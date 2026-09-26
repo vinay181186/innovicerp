@@ -184,7 +184,7 @@ function RouteCardsListPage(): React.JSX.Element {
       {
         // Grade then size on one line — the stock this card is cut from, so the
         // master answers "what is it made of" without opening a card.
-        header: 'Grade / Size',
+        header: 'RM Grade / RM Size',
         width: '15%',
         className: 'mono',
         ellipsis: true,
@@ -253,11 +253,7 @@ function RouteCardsListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            empty={
-              <>
-                No route cards yet — click <strong>+ Add Route Card</strong>
-              </>
-            }
+            empty={search ? 'No Route Cards match.' : 'No Route Cards yet.'}
             onRowClick={(rc) => void navigate({ to: '/route-cards/$id', params: { id: rc.id } })}
             // The op sequence is fetched only for a row that is actually open —
             // returning null for a collapsed row means ExpandedOps (and its
@@ -266,9 +262,8 @@ function RouteCardsListPage(): React.JSX.Element {
             rowActionsWidth="10%"
             rowActions={(rc) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/route-cards/${rc.id}`}
+                // Row click opens the card (no separate View). Edit is a ROUTE,
+                // so it stays a real link — ctrl-click still opens a new tab.
                 editTo={perms.edit ? `/route-cards/${rc.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // 🖨 Print is this screen's own action, not one of the three
@@ -308,8 +303,7 @@ function RouteCardsListPage(): React.JSX.Element {
         limit={LIST_LIMIT}
         hint={
           <>
-            Click a row to open it · click ▸ before the <b>RC No.</b> to show its operation
-            sequence.
+            Click ▸ before the <b>RC No.</b> to show its operation sequence.
           </>
         }
       />
@@ -334,7 +328,7 @@ function ExpandedOps({ rcId }: { rcId: string }): React.JSX.Element {
         className="mono fw-700"
         style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)', marginBottom: 'var(--sp-1)' }}
       >
-        ▸ OPERATION SEQUENCE — {data.code}
+        ▸ Operation Sequence — {data.code}
       </div>
       <div style={{ display: 'flex', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>
         {data.ops.map((op, i) => {

@@ -8,7 +8,9 @@ import type { StuckDashboardResponse, StuckItem } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { apiFetch } from '@/lib/api';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 
 export const stuckDashboardRoute = createRoute({
@@ -59,24 +61,32 @@ function StuckDashboardPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr">⚠ Stuck Dashboard</div>
+      <div className="section-hdr">Stuck Dashboard</div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile label="Total Stuck" value={data.summary.totalStuck} color="var(--amber)" />
-        <Tile
-          label="Critical (>5d over)"
-          value={data.summary.criticalStuck}
-          color="var(--red)"
-          critical
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            {
+              key: 'total',
+              label: 'Total Stuck',
+              count: data.summary.totalStuck,
+              color: 'var(--amber)',
+            },
+            {
+              key: 'critical',
+              label: 'Critical',
+              count: data.summary.criticalStuck,
+              color: 'var(--red)',
+              title: 'Over by 5+ days',
+            },
+            {
+              key: 'stages',
+              label: 'Stages Affected',
+              count: data.summary.stagesAffected,
+              color: 'var(--blue)',
+            },
+          ]}
         />
-        <Tile label="Stages Affected" value={data.summary.stagesAffected} color="var(--blue)" />
       </div>
 
       {data.summary.totalStuck === 0 ? (
@@ -89,13 +99,7 @@ function StuckDashboardPage(): React.JSX.Element {
             borderRadius: 'var(--radius2)',
           }}
         >
-          <div style={{ fontSize: 48 }}>✅</div>
-          <div style={{ fontSize: 16, fontWeight: 700, marginTop: 10 }}>
-            All activities on track
-          </div>
-          <div className="text3" style={{ fontSize: 12, marginTop: 4 }}>
-            No activities are stuck beyond threshold
-          </div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>No stuck jobs.</div>
         </div>
       ) : (
         <>
@@ -125,9 +129,8 @@ function StuckDashboardPage(): React.JSX.Element {
                           <th>SO No.</th>
                           <th>Customer</th>
                           <th className="td-ctr">Stuck For</th>
-                          <th className="td-ctr">Threshold</th>
                           <th className="td-ctr">Over By</th>
-                          <th>Since</th>
+                          <th>Stuck Since</th>
                           <th>Detail</th>
                         </tr>
                       </thead>
@@ -151,12 +154,11 @@ function StuckDashboardPage(): React.JSX.Element {
                               <td className="td-ctr mono fw-700" style={{ color: oc }}>
                                 {it.days} days
                               </td>
-                              <td className="td-ctr mono text3">{it.threshold} days</td>
                               <td className="td-ctr mono fw-700" style={{ color: oc }}>
-                                +{over}d
+                                +{over} days
                               </td>
                               <td className="text3" style={{ fontSize: 11 }}>
-                                {it.since ?? '—'}
+                                {fmtDate(it.since)}
                               </td>
                               <td style={{ fontSize: 11 }}>{it.detail}</td>
                             </tr>
@@ -179,40 +181,6 @@ function StuckDashboardPage(): React.JSX.Element {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-// Legacy hand-rolls these tiles inline (L18123-18125) — they are NOT .panel and
-// NOT .stat-card. The Critical tile carries a red wash + red label; legacy spells
-// it rgba(239,68,68,0.06)/rgba(239,68,68,0.3) against its dark theme, which maps
-// to the light theme's signal tokens (ISSUE-067). Legacy sets no font-family on
-// the value, so no `mono` here — unlike the table's qty cells, which do use it.
-function Tile({
-  label,
-  value,
-  color,
-  critical = false,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  critical?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        textAlign: 'center',
-        padding: 14,
-        borderRadius: 'var(--radius2)',
-        background: critical ? 'var(--sig-critical-bg)' : 'var(--bg2)',
-        border: `1px solid ${critical ? 'var(--sig-critical-bd)' : 'var(--border)'}`,
-      }}
-    >
-      <div style={{ fontSize: 11, color: critical ? 'var(--red)' : 'var(--text3)' }}>{label}</div>
-      <div className="fw-700" style={{ fontSize: 26, color }}>
-        {value}
-      </div>
     </div>
   );
 }

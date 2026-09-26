@@ -2216,7 +2216,7 @@ export async function updateJobCard(
         (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
       ) {
         throw new ValidationError(
-          'Stop Operation first, then change the machine. Pieces already made stay recorded on the current machine.',
+          'Stop Operation first, then change the machine.',
         );
       }
       if (

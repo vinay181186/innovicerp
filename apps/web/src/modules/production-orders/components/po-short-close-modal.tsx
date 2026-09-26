@@ -42,7 +42,7 @@ export function PoShortCloseModal({
   const onSubmit = (): void => {
     setErr(null);
     if (!trimmed) {
-      setErr('Say why the order is being short closed');
+      setErr('Reason is required.');
       return;
     }
     shortClose.mutate(
@@ -53,7 +53,7 @@ export function PoShortCloseModal({
           setErr(
             e instanceof Error
               ? e.message
-              : 'Could not short close this Production Order. Try again.',
+              : 'Could not Short Close this Production Order. Try again.',
           ),
       },
     );
@@ -61,7 +61,7 @@ export function PoShortCloseModal({
 
   return (
     <Modal
-      title={`⛔ Short Close ${code}`}
+      title={`Short Close ${code}`}
       size="sm"
       onClose={() => {
         // Always a function: `ModalProps.onClose` is required and handing it
@@ -99,14 +99,13 @@ export function PoShortCloseModal({
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
           {jcCode}
         </span>{' '}
-        is frozen — no production entry, QC, NC, outsourcing or edit is allowed on it afterwards.
+        is frozen — no entry or edit is allowed on it afterwards.
         <div style={{ marginTop: 8 }}>
-          {creditedQty} of {orderQty} pieces are already credited to stock and{' '}
-          <span className="fw-700">stay credited</span>. The pending{' '}
+          {creditedQty} of {orderQty} credited stay in stock. The Pending{' '}
           <span className="fw-700" style={{ color: 'var(--amber2)' }}>
             {stopping}
           </span>{' '}
-          go back to the plan&apos;s Pending, so a new Production Order can be raised for them.
+          go back to the plan.
         </div>
       </div>
 

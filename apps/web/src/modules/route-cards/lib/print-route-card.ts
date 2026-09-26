@@ -48,20 +48,18 @@ export function printRouteCard(args: {
   const drawing = item?.drawingNo ?? '—';
 
   const body = `
-    <div class="doc-title"><h1>ROUTE CARD — ${esc(rc.code || itemCode)}</h1><span class="print-meta">${printedMeta()}</span></div>
+    <div class="doc-title"><h1>Route Card — ${esc(rc.code || itemCode)}</h1><span class="print-meta">${printedMeta()}</span></div>
     <div class="info-grid" style="grid-template-columns:repeat(3,1fr)">
       <div class="info-box"><div class="info-lbl">Item Code</div><div class="info-val" style="color:#7c3aed">${esc(itemCode)}</div></div>
       <div class="info-box"><div class="info-lbl">Item Name</div><div class="info-val">${esc(rc.itemName ?? item?.name ?? '—')}</div></div>
-      <div class="info-box"><div class="info-lbl">Material Grade</div><div class="info-val">${esc(rc.rawMaterialGradeText ?? '—')}</div></div>
-      <div class="info-box"><div class="info-lbl">Material Size</div><div class="info-val">${esc(rc.rawMaterialSizeText ?? '—')}</div></div>
+      <div class="info-box"><div class="info-lbl">RM Grade</div><div class="info-val">${esc(rc.rawMaterialGradeText ?? '—')}</div></div>
+      <div class="info-box"><div class="info-lbl">RM Size</div><div class="info-val">${esc(rc.rawMaterialSizeText ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Drawing No.</div><div class="info-val" style="font-family:monospace">${esc(drawing)}</div></div>
-      <div class="info-box"><div class="info-lbl">Material</div><div class="info-val">${esc(item?.material ?? '—')}</div></div>
-      <div class="info-box"><div class="info-lbl">Total Operations</div><div class="info-val">${rc.ops.length}</div></div>
       <div class="info-box"><div class="info-lbl">Route Card Rev</div><div class="info-val">${rc.currentRevision}</div></div>
     </div>
     <h2>Operation Sequence</h2>
     <table><thead><tr><th>Op</th><th>Planned Machine</th><th>Operation</th><th>Cycle Time (min)</th><th>Program No.</th><th>Tool No.</th><th>Tool Details / Setup Notes</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#aaa">No operations</td></tr>'}</tbody></table>
+    <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#aaa">No operations yet.</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Process Engineer</div>
       <div class="sign-box">Reviewed By</div>

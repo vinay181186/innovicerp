@@ -6,6 +6,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlan, useUpdatePlan } from '../api';
 import { PlanForm, type PlanFormValues, toCreateInput } from '../components/plan-form';
+import { STORED_LABEL } from '../lib/derived-status';
 
 export const planEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -26,8 +27,7 @@ function PlanEditPage(): React.JSX.Element {
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have edit access to Plans. Ask an admin for L2 Data Entry or above in
-        Planning.
+        You do not have permission to edit Plans. Ask an admin.
       </div>
     );
   }
@@ -61,11 +61,10 @@ function PlanEditPage(): React.JSX.Element {
             className="btn btn-ghost btn-sm"
             style={{ marginBottom: 10 }}
           >
-            <ArrowLeft size={14} /> Back to detail
+            <ArrowLeft size={14} /> Back
           </Link>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            Plans in status <b>{plan.planStatus}</b> are read-only. Cancel via the workflow if you
-            need changes.
+            A {STORED_LABEL[plan.planStatus]} plan cannot be edited.
           </div>
         </div>
       </div>
@@ -81,10 +80,10 @@ function PlanEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to {plan.code}
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="section-hdr" style={{ marginBottom: 10 }}>
-        ✏️ Edit plan {plan.code}
+        Edit Plan {plan.code}
       </div>
 
       <PlanForm

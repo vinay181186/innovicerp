@@ -57,7 +57,7 @@ function Kv({ label, children }: { label: string; children: React.ReactNode }): 
   );
 }
 
-/** One KPI tile — big mono number over a small uppercase caption. `tone`
+/** One KPI tile — big mono number over a small caption. `tone`
  *  only tints it (background, border, number colour); the size never moves. */
 function KpiTile({
   label,
@@ -118,8 +118,6 @@ function KpiTile({
           fontSize: 11,
           color: 'var(--text3)',
           marginTop: 2,
-          textTransform: 'uppercase',
-          letterSpacing: '.05em',
           whiteSpace: 'nowrap',
         }}
       >
@@ -174,9 +172,8 @@ export function JcViewSummary({
    *  what was PLANNED. */
   actualSize?: string | null;
   drawing: JcDrawingRef | null;
-  /** Opens the shared drawing preview — from the `👁 Open drawing` button
-   *  under the product picture, the drawing thumbnail (image drawings only),
-   *  or the Documents tab's Drawing card. */
+  /** Opens the shared drawing preview — from the drawing thumbnail (image
+   *  drawings) or the file name on the Drawing row (PDF / DWG). */
   onOpenDrawing: () => void;
 }): React.JSX.Element {
   // ── KPI tiles ──
@@ -302,11 +299,11 @@ export function JcViewSummary({
               ) : null}
             </div>
           </ItemBadge>
-          {/* Drawing controls — the thumbnail when the drawing is an image,
-              else (a PDF has none) an open button; both open the same preview
-              the Documents tab's Drawing card does. Never `download`: opening
-              a thumbnail is nobody keeping a copy. */}
-          {drawing ? (
+          {/* Drawing thumbnail when the drawing is an image (a PDF has none —
+              its file name on the Drawing row opens it instead). Opens the
+              shared preview. Never `download`: opening a thumbnail is nobody
+              keeping a copy. */}
+          {drawing?.thumbUrl ? (
             <div
               style={{
                 marginTop: 6,
@@ -316,36 +313,25 @@ export function JcViewSummary({
                 gap: 6,
               }}
             >
-              {drawing.thumbUrl ? (
-                <button
-                  type="button"
-                  onClick={onOpenDrawing}
-                  title={`Open this drawing — ${drawing.label}`}
-                  style={{
-                    background: 'none',
-                    border: '1px solid var(--border2)',
-                    borderRadius: 8,
-                    padding: 2,
-                    cursor: 'pointer',
-                    lineHeight: 0,
-                  }}
-                >
-                  <img
-                    src={drawing.thumbUrl}
-                    alt={`${drawing.label} drawing`}
-                    style={{ maxHeight: 56, maxWidth: 116, borderRadius: 6, display: 'block' }}
-                  />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={onOpenDrawing}
-                  title={drawing.fileName}
-                >
-                  👁 Open drawing
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={onOpenDrawing}
+                title={`Open this drawing — ${drawing.label}`}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--border2)',
+                  borderRadius: 8,
+                  padding: 2,
+                  cursor: 'pointer',
+                  lineHeight: 0,
+                }}
+              >
+                <img
+                  src={drawing.thumbUrl}
+                  alt={`${drawing.label} drawing`}
+                  style={{ maxHeight: 56, maxWidth: 116, borderRadius: 6, display: 'block' }}
+                />
+              </button>
             </div>
           ) : null}
         </div>
@@ -375,17 +361,26 @@ export function JcViewSummary({
                   {drawing.label}
                 </span>
                 {drawing.thumbUrl ? null : (
-                  <div
+                  <button
+                    type="button"
+                    onClick={onOpenDrawing}
+                    title={`Open this drawing — ${drawing.fileName}`}
                     style={{
+                      display: 'block',
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      font: 'inherit',
                       fontSize: 11,
                       fontWeight: 400,
-                      color: 'var(--text2)',
+                      color: 'var(--blue)',
                       overflowWrap: 'anywhere',
                     }}
-                    title={drawing.fileName}
                   >
-                    📄 {drawing.fileName} — open it to view
-                  </div>
+                    📄 {drawing.fileName}
+                  </button>
                 )}
               </>
             ) : (
@@ -443,7 +438,7 @@ export function JcViewSummary({
                 ) : null}
               </span>
             ) : (
-              <span style={{ color: 'var(--amber2)' }}>none</span>
+              <span style={{ color: 'var(--amber2)' }}>None</span>
             )}
           </Kv>
           {/* ADR-170 — the Production Order that built this card. Only such a
@@ -544,7 +539,7 @@ export function JcViewSummary({
               title="Through the last op."
             />
             <KpiTile
-              label="In Process"
+              label="In Progress"
               value={wip ?? '—'}
               tone="blue"
               title="Started, not yet finished."
@@ -604,7 +599,7 @@ export function JcViewSummary({
               {jc.priority === 'high' ? '↑ High' : 'Normal'}
             </span>
           </div>
-          <div style={kvLabel}>Waiting at</div>
+          <div style={kvLabel}>Current Op</div>
           <div className="fw-700" style={{ fontSize: 12.5, textAlign: 'right' }}>
             {stuck ? (
               <>

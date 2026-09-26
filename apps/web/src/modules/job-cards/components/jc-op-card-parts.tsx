@@ -4,12 +4,10 @@
 //
 // Presentation only — these components hold no JC logic and compute nothing.
 
-/** Small uppercase section caption inside a card ("QUANTITIES", "SETUP", …). */
+/** Small section caption inside a card ("Quantities", "Setup", …). */
 export const secLabel: React.CSSProperties = {
   fontSize: 11,
   color: 'var(--text3)',
-  textTransform: 'uppercase',
-  letterSpacing: '.08em',
   fontWeight: 700,
   marginBottom: 5,
 };
@@ -33,7 +31,7 @@ export function SetupField({
 }
 
 /** One quantity CHIP (JC-Detail-Restyle-Mockup.html, 2026-09-21): mono number
- *  over a tiny uppercase caption, in a bordered box that fills its grid cell.
+ *  over a small caption, in a bordered box that fills its grid cell.
  *  `highlight` tints it amber (pieces waiting); `sub` holds the caller's extra
  *  lines unchanged. Used by BOTH the read-only VIEW op card (jc-op-card.tsx) and
  *  the editable op card (jc-op-edit-card.tsx) so their quantities read the same. */
@@ -70,8 +68,6 @@ export function QtyChip({
       <div
         style={{
           fontSize: 11,
-          letterSpacing: '.04em',
-          textTransform: 'uppercase',
           color: 'var(--text3)',
           marginTop: 2,
           whiteSpace: 'nowrap',

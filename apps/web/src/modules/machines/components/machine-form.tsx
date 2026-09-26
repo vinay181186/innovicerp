@@ -186,7 +186,7 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label green" htmlFor="hourRate">
-            💰 Hour Rate (₹/hr)
+            Hour Rate (₹/hr)
           </label>
           <input
             id="hourRate"
@@ -321,7 +321,7 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label green" htmlFor="hourRate">
-            💰 Hour Rate (₹/hr)
+            Hour Rate (₹/hr)
           </label>
           <input
             id="hourRate"
@@ -372,7 +372,7 @@ function FormFooter(props: {
           style={{
             color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--sig-critical-bd)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,

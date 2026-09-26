@@ -10,9 +10,9 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatusBadge } from '@/ui/core';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useExecutePlan, useFinalizePlan, usePlan, useSoftDeletePlan } from '../api';
-import { DERIVED_BADGE, DERIVED_LABEL } from '../lib/derived-status';
+import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
 
 export const planDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -20,9 +20,9 @@ export const planDetailRoute = createRoute({
   component: PlanDetailPage,
 });
 
-// The plan-status words. The COLOURS live in ui/core/StatusBadge.tsx under
-// kind="plan" — one map, shared with the Plans list, so the two screens cannot
-// paint the same status differently.
+// The plan-status words. The COLOURS are STORED_BADGE (lib/derived-status) —
+// one map, shared with the Plans list, so the two screens cannot paint the
+// same status differently.
 const STATUS_LABEL: Record<PlanStatus, string> = {
   in_planning: 'In Planning',
   planned: 'Planned',
@@ -35,7 +35,7 @@ const STATUS_LABEL: Record<PlanStatus, string> = {
 
 const TYPE_LABEL: Record<PlanType, string> = {
   manufacture: '🏭 Manufacture',
-  direct_purchase: '🛒 Direct Purchase',
+  direct_purchase: '🛒 Buy',
   full_outsource: '📦 Full Outsource',
   assembly: '🔧 Assembly',
 };
@@ -111,20 +111,16 @@ function PlanDetailPage(): React.JSX.Element {
         ),
     });
   };
-  const onDelete = (): void => {
-    softDelete.mutate(plan.id, {
-      onSuccess: () => {
-        void navigate({ to: '/plans', replace: true });
-      },
-      onError: (e) =>
-        setActionError(e instanceof Error ? e.message : 'Could not delete Plan. Try again.'),
-    });
+  // ConfirmDialog owns the wait and shows a refusal inside the dialog.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(plan.id);
+    void navigate({ to: '/plans', replace: true });
   };
 
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Plans. Ask an admin.
       </div>
     );
   }
@@ -132,7 +128,7 @@ function PlanDetailPage(): React.JSX.Element {
   return (
     <div>
       <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to plans
+        <ArrowLeft size={14} /> Back
       </Link>
 
       <div className="panel">
@@ -162,11 +158,9 @@ function PlanDetailPage(): React.JSX.Element {
                   {DERIVED_LABEL[plan.derivedStatus]}
                 </span>
               ) : (
-                <StatusBadge
-                  kind="plan"
-                  status={plan.planStatus}
-                  label={STATUS_LABEL[plan.planStatus]}
-                />
+                <span className={`badge ${STORED_BADGE[plan.planStatus]}`}>
+                  {STATUS_LABEL[plan.planStatus]}
+                </span>
               )}
               <span className="text3" style={{ fontSize: 12 }}>
                 {TYPE_LABEL[plan.planType]}
@@ -218,42 +212,14 @@ function PlanDetailPage(): React.JSX.Element {
               </Link>
             ) : null}
             {perms.edit && perms.approve && isEditable ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}{' '}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setConfirmDelete(true)}
+                disabled={softDelete.isPending}
+              >
+                <Trash2 size={13} /> Delete
+              </button>
             ) : null}
           </div>
         </div>
@@ -263,7 +229,7 @@ function PlanDetailPage(): React.JSX.Element {
               style={{
                 color: 'var(--red2)',
                 background: 'var(--red3)',
-                border: '1px solid #fca5a5',
+                border: '1px solid var(--red2)',
                 borderRadius: 6,
                 padding: '6px 10px',
                 fontSize: 12,
@@ -299,7 +265,11 @@ function PlanDetailPage(): React.JSX.Element {
                 keeps the bare code, with no trailing slash. */}
             <KV
               label="Item Code"
-              value={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+              value={
+                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                  {itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+                </span>
+              }
             />
             {/* POL — the line number printed on the CUSTOMER's own purchase
                 order. It is NOT our SO line number ("Line #" below); on live
@@ -319,7 +289,7 @@ function PlanDetailPage(): React.JSX.Element {
           {plan.planType === 'direct_purchase' ? (
             <>
               <div className="section-hdr" style={{ marginTop: 14 }}>
-                Direct purchase
+                Buy
               </div>
               <Grid>
                 <KV label="Vendor" value={plan.dpVendorCodeText ?? '—'} />
@@ -333,7 +303,7 @@ function PlanDetailPage(): React.JSX.Element {
           {plan.planType === 'full_outsource' ? (
             <>
               <div className="section-hdr" style={{ marginTop: 14 }}>
-                Full outsource
+                Full Outsource
               </div>
               <Grid>
                 <KV label="JW Vendor" value={plan.foVendorCodeText ?? '—'} />
@@ -388,8 +358,6 @@ function PlanDetailPage(): React.JSX.Element {
                 className="text3"
                 style={{
                   fontSize: 11,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
                   marginBottom: 4,
                 }}
               >
@@ -441,6 +409,16 @@ function PlanDetailPage(): React.JSX.Element {
       ) : null}
 
       <RelatedDocsPanel module="plans" id={plan.id} />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Move Plan ${plan.code} to Trash?`}
+        message="You can restore it from Trash."
+        confirmLabel="Move to Trash"
+        pendingLabel="Moving to Trash…"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={onDelete}
+      />
     </div>
   );
 }
@@ -466,8 +444,6 @@ function KV({ label, value }: { label: string; value: React.ReactNode }): React.
         className="text3"
         style={{
           fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
           marginBottom: 2,
         }}
       >

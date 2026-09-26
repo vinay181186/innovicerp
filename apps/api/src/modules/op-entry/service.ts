@@ -979,10 +979,7 @@ function nextLogNo(): string {
 function assertNotFutureDate(value: string, label: string): void {
   const istToday = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
   if (value > istToday) {
-    throw new ValidationError(
-      `${label} ${value} is in the future — an operation cannot be worked on a day that has ` +
-        `not happened yet. Today is ${istToday}.`,
-    );
+    throw new ValidationError(`${label} cannot be in the future.`);
   }
 }
 
@@ -1014,7 +1011,7 @@ async function writeProductionLog(
 }> {
   // Covers BOTH ways production is booked -- POST /op-entry/op-log and the
   // quantity carried by a stop -- because both write through here.
-  assertNotFutureDate(input.logDate, 'Log date');
+  assertNotFutureDate(input.logDate, 'Log Date');
   const op = await loadJcOp(tx, input.jcOpId, companyId);
   // ADR-182 — nothing may be booked against a short-closed Production Order's
   // Job Card (or a rework child of one). Checked before any write.
@@ -1313,7 +1310,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
   const companyId = requireCompany(user);
   // A QC date box is blank and typed like every other one, so it can be
   // mistyped like every other one.
-  assertNotFutureDate(input.logDate, 'Inspection date');
+  assertNotFutureDate(input.logDate, 'Inspection Date');
 
   return withUserContext(user, async (tx) => {
     // Load op + qc_required + qc_call_date in one go (loadJcOp doesn't carry
@@ -1791,7 +1788,7 @@ export async function updateOpLogTiming(
   // The fourth way a date reaches op_log. Guarding the three entry paths and
   // leaving the correction path open would only move the hole -- a retime can
   // put a row in the future just as easily as an original entry can.
-  assertNotFutureDate(input.logDate, 'Corrected date');
+  assertNotFutureDate(input.logDate, 'Log Date');
 
   return withUserContext(user, async (tx) => {
     const row = await loadTimingTarget(tx, input.id, companyId);
@@ -2119,7 +2116,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
   // session records shop-floor work → `entry`. Admins bypass.
   await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
-  assertNotFutureDate(input.startDate, 'Start date');
+  assertNotFutureDate(input.startDate, 'Start Date');
 
   return withUserContext(user, async (tx) => {
     const op = await loadJcOp(tx, input.jcOpId, companyId);
@@ -2133,7 +2130,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
     const snapshot = await loadAvailability(tx, input.jcOpId);
     if (snapshot.available <= 0) {
       throw new ValidationError(
-        'Nothing Pending on this operation — the previous operation must complete pieces first.',
+        'Nothing Available on this operation — finish the previous op first.',
       );
     }
     // Client-material gate: the first op of a JWSO Job Card can only start once

@@ -1,11 +1,13 @@
 // Job Card VIEW page — the bottom tab bar (2026-09-18 mockup):
 //   Documents & Quality | Related Records | History
 //
-//   Documents & Quality  cards for what this card actually has: the drawing
-//                        (opens the shared preview), each QC document (opens
+//   Documents & Quality  cards for what this card actually has: each QC
+//                        document (opens
 //                        the file), open QC calls (→ QC Call Register on this
 //                        card), NCs (→ NC register on this card). No card for
 //                        a thing that does not exist; no "Manage Documents".
+//                        No Drawing card: the header's Drawing row + thumbnail
+//                        already open the drawing (Round 5, one way in).
 //   Related Records      the shared Related Documents panel, as before.
 //   History              the completion-log feed (op_log ∪ NC ∪ dispositions ∪
 //                        OSP), as before — server-merged, real total.
@@ -29,7 +31,6 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { drawingViewUrl } from '@/lib/drawing-url';
 import { fmtJcDate } from '../lib/fmt-jc-date';
-import type { JcDrawingRef } from './jc-view-summary';
 
 // ─── Completion-log feed (History tab) ──────────────────────────────────────
 
@@ -92,7 +93,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       time: e.time,
       icon: e.logType === 'start' ? '▶' : e.logType === 'qc' ? '🔬' : '✔',
       color: e.logType === 'start' ? 'var(--amber)' : 'var(--green)',
-      title: `Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}: ${e.operation ?? '?'} — ${label}`,
+      title: `Op ${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}: ${e.operation ?? '?'} — ${label}`,
       detail: [detail, e.shift ? labelOf(SHIFT_LABELS, e.shift) : ''].filter(Boolean).join(' • '),
       remarks: e.remarks ?? '',
       qtyKind: e.logType === 'start' ? 'none' : e.logType === 'qc' ? 'qc' : 'complete',
@@ -110,7 +111,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       time: e.time,
       icon: '❌',
       color: 'var(--red2)',
-      title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ? labelOf(NC_REASON_CATEGORY_LABELS, e.reasonCategory) : 'NC'} at Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}`,
+      title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ? labelOf(NC_REASON_CATEGORY_LABELS, e.reasonCategory) : 'NC'} at Op ${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}`,
       detail,
       remarks: '',
       qtyKind: 'nc',
@@ -122,7 +123,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
     const detail =
       `${e.rejectedQty ?? 0} pcs` +
       (e.disposition === 'rework'
-        ? ` → back to Op${e.reworkOpSeq != null ? fmtOpSrNo(e.reworkOpSeq) : '?'}`
+        ? ` → back to Op ${e.reworkOpSeq != null ? fmtOpSrNo(e.reworkOpSeq) : '?'}`
         : '') +
       (e.dispositionBy ? ` • By: ${e.dispositionBy}` : '');
     return {
@@ -186,7 +187,7 @@ function HistoryFeed({
     <div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>
         {eventDays.truncated
-          ? `showing latest ${eventDays.shown} of ${eventDays.total} entries`
+          ? `Showing latest ${eventDays.shown} of ${eventDays.total} entries`
           : `${eventDays.total} entries`}
       </div>
       <div
@@ -200,7 +201,7 @@ function HistoryFeed({
       >
         {eventDays.total === 0 ? (
           <div className="empty-state" style={{ padding: 16 }}>
-            No log entries yet
+            No entries yet.
           </div>
         ) : (
           eventDays.days.map((day) => (
@@ -393,15 +394,11 @@ function DocumentsTab({
   jc,
   ops,
   extras,
-  drawing,
-  onOpenDrawing,
   stopped,
 }: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
   extras: JobCardStatusExtras | undefined;
-  drawing: JcDrawingRef | null;
-  onOpenDrawing: () => void;
   stopped: boolean;
 }): React.JSX.Element {
   const { data: eff } = useMyAccess();
@@ -414,7 +411,7 @@ function DocumentsTab({
   const canNc = effectiveFormPerms(eff, 'nc_dispose').view;
 
   // QC Calls = the QC operations with pieces waiting to be inspected right now
-  // (qcPending > 0) — the same condition that shows 🔬 QC Call (n) on the op
+  // (qcPending > 0) — the same condition that shows 🔬 Inspect (n) on the op
   // card. The enriched op carries no qc_call_date, so this is calls OPEN, not
   // calls ever raised. Pieces waiting go on the sub-line.
   const qcOps = ops.filter((o) => o.opType === 'qc');
@@ -435,20 +432,10 @@ function DocumentsTab({
     );
   };
 
-  const nothing = !drawing && qcDocs.length === 0 && qcOps.length === 0 && ncEvents.length === 0;
+  const nothing = qcDocs.length === 0 && qcOps.length === 0 && ncEvents.length === 0;
 
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-      {drawing ? (
-        <DocCard
-          icon="📐"
-          iconBg="var(--green3)"
-          title="Drawing"
-          sub={drawing.label}
-          onClick={onOpenDrawing}
-          hint={`📄 ${drawing.fileName} — open it to view`}
-        />
-      ) : null}
       {qcDocs.map((d) => (
         <DocCard
           key={d.id}
@@ -468,7 +455,7 @@ function DocumentsTab({
           sub={
             openQcCalls.length > 0
               ? `${openQcCalls.length} open · ${qcPendingPcs} pcs waiting`
-              : 'none open'
+              : 'None open'
           }
           hint={
             stopped
@@ -498,7 +485,7 @@ function DocumentsTab({
       ) : null}
       {nothing ? (
         <div className="empty-state" style={{ padding: 16, width: '100%' }}>
-          No drawing, QC document, QC call or NC on this job card yet
+          No QC document, QC call or NC on this job card yet.
         </div>
       ) : null}
     </div>
@@ -519,15 +506,11 @@ export function JcViewTabs({
   jc,
   ops,
   extras,
-  drawing,
-  onOpenDrawing,
   stopped = false,
 }: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
   extras: JobCardStatusExtras | undefined;
-  drawing: JcDrawingRef | null;
-  onOpenDrawing: () => void;
   // ADR-182 — a short-closed Production Order freezes its Job Card. The
   // Documents tab keeps the QC Calls / NC Report cards visible (they are the
   // record of what happened) but drops their register links so the user is
@@ -576,14 +559,7 @@ export function JcViewTabs({
       </div>
       <div className="panel-body">
         {tab === 'docs' ? (
-          <DocumentsTab
-            jc={jc}
-            ops={ops}
-            extras={extras}
-            drawing={drawing}
-            onOpenDrawing={onOpenDrawing}
-            stopped={stopped}
-          />
+          <DocumentsTab jc={jc} ops={ops} extras={extras} stopped={stopped} />
         ) : tab === 'related' ? (
           <RelatedDocsPanel module="job-cards" id={jc.id} />
         ) : (

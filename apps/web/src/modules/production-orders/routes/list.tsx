@@ -139,7 +139,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
   const columns = useMemo<ColumnDef<ProductionOrderListItem>[]>(
     () => [
       {
-        header: 'Production Order No',
+        header: 'Production Order No.',
         accessorKey: 'code',
         meta: { tdClass: 'td-code' },
         cell: ({ row }) => (
@@ -161,7 +161,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{fmtDate(row.original.createdAt)}</span>,
       },
       {
-        header: 'Plan',
+        header: 'Plan No.',
         accessorKey: 'planCodeText',
         meta: { tdClass: 'mono' },
         cell: ({ row }) => (
@@ -300,7 +300,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Production Orders. Ask an admin.
       </div>
     );
   }
@@ -334,18 +334,15 @@ function ProductionOrdersListPage(): React.JSX.Element {
         >
           <div>
             <div className="section-hdr" style={{ marginBottom: 0 }}>
-              🏭 Production Orders
+              Production Orders
             </div>
             <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
               {total} order{total === 1 ? '' : 's'}
               {search.status ? (
                 <>
                   {' '}
-                  ·{' '}
-                  <span className="text2">
-                    {search.status === 'open'
-                      ? 'pending'
-                      : PRODUCTION_ORDER_STATUS_LABEL[search.status].toLowerCase()}
+                  · <span className="text2">
+                    {PRODUCTION_ORDER_STATUS_LABEL[search.status]}
                   </span>{' '}
                   only
                 </>
@@ -355,7 +352,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
               className="innovic-input"
-              placeholder="🔍 Search production order no, plan, POL, item, JC, SO…"
+              placeholder="Search Production Order No., plan, POL, item, JC, SO…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               style={{ width: 260, fontSize: 12 }}
@@ -406,7 +403,8 @@ function ProductionOrdersListPage(): React.JSX.Element {
               key: 'short_closed',
               label: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
               count: shortClosedCount,
-              color: 'var(--red2)',
+              // Grey, same as its badge: stopped, not an alarm.
+              color: 'var(--text2)',
               active: search.status === 'short_closed',
               onClick: toggleStatus('short_closed'),
             },
@@ -442,7 +440,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
                     {search.search || search.status
-                      ? 'No production orders match.'
+                      ? 'No Production Orders match.'
                       : 'No Production Orders yet.'}
                   </td>
                 </tr>

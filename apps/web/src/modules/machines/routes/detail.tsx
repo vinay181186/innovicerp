@@ -1,7 +1,7 @@
 // Machine detail page (UI-003-03). Group-4 migration onto the primitives,
 // following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
 //
-//   ← Back to Machine Master
+//   ← Back
 //   DetailHeader (code + name + machine-state chip + Edit/Delete) → ReadGrid
 //
 // A machine is a flat master — no line table, no related-document query — so
@@ -47,7 +47,7 @@ export const machineDetailRoute = createRoute({
   component: MachineDetailPage,
 });
 
-const BACK_LABEL = 'Back to Machine Master';
+const BACK_LABEL = 'Back';
 
 /** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
  *  state has no header to hang it on, so it renders the same control on its
@@ -191,10 +191,10 @@ function MachineFacts(props: { machine: Machine }): React.JSX.Element {
       <ReadField label="Product Code" size="md" mono value={machine.productCode} />
 
       <ReadField
-        label="Capacity / Shift"
+        label="Capacity / Shift (hrs)"
         size="lg"
         mono
-        value={machine.capacityPerShift !== null ? `${machine.capacityPerShift} h` : null}
+        value={machine.capacityPerShift !== null ? String(machine.capacityPerShift) : null}
       />
       <ReadField label="Shifts / Day" size="lg" mono value={String(machine.shiftsPerDay)} />
     </ReadGrid>

@@ -81,9 +81,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
     // entry can, so it is bounded the same way. The server refuses it too
     // (assertNotFutureDate in op-entry/service.ts) -- this is the early word.
     if (draftDate > todayIst()) {
-      setNotice(
-        'Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.',
-      );
+      setNotice('Log Date cannot be in the future.');
       return;
     }
     retime.mutate(
@@ -173,8 +171,6 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                       color: ts.fg,
                       fontSize: 11,
                       fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em',
                       padding: '2px 7px',
                       borderRadius: 999,
                       whiteSpace: 'nowrap',
@@ -214,7 +210,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   <span className="mono" style={{ fontSize: 12 }} title="Completed / Rejected">
                     {l.qty}
                     {l.rejectQty ? (
-                      <span style={{ color: 'var(--red2)' }}> · rej {l.rejectQty}</span>
+                      <span style={{ color: 'var(--red2)' }}> · Rejected {l.rejectQty}</span>
                     ) : null}
                   </span>
                   {/* Row action — edit / approve / reject. Logic preserved from

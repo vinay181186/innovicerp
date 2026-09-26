@@ -96,6 +96,17 @@ import { saveRouteCardForItem } from '../route-cards/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 
+// Today's calendar date in IST (same as assembly / production-schedule). The
+// UTC date is still yesterday between 00:00 and 05:30 IST.
+function todayIso(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 const EDITABLE_STATUSES: readonly PlanStatus[] = ['in_planning', 'planned'];
 
 // Placeholder vendor text stamped on an auto-raised OSP PR when the outsource op
@@ -653,7 +664,7 @@ export async function createPlan(input: CreatePlanInput, user: AuthContext): Pro
     // Direct Purchase (buy finished item outright) is not valid for job-work —
     // the client owns the job and supplies the material.
     if (planType === 'direct_purchase' && input.jwLineId) {
-      throw new ValidationError('Direct Purchase is not allowed for a job-work (JWSO) order');
+      throw new ValidationError('A Buy plan is not allowed for a JWSO order.');
     }
 
     await assertPlanQtyWithinRemaining(tx, companyId, {
@@ -807,7 +818,7 @@ export async function updatePlan(
     // Direct Purchase is not valid for a job-work (JWSO) plan.
     const resultingType = input.planType ?? row.planType;
     if (resultingType === 'direct_purchase' && row.jwLineId) {
-      throw new ValidationError('Direct Purchase is not allowed for a job-work (JWSO) order');
+      throw new ValidationError('A Buy plan is not allowed for a JWSO order.');
     }
 
     // ADR-170 — a route-card-driven plan has no operations of its own; they
@@ -1330,7 +1341,7 @@ export async function buildJobCardFromOps(
   },
 ): Promise<JcBuildResult> {
   const { plan, ops, user, companyId } = opts;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const jcCode = await nextJcCode(tx, companyId);
   // How many pieces THIS card is for — the Production Order's Order Qty since
   // ADR-182, the whole plan qty on the old Execute path. Everything built below
@@ -1614,9 +1625,9 @@ async function executeDirectPurchase(
   user: AuthContext,
 ): Promise<ExecutePlanResult> {
   if (!plan.dpVendorId && !plan.dpVendorCodeText) {
-    throw new ValidationError('Vendor is required for a Direct Purchase plan.');
+    throw new ValidationError('Vendor is required for a Buy plan.');
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
 
   const prRows = await tx
@@ -1655,7 +1666,7 @@ async function executeDirectPurchase(
     {
       action: 'PLAN_EXECUTED',
       entity: 'Plan',
-      detail: `${plan.code} → PR ${pr.code} (Direct Purchase)`,
+      detail: `${plan.code} → PR ${pr.code} (Buy)`,
       refId: plan.code,
     },
     plan.companyId,
@@ -1679,7 +1690,7 @@ async function executeFullOutsource(
   if (!plan.foProcess) {
     throw new ValidationError('Process is required for a Full Outsource plan.');
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
 
   // Seed a Job Card with ONE default outsource op (the default OSP route), so a
   // full-outsource plan lands as an editable JC op — vendor/cost prefilled from

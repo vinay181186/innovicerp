@@ -49,7 +49,7 @@ function RunningOpsPage(): React.JSX.Element {
       </div>
 
       <div style={{display:'flex',gap:4,borderBottom:'1px solid var(--border)',marginBottom:14}}>
-        {(['table','machine'] as const).map((v)=>(<button key={v} type="button" onClick={()=>setView(v)} style={{background:'none',border:'none',borderBottom:view===v?'2px solid var(--cyan)':'2px solid transparent',color:view===v?'var(--cyan)':'var(--text3)',fontSize:12,fontWeight:700,padding:'6px 12px',cursor:'pointer',marginBottom:-1}}>{v==='table'?'📊 Table':'🏭 By Machine'}</button>))}
+        {(['table','machine'] as const).map((v)=>(<button key={v} type="button" onClick={()=>setView(v)} style={{background:'none',border:'none',borderBottom:view===v?'2px solid var(--cyan)':'2px solid transparent',color:view===v?'var(--cyan)':'var(--text3)',fontSize:12,fontWeight:700,padding:'6px 12px',cursor:'pointer',marginBottom:-1}}>{v==='table'?'Table':'By Machine'}</button>))}
       </div>
 
       {view === 'machine' ? (

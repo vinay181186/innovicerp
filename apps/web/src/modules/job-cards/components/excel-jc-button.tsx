@@ -26,7 +26,7 @@ export function ExcelJcButton({
     if (!pending || doneRef.current) return;
     if (opsQuery.isError || logsQuery.isError) {
       setPending(false);
-      window.alert('Could not load job card data for export.');
+      window.alert('Could not load Job Card data for export. Try again.');
       return;
     }
     if (!opsQuery.data || opsQuery.isFetching || logsQuery.isFetching) return;

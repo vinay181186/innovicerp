@@ -28,12 +28,10 @@ const lblStyle: React.CSSProperties = {
   fontSize: 11,
   fontWeight: 700,
   color: 'var(--text3)',
-  textTransform: 'uppercase',
-  letterSpacing: '.07em',
   marginBottom: 6,
 };
 // Explanatory sentences use --text2 (never the faint --text3, which is reserved
-// for the uppercase section labels above) — the spec's contrast rule.
+// for the section labels above) — the spec's contrast rule.
 const noteStyle: React.CSSProperties = { fontSize: 12, color: 'var(--text2)' };
 
 export function JcStatTiles({
@@ -164,7 +162,7 @@ export function JcStatTiles({
               </>
             ) : (
               <span style={{ color: 'var(--text3)' }}>
-                Route Card: <span style={{ color: 'var(--amber2)' }}>none</span>
+                Route Card: <span style={{ color: 'var(--amber2)' }}>None</span>
               </span>
             )}
           </div>
@@ -249,7 +247,7 @@ export function JcStatTiles({
                   : 'Issue more customer material from Party Material Issue to continue.')
               }
             >
-              RM avail <span className="mono fw-700">{rmAvailable.availableQty}</span>
+              Customer Material <span className="mono fw-700">{rmAvailable.availableQty}</span>
               {rmAvailable.availableQty === 0
                 ? ' · issue material'
                 : ` of ${rmAvailable.issuedQty} issued`}
@@ -269,7 +267,7 @@ export function JcStatTiles({
           <div style={{ ...noteStyle, marginTop: 6 }}>
             {stuck ? (
               <>
-                Waiting at <b>Op {opSrNo(stuck.opSeq)}</b> · {stuckWhere}
+                Current Op: <b>Op {opSrNo(stuck.opSeq)}</b> · {stuckWhere}
                 {stuckRunningOn?.differs ? (
                   <>
                     {' '}
@@ -454,7 +452,7 @@ export function JcOpFlowChips({
                       color: 'var(--amber2)',
                     }}
                   >
-                    OUTSOURCE
+                    Outsource
                   </div>
                 ) : (
                   <>
@@ -549,8 +547,8 @@ export function JcOpFlowChips({
  *  tightened 2026-09-21 — no slack under a one-line name) with the same
  *  four slots —
  *
- *    OP10 · QC              op number, kind
- *    cnc-1                  machine (· name) / QC / OUTSOURCE
+ *    Op 10 · QC             op number, kind
+ *    cnc-1                  machine (· name) / QC / Outsource
  *    Turning — second …     operation name, ONE line then clipped (hover)
  *    ✓ 15/15 · ♻2           qty released / reached, OSP status, rework owed
  *
@@ -620,7 +618,7 @@ export function JcOpFlowCards({
         const line2Title = isQc
           ? 'QC'
           : isOut
-            ? 'OUTSOURCE'
+            ? 'Outsource'
             : [
                 o.machineCode ?? o.machineCodeText ?? '—',
                 actual?.differs ? `→ ${actual.label}` : null,
@@ -665,7 +663,7 @@ export function JcOpFlowCards({
               >
                 Op {opSrNo(o.opSeq)}
               </div>
-              {/* line 2 — machine / QC / OUTSOURCE, one line */}
+              {/* line 2 — machine / QC / Outsource, one line */}
               <div
                 className="fw-700"
                 style={{
@@ -790,8 +788,6 @@ function QtySeg({
       <div
         style={{
           fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '.05em',
           color: 'var(--text3)',
           marginTop: 2,
         }}

@@ -21,12 +21,12 @@
 // is there work behind it this minute. So each one is gated on a QUANTITY or an
 // ID, never on a status alone, and each mirrors the server's own refusal:
 //
-//   ▶ / ✚ Op Entry    available > 0        (startOp / submitOpLog refuse at 0)
-//   🔬 QC Call / 📋 TPI qcPending > 0       (nothing waiting to be inspected)
+//   ▶ Start Operation / ✓ Complete  available > 0  (startOp / submitOpLog refuse at 0)
+//   🔬 Inspect / 📋 TPI qcPending > 0       (nothing waiting to be inspected)
 //   ⚠ NC              qcRejectedQty > 0    (nothing was rejected → no NC to open)
 //   🚚 Gen DC         readyToSendQty > 0   (nothing cleared to send)
 //   📥 Receive        an open challan exists
-//   🔬 Incoming QC    inQcQty > 0          (nothing back awaiting inspection)
+//   🔬 Inspect (OSP)  inQcQty > 0          (nothing back awaiting inspection)
 //   🧾 Gen PO         a PR exists with no PO raised from it
 //
 // An op whose upstream has cleared nothing therefore shows NO action strip at
@@ -169,11 +169,27 @@ function OutsourceNextAction({
   //    Driven by inQcQty, not by `status === 'received'`: IN-JC-26-00008 op 8
   //    is `received` with in_qc = 0, i.e. everything is already inspected, so
   //    there is nothing to inspect and the button must not show.
+  //    Opens the QC Call Register (the same screen the 🔬 Inspect button on a
+  //    QC op opens) searched by this op's PO code — its incoming rows match on
+  //    PO code, so the inspector lands on this job card's GRN line. Falls back
+  //    to the Incoming QC queue when there is no PO code or no register access.
   if (op.inQcQty > 0 && effectiveFormPerms(eff, 'qc_incoming').view) {
+    const poCode = row.outsourcePoCode;
     actions.push(
-      <Link key="iqc" to="/incoming-qc" title="Inspect the material received back from the vendor">
-        🔬 Incoming QC
-      </Link>,
+      poCode && effectiveFormPerms(eff, 'qc_submit').view ? (
+        <Link
+          key="iqc"
+          to="/qc-call-register"
+          search={{ search: poCode }}
+          title="Inspect the pieces back from the vendor"
+        >
+          🔬 Inspect ({op.inQcQty})
+        </Link>
+      ) : (
+        <Link key="iqc" to="/incoming-qc" title="Inspect the pieces back from the vendor">
+          🔬 Inspect ({op.inQcQty})
+        </Link>
+      ),
     );
   }
 
@@ -274,10 +290,10 @@ export function JcOpFooter({
   const isQc = op.opType === 'qc';
   const isOut = op.opType === 'outsource';
 
-  // ▶ Op Entry (start) and ✚ Op Entry (log) both write op entries, which
+  // ▶ Start Operation and ✓ Complete both write op entries, which
   // guard on op_entry.entry.
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
-  // 🔬 QC Call opens the QC Call Register (read of the pending list) → qc_submit.view.
+  // 🔬 Inspect opens the QC Call Register (read of the pending list) → qc_submit.view.
   const canQc = effectiveFormPerms(eff, 'qc_submit').view;
   // 📋 TPI opens the same screen's TPI tab, whose submit enforces BOTH keys
   // (tpi/components/tpi-view.tsx:317-319) — mirror that so the link hides
@@ -324,10 +340,9 @@ export function JcOpFooter({
   //
   // So we ask `activeRunningOpId` instead (op-entry.ts): it is the running_ops
   // row RUNNING this op, or null when no machine is holding it.
-  //   activeRunningOpId !== null → ✚ Op Entry (log production against the run)
-  //   activeRunningOpId === null → ▶ Op Entry (nothing running; start it first)
-  // Both are labelled "Op Entry" (user, 2026-09-18) — the icon says which end
-  // of the chain the click lands on; the destination is the same screen.
+  //   activeRunningOpId !== null → ✓ Complete (log production against the run)
+  //   activeRunningOpId === null → ▶ Start Operation (nothing running; start it first)
+  // Same verbs as the Op Entry table (Round 5); the destination is the same screen.
   // The two are now mutually exclusive by construction — they are branches of
   // one chain below, so exactly one of them can ever render.
   //
@@ -399,7 +414,7 @@ export function JcOpFooter({
             onClick={onQc}
             title="Open the QC Call Register filtered to this job card"
           >
-            🔬 QC Call ({op.qcPending})
+            🔬 Inspect ({op.qcPending})
           </button>
         ) : showQcText ? (
           op.computedStatus === 'complete' ? (
@@ -439,7 +454,7 @@ export function JcOpFooter({
       ) : null}
       {/* NC — the QC operation that rejected pieces is where the fault was
           found, so the link only appears there, labelled with the reject count
-          like the 🔬 QC (5) button beside it. Last in the strip and quiet: it
+          like the 🔬 Inspect (5) button beside it. Last in the strip and quiet: it
           is the exception path, not the next step.
 
           It opens the NC REGISTER filtered to this job card, not the new-NC

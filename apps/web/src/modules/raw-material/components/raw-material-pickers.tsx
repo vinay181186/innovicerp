@@ -125,9 +125,6 @@ export function RawMaterialGroup({ children }: { children: React.ReactNode }): R
         style={{
           fontSize: 11,
           fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '.08em',
-          fontFamily: 'var(--mono)',
           marginBottom: 6,
         }}
       >

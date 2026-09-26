@@ -19,19 +19,22 @@ import { StatStrip, type StatStripItem } from '@/ui/data';
 
 type StatusTile = { status: PlanEffectiveStatus; label: string; color: string; kpiKey: string };
 
+// Tile colour = the row's badge colour (ADR-186 #3): grey not started, blue
+// ready, amber under way, green done. Labels = the badge words.
+
 const STATUS_TILES: StatusTile[] = [
-  { status: 'in_planning', label: 'In Planning', color: 'var(--amber2)', kpiKey: 'inPlanning' },
-  { status: 'planned', label: 'Planned (Ready)', color: 'var(--blue)', kpiKey: 'planned' },
+  { status: 'in_planning', label: 'In Planning', color: 'var(--text2)', kpiKey: 'inPlanning' },
+  { status: 'planned', label: 'Planned', color: 'var(--blue)', kpiKey: 'planned' },
   // ADR-185 — route-card plans are counted by the status their row shows.
-  { status: 'route_card_pending', label: 'RC Pending', color: 'var(--amber2)', kpiKey: 'rcPending' },
+  { status: 'route_card_pending', label: 'RC Pending', color: 'var(--text2)', kpiKey: 'rcPending' },
   {
     status: 'gen_production_order',
     label: 'RC Created',
     color: 'var(--blue)',
     kpiKey: 'rcCreated',
   },
-  { status: 'jc_created', label: 'JC Created', color: 'var(--cyan)', kpiKey: 'jcCreated' },
-  { status: 'pr_created', label: 'PR Created (Buy)', color: 'var(--purple)', kpiKey: 'prCreated' },
+  { status: 'jc_created', label: 'JC Created', color: 'var(--amber2)', kpiKey: 'jcCreated' },
+  { status: 'pr_created', label: 'PR Created', color: 'var(--amber2)', kpiKey: 'prCreated' },
   {
     status: 'in_production',
     label: 'In Production',

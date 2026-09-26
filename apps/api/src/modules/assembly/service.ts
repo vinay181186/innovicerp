@@ -76,8 +76,15 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
+// Today's calendar date in IST (R5 PR-N24). The UTC date is still yesterday
+// between 00:00 and 05:30 IST.
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 function deriveStatus(
@@ -794,7 +801,7 @@ export async function stopAssembly(
     const batch = existing[0];
     if (!batch) throw new NotFoundError('Assembly unit not found. Refresh the page.');
     if (batch.status !== 'in_progress') {
-      throw new ConflictError(`Unit #${batch.unitNo} is not in progress — nothing to complete.`);
+      throw new ConflictError(`Batch No. ${batch.unitNo} is not in assembly — nothing to complete.`);
     }
 
     const remaining = batch.qty;
@@ -930,11 +937,11 @@ export async function markUnitDispatched(
     if (!row) throw new NotFoundError('Assembly unit not found. Refresh the page.');
     if (row.status !== 'completed') {
       throw new ConflictError(
-        `Unit #${row.unitNo} is still in assembly — complete (Stop) it before dispatching.`,
+        `Batch No. ${row.unitNo} is still in assembly. Complete it before dispatch.`,
       );
     }
     if (row.dispatched) {
-      throw new ConflictError(`Unit #${row.unitNo} is already dispatched`);
+      throw new ConflictError(`Batch No. ${row.unitNo} is already dispatched.`);
     }
 
     const updated = await tx
@@ -999,10 +1006,10 @@ export async function undoLastUnit(
       .orderBy(desc(assemblyUnits.unitNo))
       .limit(1);
     const row = latest[0];
-    if (!row) throw new NotFoundError('No assembled units to undo');
+    if (!row) throw new NotFoundError('No batches to undo.');
     if (row.dispatched) {
       throw new ConflictError(
-        `Cannot undo unit #${row.unitNo} — already dispatched. Reverse dispatch first.`,
+        `Cannot undo Batch No. ${row.unitNo} — already dispatched. Reverse dispatch first.`,
       );
     }
 

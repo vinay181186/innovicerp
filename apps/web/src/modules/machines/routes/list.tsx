@@ -73,8 +73,8 @@ const listSearchSchema = z.object({
 });
 
 const TABS = [
-  { key: 'machines', label: '🏭 Machines' },
-  { key: 'groups', label: '🗂 Machine Groups' },
+  { key: 'machines', label: 'Machines' },
+  { key: 'groups', label: 'Machine Groups' },
 ];
 
 export const machinesListRoute = createRoute({
@@ -246,11 +246,11 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         render: (m) => (m.machineGroupId ? groupLookup.get(m.machineGroupId)?.code : null) ?? '—',
       },
       {
-        header: 'Capacity / Shift',
+        header: 'Capacity / Shift (hrs)',
         width: '9%',
         className: 'mono',
         nowrap: true,
-        render: (m) => (m.capacityPerShift != null ? `${m.capacityPerShift}h` : '—'),
+        render: (m) => (m.capacityPerShift != null ? String(m.capacityPerShift) : '—'),
       },
       // Legacy: <th style="color:var(--green)">₹/hr</th> (L13107).
       ...(priceHidden
@@ -338,15 +338,14 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText="No machines"
+            emptyText={search.search || search.status ? 'No Machines match.' : 'No Machines yet.'}
             onRowClick={(m) => void navigate({ to: '/machines/$id', params: { id: m.id } })}
             rowActionsWidth="8%"
             rowActions={(m) => (
-              // View and Edit are ROUTES, so they stay real links — ctrl-click
-              // / middle-click still open a new tab. Delete is not offered on
-              // this list; it lives on the machine detail page.
+              // Row click opens the machine (ERPNext list), so no separate View.
+              // Edit is a ROUTE, so it stays a real link — ctrl-click /
+              // middle-click still open a new tab. Delete lives on the detail page.
               <RowActions
-                viewTo={`/machines/${m.id}`}
                 editTo={canEdit ? `/machines/${m.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
               />

@@ -9,6 +9,7 @@
 
 import {
   PLAN_EFFECTIVE_STATUSES,
+  PRODUCTION_ORDER_STATUS_LABEL,
   type ListPlansResponse,
   type PlanEffectiveStatus,
   type PlanStatus,
@@ -24,7 +25,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { PlanningKpiStrip } from '../components/planning-kpi-strip';
 import { NeedsPlanningTable } from '../components/needs-planning-table';
-import { DERIVED_BADGE, DERIVED_LABEL } from '../lib/derived-status';
+import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -48,19 +49,20 @@ export const plansListRoute = createRoute({
   component: PlansListPage,
 });
 
+// Colours from the one STORED_BADGE map the plan detail also reads.
 const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
-  in_planning: { cls: 'b-grey', label: 'In Planning' },
-  planned: { cls: 'b-blue', label: 'Planned' },
-  jc_created: { cls: 'b-cyan', label: 'JC Created' },
-  pr_created: { cls: 'b-cyan', label: 'PR Created' },
-  in_production: { cls: 'b-amber', label: 'In Production' },
-  complete: { cls: 'b-green', label: 'Completed' },
-  cancelled: { cls: 'b-grey', label: 'Cancelled' },
+  in_planning: { cls: STORED_BADGE.in_planning, label: 'In Planning' },
+  planned: { cls: STORED_BADGE.planned, label: 'Planned' },
+  jc_created: { cls: STORED_BADGE.jc_created, label: 'JC Created' },
+  pr_created: { cls: STORED_BADGE.pr_created, label: 'PR Created' },
+  in_production: { cls: STORED_BADGE.in_production, label: 'In Production' },
+  complete: { cls: STORED_BADGE.complete, label: 'Completed' },
+  cancelled: { cls: STORED_BADGE.cancelled, label: 'Cancelled' },
 };
 
 const TYPE_LABEL: Record<PlanType, string> = {
   manufacture: 'Manufacture',
-  direct_purchase: 'Direct Purchase',
+  direct_purchase: 'Buy',
   full_outsource: 'Full Outsource',
   assembly: 'Assembly',
 };
@@ -133,7 +135,7 @@ function PlansListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Plans. Ask an admin.
       </div>
     );
   }
@@ -141,7 +143,7 @@ function PlansListPage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📋 Plans</div>
+        <div className="section-hdr m-0">Plans</div>
         <div className="flex items-center gap-2">
           <input
             className="innovic-input"
@@ -204,13 +206,13 @@ function PlansListPage(): React.JSX.Element {
           >
             <option value="">All types</option>
             <option value="manufacture">🏭 Manufacture</option>
-            <option value="direct_purchase">🛒 Direct Purchase</option>
+            <option value="direct_purchase">🛒 Buy</option>
             <option value="full_outsource">📦 Full Outsource</option>
             <option value="assembly">🔧 Assembly</option>
           </select>
           {perms.entry ? (
             <Link to="/plans/new" className="btn btn-primary">
-              <Plus size={13} /> New plan
+              <Plus size={13} /> New Plan
             </Link>
           ) : null}
         </div>
@@ -266,13 +268,20 @@ function PlansListPage(): React.JSX.Element {
           </div>
         </div>
       ) : data ? (
-        <Table data={data} />
+        <Table data={data} filtered={Boolean(search || status || planType || pending)} />
       ) : null}
     </div>
   );
 }
 
-function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
+function Table({
+  data,
+  filtered,
+}: {
+  data: ListPlansResponse;
+  filtered: boolean;
+}): React.JSX.Element {
+  const navigate = useNavigate();
   // The Status column's next-step buttons: each one is the action that moves
   // the plan out of the state it shows, offered only to someone allowed to
   // take it.
@@ -283,10 +292,7 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div className="empty-state">
-            <div className="empty-icon">📋</div>
-            No plans match the filter.
-          </div>
+          <div className="empty-state">{filtered ? 'No Plans match.' : 'No Plans yet.'}</div>
         </div>
       </div>
     );
@@ -344,7 +350,16 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                 const itemLabel = (row.itemCode ?? row.itemCodeText) as string | null;
                 const itemName = row.itemName ?? row.itemNameText;
                 return (
-                  <tr key={row.id}>
+                  // Row click opens the plan (ERPNext list); a click on a link
+                  // or button inside the row keeps its own target.
+                  <tr
+                    key={row.id}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest('a,button')) return;
+                      void navigate({ to: '/plans/$id', params: { id: row.id } });
+                    }}
+                  >
                     <td>
                       <Link
                         to="/plans/$id"
@@ -422,7 +437,14 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                           style={{ whiteSpace: 'nowrap' }}
                           title={
                             row.productionOrderStatus
-                              ? `Production Order · ${row.productionOrderStatus}`
+                              ? `Production Order · ${
+                                  (
+                                    PRODUCTION_ORDER_STATUS_LABEL as Record<
+                                      string,
+                                      string | undefined
+                                    >
+                                  )[row.productionOrderStatus] ?? row.productionOrderStatus
+                                }`
                               : 'Production Order'
                           }
                         >

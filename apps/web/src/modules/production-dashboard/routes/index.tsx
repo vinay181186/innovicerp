@@ -4,10 +4,10 @@
 // Legacy chrome.
 //
 // Data reuse (no figure is recomputed in React — CLAUDE.md rule 1):
-//  - "🏭 Machine-wise Pending Work" (L3780-3788) reads the existing
+//  - "Machine-wise Pending Work" (L3780-3788) reads the existing
 //    GET /machine-loading via useMachineLoading(); ops are grouped by machine
 //    for display only. "Full Queue →" → our /job-queue route.
-//  - "🏬 Supply Chain Snapshot" (L3804-3838) reads supplyChain on
+//  - "Supply Chain Snapshot" (L3804-3838) reads supplyChain on
 //    GET /production-dashboard, whose figures reuse store-inventory +
 //    sc-dashboard service formulas. "Store →" → our /store-inventory route.
 //
@@ -24,7 +24,8 @@ import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
-import { fmtDate } from '@/lib/date';
+import { StatStrip } from '@/components/shared/stat-strip';
+import { addDaysLocal, fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachineLoading } from '@/modules/machine-loading/api';
@@ -108,36 +109,36 @@ function ProductionDashboardPage(): React.JSX.Element {
               already declares it (legacy L96 = theme L292). Copying it would
               override our @media(max-width:768px) 2-col rule (theme L864), so
               the bare class matches legacy's render AND stays responsive. */}
-          <div className="stat-grid">
-            <div className="stat-card cyan">
-              <div className="stat-label">Open Job Cards</div>
-              <div className="stat-val cyan">{c?.openJc ?? 0}</div>
-              <div className="stat-sub">
-                {c?.totalJc ?? 0} total · {c?.noOpsJc ?? 0} without operations
-              </div>
-            </div>
-            <div className="stat-card amber">
-              <div className="stat-label">Pending Qty (pcs)</div>
-              <div className="stat-val amber">{c?.pendingQty ?? 0}</div>
-            </div>
-            <div
-              className="stat-card"
-              style={{ borderColor: (c?.runningOps ?? 0) > 0 ? 'var(--green)' : 'var(--border)' }}
-            >
-              <div className="stat-label">Running Now</div>
-              <div
-                className="stat-val"
-                style={{ color: (c?.runningOps ?? 0) > 0 ? 'var(--green)' : 'var(--text3)' }}
-              >
-                {c?.runningOps ?? 0}
-              </div>
-              <div className="stat-sub">operations on machines</div>
-            </div>
-            <div className="stat-card green">
-              <div className="stat-label">Ready to Start</div>
-              <div className="stat-val green">{c?.readyQty ?? 0}</div>
-              <div className="stat-sub">pcs available right now</div>
-            </div>
+          <div style={{ marginBottom: 16 }}>
+            <StatStrip
+              items={[
+                {
+                  key: 'open-jc',
+                  label: 'Open Job Cards',
+                  count: c?.openJc ?? 0,
+                  color: 'var(--cyan)',
+                  sub: `${c?.totalJc ?? 0} total · ${c?.noOpsJc ?? 0} without operations`,
+                },
+                {
+                  key: 'pending',
+                  label: 'Pending Qty (pcs)',
+                  count: c?.pendingQty ?? 0,
+                  color: 'var(--amber)',
+                },
+                {
+                  key: 'running',
+                  label: 'Running',
+                  count: c?.runningOps ?? 0,
+                  color: (c?.runningOps ?? 0) > 0 ? 'var(--green)' : 'var(--text3)',
+                },
+                {
+                  key: 'available',
+                  label: 'Available (pcs)',
+                  count: c?.readyQty ?? 0,
+                  color: 'var(--green)',
+                },
+              ]}
+            />
           </div>
 
           {/* Machine-wise Pending Work — legacy L3780-3788. Reuses the existing
@@ -152,7 +153,7 @@ function ProductionDashboardPage(): React.JSX.Element {
           {/* Open JC cards — legacy L3791-3799 */}
           <div className="panel" style={{ marginBottom: 16 }}>
             <div className="panel-hdr">
-              <span className="panel-title">📋 Open Job Cards</span>
+              <span className="panel-title">Open Job Cards</span>
               <Link to="/job-cards" className="btn btn-ghost btn-sm">
                 All JCs →
               </Link>
@@ -167,7 +168,7 @@ function ProductionDashboardPage(): React.JSX.Element {
             >
               {openJobCards.length === 0 ? (
                 <div className="empty-state" style={{ padding: 16 }}>
-                  ✓ No open job cards
+                  No open Job Cards.
                 </div>
               ) : (
                 openJobCards.map((jc) => <JcCard key={jc.jobCardId} jc={jc} />)
@@ -180,11 +181,11 @@ function ProductionDashboardPage(): React.JSX.Element {
           {readyToProcess.length > 0 ? (
             <div className="panel" style={{ marginBottom: 16 }}>
               <div className="panel-hdr">
-                <span className="panel-title">⚡ Ready to Process Now</span>
+                <span className="panel-title">Available Now</span>
                 <span className="text3" style={{ fontSize: 11 }}>
                   {/* Server's full-scope count. `readyToProcess` is LIMIT 100,
                       so binding .length here froze the figure at 100. */}
-                  {c?.readyOps ?? 0} operations with available qty
+                  {c?.readyOps ?? 0} operations
                 </span>
               </div>
               <div className="tbl-wrap">
@@ -205,7 +206,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                       <th>Order Qty</th>
                       <th>Completed</th>
                       <th style={{ color: 'var(--amber2)' }}>Available</th>
-                      <th>Pending Hrs</th>
+                      <th>Pending (hrs)</th>
                       <th>Op Status</th>
                     </tr>
                   </thead>
@@ -231,7 +232,8 @@ function ProductionDashboardPage(): React.JSX.Element {
 // Machine-wise Pending Work (legacy L3670-3714 + L3780-3788). One card per
 // machine; pending ops grouped from the machine-loading `ops` list (already
 // server-sorted priority → due → op_seq, preserved within each group).
-const DUE_SOON_ISO = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+// IST today + 3 days (not the UTC date, which is a day behind before 05:30 IST).
+const DUE_SOON_ISO = addDaysLocal(todayIst(), 3);
 
 function MachinePendingPanel({
   machines,
@@ -253,7 +255,7 @@ function MachinePendingPanel({
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <div className="panel-hdr">
-        <span className="panel-title">🏭 Machine-wise Pending Work</span>
+        <span className="panel-title">Machine-wise Pending Work</span>
         <Link to="/job-queue" className="btn btn-ghost btn-sm">
           Full Queue →
         </Link>
@@ -272,7 +274,7 @@ function MachinePendingPanel({
           </div>
         ) : machines.length === 0 ? (
           <div className="empty-state" style={{ padding: 16 }}>
-            No machines configured
+            No Machines yet.
           </div>
         ) : (
           machines.map((m) => (
@@ -326,7 +328,7 @@ function MachineCard({
           <span className="badge b-grey">Idle</span>
         </div>
         <div className="text3" style={{ fontSize: 12, textAlign: 'center', padding: '8px 0' }}>
-          — No pending work —
+          No pending work
         </div>
       </div>
     );
@@ -356,7 +358,7 @@ function MachineCard({
             {ops.length} op{ops.length !== 1 ? 's' : ''}
           </span>
           {runCount > 0 ? (
-            <span className="badge">● Running</span>
+            <span className="badge b-green">Running</span>
           ) : (
             <span className="badge b-amber">Pending</span>
           )}
@@ -458,7 +460,7 @@ function SupplyChainPanel({
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <div className="panel-hdr">
-        <span className="panel-title">🏬 Supply Chain Snapshot</span>
+        <span className="panel-title">Supply Chain Snapshot</span>
         <Link to="/store-inventory" className="btn btn-ghost btn-sm">
           Store →
         </Link>
@@ -486,7 +488,7 @@ function SupplyChainPanel({
           color="var(--amber)"
         />
         <ScTile
-          label="Open POs"
+          label="Open Purchase Orders"
           value={openPos}
           bg="var(--blue3)"
           border="var(--blue)"
@@ -503,7 +505,7 @@ function SupplyChainPanel({
       {lowStockItems.length > 0 ? (
         <div style={{ padding: '0 14px 14px' }}>
           <div style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700, marginBottom: 6 }}>
-            ⚠ Low Stock Items:
+            Low Stock Items:
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {lowStockItems.map((i) => (
@@ -551,7 +553,7 @@ function ScTile({
         border: `1px solid ${border}`,
       }}
     >
-      <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
       <div className="mono fw-700" style={{ fontSize: 22, color }}>
         {value}
       </div>
@@ -630,7 +632,7 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
         </span>
       </td>
       <td className="td-ctr mono" style={{ color: 'var(--orange)' }}>
-        {op.pendingHrs}h
+        {op.pendingHrs}
       </td>
       <td>
         <OpStatusBadge status={op.computedStatus} />

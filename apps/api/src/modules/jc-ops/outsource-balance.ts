@@ -31,7 +31,8 @@ function requireCompany(user: AuthContext): string {
 
 // Plain ISO date — matches the codebase's zoneless `date` columns.
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  // TODAY IN IST — the UTC date is still yesterday between 00:00 and 05:30 IST.
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 export interface OutsourceOpBalanceResult {

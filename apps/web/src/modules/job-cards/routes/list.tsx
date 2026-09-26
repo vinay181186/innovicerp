@@ -251,6 +251,14 @@ function JobCardsListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const today = todayIst();
+  const filtered =
+    !!search.search ||
+    !!search.status ||
+    !!search.machineId ||
+    !!search.operatorId ||
+    !!search.fromDate ||
+    !!search.toDate;
+  const emptyText = filtered ? 'No Job Cards match.' : 'No Job Cards yet.';
 
   // Client-side pagination for the List View (Card View keeps its full scroll).
   // Keeps each page to PAGE_SIZE rows so only a page's worth of thumbnails load.
@@ -263,7 +271,8 @@ function JobCardsListPage(): React.JSX.Element {
 
   // KPI tiles — computed from the CURRENTLY LOADED/filtered rows (the API returns
   // a filtered total, not global per-status counts). Buckets:
-  //   Open        = not started (no ops done) and not done
+  //   Not Started = no op done, nothing running and not done (NOT the
+  //                 filter's "Open", which also holds started cards)
   //   In Progress = started (an op done / QC pending / a running session) not done
   //   Completed   = complete or closed
   //   Overdue     = past due and not done
@@ -338,7 +347,7 @@ function JobCardsListPage(): React.JSX.Element {
   );
 
   // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+11+8+12+9+6+8+8+7+7+5 = 85, + 15 = 100,
+  // column (rowActionsWidth below): 4+10+8+4+12+8+6+7+8+6+7+5 = 85, + 15 = 100,
   // so the table never scrolls sideways. Centred by the standard; only the
   // item code · name is left-aligned, so the code starts at the same x in
   // every row.
@@ -352,30 +361,22 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'JC No.',
-        width: '11%',
+        width: '10%',
         nowrap: true,
         render: (jc) => (
-          <>
-            <Link
-              to="/job-cards/$id"
-              params={{ id: jc.id }}
-              className="td-code"
-              style={{ color: 'var(--blue)', fontWeight: 800 }}
-              title="View job card status"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {jc.code}
-            </Link>
-            {jc.itemRevision ? (
-              <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                Drawing Rev {jc.itemRevision}
-              </div>
-            ) : null}
-          </>
+          <Link
+            to="/job-cards/$id"
+            params={{ id: jc.id }}
+            className="td-code"
+            style={{ color: 'var(--blue)', fontWeight: 800 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {jc.code}
+          </Link>
         ),
       },
       {
-        header: 'Thumbnail',
+        header: 'Image',
         width: THUMBNAIL_COL_WIDTH,
         // The picture fills the cell edge to edge, the gridlines being its
         // frame (user decision 2026-09-22 — the thumbnail column sits before
@@ -401,6 +402,20 @@ function JobCardsListPage(): React.JSX.Element {
         ),
       },
       {
+        // The CUSTOMER's PO line no. (never our SO line no.), beside CODE/REV.
+        header: 'POL',
+        width: '4%',
+        nowrap: true,
+        render: (jc) =>
+          jc.clientPoLineNo ? (
+            <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+              {jc.clientPoLineNo}
+            </span>
+          ) : (
+            <span className="text3">—</span>
+          ),
+      },
+      {
         header: 'Item Code',
         width: '12%',
         align: 'left',
@@ -421,7 +436,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'SO No.',
-        width: '9%',
+        width: '8%',
         nowrap: true,
         render: (jc) => {
           const s = jc.sourceLink;
@@ -461,7 +476,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Progress',
-        width: '8%',
+        width: '7%',
         // Completed pieces at the LAST operation over the order qty — the
         // same figure the card view's Completed box shows.
         render: (jc) => {
@@ -488,8 +503,8 @@ function JobCardsListPage(): React.JSX.Element {
         render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} />,
       },
       {
-        header: 'Start Date',
-        width: '7%',
+        header: 'JC Date',
+        width: '6%',
         className: 'mono',
         nowrap: true,
         render: (jc) => fmtDate(jc.jcDate),
@@ -510,7 +525,7 @@ function JobCardsListPage(): React.JSX.Element {
                 style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
                 title="Customer Dispatch Date (from the plan)"
               >
-                Disp {fmtDate(jc.customerDispatchDate)}
+                Dispatch {fmtDate(jc.customerDispatchDate)}
               </div>
             ) : null}
           </>
@@ -576,12 +591,17 @@ function JobCardsListPage(): React.JSX.Element {
             figures: no onClick, no filtering. */}
         <StatStrip
           items={[
-            { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber2)' },
+            {
+              key: 'not_started',
+              label: 'Not Started',
+              count: kpis.open,
+              color: 'var(--text3)',
+            },
             {
               key: 'in_progress',
               label: 'In Progress',
               count: kpis.inProgress,
-              color: 'var(--blue)',
+              color: 'var(--amber2)',
             },
             {
               key: 'completed',
@@ -637,15 +657,15 @@ function JobCardsListPage(): React.JSX.Element {
             type="date"
             value={search.fromDate ?? ''}
             onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
-            title="From date"
-            aria-label="From date"
+            title="JC Date from"
+            aria-label="JC Date from"
           />
           <Input
             type="date"
             value={search.toDate ?? ''}
             onChange={(e) => setNav({ toDate: e.target.value || undefined })}
-            title="To date"
-            aria-label="To date"
+            title="JC Date to"
+            aria-label="JC Date to"
           />
           <div style={{ display: 'flex', gap: 'var(--sp-1)', alignItems: 'center' }}>
             <ViewToggle value={view} onChange={changeView} />
@@ -665,7 +685,7 @@ function JobCardsListPage(): React.JSX.Element {
             columns={columns}
             rows={pagedRows}
             loading={isLoading}
-            emptyText="No job cards match these filters."
+            emptyText={emptyText}
             onRowClick={(jc) => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
             rowActionsWidth="15%"
             rowActions={(jc) => rowActions(jc, false)}
@@ -674,7 +694,7 @@ function JobCardsListPage(): React.JSX.Element {
       ) : isLoading ? (
         <PageState state="loading" />
       ) : rows.length === 0 ? (
-        <PageState state="empty" message="No job cards match these filters." />
+        <PageState state="empty" message={emptyText} />
       ) : (
         // ── CARD VIEW ────────────────────────────────────────────────────────
         // Kept as its own card, NOT <DocCard>: a DocCard's band click is its
@@ -727,7 +747,6 @@ function JobCardsListPage(): React.JSX.Element {
                     params={{ id: jc.id }}
                     className="td-code"
                     style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 'var(--fs-sm)' }}
-                    title="View job card status"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {jc.code}
@@ -785,8 +804,8 @@ function JobCardsListPage(): React.JSX.Element {
                   {jc.runningCount > 0 ? (
                     <span
                       className="fw-700"
-                      style={{ fontSize: 'var(--fs-xs)', color: 'var(--amber2)' }}
-                      title="Operations running right now"
+                      style={{ fontSize: 'var(--fs-xs)', color: 'var(--green2)' }}
+                      title="Operations running now"
                     >
                       ▶{jc.runningCount}
                     </span>
@@ -813,7 +832,7 @@ function JobCardsListPage(): React.JSX.Element {
                       {
                         label: 'Pending',
                         value: pending,
-                        color: pending > 0 ? 'var(--red)' : 'var(--green)',
+                        color: pending > 0 ? 'var(--blue)' : 'var(--green)',
                       },
                       { label: 'Ops', value: `${jc.doneOps}/${jc.totalOps}` },
                     ]}

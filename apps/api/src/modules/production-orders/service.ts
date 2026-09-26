@@ -110,6 +110,17 @@ import type {
 
 const PO_PREFIX = 'IN-PRO-';
 
+// Today's calendar date in IST (same as assembly / production-schedule). The
+// UTC date is still yesterday between 00:00 and 05:30 IST.
+function todayIso(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
@@ -702,7 +713,7 @@ export async function createProductionOrder(
   // written, and worded exactly as the screen words it.
   if (input.rawMaterialAvailable !== true) {
     throw new ValidationError(
-      'Raw Material is required. Set it on the Route Card, then save the Production Order.',
+      'Raw Material Available is required. Tick it once the store confirms the material.',
     );
   }
   const actualSize = input.actualSize?.trim() ? input.actualSize.trim() : null;
@@ -801,7 +812,7 @@ export async function createProductionOrder(
           .limit(1);
         if (!anyForItem[0]) {
           throw new ValidationError(
-            `No Route Card for this item — create it in Item Master first (${itemLabel}).`,
+            `No Route Card for item ${itemLabel}. Create the Route Card first.`,
           );
         }
         throw new NotFoundError('Route Card not found or no longer active. Pick it again.');
@@ -817,7 +828,7 @@ export async function createProductionOrder(
         .orderBy(asc(routeCardOps.opSeq));
       if (rcOps.length === 0) {
         throw new ValidationError(
-          `Route Card ${rc.code} has no operations — add them in Item Master first.`,
+          `Route Card ${rc.code} has no operations. Add them on the Route Card first.`,
         );
       }
       // Same routing rule Execute applies to a plan's ops: a QC op may not sit
@@ -837,9 +848,7 @@ export async function createProductionOrder(
         // A bought item has nothing to produce. What (if anything) a Production
         // Order should do for it is still the user's call; until then the branch
         // refuses in plain words rather than building a Job Card with no work.
-        throw new ValidationError(
-          'Direct Purchase items are bought, not produced — this Route Card cannot raise a Production Order yet.',
-        );
+        throw new ValidationError(`Item ${itemLabel} is a Buy item — no Production Order.`);
       }
       if (rc.planType === 'full_outsource' && !rcOps.some((op) => op.opType === 'outsource')) {
         // A full-outsource card is built by the same steps (the builder raises
@@ -990,7 +999,7 @@ async function writeCloseStockTxn(
     .insert(storeTransactions)
     .values({
       companyId: args.companyId,
-      txnDate: new Date().toISOString().slice(0, 10),
+      txnDate: todayIso(),
       itemId: args.itemId,
       txnType: args.txnType,
       qty: args.qty,

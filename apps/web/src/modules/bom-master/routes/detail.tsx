@@ -29,14 +29,14 @@ export const bomMasterDetailRoute = createRoute({
 // Legacy expand-row type icons (L8469-8470) — short forms, not the long
 // labels the BOM form's <select> uses (L8537-8539).
 const BOM_TYPE_DISPLAY: Record<string, { label: string; color: string }> = {
-  manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
+  manufacture: { label: '🏭 Manufacture', color: 'var(--cyan)' },
   purchase: { label: '🛒 Buy', color: 'var(--green2)' },
-  outsource: { label: '🏭 Outsrc', color: 'var(--amber2)' },
+  outsource: { label: '🏭 Outsource', color: 'var(--amber2)' },
 };
 
 const BOM_TYPE_WORD: Record<string, string> = {
   manufacture: 'Manufacture',
-  purchase: 'Purchase',
+  purchase: 'Buy',
   outsource: 'Outsource',
 };
 
@@ -58,7 +58,7 @@ function BomMasterDetailPage(): React.JSX.Element {
     if (!detail) return;
     if (detail.linkedSoCount > 0) {
       setDelError(
-        `This BOM is linked to ${detail.linkedSoCount} SO line(s). Cancel those SO lines or remove the BOM reference first.`,
+        `Cannot delete BOM ${detail.bomNo}: it is used on ${detail.linkedSoCount} SO line(s). Remove it from those lines first.`,
       );
       return;
     }
@@ -78,7 +78,7 @@ function BomMasterDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view BOMs. Ask an admin.
       </div>
     );
   }
@@ -116,7 +116,7 @@ function BomMasterDetailPage(): React.JSX.Element {
   return (
     <div>
       <Link to="/bom-masters" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to BOM list
+        <ArrowLeft size={14} /> Back
       </Link>
 
       <div className="panel">
@@ -162,8 +162,8 @@ function BomMasterDetailPage(): React.JSX.Element {
                   disabled: del.isPending,
                   title:
                     detail.linkedSoCount > 0
-                      ? `Linked to ${detail.linkedSoCount} SO line(s)`
-                      : 'Delete BOM',
+                      ? `Used on ${detail.linkedSoCount} SO line(s)`
+                      : 'Move this BOM to Trash',
                   onClick: onDeleteClick,
                 },
               ]}
@@ -213,7 +213,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                 marginTop: 8,
                 color: 'var(--red2)',
                 background: 'var(--red3)',
-                border: '1px solid #fca5a5',
+                border: '1px solid var(--red2)',
                 borderRadius: 6,
                 padding: '6px 10px',
                 fontSize: 12,
@@ -228,7 +228,7 @@ function BomMasterDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title cyan">
-            ▸ PART LIST / ITEMS — {detail.bomNo} ({detail.lines.length})
+            Part List — {detail.bomNo} ({detail.lines.length})
           </div>
         </div>
         <div className="tbl-wrap">
@@ -246,15 +246,15 @@ function BomMasterDetailPage(): React.JSX.Element {
                     from its own stock, and this is what the BOM cascade stamps
                     on that child's Job Card. Blank is normal on a Buy/Outsource
                     line, so it shows a plain dash, not a warning. */}
-                <th>Grade</th>
-                <th>Size</th>
+                <th>RM Grade</th>
+                <th>RM Size</th>
               </tr>
             </thead>
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="empty-state">
-                    No lines on this BOM.
+                    No lines yet.
                   </td>
                 </tr>
               ) : (
@@ -266,7 +266,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                   return (
                     <tr key={line.id}>
                       <td className="td-num mono fw-700">{idx + 1}</td>
-                      <td className="td-code" style={{ color: 'var(--purple)' }}>
+                      <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                         {line.childItemCode ?? '—'}
                       </td>
                       <td>{line.childItemName ?? '—'}</td>
@@ -296,7 +296,7 @@ function BomMasterDetailPage(): React.JSX.Element {
       {detail.revisions.length > 0 ? (
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title amber">▸ REVISION HISTORY ({detail.revisions.length})</div>
+            <div className="panel-title amber">Revision History ({detail.revisions.length})</div>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -358,7 +358,7 @@ function BomMasterDetailPage(): React.JSX.Element {
           <div className="modal modal-lg">
             <div className="modal-hdr">
               <span className="modal-title">
-                📋 {detail.bomNo} — BOM Rev {openSnapshot.revision} Snapshot (
+                {detail.bomNo} — BOM Rev {openSnapshot.revision} (
                 {openSnapshot.itemsSnapshot.length} items)
               </span>
               <button
@@ -370,9 +370,6 @@ function BomMasterDetailPage(): React.JSX.Element {
               </button>
             </div>
             <div className="modal-body">
-              <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
-                Archived items from BOM Rev {openSnapshot.revision}
-              </div>
               <table className="innovic-table">
                 <thead>
                   <tr>
@@ -387,7 +384,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                   {openSnapshot.itemsSnapshot.map((it, i) => (
                     <tr key={`${it.childItemId}-${i}`}>
                       <td className="td-num mono">{i + 1}</td>
-                      <td className="td-code" style={{ color: 'var(--purple)' }}>
+                      <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                         {it.childItemCode ?? '—'}
                       </td>
                       <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
@@ -400,14 +397,7 @@ function BomMasterDetailPage(): React.JSX.Element {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-ghost" onClick={() => setSnapshotRev(null)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-success"
-                onClick={() => setSnapshotRev(null)}
-              >
-                ✓ Close
+                Close
               </button>
             </div>
           </div>

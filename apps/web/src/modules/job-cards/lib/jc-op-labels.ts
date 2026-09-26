@@ -25,7 +25,7 @@ export const OP_STATUS: Record<string, { label: string; cls: string }> = {
   pr_raised: { label: 'PR Raised', cls: 'b-amber' },
   po_created: { label: 'PO Created', cls: 'b-blue' },
   at_vendor: { label: 'At Vendor', cls: 'b-amber' },
-  received: { label: 'Received – QC Pending', cls: 'b-cyan' },
+  received: { label: 'Received – QC Pending', cls: 'b-amber' }, // QC Pending = amber (Round 5)
   ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
   outsource: { label: 'Outsource', cls: 'b-amber' },
 };

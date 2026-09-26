@@ -346,27 +346,27 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   const removeOp = (idx: number): void => setOps((prev) => prev.filter((_, i) => i !== idx));
 
   const validationError = useMemo<string | null>(() => {
-    if (!header.itemId) return 'Pick an item code from the master list';
-    if (ops.length === 0) return 'Add at least one operation';
+    if (!header.itemId) return 'Item Code is required.';
+    if (ops.length === 0) return 'Add at least one operation.';
     for (let i = 0; i < ops.length; i++) {
       const o = ops[i]!;
       // Messages name the op as the table shows it (10, 20, 30) — see opSrNo.
       const sr = opSrNo(i + 1);
-      if (!o.operation.trim()) return `Op ${sr}: operation name is required`;
+      if (!o.operation.trim()) return `Op ${sr}: Operation is required.`;
       if (o.opType === 'process' && !o.machineId && !o.machineCodeText.trim()) {
-        return `Op ${sr}: process steps need a machine`;
+        return `Op ${sr}: Machine is required.`;
       }
       if (o.opType === 'outsource' && !o.ospVendorId && !o.ospVendorCodeText.trim()) {
-        return `Op ${sr}: outsource steps need a vendor`;
+        return `Op ${sr}: Vendor is required.`;
       }
       const cycle = Number(o.cycleTimeMin);
       if (!Number.isFinite(cycle) || cycle < 0) {
-        return `Op ${sr}: Cycle Time cannot be less than 0`;
+        return `Op ${sr}: Cycle Time (min) cannot be less than 0.`;
       }
       if (o.ospLeadDays.trim()) {
         const lead = Number(o.ospLeadDays);
         if (!Number.isInteger(lead) || lead < 0) {
-          return `Op ${sr}: Lead Time must be a whole number of days, 0 or more`;
+          return `Op ${sr}: Lead Days must be a whole number, 0 or more.`;
         }
       }
     }
@@ -434,7 +434,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       <PageHeader
         sticky
         title={mode === 'create' ? 'New Route Card' : `Edit Route Card — ${routeCard?.code ?? ''}`}
-        backLabel="Back to Route Cards"
+        backLabel="Back"
         onBack={onBack ?? onCancel}
         actions={
           <>
@@ -447,7 +447,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               disabled={Boolean(validationError) || submitting}
               title={validationError ?? undefined}
             >
-              {submitting ? 'Saving…' : 'Save Route Card'}
+              {submitting ? 'Saving…' : mode === 'create' ? 'Save Route Card' : 'Save Changes'}
             </button>
           </>
         }
@@ -587,7 +587,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 'Manufacture',
                 'Job Card + Operations',
                 'var(--cyan)',
-                'rgba(34,211,238,0.08)',
+                'var(--cyan3)',
               )}
               {planTypeCard(
                 'full_outsource',
@@ -595,13 +595,15 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 'Full Outsource',
                 'Our material, vendor does all',
                 'var(--purple)',
-                'rgba(124,58,237,0.08)',
+                'var(--purple3)',
               )}
             </div>
             {header.planType === 'direct_purchase' ? (
               <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
-                <span className="badge b-grey">🛒 Direct Purchase</span>{' '}
-                <span className="text3">(legacy — set the item&apos;s Source to Buy instead)</span>
+                <span className="badge b-grey">🛒 Buy</span>{' '}
+                <span className="text3">
+                  Old setting — set the item&apos;s Source to Buy instead.
+                </span>
               </div>
             ) : null}
           </div>
@@ -611,7 +613,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           <div className="f-full">
             <RawMaterialGroup>
               <div className="form-grp">
-                <label className="form-label">Grade</label>
+                <label className="form-label">RM Grade</label>
                 <MaterialGradePicker
                   valueId={header.rawMaterialGradeId}
                   valueText={header.rawMaterialGradeText}
@@ -625,7 +627,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label">Size</label>
+                <label className="form-label">RM Size</label>
                 <MaterialSizePicker
                   valueId={header.rawMaterialSizeId}
                   valueText={header.rawMaterialSizeText}
@@ -661,7 +663,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       </Panel>
 
       <Panel
-        title={`⚙️ Route Sequence (${ops.length})`}
+        title={`Operation Sequence (${ops.length})`}
         bodyPadding="none"
         bodyClassName="tbl-wrap"
         actions={
@@ -673,9 +675,9 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               type="button"
               className="btn btn-sm"
               style={{
-                background: 'rgba(124,58,237,0.08)',
+                background: 'var(--purple3)',
                 color: 'var(--purple)',
-                border: '1px solid rgba(124,58,237,0.25)',
+                border: '1px solid var(--purple)',
               }}
               onClick={() => addOp('outsource')}
             >
@@ -685,9 +687,9 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               type="button"
               className="btn btn-sm"
               style={{
-                background: 'rgba(34,197,94,0.08)',
+                background: 'var(--green3)',
                 color: 'var(--green2)',
-                border: '1px solid rgba(34,197,94,0.25)',
+                border: '1px solid var(--green)',
               }}
               onClick={() => addOp('qc')}
             >
@@ -707,12 +709,19 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                     the same fact invited rows whose Type disagreed with their
                     machine. */}
               <th style={{ width: 140 }}>Group</th>
-              <th style={{ width: 150 }}>Machine / Vendor ★</th>
-              <th>Operation ★</th>
+              <th style={{ width: 150 }}>
+                Machine / Vendor<span className="req">★</span>
+              </th>
+              <th>
+                Operation<span className="req">★</span>
+              </th>
               <th className="th-num text3" style={{ width: 90 }}>
                 Cycle Time (min)
               </th>
-              <th style={{ width: 90 }}>Program / Lead</th>
+              <th style={{ width: 90 }}>Program No.</th>
+              <th className="th-num" style={{ width: 70 }}>
+                Lead Days
+              </th>
               <th className="cyan" style={{ width: 90 }}>
                 Tool No.
               </th>
@@ -723,9 +732,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           <tbody>
             {ops.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty-state">
-                  No operations yet — click <strong>+ Add Op</strong> / <strong>+ Add QC Op</strong>{' '}
-                  / <strong>+ Add OSP Op</strong>.
+                <td colSpan={10} className="empty-state">
+                  No operations yet.
                 </td>
               </tr>
             ) : (
@@ -750,13 +758,13 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       </Panel>
 
       {mode === 'edit' ? (
-        <Panel title="📋 Revision Note">
+        <Panel title="Revision Note">
           <textarea
             className="innovic-textarea"
             rows={2}
             value={revisionNote}
             onChange={(e) => setRevisionNote(e.target.value)}
-            placeholder="Auto-generated diff note will be used if blank. Override here for ECO numbers etc."
+            placeholder="Optional — auto-filled if blank"
           />
         </Panel>
       ) : null}
@@ -799,11 +807,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
     ? (machineGroupCodeById.get(op.machineGroupId) ?? null)
     : null;
   const rowBg =
-    op.opType === 'qc'
-      ? 'rgba(34,197,94,0.06)'
-      : op.opType === 'outsource'
-        ? 'rgba(124,58,237,0.06)'
-        : undefined;
+    op.opType === 'qc' ? 'var(--green3)' : op.opType === 'outsource' ? 'var(--purple3)' : undefined;
   const accent =
     op.opType === 'qc'
       ? 'var(--green)'
@@ -813,10 +817,10 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   const machineLabel = op.machineId
     ? machinesList.find((m) => m.id === op.machineId)?.name
     : op.machineCodeText.trim()
-      ? '⚠ not in master'
+      ? '⚠ Not in master'
       : null;
   // Warning only — the vendor NAME is shown in the picker field itself (CODE — Name).
-  const vendorLabel = !op.ospVendorId && op.ospVendorCodeText.trim() ? '⚠ not in master' : null;
+  const vendorLabel = !op.ospVendorId && op.ospVendorCodeText.trim() ? '⚠ Not in master' : null;
   return (
     <tr style={{ background: rowBg }}>
       <td className="mono fw-700" style={{ color: accent }}>
@@ -833,8 +837,8 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             style={{
               fontSize: 11,
               color: 'var(--purple)',
-              background: 'rgba(124,58,237,0.12)',
-              border: '1px solid rgba(124,58,237,0.3)',
+              background: 'var(--purple3)',
+              border: '1px solid var(--purple)',
             }}
           >
             🏭 OSP
@@ -942,8 +946,21 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           placeholder="min"
         />
       </td>
-      {/* Lead days (OSP rows) is a number and right-aligns; Program is text. */}
-      <td className={op.opType === 'outsource' ? 'td-num' : undefined}>
+      {/* Program No. is for in-house / QC rows; Lead Days for OSP rows only. */}
+      <td>
+        {op.opType === 'outsource' ? (
+          <span className="text3">—</span>
+        ) : (
+          <input
+            className="innovic-input"
+            value={op.program}
+            onChange={(e) => onChange({ program: e.target.value })}
+            placeholder="PRG-001"
+            style={{ color: 'var(--blue)' }}
+          />
+        )}
+      </td>
+      <td className="td-num">
         {op.opType === 'outsource' ? (
           <input
             type="number"
@@ -953,16 +970,9 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             value={op.ospLeadDays}
             onChange={(e) => onChange({ ospLeadDays: e.target.value })}
             placeholder="days"
-            title="Lead time in days"
           />
         ) : (
-          <input
-            className="innovic-input"
-            value={op.program}
-            onChange={(e) => onChange({ program: e.target.value })}
-            placeholder="PRG-001"
-            style={{ color: 'var(--blue)' }}
-          />
+          <span className="text3">—</span>
         )}
       </td>
       <td>

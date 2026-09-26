@@ -19,8 +19,8 @@ const CLASSES: Record<ProductionOrderStatus, string> = {
   open: 'b-blue',
   partially_closed: 'b-amber',
   closed: 'b-green',
-  // Red: a stopped order is a dead end, not a finished one.
-  short_closed: 'b-red',
+  // Grey: a stopped order is a dead end, not a finished one (R5 palette).
+  short_closed: 'b-grey',
 };
 
 const LABELS: Record<ProductionOrderStatus, string> = {

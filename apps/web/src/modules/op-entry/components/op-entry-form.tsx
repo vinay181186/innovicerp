@@ -1342,22 +1342,13 @@ export function OpEntryForm({
                       onClick={() => void handleStart()}
                       disabled={blockedReason !== null || start.isPending}
                     >
-                      <Play size={14} />▶ Start Operation
+                      <Play size={14} />
+                      Start Operation
                     </button>
                   )}
                 </>
               )
             ) : null}
-            <span
-              style={{
-                marginLeft: 'auto',
-                alignSelf: 'center',
-                fontSize: 12,
-                color: 'var(--text2)',
-              }}
-            >
-              Pending on this op: <b style={{ color: 'var(--amber2)' }}>{op.pendingQty}</b>
-            </span>
           </div>
         </div>
       </div>

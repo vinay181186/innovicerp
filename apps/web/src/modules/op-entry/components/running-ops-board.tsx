@@ -56,7 +56,7 @@ function ItemCells({ r }: { r: RunningOp }): React.JSX.Element {
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {r.clientPoLineNo ?? '—'}
       </td>
-      <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+      <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td
@@ -133,7 +133,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                       each get their own column — the empty row must span the
                       whole table or it draws short. */}
                   <td colSpan={11} className="empty-state">
-                    No ops currently running.
+                    No operations running.
                   </td>
                 </tr>
               ) : (
@@ -176,7 +176,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                             setStopRow(r);
                           }}
                         >
-                          <Square size={13} /> Stop
+                          <Square size={13} /> Stop Operation
                         </button>
                       ) : null}
                     </td>

@@ -215,7 +215,7 @@ function OpEntryPage() {
   if (eff && !effectiveFormPerms(eff, 'op_entry').view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Op Entry. Ask an admin.
       </div>
     );
   }
@@ -256,7 +256,7 @@ function OpEntryPage() {
               marginBottom: -1,
             }}
           >
-            {v === 'jc' ? '📋 By Job Card' : '⚙ By Machine'}
+            {v === 'jc' ? 'By Job Card' : 'By Machine'}
           </button>
         ))}
       </div>
@@ -286,7 +286,7 @@ function OpEntryPage() {
                     loading={jcList.isFetching}
                     options={jcOptions}
                     placeholder="🔍 Job card no, item, or SO…"
-                    emptyText="No job cards"
+                    emptyText="No Job Cards match."
                     valueLabel={search.jc ?? undefined}
                     selectedLabel={(o) => o.code ?? o.name}
                   />
@@ -474,7 +474,7 @@ function OpEntryPage() {
             </div>
           ) : (
             <div className="panel">
-              <div className="empty-state">Enter a job card number to load its ops.</div>
+              <div className="empty-state">Pick a job card to load its operations.</div>
             </div>
           )}
 

@@ -95,8 +95,7 @@ function DailyReportPage(): React.JSX.Element {
 
   return (
     <ReportShell
-      title="Daily Report"
-      icon="📊"
+      title="Daily Production Report"
       actions={
         <button
           type="button"
@@ -110,7 +109,7 @@ function DailyReportPage(): React.JSX.Element {
       }
       filters={
         <>
-          <ReportFilter label="Date" htmlFor="dr-date">
+          <ReportFilter label="Report Date" htmlFor="dr-date">
             <input
               id="dr-date"
               type="date"
@@ -182,12 +181,7 @@ function DailyReportPage(): React.JSX.Element {
       ) : !data || data.groups.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 56 }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
-            <b>No production entries for {fmtDate(date)}</b>
-            <br />
-            <span className="text3" style={{ marginTop: 'var(--sp-2)', display: 'block' }}>
-              Log completions via Op Entry to see them here
-            </span>
+            <b>No production entries for {fmtDate(date)}.</b>
           </div>
         </div>
       ) : (
@@ -259,11 +253,11 @@ function DailyReportPage(): React.JSX.Element {
                       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                         {r.clientPoLineNo ?? '—'}
                       </td>
-                      <td className="mono" style={{ color: 'var(--purple)' }}>
+                      <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                         {itemCodeWithRev(r.itemCode, r.itemRevision)}
                       </td>
                       <td>{r.itemName ?? '—'}</td>
-                      <td className="mono">{opSrNo(r.opSeq)}</td>
+                      <td className="mono">Op {opSrNo(r.opSeq)}</td>
                       <td>{r.operation}</td>
                       <td>
                         <span className="badge b-grey">
@@ -282,7 +276,7 @@ function DailyReportPage(): React.JSX.Element {
                 <tfoot>
                   <tr style={reportTotalRowStyle}>
                     <td colSpan={7} style={{ color: 'var(--text2)' }}>
-                      TOTAL ({g.rows.length} entries)
+                      Total ({g.rows.length} entries)
                     </td>
                     <td className="td-num mono" style={{ color: 'var(--green2)' }}>
                       {g.totalQty}

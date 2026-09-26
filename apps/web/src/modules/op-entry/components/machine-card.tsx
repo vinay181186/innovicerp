@@ -84,7 +84,7 @@ export function MachineCard({ machine, running, isSelected, onSelect }: Props): 
             </div>
           ) : null}
           <div className="text3" style={{ fontSize: 11 }}>
-            Op{opSrNo(running.opSeq)}: {running.operation}
+            Op {opSrNo(running.opSeq)}: {running.operation}
           </div>
         </>
       ) : null}

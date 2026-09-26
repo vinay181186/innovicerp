@@ -44,7 +44,7 @@ function MachineNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <Link to="/machines" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Machine Master
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="panel">
         <div className="panel-hdr">
@@ -123,7 +123,7 @@ function MachineEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to machine
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="panel">
         <div className="panel-hdr">

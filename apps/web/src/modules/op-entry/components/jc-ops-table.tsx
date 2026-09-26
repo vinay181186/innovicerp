@@ -56,7 +56,8 @@ const OP_TYPE_LABEL: Record<string, string> = {
  *      on click.
  *    • Start vs Log is a SESSION question, not a status one: `activeRunningOpId`
  *      is the running_ops row holding this op right now, or null. Something
- *      running → ✚ Log (add production to it); nothing running → ▶ Start.
+ *      running → ✓ Complete (add production to it); nothing running →
+ *      ▶ Start Operation.
  *      They are branches of one chain, so exactly one can ever render.
  *
  *  QC diverges from the Job Card page on purpose. There, 🔬 QC sends the
@@ -79,14 +80,14 @@ function rowAction(
   // form, so the button and the form it opens can never disagree.
   if (op.opType === 'qc' || op.qcRequired) {
     if (!canQcSubmit || op.qcPending <= 0) return null;
-    return { label: `✔ Inspect (${op.qcPending})`, mode: 'complete', primary: true };
+    return { label: `🔬 Inspect (${op.qcPending})`, mode: 'complete', primary: true };
   }
 
   if (!canOpEntry) return null;
   if (op.available <= 0 || op.computedStatus === 'qc_pending') return null;
   return op.activeRunningOpId !== null
-    ? { label: '✚ Log', mode: 'complete', primary: true }
-    : { label: '▶ Start', mode: 'start', primary: false };
+    ? { label: '✓ Complete', mode: 'complete', primary: true }
+    : { label: '▶ Start Operation', mode: 'start', primary: false };
 }
 
 export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props): React.JSX.Element {
@@ -112,7 +113,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
               Completed
             </th>
             <th className="th-num" style={{ color: 'var(--amber2)' }}>
-              Pending
+              Available
             </th>
             <th>Op Status</th>
             <th>Action</th>
@@ -219,23 +220,17 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                     )}
                   </td>
                   <td className="td-num">
-                    {/* pending_qty (0087), not `available`. On a QC op
-                        `available` is input − op_log completes, and a QC op
-                        never gets a complete log — so this column printed the
-                        whole batch (50 on IN-JC-26-00085 Op2) against an op
-                        that had already inspected every piece. */}
+                    {/* Available = what can be worked on this op right now —
+                        the same number the By Machine view, Machine Loading and
+                        Job Queue show. A qc-bearing op never gets a `complete`
+                        log, so `available` there is the whole batch; its
+                        workable qty is qcPending (what the Inspect button uses). */}
                     <span className="mono fw-700 amber" style={{ fontSize: 15 }}>
-                      {op.pendingQty}
+                      {op.opType === 'qc' || op.qcRequired ? op.qcPending : op.available}
                     </span>
                   </td>
                   <td>
-                    {op.computedStatus === 'running' ? (
-                      <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 12 }}>
-                        ▶ Running
-                      </span>
-                    ) : (
-                      <JcOpStatusBadge status={op.computedStatus} />
-                    )}
+                    <JcOpStatusBadge status={op.computedStatus} />
                   </td>
                   {/* The button is wrapped so pressing it does not also fire the
                       row's own click. The host still selects the row from

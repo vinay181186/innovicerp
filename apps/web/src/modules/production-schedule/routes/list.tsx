@@ -1,4 +1,4 @@
-// Production Schedule (Gantt) — mirrors legacy renderProductionSchedule
+// Production Schedule (Gantt chart) — mirrors legacy renderProductionSchedule
 // (HTML L15588). 30-day grid, one row per machine, drag-drop reschedule.
 
 import { type ProductionScheduleBar, type ProductionScheduleFilter } from '@innovic/shared';
@@ -7,6 +7,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -34,7 +35,9 @@ const BAR_PALETTE: Record<
   ok: { bg: 'var(--sig-ok-bg)', border: 'var(--sig-ok)', fg: 'var(--green2)' },
   tight: { bg: 'var(--sig-warn-bg)', border: 'var(--sig-warn)', fg: 'var(--amber2)' },
   at_risk: { bg: 'var(--sig-critical-bg)', border: 'var(--sig-critical)', fg: 'var(--red2)' },
-  running: { bg: 'var(--sig-info)', border: 'var(--blue2)', fg: '#fff' },
+  // Running = green everywhere (R5 PR-N8). Solid fill so it still reads apart
+  // from the pale-green "On schedule" bars.
+  running: { bg: 'var(--sig-ok)', border: 'var(--green2)', fg: '#fff' },
   done: { bg: 'var(--sig-neutral)', border: 'var(--sig-neutral)', fg: '#fff' },
 };
 
@@ -140,7 +143,7 @@ function ProductionSchedulePage(): React.JSX.Element {
           gap: 10,
         }}
       >
-        <div className="section-hdr m-0">📅 Production Schedule (Gantt)</div>
+        <div className="section-hdr m-0">Production Schedule</div>
       </div>
 
       {/* Filter + nav */}
@@ -216,25 +219,27 @@ function ProductionSchedulePage(): React.JSX.Element {
         <LegendDot kind="ok" label="On schedule" />
         <LegendDot kind="tight" label="Tight (≤ 2-day buffer)" />
         <LegendDot kind="at_risk" label="Will miss due date" />
-        <LegendDot kind="running" label="Currently running" />
+        <LegendDot kind="running" label="Running" />
         <LegendDot kind="done" label="Completed" />
       </div>
 
-      {/* Stats */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: 8,
-          marginBottom: 12,
-        }}
-      >
-        <StatCard label="Total Ops" value={stats.total} color="var(--text)" />
-        <StatCard label="On Schedule" value={stats.onSchedule} color="var(--sig-ok)" />
-        <StatCard label="Tight" value={stats.tight} color="var(--sig-warn)" />
-        <StatCard label="At Risk" value={stats.atRisk} color="var(--sig-critical)" />
-        <StatCard label="Running Now" value={stats.running} color="var(--sig-info)" />
-        <StatCard label="Unscheduled" value={stats.unscheduled} color="var(--text3)" />
+      {/* Stats — one StatStrip (plain totals, not filters). */}
+      <div style={{ marginBottom: 12 }}>
+        <StatStrip
+          items={[
+            { key: 'total', label: 'Total Ops', count: stats.total },
+            { key: 'ok', label: 'On Schedule', count: stats.onSchedule, color: 'var(--sig-ok)' },
+            { key: 'tight', label: 'Tight', count: stats.tight, color: 'var(--sig-warn)' },
+            { key: 'risk', label: 'At Risk', count: stats.atRisk, color: 'var(--sig-critical)' },
+            { key: 'running', label: 'Running', count: stats.running, color: 'var(--sig-ok)' },
+            {
+              key: 'unscheduled',
+              label: 'Unscheduled',
+              count: stats.unscheduled,
+              color: 'var(--text3)',
+            },
+          ]}
+        />
       </div>
 
       {/* Gantt grid */}
@@ -258,12 +263,7 @@ function ProductionSchedulePage(): React.JSX.Element {
         </div>
       ) : !data || data.machines.length === 0 ? (
         <div className="panel empty-state">
-          <div style={{ fontSize: 32, marginBottom: 8 }}>📅</div>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>No operations to display</div>
-          <div style={{ fontSize: 11 }}>
-            No Job Card operations match the current filter or window. Try &quot;All Ops&quot;
-            filter, move the window date, or create some Job Cards first.
-          </div>
+          <div style={{ fontWeight: 700 }}>No operations match.</div>
         </div>
       ) : (
         <>
@@ -297,7 +297,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                   </th>
                   {days.map((d) => {
                     const bg = d.isToday
-                      ? 'rgba(59,130,246,0.15)'
+                      ? 'var(--sig-info-bg)'
                       : d.isWeekend
                         ? 'var(--bg3)'
                         : 'var(--bg2)';
@@ -354,7 +354,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                     {days.map((d, dayIdx) => {
                       const startingHere = m.bars.filter((b) => b.plannedStart === d.iso);
                       const bg = d.isToday
-                        ? 'rgba(59,130,246,0.05)'
+                        ? 'var(--sig-info-bg)'
                         : d.isWeekend
                           ? 'var(--bg3)'
                           : 'transparent';
@@ -382,32 +382,6 @@ function ProductionSchedulePage(): React.JSX.Element {
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* Help text — legacy HTML L15762. Legacy's "Click any bar to see
-            operation details" and "Auto-Schedule ..." clauses are omitted:
-            neither the op-detail modal nor the Auto-Schedule button is ported
-            (no endpoint exists), so the text would advertise features this
-            page does not have. */}
-          <div
-            style={{
-              marginTop: 10,
-              padding: 10,
-              background: 'var(--sig-info-bg)',
-              border: '1px solid var(--sig-info-bd)',
-              borderRadius: 6,
-              fontSize: 11,
-              color: 'var(--text2)',
-              lineHeight: 1.6,
-            }}
-          >
-            <b style={{ color: 'var(--sig-info)' }}>How to use:</b>{' '}
-            {canWrite ? (
-              <>
-                <b>Drag</b> a bar to a different machine row or day to reschedule.{' '}
-              </>
-            ) : null}
-            Color shows schedule health: green = on track, yellow = tight, red = will miss due date.
           </div>
         </>
       )}
@@ -456,9 +430,10 @@ function Bar({
       draggable={canWrite}
       onDragStart={(e) => e.dataTransfer.setData('text/jc-op-id', bar.jcOpId)}
       title={
-        `${bar.jcCode} Op${fmtOpSrNo(bar.opSeq)} ${bar.operation}` +
+        `${bar.jcCode} Op ${fmtOpSrNo(bar.opSeq)} ${bar.operation}` +
         (bar.dueDate ? ` (Due ${fmtDate(bar.dueDate)})` : '') +
-        (itemLabel ? `\n${itemLabel}` : '')
+        (itemLabel ? `\n${itemLabel}` : '') +
+        (canWrite ? '\nDrag a bar to reschedule.' : '')
       }
       style={{
         position: 'absolute',
@@ -487,7 +462,7 @@ function Bar({
           textOverflow: 'ellipsis',
         }}
       >
-        {bar.jcCode} · Op{opSrNo(bar.opSeq)}
+        {bar.jcCode} · Op {opSrNo(bar.opSeq)}
       </div>
       <div
         style={{
@@ -524,32 +499,6 @@ function LegendDot({
         }}
       />
       {label}
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ textAlign: 'center', padding: 10 }}>
-      <div
-        className="text3"
-        style={{
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '.04em',
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }

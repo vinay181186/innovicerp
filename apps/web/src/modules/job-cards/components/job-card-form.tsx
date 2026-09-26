@@ -934,7 +934,7 @@ export function JobCardForm({
               style={{ color: 'var(--amber2)', border: '1px solid rgba(245,158,11,0.4)' }}
               onClick={() => addOp('outsource')}
             >
-              + Add OSP Op
+              + Add Outsource Op
             </button>
           </div>
         </div>
@@ -1019,7 +1019,7 @@ export function JobCardForm({
         <div className="panel-body">
           {docs.length === 0 ? (
             <div className="empty-state" style={{ fontSize: 12 }}>
-              No QC documents — click “+ Add Document” to attach MIR, MCR, Inspection Reports, etc.
+              No QC documents.
             </div>
           ) : (
             <table className="innovic-table">
@@ -1114,9 +1114,7 @@ export function JobCardForm({
             const idx = balanceOpIdx;
             const op = ops[idx];
             if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
-            setBalanceNote(
-              `Outsourced ${qtyDone} pc(s) from Op${fmtOpSrNo(idx + 1)} — JW OSP purchase request raised.`,
-            );
+            setBalanceNote(`Outsource PR raised for ${qtyDone} pcs (Op ${fmtOpSrNo(idx + 1)}).`);
             setBalanceOpIdx(null);
           }}
         />

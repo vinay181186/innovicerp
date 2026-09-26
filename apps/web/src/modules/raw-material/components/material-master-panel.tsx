@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { ConfirmDialog } from '@/ui/feedback';
 
 /** The subset of MaterialGrade / MaterialSize this table renders. Both shared
  *  types are structurally assignable to it. */
@@ -92,6 +93,8 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
 
   const [status, setStatus] = useState<StatusFilter>('all');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
+  // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
+  const [trashRow, setTrashRow] = useState<MaterialMasterRow | null>(null);
 
   const activeCount = rows.filter((r) => r.isActive).length;
   const inactiveCount = rows.length - activeCount;
@@ -234,7 +237,9 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="empty-state">
-                    No {noun.toLowerCase()}s — click <strong>+ Add {noun}</strong> to begin
+                    {rows.length === 0 && !searchInput.trim()
+                      ? `No ${noun}s yet.`
+                      : `No ${noun}s match.`}
                   </td>
                 </tr>
               ) : (
@@ -287,11 +292,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                             type="button"
                             className="btn btn-danger btn-sm"
                             disabled={deleting}
-                            onClick={() => {
-                              if (confirm(`Move ${noun.toLowerCase()} "${row.name}" to Trash?`)) {
-                                onDelete(row);
-                              }
-                            }}
+                            onClick={() => setTrashRow(row)}
                           >
                             Delete
                           </button>
@@ -320,7 +321,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
           color: 'var(--text3)',
         }}
       >
-        <span>{canEdit ? `💡 Click a row to edit that ${noun.toLowerCase()}.` : ''}</span>
+        <span />
         <span>
           {total > rows.length
             ? `Showing first ${rows.length} of ${total} — refine with search`
@@ -361,6 +362,19 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
             }}
           />
         </div>
+      ) : null}
+
+      {trashRow ? (
+        <ConfirmDialog
+          title={`Move ${noun} ${trashRow.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          onConfirm={() => {
+            onDelete(trashRow);
+            setTrashRow(null);
+          }}
+          onCancel={() => setTrashRow(null)}
+        />
       ) : null}
 
       {modal.kind !== 'none' ? (
@@ -469,7 +483,7 @@ function MaterialRowModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
-          <span className="panel-title">{row ? `✏ Edit ${noun}` : `＋ Add ${noun}`}</span>
+          <span className="panel-title">{row ? `Edit ${noun}` : `Add ${noun}`}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             ✕
           </button>
@@ -530,7 +544,8 @@ function MaterialRowModal({
               disabled={saving}
               onClick={() => void submit()}
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{' '}
+              {row ? 'Save Changes' : `Save ${noun}`}
             </button>
           </div>
         </div>

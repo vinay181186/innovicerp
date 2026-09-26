@@ -2,8 +2,8 @@
 // dispatched counts + status badge. Click-through to the per-SO tracker.
 //
 // PL-5b parity port (renderAssemblyTracker L28738–28787):
-//   - 5 status tiles (Total / Waiting / Ready / Assembling / Done) above table
-//   - Search input + status filter dropdown
+//   - 5 status tiles (Total / Waiting / Ready / In Assembly / Completed) above table
+//   - Search input (the status tiles are the status filter)
 //   - Due Date column
 // Legacy renders ONE screen: an accordion of per-SO cards. The port splits it —
 // this list is legacy's collapsed card header (L28782–28787); the expanded body
@@ -16,10 +16,11 @@
 //   - Dispatched column (legacy shows it only in the expanded body, L28795)
 
 import type { AssemblyListItem } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { fmtDate } from '@/lib/date';
+import { StatStrip } from '@/components/shared/stat-strip';
+import { fmtDate, todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAssembliesList } from '../api';
 
@@ -32,12 +33,13 @@ export const assemblyListRoute = createRoute({
 type StatusKey = AssemblyListItem['status'];
 type FilterKey = 'all' | StatusKey;
 
-// Badge colours mirror legacy L28778–28781 (green / cyan / teal / amber).
+// Status colours follow the app rule (R5 PR-N50): Waiting grey, Ready (awaiting
+// the next step) blue, In Assembly amber, Completed green.
 const STATUS_BADGE_CLASS: Record<StatusKey, string> = {
-  waiting: 'b-amber',
-  ready: 'b-green',
-  assembling: 'b-cyan',
-  done: 'b-teal',
+  waiting: 'b-grey',
+  ready: 'b-blue',
+  assembling: 'b-amber',
+  done: 'b-green',
 };
 
 // Legacy badge text (L28778–28781). The waiting variant's "— <ready>/<total>"
@@ -49,7 +51,7 @@ function statusBadgeLabel(row: AssemblyListItem): string {
     case 'ready':
       return 'Ready';
     case 'assembling':
-      return `Assembling ${row.assembledQty}/${row.orderQty}`;
+      return `In Assembly ${row.assembledQty}/${row.orderQty}`;
     case 'done':
       return `Completed ${row.assembledQty}/${row.orderQty}`;
     case 'waiting':
@@ -59,11 +61,11 @@ function statusBadgeLabel(row: AssemblyListItem): string {
 
 // Tile order matches legacy L28747–28749.
 const TILES: Array<{ key: FilterKey; label: string; color: string }> = [
-  { key: 'all', label: 'Total', color: 'var(--blue)' },
-  { key: 'waiting', label: 'Waiting', color: 'var(--amber2)' },
-  { key: 'ready', label: 'Ready', color: 'var(--green2)' },
-  { key: 'assembling', label: 'Assembling', color: 'var(--cyan)' },
-  { key: 'done', label: 'Completed', color: 'var(--teal, #14b8a6)' },
+  { key: 'all', label: 'Total', color: 'var(--text)' },
+  { key: 'waiting', label: 'Waiting', color: 'var(--text3)' },
+  { key: 'ready', label: 'Ready', color: 'var(--blue)' },
+  { key: 'assembling', label: 'In Assembly', color: 'var(--amber)' },
+  { key: 'done', label: 'Completed', color: 'var(--green)' },
 ];
 
 function AssemblyListPage(): React.JSX.Element {
@@ -71,7 +73,9 @@ function AssemblyListPage(): React.JSX.Element {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState<string>('');
 
-  const today = new Date().toISOString().slice(0, 10);
+  // IST today (the UTC date is yesterday before 05:30 IST).
+  const today = todayIst();
+  const navigate = useNavigate();
 
   const counts = useMemo(() => {
     const c: Record<FilterKey, number> = { all: 0, waiting: 0, ready: 0, assembling: 0, done: 0 };
@@ -102,7 +106,7 @@ function AssemblyListPage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">🔧 Assembly Tracker</div>
+        <div className="section-hdr m-0">Assembly Tracker</div>
       </div>
 
       {isLoading ? (
@@ -125,16 +129,15 @@ function AssemblyListPage(): React.JSX.Element {
         <>
           <KpiTiles counts={counts} filter={filter} setFilter={setFilter} />
 
-          <Toolbar search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} />
+          <Toolbar search={search} setSearch={setSearch} />
 
           {filtered.length === 0 ? (
             <div className="panel">
               <div className="panel-body">
                 <div className="empty-state">
-                  <div className="empty-icon">🔧</div>
                   {data.items.length === 0
-                    ? 'No equipment assembly orders found. Create an Equipment SO with a linked BOM to see assembly tracking here.'
-                    : 'No results match your filter.'}
+                    ? 'No assembly orders yet.'
+                    : 'No assembly orders match.'}
                 </div>
               </div>
             </div>
@@ -159,13 +162,20 @@ function AssemblyListPage(): React.JSX.Element {
                       const overdue =
                         row.dueDate !== null && row.dueDate < today && row.status !== 'done';
                       return (
-                        <tr key={row.soId}>
+                        <tr
+                          key={row.soId}
+                          onClick={() =>
+                            void navigate({ to: '/assemblies/$soId', params: { soId: row.soId } })
+                          }
+                          style={{ cursor: 'pointer' }}
+                        >
                           <td>
                             <Link
                               to="/assemblies/$soId"
                               params={{ soId: row.soId }}
                               className="td-code"
                               style={{ color: 'var(--cyan)', fontWeight: 600 }}
+                              onClick={(e) => e.stopPropagation()}
                             >
                               {row.soCode}
                             </Link>
@@ -195,7 +205,7 @@ function AssemblyListPage(): React.JSX.Element {
                           </td>
                           <td>{row.orderQty}</td>
                           <td style={{ color: 'var(--green2)' }}>{row.assembledQty}</td>
-                          <td style={{ color: 'var(--cyan)' }}>{row.dispatchedQty}</td>
+                          <td style={{ color: 'var(--green2)' }}>{row.dispatchedQty}</td>
                           <td>
                             <span className={`badge ${STATUS_BADGE_CLASS[row.status]}`}>
                               {statusBadgeLabel(row)}
@@ -224,37 +234,19 @@ function KpiTiles({
   filter: FilterKey;
   setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
+  // One StatStrip; the tiles ARE the status filter (the old dropdown is gone).
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))',
-        gap: 10,
-        marginBottom: 20,
-      }}
-    >
-      {TILES.map((t) => {
-        const active = filter === t.key;
-        return (
-          <div
-            key={t.key}
-            onClick={() => setFilter(filter === t.key ? 'all' : t.key)}
-            style={{
-              cursor: 'pointer',
-              textAlign: 'center',
-              padding: 14,
-              borderRadius: 10,
-              background: 'var(--bg2)',
-              border: '1px solid var(--border)',
-              boxShadow: active ? `0 0 0 2px ${t.color}` : undefined,
-              transition: 'box-shadow .15s',
-            }}
-          >
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>{t.label}</div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: t.color }}>{counts[t.key]}</div>
-          </div>
-        );
-      })}
+    <div style={{ marginBottom: 16 }}>
+      <StatStrip
+        items={TILES.map((t) => ({
+          key: t.key,
+          label: t.label,
+          count: counts[t.key],
+          color: t.color,
+          active: filter === t.key,
+          onClick: () => setFilter(filter === t.key ? 'all' : t.key),
+        }))}
+      />
     </div>
   );
 }
@@ -262,13 +254,9 @@ function KpiTiles({
 function Toolbar({
   search,
   setSearch,
-  filter,
-  setFilter,
 }: {
   search: string;
   setSearch: (v: string) => void;
-  filter: FilterKey;
-  setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
   return (
     <div
@@ -288,17 +276,6 @@ function Toolbar({
         onChange={(e) => setSearch(e.target.value)}
         style={{ minWidth: 240 }}
       />
-      <select
-        className="innovic-select"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value as FilterKey)}
-      >
-        <option value="all">All Status</option>
-        <option value="waiting">Waiting</option>
-        <option value="ready">Ready</option>
-        <option value="assembling">Assembling</option>
-        <option value="done">Completed</option>
-      </select>
     </div>
   );
 }

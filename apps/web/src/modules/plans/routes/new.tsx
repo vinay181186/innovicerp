@@ -23,8 +23,7 @@ function PlanNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have create access to Plans. Ask an admin for L2 Data Entry or above in
-        Planning.
+        You do not have permission to create Plans. Ask an admin.
       </div>
     );
   }
@@ -33,10 +32,10 @@ function PlanNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to plans
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="section-hdr" style={{ marginBottom: 10 }}>
-        ➕ New plan
+        New Plan
       </div>
 
       <PlanForm

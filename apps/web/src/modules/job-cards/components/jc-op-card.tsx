@@ -8,10 +8,10 @@
 //   bar     #n · OPnn · kind chip · operation · tags · status badge
 //           … Start : … End : … Cycle : …
 //   chips   Order Qty / Completed / Pending / QC Pending / Rejected /
-//           At Vendor [+ RM Avail on the first op; Ready to Send / In QC on
-//           an OSP op]
+//           At Vendor [+ RM Avail on the first op; Ready to Send / Back from
+//           Vendor on an OSP op]
 //   fields  Machine · Operator · Program No. · Tool · Last Entry
-//           on a process op; Inspector · QC Date · Result on a QC op; vendor
+//           on a process op; Inspected By · QC Date · Result on a QC op; vendor
 //           + status on an OSP op
 //   actions the NEXT ACTION strip (jc-op-actions.tsx — every button in it is
 //           permission-gated on the screen it opens)
@@ -166,7 +166,7 @@ function KindChip({ op }: { op: JcOpEnriched }): React.JSX.Element {
   );
 }
 
-/** One cell of the field row: tiny uppercase caption over a strong value. */
+/** One cell of the field row: small caption over a strong value. */
 function InfoCell({
   label,
   children,
@@ -182,8 +182,6 @@ function InfoCell({
         style={{
           fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '.04em',
           whiteSpace: 'nowrap',
         }}
       >
@@ -256,7 +254,7 @@ export function JcOpCard({
    *  applies to — and null everywhere else. */
   rmAvailable: JobCardRmAvailable | null;
   /** EVERY loaded log of this op, latest first. The strip shows the latest 3
-   *  (as the table always did); Operator / Last Entry / Inspector / QC Date
+   *  (as the table always did); Operator / Last Entry / Inspected By / QC Date
    *  read the latest entry, the Start / End stamps the earliest and latest. */
   logs: OpLog[];
   /** ADR-182 — this card's Production Order was short closed, so the operation
@@ -303,10 +301,10 @@ export function JcOpCard({
     .join(', ');
   const reworkOutTo =
     op.reworkRaisedToOps && op.reworkRaisedToOps !== String(op.opSeq)
-      ? ` → Op${reworkOutSrNos}`
+      ? ` → Op ${reworkOutSrNos}`
       : '';
   const reworkOut = op.reworkRaisedQty > 0 && reworkOutTo !== '';
-  const reworkOutTitle = `${op.reworkRaisedQty} piece(s) rejected here and sent back to Op${reworkOutSrNos} for rework. Clears when the NC is closed.`;
+  const reworkOutTitle = `${op.reworkRaisedQty} piece(s) rejected here and sent back to Op ${reworkOutSrNos} for rework. Clears when the NC is closed.`;
 
   // Start / End stamps. The DATES are the server's (op.firstLogDate = earliest
   // entry of any kind, op.lastLogDate = latest completion / QC entry — the same
@@ -525,7 +523,7 @@ export function JcOpCard({
 
         {/* ── CHIPS: Completed · Pending · QC Pending · Rejected
             · At Vendor, then the op-specific extras (RM Avail on the first op;
-            Ready to Send / In QC on an OSP op). auto-fit: six across when there
+            Ready to Send / Back from Vendor on an OSP op). auto-fit: six across when there
             is room, fewer on a narrow screen. ── */}
         <div
           style={{
@@ -622,7 +620,8 @@ export function JcOpCard({
                 highlight={op.readyToSendQty > 0}
               />
               <QtyChip
-                label="In QC"
+                label="Back from Vendor"
+                title="Pieces back from the vendor, waiting for incoming inspection"
                 value={op.inQcQty}
                 color={op.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)'}
               />
@@ -652,7 +651,7 @@ export function JcOpCard({
             </div>
           ) : isQc ? (
             <>
-              <InfoCell label="Inspector">{lastQcLog?.operatorName ?? '—'}</InfoCell>
+              <InfoCell label="Inspected By">{lastQcLog?.operatorName ?? '—'}</InfoCell>
               <InfoCell label="QC Date">
                 {lastQcLog ? fmtJcStamp(lastQcLog.logDate, lastQcLog.startTime) : '—'}
               </InfoCell>

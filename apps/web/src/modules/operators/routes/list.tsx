@@ -304,18 +304,13 @@ function OperatorsListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            empty={
-              <>
-                No operators — click <strong>+ Add Operator</strong> to begin
-              </>
-            }
+            empty={search.search || search.status ? 'No Operators match.' : 'No Operators yet.'}
             onRowClick={(op) => void navigate({ to: '/operators/$id', params: { id: op.id } })}
             rowActionsWidth="10%"
             rowActions={(op) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/operators/${op.id}`}
+                // Row click opens the operator (ERPNext list), so no View.
+                // Edit is a ROUTE, so it stays a real link.
                 editTo={canEdit ? `/operators/${op.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed: the confirm dialog
@@ -329,8 +324,8 @@ function OperatorsListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move operator "${op.name}" to Trash?`,
-                  message: `${op.code} — ${op.name} stops appearing in the Operator Master and in every operator picker.`,
+                  title: `Move Operator ${op.code} to Trash?`,
+                  message: 'You can restore it from Trash.',
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',
                 }}

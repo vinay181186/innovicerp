@@ -114,7 +114,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
               <th>Close Date</th>
               <th className="th-num">Close Qty</th>
               <th>Closed By</th>
-              <th>Note</th>
+              <th>Remarks</th>
               <th>Reversed</th>
               {canReverse ? <th></th> : null}
             </tr>

@@ -34,11 +34,7 @@ export function PrintRouteCardButton({ rc }: { rc: RouteCardListItem }): React.J
     if (!pending || printedRef.current) return;
     if (rcQuery.isError) {
       setPending(false);
-      window.alert(
-        rcQuery.error instanceof Error
-          ? `Could not load route card: ${rcQuery.error.message}`
-          : 'Could not load this route card.',
-      );
+      window.alert('Could not load Route Card. Try again.');
       return;
     }
     if (!rcQuery.data) return; // ops still loading

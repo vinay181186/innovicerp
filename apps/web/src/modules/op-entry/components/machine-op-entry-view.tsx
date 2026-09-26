@@ -274,7 +274,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                   Operation
                 </div>
                 <div className="fw-700">
-                  Op{opSrNo(runningOpRow.opSeq)}: {runningOpRow.operation}
+                  Op {opSrNo(runningOpRow.opSeq)}: {runningOpRow.operation}
                 </div>
               </div>
               <div
@@ -604,7 +604,7 @@ function PendingOpsSection({
                       name={row.op.itemName}
                       pol={row.op.clientPoLineNo}
                     />
-                    <td className="mono">Op{opSrNo(row.op.opSeq)}</td>
+                    <td className="mono">Op {opSrNo(row.op.opSeq)}</td>
                     <td>{row.op.operation}</td>
                     <td className="mono fw-700 green td-num">{row.qty}</td>
                   </tr>

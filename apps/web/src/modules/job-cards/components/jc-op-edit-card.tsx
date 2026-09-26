@@ -10,17 +10,17 @@
 //   Op / Machine / Operation → header line (seq chip, machine picker, operation input)
 //   Status                   → header-right badge (+ left accent bar)
 //   (move / remove)          → header-right ▲ ▼ ✕
-//   Order/Completed/Pending/At Vendor/In QC → QUANTITIES tile row (read-only)
+//   Completed/Pending/QC Pending (+ At Vendor/Back from Vendor on an OSP op)
+//                            → QUANTITIES tile row (read-only), view-card words
 //   Cycle / Prog / Tool      → SETUP field row (editable)
-//   QC                       → QC YES tag in the header
+//   QC                       → "QC Required" tag in the header (view parity)
 //   Outsource                → OUTSOURCE block (checkbox / balance button / vendor / cost)
-//   Recent Logs              → collapsible RECENT LOGS strip (read-only)
+//   Recent Logs              → RECENT LOGS lines (read-only, always shown)
 //
 // The edit table has no Start / Log / QC action cell — so this card has no
 // footer either. No logic, no calculation and no API call changed.
 import type { JcOpEnriched, JobCardListItem, OpLog } from '@innovic/shared';
 import { opSrNo, SHIFT_LABELS } from '@innovic/shared';
-import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -61,7 +61,6 @@ const iconBtn: React.CSSProperties = { padding: '2px 6px' };
 const noVendorSearch = (): void => {};
 
 export function JcOpEditCard({
-  jc,
   op,
   index,
   seqLabel,
@@ -77,7 +76,7 @@ export function JcOpEditCard({
   onVendorSearch = noVendorSearch,
   vendorsLoading = false,
   logs,
-  cycleLabel = 'Cycle (min)',
+  cycleLabel = 'Cycle Time (min)',
   toolDetailsPlaceholder = 'Tool details',
   isFirst,
   isLast,
@@ -86,7 +85,8 @@ export function JcOpEditCard({
   onRemove,
   onOutsourceBalance,
 }: {
-  /** Order qty comes from the JC header; undefined on create (no JC yet). */
+  /** Order qty from the JC header. No longer drawn on the card (it repeats
+   *  the JC's first header tile); kept so the hosts' call sites stay put. */
   jc: Pick<JobCardListItem, 'orderQty'> | undefined;
   op: JcOpEditValues;
   index: number;
@@ -123,7 +123,7 @@ export function JcOpEditCard({
    *  Omit entirely (create screen) to hide the RECENT LOGS strip — the create
    *  form's table has no such column. */
   logs?: OpLog[];
-  /** The cycle field's caption. Defaults to "Cycle (min)" — the column is
+  /** The cycle field's caption. Defaults to "Cycle Time (min)" — the column is
    *  `jc_ops.cycle_time_min`, so legacy's inherited "Cycle(h)" was the wrong
    *  unit on every screen that showed it. */
   cycleLabel?: string;
@@ -136,8 +136,6 @@ export function JcOpEditCard({
   onRemove: () => void;
   onOutsourceBalance: () => void;
 }): React.JSX.Element {
-  const [logsOpen, setLogsOpen] = useState(true);
-
   const isQc = op.opType === 'qc';
   const isOut = op.opType === 'outsource';
   const en = enriched;
@@ -145,7 +143,6 @@ export function JcOpEditCard({
     ? (OP_STATUS[en.computedStatus] ?? { label: en.computedStatus, cls: 'b-grey' })
     : null;
   const doneQty = en ? (isQc ? en.qcAcceptedQty : en.completedQty) : 0;
-  const orderQty = jc?.orderQty ?? 0;
   // Pending comes straight from the server (v_jc_op_status.pending_qty, 0087) —
   // see the note in jc-op-card.tsx for why this card no longer does its own
   // maths. Null enrichment (a brand-new unsaved op) still reads 0.
@@ -218,17 +215,12 @@ export function JcOpEditCard({
               QC and OSP (T32b: an OSP op has no machine). */}
           <div style={{ width: 172 }}>
             {isQc ? (
-              <span className="badge b-green">🔬 QC</span>
+              <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>
+                QC
+              </span>
             ) : isOut ? (
-              <span
-                className="badge"
-                style={{
-                  background: 'rgba(245,158,11,0.12)',
-                  color: 'var(--amber2)',
-                  border: '1px solid rgba(245,158,11,0.35)',
-                }}
-              >
-                🏭 OSP
+              <span className="tag" style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}>
+                Outsource
               </span>
             ) : (
               <>
@@ -280,14 +272,9 @@ export function JcOpEditCard({
             />
           )}
 
-          {isOut ? (
-            <span className="tag" style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}>
-              OSP
-            </span>
-          ) : null}
-          {isQc ? (
+          {!isQc && op.qcRequired ? (
             <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>
-              QC YES
+              QC Required
             </span>
           ) : null}
 
@@ -358,7 +345,6 @@ export function JcOpEditCard({
                 gap: 6,
               }}
             >
-              <QtyChip label="Order Qty" value={orderQty} color="var(--text)" />
               <QtyChip
                 label="Completed"
                 value={!en ? '—' : doneQty}
@@ -387,15 +373,26 @@ export function JcOpEditCard({
                 highlight={Boolean(en) && pendingQty > 0}
               />
               <QtyChip
-                label="At Vendor"
-                value={en && isOut ? en.atVendorQty : '—'}
-                color={en && isOut && en.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)'}
+                label="QC Pending"
+                value={!en ? '—' : en.qcPending}
+                color={en && en.qcPending > 0 ? 'var(--amber)' : 'var(--text3)'}
               />
-              <QtyChip
-                label="In QC"
-                value={en && isOut ? en.inQcQty : '—'}
-                color={en && isOut && en.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)'}
-              />
+              {/* At Vendor / Back from Vendor only on an OSP op — same words
+                  and figures as the view card. */}
+              {isOut ? (
+                <>
+                  <QtyChip
+                    label="At Vendor"
+                    value={!en ? '—' : en.atVendorQty}
+                    color={en && en.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)'}
+                  />
+                  <QtyChip
+                    label="Back from Vendor"
+                    value={!en ? '—' : en.inQcQty}
+                    color={en && en.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)'}
+                  />
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -479,10 +476,10 @@ export function JcOpEditCard({
                       border: '1px solid rgba(245,158,11,0.4)',
                       padding: '2px 6px',
                     }}
-                    title={`Outsource the pending ${op.available} pc(s) of this started operation`}
+                    title={`Outsource the ${op.available} pcs available on this operation`}
                     onClick={onOutsourceBalance}
                   >
-                    🏭 Outsource Pending
+                    🏭 Outsource Available
                   </button>
                 ) : (
                   <label
@@ -493,7 +490,7 @@ export function JcOpEditCard({
                       cursor: op.hasStarted ? 'not-allowed' : 'pointer',
                     }}
                     title={
-                      op.hasStarted ? 'Operation already started — locked' : 'Outsource this op'
+                      op.hasStarted ? 'Operation started — locked' : 'Outsource this operation'
                     }
                   >
                     <input
@@ -568,7 +565,7 @@ export function JcOpEditCard({
           </div>
         </div>
 
-        {/* ── RECENT LOGS — read-only, same latest-3 the table showed. Absent
+        {/* ── RECENT LOGS — read-only lines, no toggle. Absent
             on the create form, whose table has no logs column. ── */}
         {logs ? (
           <>
@@ -576,43 +573,9 @@ export function JcOpEditCard({
               <span style={{ ...secLabel, marginBottom: 0 }}>Recent Logs</span>
               {logs.length === 0 ? (
                 <span style={{ fontSize: 11, color: 'var(--text3)' }}>No entries</span>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setLogsOpen((v) => !v)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                      cursor: 'pointer',
-                      fontSize: 11,
-                      color: 'var(--blue)',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {`latest ${logs.length} log ${logs.length === 1 ? 'entry' : 'entries'}`}
-                  </button>
-                  <span style={{ flex: 1 }} />
-                  <button
-                    type="button"
-                    onClick={() => setLogsOpen((v) => !v)}
-                    aria-label={logsOpen ? 'Collapse logs' : 'Expand logs'}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                      cursor: 'pointer',
-                      fontSize: 11,
-                      color: 'var(--text3)',
-                    }}
-                  >
-                    {logsOpen ? '▲' : '▼'}
-                  </button>
-                </>
-              )}
+              ) : null}
             </div>
-            {logs.length > 0 && logsOpen ? (
+            {logs.length > 0 ? (
               <div
                 style={{
                   marginTop: 6,

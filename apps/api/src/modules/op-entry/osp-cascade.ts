@@ -355,5 +355,6 @@ export async function generateOspPrForOp(
 // today() as a plain ISO date — matches the rest of the codebase's `date`
 // columns, which store dates without a zone.
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  // TODAY IN IST — the UTC date is still yesterday between 00:00 and 05:30 IST.
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }

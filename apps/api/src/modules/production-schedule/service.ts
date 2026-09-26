@@ -43,8 +43,15 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
+// Today's calendar date in IST (R5 PR-N24). The UTC date is still yesterday
+// between 00:00 and 05:30 IST.
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 function addDays(iso: string, n: number): string {
@@ -255,7 +262,7 @@ export async function rescheduleJcOp(
   const userId = user.id;
 
   if (input.plannedEnd && input.plannedEnd < input.plannedStart) {
-    throw new ValidationError('plannedEnd cannot be before plannedStart');
+    throw new ValidationError('Planned End cannot be before Planned Start.');
   }
 
   return withUserContext(user, async (tx) => {
@@ -289,7 +296,7 @@ export async function rescheduleJcOp(
       done: number;
     }>;
     const op = opRows[0];
-    if (!op) throw new NotFoundError(`JC operation ${jcOpId} not found`);
+    if (!op) throw new NotFoundError('Job Card operation not found. Refresh the page.');
     if (op.status === 'complete') {
       throw new ConflictError('Cannot reschedule a completed operation.');
     }
@@ -323,7 +330,7 @@ export async function rescheduleJcOp(
         AND deleted_at IS NULL
       LIMIT 1
     `)) as unknown as Array<{ id: string; code: string }>;
-    if (!machRows[0]) throw new NotFoundError(`Machine ${input.machineId} not found`);
+    if (!machRows[0]) throw new NotFoundError('Machine not found. Refresh the page.');
 
     // Compute plannedEnd: keep span if not provided
     let plannedEnd = input.plannedEnd;

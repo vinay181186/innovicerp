@@ -134,7 +134,7 @@ export function OpEntryModal({
   const title = showBusyPanel
     ? '⛔ Machine Busy'
     : isQc
-      ? '✔ QC Inspection'
+      ? '🔬 QC Inspection'
       : activeRunningId
         ? '✓ Complete Operation'
         : '▶ Start Operation';

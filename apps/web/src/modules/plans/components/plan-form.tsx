@@ -92,15 +92,15 @@ export const PLAN_TYPE_OPTIONS: Array<{
   },
   {
     value: 'direct_purchase',
-    label: 'Direct Purchase',
+    label: 'Buy',
     icon: '🛒',
-    help: 'Buy from vendor — single PR generated',
+    help: 'Raises one PR to a vendor',
   },
   {
     value: 'full_outsource',
     label: 'Full Outsource',
     icon: '📦',
-    help: 'Outsource to job-work vendor (+ optional material PR)',
+    help: 'Job-work vendor makes the part',
   },
   { value: 'assembly', label: 'Assembly', icon: '🔧', help: 'Assembly of equipment per BOM' },
 ];
@@ -406,7 +406,7 @@ export function PlanForm({
           style={{
             color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--red2)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,
@@ -419,7 +419,7 @@ export function PlanForm({
       {/* Header block */}
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Plan header</div>
+          <div className="panel-title">Plan Details</div>
         </div>
         <div
           className="panel-body"
@@ -438,7 +438,7 @@ export function PlanForm({
               onChange={(e) => update('code', e.target.value)}
             />
           </Field>
-          <Field label="Plan Date *">
+          <Field label="Plan Date" required>
             <input
               type="date"
               className="innovic-input"
@@ -447,7 +447,7 @@ export function PlanForm({
               onChange={(e) => update('planDate', e.target.value)}
             />
           </Field>
-          <Field label="Plan Type *">
+          <Field label="Plan Type" required>
             <select
               className="innovic-select"
               value={values.planType}
@@ -471,7 +471,7 @@ export function PlanForm({
       {/* Item + SO link */}
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Item &amp; source</div>
+          <div className="panel-title">Item &amp; Source</div>
         </div>
         <div
           className="panel-body"
@@ -481,7 +481,7 @@ export function PlanForm({
             gap: 10,
           }}
         >
-          <Field label="Item Code *">
+          <Field label="Item Code" required>
             <input
               className="innovic-input"
               list="dlPlanItems"
@@ -516,7 +516,7 @@ export function PlanForm({
           </Field>
           {/* No raw "Item id (UUID)" box: the Item Code picker above already
               links the plan to the Item Master (sets itemId). */}
-          <Field label="Order Qty *">
+          <Field label="Order Qty" required>
             <input
               type="number"
               min={1}
@@ -526,7 +526,7 @@ export function PlanForm({
               onChange={(e) => update('orderQty', Number(e.target.value))}
             />
           </Field>
-          <Field label="Plan Qty *">
+          <Field label="Plan Qty" required>
             <input
               type="number"
               min={1}
@@ -561,7 +561,7 @@ export function PlanForm({
               }
             />
           </Field>
-          <Field label="Planned Start">
+          <Field label="Planned Start Date">
             <input
               type="date"
               className="innovic-input"
@@ -569,7 +569,7 @@ export function PlanForm({
               onChange={(e) => update('plannedStartDate', e.target.value)}
             />
           </Field>
-          <Field label="Planned End">
+          <Field label="Planned End Date">
             <input
               type="date"
               className="innovic-input"
@@ -581,7 +581,7 @@ export function PlanForm({
               the planned dates. Both optional — no ★ on either. */}
           <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
             <RawMaterialGroup>
-              <Field label="Grade">
+              <Field label="RM Grade">
                 <MaterialGradePicker
                   valueId={values.rawMaterialGradeId}
                   valueText={values.rawMaterialGradeText}
@@ -594,7 +594,7 @@ export function PlanForm({
                   }}
                 />
               </Field>
-              <Field label="Size">
+              <Field label="RM Size">
                 <MaterialSizePicker
                   valueId={values.rawMaterialSizeId}
                   valueText={values.rawMaterialSizeText}
@@ -616,7 +616,7 @@ export function PlanForm({
       {values.planType === 'direct_purchase' ? (
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">🛒 Direct purchase</div>
+            <div className="panel-title">Buy</div>
           </div>
           <div
             className="panel-body"
@@ -626,7 +626,7 @@ export function PlanForm({
               gap: 10,
             }}
           >
-            <Field label="Vendor Code *">
+            <Field label="Vendor Code" required>
               <input
                 className="innovic-input"
                 required
@@ -667,7 +667,7 @@ export function PlanForm({
       {values.planType === 'full_outsource' ? (
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">📦 Full outsource</div>
+            <div className="panel-title">Full Outsource</div>
           </div>
           <div
             className="panel-body"
@@ -677,7 +677,7 @@ export function PlanForm({
               gap: 10,
             }}
           >
-            <Field label="JW Vendor Code *">
+            <Field label="JW Vendor Code" required>
               <input
                 className="innovic-input"
                 required
@@ -685,7 +685,7 @@ export function PlanForm({
                 onChange={(e) => update('foVendorCodeText', e.target.value)}
               />
             </Field>
-            <Field label="Process *">
+            <Field label="Process" required>
               <input
                 className="innovic-input"
                 required
@@ -771,7 +771,7 @@ export function PlanForm({
                     'Loading…'
                   ) : (
                     <>
-                      Route Card: <span style={{ color: 'var(--amber2)' }}>none</span> &mdash; enter
+                      <span style={{ color: 'var(--amber2)' }}>No Route Card</span> &mdash; enter
                       the operations below
                     </>
                   )}
@@ -783,14 +783,14 @@ export function PlanForm({
                   className="btn btn-ghost btn-sm"
                   onClick={handleLoadDefaultOps}
                   disabled={loadingOps}
-                  title="Replaces ops with the item's active route card"
+                  title="Replaces the operations with the item's Route Card"
                 >
                   {loadingOps ? <Loader2 size={13} className="animate-spin" /> : null}
-                  Load route card ({defaultOps.ops.length})
+                  Load Route Card ({defaultOps.ops.length})
                 </button>
               ) : null}
               <button type="button" className="btn btn-ghost btn-sm" onClick={addOp}>
-                <Plus size={13} /> Add op
+                <Plus size={13} /> Add Op
               </button>
             </div>
           </div>
@@ -813,7 +813,7 @@ export function PlanForm({
                 {values.ops.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="empty-state">
-                      No operations. Add one or load from the item's route card.
+                      No operations yet.
                     </td>
                   </tr>
                 ) : (
@@ -854,7 +854,7 @@ export function PlanForm({
                             }))
                           }
                         >
-                          <option value="process">Process</option>
+                          <option value="process">In-house</option>
                           <option value="outsource">Outsource</option>
                           <option value="qc">QC</option>
                         </select>
@@ -967,7 +967,7 @@ export function PlanForm({
               style={{
                 color: 'var(--red2)',
                 background: 'var(--red3)',
-                border: '1px solid #fca5a5',
+                border: '1px solid var(--red2)',
                 borderRadius: 6,
                 padding: '6px 10px',
                 fontSize: 12,
@@ -1012,10 +1012,12 @@ function Field({
   label,
   children,
   full,
+  required,
 }: {
   label: string;
   children: React.ReactNode;
   full?: boolean;
+  required?: boolean;
 }): React.JSX.Element {
   return (
     <div style={full ? { gridColumn: '1 / -1' } : undefined}>
@@ -1024,12 +1026,11 @@ function Field({
         style={{
           display: 'block',
           fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
           marginBottom: 4,
         }}
       >
         {label}
+        {required ? <span className="req">★</span> : null}
       </label>
       {children}
     </div>

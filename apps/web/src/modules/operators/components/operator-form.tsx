@@ -147,7 +147,6 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
               setValueAs: (v: string) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
             })}
           />
-          <div className="form-help">Generated automatically in series (OP-…) when you save.</div>
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">
@@ -303,7 +302,7 @@ function FormFooter(props: {
           style={{
             color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--sig-critical-bd)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,

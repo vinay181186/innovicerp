@@ -63,8 +63,7 @@ function RouteCardNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have create access to Route Cards. Ask an admin for L2 Data Entry or above in
-        Design.
+        You do not have permission to create Route Cards. Ask an admin.
       </div>
     );
   }

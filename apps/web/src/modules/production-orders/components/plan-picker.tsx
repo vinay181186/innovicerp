@@ -90,17 +90,13 @@ export function PlanPicker({
         }))}
         placeholder={
           mode === 'create'
-            ? '🔍 Type plan no, item code or SO no…'
-            : '🔍 Type plan no, production order no, item or SO no…'
+            ? 'Search Plan No., Item Code or SO No.…'
+            : 'Search Plan No., Production Order No., item or SO No.…'
         }
         valueLabel={
           selected ? planPickerLabel(selected, mode) : label || fallbackLabel || undefined
         }
-        emptyText={
-          mode === 'create'
-            ? 'No plan has any Pending qty left to order'
-            : 'No plan with a Production Order matches'
-        }
+        emptyText={mode === 'create' ? 'No Plans with Pending qty.' : 'No Plans match.'}
       />
       {error ? <div className="form-error">{error}</div> : null}
     </div>

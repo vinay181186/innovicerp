@@ -40,8 +40,7 @@ function JobCardNewPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
-          ⛔ You do not have create access to Job Cards. Ask an admin for L2 Data Entry or above in
-          Production.
+          You do not have permission to create Job Cards. Ask an admin.
         </div>
       </div>
     );

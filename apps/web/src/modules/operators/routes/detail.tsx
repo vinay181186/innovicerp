@@ -1,7 +1,7 @@
 // Operator detail page (UI-003-03). Group-4 migration onto the primitives,
 // following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
 //
-//   ← Back to Operator Master
+//   ← Back
 //   DetailHeader (code + name + Active chip + Edit/Delete) → ReadGrid
 //
 // An operator is a flat master — no line table, no related-document query —
@@ -43,7 +43,7 @@ export const operatorDetailRoute = createRoute({
   component: OperatorDetailPage,
 });
 
-const BACK_LABEL = 'Back to Operator Master';
+const BACK_LABEL = 'Back';
 
 /** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
  *  state has no header to hang it on, so it renders the same control on its
@@ -165,7 +165,7 @@ function OperatorFacts(props: { operator: Operator }): React.JSX.Element {
   const { operator } = props;
   const { data: users } = useTaskUserOptions(Boolean(operator.userId));
   const linkedName = operator.userId
-    ? (users?.options.find((u) => u.id === operator.userId)?.name ?? operator.userId)
+    ? (users?.options.find((u) => u.id === operator.userId)?.name ?? 'User not in the active list')
     : null;
   return (
     <ReadGrid>

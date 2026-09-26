@@ -290,9 +290,7 @@ export async function changeJcOpMachine(
       LIMIT 1
     `)) as unknown as Array<{ one: number }>;
     if (runningRows.length > 0) {
-      throw new ConflictError(
-        'Stop Operation first, then change the machine. Pieces already made stay recorded on the current machine.',
-      );
+      throw new ConflictError('Stop Operation first, then change the machine.');
     }
 
     // Verify the target machine exists in this company

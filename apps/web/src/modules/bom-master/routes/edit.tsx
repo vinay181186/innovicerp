@@ -74,8 +74,7 @@ function BomMasterEditPage(): React.JSX.Element {
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have edit access to BOM Master. Ask an admin for L2 Data Entry or above in
-        Design.
+        You do not have permission to edit BOMs. Ask an admin.
       </div>
     );
   }

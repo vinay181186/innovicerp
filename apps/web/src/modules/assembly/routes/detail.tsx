@@ -24,7 +24,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Play, RotateCcw, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
 
@@ -44,7 +44,8 @@ function AssemblyDetailPage(): React.JSX.Element {
   // happens per unit at STOP. Serial is auto-generated server-side.
   const [qty, setQty] = useState('1');
   const [assembledBy, setAssembledBy] = useState('');
-  const [assemblyDate, setAssemblyDate] = useState('');
+  // Prefilled with today (IST) so the default is visible, not hidden in a tooltip.
+  const [assemblyDate, setAssemblyDate] = useState(() => todayIst());
   const [remarks, setRemarks] = useState('');
 
   if (isLoading) {
@@ -107,7 +108,7 @@ function AssemblyDetailPage(): React.JSX.Element {
   return (
     <div>
       <Link to="/assemblies" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to list
+        <ArrowLeft size={14} /> Back
       </Link>
 
       <HeaderPanel data={data} />
@@ -118,7 +119,7 @@ function AssemblyDetailPage(): React.JSX.Element {
           style={{
             color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--sig-critical-bd)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,
@@ -138,24 +139,15 @@ function AssemblyDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Start assembly</div>
+          <div className="panel-title">Start Assembly</div>
           <span className="text3" style={{ fontSize: 11 }}>
             Start units, then Complete each batch.
           </span>
         </div>
         <div className="panel-body" style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
           <div>
-            <label
-              className="text3"
-              style={{
-                display: 'block',
-                fontSize: 11,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: 4,
-              }}
-            >
-              Qty to start
+            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+              Qty to Start<span className="req">★</span>
             </label>
             <input
               type="number"
@@ -169,17 +161,8 @@ function AssemblyDetailPage(): React.JSX.Element {
             />
           </div>
           <div>
-            <label
-              className="text3"
-              style={{
-                display: 'block',
-                fontSize: 11,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: 4,
-              }}
-            >
-              Started by
+            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+              Assembled By
             </label>
             <input
               className="innovic-input"
@@ -191,17 +174,8 @@ function AssemblyDetailPage(): React.JSX.Element {
           </div>
           {/* Start date + Remarks — stamped on the in-progress batch. */}
           <div>
-            <label
-              className="text3"
-              style={{
-                display: 'block',
-                fontSize: 11,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: 4,
-              }}
-            >
-              Start date
+            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+              Start Date
             </label>
             <input
               type="date"
@@ -209,20 +183,10 @@ function AssemblyDetailPage(): React.JSX.Element {
               style={{ width: 150 }}
               value={assemblyDate}
               onChange={(e) => setAssemblyDate(e.target.value)}
-              title="Defaults to today when left blank"
             />
           </div>
           <div>
-            <label
-              className="text3"
-              style={{
-                display: 'block',
-                fontSize: 11,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: 4,
-              }}
-            >
+            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
               Remarks
             </label>
             <input
@@ -259,7 +223,7 @@ function AssemblyDetailPage(): React.JSX.Element {
             ) : (
               <RotateCcw size={13} />
             )}
-            Undo Last Unit
+            Undo Last Batch
           </button>
         </div>
 
@@ -292,7 +256,8 @@ function AssemblyDetailPage(): React.JSX.Element {
   );
 }
 
-// Legacy L28778–28781. `done` uses legacy's literal #14b8a6 → .b-teal.
+// Status colours follow the app rule (R5 PR-N50): Waiting grey, Ready blue,
+// In Assembly amber, Completed green.
 function StatusBadge({
   rollup,
   readyCount,
@@ -304,22 +269,22 @@ function StatusBadge({
 }): React.JSX.Element {
   switch (rollup.status) {
     case 'ready':
-      return <span className="badge b-green">Ready</span>;
+      return <span className="badge b-blue">Ready</span>;
     case 'assembling':
       return (
-        <span className="badge b-cyan">
-          Assembling {rollup.assembledQty}/{rollup.orderQty}
+        <span className="badge b-amber">
+          In Assembly {rollup.assembledQty}/{rollup.orderQty}
         </span>
       );
     case 'done':
       return (
-        <span className="badge b-teal">
+        <span className="badge b-green">
           Completed {rollup.assembledQty}/{rollup.orderQty}
         </span>
       );
     case 'waiting':
       return (
-        <span className="badge b-amber">
+        <span className="badge b-grey">
           Waiting — {readyCount}/{totalCount}
         </span>
       );
@@ -414,25 +379,25 @@ function RollupPanel({
         >
           <div>
             <span className="text3" style={{ fontSize: 11 }}>
-              ORDER QTY
+              Order Qty
             </span>
             <br />
             <b style={{ fontSize: 18 }}>{rollup.orderQty}</b>
           </div>
           <div>
             <span className="text3" style={{ fontSize: 11 }}>
-              CAN ASSEMBLE
+              Can Assemble
             </span>
             <br />
             <b style={{ fontSize: 18, color: canAssembleColor }}>{rollup.canAssembleAdditional}</b>
           </div>
           <div>
-            <span style={{ fontSize: 11 }}>ASSEMBLED</span>
+            <span style={{ fontSize: 11 }}>Assembled</span>
             <br />
             <b style={{ fontSize: 18 }}>{rollup.assembledQty}</b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--amber2)' }}>IN ASSEMBLY</span>
+            <span style={{ fontSize: 11, color: 'var(--amber2)' }}>In Assembly</span>
             <br />
             <b
               style={{ fontSize: 18, color: rollup.inProgressQty > 0 ? 'var(--amber)' : undefined }}
@@ -441,13 +406,13 @@ function RollupPanel({
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--cyan)' }}>DISPATCHED</span>
+            <span style={{ fontSize: 11, color: 'var(--green2)' }}>Dispatched</span>
             <br />
-            <b style={{ fontSize: 18, color: 'var(--cyan)' }}>{rollup.dispatchedQty}</b>
+            <b style={{ fontSize: 18, color: 'var(--green2)' }}>{rollup.dispatchedQty}</b>
           </div>
           <div>
             <span className="text3" style={{ fontSize: 11 }}>
-              PENDING
+              Pending
             </span>
             <br />
             <b
@@ -458,7 +423,7 @@ function RollupPanel({
           </div>
           <div>
             <span className="text3" style={{ fontSize: 11 }}>
-              COMPONENTS
+              Components
             </span>
             <br />
             <b style={{ fontSize: 18 }}>
@@ -467,7 +432,7 @@ function RollupPanel({
           </div>
           {rollup.bottleneck && rollup.bottleneck.enoughForUnits < rollup.orderQty ? (
             <div>
-              <span style={{ fontSize: 11, color: 'var(--red2)' }}>BOTTLENECK</span>
+              <span style={{ fontSize: 11, color: 'var(--red2)' }}>Bottleneck</span>
               <br />
               {/* Legacy prints childName||childCode; the rollup carries only the code. */}
               <b style={{ color: 'var(--red2)' }}>{rollup.bottleneck.childItemCode}</b>
@@ -501,10 +466,7 @@ function ComponentsPanel({
     return (
       <div className="panel">
         <div className="panel-body">
-          <div className="empty-state">
-            <div className="empty-icon">📦</div>
-            No BOM linked. Set a BOM master on the sales order to populate components.
-          </div>
+          <div className="empty-state">No BOM linked to this Sales Order.</div>
         </div>
       </div>
     );
@@ -537,11 +499,11 @@ function ComponentsPanel({
             {components.map((c, i) => (
               <tr
                 key={c.childItemCode}
-                style={{ background: c.status === 'ready' ? 'rgba(34,197,94,0.04)' : undefined }}
+                style={{ background: c.status === 'ready' ? 'var(--sig-ok-bg)' : undefined }}
               >
                 <td>{i + 1}</td>
                 <td>
-                  <div className="td-code" style={{ color: 'var(--purple)' }}>
+                  <div className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                     {c.childItemCode}
                   </div>
                   {c.childItemName ? (
@@ -634,10 +596,7 @@ function UnitsPanel({
     return (
       <div className="panel">
         <div className="panel-body">
-          <div className="empty-state">
-            <div className="empty-icon">🔧</div>
-            No batches yet — click <strong>Start</strong> above to put units on the bench.
-          </div>
+          <div className="empty-state">No batches yet.</div>
         </div>
       </div>
     );
@@ -668,7 +627,7 @@ function UnitsPanel({
     <div className="panel">
       <div className="panel-hdr">
         <div className="panel-title">
-          📦 Assembly Batches — {completedTotal} completed
+          Assembly Batches — {completedTotal} completed
           {wipTotal > 0 ? `, ${wipTotal} in assembly` : ''}
         </div>
       </div>

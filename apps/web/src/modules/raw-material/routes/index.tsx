@@ -30,8 +30,8 @@ export const rawMaterialRoute = createRoute({
 });
 
 const TABS = [
-  { key: 'grade', label: '🧪 Grade' },
-  { key: 'size', label: '📏 Size' },
+  { key: 'grade', label: 'Grade' },
+  { key: 'size', label: 'Size' },
 ] as const;
 
 function RawMaterialPage(): React.JSX.Element {
@@ -65,7 +65,7 @@ function RawMaterialPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Raw Material Master. Ask an admin.
       </div>
     );
   }

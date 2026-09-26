@@ -4,7 +4,7 @@
 import type { JcComputedStatus } from '@innovic/shared';
 
 const CLASSES: Record<JcComputedStatus, string> = {
-  open: 'b-grey',
+  open: 'b-blue', // Round 5: Open = blue (awaiting next step)
   qc_pending: 'b-amber',
   complete: 'b-green', // wave 2: finished = green on every badge
   closed: 'b-green',

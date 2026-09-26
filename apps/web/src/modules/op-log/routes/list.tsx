@@ -303,7 +303,7 @@ function OpLogListPage(): React.JSX.Element {
                         className="tag"
                         style={{ background: 'var(--bg4)', color: 'var(--cyan)' }}
                       >
-                        {r.plannedMachineCode ?? '?'}
+                        {r.plannedMachineCode ?? '—'}
                       </span>
                     </td>
                     <td>
@@ -320,10 +320,10 @@ function OpLogListPage(): React.JSX.Element {
                               : 'var(--cyan)',
                         }}
                       >
-                        {r.machineCode ?? '?'}
+                        {r.machineCode ?? '—'}
                       </span>
                     </td>
-                    <td>{r.operation ?? '?'}</td>
+                    <td>{r.operation ?? '—'}</td>
                     <td className="td-ctr mono fw-700 green">{r.qty}</td>
                     <td
                       className="td-ctr mono fw-700"

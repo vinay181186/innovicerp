@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { ConfirmDialog } from '@/ui/feedback';
 import {
   MACHINE_GROUP_LIST_LIMIT,
   useCreateMachineGroup,
@@ -64,6 +65,8 @@ export function MachineGroupTab(): React.JSX.Element {
 
   const [status, setStatus] = useState<StatusFilter>('all');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
+  // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
+  const [trashRow, setTrashRow] = useState<MachineGroup | null>(null);
 
   const rows = useMemo(() => list.data?.groups ?? [], [list.data]);
   const total = list.data?.total ?? 0;
@@ -185,7 +188,9 @@ export function MachineGroupTab(): React.JSX.Element {
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="empty-state">
-                    No machine groups — click <strong>+ Add Machine Group</strong> to begin
+                    {rows.length === 0 && !term
+                      ? 'No Machine Groups yet.'
+                      : 'No Machine Groups match.'}
                   </td>
                 </tr>
               ) : (
@@ -238,9 +243,9 @@ export function MachineGroupTab(): React.JSX.Element {
                             className="btn btn-danger btn-sm"
                             disabled={softDelete.isPending}
                             onClick={() => {
-                              if (confirm(`Move machine group "${row.code}" to Trash?`)) {
-                                softDelete.mutate(row.id);
-                              }
+                              // A failed earlier delete must not greet this one.
+                              softDelete.reset();
+                              setTrashRow(row);
                             }}
                           >
                             Delete
@@ -270,13 +275,34 @@ export function MachineGroupTab(): React.JSX.Element {
           color: 'var(--text3)',
         }}
       >
-        <span>{canEdit ? '💡 Click a row to edit that group.' : ''}</span>
+        <span />
         <span>
           {total > rows.length
             ? `Showing first ${rows.length} of ${total} — refine with search`
             : `Showing all ${total} machine group${total === 1 ? '' : 's'}`}
         </span>
       </div>
+
+      {trashRow ? (
+        <ConfirmDialog
+          title={`Move Machine Group ${trashRow.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          onConfirm={async () => {
+            await softDelete.mutateAsync(trashRow.id);
+            setTrashRow(null);
+          }}
+          onCancel={() => setTrashRow(null)}
+          errorText={
+            softDelete.isError
+              ? softDelete.error instanceof Error
+                ? softDelete.error.message
+                : 'Could not delete Machine Group. Try again.'
+              : null
+          }
+        />
+      ) : null}
 
       {modal.kind !== 'none' ? (
         <MachineGroupModal
@@ -396,9 +422,7 @@ function MachineGroupModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
-          <span className="panel-title">
-            {row ? '✏ Edit Machine Group' : '＋ Add Machine Group'}
-          </span>
+          <span className="panel-title">{row ? 'Edit Machine Group' : 'Add Machine Group'}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             ✕
           </button>
@@ -422,8 +446,7 @@ function MachineGroupModal({
               />
               {row ? (
                 <div className="text3" style={{ fontSize: 11, marginTop: 3 }}>
-                  The group name cannot be changed — machines already carry it. Set Status to
-                  Inactive to retire it.
+                  Cannot be changed. Set Status to Inactive to retire it.
                 </div>
               ) : null}
             </div>
@@ -469,7 +492,8 @@ function MachineGroupModal({
               disabled={saving}
               onClick={() => void submit()}
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{' '}
+              {row ? 'Save Changes' : 'Save Machine Group'}
             </button>
           </div>
         </div>

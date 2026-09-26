@@ -11,6 +11,7 @@ import { ActualMachineLine } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
+import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
 
@@ -87,7 +88,7 @@ function JobQueuePage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">⬛ Job Queue</div>
+        <div className="section-hdr m-0">Job Queue</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {isAdmin ? (
             <button
@@ -175,7 +176,7 @@ function JobQueuePage(): React.JSX.Element {
       ) : displayMachines.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 32 }}>
-            No pending operations
+            No pending operations.
           </div>
         </div>
       ) : (
@@ -241,7 +242,7 @@ function JobQueuePage(): React.JSX.Element {
                       <th>Operation</th>
                       <th>Priority</th>
                       <th>Due Date</th>
-                      <th className="th-num">Order Qty</th>
+                      <th className="th-num">JC Qty</th>
                       <th className="th-num" style={{ color: 'var(--green2)' }}>
                         Completed
                       </th>
@@ -332,11 +333,14 @@ function JobQueuePage(): React.JSX.Element {
                             <div
                               style={{
                                 fontSize: 12,
-                                fontWeight: 600,
-                                color: 'var(--cyan)',
                               }}
                             >
-                              {itemCodeWithRev(r.itemCode, r.itemRevision, '')}{' '}
+                              <span
+                                className="mono fw-700"
+                                style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+                              >
+                                {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
+                              </span>{' '}
                               {r.itemName ? `— ${r.itemName}` : ''}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -374,23 +378,11 @@ function JobQueuePage(): React.JSX.Element {
                             </span>
                           </td>
                           <td>
-                            {r.isRunning ? (
-                              <span
-                                style={{
-                                  color: 'var(--amber2)',
-                                  fontWeight: 700,
-                                  fontSize: 12,
-                                }}
-                              >
-                                ▶ Running
-                              </span>
-                            ) : (
-                              <StatusBadge status={r.status} />
-                            )}
+                            <StatusBadge status={r.isRunning ? 'running' : r.status} />
                           </td>
                           <td>
                             {isNext && canOpEntry ? (
-                              // T33: only offer "Log Op" once the op is started
+                              // T33: only offer "Complete" once the op is started
                               // on this machine; otherwise show "Start".
                               startedHere ? (
                                 <Link
@@ -405,7 +397,7 @@ function JobQueuePage(): React.JSX.Element {
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  ✚ Log Op
+                                  ✓ Complete
                                 </Link>
                               ) : (
                                 <Link
@@ -414,7 +406,7 @@ function JobQueuePage(): React.JSX.Element {
                                   className="btn btn-sm"
                                   style={{ fontSize: 11, whiteSpace: 'nowrap' }}
                                 >
-                                  ▶ Start
+                                  ▶ Start Operation
                                 </Link>
                               )
                             ) : null}
@@ -433,27 +425,7 @@ function JobQueuePage(): React.JSX.Element {
   );
 }
 
-// Legacy badge() (HTML L1959) mapped onto our lowercase computed_status enum.
-// Legacy's `In Progress`/`At Vendor` map to .b-yellow, which legacy defines ONLY
-// in its print-only <style> block (L10559) — so on legacy's screen they render as
-// a bare .badge. We reproduce that with no b-* class rather than invent a tint.
-// Wave 2 (owner, 2026-09-26) overrides the legacy note above: in_progress now
-// reads "Partly Completed" (amber) and running (an open session) is green.
-const OP_STATUS: Record<string, { label: string; cls: string }> = {
-  complete: { label: 'Completed', cls: 'b-green' },
-  in_progress: { label: 'Partly Completed', cls: 'b-amber' },
-  available: { label: 'Available', cls: 'b-blue' },
-  waiting: { label: 'Waiting', cls: 'b-grey' },
-  qc_pending: { label: 'QC Pending', cls: 'b-amber' },
-  running: { label: 'Running', cls: 'b-green' },
-  ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
-  pr_raised: { label: 'PR Raised', cls: 'b-amber' },
-  po_created: { label: 'PO Created', cls: 'b-blue' },
-  at_vendor: { label: 'At Vendor', cls: '' },
-  received: { label: 'Received – QC Pending', cls: 'b-cyan' },
-  outsource: { label: 'Outsource', cls: 'b-amber' },
-};
-
+// Op status words + colours: the ONE shared map (job-cards/lib/jc-op-labels).
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
   const hit = OP_STATUS[status.toLowerCase()];
   // Legacy: `m[status] || 'b-grey'`.

@@ -61,7 +61,7 @@ function JcOpsPage(): React.JSX.Element {
   if (eff && !effectiveFormPerms(eff, 'jc_create').view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view JC Operations. Ask an admin.
       </div>
     );
   }
@@ -77,7 +77,7 @@ function JcOpsPage(): React.JSX.Element {
             onChange={(e) => setJcCode(e.target.value)}
             style={{ width: 200, fontSize: 12 }}
           >
-            <option value="">All JC</option>
+            <option value="">All Job Cards</option>
             {(data?.jcOptions ?? []).map((j) => (
               <option key={j.jcId} value={j.jcCode}>
                 {j.jcCode}
@@ -117,7 +117,7 @@ function JcOpsPage(): React.JSX.Element {
           </div>
         ) : data && data.items.length === 0 ? (
           <div className="panel-body">
-            <div className="empty-state">No operations defined</div>
+            <div className="empty-state">No Operations yet.</div>
           </div>
         ) : data ? (
           <div className="tbl-wrap">
@@ -137,12 +137,12 @@ function JcOpsPage(): React.JSX.Element {
                   <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     QC
                   </th>
-                  <th className="th-num">Order Qty</th>
+                  <th className="th-num">JC Qty</th>
                   <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Completed
                   </th>
                   <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                    Pending
+                    Available
                   </th>
                   <th className="th-num" style={{ color: 'var(--red2)' }}>
                     Pending Hrs
@@ -296,7 +296,7 @@ function Row({
               style={{
                 fontSize: 11,
                 fontWeight: 700,
-                color: '#7c3aed',
+                color: 'var(--purple)',
                 background: 'rgba(124,58,237,0.12)',
                 padding: '1px 6px',
                 borderRadius: 3,
@@ -317,7 +317,7 @@ function Row({
                 marginTop: 2,
               }}
             >
-              🏭 OUTSOURCE
+              Outsource
             </span>
             <div
               style={{
@@ -330,7 +330,7 @@ function Row({
                       : outsourceStatus === 'po_created'
                         ? 'var(--blue)'
                         : outsourceStatus === 'sent'
-                          ? 'var(--purple)'
+                          ? 'var(--amber)'
                           : outsourceStatus === 'received'
                             ? 'var(--cyan)'
                             : 'var(--green)',
@@ -358,10 +358,10 @@ function Row({
               borderRadius: 3,
             }}
           >
-            YES
+            Yes
           </span>
         ) : (
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>NO</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>No</span>
         )}
       </td>
       <td className="td-num">{o.jcOrderQty}</td>
@@ -430,7 +430,7 @@ function Row({
               </span>
             )
           ) : outsourceStatus === 'sent' ? (
-            <span style={{ fontSize: 11, color: 'var(--purple)' }}>
+            <span style={{ fontSize: 11, color: 'var(--amber2)' }}>
               📦 At Vendor ({o.sentQty} pcs)
             </span>
           ) : null
@@ -466,13 +466,13 @@ function Row({
                 className="btn btn-sm"
                 style={{
                   background: 'rgba(124,58,237,0.15)',
-                  color: '#7c3aed',
+                  color: 'var(--purple)',
                   fontSize: 11,
                   fontWeight: 700,
                 }}
                 onClick={onOutsource}
               >
-                🏭 Outsource Pending
+                🏭 Outsource Available
               </button>
             ) : null}
           </div>
@@ -483,36 +483,11 @@ function Row({
 }
 
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
-  const v = status.toLowerCase();
-  const colors: Record<string, string> = {
-    complete: 'var(--green)',
-    qc_pending: 'var(--amber)',
-    running: 'var(--green)',
-    in_progress: 'var(--amber)',
-    available: 'var(--blue)',
-    waiting: 'var(--text3)',
-    pr_raised: 'var(--amber)',
-    po_created: 'var(--blue)',
-    at_vendor: 'var(--purple)',
-    received: 'var(--cyan)',
-    ready_for_pr: 'var(--amber)',
-    outsource: 'var(--text3)',
-  };
-  const c = colors[v] ?? 'var(--text3)';
+  // One shared op-status map (job-cards/lib/jc-op-labels) — same words and
+  // colours as the Job Card page.
+  const s = OP_STATUS[status.toLowerCase()];
   return (
-    <span
-      style={{
-        padding: '2px 9px',
-        borderRadius: 4,
-        fontSize: 11,
-        fontWeight: 700,
-        color: c,
-        background: `${c}12`,
-        border: `1px solid ${c}30`,
-      }}
-    >
-      {OP_STATUS[status]?.label ?? status.replace(/_/g, ' ')}
-    </span>
+    <span className={`badge ${s?.cls ?? ''}`.trim()}>{s?.label ?? status.replace(/_/g, ' ')}</span>
   );
 }
 
@@ -536,7 +511,7 @@ function ChangeMachineModal({
   const onSave = (): void => {
     setErr(null);
     if (!machineId) {
-      setErr('Select a machine');
+      setErr('Machine is required.');
       return;
     }
     const input: ChangeJcOpMachineInput = { machineId };
@@ -574,7 +549,7 @@ function ChangeMachineModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Change Machine — {row.jcCode} Op{opSrNo(row.opSeq)}
+          Change Machine — {row.jcCode} Op {opSrNo(row.opSeq)}
         </div>
         <div
           style={{
@@ -604,7 +579,7 @@ function ChangeMachineModal({
                   <b style={{ color: 'var(--text2)' }}>{m.machineCode}</b>: {m.qty} pcs
                 </span>
               ))}
-              . Each stays recorded against its own machine. The new machine takes the pending{' '}
+              . Each stays recorded against its own machine. The new machine takes the remaining{' '}
               <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
             </div>
           ) : row.completed > 0 ? (
@@ -613,7 +588,7 @@ function ChangeMachineModal({
               <b style={{ color: 'var(--text2)' }}>
                 {row.machines[0]?.machineCode ?? row.machineCode ?? 'the planned machine'}
               </b>
-              . The new machine takes the pending{' '}
+              . The new machine takes the remaining{' '}
               <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
             </div>
           ) : (
@@ -624,11 +599,8 @@ function ChangeMachineModal({
           )}
         </div>
         <div>
-          <div
-            className="text3"
-            style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Assign Machine ★
+          <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+            Assign Machine <span className="req">★</span>
           </div>
           <select
             className="innovic-select"
@@ -664,13 +636,7 @@ function ChangeMachineModal({
               &#10007;
             </span>
             <span>
-              {err ??
-                `This operation is finished — all ${row.completed} ` +
-                  `${row.completed === 1 ? 'pc is' : 'pcs are'} made, so there is nothing ` +
-                  `left to run on another machine.` +
-                  (row.machineCode
-                    ? ` The finished qty stays recorded against ${row.machineCode}.`
-                    : '')}
+              {err ?? 'This operation is Completed — nothing is left to run on another machine.'}
             </span>
           </div>
         ) : null}
@@ -726,15 +692,15 @@ function CreatePrModal({
   const onSave = (): void => {
     setErr(null);
     if (!code.trim()) {
-      setErr('PR No. is required');
+      setErr('PR No. is required.');
       return;
     }
     if (qty <= 0) {
-      setErr('Qty must be > 0'); // legacy L6194
+      setErr('Qty must be more than 0.'); // legacy L6194
       return;
     }
     if (!vendorText.trim()) {
-      setErr('This op has no outsource vendor — set a vendor on the operation first');
+      setErr('Set an outsource vendor on this operation first.');
       return;
     }
     const input: CreatePurchaseRequestInput = {
@@ -785,7 +751,7 @@ function CreatePrModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Create Purchase Request — {row.jcCode} Op{opSrNo(row.opSeq)}
+          Create Purchase Request — {row.jcCode} Op {opSrNo(row.opSeq)}
         </div>
         <div
           style={{
@@ -823,11 +789,8 @@ function CreatePrModal({
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <div
-            className="text3"
-            style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            PR No. ★
+          <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+            PR No. <span className="req">★</span>
           </div>
           <input
             className="innovic-select"
@@ -844,12 +807,11 @@ function CreatePrModal({
               className="text3"
               style={{
                 fontSize: 11,
-                textTransform: 'uppercase',
                 marginBottom: 4,
                 color: 'var(--amber2)',
               }}
             >
-              Qty Required ★
+              Qty Required <span className="req">★</span>
             </div>
             <input
               type="number"
@@ -861,10 +823,7 @@ function CreatePrModal({
             />
           </div>
           <div style={{ flex: '1 1 140px' }}>
-            <div
-              className="text3"
-              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
-            >
+            <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
               Est. Cost / pc (₹)
             </div>
             <input
@@ -878,10 +837,7 @@ function CreatePrModal({
             />
           </div>
           <div style={{ flex: '1 1 140px' }}>
-            <div
-              className="text3"
-              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
-            >
+            <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
               Required By Date
             </div>
             <input
@@ -895,10 +851,7 @@ function CreatePrModal({
         </div>
 
         <div style={{ marginTop: 12 }}>
-          <div
-            className="text3"
-            style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
-          >
+          <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
             Remarks
           </div>
           <input
@@ -969,11 +922,11 @@ function OutsourceBalanceModal({
   const onSave = (): void => {
     setErr(null);
     if (qty <= 0 || qty > row.available) {
-      setErr(`Qty must be between 1 and ${row.available}`);
+      setErr(`Qty must be between 1 and Available (${row.available}).`);
       return;
     }
     if (!vendorCode.trim()) {
-      setErr('Vendor is required');
+      setErr('Vendor is required.');
       return;
     }
     const input: OutsourceOpBalanceInput = { qty, vendorCode: vendorCode.trim() };
@@ -1013,7 +966,7 @@ function OutsourceBalanceModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Outsource Pending Qty — {row.jcCode} Op{opSrNo(row.opSeq)}
+          Outsource Available Qty — {row.jcCode} Op {opSrNo(row.opSeq)}
         </div>
         <div
           style={{
@@ -1043,8 +996,8 @@ function OutsourceBalanceModal({
             <span className="mono fw-700" style={{ color: 'var(--text)' }}>
               {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
             </span>{' '}
-            · Available: <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs. Sends the
-            pending qty to a vendor as a JW OSP purchase request.
+            · Available: <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs. Sends this
+            qty to a vendor as an OSP purchase request.
           </div>
         </div>
 
@@ -1054,12 +1007,11 @@ function OutsourceBalanceModal({
               className="text3"
               style={{
                 fontSize: 11,
-                textTransform: 'uppercase',
                 marginBottom: 4,
                 color: 'var(--amber2)',
               }}
             >
-              Qty to outsource ★
+              Qty to Outsource <span className="req">★</span>
             </div>
             <input
               type="number"
@@ -1072,11 +1024,8 @@ function OutsourceBalanceModal({
             />
           </div>
           <div style={{ flex: '1 1 200px' }}>
-            <div
-              className="text3"
-              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
-            >
-              Vendor ★
+            <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+              Vendor <span className="req">★</span>
             </div>
             <input
               className="innovic-select"
@@ -1125,7 +1074,7 @@ function OutsourceBalanceModal({
                 <Loader2 size={14} className="inline animate-spin" /> Outsourcing…
               </>
             ) : (
-              'Outsource Pending'
+              'Outsource Available'
             )}
           </button>
         </div>

@@ -13,6 +13,7 @@ import { fmtDate } from '@/lib/date';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 import { useMyCompany } from '../../settings/api';
 import { useMachineLoading } from '../api';
 import { printMachineQueue } from '../lib/print-machine-queue';
@@ -37,28 +38,11 @@ function loadBadgeClass(status: MachineLoadStatus): string {
   return 'b-green'; // Manageable + Clear (legacy L1963)
 }
 
-// Legacy badge() op-status map (L1961-1963). `b-yellow` (In Progress) and
-// `b-running` (Running) are declared ONLY in legacy's print-only <style> block
-// (L10559-10561), never in its main sheet at L10 — so legacy renders both as an
-// unstyled `.badge` pill on screen. Empty class here reproduces that exactly;
-// neither class exists in our theme either.
-// Wave 2 (owner, 2026-09-26) overrides the legacy note above: in_progress now
-// reads "Partly Completed" (amber) and running (an open session) is green.
-const OP_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
-  complete: { label: 'Completed', cls: 'b-green' },
-  in_progress: { label: 'Partly Completed', cls: 'b-amber' },
-  running: { label: 'Running', cls: 'b-green' },
-  available: { label: 'Available', cls: 'b-blue' },
-  waiting: { label: 'Waiting', cls: 'b-grey' },
-  qc_pending: { label: 'QC Pending', cls: 'b-amber' },
-};
-
+// Op status words + colours: the ONE shared map (job-cards/lib/jc-op-labels).
 function OpStatusBadge({ status }: { status: string }): React.JSX.Element {
-  const known = OP_STATUS_BADGES[status];
-  // Legacy's fallback is `m[status] || 'b-grey'` with the raw status text.
+  const known = OP_STATUS[status];
   const label = known?.label ?? status.replaceAll('_', ' ');
-  const cls = known ? known.cls : 'b-grey';
-  return <span className={cls ? `badge ${cls}` : 'badge'}>{label}</span>;
+  return <span className={`badge ${known?.cls || 'b-grey'}`}>{label}</span>;
 }
 
 function barColor(pct: number): string {
@@ -392,7 +376,9 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
         {op.clientPoLineNo ?? '—'}
       </td>
       <td style={{ fontSize: 11 }}>
-        {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
+        <span className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
+          {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
+        </span>
         {op.itemName ? ` — ${op.itemName}` : ''}
       </td>
       <td className="td-ctr mono text3" style={{ fontSize: 11 }}>
@@ -470,7 +456,7 @@ function OperationView({
               <th>Operation</th>
               <th>Priority</th>
               <th>Due Date</th>
-              <th className="th-num">Order Qty</th>
+              <th className="th-num">JC Qty</th>
               <th className="th-num">Completed</th>
               <th className="th-num" style={{ color: 'var(--amber2)' }}>
                 Available
@@ -485,7 +471,7 @@ function OperationView({
             {ops.length === 0 ? (
               <tr>
                 <td colSpan={14} className="empty-state">
-                  No pending operations
+                  No pending operations.
                 </td>
               </tr>
             ) : (
@@ -511,7 +497,7 @@ function JobQueueView({
     return (
       <div className="panel">
         <div className="empty-state" style={{ padding: 32 }}>
-          No machines configured
+          No machines configured.
         </div>
       </div>
     );
@@ -595,7 +581,7 @@ function JobQueueView({
                     <th>Operation</th>
                     <th>Priority</th>
                     <th>Due Date</th>
-                    <th className="th-num">Order Qty</th>
+                    <th className="th-num">JC Qty</th>
                     <th className="th-num">Completed</th>
                     <th className="th-num" style={{ color: 'var(--amber2)' }}>
                       Available
@@ -647,7 +633,7 @@ function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.J
             {machines.length === 0 ? (
               <tr>
                 <td colSpan={10} className="empty-state">
-                  No machines
+                  No machines yet.
                 </td>
               </tr>
             ) : (

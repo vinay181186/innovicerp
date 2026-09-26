@@ -34,7 +34,7 @@ import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
-import { ListFooter, ListHeader, PageState, RowActions, StatusPills } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState, StatusPills } from '@/ui/layout';
 import { useBomMaster, useBomMastersList } from '../api';
 
 const searchSchema = z.object({
@@ -102,7 +102,7 @@ function BomMastersListPage(): React.JSX.Element {
   }, []);
 
   // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+11+19+23+6+7+9+8+7 = 94, + 6 = 100, so
+  // 4+11+19+29+6+7+9+8+7 = 100 (no Action column: the row opens the BOM), so
   // the table never scrolls sideways. Centred by the standard; only BOM Name
   // is left-aligned.
   const columns = useMemo<DataTableColumn<BomMasterListItem>[]>(
@@ -167,7 +167,7 @@ function BomMastersListPage(): React.JSX.Element {
       },
       {
         header: 'Parent Item',
-        width: '23%',
+        width: '29%',
         ellipsis: true,
         title: (b) =>
           b.parentItemCode ? `${b.parentItemCode} — ${b.parentItemName ?? ''}` : 'not set',
@@ -213,14 +213,15 @@ function BomMastersListPage(): React.JSX.Element {
         render: (b) => fmtDate(b.revisionDate),
       },
       {
-        header: 'Linked SOs',
+        // Counts SO LINES that use this BOM (not orders) — same label as the detail.
+        header: 'Linked SO Lines',
         width: '8%',
         align: 'right',
         nowrap: true,
         render: (b) =>
           b.linkedSoCount > 0 ? (
             <span className="fw-700" style={{ color: 'var(--green2)' }}>
-              {b.linkedSoCount} SO{b.linkedSoCount > 1 ? 's' : ''}
+              {b.linkedSoCount}
             </span>
           ) : (
             <span className="text3">—</span>
@@ -249,7 +250,6 @@ function BomMastersListPage(): React.JSX.Element {
           status pills stay put while the rows scroll underneath. */}
       <ListHeader
         title="BOM Master"
-        icon="📦"
         count={total}
         noun="BOM"
         filterNote={status}
@@ -295,23 +295,12 @@ function BomMastersListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            empty={
-              <>
-                No BOMs created yet — click <strong>+ New BOM</strong>
-              </>
-            }
+            empty={search || status ? 'No BOMs match.' : 'No BOMs yet.'}
             onRowClick={(b) => void navigate({ to: '/bom-masters/$id', params: { id: b.id } })}
             // The part list is fetched only for a row that is actually open —
             // returning null for a collapsed row means ExpandedLines (and its
             // detail query) never mounts for it.
             renderExpanded={(b) => (expanded.has(b.id) ? <ExpandedLines bomId={b.id} /> : null)}
-            rowActionsWidth="6%"
-            rowActions={(b) => (
-              // View is a ROUTE, so it stays a real link — ctrl-click /
-              // middle-click still open a new tab. Editing and revising a BOM
-              // happen on the detail page, so the row offers neither.
-              <RowActions viewTo={`/bom-masters/${b.id}`} renderLink={(p) => <Link {...p} />} />
-            )}
           />
         </Panel>
       )}
@@ -379,11 +368,11 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
         className="mono fw-700"
         style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)', marginBottom: 'var(--sp-1)' }}
       >
-        ▸ PART LIST / ITEMS — {data.bomNo}
+        ▸ Part List — {data.bomNo}
       </div>
       {/* `compact` is the nested-line-table density — the same sheet, one step
           tighter, because it sits inside a row of the sheet above it. */}
-      <DataTable columns={columns} rows={data.lines} density="compact" emptyText="No lines" />
+      <DataTable columns={columns} rows={data.lines} density="compact" emptyText="No lines yet." />
     </div>
   );
 }
@@ -392,9 +381,9 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
  *  Local to this screen; nothing else renders a BOM line's type. */
 function BomTypeBadge({ type }: { type: string }): React.JSX.Element {
   const cfg = {
-    manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
+    manufacture: { label: '🏭 Manufacture', color: 'var(--cyan)' },
     purchase: { label: '🛒 Buy', color: 'var(--green2)' },
-    outsource: { label: '🏭 Outsrc', color: 'var(--amber2)' },
+    outsource: { label: '🏭 Outsource', color: 'var(--amber2)' },
   }[type] ?? { label: type, color: 'var(--text3)' };
   return (
     <span className="fw-700" style={{ color: cfg.color, fontSize: 'var(--fs-xs)' }}>

@@ -90,13 +90,13 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
         }}
       >
         <span>
-          Available to close{' '}
+          Available{' '}
           <b className="mono" style={{ color: 'var(--text)' }}>
             {po.availableToClose}
           </b>
         </span>
         <span>
-          Credited so far{' '}
+          Credited{' '}
           <b className="mono" style={{ color: 'var(--text)' }}>
             {po.creditedQty ?? 0}
           </b>{' '}
@@ -121,7 +121,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
         {finish ? null : (
           <div className="form-grp">
             <label className="form-label" htmlFor={`close-qty-${po.id}`}>
-              Qty to close now<span className="req">★</span>
+              Qty to Close<span className="req">★</span>
             </label>
             <input
               id={`close-qty-${po.id}`}
@@ -134,15 +134,13 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
               onChange={(e) => setQty(e.target.value)}
               style={{ textAlign: 'right' }}
             />
-            <div className="form-help">
-              Defaults to all {max} available. Credits this many pieces to stock.
-            </div>
+            <div className="form-help">Credited to stock.</div>
           </div>
         )}
 
         <div className={finish ? 'form-grp form-full' : 'form-grp form-span-2'}>
           <label className="form-label" htmlFor={`close-remarks-${po.id}`}>
-            {finish ? 'Reason for finishing short' : 'Remarks'}
+            {finish ? 'Reason' : 'Remarks'}
             {finish ? <span className="req">★</span> : null}
           </label>
           <input
@@ -187,12 +185,12 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
 
       {!remarksValid ? (
         <div className="form-error" style={{ marginTop: 8 }}>
-          A reason is required when finishing short.
+          Reason is required.
         </div>
       ) : null}
       {!finish && !qtyValid && qty.trim() !== '' ? (
         <div className="form-error" style={{ marginTop: 8 }}>
-          Enter a whole qty between 1 and {max}.
+          Qty to Close must be a whole number from 1 to {max}.
         </div>
       ) : null}
 

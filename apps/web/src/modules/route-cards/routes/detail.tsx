@@ -17,6 +17,7 @@ import { Fragment, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useItem } from '../../items/api';
 import { useMyCompany } from '../../settings/api';
 import { useDeleteRouteCard, useRouteCard } from '../api';
@@ -37,34 +38,22 @@ function RouteCardDetailPage(): React.JSX.Element {
   const { data: item } = useItem(detail?.itemId);
   const { data: company } = useMyCompany();
   const del = useDeleteRouteCard();
-  const [delError, setDelError] = useState<string | null>(null);
+  // Print failure (popup blocked) shows in place — never window.alert.
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const onPrint = (): void => {
     if (!detail) return;
+    setNotice(null);
     if (!printRouteCard({ rc: detail, item, company })) {
-      window.alert('Allow popups to print.');
-    }
-  };
-
-  const onDelete = async (): Promise<void> => {
-    if (!detail) return;
-    if (!window.confirm(`Move Route Card ${detail.code} to Trash? You can restore it from Trash.`))
-      return;
-    setDelError(null);
-    try {
-      await del.mutateAsync(detail.id);
-      void navigate({ to: '/route-cards' });
-    } catch (e) {
-      setDelError(
-        e instanceof Error ? e.message : 'Could not move Route Card to Trash. Try again.',
-      );
+      setNotice('Allow popups to print.');
     }
   };
 
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Route Cards. Ask an admin.
       </div>
     );
   }
@@ -96,7 +85,7 @@ function RouteCardDetailPage(): React.JSX.Element {
   return (
     <div>
       <Link to="/route-cards" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Route Cards
+        <ArrowLeft size={14} /> Back
       </Link>
 
       {/* SO-Planning left-accent identity card: the cyan stripe + banded header
@@ -121,7 +110,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                   fontSize: 11,
                   padding: '2px 8px',
                   borderRadius: 3,
-                  background: 'rgba(0,136,187,0.12)',
+                  background: 'var(--cyan3)',
                   color: 'var(--cyan)',
                 }}
               >
@@ -146,9 +135,9 @@ function RouteCardDetailPage(): React.JSX.Element {
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                onClick={() => void onDelete()}
+                onClick={() => setConfirmDelete(true)}
                 disabled={del.isPending}
-                title="Delete route card"
+                title="Move this Route Card to Trash"
               >
                 <Trash2 size={13} /> Delete
               </button>
@@ -180,14 +169,14 @@ function RouteCardDetailPage(): React.JSX.Element {
                 {detail.planType === 'full_outsource'
                   ? '📦 Full Outsource'
                   : detail.planType === 'direct_purchase'
-                    ? '🛒 Direct Purchase'
+                    ? '🛒 Buy'
                     : '🏭 Manufacture'}
               </div>
               {detail.planType === 'direct_purchase' ? (
                 // ADR-171: the tile is gone from the form; the value survives
                 // on old cards so the user knows where the flag now lives.
                 <div className="text3" style={{ fontSize: 11 }}>
-                  legacy — set the item&apos;s Source to Buy instead
+                  Old setting — set the item&apos;s Source to Buy instead.
                 </div>
               ) : null}
             </div>
@@ -214,19 +203,19 @@ function RouteCardDetailPage(): React.JSX.Element {
               <div className="text2">{detail.notes ?? '—'}</div>
             </div>
           </div>
-          {delError ? (
+          {notice ? (
             <div
               style={{
                 marginTop: 8,
                 color: 'var(--red2)',
                 background: 'var(--red3)',
-                border: '1px solid #fca5a5',
+                border: '1px solid var(--red2)',
                 borderRadius: 6,
                 padding: '6px 10px',
                 fontSize: 12,
               }}
             >
-              {delError}
+              {notice}
             </div>
           ) : null}
         </div>
@@ -234,7 +223,7 @@ function RouteCardDetailPage(): React.JSX.Element {
 
       <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
         <div className="panel-hdr">
-          <div className="panel-title">⚙️ Operation Sequence ({detail.ops.length})</div>
+          <div className="panel-title">Operation Sequence ({detail.ops.length})</div>
         </div>
         <div className="tbl-wrap">
           <table className="innovic-table">
@@ -247,7 +236,8 @@ function RouteCardDetailPage(): React.JSX.Element {
                 <th>Machine / Vendor</th>
                 <th>Operation</th>
                 <th className="td-ctr">Cycle Time (min)</th>
-                <th>Program / Lead</th>
+                <th>Program No.</th>
+                <th className="td-ctr">Lead Days</th>
                 <th>Tool No.</th>
                 <th>Tool Details</th>
               </tr>
@@ -255,8 +245,8 @@ function RouteCardDetailPage(): React.JSX.Element {
             <tbody>
               {detail.ops.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
-                    No operations
+                  <td colSpan={9} className="empty-state">
+                    No operations yet.
                   </td>
                 </tr>
               ) : (
@@ -272,9 +262,9 @@ function RouteCardDetailPage(): React.JSX.Element {
                         : 'var(--text3)';
                   const bg =
                     op.opType === 'qc'
-                      ? 'rgba(34,197,94,0.06)'
+                      ? 'var(--green3)'
                       : op.opType === 'outsource'
-                        ? 'rgba(124,58,237,0.06)'
+                        ? 'var(--purple3)'
                         : undefined;
                   // machTag (L1980) renders the machine as a cyan `.tag` chip:
                   // code on a bold line, machine name on a 9px text3 line under
@@ -313,8 +303,8 @@ function RouteCardDetailPage(): React.JSX.Element {
                             style={{
                               fontSize: 11,
                               color: 'var(--purple)',
-                              background: 'rgba(124,58,237,0.12)',
-                              border: '1px solid rgba(124,58,237,0.3)',
+                              background: 'var(--purple3)',
+                              border: '1px solid var(--purple)',
                             }}
                           >
                             🏭 OSP
@@ -355,11 +345,10 @@ function RouteCardDetailPage(): React.JSX.Element {
                       <td className="fw-700">{op.operation}</td>
                       <td className="td-ctr mono">{Number(op.cycleTimeMin) || '—'}</td>
                       <td className="mono" style={{ fontSize: 12, color: 'var(--blue)' }}>
-                        {op.opType === 'outsource'
-                          ? op.ospLeadDays != null
-                            ? `${op.ospLeadDays}d lead`
-                            : '—'
-                          : (op.program ?? '—')}
+                        {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
+                      </td>
+                      <td className="td-ctr mono" style={{ fontSize: 12 }}>
+                        {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
                       </td>
                       <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
                         {op.toolNo ?? '—'}
@@ -377,6 +366,19 @@ function RouteCardDetailPage(): React.JSX.Element {
       </div>
 
       {detail.revisions.length > 0 ? <RevisionHistory revisions={detail.revisions} /> : null}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Move Route Card ${detail.code} to Trash?`}
+        message="You can restore it from Trash."
+        confirmLabel="Move to Trash"
+        pendingLabel="Moving to Trash…"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={async () => {
+          await del.mutateAsync(detail.id);
+          void navigate({ to: '/route-cards' });
+        }}
+      />
     </div>
   );
 }
@@ -392,10 +394,11 @@ function RouteCardDetailPage(): React.JSX.Element {
 // Each row opens now. The colours and chips deliberately match the live
 // operations table above, so an old routing reads exactly like the current one.
 
-// Op Type as the user reads it — never the raw code.
+// Group as the user reads it — never the raw code. The snapshot keeps no
+// machine group, so an in-house op reads "In-house" here.
 const OP_TYPE_LABEL: Record<string, string> = {
   process: 'In-house',
-  outsource: 'Outsource',
+  outsource: 'OSP',
   qc: 'QC',
 };
 
@@ -472,22 +475,22 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                           style={{
                             fontSize: 11,
                             fontWeight: 700,
-                            letterSpacing: '.07em',
                             marginBottom: 6,
                           }}
                         >
-                          ROUTING AT ROUTE CARD REV {rev.revisionNo}
+                          Routing at Route Card Rev {rev.revisionNo}
                         </div>
                         <div className="tbl-wrap">
                           <table className="innovic-table">
                             <thead>
                               <tr>
                                 <th className="td-ctr">Op</th>
-                                <th>Op Type</th>
+                                <th>Group</th>
                                 <th>Machine / Vendor</th>
                                 <th>Operation</th>
                                 <th className="td-ctr">Cycle Time (min)</th>
-                                <th>Program / Lead</th>
+                                <th>Program No.</th>
+                                <th className="td-ctr">Lead Days</th>
                                 <th>Tool No.</th>
                                 <th>Tool Details</th>
                                 <th className="td-ctr">QC</th>
@@ -522,11 +525,10 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                       className="mono"
                                       style={{ fontSize: 12, color: 'var(--blue)' }}
                                     >
-                                      {op.opType === 'outsource'
-                                        ? op.ospLeadDays != null
-                                          ? `${op.ospLeadDays}d lead`
-                                          : '—'
-                                        : (op.program ?? '—')}
+                                      {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
+                                    </td>
+                                    <td className="td-ctr mono" style={{ fontSize: 12 }}>
+                                      {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
                                     </td>
                                     <td
                                       className="mono"

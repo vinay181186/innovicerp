@@ -159,9 +159,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
           empty={
             <>
               <div className="empty-icon">✅</div>
-              {data && data.rows.length === 0
-                ? 'All SO lines are fully planned!'
-                : 'No SO lines match your search.'}
+              {data && data.rows.length === 0 ? 'No SO lines to plan.' : 'No SO lines match.'}
             </>
           }
           rowActionsWidth="15%"

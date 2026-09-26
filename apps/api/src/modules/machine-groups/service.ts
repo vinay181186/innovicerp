@@ -97,7 +97,7 @@ export async function getMachineGroup(id: string, user: AuthContext): Promise<Ma
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Machine group ${id} not found`);
+    if (!row) throw new NotFoundError('Machine Group not found. Refresh the page.');
     return row as unknown as MachineGroup;
   });
 }
@@ -167,7 +167,8 @@ export async function updateMachineGroup(
         ),
       )
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Machine group ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Machine Group not found. Refresh the page.');
 
     // `code` is not updatable (omitted from the shared input schema): it is the
     // word the shop floor reads and screens quote, so a rename would make the
@@ -202,7 +203,8 @@ export async function softDeleteMachineGroup(id: string, user: AuthContext): Pro
         ),
       )
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Machine group ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Machine Group not found. Refresh the page.');
 
     // Refuse while live machines still point here. No cascade: silently
     // un-grouping someone's machines is not a delete the user asked for. They

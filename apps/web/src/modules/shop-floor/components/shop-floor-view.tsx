@@ -129,10 +129,10 @@ export function ShopFloorView(): React.JSX.Element {
         <div className="panel">
           <div className="empty-state" style={{ padding: 56 }}>
             <div className="empty-icon">🏭</div>
-            <b>No operations currently running</b>
+            <b>No operations running.</b>
             <br />
             <span className="text3" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
-              Use Op Entry → ▶ Start to begin tracking jobs
+              Use Op Entry → ▶ Start Operation to begin.
             </span>
           </div>
         </div>
@@ -154,7 +154,7 @@ export function ShopFloorView(): React.JSX.Element {
                 <span className="text3" style={{ fontSize: 12 }}>
                   {m.machineName ?? ''}
                 </span>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>⚫ IDLE</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>⚫ Idle</span>
               </div>
             </div>
           ) : (
@@ -183,7 +183,7 @@ export function ShopFloorView(): React.JSX.Element {
                   {m.machineName ?? ''} · {m.machineType ?? ''}
                 </span>
                 <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 12 }}>
-                  ▶ {m.runningCount} RUNNING
+                  ▶ {m.runningCount} Running
                 </span>
               </div>
               <div className="tbl-wrap">
@@ -199,11 +199,11 @@ export function ShopFloorView(): React.JSX.Element {
                       <th>Item Code</th>
                       <th>Item Name</th>
                       <th>SO No.</th>
-                      <th className="td-ctr">Order Qty</th>
+                      <th className="td-ctr">JC Qty</th>
                       <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                         Completed
                       </th>
-                      <th className="td-ctr" style={{ color: 'var(--red2)' }}>
+                      <th className="td-ctr" style={{ color: 'var(--amber2)' }}>
                         Pending
                       </th>
                       <th>Priority</th>
@@ -257,7 +257,10 @@ export function ShopFloorView(): React.JSX.Element {
                         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                           {r.clientPoLineNo ?? '—'}
                         </td>
-                        <td className="td-code" style={{ color: 'var(--purple)' }}>
+                        <td
+                          className="mono fw-700"
+                          style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+                        >
                           {itemCodeWithRev(r.itemCode, r.itemRevision)}
                         </td>
                         <td>{r.itemName ?? '—'}</td>
@@ -266,7 +269,7 @@ export function ShopFloorView(): React.JSX.Element {
                         </td>
                         <td className="td-ctr mono">{r.orderQty}</td>
                         <td className="td-ctr green mono fw-700">{r.doneQty}</td>
-                        <td className="td-ctr mono" style={{ color: 'var(--red2)' }}>
+                        <td className="td-ctr mono" style={{ color: 'var(--amber2)' }}>
                           {r.pendingQty}
                         </td>
                         <td>
@@ -294,7 +297,7 @@ export function ShopFloorView(): React.JSX.Element {
                                 setStopRow({ row: r, machineCode: m.machineCode });
                               }}
                             >
-                              ■ Stop
+                              ■ Stop Operation
                             </button>
                           ) : null}
                         </td>

@@ -15,6 +15,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 import { challanDate } from '@/lib/print/sheet-print';
+import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 
 // Legacy priority/status → badge class.
 function priorityBadge(priority: MachineLoadOp['priority']): string {
@@ -23,16 +24,12 @@ function priorityBadge(priority: MachineLoadOp['priority']): string {
   return `<span class="badge ${cls}">${label}</span>`;
 }
 
+// Op status words + colours from the ONE shared map the screens use
+// (job-cards/lib/jc-op-labels) — in_progress prints "Partly Completed".
 function statusBadge(status: string): string {
-  const s = status.replaceAll('_', ' ');
-  const lower = s.toLowerCase();
-  const cls = lower.includes('progress')
-    ? 'b-amber'
-    : lower.includes('available')
-      ? 'b-blue'
-      : 'b-grey';
-  // Title-case the computed status for the print.
-  const label = s.replace(/\b\w/g, (c) => c.toUpperCase());
+  const hit = OP_STATUS[status.toLowerCase()];
+  const cls = hit?.cls || 'b-grey';
+  const label = hit?.label ?? status.replaceAll('_', ' ');
   return `<span class="badge ${cls}">${esc(label)}</span>`;
 }
 
@@ -85,7 +82,7 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
   return `${head}<table><thead><tr>
       <th>Sr No</th><th>JC No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>SO No.</th>
       <th>Op</th><th>Operation</th><th>Priority</th><th>Due Date</th>
-      <th>Order Qty</th><th>Completed</th><th>Available</th><th>Pending Hrs</th><th>Op Status</th>
+      <th>JC Qty</th><th>Completed</th><th>Available</th><th>Pending Hrs</th><th>Op Status</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
 }
 

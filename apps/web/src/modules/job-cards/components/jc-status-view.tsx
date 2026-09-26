@@ -3,7 +3,7 @@
 //   A  header bar     Job Card : <code> + status badge · Back to List · Print
 //                     Job Card · Excel · ▶ Production Entry · ✎ Edit Job Card
 //   B  recovery       rework / repair child banner (only on such a card)
-//   C  header tile    part · references · Order / Completed / WIP / Rejected
+//   C  header tile    part · references · Order / Completed / In Progress / Rejected
 //                     (NC) / Pending tiles · due date · priority · status
 //   D  route flow     the wrapping strip of fixed-size operation cards
 //   E  operations     one card per op — expanded for the current op and the
@@ -297,7 +297,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         {detailOpen ? (
           <div style={{ padding: '2px 0' }}>
             {sortedOps.length === 0 ? (
-              <div className="empty-state">No operations</div>
+              <div className="empty-state">No operations yet.</div>
             ) : (
               sortedOps.map((o, i) => (
                 <JcOpCard
@@ -342,14 +342,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
       </div>
 
       {/* ── F. Documents & Quality | Related Records | History ── */}
-      <JcViewTabs
-        jc={jc}
-        ops={ops}
-        extras={extras}
-        drawing={drawingRef}
-        onOpenDrawing={openDrawing}
-        stopped={stopped}
-      />
+      <JcViewTabs jc={jc} ops={ops} extras={extras} stopped={stopped} />
     </div>
   );
 }

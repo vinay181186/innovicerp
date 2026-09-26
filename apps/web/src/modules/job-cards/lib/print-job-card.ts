@@ -12,7 +12,7 @@
 //     shop-floor sheet); date, due, qty, item, drawing
 //     on the right. The last row of each column has no rule — the box closes it.
 //   • The operation table: Op · Operation · Plan Machine · Actual Machine ·
-//     Operator · Start · Finish · Accepted · Rejected · QC/Report · Logged By.
+//     Operator · Start · Finish · Accepted · Rejected · Logged By.
 //     Plan is jc_ops.machine_id; Actual is who made the pieces (ADR-164).
 //     "Logged By" is the SYSTEM user who booked the entries — the person
 //     accountable for the record — not the shop-floor operator, who has his
@@ -28,6 +28,7 @@ import type { Company, JcOpEnriched, JobCardListItem } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtDate } from '@/lib/date';
 import { buildDocCompany } from '@/lib/print/company';
 import { esc } from '@/lib/print/doc-print';
 import { openSheetHtmlWindow, sheetLetterheadHtml } from '@/lib/print/sheet-print';
@@ -39,12 +40,10 @@ const COLS = 6;
 // room on paper for a step added on the floor.
 const BLANK_OP_ROWS = 4;
 
-// dd-MM-yyyy with no TZ shift; null-safe (mirrors legacy fmt()). Blank, not a
-// dash, on the traveller: an empty cell is where a hand writes the date.
+// The one shared DD-MMM-YYYY format. Blank, not a dash, on the traveller: an
+// empty cell is where a hand writes the date.
 function fmt(d: string | null | undefined): string {
-  if (!d) return '';
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : d;
+  return fmtDate(d, '');
 }
 
 /** One label / value row. The rule under it runs the full column width — from
@@ -85,13 +84,12 @@ function opRow(o: JcOpEnriched): string {
     <td class="c">${fmt(o.lastLogDate)}</td>
     <td class="c b">${okQty > 0 ? okQty : ''}</td>
     <td class="c">${rej > 0 ? rej : ''}</td>
-    <td></td>
     <td>${esc(o.entryDoneBy ?? '')}</td>
   </tr>`;
 }
 
 function blankRow(seq: number): string {
-  return `<tr class="hand"><td class="c">${opSrNo(seq)}</td>${'<td></td>'.repeat(10)}</tr>`;
+  return `<tr class="hand"><td class="c">${opSrNo(seq)}</td>${'<td></td>'.repeat(9)}</tr>`;
 }
 
 // Everything the traveller needs beyond SHEET_STYLE. Sizes follow the sheet:
@@ -155,7 +153,7 @@ export function printJobCard(args: {
 
   const so = jc.sourceLink?.type === 'so' ? jc.sourceLink : null;
   const soNo = jc.sourceLink?.code ?? '';
-  // Two different line numbers, never one. `SO Line` is OUR line on the sales
+  // Two different line numbers, never one. `Ln` is OUR line on the sales
   // order; `POL` is the line number on the CUSTOMER'S purchase order, which
   // does not have to match (our line 11 can be their line 20).
   const soLine = so ? String(so.lineNo) : '';
@@ -197,7 +195,6 @@ export function printJobCard(args: {
       <th style="width:16mm">End<br>Date</th>
       <th style="width:11mm">Accepted</th>
       <th style="width:13mm">Rejected</th>
-      <th style="width:20mm">QC / Report</th>
       <th style="width:22mm">Logged By</th>
     </tr></thead>
     <tbody>${rows}</tbody>
@@ -206,7 +203,7 @@ export function printJobCard(args: {
   const trace = `<div class="jsec">Material / Traceability &nbsp;·&nbsp; NC / Rework References</div>
     <div class="jtrace">
       <div>${fact('Material Grade', jc.rawMaterialGradeText ?? '')}${fact('Actual Size', args.actualSize ?? '')}${fact('Heat / Lot No.', '')}</div>
-      <div>${fact('NC No.', jc.parentNcCode ?? '')}${fact('Rework JC', '')}</div>
+      <div>${fact('NC No.', jc.parentNcCode ?? '')}</div>
     </div>`;
 
   const signs = `<div class="jsign">

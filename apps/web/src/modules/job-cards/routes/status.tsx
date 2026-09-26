@@ -27,7 +27,7 @@ function JobCardStatusPage(): React.JSX.Element {
   if (eff && !effectiveFormPerms(eff, 'jc_create').view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Job Cards. Ask an admin.
       </div>
     );
   }

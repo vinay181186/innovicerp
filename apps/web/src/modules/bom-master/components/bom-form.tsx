@@ -47,12 +47,12 @@ const STATUS_LABEL: Record<BomFormHeaderDraft['status'], string> = {
   draft: 'Draft',
   obsolete: 'Obsolete',
 };
-
+/** Status → the theme's badge colour — same as StatusBadge kind 'bom' (green live, grey otherwise). */
 /** Status → the theme's badge colour (green live · amber draft · red retired). */
 const STATUS_BADGE: Record<BomFormHeaderDraft['status'], string> = {
   active: 'b-green',
-  draft: 'b-amber',
-  obsolete: 'b-red',
+  draft: 'b-grey',
+  obsolete: 'b-grey',
 };
 
 /** A part row while the parent is unset: inert, not hidden (see below). */
@@ -99,12 +99,12 @@ type ExcelRowErrorKind =
 
 const ERROR_KIND_LABEL: Record<ExcelRowErrorKind, string> = {
   blank_code: 'Item Code is blank',
-  not_found: 'item code not in Item Master',
-  lookup_failed: 'could not be checked — try again',
-  parent_as_child: 'the parent item cannot be its own part',
-  duplicate: 'the same item appears more than once',
-  bad_qty: 'Qty / Set must be a number greater than 0',
-  bad_type: 'BOM Type must be Manufacture, Purchase or Outsource',
+  not_found: 'Item Code not in Item Master',
+  lookup_failed: 'Could not check. Try again',
+  parent_as_child: 'Parent item cannot be its own part',
+  duplicate: 'Same item listed more than once',
+  bad_qty: 'Qty / Set must be greater than 0',
+  bad_type: 'BOM Type must be manufacture, purchase or outsource',
 };
 
 interface ExcelRowError {
@@ -134,7 +134,7 @@ interface BomFormProps {
 // "🏭 Outsource" read as the same option at a glance.
 const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = [
   { value: 'manufacture', label: 'Manufacture' },
-  { value: 'purchase', label: 'Purchase' },
+  { value: 'purchase', label: 'Buy' },
   { value: 'outsource', label: 'Outsource' },
 ];
 
@@ -145,11 +145,12 @@ const VALID_BOM_TYPES = new Set<BomLineType>(['manufacture', 'purchase', 'outsou
 // reads — so a column can never be validated under one name and then read under
 // another.
 const CODE_ALIASES = ['item_code', 'Item Code', 'code'];
-const QTY_ALIASES = ['qty_per_set', 'Qty Per Set', 'qty', 'qty/set'];
+// 'Qty / Set' is the template header; the older spellings still import.
+const QTY_ALIASES = ['qty_per_set', 'Qty / Set', 'Qty Per Set', 'qty', 'qty/set'];
 const TYPE_ALIASES = ['bom_type', 'BOM Type', 'Type'];
 const REQUIRED_COLUMNS: ReadonlyArray<{ label: string; aliases: string[] }> = [
   { label: 'Item Code', aliases: CODE_ALIASES },
-  { label: 'Qty Per Set', aliases: QTY_ALIASES },
+  { label: 'Qty / Set', aliases: QTY_ALIASES },
   { label: 'BOM Type', aliases: TYPE_ALIASES },
 ];
 
@@ -381,7 +382,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     // 3 columns + a sample row so users know the shape.
     const aoa = [
       // Title Case headers; the importer's aliases still read item_code / qty_per_set / bom_type.
-      ['Item Code', 'Qty Per Set', 'BOM Type'],
+      ['Item Code', 'Qty / Set', 'BOM Type'],
       ['EXAMPLE-001', 2, 'manufacture'],
       ['EXAMPLE-002', 3, 'purchase'],
     ];
@@ -418,7 +419,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // once, at the top, with the right template one click away.
       if (rows.length === 0) {
         throw new Error(
-          `Sheet "${sheetName}" has no data rows. Put your rows under the header row of the template.`,
+          `Sheet "${sheetName}" has no rows. Put your rows under the template's header row.`,
         );
       }
       const headerKeys = new Set(Object.keys(rows[0] ?? {}));
@@ -427,10 +428,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       );
       if (missingColumns.length > 0) {
         throw new Error(
-          `Import template is not valid — missing column${missingColumns.length === 1 ? '' : 's'}: ` +
+          `Missing column${missingColumns.length === 1 ? '' : 's'}: ` +
             `${missingColumns.map((c) => c.label).join(', ')}. ` +
             `Sheet "${sheetName}" has: ${Array.from(headerKeys).join(', ') || '(no columns)'}. ` +
-            `Download the template, put your rows into it, and import that.`,
+            `Use the Template.`,
         );
       }
 
@@ -443,11 +444,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         rows.length > 0 && rows.every((r) => /^EXAMPLE-\d+$/i.test(getCol(r, CODE_ALIASES).trim()));
       if (onlySampleRows) {
         throw new Error(
-          `Sheet "${sheetName}" still contains only the sample rows (EXAMPLE-001 / EXAMPLE-002). ` +
-            `Replace them with your own rows on that sheet` +
-            ((sheetNames?.length ?? 0) > 1
-              ? ` — this workbook has ${sheetNames!.length} sheets (${sheetNames!.join(', ')}) and only the first is read.`
-              : '.'),
+          `Sheet "${sheetName}" has only the sample rows (EXAMPLE-001 / EXAMPLE-002). ` +
+            `Replace them with your own rows` +
+            ((sheetNames?.length ?? 0) > 1 ? ` — only the first sheet is read.` : '.'),
         );
       }
       const sheetNote =
@@ -505,7 +504,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               rowIndex: idx,
               itemCode,
               kind: 'lookup_failed',
-              reason: 'could not be checked. Try the import again.',
+              reason: 'Could not check. Try the import again.',
             });
             return;
           }
@@ -529,7 +528,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'parent_as_child',
-            reason: 'is the parent item of this BOM, so it cannot be one of its parts.',
+            reason: 'Parent item cannot be its own part.',
           });
           return;
         }
@@ -539,7 +538,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'duplicate',
-            reason: `is already on row ${firstRow + 2}.`,
+            reason: `Already on row #${firstRow + 2}.`,
           });
           return;
         }
@@ -549,7 +548,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'duplicate',
-            reason: `is already part ${onFormAt + 1} in the list below.`,
+            reason: `Already on line #${onFormAt + 1} below.`,
           });
           return;
         }
@@ -568,7 +567,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'bad_type',
-            reason: 'BOM Type must be Manufacture, Purchase or Outsource.',
+            reason: 'BOM Type must be manufacture, purchase or outsource.',
           });
           return;
         }
@@ -614,7 +613,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   }, [importErrors]);
 
   const errorLines = (): string[] =>
-    importErrors.map((e) => `Row ${e.rowIndex + 2}: ${e.itemCode} — ${e.reason}`);
+    importErrors.map((e) => `Row #${e.rowIndex + 2}: ${e.itemCode} — ${e.reason}`);
 
   const [copiedErrors, setCopiedErrors] = useState(false);
   const copyErrors = async (): Promise<void> => {
@@ -685,15 +684,15 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   };
 
   const validationError = useMemo(() => {
-    if (!header.bomName.trim()) return 'BOM Name is required';
+    if (!header.bomName.trim()) return 'BOM Name is required.';
     // Parent before parts — it is the thing the parts add up to, and the part
     // list is locked until it is set, so complain about it first.
     if (!resolvedParentId) {
       return header.parentItemCodeText.trim()
-        ? `Parent item: "${header.parentItemCodeText.trim()}" is not an item code in the master — pick the item from the dropdown list.`
-        : 'Pick the parent item this BOM builds before adding parts.';
+        ? `Parent Item Code "${header.parentItemCodeText.trim()}" is not in Item Master. Pick it from the list.`
+        : 'Parent Item Code is required.';
     }
-    if (resolvedLines.length === 0) return 'Add at least one item to the BOM';
+    if (resolvedLines.length === 0) return 'Add at least one child item.';
     const itemIds = new Map<string, number>();
     for (let i = 0; i < resolvedLines.length; i++) {
       const l = resolvedLines[i]!;
@@ -701,24 +700,24 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         // Say what to DO. The old text implied the code was wrong, when the
         // usual cause is a code typed but never selected from the list.
         return l.childItemCodeText.trim()
-          ? `Line ${i + 1}: "${l.childItemCodeText.trim()}" is not an item code in the master — pick the item from the dropdown list.`
-          : `Line ${i + 1}: pick an item from the dropdown list.`;
+          ? `Row #${i + 1}: Item Code "${l.childItemCodeText.trim()}" is not in Item Master. Pick it from the list.`
+          : `Row #${i + 1}: Item Code is required.`;
       }
       if (l.childItemId === resolvedParentId) {
         const code = l.childItemCodeText.trim() || parentItem?.code || 'this item';
-        return `Line ${i + 1}: ${code} is the parent item, so it cannot also be one of its own parts. Remove this line, or pick a different parent.`;
+        return `Row #${i + 1}: Item Code ${code} is the parent item and cannot be its own part.`;
       }
       const firstLine = itemIds.get(l.childItemId);
       if (firstLine !== undefined) {
         // Name the part and both lines. "duplicate item code" alone left the
         // user hunting for which two rows collided in a 20-part BOM.
         const code = l.childItemCodeText.trim() || itemById.get(l.childItemId)?.code || 'this item';
-        return `Line ${i + 1}: duplicate item code — ${code} is already on line ${firstLine + 1}. A BOM can list a part only once; remove one line, or put the combined quantity on a single line.`;
+        return `Row #${i + 1}: Item Code ${code} is already on row #${firstLine + 1}.`;
       }
       itemIds.set(l.childItemId, i);
       const qty = Number(l.qtyPerSet);
       if (!Number.isFinite(qty) || qty <= 0) {
-        return `Line ${i + 1}: Qty / Set must be greater than 0.`;
+        return `Row #${i + 1}: Qty / Set must be greater than 0.`;
       }
     }
     return null;
@@ -757,11 +756,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       l: lines,
     }) !== initialSnapshot.current;
 
-  const saveLabel = submitting
-    ? 'Saving…'
-    : mode === 'create'
-      ? 'Save BOM'
-      : `Save as BOM Rev ${nextRevision}`;
+  const saveLabel = submitting ? 'Saving…' : mode === 'create' ? 'Save BOM' : 'Save Changes';
 
   // Child grid: # · Item Code · Item Name · Qty / Set · BOM Type · (remove).
   const childCols = 6;
@@ -778,7 +773,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             </span>
             {mode === 'edit' ? (
               <span className="badge b-grey">
-                BOM REV {bom?.revision ?? 1} → {nextRevision}
+                BOM Rev {bom?.revision ?? 1} → {nextRevision}
               </span>
             ) : null}
           </span>
@@ -812,13 +807,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       {/* ── BOM header ─────────────────────────────────────────────────── */}
       <Panel title="BOM Details">
         <FormGrid>
-          <FormField
-            label="BOM No."
-            required
-            size="sm"
-            htmlFor="bom-no"
-            help="Auto-generated · editable"
-          >
+          <FormField label="BOM No." required size="sm" htmlFor="bom-no">
             <input
               id="bom-no"
               className="innovic-input mono"
@@ -827,13 +816,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : 'BOM-0001'}
             />
           </FormField>
-          <FormField
-            label="BOM Name"
-            required
-            size="md"
-            htmlFor="bom-name"
-            help="Shown across production and planning screens"
-          >
+          <FormField label="BOM Name" required size="md" htmlFor="bom-name">
             <input
               id="bom-name"
               className="innovic-input"
@@ -842,15 +825,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               placeholder="e.g. Hydraulic Press Assembly"
             />
           </FormField>
-          <FormField
-            label="BOM Status"
-            size="sm"
-            htmlFor="bom-status"
-            help="Only Active BOMs attach to sales orders"
-          >
+          <FormField label="BOM Status" size="sm" htmlFor="bom-status">
             <select
               id="bom-status"
               className="innovic-select"
+              title="Only Active BOMs attach to sales orders"
               value={header.status}
               onChange={(e) =>
                 setHeader({ ...header, status: e.target.value as BomFormHeaderDraft['status'] })
@@ -861,7 +840,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               <option value="obsolete">Obsolete</option>
             </select>
           </FormField>
-          <FormField label="BOM Rev" size="xs" htmlFor="bom-rev" help="Increments on each release">
+          <FormField label="BOM Rev" size="xs" htmlFor="bom-rev">
             <input
               id="bom-rev"
               className="innovic-input mono is-derived"
@@ -965,15 +944,6 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                     marginTop: 'var(--sp-1)',
                   }}
                 >
-                  {importFatal ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => void downloadTemplate()}
-                    >
-                      <Download size={12} /> Download template
-                    </button>
-                  ) : null}
                   {importErrors.length > 0 ? (
                     <>
                       <button
@@ -1004,12 +974,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                       className="btn btn-ghost btn-sm"
                       onClick={() => void downloadMissingItemsSheet()}
                     >
-                      <Download size={12} /> Download {missingCodes.length} missing code
-                      {missingCodes.length === 1 ? '' : 's'} as an Item Master import sheet
+                      <Download size={12} /> Download {missingCodes.length} missing Item Code
+                      {missingCodes.length === 1 ? '' : 's'} for Item Master import
                     </button>
                     <div style={{ marginTop: 4 }}>
-                      Fill in the Name column, import it on Item Master, then run this BOM import
-                      again.
+                      Import them on Item Master, then import this BOM again.
                     </div>
                   </div>
                 ) : null}
@@ -1033,7 +1002,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   >
                     {importErrors.map((err, i) => (
                       <li key={i}>
-                        Row {err.rowIndex + 2}: {err.itemCode} — {err.reason}
+                        Row #{err.rowIndex + 2}: {err.itemCode} — {err.reason}
                       </li>
                     ))}
                   </ol>
@@ -1051,7 +1020,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             <thead>
               <tr>
                 <th className="th-num" style={{ width: 44 }}>
-                  #
+                  Sr No
                 </th>
                 <th style={{ minWidth: 160 }}>
                   Item Code<span className="req">★</span>
@@ -1070,7 +1039,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   <td colSpan={childCols} className="empty-state">
                     {parentLocked
                       ? 'Locked — pick the parent item above first.'
-                      : 'No parts yet. Use + Add child item below.'}
+                      : 'No child items yet.'}
                   </td>
                 </tr>
               ) : null}
@@ -1174,7 +1143,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                           <RawMaterialGroup>
                             <div className="form-grp">
                               <label className="form-label" htmlFor={`bom-line-grade-${idx}`}>
-                                Grade
+                                RM Grade
                               </label>
                               <MaterialGradePicker
                                 id={`bom-line-grade-${idx}`}
@@ -1190,7 +1159,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                             </div>
                             <div className="form-grp">
                               <label className="form-label" htmlFor={`bom-line-size-${idx}`}>
-                                Size
+                                RM Size
                               </label>
                               <MaterialSizePicker
                                 id={`bom-line-size-${idx}`}
@@ -1227,7 +1196,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             title={parentLocked ? 'Pick the parent item first' : undefined}
             onClick={addLine}
           >
-            <Plus size={14} /> Add child item
+            <Plus size={14} /> Add Child Item
           </button>
           {/* Template stays open even while locked — you may well want the empty
               sheet before you have decided the parent. */}
@@ -1267,7 +1236,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           title="Revision Note"
           actions={
             <span className="badge b-grey">
-              BOM REV {bom?.revision ?? 1} → {nextRevision}
+              BOM Rev {bom?.revision ?? 1} → {nextRevision}
             </span>
           }
         >
@@ -1279,11 +1248,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               aria-label="Revision Note"
               value={revisionNote}
               onChange={(e) => setRevisionNote(e.target.value)}
-              placeholder="Auto-generated on save. You can edit…"
+              placeholder="Optional — auto-filled if blank"
             />
-            <div className="form-help">
-              Generated from what changed when you save. Edit it first if you want your own wording.
-            </div>
           </div>
         </Panel>
       ) : null}

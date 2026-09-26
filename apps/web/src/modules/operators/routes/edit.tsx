@@ -60,7 +60,7 @@ function OperatorNewPage(): React.JSX.Element {
         <div className="panel-body">
           <div style={{ marginBottom: 8 }}>
             <Link to="/operators" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back to Operator Master
+              <ArrowLeft size={14} /> Back
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
@@ -76,7 +76,7 @@ function OperatorNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <Link to="/operators" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Operator Master
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="panel">
         <div className="panel-hdr">
@@ -140,7 +140,7 @@ function OperatorEditPage(): React.JSX.Element {
         <div className="panel-body">
           <div style={{ marginBottom: 8 }}>
             <Link to="/operators" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back to Operator Master
+              <ArrowLeft size={14} /> Back
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
@@ -186,7 +186,7 @@ function OperatorEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to operator
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="panel">
         <div className="panel-hdr">

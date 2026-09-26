@@ -90,7 +90,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Production Orders. Ask an admin.
       </div>
     );
   }
@@ -115,11 +115,11 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       {/* DetailHeader layout: Back link, code + status, one shortcut to the
           order's Job Card, and Short Close in the Actions menu (red, last). */}
       <DetailHeader
-        backLabel="Back to Production Orders"
+        backLabel="Back"
         backTo="/production-orders"
         renderLink={(p) => <Link {...p} />}
         code={data.code}
-        name="🏭 Production Order"
+        name="Production Order"
         badges={<PoStatusBadge status={data.status} />}
         actions={
           <>
@@ -134,7 +134,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 {
-                  label: '⛔ Short Close',
+                  label: 'Short Close',
                   danger: true,
                   hidden: !showShortCloseButton,
                   title:
@@ -163,7 +163,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         ) : null}
 
         <div className="form-grid form-grid-4">
-          <Fact label="Plan">
+          <Fact label="Plan No.">
             <Link
               to="/plans/$id"
               params={{ id: data.planId }}
@@ -177,7 +177,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             {data.soCodeText ? (
               <>
                 {data.soCodeText}
-                {data.lineNo ? <span className="text3"> / line {data.lineNo}</span> : null}
+                {data.lineNo ? <span className="text3"> · Ln {data.lineNo}</span> : null}
               </>
             ) : (
               '—'
@@ -189,7 +189,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           </Fact>
 
           {/* POL — the line number printed on the CUSTOMER's own purchase
-                order. NOT our SO line number ("/ line n" above); on live data
+                order. NOT our SO line number ("Ln n" above); on live data
                 our line 11 is the customer's line 20. Sits before the item
                 code, as on every other document. */}
           <Fact label="POL" mono>
@@ -265,13 +265,13 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         </div>
       </DetailHeader>
 
-      {/* ADR-182 — the order was stopped. Red and high on the page, because it
-          changes what every panel under it means. */}
+      {/* ADR-182 — the order was stopped. High on the page, because it changes
+          what every panel under it means. Grey, like its Short Closed badge. */}
       {stopped ? (
-        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--red)' }}>
+        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--text3)' }}>
           <div className="panel-hdr">
-            <div className="panel-title" style={{ color: 'var(--red2)' }}>
-              ⛔ Short closed on {fmtDate(data.shortClosedAt)} by {data.shortClosedByName ?? '—'} —{' '}
+            <div className="panel-title">
+              Short Closed on {fmtDate(data.shortClosedAt)} by {data.shortClosedByName ?? '—'} —{' '}
               {data.shortCloseReason ?? '—'}
             </div>
           </div>
@@ -289,11 +289,11 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       <div className="panel" style={{ marginTop: 12 }}>
         <div className="panel-hdr">
           <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            ▭ Job Card progress
+            Job Card Progress
             {data.jcComputedStatus ? (
               <JcStatusBadge status={data.jcComputedStatus} />
             ) : (
-              <span className="badge b-grey">no job card</span>
+              <span className="badge b-grey">No Job Card</span>
             )}
           </div>
           <div
@@ -301,7 +301,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             style={{ fontSize: 14, color: 'var(--text)', cursor: 'help' }}
             title="Finished qty = output of the Job Card's last op (QC-accepted if it is QC). Close credits this qty to stock."
           >
-            {data.jcFinishedQty} <span className="text3">/ {data.orderQty} ?</span>
+            {data.jcFinishedQty} <span className="text3">/ {data.orderQty}</span>
           </div>
         </div>
         <div className="panel-body">
@@ -334,7 +334,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       {showCloseForm ? (
         <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--cyan)' }}>
           <div className="panel-hdr">
-            <div className="panel-title">🔒 Close Production Order</div>
+            <div className="panel-title">Close Production Order</div>
           </div>
           <div className="panel-body">
             <PoCloseForm po={data} />
@@ -346,7 +346,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       {data.closes.length > 0 ? (
         <div className="panel" style={{ marginTop: 12 }}>
           <div className="panel-hdr">
-            <div className="panel-title">📒 Close ledger ({data.closes.length})</div>
+            <div className="panel-title">Close Ledger ({data.closes.length})</div>
             <div className="mono fw-700" style={{ fontSize: 13, color: 'var(--text)' }}>
               {data.creditedQty ?? 0} <span className="text3">/ {data.orderQty} credited</span>
             </div>

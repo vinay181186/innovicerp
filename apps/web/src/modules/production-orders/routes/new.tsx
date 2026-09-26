@@ -142,13 +142,16 @@ function ProductionOrderNewPage(): React.JSX.Element {
     : pendingQty === 0
       ? `Plan ${plan.code} is fully covered by its Production Orders (${plan.planQty} of ${plan.planQty}).`
       : orderQtyText.trim() === ''
-        ? 'Type how many pieces this order is for.'
+        ? 'Order Qty is required.'
         : !orderQtyValid
-          ? `Order Qty must be between 1 and ${pendingQty} — that is all this plan has Pending.`
+          ? orderQty > pendingQty
+            ? `Order Qty cannot be more than Pending (${pendingQty}).`
+            : 'Order Qty must be a whole number greater than 0.'
           : null;
   // The server's exact words, said here first so the user never meets it as an
   // error after a click (production-orders/service.ts).
-  const NO_RAW_MATERIAL = 'No raw material — you cannot create the production order.';
+  const NO_RAW_MATERIAL =
+    'Raw Material Available is required. Tick it once the store confirms the material.';
 
   const canSubmit =
     Boolean(plan) &&
@@ -189,15 +192,15 @@ function ProductionOrderNewPage(): React.JSX.Element {
 
   // Why Save is off — the header button's tooltip.
   const saveBlockedReason = !plan
-    ? 'Pick a plan first'
+    ? 'Plan is required.'
     : noRouteCard
-      ? 'No route card for this item'
+      ? 'No Route Card for this item.'
       : !routeCardId
-        ? 'Pick the route card'
+        ? 'Route Card is required.'
         : directPurchase
-          ? 'Direct-purchase items cannot raise a Production Order'
+          ? 'Buy item — no Production Order.'
           : !targetDate
-            ? 'Set the customer dispatch date'
+            ? 'Customer Dispatch Date is required.'
             : orderQtyError
               ? orderQtyError
               : !rawMaterialAvailable
@@ -229,12 +232,11 @@ function ProductionOrderNewPage(): React.JSX.Element {
         <div className="panel-body">
           <div style={{ marginBottom: 8 }}>
             <Link to="/production-orders" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back to Production Orders
+              <ArrowLeft size={14} /> Back
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have create access to Production Orders. Ask an admin for L2 Data Entry or
-            above in Production.
+            You do not have permission to create Production Orders. Ask an admin.
           </div>
         </div>
       </div>
@@ -246,14 +248,13 @@ function ProductionOrderNewPage(): React.JSX.Element {
       {exit.dialog}
       <PageHeader
         sticky
-        icon="🏭"
-        title="Create Production Order"
+        title="New Production Order"
         subtitle={
           <span className="td-code">
             {nextCode.data?.code ?? (nextCode.isLoading ? '…' : 'IN-PRO-?????')}
           </span>
         }
-        backLabel="Back to Production Orders"
+        backLabel="Back"
         onBack={goBack}
         actions={
           <>
@@ -281,7 +282,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
       {/* What stops Save, under the header where the Save button is. */}
       {noRouteCard ? (
         <Banner tone="warn" role="alert">
-          ⚠ No route card for this item —{' '}
+          ⚠ No Route Card for this item —{' '}
           <Link to="/route-cards/new" search={newRouteCardSearch} className="fw-700">
             create it
           </Link>{' '}
@@ -290,14 +291,12 @@ function ProductionOrderNewPage(): React.JSX.Element {
       ) : null}
       {directPurchase ? (
         <Banner tone="warn" role="alert">
-          ⚠ Direct-purchase items are bought, not produced — this route card cannot raise a
-          Production Order.
+          ⚠ Item {planItemCode ?? ''} is a Buy item — no Production Order.
         </Banner>
       ) : null}
       {!rawMaterialAvailable ? (
         <Banner tone="error" role="alert">
-          ⛔ {NO_RAW_MATERIAL} Tick <span className="fw-700">Raw material available</span> once the
-          store has confirmed it.
+          {NO_RAW_MATERIAL}
         </Banner>
       ) : null}
       {submitError ? (
@@ -313,7 +312,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
         <div className="form-grid-12">
           <div className="form-grp f-sm">
             <label className="form-label" htmlFor="po-code">
-              Production Order No
+              Production Order No.
             </label>
             <input
               id="po-code"
@@ -369,10 +368,10 @@ function ProductionOrderNewPage(): React.JSX.Element {
                 {!plan
                   ? 'Pick a plan first'
                   : routeCards.isLoading
-                    ? 'Loading route cards…'
+                    ? 'Loading Route Cards…'
                     : noRouteCard
-                      ? 'No route card for this item'
-                      : 'Select route card…'}
+                      ? 'No Route Card for this item'
+                      : 'Select Route Card…'}
               </option>
               {rcItems.map((rc) => (
                 <option key={rc.id} value={rc.id}>
@@ -391,7 +390,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                 {routeCard.opCount === 0 ? (
                   <span style={{ color: 'var(--amber2)' }}>
                     {' '}
-                    — this route card has no operations; add them before creating the JC.
+                    — no operations yet. Add them on the Route Card first.
                   </span>
                 ) : null}
               </div>
@@ -449,7 +448,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
               words, so the screen says them first. */}
           <div className="form-grp f-full">
             <span className="form-label">
-              Raw material available<span className="req">★</span>
+              Raw Material Available<span className="req">★</span>
             </span>
             <label
               htmlFor="po-rm-available"
@@ -498,7 +497,7 @@ function PlanTypeChip({ planType }: { planType: PlanType }): React.JSX.Element {
     planType === 'full_outsource'
       ? 'Full Outsource'
       : planType === 'direct_purchase'
-        ? 'Direct Purchase'
+        ? 'Buy'
         : planType === 'assembly'
           ? 'Assembly'
           : 'Manufacture';
@@ -530,7 +529,7 @@ function PlanTypeChip({ planType }: { planType: PlanType }): React.JSX.Element {
 /** Read-only recap of the picked plan — what the JC will be built for. */
 function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
   const so = plan.soCodeText
-    ? `${plan.soCodeText}${plan.lineNo ? ` / line ${plan.lineNo}` : ''}`
+    ? `${plan.soCodeText}${plan.lineNo ? ` · Ln ${plan.lineNo}` : ''}`
     : '—';
   return (
     <div
@@ -543,11 +542,11 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
     >
       <div className="form-grid form-grid-4" style={{ gap: 8 }}>
         {/* POL — the line number printed on the CUSTOMER's own purchase order.
-            NOT the "/ line n" in SO / JWSO below, which is OUR line number. */}
+            NOT the "Ln n" in SO / JWSO below, which is OUR line number. */}
         <Fact label="POL" value={plan.clientPoLineNo ?? '—'} mono />
         {/* CODE/REV (ADR-177); bare code when the plan's line has no revision. */}
         <Fact
-          label="Item"
+          label="Item Code"
           value={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
           mono
         />
@@ -559,13 +558,13 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
         <Fact label="Covered" value={String(plan.coveredQty)} mono />
         <Fact label="Pending" value={String(plan.pendingQty)} mono />
         <Fact label="SO / JWSO No." value={so} mono />
-        <Fact label="Planned Start" value={fmtDate(plan.plannedStartDate)} mono />
-        <Fact label="Planned End" value={fmtDate(plan.plannedEndDate)} mono />
+        <Fact label="Planned Start Date" value={fmtDate(plan.plannedStartDate)} mono />
+        <Fact label="Planned End Date" value={fmtDate(plan.plannedEndDate)} mono />
         <Fact label="RM Grade" value={plan.rawMaterialGradeText ?? '—'} />
         <Fact label="RM Size" value={plan.rawMaterialSizeText ?? '—'} />
         {plan.remarks ? (
           <div className="form-full">
-            <Fact label="Plan Remark" value={plan.remarks} />
+            <Fact label="Plan Remarks" value={plan.remarks} />
           </div>
         ) : null}
       </div>
@@ -576,10 +575,7 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
 function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
-      <div
-        className="text3"
-        style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}
-      >
+      <div className="text3" style={{ fontSize: 11 }}>
         {label}
       </div>
       <div

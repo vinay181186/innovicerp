@@ -448,7 +448,7 @@ function JcStatusEditForm({
     });
     // Never leave the new line hidden behind a collapsed section.
     setDetailOpen(true);
-    const kindLabel = kind === 'qc' ? 'QC' : kind === 'outsource' ? 'OSP' : 'machining';
+    const kindLabel = kind === 'qc' ? 'QC' : kind === 'outsource' ? 'Outsource' : 'Machining';
     const need =
       kind === 'qc'
         ? 'pick the QC process'
@@ -457,7 +457,7 @@ function JcStatusEditForm({
           : 'pick a machine and operation name';
     setFlashIdx(newPos - 1);
     scrollToNewOp.current = true;
-    setAddNote(`✅ Op line #${newPos} (${kindLabel}) added below — now ${need}, then Save.`);
+    setAddNote(`Op ${fmtOpSrNo(newPos)} (${kindLabel}) added — ${need}, then Save.`);
   };
 
   const submitting = update.isPending;
@@ -659,8 +659,6 @@ function JcStatusEditForm({
             fontSize: 11,
             color: 'var(--cyan)',
             fontWeight: 700,
-            letterSpacing: '.08em',
-            textTransform: 'uppercase',
             marginBottom: 8,
             padding: 0,
           }}
@@ -689,7 +687,7 @@ function JcStatusEditForm({
             style={{ color: 'var(--amber2)', border: '1px solid rgba(245,158,11,0.4)' }}
             onClick={() => addOp('outsource')}
           >
-            + Add OSP Op
+            + Add Outsource Op
           </button>
         </div>
       </div>
@@ -730,9 +728,7 @@ function JcStatusEditForm({
         <div style={{ marginBottom: 16 }}>
           {ops.length === 0 ? (
             <div className="panel">
-              <div className="empty-state">
-                No operations — click “+ Add Op”, “+ Add QC Op”, or “+ Add OSP Op”.
-              </div>
+              <div className="empty-state">No operations yet.</div>
             </div>
           ) : (
             ops.map((o, i) => {
@@ -791,7 +787,7 @@ function JcStatusEditForm({
           style={{
             color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--red)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,
@@ -834,9 +830,8 @@ function JcStatusEditForm({
             const idx = balanceOpIdx;
             const op = ops[idx];
             if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
-            setBalanceNote(
-              `Outsourced ${qtyDone} pc(s) from Op${fmtOpSrNo(idx + 1)} — JW OSP purchase request raised.`,
-            );
+            const seq = (op?.id ? enrichedById.get(op.id)?.opSeq : undefined) ?? idx + 1;
+            setBalanceNote(`Outsource PR raised for ${qtyDone} pcs (Op ${fmtOpSrNo(seq)}).`);
             setBalanceOpIdx(null);
           }}
         />

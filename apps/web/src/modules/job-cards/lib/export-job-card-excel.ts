@@ -82,7 +82,6 @@ export function exportJobCardExcel(args: {
     // no SO line behind it, and `itemCodeWithRev` then leaves the code bare
     // rather than printing a trailing slash.
     ['Item Code', itemCodeWithRev(jc.itemCode, jc.itemRevision)],
-    ['Drawing Rev', jc.itemRevision ?? ''],
     ['Item Name', jc.itemName || ''],
     ['SO / JWSO No.', jc.sourceLink?.code ?? ''],
     ['Ln', jc.sourceLink?.lineNo ?? ''],
@@ -105,7 +104,7 @@ export function exportJobCardExcel(args: {
     // "Planned Machine" unless the operator ran the op elsewhere.
     'Actual Machine',
     'Operation',
-    'Cycle (min)',
+    'Cycle Time (min)',
     'Program',
     'Tool No.',
     'Order Qty',

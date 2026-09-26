@@ -82,8 +82,7 @@ function RouteCardEditPage(): React.JSX.Element {
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have edit access to Route Cards. Ask an admin for L2 Data Entry or above in
-        Design.
+        You do not have permission to edit Route Cards. Ask an admin.
       </div>
     );
   }

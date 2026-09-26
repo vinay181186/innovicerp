@@ -38,8 +38,7 @@ function JobCardEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
-          ⛔ You do not have edit access to Job Cards. Ask an admin for L3 Editor or above in
-          Production.
+          You do not have permission to edit Job Cards. Ask an admin.
         </div>
       </div>
     );
