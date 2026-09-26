@@ -40,7 +40,10 @@ import {
   recalcPoLineReceivedQty,
   resolveGrnLineJobCardId,
 } from '../goods-receipt-notes/cascades';
-import { autoCreateNcFromQcReject } from '../nc-register/cascades';
+import {
+  autoCreateMaterialNcFromIqcReject,
+  autoCreateNcFromQcReject,
+} from '../nc-register/cascades';
 import { onNcReplacementQc, onRecoveryJobCardQc } from '../nc-register/recovery';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
@@ -546,7 +549,11 @@ export async function submitIncomingQc(
           isNull(goodsReceiptNoteLines.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      // ADR-189 — lock the line: two inspectors submitting at once must not both
+      // read the same QC Pending and each credit stock for it. The second waits
+      // here and re-reads the first one's figures.
+      .for('update');
     const line = rows[0];
     if (!line) throw new NotFoundError('GRN line not found. Refresh the page.');
 
@@ -731,6 +738,24 @@ export async function submitIncomingQc(
             // source op is outsourced), so the pieces were made by the vendor,
             // not on an in-house machine — machineCodeText stays null.
             machineCodeText: null,
+          },
+          user,
+        );
+      } else {
+        // ADR-189 — a bought-material reject (no job card behind the PO line):
+        // raise an NC with no job card so the rejected pieces are on record
+        // until they are scrapped or returned to the vendor.
+        await autoCreateMaterialNcFromIqcReject(
+          tx,
+          {
+            companyId,
+            grnLineId: line.id,
+            grnCode: line.grnCode,
+            lineNo: line.lineNo,
+            rejectedQty: input.rejectedQty,
+            ncDate: qcDate,
+            reportedByText: input.qcInspectedByName ?? null,
+            remarks: input.qcRemarks ?? null,
           },
           user,
         );

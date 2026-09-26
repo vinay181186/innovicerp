@@ -823,7 +823,7 @@ async function assertPurchaseOrderExists(
   companyId: string,
 ): Promise<void> {
   const rows = await tx
-    .select({ id: purchaseOrders.id })
+    .select({ id: purchaseOrders.id, code: purchaseOrders.code, status: purchaseOrders.status })
     .from(purchaseOrders)
     .where(
       and(
@@ -833,8 +833,19 @@ async function assertPurchaseOrderExists(
       ),
     )
     .limit(1);
-  if (rows.length === 0) {
+  const po = rows[0];
+  if (!po) {
     throw new ValidationError('Selected PO was not found. Please select the PO again.');
+  }
+  // ADR-189 — material goes out only against an approved, live PO (the GRN
+  // side already refuses a draft PO; a DC is the same commitment to a vendor).
+  if (po.status === 'draft') {
+    throw new ConflictError(`Cannot send material against PO ${po.code}: it is not approved yet.`);
+  }
+  if (po.status === 'cancelled' || po.status === 'closed') {
+    throw new ConflictError(
+      `PO ${po.code} is ${po.status === 'closed' ? 'Closed' : 'Cancelled'}. Nothing more can be sent against it.`,
+    );
   }
 }
 

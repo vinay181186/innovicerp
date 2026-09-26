@@ -100,8 +100,12 @@ export async function recalcPoLineReceivedQty(
       COALESCE((
         SELECT SUM(nc.rejected_qty - nc.cleared_qty - nc.failed_qty)
         FROM public.nc_register nc
-        JOIN public.jc_ops o ON o.id = nc.jc_op_id
-        WHERE o.outsource_po_line_id = ${poLineId}::uuid
+        LEFT JOIN public.jc_ops o ON o.id = nc.jc_op_id
+        -- ADR-189: a bought-material NC (no job card) reaches its PO line
+        -- through the GRN line it was rejected on.
+        LEFT JOIN public.goods_receipt_note_lines ngl ON ngl.id = nc.grn_line_id
+        WHERE (o.outsource_po_line_id = ${poLineId}::uuid
+               OR (nc.job_card_id IS NULL AND ngl.purchase_order_line_id = ${poLineId}::uuid))
           AND nc.disposition = 'return_to_vendor'
           AND nc.delivery_challan_id IS NOT NULL
           AND nc.deleted_at IS NULL
@@ -122,12 +126,19 @@ export async function recalcPoHeaderStatus(
 ): Promise<void> {
   // Pull the current header to check terminal/draft state.
   const headerRows = await tx
-    .select({ id: purchaseOrders.id, status: purchaseOrders.status })
+    .select({
+      id: purchaseOrders.id,
+      status: purchaseOrders.status,
+      shortClosedAt: purchaseOrders.shortClosedAt,
+    })
     .from(purchaseOrders)
     .where(eq(purchaseOrders.id, poId))
     .limit(1);
   const header = headerRows[0];
   if (!header) return;
+  // ADR-189 — a PO stopped by hand stays stopped: a late QC on its received
+  // lines must not walk it back to 'partial'.
+  if (header.shortClosedAt !== null) return;
   // Don't touch terminal or draft headers — the open/partial/qc_pending/closed
   // ladder only applies after the PO has been "opened" to vendors.
   if (header.status === 'cancelled' || header.status === 'draft') return;

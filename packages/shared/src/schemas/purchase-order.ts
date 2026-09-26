@@ -137,6 +137,12 @@ export const purchaseOrderSchema = z.object({
   rejectedBy: z.string().uuid().nullable(),
   rejectedAt: z.string().nullable(),
   rejectionReason: z.string().nullable(),
+  /** ADR-189 — set when an issued PO was stopped by hand (Short Close):
+   *  'closed' part-way (its PRs keep only what was received) or 'cancelled'
+   *  when nothing had been received or sent. */
+  shortClosedAt: z.string().nullable().default(null),
+  shortClosedBy: z.string().uuid().nullable().default(null),
+  shortCloseReason: z.string().nullable().default(null),
   remarks: z.string().nullable(),
   /** users.full_name of whoever raised the PO -- the "Contact Person" a
    *  vendor rings about it. `createdBy` alone is a uuid, which is useless on
@@ -373,3 +379,15 @@ export interface ListPurchaseOrdersResponse {
   limit: number;
   offset: number;
 }
+
+/** ADR-189 — stopping an issued PO is a recorded action with a reason a reader
+ *  can act on (ERPNext: Close / Cancel a Purchase Order). */
+export const PO_SHORT_CLOSE_REASON_MIN = 10;
+export const shortClosePurchaseOrderInputSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(PO_SHORT_CLOSE_REASON_MIN, `Give a reason (at least ${PO_SHORT_CLOSE_REASON_MIN} characters)`)
+    .max(500),
+});
+export type ShortClosePurchaseOrderInput = z.infer<typeof shortClosePurchaseOrderInputSchema>;

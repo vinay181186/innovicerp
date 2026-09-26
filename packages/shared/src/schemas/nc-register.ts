@@ -33,7 +33,9 @@ export const ncRegisterSchema = z.object({
   companyId: z.string().uuid(),
   code: z.string().min(1),
   ncDate: z.string(), // ISO date
-  jobCardId: z.string().uuid(),
+  /** ADR-189 — null for a bought-material reject raised by Incoming QC on a
+   *  GRN line that no job card stands behind (grnLineId is set instead). */
+  jobCardId: z.string().uuid().nullable(),
   jcOpId: z.string().uuid().nullable(),
   opSeq: z.number().int().nullable(),
   operationText: z.string().nullable(),

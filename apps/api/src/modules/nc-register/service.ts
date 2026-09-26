@@ -30,6 +30,7 @@ import {
   salesOrderLines,
   users,
   vendors,
+  goodsReceiptNoteLines,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
@@ -1633,11 +1634,14 @@ export async function createNcDc(
 
     // The parent card supplies the SO line; the item master the uom the line
     // needs; the origin op tells us whether a PO line is involved.
-    const jcRows = await tx
-      .select({ sourceSoLineId: jobCards.sourceSoLineId })
-      .from(jobCards)
-      .where(and(eq(jobCards.id, nc.jobCardId), eq(jobCards.companyId, companyId)))
-      .limit(1);
+    // ADR-189 — a bought-material NC has no card, hence no SO line.
+    const jcRows = nc.jobCardId
+      ? await tx
+          .select({ sourceSoLineId: jobCards.sourceSoLineId })
+          .from(jobCards)
+          .where(and(eq(jobCards.id, nc.jobCardId), eq(jobCards.companyId, companyId)))
+          .limit(1)
+      : [];
     const itemRows = await tx
       .select({ code: items.code, name: items.name, uom: items.uom })
       .from(items)
@@ -1652,10 +1656,20 @@ export async function createNcDc(
           .limit(1)
       : [];
     const origin = originRows[0];
-    const poLineId =
+    let poLineId =
       origin && (origin.opType === 'outsource' || origin.outsourcePoLineId)
         ? (origin.outsourcePoLineId ?? null)
         : null;
+    // ADR-189 — a bought-material NC has no op; its PO line is the one the
+    // rejected GRN line was received against.
+    if (!poLineId && !nc.jobCardId && nc.grnLineId) {
+      const gl = await tx
+        .select({ poLineId: goodsReceiptNoteLines.purchaseOrderLineId })
+        .from(goodsReceiptNoteLines)
+        .where(eq(goodsReceiptNoteLines.id, nc.grnLineId))
+        .limit(1);
+      poLineId = gl[0]?.poLineId ?? null;
+    }
 
     const qty = Math.round(Number(nc.rejectedQty));
     const code = await nextNcDcCode(tx, companyId);

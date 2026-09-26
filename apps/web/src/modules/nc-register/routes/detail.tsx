@@ -75,7 +75,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // dropdown (legacy `_disposeNC` renders every op of the JC, HTML L22637) and
   // resolves the human JC code.
   const { data: jcOps } = useJcOpsEnriched(
-    { jobCardId: detail?.jobCardId },
+    { jobCardId: detail?.jobCardId ?? undefined },
     { enabled: Boolean(detail?.jobCardId) },
   );
 

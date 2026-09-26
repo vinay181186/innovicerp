@@ -152,6 +152,24 @@ export function useRejectPurchaseOrder() {
   });
 }
 
+// ADR-189 — stop an issued PO (cancel if nothing moved, else close short).
+export function useShortClosePurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation<PurchaseOrderDetail, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<PurchaseOrderDetail>(`/purchase-orders/${id}/short-close`, {
+        method: 'POST',
+        json: { reason },
+      }),
+    onSuccess: (po) => {
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
+      // Its PRs' Pending changes too.
+      void qc.invalidateQueries({ queryKey: ['purchase-requests'] });
+    },
+  });
+}
+
 import type { CreatePurchaseOrderFromPrBatchInput } from '@innovic/shared';
 
 export function useCreatePurchaseOrderFromPrBatch() {

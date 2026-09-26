@@ -187,6 +187,7 @@ describe('purchase-requests service', () => {
         sourceJcOpId: cascadeSourceOpId,
       },
       admin,
+      { systemRaised: true },
     );
     // The PR itself records its source op.
     expect(pr.sourceJcOpId).toBe(cascadeSourceOpId);
@@ -233,6 +234,7 @@ describe('purchase-requests service', () => {
         sourceJcOpId: op.id,
       },
       admin,
+      { systemRaised: true },
     );
     const stamped = (await db.select().from(jcOps).where(eq(jcOps.id, op.id)))[0]!;
     expect(stamped.outsourcePrId).toBe(pr.id);

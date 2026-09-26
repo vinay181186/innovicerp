@@ -57,7 +57,7 @@ import {
   poCodePrefix,
   withDocRevision,
 } from '@innovic/shared';
-import type { DocumentTraceability } from '@innovic/shared';
+import type { DocumentTraceability, ShortClosePurchaseOrderInput } from '@innovic/shared';
 import type {
   CreatePurchaseOrderFromPrInput,
   CreatePurchaseOrderInput,
@@ -250,6 +250,7 @@ async function assertLinesWithinPrBalances(
 
   // One round trip for every PR on the form — not one per PR.
   const balances = await loadPrBalances(tx, prRows);
+  const switches = await readApprovalSwitches(tx, companyId);
   for (const pr of prRows) {
     if (pr.status === 'cancelled') {
       throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
@@ -259,6 +260,8 @@ async function assertLinesWithinPrBalances(
     const asked = askedByPr.get(pr.id) ?? 0;
     // Neutral or a reduction — nothing new is being taken, so nothing to refuse.
     if (asked <= mine) continue;
+    // ADR-189 review — taking MORE from a PR on edit is a conversion too.
+    assertPrConvertible(pr, switches);
     // Everything below is measured EXCLUDING this PO's own lines, so the
     // refusals read the same way they do on the create paths.
     assertPrCanTakeAnotherPo(pr, {
@@ -457,6 +460,41 @@ function escapeLikeTerm(raw: string): string {
   return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
+// ADR-189 — the company's approval switches (approval_config). A company with
+// no row takes the column defaults, which are ON: approval is the safe default,
+// switched off deliberately on the Approval Configuration screen. Read inside
+// the caller's transaction.
+async function readApprovalSwitches(
+  tx: DbTransaction,
+  companyId: string,
+): Promise<{ poApproval: boolean; prApproval: boolean }> {
+  const rows = await tx
+    .select({ poApproval: approvalConfig.poApproval, prApproval: approvalConfig.prApproval })
+    .from(approvalConfig)
+    .where(and(eq(approvalConfig.companyId, companyId), isNull(approvalConfig.deletedAt)))
+    .limit(1);
+  return { poApproval: rows[0]?.poApproval ?? true, prApproval: rows[0]?.prApproval ?? true };
+}
+
+/** ADR-189 — only an approved PR may become a PO while PR approval is on.
+ *  A PR the SYSTEM raised from a job-card op (outsourced routing: pr_type
+ *  'jw_osp' / source_jc_op_id) is exempt: nobody asked for it by hand, and the
+ *  PO raised from it still goes through PO approval. */
+function assertPrConvertible(
+  pr: { code: string; status: string; prType?: string | null; sourceJcOpId?: string | null },
+  switches: { prApproval: boolean },
+): void {
+  if (pr.status === 'cancelled') {
+    throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
+  }
+  const machineRaised = pr.prType === 'jw_osp' || Boolean(pr.sourceJcOpId);
+  if (switches.prApproval && pr.status === 'open' && !machineRaised) {
+    throw new ConflictError(
+      `Cannot create a PO from PR ${pr.code}: it is not approved yet. Approve the PR first.`,
+    );
+  }
+}
+
 export async function listPurchaseOrders(
   input: ListPurchaseOrdersQuery,
   user: AuthContext,
@@ -532,6 +570,8 @@ export async function listPurchaseOrders(
         po.approval_remarks AS "approvalRemarks",
         po.rejected_by AS "rejectedBy", po.rejected_at AS "rejectedAt",
         po.rejection_reason AS "rejectionReason", po.remarks,
+        po.short_closed_at AS "shortClosedAt", po.short_closed_by AS "shortClosedBy",
+        po.short_close_reason AS "shortCloseReason",
         po.created_at AS "createdAt", po.created_by AS "createdBy",
         po.updated_at AS "updatedAt", po.updated_by AS "updatedBy",
         po.deleted_at AS "deletedAt",
@@ -637,6 +677,9 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     rejectedBy: (r['rejectedBy'] as string | null) ?? null,
     rejectedAt: maybeTsLike(r['rejectedAt']),
     rejectionReason: (r['rejectionReason'] as string | null) ?? null,
+    shortClosedAt: maybeTsLike(r['shortClosedAt']),
+    shortClosedBy: (r['shortClosedBy'] as string | null) ?? null,
+    shortCloseReason: (r['shortCloseReason'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
@@ -796,6 +839,9 @@ function toPurchaseOrder(row: typeof purchaseOrders.$inferSelect): PurchaseOrder
     rejectedBy: row.rejectedBy,
     rejectedAt: maybeTsLike(row.rejectedAt),
     rejectionReason: row.rejectionReason,
+    shortClosedAt: maybeTsLike(row.shortClosedAt),
+    shortClosedBy: row.shortClosedBy ?? null,
+    shortCloseReason: row.shortCloseReason ?? null,
     remarks: row.remarks,
     // A bare purchase_orders row carries no join, so there is no creator NAME
     // to report here -- only the uuid in createdBy. The list and detail reads
@@ -941,6 +987,8 @@ export async function createPurchaseOrder(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // ADR-189 — approval switches, read once for the whole create.
+    const switches = await readApprovalSwitches(tx, companyId);
     // The PO type decides WHICH SERIES numbers this order, so it is resolved
     // before the code. Same expression (and same default) the insert below
     // writes to the po_type column — the two must never drift apart, or a PO
@@ -1011,9 +1059,7 @@ export async function createPurchaseOrder(
       for (const prId of distinctPrIds) {
         const pr = prById.get(prId);
         if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
-        if (pr.status === 'cancelled') {
-          throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
-        }
+        assertPrConvertible(pr, switches);
         sourcePrs.push(pr);
       }
       // What this PO asks of each PR, summed over its own lines.
@@ -1058,8 +1104,10 @@ export async function createPurchaseOrder(
     // 'draft' whenever Approval Configuration had PO approval on. That branch
     // was already unreachable: the shared schema defaults `status` to 'draft',
     // so `!input.header.status` was never true and the config was never read.
-    // Opening straight at 'open' is now the deliberate rule, not an accident.
-    const headerStatus = 'open' as const;
+    // ADR-189 supersedes that: the switch IS read now. With PO approval on (the
+    // default) a new PO is born 'draft' and goes through approvePurchaseOrder
+    // (amount ceiling, not self); with it off it opens straight away.
+    const headerStatus = switches.poApproval ? ('draft' as const) : ('open' as const);
     const totals = computePoTotals(
       input.lines,
       input.header.sgstPct ?? 0,
@@ -1654,6 +1702,45 @@ export async function updatePurchaseOrder(
     const newCode = bumpRevision ? bumpDocRevision(oldCode) : oldCode;
     if (bumpRevision) updates['code'] = newCode;
 
+    // ADR-189 review — an approved PO whose COMMERCIAL terms change (lines,
+    // vendor, tax) goes back to draft for re-approval while PO approval is on:
+    // otherwise approving 10k and then editing to 10 lakh bypasses the ceiling.
+    // The edit form always posts the lines, so a line change is judged on what
+    // was bought (items / qty / rate / lines added or dropped), never on due
+    // date or remarks. A PO with goods already moved is left alone: its
+    // commercial fields are locked above, and re-drafting it would strand
+    // receipts on a draft.
+    const commercialChange =
+      bumpRevision &&
+      !goodsDoc &&
+      ((input.lines !== undefined &&
+        (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))) ||
+        (h.vendorId !== undefined && (h.vendorId ?? null) !== (existingHdr.vendorId ?? null)) ||
+        (showMoney &&
+          ((h.sgstPct !== undefined && pctToString(h.sgstPct) !== existingHdr.sgstPct) ||
+            (h.cgstPct !== undefined && pctToString(h.cgstPct) !== existingHdr.cgstPct) ||
+            (h.igstPct !== undefined && pctToString(h.igstPct) !== existingHdr.igstPct))));
+    if (commercialChange && existingHdr.status === 'open') {
+      const switches = await readApprovalSwitches(tx, companyId);
+      if (switches.poApproval) {
+        updates['status'] = 'draft';
+        updates['approvedBy'] = null;
+        updates['approvedAt'] = null;
+        updates['approvalRemarks'] = `Re-approval needed: edited to ${newCode}`;
+        await emitActivityLog(
+          tx,
+          {
+            action: 'APPROVAL_WITHDRAWN',
+            entity: 'Purchase Order',
+            detail: `${oldCode} → ${newCode}: items / qty / rate / vendor / tax changed after approval; back to Draft for re-approval`,
+            refId: newCode,
+          },
+          companyId,
+          user,
+        );
+      }
+    }
+
     await tx.update(purchaseOrders).set(updates).where(eq(purchaseOrders.id, id));
 
     // The snapshots move with the code, in the SAME transaction as the code
@@ -2221,9 +2308,8 @@ export async function createPurchaseOrderFromPr(
       .limit(1);
     const pr = prRows[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
-    if (pr.status === 'cancelled') {
-      throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
-    }
+    const switches = await readApprovalSwitches(tx, companyId);
+    assertPrConvertible(pr, switches);
     // Quantity, not a boolean (ADR-152 phase 2): a PR is convertible for as
     // long as it has balance left, so a PR for 100 already covered for 10 can
     // be converted again for the other 90.
@@ -2315,7 +2401,8 @@ export async function createPurchaseOrderFromPr(
         // resolveItemRefs' "a real link beats carried text" rule.
         vendorId: overrideVendorId ?? pr.vendorId,
         vendorCodeText: overrideVendorId ? overrideVendorCode : pr.vendorCodeText,
-        status: 'open', // PRs only convert to open POs (skip draft state)
+        // ADR-189 — draft while PO approval is on, like every other new PO.
+        status: switches.poApproval ? ('draft' as const) : ('open' as const),
         dueDate: input.header.dueDate ?? pr.requiredDate ?? null,
         taxType: input.header.taxType ?? null,
         sgstPct: pctToString(input.header.sgstPct ?? 0),
@@ -2715,6 +2802,129 @@ export async function rejectPurchaseOrder(
   });
 }
 
+/**
+ * ADR-189 — stop an ISSUED Purchase Order (ERPNext: Close / Cancel a PO).
+ *
+ *  - Nothing received and nothing sent to the vendor → 'cancelled': it holds
+ *    nothing, so its PRs and outsourced ops are handed back exactly as a
+ *    rejected draft's are (releaseJcOpsForCancelledPo).
+ *  - Part received → 'closed' short: the stamps (who / when / why) make every
+ *    PR it drew on count only what was RECEIVED on the line
+ *    (purchase-requests liveOrderedQtySql), so the un-received qty is Pending
+ *    on the PR again and can be ordered elsewhere.
+ *
+ * Refused while material sent on a DC is still at the vendor (it has to come
+ * back or be written off first), and for a draft (Reject it instead) or a PO
+ * that is already closed / cancelled. The status recompute leaves a stopped PO
+ * alone (goods-receipt-notes/cascades.ts recalcPoHeaderStatus).
+ */
+export async function shortClosePurchaseOrder(
+  id: string,
+  input: ShortClosePurchaseOrderInput,
+  user: AuthContext,
+): Promise<PurchaseOrderDetail> {
+  requireWriteRole(user);
+  // Undoing an approved commitment is a sign-off, like Reject (review).
+  await requireFormAccess(user, 'po_create', 'approve');
+  const companyId = requireCompany(user);
+  const reason = input.reason.trim();
+
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          eq(purchaseOrders.companyId, companyId),
+          isNull(purchaseOrders.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    const po = rows[0];
+    if (!po) throw new NotFoundError('PO not found. It may have been moved to Trash.');
+    if (po.status === 'draft') {
+      throw new ValidationError(`PO ${po.code} is a Draft — Reject it instead.`);
+    }
+    if (po.status === 'closed' || po.status === 'cancelled') {
+      throw new ConflictError(`PO ${po.code} is already ${poStatusLabel(po.status)}.`);
+    }
+
+    // Per PO line: ordered, received, and pieces sent OUT on an ordinary
+    // outward DC (a return-to-vendor NC challan is not "sent on the PO" — its
+    // pieces are accounted by their NC) less what came back on ordinary GRNs.
+    const lines = (await tx.execute(sql`
+      SELECT pol.line_no, pol.qty,
+        COALESCE(pol.received_qty, 0)::int AS received,
+        GREATEST(
+          COALESCE((SELECT SUM(dl.qty) FROM public.delivery_challan_lines dl
+                    JOIN public.delivery_challans dc ON dc.id = dl.delivery_challan_id
+                    WHERE dl.purchase_order_line_id = pol.id AND dl.deleted_at IS NULL
+                      AND dc.deleted_at IS NULL AND dc.status <> 'cancelled' AND dc.nc_id IS NULL), 0)
+          - COALESCE((SELECT SUM(gl.received_qty) FROM public.goods_receipt_note_lines gl
+                      JOIN public.goods_receipt_notes g ON g.id = gl.goods_receipt_note_id
+                      WHERE gl.purchase_order_line_id = pol.id AND gl.deleted_at IS NULL
+                        AND g.deleted_at IS NULL AND g.nc_id IS NULL), 0),
+          0)::int AS at_vendor,
+        COALESCE((SELECT SUM(dl.qty) FROM public.delivery_challan_lines dl
+                  JOIN public.delivery_challans dc ON dc.id = dl.delivery_challan_id
+                  WHERE dl.purchase_order_line_id = pol.id AND dl.deleted_at IS NULL
+                    AND dc.deleted_at IS NULL AND dc.status <> 'cancelled' AND dc.nc_id IS NULL), 0)::int AS sent
+      FROM public.purchase_order_lines pol
+      WHERE pol.purchase_order_id = ${id}::uuid AND pol.deleted_at IS NULL
+      ORDER BY pol.line_no
+    `)) as unknown as Array<{
+      line_no: number;
+      qty: number;
+      received: number;
+      at_vendor: number;
+      sent: number;
+    }>;
+    const atVendor = lines.find((l) => Number(l.at_vendor) > 0);
+    if (atVendor) {
+      throw new ConflictError(
+        `PO ${po.code} line ${atVendor.line_no}: ${atVendor.at_vendor} piece(s) sent on a DC are still at the vendor. Receive them back (or record the loss) before closing the PO.`,
+      );
+    }
+    const ordered = lines.reduce((a, l) => a + Number(l.qty), 0);
+    const received = lines.reduce((a, l) => a + Number(l.received), 0);
+    const sent = lines.reduce((a, l) => a + Number(l.sent), 0);
+
+    const now = new Date();
+    const stopWholly = received === 0 && sent === 0;
+    await tx
+      .update(purchaseOrders)
+      .set({
+        status: stopWholly ? 'cancelled' : 'closed',
+        shortClosedAt: now,
+        shortClosedBy: user.id,
+        shortCloseReason: reason,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(purchaseOrders.id, id));
+    if (stopWholly) {
+      await releaseJcOpsForCancelledPo(tx, companyId, { id: po.id, code: po.code }, user);
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'SHORT_CLOSE',
+        entity: 'Purchase Order',
+        detail: stopWholly
+          ? `${po.code} cancelled — nothing received (ordered ${ordered}); PRs released. Reason: ${reason}`
+          : `${po.code} short closed — received ${received} of ${ordered}; ${ordered - received} returned to its PRs as Pending. Reason: ${reason}`,
+        refId: po.code,
+      },
+      companyId,
+      user,
+    );
+    return getPurchaseOrderInternal(tx, id, companyId);
+  });
+}
+
 // ─── Outsource Jobs batch convert (legacy _ospCreatePO L27131) ─────
 //
 // Clubs N OSP PRs into a single JW PO header with one line per PR.
@@ -2796,11 +3006,8 @@ export async function createPurchaseOrderFromPrBatch(
         'Some selected PRs no longer exist. Refresh the list and select again.',
       );
     }
-    for (const pr of prRows) {
-      if (pr.status === 'cancelled') {
-        throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
-      }
-    }
+    const switches = await readApprovalSwitches(tx, companyId);
+    for (const pr of prRows) assertPrConvertible(pr, switches);
 
     // Sort PRs by created_at so line_no ordering is stable.
     const sortedPrs = [...prRows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -2856,7 +3063,8 @@ export async function createPurchaseOrderFromPrBatch(
             : 'standard',
         vendorId: input.vendorId,
         vendorCodeText,
-        status: 'open',
+        // ADR-189 — draft while PO approval is on.
+        status: switches.poApproval ? ('draft' as const) : ('open' as const),
         dueDate: input.header.dueDate ?? null,
         taxType: input.header.taxType ?? null,
         sgstPct: String(input.header.sgstPct ?? 0),

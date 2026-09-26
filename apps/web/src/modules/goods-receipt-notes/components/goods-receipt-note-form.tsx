@@ -14,9 +14,7 @@ import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { LineItemPicker } from '@/components/shared/line-item-picker';
 import { todayLocal } from '@/lib/date';
-import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { useSession } from '@/lib/session';
 import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
@@ -144,7 +142,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   const isCreate = !isEdit;
   const [docNoValid, setDocNoValid] = useState(true);
   const errors = formState.errors;
-  const companyId = useSession().data?.companyId ?? null;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
 
   const { onStatusChange } = props;
@@ -169,8 +166,9 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   const vendors = vendorsData?.vendors ?? [];
 
   const { data: posData } = usePurchaseOrdersList({ limit: 200, offset: 0 });
+  // ADR-189 — a draft PO is not approved yet, so goods cannot be received on it.
   const pos = (posData?.items ?? []).filter((p) =>
-    ['draft', 'open', 'partial', 'qc_pending'].includes(p.status),
+    ['open', 'partial', 'qc_pending'].includes(p.status),
   );
 
   const selectedPoId = useWatch({ control, name: 'header.purchaseOrderId' });
@@ -515,9 +513,11 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                     </div>
                     <div className="form-grp">
                       <label className="form-label">QC Status</label>
+                      {/* ADR-189 — QC is recorded in Incoming QC only; the GRN
+                        shows what was inspected but never sets it. */}
                       <select
                         className="innovic-select"
-                        disabled={locked}
+                        disabled
                         {...register(`lines.${idx}.qcStatus` as const)}
                       >
                         {GRN_QC_STATUSES.map((s) => (
@@ -533,7 +533,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                         type="number"
                         min={0}
                         className="innovic-input"
-                        readOnly={locked}
+                        readOnly
                         {...register(`lines.${idx}.qcAcceptedQty` as const, {
                           valueAsNumber: true,
                         })}
@@ -546,7 +546,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                         type="number"
                         min={0}
                         className="innovic-input"
-                        readOnly={locked}
+                        readOnly
                         {...register(`lines.${idx}.qcRejectedQty` as const, {
                           valueAsNumber: true,
                         })}
@@ -557,7 +557,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       <input
                         type="date"
                         className="innovic-input"
-                        readOnly={locked}
+                        readOnly
                         {...register(`lines.${idx}.qcDate` as const)}
                       />
                     </div>
@@ -587,7 +587,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                         loading={qcUsers.isFetching}
                         valueLabel={watch(`lines.${idx}.qcInspectedByName`) ?? ''}
                         selectedLabel={qcSelectedLabel}
-                        disabled={locked}
+                        disabled
                         placeholder="🔍 Select QC person…"
                         emptyText="No QC users — set them up in Access Control"
                       />
@@ -597,7 +597,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       <input
                         className="innovic-input"
                         autoComplete="off"
-                        readOnly={locked}
+                        readOnly
                         {...register(`lines.${idx}.qcRemarks` as const)}
                       />
                     </div>
@@ -614,24 +614,10 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
 
                     <div className="form-grp f-full">
                       <label className="form-label">QC Report</label>
-                      {locked ? (
-                        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                          {watch(`lines.${idx}.qcReportName`) ?? '— none —'}
-                        </div>
-                      ) : (
-                        <QcReportAttach
-                          companyId={companyId}
-                          fileName={watch(`lines.${idx}.qcReportName`) ?? null}
-                          onUploaded={(path, name) => {
-                            setValue(`lines.${idx}.qcReportPath`, path, { shouldDirty: true });
-                            setValue(`lines.${idx}.qcReportName`, name, { shouldDirty: true });
-                          }}
-                          onClear={() => {
-                            setValue(`lines.${idx}.qcReportPath`, null, { shouldDirty: true });
-                            setValue(`lines.${idx}.qcReportName`, null, { shouldDirty: true });
-                          }}
-                        />
-                      )}
+                      {/* ADR-189 — read-only: reports are attached in Incoming QC. */}
+                      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                        {watch(`lines.${idx}.qcReportName`) ?? '— none —'}
+                      </div>
                     </div>
                   </div>
                 </div>

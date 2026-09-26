@@ -348,7 +348,9 @@ const ncRegisterSource: RegisteredSource = {
       nc.op_seq * 10        AS op_seq,
       nc.reported_by_text   AS reported_by
     FROM public.nc_register nc
-    JOIN public.job_cards jc ON jc.id = nc.job_card_id
+    -- LEFT (ADR-189): a bought-material reject from Incoming QC has no job card
+    -- and must still be listed.
+    LEFT JOIN public.job_cards jc ON jc.id = nc.job_card_id
     JOIN public.items it ON it.id = nc.item_id
     -- LEFT, never inner: an NC raised on a JW-sourced or standalone JC has no
     -- SO line, and quality must still see every NC it has logged.
