@@ -90,6 +90,9 @@ export function printJwInvoice(args: {
   // before the column existed has no tax type, and keeps the single GST row it
   // always printed — a split the data does not state is not invented for it.
   // The total GST is the same number in every case.
+  // Split once so the two halves always add back to the stored GST (odd paisa goes to SGST).
+  const cgstAmount = Math.round(gstAmount * 50) / 100;
+  const sgstAmount = Math.round((gstAmount - cgstAmount) * 100) / 100;
   const taxRows =
     gstPct <= 0
       ? []
@@ -97,8 +100,8 @@ export function printJwInvoice(args: {
         ? [{ label: `IGST @ ${gstPct}%`, value: money(gstAmount) }]
         : invoice.taxType === 'sgst_cgst'
           ? [
-              { label: `SGST @ ${gstPct / 2}%`, value: money(gstAmount / 2) },
-              { label: `CGST @ ${gstPct / 2}%`, value: money(gstAmount / 2) },
+              { label: `SGST @ ${gstPct / 2}%`, value: money(sgstAmount) },
+              { label: `CGST @ ${gstPct / 2}%`, value: money(cgstAmount) },
             ]
           : [{ label: `GST @ ${gstPct}%`, value: money(gstAmount) }];
   const uom = invoice.uom?.trim() || FALLBACK_UOM;

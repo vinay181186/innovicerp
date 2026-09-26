@@ -37,7 +37,7 @@ export function printJwDc(args: {
   // UOM off the items master for each line; NOS only when a line has none.
   const uomOf = (u: string | null | undefined): string => u?.trim() || 'NOS';
   const lineUoms = [...new Set(dc.lines.map((l) => uomOf(l.uom)))];
-  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? 'NOS') : 'NOS';
+  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? 'NOS') : '';
   const purpose = [...new Set(dc.lines.map((l) => l.processText).filter(Boolean))].join(', ');
 
   const data: Record<string, string> = {

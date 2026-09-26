@@ -13,4 +13,4 @@
 -- Idempotent. Apply to BOTH the test and the production database.
 -- ============================================================
 
-UPDATE purchase_orders SET tax_type = NULL WHERE tax_type IN ('none', '');
+UPDATE purchase_orders SET tax_type = NULL WHERE lower(btrim(tax_type)) IN ('none', '');

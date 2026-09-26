@@ -79,8 +79,8 @@ export function printPurchaseOrder(args: {
 
   const uomOf = (u: string | null | undefined): string => u?.trim() || PO_UOM_FALLBACK;
   const lineUoms = [...new Set(lines.map((l) => uomOf(l.uom)))];
-  // One unit under the quantity total when every line agrees; NOS otherwise.
-  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? PO_UOM_FALLBACK) : PO_UOM_FALLBACK;
+  // One unit under the quantity total when every line agrees; blank when units differ.
+  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? PO_UOM_FALLBACK) : '';
 
   const subtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
