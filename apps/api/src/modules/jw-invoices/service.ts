@@ -60,6 +60,10 @@ function rowToInvoice(row: typeof jwInvoices.$inferSelect): JwInvoice {
     gstPercent: Number(row.gstPercent),
     gstAmount: Number(row.gstAmount),
     totalAmount: Number(row.totalAmount),
+    // text column, CHECK-constrained to the two codes (migration 0148); any
+    // other value is treated as "not recorded" so the print falls back to one
+    // GST row instead of guessing a split.
+    taxType: row.taxType === 'sgst_cgst' || row.taxType === 'igst' ? row.taxType : null,
     remarks: row.remarks,
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy,
@@ -148,6 +152,7 @@ export async function createJwInvoice(
         gstPercent: money(gstPercent),
         gstAmount: money(gstAmount),
         totalAmount: money(total),
+        taxType: input.taxType ?? 'sgst_cgst',
         remarks: input.remarks ?? null,
         createdBy: userId,
         updatedBy: userId,
@@ -254,6 +259,8 @@ export async function listJwInvoices(
           // Cast to text: the contract types it as a string.
           itemRevision: sql<string | null>`${jobWorkOrderLines.revision}::text`,
           partName: jobWorkOrderLines.partName,
+          // The unit the JWSO line was booked in, for the printed UOM column.
+          uom: sql<string | null>`${jobWorkOrderLines.uom}::text`,
         })
         .from(jwInvoices)
         .leftJoin(clients, eq(clients.id, jwInvoices.clientId))
@@ -287,6 +294,7 @@ export async function listJwInvoices(
           // never the JWSO line number, which is a different number entirely.
           clientPoLineNo: null,
           partName: r.partName ?? null,
+          uom: r.uom ?? null,
         };
         return showMoney ? item : hideJwInvoiceMoney(item);
       }),

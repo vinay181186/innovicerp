@@ -301,6 +301,7 @@ export async function getJwDcOutwardDetail(
         sol.revision::text AS "itemRevision",
         sol.client_po_line_no AS "clientPoLineNo",
         i.name AS "itemName",
+        i.uom::text AS "uom",
         jdol.item_code_text AS "itemCodeText",
         jdol.item_name_text AS "itemNameText",
         jdol.process_text AS "processText",
@@ -357,6 +358,7 @@ export async function getJwDcOutwardDetail(
         deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
         alreadyReturned: ret,
         pending,
+        uom: (r['uom'] as string | null) ?? null,
       };
     });
 

@@ -20,6 +20,7 @@ import {
   invoiceLines,
   invoicePayments,
   invoices,
+  items,
   salesOrderLines,
   salesOrders,
 } from '../../db/schema';
@@ -199,11 +200,15 @@ async function getInvoiceInternal(
       // off the SAME SO line as the revision above. Not our SO line number.
       // Null when this invoice line has no SO line behind it.
       clientPoLineNo: salesOrderLines.clientPoLineNo,
+      // Unit for the printed UOM column: the SO line's (what the customer
+      // ordered in), else the item master's. Display only, not frozen.
+      uom: sql<string | null>`COALESCE(${salesOrderLines.uom}::text, ${items.uom}::text)`,
     })
     .from(invoiceLines)
     // LEFT, never inner: invoice_lines.sales_order_line_id is nullable, and a
     // line with no SO behind it must still come back — with a null revision.
     .leftJoin(salesOrderLines, eq(salesOrderLines.id, invoiceLines.salesOrderLineId))
+    .leftJoin(items, eq(items.id, invoiceLines.itemId))
     .where(and(eq(invoiceLines.invoiceId, id), isNull(invoiceLines.deletedAt)))
     .orderBy(asc(invoiceLines.lineNo));
   const lines: InvoiceLineRow[] = lineRows.map((l) => ({
@@ -212,6 +217,7 @@ async function getInvoiceInternal(
     itemCode: l.itemCodeText,
     itemRevision: l.itemRevision ?? null,
     clientPoLineNo: l.clientPoLineNo ?? null,
+    uom: l.uom ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemNameText,
     qty: l.qty,
@@ -233,12 +239,20 @@ async function getInvoiceInternal(
     notes: p.notes,
   }));
 
+  // The customer's PO number off the SO this invoice bills, for the print.
+  const soRows = await tx
+    .select({ clientPoNo: salesOrders.clientPoNo })
+    .from(salesOrders)
+    .where(eq(salesOrders.id, inv.salesOrderId))
+    .limit(1);
+
   return {
     ...rowToInvoice(inv),
     clientCode: inv.clientCodeText,
     clientGst: inv.clientGstText,
     paymentTermsDays: inv.paymentTermsDays,
     remarks: inv.remarks,
+    clientPoNo: soRows[0]?.clientPoNo ?? null,
     lines,
     payments,
   };

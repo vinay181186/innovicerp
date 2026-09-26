@@ -42,6 +42,7 @@ import {
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { sendAlertDigest } from '../../lib/email';
 import { env } from '../../lib/env';
+import { fmtDate, isIsoDateLike } from '../../lib/format-date';
 import { logger } from '../../lib/logger';
 import { ALERTS, type RegisteredAlert } from './registry';
 
@@ -158,6 +159,8 @@ function digestCellText(code: string, key: string, value: string | number | null
   const text = String(value);
   const mapped = DIGEST_STATUS_LABELS[code]?.[key]?.[text];
   if (mapped) return mapped;
+  // Dates read DD-MMM-YYYY (IST), never the raw YYYY-MM-DD the query returns.
+  if (typeof value === 'string' && isIsoDateLike(text)) return fmtDate(text);
   if (key.endsWith('status') && /^[a-z0-9_]+$/.test(text)) {
     return text
       .split('_')

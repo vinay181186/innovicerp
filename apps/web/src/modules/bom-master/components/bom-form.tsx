@@ -781,8 +781,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         'Item Code*',
         'Item Name*',
         'Description',
-        'Drawing No.',
-        'Revision',
+        // No Drawing No. / Revision columns: the Item Master importer ignores
+        // both (items/lib/import-export.ts), so they would be filled for nothing.
         'Material',
         'UOM',
         'Item Type',
@@ -790,10 +790,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // Item Name is REQUIRED by the Item Master importer, so it is pre-filled with
       // the code — the sheet imports as-is, and the names can be corrected in
       // the sheet before importing or in Item Master afterwards.
-      ...missingCodes.map((code) => [code, code, '', '', 'A', '', 'NOS', 'component']),
+      ...missingCodes.map((code) => [code, code, '', '', 'NOS', 'component']),
     ];
     const sheet = xlsxUtils.aoa_to_sheet(aoa);
-    sheet['!cols'] = [22, 22, 28, 16, 10, 18, 8, 12].map((wch) => ({ wch }));
+    sheet['!cols'] = [22, 22, 28, 18, 8, 12].map((wch) => ({ wch }));
     const wb = xlsxUtils.book_new();
     xlsxUtils.book_append_sheet(wb, sheet, 'Items');
     const buf = xlsxWrite(wb, { type: 'array', bookType: 'xlsx' });

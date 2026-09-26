@@ -89,6 +89,9 @@ export const invoiceLineRowSchema = z.object({
    *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
    *  Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
+  /** Unit for the printed UOM column: the SO line's unit, else the item
+   *  master's (items.uom). Null when neither exists; the print shows NOS. */
+  uom: z.string().nullable().default(null),
   // Stored snapshot fallback captured at invoice creation.
   itemCodeText: z.string().nullable(),
   itemName: z.string(),
@@ -142,6 +145,9 @@ export const invoiceDetailSchema = invoiceRowSchema.extend({
   clientGst: z.string().nullable(),
   paymentTermsDays: z.number().int().nonnegative(),
   remarks: z.string().nullable(),
+  /** The customer's PO number (`Client PO No.`), read live off the sales order
+   *  this invoice bills (sales_orders.client_po_no). Null when not captured. */
+  clientPoNo: z.string().nullable().default(null),
   lines: z.array(invoiceLineRowSchema),
   payments: z.array(invoicePaymentRowSchema),
 });

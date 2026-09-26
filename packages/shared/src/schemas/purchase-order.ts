@@ -69,6 +69,10 @@ export const purchaseOrderLineSchema = z.object({
    *  return, a line whose SO line was deleted). Read-only: the Sales Order is
    *  the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
+  /** Unit of the line's item, read live off the items master (items.uom) — a
+   *  PO line has no uom column of its own. Detail read only; null on a
+   *  hand-typed line with no item, and the print then shows NOS. */
+  uom: z.string().nullable().default(null),
   itemName: z.string(),
   qty: z.number().int().positive(),
   // numeric stored as string; NULL when the viewer's access hides prices
@@ -274,7 +278,11 @@ export type CreatePurchaseOrderInput = z.infer<typeof createPurchaseOrderInputSc
 
 /** UPDATE — same shape; lines optional (option C merge). `code` immutable. */
 export const updatePurchaseOrderInputSchema = z.object({
-  header: _poHeaderInputBase.partial().omit({ code: true }),
+  // taxType: null = "None" chosen on edit → the server clears the column.
+  header: _poHeaderInputBase
+    .partial()
+    .omit({ code: true })
+    .extend({ taxType: z.string().max(32).nullable().optional() }),
   lines: z.array(purchaseOrderLineInputSchema).optional(),
 });
 export type UpdatePurchaseOrderInput = z.infer<typeof updatePurchaseOrderInputSchema>;

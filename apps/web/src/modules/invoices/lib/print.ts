@@ -112,7 +112,7 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
         `<td style="${TD}">${esc(itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, '')) || '&mdash;'}</td>` +
         `<td style="${TD}">${esc(l.itemName) || '&mdash;'}</td>` +
         `<td style="${TD};text-align:right">${l.qty.toFixed(1)}</td>` +
-        `<td style="${TD};text-align:center;font-size:10px">NOS</td>` +
+        `<td style="${TD};text-align:center;font-size:10px">${esc(l.uom?.trim() || 'NOS')}</td>` +
         (priceHidden
           ? ''
           : `<td style="${TD};text-align:right">${inrFormat(l.rate ?? 0)}</td>` +
@@ -142,6 +142,7 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
           <div style="font-weight:700;font-size:14px;color:#1a5276">${esc(inv.code)}</div>
           <div>Invoice Date: ${esc(challanDate(inv.invoiceDate))}</div>
           <div>SO No.: <b>${esc(inv.soCode ?? '')}</b></div>
+          ${inv.clientPoNo ? `<div>Client PO No.: <b>${esc(inv.clientPoNo)}</b></div>` : ''}
           <div>Payment Terms: ${inv.paymentTermsDays} Days</div>
           <div>Due Date: <b>${esc(challanDate(inv.dueDate))}</b></div>
         </div>

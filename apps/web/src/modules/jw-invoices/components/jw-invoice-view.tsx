@@ -211,6 +211,9 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
   const [qty, setQty] = useState('1');
   const [rate, setRate] = useState('');
   const [remarks, setRemarks] = useState('');
+  // Same-state supply by default: the print splits the GST into SGST + CGST.
+  // IGST for an inter-state customer. Totals do not change either way.
+  const [taxType, setTaxType] = useState<'sgst_cgst' | 'igst'>('sgst_cgst');
   const [err, setErr] = useState<string | null>(null);
 
   // ADR-104: NO status filter — see jw-returns. A JWSO closes at final QC, so
@@ -263,6 +266,7 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
       invoiceDate: date,
       jobWorkOrderLineId: lineId,
       qty: qtyNum,
+      taxType,
     };
     if (Number.isFinite(rateNum) && rate.trim()) input.rate = rateNum;
     if (remarks.trim()) input.remarks = remarks.trim();
@@ -384,6 +388,17 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
               onChange={(e) => setRate(e.target.value)}
               placeholder="0.00"
             />
+          </Field>
+          <Field label="Tax Type">
+            <select
+              className="innovic-input"
+              value={taxType}
+              onChange={(e) => setTaxType(e.target.value === 'igst' ? 'igst' : 'sgst_cgst')}
+              style={{ width: '100%' }}
+            >
+              <option value="sgst_cgst">SGST + CGST</option>
+              <option value="igst">IGST</option>
+            </select>
           </Field>
           <Field label="Remarks">
             <input

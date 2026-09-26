@@ -20,13 +20,11 @@ const COLUMNS = [
   'Customer',
   'JC No.',
   'POL',
+  // Reads CODE/REV, the way a dispatch line — which always traces back to a
+  // Sales Order line — reads everywhere else (user rule 2026-09-23). No
+  // separate Drawing Rev column: the revision is already in this cell (owner
+  // decision, round 3 wave 2).
   'Item Code',
-  // The Item Code cell above reads CODE/REV, the way a dispatch line — which
-  // always traces back to a Sales Order line — reads everywhere else (user
-  // rule 2026-09-23). The customer's drawing revision ALSO keeps its own
-  // column here so it stays filterable and sortable on its own. Same decision
-  // as the Job Card export.
-  'Drawing Rev',
   'Item Name',
   'Dispatch Qty',
   'UOM',
@@ -46,7 +44,6 @@ export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFi
     r.jcNo ?? '',
     r.clientPoLineNo ?? '',
     itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision, ''),
-    r.itemRevision ?? '',
     r.itemName,
     r.qty,
     r.uom ?? 'NOS',

@@ -34,6 +34,10 @@ export function printJwDc(args: {
   const recipientName = vendor?.name ?? dc.vendorNameText ?? dc.vendorCodeText ?? '';
   const recipientAddress = vendor?.addressLine1 ?? '';
   const vehicleNo = dc.vehicleNo ?? '';
+  // UOM off the items master for each line; NOS only when a line has none.
+  const uomOf = (u: string | null | undefined): string => u?.trim() || 'NOS';
+  const lineUoms = [...new Set(dc.lines.map((l) => uomOf(l.uom)))];
+  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? 'NOS') : 'NOS';
   const purpose = [...new Set(dc.lines.map((l) => l.processText).filter(Boolean))].join(', ');
 
   const data: Record<string, string> = {
@@ -104,16 +108,14 @@ export function printJwDc(args: {
       // layout has a Remarks column, so the process it names prints there —
       // still on the vendor's copy, and no longer glued to the part name.
       remarks: l.processText,
-      // Legacy hardcodes NOS on the printed DC line too (L24614) and the JW DC
-      // line carries no uom, so this is faithful — not the ISSUE-158 pattern.
-      uom: 'NOS',
+      uom: uomOf(l.uom),
       // HSN lives on the item master and the JW DC line does not carry it, so
       // the column prints blank.
       hsn: null,
       qty: l.sentQty.toFixed(2),
     })),
     totalQty: totalQty.toFixed(2),
-    totalUom: 'NOS',
+    totalUom,
   };
 
   return openSheetPrintWindow(model);

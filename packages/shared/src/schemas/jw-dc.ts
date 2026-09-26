@@ -81,6 +81,9 @@ export const jwDcOutwardDetailSchema = jwDcOutwardListItemSchema.extend({
     jwDcOutwardLineSchema.extend({
       alreadyReturned: z.number().int().nonnegative(),
       pending: z.number().int().nonnegative(),
+      /** Unit from the items master (items.uom) for the printed UOM column.
+       *  Null when the line names no item; the print then shows NOS. */
+      uom: z.string().nullable().default(null),
     }),
   ),
 });

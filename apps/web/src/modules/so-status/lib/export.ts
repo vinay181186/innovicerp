@@ -39,14 +39,16 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
     'Drawing Rev': l.itemRevision ?? '',
     'Item Name': l.partName ?? '',
     'Order Qty': l.orderQty,
+    // `doneQty` is the same number the API puts in the "produced" chip, so it
+    // prints once, here — there is no separate "Produced" column.
     Completed: l.doneQty,
     'Progress %': l.completionPct,
-    'SO Status': LINE_STATUS_LABEL[l.status],
+    // The status of THIS LINE, not of the whole SO.
+    'Line Status': LINE_STATUS_LABEL[l.status],
     'JC Issued': l.chips.jcIssued.qty,
     'PO Raised': l.chips.poRaised.qty,
     'GRN Received': l.chips.grnReceived.qty,
     'QC Accepted': l.chips.qcAccepted.qty,
-    Produced: l.chips.produced.qty,
     Dispatched: l.chips.dispatched.qty,
   }));
 
