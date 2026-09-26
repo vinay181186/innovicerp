@@ -8,7 +8,8 @@
 // (modules/clients/routes/list.tsx) as the reference. The composition is the
 // canonical one and nothing else:
 //
-//   <ListHeader>            title · count · SearchInput · filters · ⟳ Updating… · primary
+//   <ListHeader>            title · count · ⟳ Updating… · primary, then the
+//                           filter bar: SearchInput · filters · Clear
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            the count line and the Prev / Page n / Next pager
 //   <PageState>             no-access and load-failure
@@ -204,8 +205,9 @@ function CostCentersListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, search, the three filters and
-          the primary action stay put while the rows scroll underneath. */}
+      {/* The frozen header band: title, count and the primary action, then the
+          filter bar (search, the three filters, Clear), stay put while the
+          rows scroll underneath. */}
       <ListHeader
         title="Cost Centre Master"
         icon="🏢"
@@ -219,11 +221,10 @@ function CostCentersListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
             <Select
               aria-label="Department"
-              fieldWidth="md"
               value={search.department ?? ''}
               options={[
                 { value: '', label: 'All departments' },
@@ -242,7 +243,6 @@ function CostCentersListPage(): React.JSX.Element {
             />
             <Select
               aria-label="Cost Centre Type"
-              fieldWidth="md"
               value={search.type ?? ''}
               options={[
                 { value: '', label: 'All types' },
@@ -261,7 +261,6 @@ function CostCentersListPage(): React.JSX.Element {
             />
             <Select
               aria-label="Active"
-              fieldWidth="md"
               value={search.isActive === undefined ? '' : String(search.isActive)}
               options={[
                 { value: '', label: 'All' },
@@ -281,6 +280,27 @@ function CostCentersListPage(): React.JSX.Element {
               }}
             />
           </>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              search: undefined,
+              department: undefined,
+              type: undefined,
+              isActive: undefined,
+              page: 1,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={
+          search.search != null ||
+          search.department != null ||
+          search.type != null ||
+          search.isActive != null ||
+          searchInput !== ''
         }
         primary={
           canAdd ? (

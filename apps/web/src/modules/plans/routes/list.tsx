@@ -1,7 +1,7 @@
 // Plans list (PL-4). All plans with status + type + search filters + pagination.
 //
 // ADR-170 (Production Orders): the same list is Production → Master → Plans.
-// Two pills above the table — All | Pending — where Pending is the server's
+// An All | Pending dropdown in the filter bar (was two pills) — where Pending is the server's
 // `poPending=true` (route-card-driven plans that still have no Production
 // Order). The Status column shows the DERIVED status for those plans
 // (Route card pending → Gen production order → In production → Production
@@ -21,9 +21,8 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader, PageState, StatusPills } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePlansList, usePlanningDashboard } from '../api';
-import { PlanningKpiStrip } from '../components/planning-kpi-strip';
 import { NeedsPlanningTable } from '../components/needs-planning-table';
 import { DERIVED_BADGE, DERIVED_LABEL } from '../lib/derived-status';
 
@@ -73,6 +72,27 @@ const TYPE_ICON: Record<PlanType, string> = {
   assembly: '🔧',
 };
 
+// Status dropdown value for the Needs-Planning mode (the `needsPlanning` URL
+// flag, not a plan status).
+const NEEDS_PLANNING = '__needs_planning';
+
+// Status → the planning-dashboard KPI key that counts it (same keys the old
+// tiles read). Cancelled has no tile, so no count.
+const STATUS_KPI_KEY: Record<
+  PlanStatus | 'route_card_pending' | 'gen_production_order',
+  string | undefined
+> = {
+  in_planning: 'inPlanning',
+  planned: 'planned',
+  jc_created: 'jcCreated',
+  pr_created: 'prCreated',
+  in_production: 'inProduction',
+  complete: 'complete',
+  cancelled: undefined,
+  route_card_pending: 'rcPending',
+  gen_production_order: 'rcCreated',
+};
+
 // One fetch, then scroll — no Prev / Next (user, 2026-09-19). The list-query
 // cap is 500; the count line under the table flags a rarer larger set.
 const LIMIT = 500;
@@ -89,24 +109,15 @@ function PlansListPage(): React.JSX.Element {
     limit: LIMIT,
     offset: off,
   });
-  // KPI counts for the filter-bar tiles (folded in from the Planning Dashboard).
+  // KPI counts for the status dropdown's option labels (folded in from the
+  // Planning Dashboard; they used to be clickable tiles).
   const dash = usePlanningDashboard();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
 
-  // Tile → URL filter. Status tiles set `status`; the Needs Planning tile flips
-  // the body to the unplanned-SO-lines table. Both clear the other so only one
-  // mode is ever active.
-  const selectStatus = (s: PlanEffectiveStatus | undefined): void =>
-    void navigate({
-      to: '/plans',
-      search: {
-        ...(search ? { search } : {}),
-        ...(planType ? { planType } : {}),
-        ...(pending ? { pending } : {}),
-        ...(s ? { status: s } : {}),
-      },
-    });
+  // Status dropdown → URL filter. A status sets `status`; "Needs Planning"
+  // flips the body to the unplanned-SO-lines table. Each clears the other so
+  // only one mode is ever active.
   const selectNeedsPlanning = (): void =>
     void navigate({
       to: '/plans',
@@ -117,7 +128,7 @@ function PlansListPage(): React.JSX.Element {
         ...(needsPlanning ? {} : { needsPlanning: true }),
       },
     });
-  // All | Pending pills. Same URL-param shape as the SO list's status pills;
+  // All | Pending dropdown (was pills). Same URL-param shape as the SO list's status pills;
   // drops the offset so a narrower result never starts on an empty page.
   const selectPending = (p: boolean): void =>
     void navigate({
@@ -131,6 +142,14 @@ function PlansListPage(): React.JSX.Element {
       replace: true,
     });
 
+  // "In Planning (12)" — the count the old tile showed; bare label while the
+  // dashboard loads or for a status that has no tile.
+  const kpi: Record<string, number> = dash.data?.kpi ?? {};
+  const withCount = (label: string, kpiKey: string | undefined): string => {
+    const n = kpiKey ? kpi[kpiKey] : undefined;
+    return n == null ? label : `${label} (${n})`;
+  };
+
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
   }
@@ -138,8 +157,9 @@ function PlansListPage(): React.JSX.Element {
   return (
     <div>
       {/* The ONE list header (ui/layout ListHeader). Same URL params and the
-          same server search / status / type filters as before; the All |
-          Pending pills (ADR-170) and the KPI tiles sit in its sticky band. */}
+          same server search / status / type filters as before. The filter bar
+          carries status (with the old KPI-tile counts), type and All |
+          Pending (ADR-170) as dropdowns — no tiles, no pills. */}
       <ListHeader
         title="Plans"
         icon="📋"
@@ -159,37 +179,52 @@ function PlansListPage(): React.JSX.Element {
           })
         }
         searchPlaceholder="Search plan no., item code / name, SO no., POL, Production Order, JC…"
-        tools={
+        filters={
           <>
+            {/* Status — the former KPI tiles, folded in: every option carries
+                the same count its tile showed, and "Needs Planning" still
+                swaps the body for the unplanned-SO-lines table. */}
             <select
               className="innovic-select"
-              style={{ width: 140 }}
-              value={status ?? ''}
-              onChange={(e) =>
+              aria-label="Plan status"
+              title="Plan status"
+              value={needsPlanning ? NEEDS_PLANNING : (status ?? '')}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === NEEDS_PLANNING) {
+                  if (!needsPlanning) selectNeedsPlanning();
+                  return;
+                }
                 void navigate({
                   to: '/plans',
                   search: {
                     ...(search ? { search } : {}),
                     ...(planType ? { planType } : {}),
                     ...(pending ? { pending } : {}),
-                    status: (e.target.value as PlanEffectiveStatus | '') || undefined,
+                    status: (v as PlanEffectiveStatus | '') || undefined,
                   },
-                })
-              }
+                });
+              }}
             >
               <option value="">All statuses</option>
+              <option value={NEEDS_PLANNING}>{withCount('Needs Planning', 'needsPlanning')}</option>
               {(Object.keys(STATUS_BADGE) as PlanStatus[]).map((s) => (
                 <option key={s} value={s}>
-                  {STATUS_BADGE[s].label}
+                  {withCount(STATUS_BADGE[s].label, STATUS_KPI_KEY[s])}
                 </option>
               ))}
               {/* ADR-185 — the two route-card states with no stored twin. */}
-              <option value="route_card_pending">{DERIVED_LABEL.route_card_pending}</option>
-              <option value="gen_production_order">{DERIVED_LABEL.gen_production_order}</option>
+              <option value="route_card_pending">
+                {withCount(DERIVED_LABEL.route_card_pending, STATUS_KPI_KEY.route_card_pending)}
+              </option>
+              <option value="gen_production_order">
+                {withCount(DERIVED_LABEL.gen_production_order, STATUS_KPI_KEY.gen_production_order)}
+              </option>
             </select>
             <select
               className="innovic-select"
-              style={{ width: 140 }}
+              aria-label="Plan type"
+              title="Plan type"
               value={planType ?? ''}
               onChange={(e) =>
                 void navigate({
@@ -209,8 +244,23 @@ function PlansListPage(): React.JSX.Element {
               <option value="full_outsource">📦 Full Outsource</option>
               <option value="assembly">🔧 Assembly</option>
             </select>
+            {/* ADR-170 — All | Pending. "Pending" = route-card-driven plans
+                that still need a Production Order (server filter `poPending`).
+                Old plans only ever appear under All. */}
+            <select
+              className="innovic-select"
+              aria-label="Plans waiting for a Production Order"
+              title="Plans waiting for a Production Order"
+              value={pending ? 'pending' : ''}
+              onChange={(e) => selectPending(e.target.value === 'pending')}
+            >
+              <option value="">All plans</option>
+              <option value="pending">Pending</option>
+            </select>
           </>
         }
+        onClearFilters={() => void navigate({ to: '/plans', search: {} })}
+        filtersActive={!!(search || status || planType || pending || needsPlanning)}
         primary={
           perms.entry ? (
             <Link to="/plans/new" className="btn btn-primary">
@@ -218,26 +268,7 @@ function PlansListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        {/* ADR-170 — All | Pending. "Pending" = route-card-driven plans that
-            still need a Production Order (server filter `poPending`). Old
-            plans only ever appear under All. */}
-        <StatusPills
-          label="Plans waiting for a Production Order"
-          options={[{ value: 'pending', label: 'Pending' }]}
-          value={pending ? 'pending' : null}
-          onChange={(v) => selectPending(v === 'pending')}
-        />
-        <div style={{ marginTop: 'var(--sp-2)' }}>
-          <PlanningKpiStrip
-            kpi={dash.data?.kpi ?? {}}
-            activeStatus={status}
-            needsPlanning={!!needsPlanning}
-            onSelectStatus={selectStatus}
-            onSelectNeedsPlanning={selectNeedsPlanning}
-          />
-        </div>
-      </ListHeader>
+      />
 
       {needsPlanning ? (
         <NeedsPlanningTable />
