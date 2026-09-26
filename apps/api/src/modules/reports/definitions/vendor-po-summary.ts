@@ -4,6 +4,7 @@
 // per vendor.
 
 import { sql } from 'drizzle-orm';
+import { poLinePendingSql } from '../../../lib/po-pending';
 import type { RegisteredReport } from '../registry';
 
 export const vendorPoSummaryReport: RegisteredReport = {
@@ -25,8 +26,8 @@ export const vendorPoSummaryReport: RegisteredReport = {
       { key: 'po_count', label: 'PO Count', type: 'number' },
       { key: 'open_count', label: 'Open / Partial', type: 'number' },
       { key: 'closed_count', label: 'Closed', type: 'number' },
-      { key: 'total_value', label: 'Total Value', type: 'number' },
-      { key: 'pending_value', label: 'Pending Value', type: 'number' },
+      { key: 'total_value', label: 'Total Value (incl. GST)', type: 'number' },
+      { key: 'pending_value', label: 'Pending Value (ex-GST)', type: 'number' },
     ],
   },
   async run({ tx, companyId, filters }) {
@@ -35,6 +36,11 @@ export const vendorPoSummaryReport: RegisteredReport = {
     const fromFrag = fromDate ? sql`AND po.po_date >= ${fromDate}::date` : sql``;
     const toFrag = toDate ? sql`AND po.po_date <= ${toDate}::date` : sql``;
 
+    // ADR-189 — the same figures the PO list shows: Total Value is the PO's
+    // SAVED total (incl. GST), cancelled POs excluded (a cancelled order is no
+    // spend); Pending Value is the one Pending rule (lib/po-pending.ts) × rate,
+    // ex-GST. One row per vendor (by vendor id, else the typed code), never
+    // split because an old PO carries a different code snapshot.
     const result = await tx.execute(sql`
       WITH po_lines AS (
         SELECT
@@ -42,8 +48,8 @@ export const vendorPoSummaryReport: RegisteredReport = {
           po.vendor_id,
           po.vendor_code_text,
           po.status,
-          COALESCE(SUM(pol.qty * pol.rate), 0)::numeric(14, 2) AS line_total,
-          COALESCE(SUM((pol.qty - pol.received_qty) * pol.rate), 0)::numeric(14, 2)
+          COALESCE(po.total_amount, 0)::numeric(14, 2) AS po_total,
+          COALESCE(SUM(${poLinePendingSql('pol', 'po')} * pol.rate), 0)::numeric(14, 2)
             AS line_pending
         FROM public.purchase_orders po
         LEFT JOIN public.purchase_order_lines pol
@@ -55,18 +61,19 @@ export const vendorPoSummaryReport: RegisteredReport = {
         GROUP BY po.id
       )
       SELECT
-        COALESCE(v.code, pl.vendor_code_text, '—') AS vendor_code,
-        COALESCE(v.name, pl.vendor_code_text, '—') AS vendor_name,
+        COALESCE(MAX(v.code), MAX(pl.vendor_code_text), '—') AS vendor_code,
+        COALESCE(MAX(v.name), MAX(pl.vendor_code_text), '—') AS vendor_name,
         COUNT(*)::int                              AS po_count,
         COUNT(*) FILTER (WHERE pl.status IN ('draft', 'open', 'partial', 'qc_pending'))::int
                                                    AS open_count,
         COUNT(*) FILTER (WHERE pl.status = 'closed')::int
                                                    AS closed_count,
-        COALESCE(SUM(pl.line_total), 0)::numeric(14, 2)   AS total_value,
+        COALESCE(SUM(pl.po_total) FILTER (WHERE pl.status <> 'cancelled'), 0)::numeric(14, 2)
+                                                   AS total_value,
         COALESCE(SUM(pl.line_pending), 0)::numeric(14, 2) AS pending_value
       FROM po_lines pl
       LEFT JOIN public.vendors v ON v.id = pl.vendor_id AND v.deleted_at IS NULL
-      GROUP BY v.code, v.name, pl.vendor_code_text
+      GROUP BY COALESCE(pl.vendor_id::text, pl.vendor_code_text)
       ORDER BY total_value DESC, vendor_name ASC
       LIMIT 500
     `);

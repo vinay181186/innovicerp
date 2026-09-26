@@ -4,6 +4,8 @@
 import {
   type CreateStoreIssueInput,
   STORE_ISSUE_REF_TYPES,
+  STORE_ISSUE_REVERSE_REASON_MIN,
+  type StoreIssueListItem,
   type StoreIssueRefType,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
@@ -18,7 +20,12 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { SearchableSelect } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useItemsList } from '../../items/api';
-import { useCreateStoreIssue, useNextStoreIssueCode, useStoreIssuesList } from '../api';
+import {
+  useCreateStoreIssue,
+  useNextStoreIssueCode,
+  useReverseStoreIssue,
+  useStoreIssuesList,
+} from '../api';
 
 const PAGE_SIZE = 25;
 
@@ -47,6 +54,7 @@ function StoreIssuesListPage(): React.JSX.Element {
   );
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
+  const [reversing, setReversing] = useState<StoreIssueListItem | null>(null);
   // Tier-driven, per department (Store). Was `role === admin || manager`, which
   // let any manager in any department post a stock issue and locked out the
   // L2 storekeeper whose job this is. This gate covers the Item Issues tab
@@ -169,6 +177,7 @@ function StoreIssuesListPage(): React.JSX.Element {
                       <th>Purpose</th>
                       <th>Remarks</th>
                       <th>Issued By</th>
+                      {perms.edit ? <th></th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -178,6 +187,14 @@ function StoreIssuesListPage(): React.JSX.Element {
                           <span className="td-code" style={{ color: 'var(--cyan)' }}>
                             {iss.code}
                           </span>
+                          {iss.reversedAt ? (
+                            <div
+                              style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}
+                              title={`Reversed ${fmtDate(iss.reversedAt.slice(0, 10))} — ${iss.reversalReason ?? ''}`}
+                            >
+                              Reversed
+                            </div>
+                          ) : null}
                         </td>
                         <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                           {fmtDate(iss.issueDate)}
@@ -188,7 +205,13 @@ function StoreIssuesListPage(): React.JSX.Element {
                           </span>
                         </td>
                         <td>{iss.itemName || '—'}</td>
-                        <td className="mono fw-700 td-num" style={{ fontSize: 14 }}>
+                        <td
+                          className="mono fw-700 td-num"
+                          style={{
+                            fontSize: 14,
+                            textDecoration: iss.reversedAt ? 'line-through' : undefined,
+                          }}
+                        >
                           {iss.qty}
                         </td>
                         <td>{iss.issuedTo || '—'}</td>
@@ -205,11 +228,24 @@ function StoreIssuesListPage(): React.JSX.Element {
                           {iss.remarks || '—'}
                         </td>
                         <td>{iss.issuedByName || '—'}</td>
+                        {perms.edit ? (
+                          <td>
+                            {iss.reversedAt ? null : (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setReversing(iss)}
+                              >
+                                Reverse
+                              </button>
+                            )}
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                     {data.items.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="empty-state">
+                        <td colSpan={perms.edit ? 11 : 10} className="empty-state">
                           {search.trim() ? 'No issues match.' : 'No issues yet.'}
                         </td>
                       </tr>
@@ -231,6 +267,9 @@ function StoreIssuesListPage(): React.JSX.Element {
           ) : null}
 
           {showModal && perms.entry ? <NewIssueModal onClose={() => setShowModal(false)} /> : null}
+          {reversing && perms.edit ? (
+            <ReverseIssueModal issue={reversing} onClose={() => setReversing(null)} />
+          ) : null}
         </>
       )}
     </div>
@@ -288,15 +327,19 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
       setErr('Issued To is required.');
       return;
     }
+    if (purpose.trim().length < 3) {
+      setErr('Enter the Purpose — what the material is for');
+      return;
+    }
     const input: CreateStoreIssueInput = {
       issueDate: date,
       itemId,
       qty: q,
       issuedTo: issuedTo.trim(),
       refType,
+      purpose: purpose.trim(),
     };
     if (refNo.trim()) input.refNo = refNo.trim();
-    if (purpose.trim()) input.purpose = purpose.trim();
     if (remarks.trim()) input.remarks = remarks.trim();
     createMut.mutate(input, {
       onSuccess: (created) => {
@@ -438,7 +481,7 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
             </div>
 
             <div className="form-grp">
-              <label className="form-label">Purpose</label>
+              <label className="form-label">Purpose ★</label>
               <input
                 type="text"
                 className="innovic-input"
@@ -506,6 +549,96 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
               </>
             ) : (
               'Save Issue'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** ADR-189 — put an issue's pieces back with an opposite ledger entry. */
+function ReverseIssueModal({
+  issue,
+  onClose,
+}: {
+  issue: StoreIssueListItem;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [reason, setReason] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const reverseMut = useReverseStoreIssue();
+  const onSave = (): void => {
+    setErr(null);
+    if (reason.trim().length < STORE_ISSUE_REVERSE_REASON_MIN) {
+      setErr(`Give a reason (at least ${STORE_ISSUE_REVERSE_REASON_MIN} characters)`);
+      return;
+    }
+    reverseMut.mutate(
+      { id: issue.id, reason: reason.trim() },
+      {
+        onSuccess: () => onClose(),
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not reverse. Try again.'),
+      },
+    );
+  };
+  return (
+    <div
+      className="overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="modal">
+        <div className="modal-hdr">
+          <span className="modal-title">Reverse {issue.code}</span>
+          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="text2" style={{ fontSize: 12, marginBottom: 10 }}>
+            Puts{' '}
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {issue.qty}
+            </span>{' '}
+            of{' '}
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {issue.itemCode ?? issue.itemCodeText ?? '—'}
+            </span>{' '}
+            back into stock with an opposite entry. The issue stays on the register, marked
+            Reversed. This cannot be undone.
+          </div>
+          <div className="form-grp form-full">
+            <label className="form-label">Reason ★</label>
+            <input
+              type="text"
+              className="innovic-input"
+              placeholder="e.g. issued against the wrong job card"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+          {err ? (
+            <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
+          ) : null}
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={reverseMut.isPending}
+            onClick={onSave}
+          >
+            {reverseMut.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Saving…
+              </>
+            ) : (
+              'Reverse'
             )}
           </button>
         </div>

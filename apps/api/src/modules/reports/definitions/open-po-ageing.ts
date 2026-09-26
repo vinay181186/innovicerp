@@ -4,6 +4,7 @@
 // computed field + status enum filter.
 
 import { sql } from 'drizzle-orm';
+import { poLinePendingSql } from '../../../lib/po-pending';
 import type { RegisteredReport } from '../registry';
 
 export const openPoAgeingReport: RegisteredReport = {
@@ -53,7 +54,8 @@ export const openPoAgeingReport: RegisteredReport = {
         po.status,
         COALESCE(SUM(pol.qty), 0)::float AS total_qty,
         COALESCE(SUM(pol.received_qty), 0)::float AS received_qty,
-        COALESCE(SUM(pol.qty - pol.received_qty), 0)::float AS pending_qty
+        -- ADR-189 — the one Pending rule (lib/po-pending.ts), clamped per line.
+        COALESCE(SUM(${poLinePendingSql('pol', 'po')}), 0)::float AS pending_qty
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v
         ON v.id = po.vendor_id AND v.deleted_at IS NULL

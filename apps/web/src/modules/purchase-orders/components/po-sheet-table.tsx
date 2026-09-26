@@ -75,7 +75,7 @@ export function PoSheetTable({
             {rows.map((po, i) => {
               const isJW = po.poType === 'job_work';
               const isSvc = po.poType === 'service';
-              const pending = po.totalQty - po.receivedQty;
+              const pending = po.pendingQty;
               const vendor = po.vendorName ?? po.vendorCodeText ?? '—';
               return (
                 <tr key={po.id} onClick={() => onOpen(po.id)} style={{ cursor: 'pointer' }}>

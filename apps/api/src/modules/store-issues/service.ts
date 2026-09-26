@@ -13,17 +13,21 @@
 //   - item exists, not soft-deleted
 //   - qty <= current on-hand (from v_item_stock)
 
-import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreateStoreIssueInput,
   ListStoreIssuesQuery,
   ListStoreIssuesResponse,
+  ReverseStoreIssueInput,
   StoreIssue,
   StoreIssueListItem,
 } from '@innovic/shared';
+import { STORE_ISSUE_REVERSE_REASON_MIN } from '@innovic/shared';
+import { emitActivityLog } from '../activity-log/service';
 import { items, storeIssues, storeTransactions } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { readStockPositionLocked } from '../../lib/stock-reservation';
 import {
   AuthorizationError,
   ConflictError,
@@ -112,6 +116,8 @@ export async function listStoreIssues(
         si.purpose,
         si.remarks,
         si.store_transaction_id AS "storeTransactionId",
+        si.reversed_at AS "reversedAt", si.reversed_by AS "reversedBy",
+        si.reversal_reason AS "reversalReason",
         si.created_at AS "createdAt", si.created_by AS "createdBy",
         si.updated_at AS "updatedAt", si.updated_by AS "updatedBy",
         si.deleted_at AS "deletedAt",
@@ -130,13 +136,19 @@ export async function listStoreIssues(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(storeIssues.companyId, companyId), isNull(storeIssues.deletedAt)];
-    if (input.itemId) conditions.push(eq(storeIssues.itemId, input.itemId));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(storeIssues)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // The pager total counts under the SAME filters as the page (it used to
+    // ignore search and dates, so the pager overstated a filtered list).
+    const totalRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS total
+      FROM public.store_issues si
+      WHERE si.company_id = ${companyId}::uuid
+        AND si.deleted_at IS NULL
+        ${searchFrag}
+        ${itemFrag}
+        ${fromFrag}
+        ${toFrag}
+    `)) as unknown as Array<{ total: number }>;
+    const total = Number(totalRows[0]?.total ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };
@@ -159,6 +171,9 @@ function toListItem(r: Record<string, unknown>): StoreIssueListItem {
     purpose: (r['purpose'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     storeTransactionId: (r['storeTransactionId'] as string | null) ?? null,
+    reversedAt: r['reversedAt'] != null ? tsLike(r['reversedAt']) : null,
+    reversedBy: (r['reversedBy'] as string | null) ?? null,
+    reversalReason: (r['reversalReason'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
     updatedAt: tsLike(r['updatedAt']),
@@ -230,20 +245,18 @@ export async function createStoreIssue(
       productionOrderId = ref?.po_id ?? null;
     }
 
-    // 2) Lock the items row for the duration of the tx so concurrent
-    //    issues cant double-spend stock.
-    await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itm.id}::uuid FOR UPDATE`);
-
-    // 3) Read current on-hand and validate qty.
-    const balRows = (await tx.execute(sql`
-      SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-      FROM public.v_item_stock
-      WHERE company_id = ${companyId}::uuid AND item_id = ${itm.id}::uuid
-    `)) as unknown as Array<{ on_hand: number }>;
-    const stockBefore = Number(balRows[0]?.on_hand ?? 0);
-    if (input.qty > stockBefore) {
+    // 2) Lock the item row and read PHYSICAL / RESERVED / AVAILABLE inside
+    //    the lock (lib/stock-reservation), so two issues cannot double-spend.
+    // 3) ADR-189 — an issue may take only AVAILABLE stock: pieces booked for a
+    //    sales order line are on the shelf but already promised. The ledger
+    //    before / after figures stay PHYSICAL (what the shelf holds).
+    const pos = await readStockPositionLocked(tx, companyId, itm.id);
+    const stockBefore = pos.physicalQty;
+    if (input.qty > pos.availableQty) {
       throw new ConflictError(
-        `Item ${itm.code}: Qty (${input.qty}) cannot be more than In Stock (${stockBefore}).`,
+        pos.reservedQty > 0
+          ? `Item ${itm.code}: Qty (${input.qty}) cannot be more than Available (${pos.availableQty}) — In Stock ${pos.physicalQty}, of which ${pos.reservedQty} is booked for sales orders.`
+          : `Item ${itm.code}: Qty (${input.qty}) cannot be more than In Stock (${stockBefore}).`,
       );
     }
     const stockAfter = stockBefore - input.qty;
@@ -298,6 +311,18 @@ export async function createStoreIssue(
     const row = inserted[0];
     if (!row) throw new ValidationError('Could not save Item Issue. Try again.');
 
+    await emitActivityLog(
+      tx,
+      {
+        action: 'ISSUE',
+        entity: 'Store Issue',
+        detail: `${code} · ${itm.code} × ${input.qty} to ${input.issuedTo} — ${input.purpose} (stock ${stockBefore} → ${stockAfter})`,
+        refId: code,
+      },
+      companyId,
+      user,
+    );
+
     return {
       id: row.id,
       companyId: row.companyId,
@@ -313,12 +338,135 @@ export async function createStoreIssue(
       purpose: row.purpose,
       remarks: row.remarks,
       storeTransactionId: row.storeTransactionId,
+      reversedAt: null,
+      reversedBy: null,
+      reversalReason: null,
       createdAt: tsLike(row.createdAt),
       createdBy: row.createdBy,
       updatedAt: tsLike(row.updatedAt),
       updatedBy: row.updatedBy,
       deletedAt: row.deletedAt != null ? tsLike(row.deletedAt) : null,
     };
+  });
+}
+
+/**
+ * ADR-189 — undo an issue by an OPPOSITE ledger entry ('in' of the same qty),
+ * never by editing or deleting the 'out' it made (ledger rows are immutable).
+ * The issue stays on the register, stamped who / when / why. Once only.
+ */
+export async function reverseStoreIssue(
+  id: string,
+  input: ReverseStoreIssueInput,
+  user: AuthContext,
+): Promise<StoreIssueListItem> {
+  // Undoing a saved issue changes a stored stock figure → `edit`, as Adjust.
+  await requireFormAccess(user, 'issue_create', 'edit');
+  const companyId = requireCompany(user);
+  const reason = input.reason.trim();
+  if (reason.length < STORE_ISSUE_REVERSE_REASON_MIN) {
+    throw new ValidationError(
+      `Give a reason for the reversal (at least ${STORE_ISSUE_REVERSE_REASON_MIN} characters).`,
+    );
+  }
+  return withUserContext(user, async (tx) => {
+    const found = await tx
+      .select()
+      .from(storeIssues)
+      .where(
+        and(
+          eq(storeIssues.id, id),
+          eq(storeIssues.companyId, companyId),
+          isNull(storeIssues.deletedAt),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    const iss = found[0];
+    if (!iss) throw new NotFoundError('Item Issue not found.');
+    if (iss.reversedAt) {
+      throw new ConflictError(`${iss.code} is already reversed.`);
+    }
+    const live = iss.itemId
+      ? await tx
+          .select({ id: items.id })
+          .from(items)
+          .where(and(eq(items.id, iss.itemId), isNull(items.deletedAt)))
+          .limit(1)
+      : [];
+    if (!iss.itemId || !live[0]) {
+      throw new ConflictError(
+        `${iss.code}: its item is no longer in the Item Master, so the stock cannot be put back.`,
+      );
+    }
+
+    const pos = await readStockPositionLocked(tx, companyId, iss.itemId);
+    const stockBefore = pos.physicalQty;
+    const stockAfter = stockBefore + iss.qty;
+    const itemCode = iss.itemCodeText ?? '';
+    const st = await tx
+      .insert(storeTransactions)
+      .values({
+        companyId,
+        txnDate: new Date().toISOString().slice(0, 10),
+        itemId: iss.itemId,
+        itemCodeText: iss.itemCodeText,
+        txnType: 'in',
+        qty: iss.qty,
+        sourceType: 'other',
+        sourceRef: `${iss.code} reversal · ${itemCode}`,
+        stockBefore,
+        stockAfter,
+        remarks: `Item Issue reversed · ${reason}`,
+        createdBy: user.id,
+      })
+      .returning({ id: storeTransactions.id });
+
+    const now = new Date();
+    await tx
+      .update(storeIssues)
+      .set({
+        reversedAt: now,
+        reversedBy: user.id,
+        reversalReason: reason,
+        reversalStoreTransactionId: st[0]?.id ?? null,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(storeIssues.id, iss.id));
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'REVERSE',
+        entity: 'Store Issue',
+        detail: `${iss.code} · ${itemCode} × ${iss.qty} put back (stock ${stockBefore} → ${stockAfter}). Reason: ${reason}`,
+        refId: iss.code,
+      },
+      companyId,
+      user,
+    );
+
+    const rows = (await tx.execute(sql`
+      SELECT
+        si.id, si.company_id AS "companyId", si.code,
+        si.issue_date AS "issueDate", si.item_id AS "itemId",
+        si.item_code_text AS "itemCodeText", si.item_name AS "itemName",
+        si.qty, si.issued_to AS "issuedTo", si.ref_type AS "refType",
+        si.ref_no AS "refNo", si.purpose, si.remarks,
+        si.store_transaction_id AS "storeTransactionId",
+        si.reversed_at AS "reversedAt", si.reversed_by AS "reversedBy",
+        si.reversal_reason AS "reversalReason",
+        si.created_at AS "createdAt", si.created_by AS "createdBy",
+        si.updated_at AS "updatedAt", si.updated_by AS "updatedBy",
+        si.deleted_at AS "deletedAt",
+        i.code AS "itemCode", u.full_name AS "issuedByName"
+      FROM public.store_issues si
+      LEFT JOIN public.items i ON i.id = si.item_id AND i.deleted_at IS NULL
+      LEFT JOIN public.users u ON u.id = si.created_by
+      WHERE si.id = ${iss.id}::uuid
+    `)) as unknown as Array<Record<string, unknown>>;
+    return toListItem(rows[0]!);
   });
 }
 

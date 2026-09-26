@@ -40,6 +40,10 @@ export const storeIssueSchema = z.object({
   purpose: z.string().nullable(),
   remarks: z.string().nullable(),
   storeTransactionId: z.string().uuid().nullable(),
+  /** ADR-189 (0152) — undone by an opposite ledger entry: who / when / why. */
+  reversedAt: z.string().nullable().default(null),
+  reversedBy: z.string().uuid().nullable().default(null),
+  reversalReason: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -65,10 +69,25 @@ export const createStoreIssueInputSchema = z.object({
   issuedTo: z.string().trim().min(1).max(255),
   refType: storeIssueRefTypeSchema.optional(),
   refNo: z.string().trim().max(64).optional(),
-  purpose: z.string().trim().max(255).optional(),
+  // ADR-189 — every issue says what the material is for.
+  purpose: z.string().trim().min(3, 'Enter the Purpose (at least 3 characters)').max(255),
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreateStoreIssueInput = z.infer<typeof createStoreIssueInputSchema>;
+
+/** ADR-189 — reversing an issue puts the pieces back with an opposite entry. */
+export const STORE_ISSUE_REVERSE_REASON_MIN = 10;
+export const reverseStoreIssueInputSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(
+      STORE_ISSUE_REVERSE_REASON_MIN,
+      `Give a reason (at least ${STORE_ISSUE_REVERSE_REASON_MIN} characters)`,
+    )
+    .max(500),
+});
+export type ReverseStoreIssueInput = z.infer<typeof reverseStoreIssueInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

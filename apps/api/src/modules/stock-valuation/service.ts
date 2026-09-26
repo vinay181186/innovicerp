@@ -43,8 +43,10 @@ export async function getStockValuation(user: AuthContext): Promise<StockValuati
           FROM goods_receipt_note_lines gl
           JOIN goods_receipt_notes g ON g.id = gl.goods_receipt_note_id
           JOIN purchase_order_lines pol ON pol.id = gl.purchase_order_line_id
+          JOIN purchase_orders gpo ON gpo.id = pol.purchase_order_id
           WHERE g.company_id = ${cid} AND g.deleted_at IS NULL AND gl.deleted_at IS NULL
             AND gl.item_id IS NOT NULL AND pol.rate > 0
+            AND gpo.status NOT IN ('draft', 'cancelled')
           ORDER BY gl.item_id, g.grn_date DESC, g.created_at DESC
         ),
         last_po_rate AS (
@@ -53,6 +55,8 @@ export async function getStockValuation(user: AuthContext): Promise<StockValuati
           JOIN purchase_orders po ON po.id = pol.purchase_order_id
           WHERE po.company_id = ${cid} AND po.deleted_at IS NULL
             AND pol.item_id IS NOT NULL AND pol.rate > 0
+            -- ADR-189 — a draft or cancelled PO is not a price anybody paid.
+            AND po.status NOT IN ('draft', 'cancelled')
           ORDER BY pol.item_id, po.po_date DESC
         )
         SELECT

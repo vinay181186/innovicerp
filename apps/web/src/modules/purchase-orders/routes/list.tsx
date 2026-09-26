@@ -309,7 +309,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         rows.map((po) => {
           const isJW = po.poType === 'job_work';
           const isSvc = po.poType === 'service';
-          const pending = po.totalQty - po.receivedQty;
+          const pending = po.pendingQty;
           const accent =
             po.status === 'closed'
               ? 'var(--green)'

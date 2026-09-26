@@ -495,6 +495,20 @@ export async function createPartyGrn(
       pm.receivedQty += ln.receivedQty;
     }
 
+    // ADR-189 — a customer-material receipt is on the activity log like every
+    // other receipt (cancel already was).
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'Party GRN',
+        detail: `${header.code} · ${input.lines.length} line(s), ${input.lines.reduce((a, l) => a + l.receivedQty, 0)} pcs against ${header.jwCodeText ?? ''}`,
+        refId: header.code,
+      },
+      companyId,
+      user,
+    );
+
     return rowToPartyGrn(header);
   });
 }

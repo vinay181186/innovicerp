@@ -43,7 +43,7 @@
 // its address and GSTIN already belonged.
 
 import type { PurchaseOrderLine } from '@innovic/shared';
-import { PO_SHORT_CLOSE_REASON_MIN, poSendsMaterialOut } from '@innovic/shared';
+import { PO_SHORT_CLOSE_REASON_MIN, poLinePendingQty, poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Send, X } from 'lucide-react';
 import { useState } from 'react';
@@ -430,7 +430,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                   </td>
                 </tr>
               ) : (
-                detail.lines.map((l) => <LineRow key={l.id} line={l} priceHidden={priceHidden} />)
+                detail.lines.map((l) => (
+                  <LineRow key={l.id} line={l} priceHidden={priceHidden} poStatus={detail.status} />
+                ))
               )}
             </tbody>
           </table>
@@ -780,12 +782,17 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 // RIGHT-aligned with `td-num` (house rule 2026-09-26), Item Code is `td-code` on the <td> in var(--purple) (a real
 // token with no utility class), Received is always green and Pending flips
 // blue/green on >0.
-function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): React.JSX.Element {
-  const { line: l, priceHidden } = props;
+function LineRow(props: {
+  line: PurchaseOrderLine;
+  priceHidden: boolean;
+  poStatus: string;
+}): React.JSX.Element {
+  const { line: l, priceHidden, poStatus } = props;
   // When the viewer may not see prices the Rate + Amount columns are dropped
   // from the table entirely (header + cells), not blanked.
   const amount = l.qty * Number(l.rate ?? 0);
-  const pending = Math.max(0, l.qty - l.receivedQty);
+  // ADR-189 — the one Pending rule: 0 once the PO is closed / short-closed.
+  const pending = poLinePendingQty(l.qty, l.receivedQty, poStatus);
   return (
     <tr>
       <td className="td-num mono fw-700" style={{ color: 'var(--blue)' }}>
