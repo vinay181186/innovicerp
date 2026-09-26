@@ -54,6 +54,13 @@ function DesignProjectsListPage(): React.JSX.Element {
     openIssues: 0,
   };
 
+  const filterCount: Record<FilterKey, number> = {
+    all: summary.total,
+    active: summary.active,
+    released: summary.released,
+    hold: summary.onHold,
+  };
+
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page.
   if (eff && !perms.view) {
@@ -76,18 +83,24 @@ function DesignProjectsListPage(): React.JSX.Element {
         onSearch={setSearch}
         searchPlaceholder="Search project no., name, SO no., customer…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <Select
             aria-label="Project filter"
-            fieldWidth="md"
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterKey)}
+            // Counts in the labels — they were the clickable Total / Active /
+            // Released tiles (owner's filter-bar decision 2026-09-26).
             options={(Object.keys(FILTER_LABEL) as FilterKey[]).map((k) => ({
               value: k,
-              label: FILTER_LABEL[k],
+              label: `${FILTER_LABEL[k]} (${filterCount[k]})`,
             }))}
           />
         }
+        onClearFilters={() => {
+          setSearch('');
+          setFilter('all');
+        }}
+        filtersActive={search.trim() !== '' || filter !== 'all'}
         primary={
           perms.entry ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
@@ -96,34 +109,10 @@ function DesignProjectsListPage(): React.JSX.Element {
           ) : null
         }
       >
-        {/* ONE strip: the first three counts double as the filter; tasks and
-            open issues are read-only totals. */}
+        {/* Read-only totals the Project filter dropdown does not carry. The
+            Total / Active / Released counts moved into its labels. */}
         <StatStrip
           items={[
-            {
-              key: 'all',
-              label: 'Total',
-              count: summary.total,
-              color: 'var(--blue)',
-              active: filter === 'all',
-              onClick: () => setFilter('all'),
-            },
-            {
-              key: 'active',
-              label: 'Active',
-              count: summary.active,
-              color: 'var(--cyan)',
-              active: filter === 'active',
-              onClick: () => setFilter('active'),
-            },
-            {
-              key: 'released',
-              label: 'Released',
-              count: summary.released,
-              color: 'var(--green2)',
-              active: filter === 'released',
-              onClick: () => setFilter('released'),
-            },
             {
               key: 'tasks',
               label: 'Tasks Completed',

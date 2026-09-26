@@ -11,6 +11,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Select } from '@/ui/forms';
 import { ListHeader } from '@/ui/layout';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
 
@@ -130,14 +131,26 @@ function ProductionSchedulePage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The one header band: title · op count … the window's date controls,
-          with the Show filter underneath it. */}
+      {/* The one header band: title · op count … the window's date controls;
+          the filter bar carries the Show dropdown (it replaced the row of
+          Show buttons — owner's filter-bar decision 2026-09-26) and Clear. */}
       <ListHeader
         title="Production Schedule (Gantt)"
         icon="📅"
         count={isLoading ? undefined : stats.total}
         noun="op"
         filterNote={filter === 'all' ? undefined : FILTER_BTNS.find(([f]) => f === filter)?.[1]}
+        filters={
+          <Select
+            aria-label="Show"
+            title="Show"
+            value={filter}
+            options={FILTER_BTNS.map(([f, label]) => ({ value: f, label }))}
+            onChange={(e) => setFilter(e.target.value as ProductionScheduleFilter)}
+          />
+        }
+        onClearFilters={() => setFilter('all')}
+        filtersActive={filter !== 'all'}
         tools={
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(-7)}>
@@ -169,22 +182,7 @@ function ProductionSchedulePage(): React.JSX.Element {
             </button>
           </div>
         }
-      >
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, color: 'var(--text3)', marginRight: 4 }}>Show:</span>
-          {FILTER_BTNS.map(([f, label]) => (
-            <button
-              key={f}
-              type="button"
-              className={`btn ${filter === f ? 'btn-primary' : 'btn-ghost'} btn-sm`}
-              style={{ fontSize: 11, padding: '4px 10px' }}
-              onClick={() => setFilter(f)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </ListHeader>
+      />
 
       {/* Legend */}
       <div

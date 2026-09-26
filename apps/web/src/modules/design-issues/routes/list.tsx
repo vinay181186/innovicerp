@@ -8,7 +8,6 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useDesignIssuesAll } from '../api';
@@ -41,6 +40,12 @@ function DesignIssuesAllPage(): React.JSX.Element {
     offset: 0,
   });
   const summary = data?.summary ?? { total: 0, open: 0, resolved: 0, critical: 0 };
+  const filterCount: Record<FilterKey, number> = {
+    all: summary.total,
+    open: summary.open,
+    resolved: summary.resolved,
+    critical: summary.critical,
+  };
 
   // "Hide page" (Access Control → Config): a user whose VIEW was removed for
   // the Design Issues page sees the no-access panel, not the page.
@@ -64,57 +69,25 @@ function DesignIssuesAllPage(): React.JSX.Element {
         onSearch={setSearch}
         searchPlaceholder="Search issue, part, assigned to, project…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <Select
             aria-label="Issue filter"
-            fieldWidth="md"
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterKey)}
+            // Counts in the labels — they were the clickable Total / Open /
+            // Resolved / Critical strip (owner's filter-bar decision 2026-09-26).
             options={(Object.keys(FILTER_LABEL) as FilterKey[]).map((k) => ({
               value: k,
-              label: FILTER_LABEL[k],
+              label: `${FILTER_LABEL[k]} (${filterCount[k]})`,
             }))}
           />
         }
-      >
-        {/* The counts double as the filter — ONE strip, not four cards. */}
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: 'Total',
-              count: summary.total,
-              color: 'var(--blue)',
-              active: filter === 'all',
-              onClick: () => setFilter('all'),
-            },
-            {
-              key: 'open',
-              label: 'Open',
-              count: summary.open,
-              color: 'var(--red2)',
-              active: filter === 'open',
-              onClick: () => setFilter('open'),
-            },
-            {
-              key: 'resolved',
-              label: 'Resolved',
-              count: summary.resolved,
-              color: 'var(--green2)',
-              active: filter === 'resolved',
-              onClick: () => setFilter('resolved'),
-            },
-            {
-              key: 'critical',
-              label: 'Critical',
-              count: summary.critical,
-              color: 'var(--red2)',
-              active: filter === 'critical',
-              onClick: () => setFilter('critical'),
-            },
-          ]}
-        />
-      </ListHeader>
+        onClearFilters={() => {
+          setSearch('');
+          setFilter('all');
+        }}
+        filtersActive={search.trim() !== '' || filter !== 'all'}
+      />
 
       <div className="panel">
         {isLoading ? (

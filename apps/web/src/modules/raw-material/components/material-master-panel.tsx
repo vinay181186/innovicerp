@@ -6,15 +6,16 @@
 // copies that would drift apart on the first fix.
 //
 // Styling follows the `styling` skill: <ListHeader> band, the ruled sheet
-// (.innovic-table.tbl-grid — codes on one line, descriptions wrap), ONE StatStrip row for the counts (which double as the
-// Active/Inactive filter), clickable rows, and a scrolling list — masters do not
-// paginate.
+// (.innovic-table.tbl-grid — codes on one line, descriptions wrap), an
+// All / Active / Inactive dropdown in the filter bar whose labels carry the
+// counts (owner's filter-bar decision 2026-09-26 — it replaced the clickable
+// count strip), clickable rows, and a scrolling list — masters do not paginate.
 
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 
 /** The subset of MaterialGrade / MaterialSize this table renders. Both shared
@@ -128,8 +129,9 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
 
   return (
     <div>
-      {/* THE list header (2026-09-26 list standard): title · count … search ·
-          + Add, with the Grade | Size tabs and the count strip in the band. */}
+      {/* THE list header (2026-09-26 list standard): title · count … + Add;
+          filter bar: search · status (counts in the labels) · Clear; the
+          Grade | Size tabs in the band. */}
       <ListHeader
         title="Raw Material Master"
         icon="▬"
@@ -140,6 +142,24 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         onSearch={onSearchInput}
         searchPlaceholder={searchPlaceholder}
         updating={isFetching && !isLoading}
+        filters={
+          <Select
+            aria-label={`${noun} Status`}
+            title={`${noun} Status`}
+            value={status}
+            options={[
+              { value: 'all', label: `All ${noun}s (${rows.length})` },
+              { value: 'active', label: `Active (${activeCount})` },
+              { value: 'inactive', label: `Inactive (${inactiveCount})` },
+            ]}
+            onChange={(e) => setStatus(e.target.value as StatusFilter)}
+          />
+        }
+        onClearFilters={() => {
+          onSearchInput('');
+          setStatus('all');
+        }}
+        filtersActive={searchInput.trim() !== '' || status !== 'all'}
         primary={
           canAdd ? (
             <button
@@ -153,35 +173,6 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         }
       >
         {tabs}
-        {/* Counts + the Active/Inactive filter in ONE strip (styling skill Rule 3). */}
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: `All ${noun}s`,
-              count: rows.length,
-              color: 'var(--cyan)',
-              active: status === 'all',
-              onClick: () => setStatus('all'),
-            },
-            {
-              key: 'active',
-              label: 'Active',
-              count: activeCount,
-              color: 'var(--green2)',
-              active: status === 'active',
-              onClick: () => setStatus('active'),
-            },
-            {
-              key: 'inactive',
-              label: 'Inactive',
-              count: inactiveCount,
-              color: 'var(--amber2)',
-              active: status === 'inactive',
-              onClick: () => setStatus('inactive'),
-            },
-          ]}
-        />
       </ListHeader>
 
       {importMsg ? (

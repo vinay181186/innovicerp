@@ -12,6 +12,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Select } from '@/ui/forms';
 import { ListHeader } from '@/ui/layout';
 import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
 
@@ -119,13 +120,34 @@ function JobQueuePage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search JC no., POL, item, SO no., customer, operation…"
+        // The machine picker (owner's filter-bar decision 2026-09-26): the
+        // clickable machine-card strip became this dropdown — each label carries
+        // the pending-op count the card showed, and ▶n when ops are running.
+        filters={
+          <Select
+            aria-label="Machine"
+            title="Machine"
+            value={selectedMachine ? selectedMachine.machineCode : ''}
+            options={[
+              {
+                value: '',
+                label: `All machines (${machines.reduce((n, m) => n + m.pendingCount, 0)})`,
+              },
+              ...machines.map((m) => ({
+                value: m.machineCode,
+                label: `${m.machineCode} (${m.pendingCount})${m.runningCount > 0 ? ` ▶${m.runningCount}` : ''}`,
+              })),
+            ]}
+            onChange={(e) => setMachine(e.target.value === '' ? null : e.target.value)}
+          />
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          setMachine(null);
+        }}
+        filtersActive={term !== '' || selectedMachine != null}
         tools={
           <>
-            {selectedMachine ? (
-              <button type="button" className="btn btn-ghost" onClick={() => setMachine(null)}>
-                All Machines ×
-              </button>
-            ) : null}
             {isAdmin ? (
               <button
                 type="button"
@@ -144,50 +166,6 @@ function JobQueuePage(): React.JSX.Element {
           </>
         }
       />
-
-      {/* Machine cards strip */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 8,
-          marginBottom: 16,
-        }}
-      >
-        {machines.map((m) => {
-          const active = selectedMachine?.machineId === m.machineId;
-          return (
-            <div
-              key={m.machineId}
-              onClick={() => setMachine(m.machineCode)}
-              style={{
-                padding: 10,
-                background: 'var(--bg2)',
-                border: `1px solid ${active ? 'var(--cyan)' : 'var(--border)'}`,
-                borderRadius: 6,
-                cursor: 'pointer',
-                boxShadow: active ? '0 0 0 2px rgba(0,136,187,.2)' : undefined,
-                textAlign: 'center',
-              }}
-            >
-              <div className="mono fw-700" style={{ fontSize: 13 }}>
-                {m.machineCode}
-              </div>
-              <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-                {m.machineType ?? ''}
-              </div>
-              {m.runningCount > 0 ? (
-                <div style={{ color: 'var(--amber2)', fontSize: 11, fontWeight: 700 }}>
-                  ▶ {m.runningCount} running
-                </div>
-              ) : null}
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                {m.pendingCount} pending ops
-              </div>
-            </div>
-          );
-        })}
-      </div>
 
       {isLoading ? (
         <div className="panel">

@@ -3,10 +3,10 @@
 // PHASE 4 — migrated onto apps/web/src/ui/ following the GROUP 1 reference
 // implementation, modules/clients/routes/list.tsx:
 //
-//   <ListHeader>            title · count … search · status · machine · operator
-//                           · dates · ☰/▦ · + New JWSO JC · + Plan & Create (primary)
-//     <StatStrip>           the KPI strip (loaded/filtered counts, read-only)
-//   </ListHeader>           — all of it inside the ONE sticky band, as before
+//   <ListHeader>            row 1: title · count … ☰/▦ · + New JWSO JC · + Plan &
+//                           Create (primary); row 2 (filter bar): search · status
+//                           (counts in the labels) · machine · operator · dates ·
+//                           Clear — all inside the ONE sticky band
 //   <Panel><DataTable>      LIST VIEW — the ruled sheet
 //   … or the card list      CARD VIEW — unchanged anatomy, primitives inside
 //   <ListFooter>            count line · pager · 💡 hint
@@ -27,12 +27,11 @@
 //     IMAGE (items.image_path), NOT the drawing (user decision 2026-09-21);
 //     the old drawing-based PartThumb wrote a drawing_view audit row per row
 //     shown, and the product image is not a controlled document;
-//   · the KPI buckets (open = not started · in progress = started · completed =
-//     complete or closed · overdue = past due and not done · on hold = always
-//     0, no such state exists) and their note that they count the LOADED list;
+//   · (the Open / In Progress / Completed / Overdue strip was removed on
+//     2026-09-26 — owner's filter-bar decision; the counts now sit in the JC
+//     Status dropdown labels, still counting the LOADED list);
 //   · the Days Left colour rule — no date or done: muted · late: red ·
-//     5 days or less: amber · otherwise green — and the same isDone() behind
-//     both it and the KPI buckets, so the two can never disagree;
+//     5 days or less: amber · otherwise green;
 //   · the card's left accent bar (red late · green finished · blue otherwise)
 //     and its overdue "Due <date> ⚠" in red;
 //   · the List/Card choice remembered per browser, in a try/catch so a
@@ -67,14 +66,7 @@ import { useOperatorsList } from '@/modules/operators/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Badge, StatusBadge } from '@/ui/core';
-import {
-  DataTable,
-  Panel,
-  ProgressBar,
-  QtyStrip,
-  StatStrip,
-  type DataTableColumn,
-} from '@/ui/data';
+import { DataTable, Panel, ProgressBar, QtyStrip, type DataTableColumn } from '@/ui/data';
 import { Input, Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions, ViewToggle } from '@/ui/layout';
 import { useDeleteJobCard, useJobCardsList } from '../api';
@@ -104,8 +96,18 @@ function accentFor(jc: JobCardListItem, today: string): string {
   return 'var(--blue)';
 }
 
-/** A job is "done" when it has reached complete or closed — used by both the KPI
- *  buckets and the Days Left column so the two never disagree. */
+/** Late and unfinished — the same rule as the red accent bar and "Due ⚠". */
+function isOverdueJc(jc: JobCardListItem, today: string): boolean {
+  return (
+    jc.dueDate != null &&
+    jc.dueDate < today &&
+    jc.computedStatus !== 'closed' &&
+    jc.computedStatus !== 'complete'
+  );
+}
+
+/** A job is "done" when it has reached complete or closed — the Days Left
+ *  column's rule. */
 function isDone(jc: JobCardListItem): boolean {
   return jc.computedStatus === 'complete' || jc.computedStatus === 'closed';
 }
@@ -141,6 +143,9 @@ function sourceRoute(link: NonNullable<JobCardListItem['sourceLink']>): {
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(JC_COMPUTED_STATUSES).optional(),
+  /** "Overdue" in the Status dropdown — not a stored status: past its due
+   *  date and not complete / closed. Filtered on the loaded set. */
+  overdue: z.boolean().optional(),
   machineId: z.string().uuid().optional(),
   operatorId: z.string().uuid().optional(),
   fromDate: z
@@ -251,9 +256,13 @@ function JobCardsListPage(): React.JSX.Element {
   const canDeleteJc = perms.edit && perms.approve;
   const del = useDeleteJobCard();
 
-  const total = data?.total ?? 0;
-  const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const today = todayIst();
+  const rows = useMemo(() => {
+    const loaded = data?.items ?? [];
+    return search.overdue ? loaded.filter((jc) => isOverdueJc(jc, today)) : loaded;
+  }, [data?.items, search.overdue, today]);
+  // Overdue is filtered in the browser, so its total is the rows shown.
+  const total = search.overdue ? rows.length : (data?.total ?? 0);
 
   // Client-side pagination for the List View (Card View keeps its full scroll).
   // Keeps each page to PAGE_SIZE rows so only a page's worth of thumbnails load.
@@ -264,38 +273,65 @@ function JobCardsListPage(): React.JSX.Element {
     void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
   };
 
-  // KPI tiles — computed from the CURRENTLY LOADED/filtered rows (the API returns
-  // a filtered total, not global per-status counts). Buckets:
-  //   Open        = not started (no ops done) and not done
-  //   In Progress = started (an op done / QC pending / a running session) not done
-  //   Completed   = complete or closed
-  //   Overdue     = past due and not done
-  //   On Hold     = no such state exists in job-card data → always 0 (see report)
-  const kpis = useMemo(() => {
-    let open = 0;
-    let inProgress = 0;
-    let completed = 0;
+  // Status counts for the JC Status dropdown labels ("Open (40)") — the
+  // owner's 2026-09-26 filter-bar decision replaced the Open / In Progress /
+  // Completed / Overdue strip with these. Counted over the list loaded WITHOUT
+  // the status filter (every other filter and the search still apply), so
+  // picking "Closed" does not turn every other option into "(0)". While no
+  // status is picked this is the very same query as the list — one fetch,
+  // shared cache entry. Like the old strip, it counts the LOADED set (cap 200).
+  const countQuery: ListJobCardsQuery = useMemo(() => ({ ...query, status: undefined }), [query]);
+  const { data: countData } = useJobCardsList(countQuery);
+  const statusCounts = useMemo(() => {
+    const c: Record<JcComputedStatus, number> = {
+      open: 0,
+      qc_pending: 0,
+      complete: 0,
+      closed: 0,
+      no_ops: 0,
+    };
     let overdue = 0;
-    for (const jc of rows) {
-      if (isDone(jc)) {
-        completed += 1;
-      } else if (jc.doneOps > 0 || jc.computedStatus === 'qc_pending' || jc.runningCount > 0) {
-        inProgress += 1;
-      } else {
-        open += 1;
-      }
-      if (!isDone(jc) && jc.dueDate != null && jc.dueDate < today) overdue += 1;
+    for (const jc of countData?.items ?? []) {
+      c[jc.computedStatus] += 1;
+      if (isOverdueJc(jc, today)) overdue += 1;
     }
-    return { total: rows.length, open, inProgress, onHold: 0, completed, overdue };
-  }, [rows, today]);
+    return { all: countData?.items.length ?? 0, byStatus: c, overdue };
+  }, [countData?.items, today]);
+  const countsReady = countData != null;
 
   const setNav = (
     update: Partial<
-      Pick<typeof search, 'status' | 'machineId' | 'operatorId' | 'fromDate' | 'toDate'>
+      Pick<typeof search, 'status' | 'overdue' | 'machineId' | 'operatorId' | 'fromDate' | 'toDate'>
     >,
   ): void => {
     void navigate({
       search: (prev) => ({ ...prev, ...update, page: 1 }),
+      replace: true,
+    });
+  };
+
+  const filtersActive =
+    searchInput.trim() !== '' ||
+    search.status != null ||
+    search.overdue === true ||
+    search.machineId != null ||
+    search.operatorId != null ||
+    search.fromDate != null ||
+    search.toDate != null;
+  const clearFilters = (): void => {
+    setSearchInput('');
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        search: undefined,
+        status: undefined,
+        overdue: undefined,
+        machineId: undefined,
+        operatorId: undefined,
+        fromDate: undefined,
+        toDate: undefined,
+        page: 1,
+      }),
       replace: true,
     });
   };
@@ -552,38 +588,56 @@ function JobCardsListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, the create buttons, the KPI
-          strip AND the filter panel stay pinned while the list scrolls
+      {/* The frozen header band: title, count, the create buttons AND the
+          filter bar stay pinned while the list scrolls
           underneath, so the filters stay reachable. */}
       <ListHeader
         title="Job Cards"
         icon="▭"
         count={total}
         noun="job card"
-        filterNote={search.status ? JC_STATUS_LABEL[search.status] : undefined}
+        filterNote={
+          search.overdue ? 'Overdue' : search.status ? JC_STATUS_LABEL[search.status] : undefined
+        }
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search JC no., item code / name, customer, SO no.…"
         updating={isFetching && !isLoading}
-        tools={
+        onClearFilters={clearFilters}
+        filtersActive={filtersActive}
+        filters={
           <>
             <Select
               aria-label="JC Status"
-              fieldWidth="md"
-              value={search.status ?? ''}
+              value={search.overdue ? 'overdue' : (search.status ?? '')}
               options={[
-                { value: '', label: 'All statuses' },
-                ...JC_COMPUTED_STATUSES.map((s) => ({ value: s, label: JC_STATUS_LABEL[s] })),
+                {
+                  value: '',
+                  label: countsReady ? `All statuses (${statusCounts.all})` : 'All statuses',
+                },
+                ...JC_COMPUTED_STATUSES.map((s) => ({
+                  value: s,
+                  label: countsReady
+                    ? `${JC_STATUS_LABEL[s]} (${statusCounts.byStatus[s]})`
+                    : JC_STATUS_LABEL[s],
+                })),
+                {
+                  value: 'overdue',
+                  label: countsReady ? `Overdue (${statusCounts.overdue})` : 'Overdue',
+                },
               ]}
-              onChange={(e) =>
-                setNav({
-                  status: e.target.value === '' ? undefined : (e.target.value as JcComputedStatus),
-                })
-              }
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'overdue') setNav({ status: undefined, overdue: true });
+                else
+                  setNav({
+                    status: v === '' ? undefined : (v as JcComputedStatus),
+                    overdue: undefined,
+                  });
+              }}
             />
             <Select
               aria-label="Machine"
-              fieldWidth="md"
               value={search.machineId ?? ''}
               options={[
                 { value: '', label: 'All machines' },
@@ -595,7 +649,6 @@ function JobCardsListPage(): React.JSX.Element {
             />
             <Select
               aria-label="Operator"
-              fieldWidth="md"
               value={search.operatorId ?? ''}
               options={[
                 { value: '', label: 'All operators' },
@@ -619,6 +672,10 @@ function JobCardsListPage(): React.JSX.Element {
               title="To date"
               aria-label="To date"
             />
+          </>
+        }
+        tools={
+          <>
             <ViewToggle value={view} onChange={changeView} />
             {canWrite ? (
               <Link
@@ -638,29 +695,7 @@ function JobCardsListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        {/* KPI strip — ONE single-row strip (styling skill Rule 3). Counts
-            reflect the loaded / filtered set, not global, so they are read-only
-            figures: no onClick, no filtering. */}
-        <StatStrip
-          items={[
-            { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber2)' },
-            {
-              key: 'in_progress',
-              label: 'In Progress',
-              count: kpis.inProgress,
-              color: 'var(--blue)',
-            },
-            {
-              key: 'completed',
-              label: 'Completed',
-              count: kpis.completed,
-              color: 'var(--green2)',
-            },
-            { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red2)' },
-          ]}
-        />
-      </ListHeader>
+      />
 
       {isError ? (
         <PageState

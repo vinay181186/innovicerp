@@ -15,7 +15,6 @@ import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useSalesOrdersList } from '../../sales-orders/api';
@@ -83,6 +82,14 @@ function DesignTrackerListPage(): React.JSX.Element {
     approved: 0,
     overdue: 0,
   };
+  const filterCount: Record<FilterKey, number> = {
+    all: summary.total,
+    pending: summary.pending,
+    progress: summary.inProgress,
+    review: summary.review,
+    approved: summary.approved,
+    overdue: summary.overdue,
+  };
 
   if (eff && !perms.view) {
     return (
@@ -104,18 +111,25 @@ function DesignTrackerListPage(): React.JSX.Element {
         onSearch={setSearch}
         searchPlaceholder="Search design no., SO no., POL, item code, engineer…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <Select
             aria-label="Design Status"
-            fieldWidth="md"
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterKey)}
+            // Counts in the labels — they were the clickable Total / Pending /
+            // In Progress / Review / Approved / Overdue strip (owner's
+            // filter-bar decision 2026-09-26).
             options={(Object.keys(FILTER_LABEL) as FilterKey[]).map((k) => ({
               value: k,
-              label: FILTER_LABEL[k],
+              label: `${FILTER_LABEL[k]} (${filterCount[k]})`,
             }))}
           />
         }
+        onClearFilters={() => {
+          setSearch('');
+          setFilter('all');
+        }}
+        filtersActive={search.trim() !== '' || filter !== 'all'}
         primary={
           perms.entry ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
@@ -123,9 +137,7 @@ function DesignTrackerListPage(): React.JSX.Element {
             </button>
           ) : null
         }
-      >
-        <KpiStrip summary={summary} filter={filter} onChange={setFilter} />
-      </ListHeader>
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -196,48 +208,6 @@ function DesignTrackerListPage(): React.JSX.Element {
       {editRow ? <EditDesignModal row={editRow} onClose={() => setEditRow(null)} /> : null}
       {logTimeRow ? <LogTimeModal row={logTimeRow} onClose={() => setLogTimeRow(null)} /> : null}
     </div>
-  );
-}
-
-function KpiStrip({
-  summary,
-  filter,
-  onChange,
-}: {
-  summary: {
-    total: number;
-    pending: number;
-    inProgress: number;
-    review: number;
-    approved: number;
-    overdue: number;
-  };
-  filter: FilterKey;
-  onChange: (k: FilterKey) => void;
-}): React.JSX.Element {
-  // ONE strip (list standard): the counts double as the Design Status filter.
-  // Overdue shows only when there is something overdue, as before.
-  const tiles: Array<{ k: FilterKey; count: number; color: string; show: boolean }> = [
-    { k: 'all', count: summary.total, color: 'var(--blue)', show: true },
-    { k: 'pending', count: summary.pending, color: 'var(--text3)', show: true },
-    { k: 'progress', count: summary.inProgress, color: 'var(--amber2)', show: true },
-    { k: 'review', count: summary.review, color: 'var(--blue)', show: true },
-    { k: 'approved', count: summary.approved, color: 'var(--green2)', show: true },
-    { k: 'overdue', count: summary.overdue, color: 'var(--red2)', show: summary.overdue > 0 },
-  ];
-  return (
-    <StatStrip
-      items={tiles
-        .filter((t) => t.show)
-        .map((t) => ({
-          key: t.k,
-          label: t.k === 'all' ? 'Total' : FILTER_LABEL[t.k],
-          count: t.count,
-          color: t.color,
-          active: filter === t.k,
-          onClick: () => onChange(t.k),
-        }))}
-    />
   );
 }
 
