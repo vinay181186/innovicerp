@@ -12,7 +12,8 @@ export const dailyOpLogReport: RegisteredReport = {
     title: 'Daily op log',
     description:
       'Time-stamped completion records by JC + op + operator over a date range. Mirrors the legacy op-log audit view.',
-    group: 'Operations',
+    group: 'Production',
+    dept: 'production',
     filters: [
       { key: 'fromDate', label: 'Log Date From', kind: 'date' },
       { key: 'toDate', label: 'Log Date To', kind: 'date' },

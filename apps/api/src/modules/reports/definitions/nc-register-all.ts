@@ -28,6 +28,7 @@ export const ncRegisterAllReport: RegisteredReport = {
     description:
       'Flat list of every non-conformance — one row per NC, newest first. The full QC register for audit and drill-down.',
     group: 'Quality',
+    dept: 'qc',
     filters: [
       { key: 'fromDate', label: 'NC Date From', kind: 'date' },
       { key: 'toDate', label: 'NC Date To', kind: 'date' },

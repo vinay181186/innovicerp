@@ -13,6 +13,7 @@ export const grnQcLogReport: RegisteredReport = {
     description:
       'Per-line QC status of received goods. Filter by QC status to scope to pending/in-progress/completed. Sorted by GRN date desc.',
     group: 'Quality',
+    dept: 'qc',
     filters: [
       { key: 'fromDate', label: 'GRN Date From', kind: 'date' },
       { key: 'toDate', label: 'GRN Date To', kind: 'date' },

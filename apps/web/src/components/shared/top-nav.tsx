@@ -37,7 +37,13 @@ import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { signOut, useSession } from '@/lib/session';
 import { useApprovalInboxTotal } from '@/modules/approvals/api';
 import { Icon } from '@/ui/core';
-import { initials, ORDERED_SECTIONS, shouldShowSection, type NavSection } from './nav-sections';
+import {
+  initials,
+  navItemMatches,
+  ORDERED_SECTIONS,
+  shouldShowSection,
+  type NavItem,
+} from './nav-sections';
 
 const OPEN_KEY_STORAGE = 'innovic.topnav.open';
 
@@ -48,15 +54,22 @@ const BUTTON_LABEL: Record<string, string> = {
   system: 'Settings',
 };
 
-function sectionContains(sec: NavSection, pathname: string): boolean {
-  return sec.groups.some((g) =>
-    g.items.some((i) => pathname === i.to || pathname.startsWith(i.to + '/')),
+/** Is this item the page the user is on? When a query-specific item (a
+ *  department's "Reports" link, /reports?group=Sales) matches, it wins: the
+ *  plain item for the same path (the Reports section's /reports) stays unlit,
+ *  so only the department's menu lights up. */
+function makeIsOn(pathname: string, search: Record<string, unknown>): (it: NavItem) => boolean {
+  const specificHit = ORDERED_SECTIONS.some((sec) =>
+    sec.groups.some((g) => g.items.some((i) => i.search && navItemMatches(i, pathname, search))),
   );
+  return (it) =>
+    navItemMatches(it, pathname, search) && !(specificHit && !it.search && it.to === pathname);
 }
 
 export function TopNav(): React.JSX.Element {
   const { data: me } = useSession();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const isOn = makeIsOn(pathname, search as Record<string, unknown>);
   const { data: eff } = useMyAccess();
   const isAdmin = me?.role === 'admin';
   // Badge on System Settings → Approvals: everything waiting for THIS user
@@ -135,7 +148,7 @@ export function TopNav(): React.JSX.Element {
       </Link>
 
       {visible.map((sec) => {
-        const here = sectionContains(sec, pathname);
+        const here = sec.groups.some((g) => g.items.some(isOn));
         const open = openKey === sec.key;
         const items = sec.groups
           .map((grp) => ({
@@ -170,11 +183,12 @@ export function TopNav(): React.JSX.Element {
                   <div key={gi} className="tn-col">
                     {grp.label ? <div className="tn-col-label">{grp.label}</div> : null}
                     {grp.items.map((it) => {
-                      const on = pathname === it.to || pathname.startsWith(it.to + '/');
+                      const on = isOn(it);
                       return (
                         <Link
                           key={it.to}
                           to={it.to}
+                          search={it.search}
                           role="menuitem"
                           className={`tn-link${on ? ' on' : ''}`}
                         >

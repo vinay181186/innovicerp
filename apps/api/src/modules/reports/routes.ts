@@ -17,7 +17,7 @@ function coerceFilters(rawQuery: unknown): Record<string, string> {
 export async function reportsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/reports', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listReports();
+    return service.listReports(req.user);
   });
 
   app.get('/reports/:slug', async (req) => {

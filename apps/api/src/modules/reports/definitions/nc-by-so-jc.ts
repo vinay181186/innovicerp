@@ -26,6 +26,7 @@ export const ncBySoJcReport: RegisteredReport = {
     description:
       'NCs grouped by Sales Order (falling back to Job Card) — count, rejected qty, pending vs closed. Pinpoints which orders are generating quality issues.',
     group: 'Quality',
+    dept: 'qc',
     filters: [
       { key: 'fromDate', label: 'NC Date From', kind: 'date' },
       { key: 'toDate', label: 'NC Date To', kind: 'date' },
