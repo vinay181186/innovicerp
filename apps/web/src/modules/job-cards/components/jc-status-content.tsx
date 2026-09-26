@@ -848,7 +848,7 @@ function JcStatusEditForm({
         </Link>
         <button
           type="button"
-          className="btn btn-success"
+          className="btn btn-primary"
           disabled={submitting}
           onClick={() => void onSave()}
         >

@@ -133,18 +133,18 @@ function JcOpsPage(): React.JSX.Element {
                   <th>Planned Machine</th>
                   <th>Actual Machine</th>
                   <th>Operation</th>
-                  <th className="td-ctr">Cycle Time (h)</th>
+                  <th className="th-num">Cycle Time (h)</th>
                   <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     QC
                   </th>
-                  <th className="td-ctr">Order Qty</th>
-                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
+                  <th className="th-num">Order Qty</th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Completed
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--amber2)' }}>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
                     Pending
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--red2)' }}>
+                  <th className="th-num" style={{ color: 'var(--red2)' }}>
                     Pending Hrs
                   </th>
                   <th>Op Status</th>
@@ -345,7 +345,7 @@ function Row({
           </>
         ) : null}
       </td>
-      <td className="td-ctr mono">{o.cycleTime ? o.cycleTime.toFixed(3) : '—'}</td>
+      <td className="mono td-num">{o.cycleTime ? o.cycleTime.toFixed(3) : '—'}</td>
       <td className="td-ctr">
         {o.qcRequired ? (
           <span
@@ -364,8 +364,8 @@ function Row({
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>NO</span>
         )}
       </td>
-      <td className="td-ctr">{o.jcOrderQty}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
+      <td className="td-num">{o.jcOrderQty}</td>
+      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
         {o.completed}
         {/* The per-machine breakdown of that total lives in the Planned /
             Actual machine cell (ADR-164), so it is not repeated here. */}
@@ -373,12 +373,12 @@ function Row({
           <div style={{ fontSize: 11, color: 'var(--amber2)' }}>⏳{o.qcPending} QC</div>
         ) : null}
       </td>
-      <td className="td-ctr">
+      <td className="td-num">
         <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--amber2)' }}>
           {o.available}
         </span>
       </td>
-      <td className="td-ctr">
+      <td className="td-num">
         <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
           {o.pendingHrs.toFixed(1)}h
         </span>

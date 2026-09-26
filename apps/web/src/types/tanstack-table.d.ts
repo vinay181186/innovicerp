@@ -23,5 +23,8 @@ declare module '@tanstack/react-table' {
   interface ColumnMeta<TData extends RowData, TValue> {
     /** Class applied to the rendered <td>, matching legacy's cell markup. */
     tdClass?: string;
+    /** Class applied to the column's <th> by SortableHead — `th-num` on a
+     *  numeric column so its name right-aligns with its values. */
+    thClass?: string;
   }
 }

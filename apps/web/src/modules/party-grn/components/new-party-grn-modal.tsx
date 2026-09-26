@@ -10,10 +10,7 @@
 // the SO Master dialogs. No validation, payload, query or mutation behaviour
 // changed — every message string is verbatim.
 
-import type {
-  CreatePartyGrnInput,
-  CreatePartyGrnLineInput,
-} from '@innovic/shared';
+import type { CreatePartyGrnInput, CreatePartyGrnLineInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -122,7 +119,13 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
       const jwLine = jwLinesForSelected.find((j) => String(j.lineNo) === lnNo);
       // ADR-102: refuse a material that is not that line's part.
       const pm = pmAll.find((p) => p.id === pmId);
-      if (jwLine && pm && pm.itemId != null && jwLine.itemId != null && pm.itemId !== jwLine.itemId) {
+      if (
+        jwLine &&
+        pm &&
+        pm.itemId != null &&
+        jwLine.itemId != null &&
+        pm.itemId !== jwLine.itemId
+      ) {
         setErr(
           `Line ${i + 1}: ${pm.code} is "${pm.name}", but JWSO line ${lnNo} is "${jwLine.partName}". Pick the material for this part, or pick the line this material belongs to.`,
         );
@@ -199,7 +202,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
 
         <div className="form-grid">
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-code">GRN No.</label>
+            <label className="form-label" htmlFor="pgrn-code">
+              GRN No.
+            </label>
             <input
               id="pgrn-code"
               type="text"
@@ -210,7 +215,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-date">GRN Date</label>
+            <label className="form-label" htmlFor="pgrn-date">
+              GRN Date
+            </label>
             <input
               id="pgrn-date"
               type="date"
@@ -238,7 +245,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-client">Customer</label>
+            <label className="form-label" htmlFor="pgrn-client">
+              Customer
+            </label>
             <input
               id="pgrn-client"
               type="text"
@@ -248,7 +257,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-cpo">Client PO No.</label>
+            <label className="form-label" htmlFor="pgrn-cpo">
+              Client PO No.
+            </label>
             <input
               id="pgrn-cpo"
               type="text"
@@ -272,7 +283,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-remarks">Remarks</label>
+            <label className="form-label" htmlFor="pgrn-remarks">
+              Remarks
+            </label>
             <input
               id="pgrn-remarks"
               type="text"
@@ -315,7 +328,10 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
         {/* `overflow: visible`, not hidden — the old box clipped the columns
             instead of letting them fit, so a wide row simply disappeared. */}
         <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
-          <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}>
+          <table
+            className="innovic-table"
+            style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}
+          >
             <thead>
               <tr>
                 <th style={{ width: '4%' }}>Ln</th>
@@ -326,10 +342,12 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
                   Material<span className="req">★</span>
                 </th>
                 <th style={{ width: '22%' }}>Material Name</th>
-                <th style={{ width: '10%', color: 'var(--green2)' }} className="td-ctr">
+                <th style={{ width: '10%', color: 'var(--green2)' }} className="th-num">
                   Received<span className="req">★</span>
                 </th>
-                <th style={{ width: '7%' }} className="td-ctr">UOM</th>
+                <th style={{ width: '7%' }} className="td-ctr">
+                  UOM
+                </th>
                 <th style={{ width: '16%' }}>Remarks</th>
                 <th style={{ width: '4%' }} />
               </tr>
@@ -380,7 +398,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
           </button>
           <button
             type="button"
-            className="btn btn-success"
+            className="btn btn-primary"
             disabled={createMut.isPending}
             onClick={onSave}
           >

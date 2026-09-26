@@ -97,7 +97,10 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--purple)', fontSize: 16, fontWeight: 800 }}>
+            <div
+              className="td-code"
+              style={{ color: 'var(--purple)', fontSize: 16, fontWeight: 800 }}
+            >
               {dc.code}
             </div>
             <div
@@ -105,7 +108,9 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
               {dc.vendorNameText ?? dc.vendorCodeText ?? '—'}
-              <span style={{ fontWeight: 700, color: statusColor, fontSize: 12 }}>{statusLabel}</span>
+              <span style={{ fontWeight: 700, color: statusColor, fontSize: 12 }}>
+                {statusLabel}
+              </span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -142,10 +147,10 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Process</th>
-                <th>PO Qty</th>
-                <th>Sent</th>
-                <th>Received</th>
-                <th>Pending</th>
+                <th className="th-num">PO Qty</th>
+                <th className="th-num">Sent</th>
+                <th className="th-num">Received</th>
+                <th className="th-num">Pending</th>
               </tr>
             </thead>
             <tbody>
@@ -166,18 +171,16 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                       {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
                     </td>
                     <td>{l.itemName ?? l.itemNameText ?? '—'}</td>
-                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>
-                      {l.processText ?? '—'}
-                    </td>
-                    <td className="mono">{l.poQty}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>{l.processText ?? '—'}</td>
+                    <td className="mono td-num">{l.poQty}</td>
+                    <td className="mono fw-700 td-num" style={{ color: 'var(--cyan)' }}>
                       {l.sentQty}
                     </td>
-                    <td className="mono" style={{ color: 'var(--green2)' }}>
+                    <td className="mono td-num" style={{ color: 'var(--green2)' }}>
                       {l.alreadyReturned}
                     </td>
                     <td
-                      className="mono fw-700"
+                      className="mono fw-700 td-num"
                       style={{ color: l.pending > 0 ? 'var(--red)' : 'var(--green)' }}
                     >
                       {l.pending}

@@ -270,8 +270,8 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
               <th>Movement Type</th>
               <th>Source</th>
               <th>Ref No.</th>
-              <th>Movement Qty</th>
-              <th>Stock Before → After</th>
+              <th className="th-num">Movement Qty</th>
+              <th className="th-num">Stock Before → After</th>
               <th>Remarks</th>
             </tr>
           </thead>
@@ -309,8 +309,8 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
                   <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
                     {r.sourceRef}
                   </td>
-                  <td className="mono fw-700">{r.qty}</td>
-                  <td className="mono" style={{ fontSize: 11 }}>
+                  <td className="mono fw-700 td-num">{r.qty}</td>
+                  <td className="mono td-num" style={{ fontSize: 11 }}>
                     {r.stockBefore} → <b>{r.stockAfter}</b>
                   </td>
                   <td className="text3" style={{ fontSize: 11 }}>

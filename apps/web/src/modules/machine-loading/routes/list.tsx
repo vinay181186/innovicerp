@@ -192,13 +192,13 @@ function MachineLoadingPage(): React.JSX.Element {
             </button>
           </div>
           {selMachineId ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilter}>
+            <button type="button" className="btn btn-ghost" onClick={clearFilter}>
               All Machines ×
             </button>
           ) : null}
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
+            className="btn btn-ghost"
             onClick={() => onPrintQueue(selMachineId)}
             disabled={machines.length === 0}
             title={selMachineId ? 'Print this machine queue' : 'Print all machine queues'}
@@ -408,8 +408,8 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
       <td className="text2 td-ctr" style={{ fontSize: 11 }}>
         {fmtDate(op.dueDate)}
       </td>
-      <td className="td-ctr mono">{op.orderQty}</td>
-      <td className="td-ctr green mono fw-700">
+      <td className="mono td-num">{op.orderQty}</td>
+      <td className="green mono fw-700 td-num">
         {op.completedQty}
         {/* ADR-164 — the op is listed under its PLANNED machine (the card /
             queue names the plan), so say which machine ACTUALLY made this
@@ -417,7 +417,7 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
             differs, with the per-machine breakdown for a 2+ machine split. */}
         <ActualMachineLine planned={op.machineCode} machines={op.machines} />
       </td>
-      <td className="td-ctr">
+      <td className="td-num">
         <span
           className="mono fw-700"
           style={{ fontSize: 15, color: op.available > 0 ? 'var(--amber)' : 'var(--text3)' }}
@@ -425,7 +425,7 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
           {op.available}
         </span>
       </td>
-      <td className="td-ctr">
+      <td className="td-num">
         <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
           {op.pendingHrs}h
         </span>
@@ -470,10 +470,14 @@ function OperationView({
               <th>Operation</th>
               <th>Priority</th>
               <th>Due Date</th>
-              <th>Order Qty</th>
-              <th>Completed</th>
-              <th style={{ color: 'var(--amber2)' }}>Available</th>
-              <th style={{ color: 'var(--red2)' }}>Pending Hrs</th>
+              <th className="th-num">Order Qty</th>
+              <th className="th-num">Completed</th>
+              <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                Available
+              </th>
+              <th className="th-num" style={{ color: 'var(--red2)' }}>
+                Pending Hrs
+              </th>
               <th>Op Status</th>
             </tr>
           </thead>
@@ -591,10 +595,14 @@ function JobQueueView({
                     <th>Operation</th>
                     <th>Priority</th>
                     <th>Due Date</th>
-                    <th>Order Qty</th>
-                    <th>Completed</th>
-                    <th style={{ color: 'var(--amber2)' }}>Available</th>
-                    <th style={{ color: 'var(--red2)' }}>Pending Hrs</th>
+                    <th className="th-num">Order Qty</th>
+                    <th className="th-num">Completed</th>
+                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                      Available
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--red2)' }}>
+                      Pending Hrs
+                    </th>
                     <th>Op Status</th>
                   </tr>
                 </thead>
@@ -626,12 +634,12 @@ function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.J
               <th>Machine</th>
               <th>Name</th>
               <th>Machine Type</th>
-              <th>Open Ops</th>
-              <th>Available</th>
-              <th>Pending Hrs</th>
-              <th>Daily Cap</th>
-              <th>Days to Clear</th>
-              <th>Loading %</th>
+              <th className="th-num">Open Ops</th>
+              <th className="th-num">Available</th>
+              <th className="th-num">Pending Hrs</th>
+              <th className="th-num">Daily Cap</th>
+              <th className="th-num">Days to Clear</th>
+              <th className="th-num">Loading %</th>
               <th>Load Status</th>
             </tr>
           </thead>
@@ -648,16 +656,16 @@ function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.J
                   <td className="td-code">{m.machineCode}</td>
                   <td>{m.name}</td>
                   <td className="text2">{m.machineType ?? '—'}</td>
-                  <td className="td-ctr mono">{m.openOps}</td>
-                  <td className="td-ctr mono fw-700 amber">{m.totalAvailQty}</td>
-                  <td className="td-ctr">
+                  <td className="mono td-num">{m.openOps}</td>
+                  <td className="mono fw-700 amber td-num">{m.totalAvailQty}</td>
+                  <td className="td-num">
                     <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
                       {m.pendingHrs}h
                     </span>
                   </td>
-                  <td className="td-ctr mono green">{m.dailyCap}h</td>
-                  <td className="td-ctr mono">{m.daysToClear}d</td>
-                  <td className="td-ctr mono fw-700">{Math.round(m.loadPct * 100)}%</td>
+                  <td className="mono green td-num">{m.dailyCap}h</td>
+                  <td className="mono td-num">{m.daysToClear}d</td>
+                  <td className="mono fw-700 td-num">{Math.round(m.loadPct * 100)}%</td>
                   <td>
                     <span className={`badge ${loadBadgeClass(m.loadStatus)}`}>{m.loadStatus}</span>
                   </td>

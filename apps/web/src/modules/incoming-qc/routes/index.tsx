@@ -251,9 +251,13 @@ function IncomingQcPage(): React.JSX.Element {
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Received</th>
-                    <th style={{ color: 'var(--amber2)' }}>Days Waiting</th>
-                    <th style={{ color: 'var(--amber2)' }}>QC Pending</th>
+                    <th className="th-num">Received</th>
+                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                      Days Waiting
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                      QC Pending
+                    </th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -310,16 +314,20 @@ function IncomingQcPage(): React.JSX.Element {
                     <th>GRN No.</th>
                     <th>GRN Date</th>
                     <th style={{ color: 'var(--green2)' }}>QC Date</th>
-                    <th>Days to Inspect</th>
+                    <th className="th-num">Days to Inspect</th>
                     <th>Vendor</th>
                     {/* POL = the CUSTOMER's own PO line number off the SO line
                         behind this receipt. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Received</th>
-                    <th style={{ color: 'var(--green2)' }}>Accepted</th>
-                    <th style={{ color: 'var(--red2)' }}>Rejected</th>
+                    <th className="th-num">Received</th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                      Accepted
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--red2)' }}>
+                      Rejected
+                    </th>
                     <th>QC Result</th>
                     <th>Remarks</th>
                     <th>Report</th>
@@ -382,8 +390,8 @@ function PendingRow({
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td>{r.itemName ?? '—'}</td>
-      <td className="td-ctr mono fw-700">{r.receivedQty}</td>
-      <td className="td-ctr">
+      <td className="mono fw-700 td-num">{r.receivedQty}</td>
+      <td className="td-num">
         <span
           style={{
             fontWeight: 800,
@@ -398,7 +406,7 @@ function PendingRow({
           ⏳ {r.waitDays}d
         </span>
       </td>
-      <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--amber2)' }}>
+      <td className="mono fw-700 td-num" style={{ fontSize: 14, color: 'var(--amber2)' }}>
         {r.pendingQty}
       </td>
       <td>
@@ -426,7 +434,7 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
         {fmtDate(r.qcDate)}
       </td>
       <td
-        className="td-ctr"
+        className="td-num"
         style={{ fontSize: 11, fontWeight: 700, color: respColor(r.respDays) }}
       >
         {r.respDays === null ? '' : r.respDays <= 0 ? 'Same day' : `${r.respDays}d`}
@@ -441,11 +449,11 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td>{r.itemName ?? '—'}</td>
-      <td className="td-ctr mono fw-700">{r.receivedQty}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
+      <td className="mono fw-700 td-num">{r.receivedQty}</td>
+      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
         {r.acceptedQty}
       </td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
+      <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
         {r.rejectedQty}
       </td>
       <td>

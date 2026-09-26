@@ -488,7 +488,9 @@ function PendingOpsSection({
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th style={{ color: 'var(--amber2)' }}>Available</th>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                    Available
+                  </th>
                   <th></th>
                 </tr>
               </thead>
@@ -523,7 +525,7 @@ function PendingOpsSection({
                     />
                     <td className="mono fw-700">Op {opSrNo(op.opSeq)}</td>
                     <td className="fw-700">{op.operation}</td>
-                    <td className="mono fw-700 amber">{op.available}</td>
+                    <td className="mono fw-700 amber td-num">{op.available}</td>
                     <td>
                       {canOpEntry ? (
                         <button
@@ -575,7 +577,9 @@ function PendingOpsSection({
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th style={{ color: 'var(--green2)' }}>Completed</th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    Completed
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -602,7 +606,7 @@ function PendingOpsSection({
                     />
                     <td className="mono">Op{opSrNo(row.op.opSeq)}</td>
                     <td>{row.op.operation}</td>
-                    <td className="mono fw-700 green">{row.qty}</td>
+                    <td className="mono fw-700 green td-num">{row.qty}</td>
                   </tr>
                 ))}
               </tbody>

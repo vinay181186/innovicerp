@@ -22,7 +22,13 @@ export interface UiLine {
 }
 
 export function makeEmptyLine(): UiLine {
-  return { partyMaterialId: null, receivedQty: '', jwLineNoText: '', remarks: '', materialSearch: '' };
+  return {
+    partyMaterialId: null,
+    receivedQty: '',
+    jwLineNoText: '',
+    remarks: '',
+    materialSearch: '',
+  };
 }
 
 /** The `<datalist>` id the material input binds to. Exported so the modal that
@@ -132,7 +138,7 @@ export function LineRow({
         {selected ? (
           <>
             {selected.name}
-            {selected.itemCode ?? selected.itemCodeText ? (
+            {(selected.itemCode ?? selected.itemCodeText) ? (
               <span className="mono text3" style={{ fontSize: 11, marginLeft: 4 }}>
                 ({selected.itemCode ?? selected.itemCodeText})
               </span>
@@ -147,7 +153,7 @@ export function LineRow({
           ''
         )}
       </td>
-      <td>
+      <td className="td-num">
         <input
           type="number"
           min={1}
@@ -159,7 +165,6 @@ export function LineRow({
             width: '100%',
             fontSize: 14,
             fontWeight: 700,
-            textAlign: 'center',
             padding: '3px 4px',
             border: '2px solid var(--green)',
             borderRadius: 4,

@@ -151,27 +151,36 @@ function StoreInventoryPage(): React.JSX.Element {
                         {/* ADR-180 — three numbers, three columns, always in
                             this order: Physical − Reserved = Available. */}
                         <th
+                          className="th-num"
                           style={{ color: 'var(--green2)' }}
                           title="On the shelf, reserved or not. Reserving never changes it."
                         >
                           Physical
                         </th>
                         <th
+                          className="th-num"
                           style={{ color: 'var(--purple)' }}
                           title="Promised to SO lines but still on the shelf — click a number to see where"
                         >
                           Reserved
                         </th>
                         <th
+                          className="th-num"
                           style={{ color: 'var(--cyan)' }}
                           title="Physical − Reserved: what a new order may still be promised"
                         >
                           Available
                         </th>
-                        <th>Min Qty</th>
-                        <th style={{ color: 'var(--blue)' }}>On PO</th>
-                        <th style={{ color: 'var(--orange)' }}>At Vendor</th>
-                        <th style={{ color: 'var(--amber2)' }}>Pending to Make</th>
+                        <th className="th-num">Min Qty</th>
+                        <th className="th-num" style={{ color: 'var(--blue)' }}>
+                          On PO
+                        </th>
+                        <th className="th-num" style={{ color: 'var(--orange)' }}>
+                          At Vendor
+                        </th>
+                        <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                          Pending to Make
+                        </th>
                         {canEdit ? <th>Actions</th> : null}
                       </tr>
                     </thead>
@@ -205,7 +214,7 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.uom}
                               </span>
                             </td>
-                            <td className="td-ctr">
+                            <td className="td-num">
                               <span
                                 className="mono fw-700"
                                 style={{
@@ -221,14 +230,16 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.inStock}
                               </span>
                               {row.lowStock ? (
-                                <div style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700 }}>
+                                <div
+                                  style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700 }}
+                                >
                                   ⚠ Low Stock
                                 </div>
                               ) : null}
                             </td>
                             {/* Reserved is clickable: it opens the list of SO
                                 lines holding this item's stock. */}
-                            <td className="td-ctr">
+                            <td className="td-num">
                               {row.reservedQty > 0 ? (
                                 <button
                                   type="button"
@@ -250,7 +261,7 @@ function StoreInventoryPage(): React.JSX.Element {
                                 <span className="mono text3">—</span>
                               )}
                             </td>
-                            <td className="td-ctr">
+                            <td className="td-num">
                               <span
                                 className="mono fw-700"
                                 style={{
@@ -261,8 +272,8 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.availableQty}
                               </span>
                             </td>
-                            <td className="td-ctr mono text3">{row.minQty || '—'}</td>
-                            <td className="td-ctr">
+                            <td className="mono text3 td-num">{row.minQty || '—'}</td>
+                            <td className="td-num">
                               <span
                                 className="mono"
                                 style={{ color: row.onPoQty > 0 ? 'var(--blue)' : 'var(--text3)' }}
@@ -270,7 +281,7 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.onPoQty || '—'}
                               </span>
                             </td>
-                            <td className="td-ctr">
+                            <td className="td-num">
                               <span
                                 className="mono"
                                 style={{
@@ -285,7 +296,7 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.atVendorQty || '—'}
                               </span>
                             </td>
-                            <td className="td-ctr">
+                            <td className="td-num">
                               <span
                                 className="mono"
                                 style={{

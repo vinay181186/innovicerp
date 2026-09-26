@@ -26,7 +26,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useAddDesignIssueComment,
@@ -48,7 +48,11 @@ const CHECKLIST: Array<{ key: string; label: string; cat: string }> = [
   { key: 'allTasksDone', label: 'All design tasks completed', cat: 'Completeness' },
   { key: 'allIssuesClosed', label: 'All design issues resolved/closed', cat: 'Completeness' },
   { key: 'bomGenerated', label: 'BOM generated and verified', cat: 'Completeness' },
-  { key: 'drawingsNumbered', label: 'All drawings properly numbered and titled', cat: 'Documentation' },
+  {
+    key: 'drawingsNumbered',
+    label: 'All drawings properly numbered and titled',
+    cat: 'Documentation',
+  },
   { key: 'dimensionsChecked', label: 'Critical dimensions verified', cat: 'Quality' },
   { key: 'tolerancesReviewed', label: 'Tolerances and GD&T reviewed', cat: 'Quality' },
   { key: 'interferenceCheck', label: 'Interference / clash check done', cat: 'Quality' },
@@ -196,10 +200,7 @@ function Tile({
   color: string;
 }): React.JSX.Element {
   return (
-    <div
-      className="panel"
-      style={{ textAlign: 'center', padding: 12 }}
-    >
+    <div className="panel" style={{ textAlign: 'center', padding: 12 }}>
       <div className="text3" style={{ fontSize: 11 }}>
         {label}
       </div>
@@ -297,7 +298,14 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 12,
+        }}
+      >
         <div className="section-hdr m-0">📝 Task Board</div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button
@@ -353,7 +361,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                   </tr>
                 ) : (
                   detail.tasks.map((t) => {
-                    const today = new Date().toISOString().slice(0, 10);
+                    const today = todayIst();
                     const isOverdue =
                       t.dueDate != null && t.dueDate < today && t.status !== 'Completed';
                     const linkedIssues = detail.issues.filter(
@@ -465,7 +473,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                 </div>
                 <div style={{ padding: 6 }}>
                   {ts.map((t) => {
-                    const today = new Date().toISOString().slice(0, 10);
+                    const today = todayIst();
                     const isOverdue =
                       t.dueDate != null && t.dueDate < today && t.status !== 'Completed';
                     const taskIssues = detail.issues.filter(
@@ -489,9 +497,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                         <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
                           {t.title}
                         </div>
-                        <div
-                          style={{ display: 'flex', flexWrap: 'wrap', gap: 4, fontSize: 11 }}
-                        >
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, fontSize: 11 }}>
                           <Badge value={t.priority} />
                           <span className="text3">👤 {t.assigneeText ?? ''}</span>
                           {t.dueDate ? (
@@ -516,11 +522,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
       )}
 
       {showAdd ? (
-        <TaskFormModal
-          projectId={detail.project.id}
-          mode="add"
-          onClose={() => setShowAdd(false)}
-        />
+        <TaskFormModal projectId={detail.project.id} mode="add" onClose={() => setShowAdd(false)} />
       ) : null}
       {editTask ? (
         <TaskFormModal
@@ -612,11 +614,7 @@ function TaskFormModal({
           </Field>
         </div>
         <Field label="Item Name">
-          <input
-            className="innovic-input"
-            value={part}
-            onChange={(e) => setPart(e.target.value)}
-          />
+          <input className="innovic-input" value={part} onChange={(e) => setPart(e.target.value)} />
         </Field>
         <Field label="Assignee">
           <input
@@ -808,8 +806,7 @@ function ViewTaskModal({
             </div>
             <div>
               <div style={{ fontSize: 11, fontWeight: 700 }}>
-                {d.author}{' '}
-                <span className="text3">{fmtDate(d.date)}</span>
+                {d.author} <span className="text3">{fmtDate(d.date)}</span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{d.text}</div>
             </div>
@@ -858,7 +855,14 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 12,
+        }}
+      >
         <div className="section-hdr m-0">⚠ Design Issues</div>
         {canAdd ? (
           <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowAdd(true)}>
@@ -893,8 +897,7 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                 detail.issues.map((i) => {
                   const ageMs = Date.now() - new Date(i.raisedDate).getTime();
                   const ageDays = Math.max(0, Math.round(ageMs / 86400000));
-                  const stale =
-                    ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
+                  const stale = ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
                   return (
                     <tr key={i.id} style={{ cursor: 'pointer' }} onClick={() => setViewIssue(i)}>
                       <td className="fw-700" style={{ maxWidth: 250 }}>
@@ -954,9 +957,7 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
           onClose={() => setEditIssue(null)}
         />
       ) : null}
-      {viewIssue ? (
-        <ViewIssueModal issue={viewIssue} onClose={() => setViewIssue(null)} />
-      ) : null}
+      {viewIssue ? <ViewIssueModal issue={viewIssue} onClose={() => setViewIssue(null)} /> : null}
     </div>
   );
 }
@@ -1060,11 +1061,7 @@ function IssueFormModal({
           </select>
         </Field>
         <Field label="Item Name">
-          <input
-            className="innovic-input"
-            value={part}
-            onChange={(e) => setPart(e.target.value)}
-          />
+          <input className="innovic-input" value={part} onChange={(e) => setPart(e.target.value)} />
         </Field>
         <Field label="Severity">
           <select
@@ -1317,10 +1314,7 @@ function ChecklistTab({
             color: 'var(--red2)',
           }}
         >
-          ⚠{' '}
-          {
-            detail.issues.filter((i) => i.status !== 'Resolved' && i.status !== 'Closed').length
-          }{' '}
+          ⚠ {detail.issues.filter((i) => i.status !== 'Resolved' && i.status !== 'Closed').length}{' '}
           issue(s) open
         </div>
       ) : null}
@@ -1622,9 +1616,7 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                         </td>
                         <td>
                           {linked ? (
-                            <span
-                              style={{ color: 'var(--green2)', fontWeight: 700, fontSize: 11 }}
-                            >
+                            <span style={{ color: 'var(--green2)', fontWeight: 700, fontSize: 11 }}>
                               ✔ {linked.code}
                             </span>
                           ) : (
@@ -1745,9 +1737,7 @@ function DcrFormModal({
   const [priority, setPriority] = useState(dcr?.priority ?? 'Normal');
   const [status, setStatus] = useState(dcr?.status ?? 'Submitted');
   const [requestedBy, setRequestedBy] = useState(dcr?.requestedByText ?? '');
-  const [requestDate, setRequestDate] = useState(
-    dcr?.requestDate ?? todayLocal(),
-  );
+  const [requestDate, setRequestDate] = useState(dcr?.requestDate ?? todayLocal());
   const [description, setDescription] = useState(dcr?.description ?? '');
   const [err, setErr] = useState<string | null>(null);
 
@@ -1800,7 +1790,10 @@ function DcrFormModal({
   };
 
   return (
-    <Modal onClose={onClose} title={mode === 'add' ? '📋 New DCR' : `✏ Edit DCR ${dcr?.code ?? ''}`}>
+    <Modal
+      onClose={onClose}
+      title={mode === 'add' ? '📋 New DCR' : `✏ Edit DCR ${dcr?.code ?? ''}`}
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Title ★">
@@ -1950,7 +1943,10 @@ function DcnFormModal({
   };
 
   return (
-    <Modal onClose={onClose} title={mode === 'add' ? '📝 New DCN' : `✏ Edit DCN ${dcn?.code ?? ''}`}>
+    <Modal
+      onClose={onClose}
+      title={mode === 'add' ? '📝 New DCN' : `✏ Edit DCN ${dcn?.code ?? ''}`}
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Title ★">

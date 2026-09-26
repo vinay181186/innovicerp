@@ -8,7 +8,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
@@ -38,13 +38,10 @@ const BAR_PALETTE: Record<
   done: { bg: 'var(--sig-neutral)', border: 'var(--sig-neutral)', fg: '#fff' },
 };
 
-// FIXME(ISSUE-065): toISOString() yields the UTC date, so between 00:00 and
-// 05:30 IST this returns YESTERDAY. That misdates the default window start,
-// the "Today" button and the highlighted "today" column on a date-critical
-// screen. Legacy's today() (HTML L1485) used LOCAL date parts and was correct.
-// Not fixed here: needs one shared IST helper across all 53 call sites.
+// ISSUE-065: today's date in IST (not UTC, which reads as yesterday between
+// 00:00 and 05:30 IST).
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayIst();
 }
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + 'T00:00:00Z');

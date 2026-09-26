@@ -11,7 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -109,11 +109,7 @@ function DesignTrackerListPage(): React.JSX.Element {
             <option value="overdue">Overdue</option>
           </select>
           {perms.entry ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowAdd(true)}
-            >
+            <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               + Assign Design
             </button>
           ) : null}
@@ -195,7 +191,14 @@ function KpiStrip({
   summary,
   onChange,
 }: {
-  summary: { total: number; pending: number; inProgress: number; review: number; approved: number; overdue: number };
+  summary: {
+    total: number;
+    pending: number;
+    inProgress: number;
+    review: number;
+    approved: number;
+    overdue: number;
+  };
   onChange: (k: FilterKey) => void;
 }): React.JSX.Element {
   // Legacy L7307–7314: plain --bg2 tiles, 1px --border, radius 10, no top accent
@@ -317,7 +320,7 @@ function Row({
   onEdit: () => void;
   onLogTime: () => void;
 }): React.JSX.Element {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
   const isOverdue = row.targetDate < today && row.status !== 'Approved';
   const stColor =
     row.status === 'Pending'
@@ -376,10 +379,7 @@ function Row({
       <td className="text2" style={{ fontSize: 11 }}>
         {fmtDate(row.startDate)}
       </td>
-      <td
-        className="text2"
-        style={{ fontSize: 11, color: isOverdue ? 'var(--red)' : undefined }}
-      >
+      <td className="text2" style={{ fontSize: 11, color: isOverdue ? 'var(--red)' : undefined }}>
         {fmtDate(row.targetDate)}
       </td>
       <td>
@@ -398,10 +398,7 @@ function Row({
       </td>
       <td className="td-ctr mono fw-700">Design Rev {row.revision}</td>
       <td className="td-ctr">
-        <span
-          className="mono fw-700"
-          style={{ color: hrsOver ? 'var(--red)' : 'var(--green)' }}
-        >
+        <span className="mono fw-700" style={{ color: hrsOver ? 'var(--red)' : 'var(--green)' }}>
           {row.totalHours}
         </span>
         <span style={{ color: 'var(--text3)', fontSize: 11 }}> / {row.estimatedHours}h</span>
@@ -433,7 +430,8 @@ function Row({
               style={{ fontSize: 11, color: 'var(--blue)' }}
               disabled={submitMut.isPending}
               onClick={() => {
-                if (window.confirm(`Submit ${row.code} for design review?`)) submitMut.mutate(row.id);
+                if (window.confirm(`Submit ${row.code} for design review?`))
+                  submitMut.mutate(row.id);
               }}
             >
               ✔ Submit
@@ -551,11 +549,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
             type="text"
             className="innovic-input"
             placeholder="🔍 Type SO code or customer…"
-            value={
-              selectedSo
-                ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}`
-                : soSearch
-            }
+            value={selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : soSearch}
             onChange={(e) => {
               setSoId(null);
               setSoSearch(e.target.value);
@@ -706,9 +700,7 @@ function EditDesignModal({
           <select
             className="innovic-select"
             value={status}
-            onChange={(e) =>
-              setStatus(e.target.value as DesignTrackerListItem['status'])
-            }
+            onChange={(e) => setStatus(e.target.value as DesignTrackerListItem['status'])}
           >
             <option>Pending</option>
             <option>In Progress</option>
@@ -857,9 +849,7 @@ function LogTimeModal({
 
       {previous.length > 0 ? (
         <>
-          <div
-            style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}
-          >
+          <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}>
             Previous Entries
           </div>
           <div className="tbl-wrap" style={{ maxHeight: 200, overflowY: 'auto' }}>
@@ -880,9 +870,7 @@ function LogTimeModal({
                       {t.hours}h
                     </td>
                     <td style={{ fontSize: 11 }}>{t.workerText}</td>
-                    <td style={{ fontSize: 11, color: 'var(--text3)' }}>
-                      {t.description ?? ''}
-                    </td>
+                    <td style={{ fontSize: 11, color: 'var(--text3)' }}>{t.description ?? ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1023,9 +1011,7 @@ function Picklist({
           }}
         >
           <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? (
-            <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span>
-          ) : null}
+          {it.sub ? <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span> : null}
         </div>
       ))}
     </div>

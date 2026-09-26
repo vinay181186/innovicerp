@@ -66,8 +66,8 @@ export function DcReceiptsPanel({
                         challan line this receipt row books against. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code · Name</th>
-                    <th>Received</th>
-                    <th>Rejected</th>
+                    <th className="th-num">Received</th>
+                    <th className="th-num">Rejected</th>
                     <th>Rejection Reason</th>
                   </tr>
                 </thead>
@@ -87,21 +87,18 @@ export function DcReceiptsPanel({
                               does not read as "IN-IT-0007/B" in the Lines table
                               and as bare "IN-IT-0007" here. */}
                           <span className="mono">
-                            {itemCodeWithRev(
-                              ll?.itemCode ?? ll?.itemCodeText,
-                              ll?.itemRevision,
-                            )}
+                            {itemCodeWithRev(ll?.itemCode ?? ll?.itemCodeText, ll?.itemRevision)}
                           </span>
-                          {ll?.itemName ?? ll?.itemNameText ? (
+                          {(ll?.itemName ?? ll?.itemNameText) ? (
                             <span className="text3" style={{ marginLeft: 6 }}>
                               {ll?.itemName ?? ll?.itemNameText}
                             </span>
                           ) : null}
                         </td>
-                        <td className="mono" style={{ color: 'var(--green2)' }}>
+                        <td className="mono td-num" style={{ color: 'var(--green2)' }}>
                           {Number(rl.receivedQty).toFixed(2)}
                         </td>
-                        <td className="mono" style={{ color: 'var(--red2)' }}>
+                        <td className="mono td-num" style={{ color: 'var(--red2)' }}>
                           {Number(rl.rejectedQty).toFixed(2)}
                         </td>
                         <td className="text3">{rl.rejectReason ?? '—'}</td>

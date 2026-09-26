@@ -109,14 +109,18 @@ export function StockLedger(): React.JSX.Element {
       {
         header: 'Qty',
         accessorKey: 'qty',
-        meta: { tdClass: 'td-ctr' },
+        meta: { tdClass: 'td-num', thClass: 'th-num' },
         cell: ({ row }) => {
           const t = row.original.txnType;
           return (
             <span
               className="mono fw-700"
               style={
-                t === 'in' ? { color: 'var(--green2)' } : t === 'out' ? { color: 'var(--red2)' } : undefined
+                t === 'in'
+                  ? { color: 'var(--green2)' }
+                  : t === 'out'
+                    ? { color: 'var(--red2)' }
+                    : undefined
               }
             >
               {t === 'in' ? '+' : t === 'out' ? '-' : ''}
@@ -165,7 +169,7 @@ export function StockLedger(): React.JSX.Element {
         header: 'Stock Before → After',
         id: 'stockAfter',
         accessorFn: (r) => r.stockAfter,
-        meta: { tdClass: 'mono' },
+        meta: { tdClass: 'mono td-num', thClass: 'th-num' },
         cell: ({ row }) => (
           <span style={{ fontSize: 11 }}>
             {row.original.stockBefore} → <b>{row.original.stockAfter}</b>
@@ -211,7 +215,15 @@ export function StockLedger(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          marginBottom: 14,
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+        }}
+      >
         <div>
           <label style={{ fontSize: 11, color: 'var(--text3)' }}>Search</label>
           <br />
@@ -304,7 +316,11 @@ export function StockLedger(): React.JSX.Element {
                         onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                         style={canSort ? { cursor: 'pointer', userSelect: 'none' } : undefined}
                         aria-sort={
-                          sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined
+                          sorted === 'asc'
+                            ? 'ascending'
+                            : sorted === 'desc'
+                              ? 'descending'
+                              : undefined
                         }
                       >
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>

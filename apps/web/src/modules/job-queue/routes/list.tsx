@@ -92,7 +92,7 @@ function JobQueuePage(): React.JSX.Element {
           {isAdmin ? (
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
+              className="btn btn-ghost"
               disabled={backfillMut.isPending}
               title="Link operations that carry a machine as text only to the matching machine. Safe to run repeatedly."
               onClick={() => backfillMut.mutate()}
@@ -105,7 +105,7 @@ function JobQueuePage(): React.JSX.Element {
             </button>
           ) : null}
           {selectedMachine ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMachine(null)}>
+            <button type="button" className="btn btn-ghost" onClick={() => setMachine(null)}>
               All Machines ×
             </button>
           ) : null}
@@ -241,9 +241,13 @@ function JobQueuePage(): React.JSX.Element {
                       <th>Operation</th>
                       <th>Priority</th>
                       <th>Due Date</th>
-                      <th>Order Qty</th>
-                      <th style={{ color: 'var(--green2)' }}>Completed</th>
-                      <th style={{ color: 'var(--amber2)' }}>Available</th>
+                      <th className="th-num">Order Qty</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Completed
+                      </th>
+                      <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                        Available
+                      </th>
                       <th>Op Status</th>
                       <th>Action</th>
                     </tr>
@@ -348,8 +352,8 @@ function JobQueuePage(): React.JSX.Element {
                           <td className="text2" style={{ fontSize: 11 }}>
                             {fmtDate(r.dueDate)}
                           </td>
-                          <td className="mono">{r.orderQty}</td>
-                          <td className="green mono fw-700">
+                          <td className="mono td-num">{r.orderQty}</td>
+                          <td className="green mono fw-700 td-num">
                             {r.completed}
                             {/* ADR-164 — this row sits in its PLANNED machine's
                                 queue, so say which machine ACTUALLY made this
@@ -358,7 +362,7 @@ function JobQueuePage(): React.JSX.Element {
                                 per-machine breakdown for a 2+ machine split. */}
                             <ActualMachineLine planned={m.machineCode} machines={r.machines} />
                           </td>
-                          <td>
+                          <td className="td-num">
                             <span
                               className="mono fw-700"
                               style={{

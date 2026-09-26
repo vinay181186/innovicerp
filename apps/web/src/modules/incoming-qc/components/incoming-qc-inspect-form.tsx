@@ -362,7 +362,7 @@ export function IncomingQcInspectFormView(props: {
         </button>
         <button
           type="button"
-          className="btn btn-success"
+          className="btn btn-primary"
           disabled={form.submitting}
           onClick={() => void form.doSubmit()}
         >

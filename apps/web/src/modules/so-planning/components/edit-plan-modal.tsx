@@ -504,7 +504,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       </button>
       <button
         type="button"
-        className="btn btn-success"
+        className="btn btn-primary"
         onClick={() => onSave(true)}
         disabled={update.isPending || finalize.isPending}
       >

@@ -255,7 +255,7 @@ export function BomPlanningModal({
       </button>
       <button
         type="button"
-        className="btn btn-success"
+        className="btn btn-primary"
         disabled={submitting || isLoading || !data}
         onClick={submit}
       >

@@ -222,7 +222,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
       {
         header: 'Order Qty',
         accessorKey: 'orderQty',
-        meta: { tdClass: 'mono fw-700' },
+        meta: { tdClass: 'mono fw-700 td-num', thClass: 'th-num' },
       },
       {
         header: 'Customer Dispatch Date',
@@ -249,7 +249,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
       {
         header: 'Completed',
         accessorKey: 'jcFinishedQty',
-        meta: { tdClass: 'mono fw-700' },
+        meta: { tdClass: 'mono fw-700 td-num', thClass: 'th-num' },
         cell: ({ row }) => (
           <span
             style={{

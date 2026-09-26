@@ -22,9 +22,12 @@ export function SortableHead<T>({ table }: { table: Table<T> }): ReactElement {
             return (
               <th
                 key={header.id}
+                className={header.column.columnDef.meta?.thClass}
                 onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                 style={canSort ? { cursor: 'pointer', userSelect: 'none' } : undefined}
-                aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}
+                aria-sort={
+                  sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined
+                }
               >
                 {header.isPlaceholder ? null : (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>

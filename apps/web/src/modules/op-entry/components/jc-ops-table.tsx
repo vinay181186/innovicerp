@@ -108,8 +108,12 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
             <th>Planned Machine</th>
             <th>Actual Machine</th>
             <th>Op Type</th>
-            <th style={{ color: 'var(--green2)' }}>Completed</th>
-            <th style={{ color: 'var(--amber2)' }}>Pending</th>
+            <th className="th-num" style={{ color: 'var(--green2)' }}>
+              Completed
+            </th>
+            <th className="th-num" style={{ color: 'var(--amber2)' }}>
+              Pending
+            </th>
             <th>Op Status</th>
             <th>Action</th>
           </tr>
@@ -192,7 +196,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       passed every piece read as "0 completed"
                       (IN-JC-26-00093 Op2). Show the accepted count there, with
                       a red ✗ marker for any rejected. */}
-                  <td className="green mono fw-700">
+                  <td className="green mono fw-700 td-num">
                     {op.opType === 'qc' || op.qcRequired ? (
                       <>
                         {op.qcAcceptedQty}
@@ -214,7 +218,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       op.completedQty
                     )}
                   </td>
-                  <td>
+                  <td className="td-num">
                     {/* pending_qty (0087), not `available`. On a QC op
                         `available` is input − op_log completes, and a QC op
                         never gets a complete log — so this column printed the

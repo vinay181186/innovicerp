@@ -140,13 +140,13 @@ function PartyMaterialsListPage(): React.JSX.Element {
                   <th>Material</th>
                   <th className="td-ctr">UOM</th>
                   <th>Customer</th>
-                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     In Stock
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--amber2)' }}>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
                     Issued
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--cyan)' }}>
+                  <th className="th-num" style={{ color: 'var(--cyan)' }}>
                     Total Received
                   </th>
                   <th>Actions</th>
@@ -182,7 +182,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                     </td>
                     <td className="fw-700">{pm.clientName ?? pm.clientCodeText ?? '—'}</td>
                     <td
-                      className="td-ctr mono fw-700"
+                      className="mono fw-700 td-num"
                       style={{
                         fontSize: 14,
                         color: pm.stockQty > 0 ? 'var(--green)' : 'var(--text3)',
@@ -190,10 +190,10 @@ function PartyMaterialsListPage(): React.JSX.Element {
                     >
                       {pm.stockQty}
                     </td>
-                    <td className="td-ctr mono" style={{ fontSize: 12, color: 'var(--amber2)' }}>
+                    <td className="mono td-num" style={{ fontSize: 12, color: 'var(--amber2)' }}>
                       {pm.issuedQty}
                     </td>
-                    <td className="td-ctr mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
+                    <td className="mono td-num" style={{ fontSize: 12, color: 'var(--cyan)' }}>
                       {pm.receivedQty}
                     </td>
                     <td>

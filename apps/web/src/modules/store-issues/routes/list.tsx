@@ -166,7 +166,7 @@ function StoreIssuesListPage(): React.JSX.Element {
                       <th>Issue Date</th>
                       <th>Item Code</th>
                       <th>Item Name</th>
-                      <th className="td-ctr">Issue Qty</th>
+                      <th className="th-num">Issue Qty</th>
                       <th>Issued To</th>
                       <th>Reference</th>
                       <th>Purpose</th>
@@ -191,7 +191,7 @@ function StoreIssuesListPage(): React.JSX.Element {
                           </span>
                         </td>
                         <td>{iss.itemName || '—'}</td>
-                        <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>
+                        <td className="mono fw-700 td-num" style={{ fontSize: 14 }}>
                           {iss.qty}
                         </td>
                         <td>{iss.issuedTo || '—'}</td>

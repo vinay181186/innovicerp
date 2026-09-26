@@ -128,12 +128,12 @@ function SoCostingDetailPage(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-ctr">Order Qty</th>
+                <th className="th-num">Order Qty</th>
                 <th>JC / Detail</th>
                 <th>Operation</th>
                 <th>Op Type</th>
                 {priceHidden ? null : (
-                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Cost
                   </th>
                 )}
@@ -171,10 +171,10 @@ function LineRows({
           {itemCodeWithRev(line.itemCode, line.itemRevision)}
         </td>
         <td style={{ fontSize: 11 }}>{line.itemName}</td>
-        <td className="td-ctr mono fw-700">{line.orderQty}</td>
+        <td className="mono fw-700 td-num">{line.orderQty}</td>
         <td colSpan={3} />
         {priceHidden ? null : (
-          <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
+          <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
             {m2(line.lineTotal)}
           </td>
         )}
@@ -190,7 +190,7 @@ function LineRows({
           <td colSpan={3} style={{ fontSize: 11, color: 'var(--blue)' }}>
             📦 Material POs
           </td>
-          <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
+          <td className="mono td-num" style={{ fontSize: 11, color: 'var(--blue)' }}>
             ₹{inrFormat(line.materialCost ?? 0)}
           </td>
         </tr>
@@ -231,9 +231,11 @@ function LineRows({
                 two separately coloured spans, not a sum. Kept that way: both are
                 server-owned, so nothing is added in the browser. */}
             {priceHidden ? null : (
-              <td className="td-ctr mono" style={{ fontSize: 11 }}>
+              <td className="mono td-num" style={{ fontSize: 11 }}>
                 {(op.outsourceCost ?? 0) > 0 ? (
-                  <span style={{ color: 'var(--amber2)' }}>₹{inrFormat(op.outsourceCost ?? 0)}</span>
+                  <span style={{ color: 'var(--amber2)' }}>
+                    ₹{inrFormat(op.outsourceCost ?? 0)}
+                  </span>
                 ) : null}
                 {(op.outsourceCost ?? 0) > 0 && (op.machineTimeCost ?? 0) > 0 ? ' + ' : null}
                 {(op.machineTimeCost ?? 0) > 0 ? (

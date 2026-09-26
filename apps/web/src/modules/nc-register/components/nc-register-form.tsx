@@ -473,7 +473,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="btn btn-success" disabled={formState.isSubmitting}>
+          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
             {props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save NC')}
           </button>
