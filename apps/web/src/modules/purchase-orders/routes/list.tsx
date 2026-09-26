@@ -226,7 +226,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           }}
         >
           <div className="section-hdr" style={{ marginBottom: 0 }}>
-            🛒 Purchase Orders
+            Purchase Orders
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input

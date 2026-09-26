@@ -253,7 +253,7 @@ export function PoHeaderBand({
 
         {/* ── Tax & approval ── */}
         <Col caption="Tax & Approval">
-          <Row label="Tax Type" value={detail.taxType ? taxTypeLabel(detail.taxType) : '—'} />
+          <Row label="Tax Type" value={taxTypeLabel(detail.taxType)} />
           <Row label="Due Date" value={<span className="mono">{detail.dueDate ?? '—'}</span>} />
           {/* Only the rates that apply — a 0% rate is not shown. */}
           {detail.totalAmount == null || gstParts.length === 0 ? null : (

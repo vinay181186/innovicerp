@@ -197,7 +197,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         >
           <div>
             <div className="section-hdr" style={{ marginBottom: 0 }}>
-              📥 Goods Receipt Notes
+              Goods Receipt Notes
             </div>
             {/* Count comes from the list response's `total` — the whole book,
                 not just the page on screen. */}

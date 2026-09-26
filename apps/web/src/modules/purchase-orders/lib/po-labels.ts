@@ -31,7 +31,9 @@ export function poStatusLabel(status: string): string {
   return (PO_STATUS_LABELS as Record<string, string>)[status] ?? status.replaceAll('_', ' ');
 }
 
-/** Tax Type is a free string column; unknown values are shown as stored. */
-export function taxTypeLabel(taxType: string): string {
+/** Tax Type is a free string column; unknown values are shown as stored.
+ *  No tax type (NULL / blank) reads "None" — the same word the form offers. */
+export function taxTypeLabel(taxType: string | null | undefined): string {
+  if (!taxType) return 'None';
   return TAX_TYPE_LABELS[taxType] ?? taxType;
 }
