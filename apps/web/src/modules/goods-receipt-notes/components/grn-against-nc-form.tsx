@@ -19,19 +19,22 @@
 import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { todayLocal } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import {
   useDeliveryChallan,
   useDeliveryChallansList,
   useReceiveDeliveryChallan,
 } from '@/modules/delivery-challans/api';
 import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-math';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
 import { goodsReceiptNotesKeys } from '../api';
+import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
+import { GrnLinesTable } from './grn-lines-table';
 
 interface LineDraft {
   deliveryChallanLineId: string;
@@ -50,12 +53,11 @@ interface LineDraft {
   error: string | null;
 }
 
-export interface GrnAgainstNcFormProps {
+export interface GrnAgainstNcFormProps extends GrnTypeFormShellProps {
   /** The parent screen's exit-guard `leave`: runs the post-save navigation
    *  without the "Are you sure you want to exit?" question. The guard itself
    *  lives in <UnifiedGrnForm>, which owns this form — one screen, one guard. */
   onLeave: (go: () => void) => void;
-  onCancel: () => void;
 }
 
 /** One line's Receive Now check. Null = fine. */
@@ -69,7 +71,11 @@ function lineQtyError(raw: string, balance: number): string | null {
   return null;
 }
 
-export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): React.JSX.Element {
+export function GrnAgainstNcForm({
+  onLeave,
+  typeField,
+  onStatusChange,
+}: GrnAgainstNcFormProps): React.JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const receive = useReceiveDeliveryChallan();
@@ -83,6 +89,8 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
   const [formError, setFormError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Any hand edit to the loaded lines — only feeds the "Not saved" pill.
+  const [linesTouched, setLinesTouched] = useState(false);
 
   // The same query the DC form uses — every challan still awaiting receipt —
   // but keeping ONLY the return-to-vendor rows (ncId set). One challan per NC
@@ -174,6 +182,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
       : '';
 
   const patchLine = (idx: number, patch: Partial<LineDraft>): void => {
+    setLinesTouched(true);
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   };
 
@@ -242,259 +251,145 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
     return o ? `${o.code} — ${o.name}` : undefined;
   }, [ncId, ncOptions]);
 
+  // Report to the shell so its header Save / "Not saved" pill stay truthful.
+  const dirty = ncId !== null || vendorInvoiceText !== '' || remarks !== '' || linesTouched;
+  useEffect(() => {
+    onStatusChange({ submitting, blocked: false, dirty });
+  }, [onStatusChange, submitting, dirty]);
+
+  const errorText = formError ?? submitError;
+
   return (
-    <form onSubmit={(e) => void handleSubmit(e)}>
-      {/* Header row 1 — NC No. · Job Card · Return Challan · Vendor (all from the NC's challan). */}
-      <div className="form-grid-4" style={{ marginBottom: 12 }}>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncId">
-            NC No.<span className="req">★</span>
-          </label>
-          <SearchableSelect
-            id="ncId"
-            value={ncId}
-            onChange={onNcChange}
-            options={ncOptions}
-            onSearch={setNcSearch}
-            loading={dcList.isFetching}
-            placeholder="🔍 Type NC number, job card or vendor…"
-            valueLabel={ncValueLabel}
-            emptyText="No NC has a return challan awaiting receipt"
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncJobCard">
-            JC No.
-          </label>
-          <input
-            id="ncJobCard"
-            className="innovic-input"
-            readOnly
-            value={ncRow?.jobCardCode ?? ''}
-            placeholder="— from the NC —"
-            tabIndex={-1}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncReturnChallan">
-            DC No.
-          </label>
-          <input
-            id="ncReturnChallan"
-            className="innovic-input"
-            readOnly
-            value={ncRow?.code ?? ''}
-            placeholder="— from the NC —"
-            tabIndex={-1}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncVendor">
-            Vendor
-          </label>
-          <input
-            id="ncVendor"
-            className="innovic-input"
-            readOnly
-            value={vendorLabel}
-            placeholder="— from the NC —"
-            tabIndex={-1}
-          />
-        </div>
-      </div>
-      {ncRow?.reason ? (
-        <div className="text3" style={{ fontSize: 12, marginTop: -6, marginBottom: 12 }}>
-          Return reason: {ncRow.reason}
-        </div>
+    <form id={GRN_CREATE_FORM_ID} onSubmit={(e) => void handleSubmit(e)}>
+      {/* Validation summary right under the header, where Save is. */}
+      {errorText ? (
+        <Banner tone="error" role="alert">
+          {errorText}
+        </Banner>
       ) : null}
 
-      {/* Header row 2 — Receipt Date · Vendor Invoice No. · Remarks (wide). */}
-      <div className="form-grid-4" style={{ marginBottom: 16 }}>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncReceiptDate">
-            GRN Date<span className="req">★</span>
-          </label>
-          <input
-            id="ncReceiptDate"
-            type="date"
-            className="innovic-input"
-            value={receiptDate}
-            onChange={(e) => setReceiptDate(e.target.value)}
+      <Panel title="GRN Details">
+        <FormGrid>
+          {/* Row 1 — GRN Type · NC No. · GRN Date (3 + 6 + 3). */}
+          {typeField}
+          <FormField
+            label="NC No."
             required
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncVendorInvoice">
-            Vendor Invoice No.
-          </label>
-          <input
-            id="ncVendorInvoice"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="optional"
-            value={vendorInvoiceText}
-            onChange={(e) => setVendorInvoiceText(e.target.value)}
-          />
-        </div>
-        <div className="form-grp form-span-2">
-          <label className="form-label" htmlFor="ncRemarks">
-            Remarks
-          </label>
-          <input
-            id="ncRemarks"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Notes"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div
-        className="form-label"
-        style={{ fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}
-      >
-        Line Items — still out on this return challan
-      </div>
-
-      <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-        <table
-          className="innovic-table"
-          style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}
-        >
-          <thead>
-            <tr>
-              <th style={{ width: '4%' }}>Ln</th>
-              {/* POL = the CUSTOMER's own PO line number off the SO line behind
-                  this challan line. Widths below still total 100. */}
-              <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
-              <th style={{ width: '16%' }}>Item Code</th>
-              <th style={{ width: '22%' }}>Item Name</th>
-              <th style={{ width: '8%' }}>Sent Qty</th>
-              <th style={{ width: '9%' }}>Received</th>
-              <th style={{ width: '8%' }}>Pending</th>
-              <th style={{ width: '11%' }}>
-                Receive Now<span className="req">★</span>
-              </th>
-              <th style={{ width: '17%' }}>Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="empty-state" style={{ padding: 14 }}>
-                  {!ncId
-                    ? 'Pick an NC to load its return challan.'
-                    : !dc
-                      ? 'Loading return challan lines…'
-                      : 'Every line on this return challan is already received — nothing pending to receive.'}
-                </td>
-              </tr>
-            ) : (
-              lines.map((l, idx) => (
-                <tr key={l.deliveryChallanLineId}>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
-                    {idx + 1}
-                  </td>
-                  {/* POL — the customer's PO line number; '—' when this line has
-                      no sales order behind it. */}
-                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                    {l.clientPoLineNo ?? '—'}
-                  </td>
-                  <td
-                    className="mono fw-700"
-                    style={{
-                      color: 'var(--text)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={itemCodeWithRev(l.itemCode, l.itemRevision)}
-                  >
-                    {itemCodeWithRev(l.itemCode, l.itemRevision)}
-                  </td>
-                  <td
-                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                    title={l.itemName}
-                  >
-                    {l.itemName || '—'}
-                  </td>
-                  <td className="mono">{l.sentQty}</td>
-                  <td className="mono">{l.receivedSoFar}</td>
-                  <td className="mono fw-700">{l.balance}</td>
-                  <td>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      max={l.balance}
-                      step={1}
-                      className="innovic-input"
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: 'var(--cyan)',
-                        padding: '4px 4px',
-                      }}
-                      value={l.receiveNow}
-                      onChange={(e) =>
-                        patchLine(idx, {
-                          receiveNow: e.target.value,
-                          error: lineQtyError(e.target.value, l.balance),
-                        })
-                      }
-                      aria-label={`Receive now, line ${idx + 1}`}
-                    />
-                    {l.error ? <div className="form-error">{l.error}</div> : null}
-                  </td>
-                  <td>
-                    <input
-                      className="innovic-input"
-                      autoComplete="off"
-                      value={l.remarks}
-                      onChange={(e) => patchLine(idx, { remarks: e.target.value })}
-                      aria-label={`Remarks, line ${idx + 1}`}
-                    />
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        {formError || submitError ? (
-          <div
-            style={{
-              color: 'var(--red2)',
-              background: 'var(--red3)',
-              border: '1px solid var(--red)',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
+            size="lg"
+            htmlFor="ncId"
+            help={ncRow?.reason ? `Return reason: ${ncRow.reason}` : undefined}
           >
-            {formError ?? submitError}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          <button type="button" className="btn btn-ghost" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-success" disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 size={13} className="animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save GRN'
-            )}
-          </button>
-        </div>
-      </div>
+            <SearchableSelect
+              id="ncId"
+              value={ncId}
+              onChange={onNcChange}
+              options={ncOptions}
+              onSearch={setNcSearch}
+              loading={dcList.isFetching}
+              placeholder="🔍 Type NC number, job card or vendor…"
+              valueLabel={ncValueLabel}
+              emptyText="No NC has a return challan awaiting receipt"
+            />
+          </FormField>
+          <FormField label="GRN Date" required size="sm" htmlFor="ncReceiptDate">
+            <input
+              id="ncReceiptDate"
+              type="date"
+              className="innovic-input"
+              value={receiptDate}
+              onChange={(e) => setReceiptDate(e.target.value)}
+              required
+            />
+          </FormField>
+
+          {/* Row 2 — JC No. · DC No. · Vendor (all from the NC's challan) ·
+              Vendor Invoice No. (3 + 3 + 3 + 3). */}
+          <FormField label="JC No." size="sm" htmlFor="ncJobCard">
+            <input
+              id="ncJobCard"
+              className="innovic-input"
+              readOnly
+              value={ncRow?.jobCardCode ?? ''}
+              placeholder="— from the NC —"
+              tabIndex={-1}
+            />
+          </FormField>
+          <FormField label="DC No." size="sm" htmlFor="ncReturnChallan">
+            <input
+              id="ncReturnChallan"
+              className="innovic-input"
+              readOnly
+              value={ncRow?.code ?? ''}
+              placeholder="— from the NC —"
+              tabIndex={-1}
+            />
+          </FormField>
+          <FormField label="Vendor" size="sm" htmlFor="ncVendor">
+            <input
+              id="ncVendor"
+              className="innovic-input"
+              readOnly
+              value={vendorLabel}
+              title={vendorLabel || undefined}
+              placeholder="— from the NC —"
+              tabIndex={-1}
+            />
+          </FormField>
+          <FormField label="Vendor Invoice No." size="sm" htmlFor="ncVendorInvoice">
+            <input
+              id="ncVendorInvoice"
+              className="innovic-input"
+              autoComplete="off"
+              placeholder="optional"
+              value={vendorInvoiceText}
+              onChange={(e) => setVendorInvoiceText(e.target.value)}
+            />
+          </FormField>
+
+          {/* Row 3 — Remarks (full). */}
+          <FormField label="Remarks" size="full" htmlFor="ncRemarks">
+            <textarea
+              id="ncRemarks"
+              className="innovic-textarea"
+              rows={2}
+              placeholder="Notes"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
+
+      <Panel title="Line Items — still out on this return challan" bodyPadding="none">
+        <GrnLinesTable
+          rows={lines.map((l) => ({
+            key: l.deliveryChallanLineId,
+            clientPoLineNo: l.clientPoLineNo,
+            itemCode: l.itemCode,
+            itemRevision: l.itemRevision,
+            itemName: l.itemName,
+            qty: l.sentQty,
+            receivedSoFar: l.receivedSoFar,
+            balance: l.balance,
+            receiveNow: l.receiveNow,
+            remarks: l.remarks,
+            error: l.error,
+          }))}
+          qtyLabel="Sent Qty"
+          emptyText={
+            !ncId
+              ? 'Pick an NC to load its return challan.'
+              : !dc
+                ? 'Loading return challan lines…'
+                : 'Every line on this return challan is already received — nothing pending to receive.'
+          }
+          onReceiveNow={(idx, v) => {
+            const l = lines[idx];
+            if (l) patchLine(idx, { receiveNow: v, error: lineQtyError(v, l.balance) });
+          }}
+          onRemarks={(idx, v) => patchLine(idx, { remarks: v })}
+        />
+      </Panel>
     </form>
   );
 }

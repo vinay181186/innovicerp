@@ -32,15 +32,22 @@
 // No type carries QC fields; QC happens later at Incoming QC. The old
 // <GoodsReceiptNoteForm> still serves /goods-receipt-notes/$id/edit only.
 
-import { GRN_INWARD_TYPES, type CreateGoodsReceiptNoteInput, type GrnInwardType } from '@innovic/shared';
-import { Link, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
+import {
+  GRN_INWARD_TYPES,
+  type CreateGoodsReceiptNoteInput,
+  type GrnInwardType,
+} from '@innovic/shared';
+import { useNavigate } from '@tanstack/react-router';
+import { Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { FormField } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreateGoodsReceiptNote } from '../api';
 import { GrnAgainstDcForm } from './grn-against-dc-form';
 import { GrnAgainstNcForm } from './grn-against-nc-form';
 import { GrnAgainstPoForm } from './grn-against-po-form';
+import { GRN_CREATE_FORM_ID, type GrnFormStatus } from './grn-create-contract';
 
 // Option text — the first two verbatim from legacy addGRN() L26533-26534.
 const TYPE_META: Record<GrnInwardType, { label: string }> = {
@@ -53,6 +60,8 @@ function isInwardType(v: string): v is GrnInwardType {
   return (GRN_INWARD_TYPES as readonly string[]).includes(v);
 }
 
+const IDLE: GrnFormStatus = { submitting: false, blocked: false, dirty: false };
+
 export function UnifiedGrnForm({
   initialPurchaseOrderId,
 }: {
@@ -62,11 +71,14 @@ export function UnifiedGrnForm({
   // A `?poId=` preselect is always a buying PO, so the type starts (and stays
   // unless the user changes it) on Against PO.
   const [inwardType, setInwardType] = useState<GrnInwardType>('purchase');
+  // What the active type form last reported: drives the header's Create
+  // button (disabled while saving / blocked) and the "Not saved" pill.
+  const [status, setStatus] = useState<GrnFormStatus>(IDLE);
   // ONE exit guard for the whole inward screen, every type. Where Cancel goes
   // is where ESC → Exit goes; every other way off the screen (Back link,
-  // breadcrumb, browser Back) gets "Are you sure?". The DC and NC forms have
-  // no Cancel of their own and live inside this component, so they are handed
-  // `exit.leave` (as `onLeave`) for their save rather than a second guard.
+  // breadcrumb, browser Back) gets "Are you sure?". The DC and NC forms live
+  // inside this component, so they are handed `exit.leave` (as `onLeave`) for
+  // their save rather than a second guard.
   const goBack = useCallback(() => void navigate({ to: '/goods-receipt-notes' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
 
@@ -80,69 +92,102 @@ export function UnifiedGrnForm({
       const created = await createPurchase.mutateAsync(values);
       exit.leave(
         () =>
-          void navigate({ to: '/goods-receipt-notes/$id', params: { id: created.id }, replace: true }),
+          void navigate({
+            to: '/goods-receipt-notes/$id',
+            params: { id: created.id },
+            replace: true,
+          }),
       );
     } catch (e) {
       setPurchaseErr(e instanceof Error ? e.message : 'Could not save GRN. Try again.');
     }
   };
 
+  // Save lives in the sticky header; the active type form owns the handler.
+  // The button reaches it through the HTML `form` attribute, and Ctrl+S
+  // submits the same form, so both paths run the form's own checks.
+  const canSave = !status.submitting && !status.blocked;
+  const submitActiveForm = useCallback(() => {
+    const el = document.getElementById(GRN_CREATE_FORM_ID);
+    if (el instanceof HTMLFormElement) el.requestSubmit();
+  }, []);
+  useSaveShortcut(submitActiveForm, canSave);
+
+  // GRN Type — rendered by the type form as the first field of its header
+  // grid, so it sits with the other header fields instead of alone on a row.
+  const typeField = (
+    <FormField label="GRN Type" required size="sm" htmlFor="grnInwardType">
+      <select
+        id="grnInwardType"
+        className="innovic-select"
+        value={inwardType}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (isInwardType(v)) {
+            setStatus(IDLE);
+            setInwardType(v);
+          }
+        }}
+      >
+        {GRN_INWARD_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {TYPE_META[t].label}
+          </option>
+        ))}
+      </select>
+    </FormField>
+  );
+
   return (
     <div>
       {exit.dialog}
-      <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to GRN list
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">📥 New GRN</div>
-          </div>
-        </div>
-        <div className="panel-body">
-          {/* GRN Type — one compact dropdown in the first cell of a 4-grid row,
-              so it lines up with the header fields of whichever form follows. */}
-          <div className="form-grid-4" style={{ marginBottom: 12 }}>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="grnInwardType">
-                GRN Type<span className="req">★</span>
-              </label>
-              <select
-                id="grnInwardType"
-                className="innovic-select"
-                value={inwardType}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (isInwardType(v)) setInwardType(v);
-                }}
-              >
-                {GRN_INWARD_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {TYPE_META[t].label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+      <PageHeader
+        sticky
+        icon="📥"
+        title="New GRN"
+        backLabel="Back to GRN list"
+        onBack={() => exit.leave(goBack)}
+        dirty={status.dirty}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form={GRN_CREATE_FORM_ID}
+              className="btn btn-primary"
+              disabled={!canSave}
+            >
+              {status.submitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Saving…
+                </>
+              ) : (
+                'Create GRN'
+              )}
+            </button>
+          </>
+        }
+      />
 
-          {/* Switching type unmounts the other form, so its picks and lines
-              are dropped — no stale state crosses over. */}
-          {inwardType === 'purchase' ? (
-            <GrnAgainstPoForm
-              {...(initialPurchaseOrderId ? { initialPurchaseOrderId } : {})}
-              onSubmit={onPurchaseSubmit}
-              submitError={purchaseErr}
-              onCancel={() => exit.leave(goBack)}
-            />
-          ) : null}
-          {inwardType === 'job_work_return' ? (
-            <GrnAgainstDcForm onLeave={exit.leave} onCancel={() => exit.leave(goBack)} />
-          ) : null}
-          {inwardType === 'nc_return' ? (
-            <GrnAgainstNcForm onLeave={exit.leave} onCancel={() => exit.leave(goBack)} />
-          ) : null}
-        </div>
-      </div>
+      {/* Switching type unmounts the other form, so its picks and lines
+          are dropped — no stale state crosses over. */}
+      {inwardType === 'purchase' ? (
+        <GrnAgainstPoForm
+          {...(initialPurchaseOrderId ? { initialPurchaseOrderId } : {})}
+          typeField={typeField}
+          onStatusChange={setStatus}
+          onSubmit={onPurchaseSubmit}
+          submitError={purchaseErr}
+        />
+      ) : null}
+      {inwardType === 'job_work_return' ? (
+        <GrnAgainstDcForm typeField={typeField} onStatusChange={setStatus} onLeave={exit.leave} />
+      ) : null}
+      {inwardType === 'nc_return' ? (
+        <GrnAgainstNcForm typeField={typeField} onStatusChange={setStatus} onLeave={exit.leave} />
+      ) : null}
     </div>
   );
 }

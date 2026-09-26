@@ -269,9 +269,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={() =>
-              setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
-            }
+            onClick={() => setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))}
             disabled={rows.length === 0}
             title={allExpanded ? 'Hide every card’s lines' : 'Show every card’s lines'}
           >
@@ -404,7 +402,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                     cursor: 'pointer',
                   }}
                 >
-                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
+                  <div
+                    style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
+                  >
                     <QtyBox label="Received" value={grn.totalReceivedQty} />
                     <QtyBox
                       label="Accepted"
@@ -597,9 +597,13 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
-            <th>Received</th>
-            <th style={{ color: 'var(--green2)' }}>Accepted</th>
-            <th style={{ color: 'var(--red2)' }}>Rejected</th>
+            <th className="th-num">Received</th>
+            <th className="th-num" style={{ color: 'var(--green2)' }}>
+              Accepted
+            </th>
+            <th className="th-num" style={{ color: 'var(--red2)' }}>
+              Rejected
+            </th>
             <th>QC</th>
             <th>QC Date</th>
           </tr>
@@ -636,11 +640,17 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
                 >
                   {l.itemName}
                 </td>
-                <td className="mono fw-700">{l.receivedQty}</td>
-                <td className="mono fw-700" style={{ color: l.qcAcceptedQty > 0 ? 'var(--green)' : undefined }}>
+                <td className="mono fw-700 td-num">{l.receivedQty}</td>
+                <td
+                  className="mono fw-700 td-num"
+                  style={{ color: l.qcAcceptedQty > 0 ? 'var(--green)' : undefined }}
+                >
                   {l.qcAcceptedQty}
                 </td>
-                <td className="mono" style={{ color: l.qcRejectedQty > 0 ? 'var(--red)' : undefined }}>
+                <td
+                  className="mono td-num"
+                  style={{ color: l.qcRejectedQty > 0 ? 'var(--red)' : undefined }}
+                >
                   {l.qcRejectedQty}
                 </td>
                 <td>

@@ -21,6 +21,9 @@ import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { useVendorsList } from '@/modules/vendors/api';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
 import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
 interface LineFormValue {
@@ -90,7 +93,7 @@ type CreateMode = {
   submitLabel?: string;
   submitError?: string | null;
   onCancel?: () => void;
-};
+} & HeaderSaveProps;
 
 type EditMode = {
   mode: 'edit';
@@ -99,7 +102,16 @@ type EditMode = {
   submitLabel?: string;
   submitError?: string | null;
   onCancel?: () => void;
-};
+} & HeaderSaveProps;
+
+/** When the page puts Save in its sticky PageHeader: the header's
+ *  `<button type="submit" form={formId}>` submits this form, the bottom
+ *  Cancel/Save bar is not rendered, and the form reports its state so the
+ *  header button and "Not saved" pill stay truthful. */
+interface HeaderSaveProps {
+  formId?: string;
+  onStatusChange?: (s: { submitting: boolean; canSubmit: boolean; dirty: boolean }) => void;
+}
 
 export type GoodsReceiptNoteFormProps = CreateMode | EditMode;
 
@@ -118,13 +130,32 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
       };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, control, handleSubmit, formState, setValue, setError, clearErrors, getValues, watch } =
-    form;
+  const {
+    register,
+    control,
+    handleSubmit,
+    formState,
+    setValue,
+    setError,
+    clearErrors,
+    getValues,
+    watch,
+  } = form;
   const isCreate = !isEdit;
   const [docNoValid, setDocNoValid] = useState(true);
   const errors = formState.errors;
   const companyId = useSession().data?.companyId ?? null;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
+
+  const { onStatusChange } = props;
+  const canSubmit = !formState.isSubmitting && !(isCreate && !docNoValid);
+  useEffect(() => {
+    onStatusChange?.({
+      submitting: formState.isSubmitting,
+      canSubmit,
+      dirty: formState.isDirty,
+    });
+  }, [onStatusChange, formState.isSubmitting, formState.isDirty, canSubmit]);
 
   // One fetch for the whole form — every line's QC By box reads the same list,
   // and the query key is shared with the other QC By fields in the app.
@@ -243,440 +274,387 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   };
 
   return (
-    <form onSubmit={handleSubmit(onValid)}>
-      {/* Header — field order, labels and placeholders verbatim from legacy
-          addGRN() L26537-26543 (2-col .form-grid, as legacy L26537). No ★ on
-          GRN No.: legacy renders it readonly/auto (L26538) and our schema has
-          code .optional() — "blank = auto". */}
-      <div className="form-grid" style={{ marginBottom: 16 }}>
-        <DocNumberInput
-          type="grn"
-          label="GRN No."
-          readOnly={isEdit}
-          value={watch('header.code') ?? ''}
-          onChange={(v) => setValue('header.code', v)}
-          onValidityChange={setDocNoValid}
-        />
-        <div className="form-grp">
-          <label className="form-label" htmlFor="grnDate">
-            GRN Date<span className="req">★</span>
-          </label>
-          <input
-            id="grnDate"
-            type="date"
-            className="innovic-input"
-            {...register('header.grnDate', { required: 'GRN Date is required' })}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="invoiceNo">
-            Vendor Invoice No.
-          </label>
-          <input
-            id="invoiceNo"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Vendor invoice"
-            {...register('header.invoiceNo')}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="dcNo">
-            Vendor Challan No.
-          </label>
-          <input
-            id="dcNo"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Delivery challan"
-            {...register('header.dcNo')}
-          />
-        </div>
+    <form id={props.formId} onSubmit={handleSubmit(onValid)}>
+      {/* Save error summary right under the page header, where Save is. */}
+      {props.submitError ? (
+        <Banner tone="error" role="alert">
+          {props.submitError}
+        </Banner>
+      ) : null}
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="remarks">
-            Remarks
-          </label>
-          {/* Legacy uses <input> (L26542); kept as <textarea> — remarks is
-              z.string().max(2000) so CR/LF survives; <input> would strip it. */}
-          <textarea
-            id="remarks"
-            className="innovic-textarea"
-            rows={2}
-            placeholder="Notes"
-            {...register('header.remarks')}
-          />
-        </div>
-      </div>
-
-      {/* ▸ SELECT PO — legacy addGRN() L26545-26550. Legacy resolves the vendor
-          from the PO and shows it read-only (_grnRefreshPOLines L26672-26673);
-          our vendor fields stay because they are the only vendor entry point
-          without legacy's Manual mode. */}
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--cyan)',
-          fontFamily: 'var(--mono)',
-          fontWeight: 700,
-          letterSpacing: '.06em',
-          marginBottom: 6,
-        }}
-      >
-        ▸ SELECT PO
-      </div>
-      <div className="form-grid" style={{ marginBottom: 16 }}>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="purchaseOrderId">
-            Purchase Order
-          </label>
-          <select
-            id="purchaseOrderId"
-            className="innovic-select"
-            disabled={isEdit}
-            {...register('header.purchaseOrderId')}
+      {/* Header — labels and placeholders from legacy addGRN() L26537-26550.
+          No ★ on GRN No.: legacy renders it readonly/auto (L26538) and our
+          schema has code .optional() — "blank = auto". Legacy resolves the
+          vendor from the PO and shows it read-only (_grnRefreshPOLines
+          L26672-26673); our vendor fields stay because they are the only vendor
+          entry point without legacy's Manual mode. On the 12-column grid:
+          party first, then the PO, then the vendor's paper numbers. */}
+      <Panel title="GRN Details">
+        <FormGrid>
+          {/* Row 1 — Vendor · Vendor Code · GRN No. (6 + 3 + 3). */}
+          <FormField
+            label="Vendor"
+            required
+            size="lg"
+            htmlFor="vendorId"
+            error={errors.header?.vendorId?.message}
           >
-            <option value="">— Type the PO No. below —</option>
-            {pos.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="poCodeText">
-            PO No. (typed)
-          </label>
-          <input
-            id="poCodeText"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('header.poCodeText')}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="vendorId">
-            Vendor<span className="req">★</span>
-          </label>
-          <select id="vendorId" className="innovic-select" {...register('header.vendorId')}>
-            <option value="">— Type the Vendor Code below —</option>
-            {vendors.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.code} — {v.name}
-              </option>
-            ))}
-          </select>
-          {errors.header?.vendorId?.message ? (
-            <div className="form-error">{errors.header.vendorId.message}</div>
-          ) : null}
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="vendorCodeText">
-            Vendor Code
-          </label>
-          <input
-            id="vendorCodeText"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('header.vendorCodeText')}
-          />
-        </div>
-      </div>
+            <select id="vendorId" className="innovic-select" {...register('header.vendorId')}>
+              <option value="">— Type the Vendor Code below —</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.code} — {v.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Vendor Code" size="sm" htmlFor="vendorCodeText">
+            <input
+              id="vendorCodeText"
+              className="innovic-input"
+              autoComplete="off"
+              {...register('header.vendorCodeText')}
+            />
+          </FormField>
+          <div className="f-sm">
+            <DocNumberInput
+              type="grn"
+              label="GRN No."
+              readOnly={isEdit}
+              value={watch('header.code') ?? ''}
+              onChange={(v) => setValue('header.code', v)}
+              onValidityChange={setDocNoValid}
+            />
+          </div>
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 8,
-        }}
+          {/* Row 2 — Purchase Order · PO No. (typed) · GRN Date (6 + 3 + 3). */}
+          <FormField label="Purchase Order" size="lg" htmlFor="purchaseOrderId">
+            <select
+              id="purchaseOrderId"
+              className="innovic-select"
+              disabled={isEdit}
+              {...register('header.purchaseOrderId')}
+            >
+              <option value="">— Type the PO No. below —</option>
+              {pos.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="PO No. (typed)" size="sm" htmlFor="poCodeText">
+            <input
+              id="poCodeText"
+              className="innovic-input"
+              autoComplete="off"
+              {...register('header.poCodeText')}
+            />
+          </FormField>
+          <FormField label="GRN Date" required size="sm" htmlFor="grnDate">
+            <input
+              id="grnDate"
+              type="date"
+              className="innovic-input"
+              {...register('header.grnDate', { required: 'GRN Date is required' })}
+            />
+          </FormField>
+
+          {/* Row 3 — Vendor Invoice No. · Vendor Challan No. (6 + 6). */}
+          <FormField label="Vendor Invoice No." size="lg" htmlFor="invoiceNo">
+            <input
+              id="invoiceNo"
+              className="innovic-input"
+              autoComplete="off"
+              placeholder="Vendor invoice"
+              {...register('header.invoiceNo')}
+            />
+          </FormField>
+          <FormField label="Vendor Challan No." size="lg" htmlFor="dcNo">
+            <input
+              id="dcNo"
+              className="innovic-input"
+              autoComplete="off"
+              placeholder="Delivery challan"
+              {...register('header.dcNo')}
+            />
+          </FormField>
+
+          {/* Row 4 — Remarks (full). Legacy uses <input> (L26542); kept as
+              <textarea> — remarks is z.string().max(2000) so CR/LF survives. */}
+          <FormField label="Remarks" size="full" htmlFor="remarks">
+            <textarea
+              id="remarks"
+              className="innovic-textarea"
+              rows={2}
+              placeholder="Notes"
+              {...register('header.remarks')}
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
+
+      <Panel
+        title="Line Items"
+        actions={
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => append({ ...NEW_LINE })}
+          >
+            <Plus size={13} /> Add line
+          </button>
+        }
       >
-        <div
-          className="form-label"
-          style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}
-        >
-          Line Items
-        </div>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => append({ ...NEW_LINE })}
-        >
-          <Plus size={13} /> Add line
-        </button>
-      </div>
-
-      {fields.length === 0 ? (
-        <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>
-          No lines yet. Pick a PO above to auto-populate, or click <strong>Add line</strong>.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {fields.map((field, idx) => {
-            const locked = field.existingQcStatus === 'completed';
-            return (
-              <div
-                key={field.id}
-                style={{
-                  border: `1px solid ${locked ? 'rgba(22,163,74,0.5)' : 'var(--border)'}`,
-                  borderRadius: 8,
-                  padding: 10,
-                  background: 'var(--bg2)',
-                }}
-              >
+        {fields.length === 0 ? (
+          <div className="empty-state">
+            No lines yet. Pick a PO above to auto-populate, or click <strong>Add line</strong>.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {fields.map((field, idx) => {
+              const locked = field.existingQcStatus === 'completed';
+              return (
                 <div
+                  key={field.id}
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: 8,
-                    fontSize: 11,
-                    color: 'var(--text3)',
-                    fontFamily: 'var(--mono)',
-                    textTransform: 'uppercase',
-                    fontWeight: 700,
+                    border: `1px solid ${locked ? 'rgba(22,163,74,0.5)' : 'var(--border)'}`,
+                    borderRadius: 8,
+                    padding: 10,
+                    background: 'var(--bg2)',
                   }}
                 >
-                  <span>
-                    Line {idx + 1}
-                    {locked ? (
-                      <span
-                        className="badge b-green"
-                        style={{ marginLeft: 8 }}
-                        title="QC done — fix via a reversing GRN line."
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 8,
+                      fontSize: 'var(--fs-xs)',
+                      color: 'var(--text3)',
+                      fontFamily: 'var(--mono)',
+                      textTransform: 'uppercase',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <span>
+                      Line {idx + 1}
+                      {locked ? (
+                        <span
+                          className="badge b-green"
+                          style={{ marginLeft: 8 }}
+                          title="QC done — fix via a reversing GRN line."
+                        >
+                          QC locked
+                        </span>
+                      ) : null}
+                    </span>
+                    {!locked ? (
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm btn-icon"
+                        onClick={() => remove(idx)}
+                        aria-label={`Remove line ${idx + 1}`}
                       >
-                        QC locked
-                      </span>
+                        <Trash2 size={12} />
+                      </button>
                     ) : null}
-                  </span>
-                  {!locked ? (
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-sm btn-icon"
-                      onClick={() => remove(idx)}
-                      aria-label={`Remove line ${idx + 1}`}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  ) : null}
-                </div>
+                  </div>
 
-                <div className="form-grid form-grid-3" style={{ marginBottom: 8 }}>
-                  {/* Shared item cell — enforces the system item-code rule (master
+                  <div className="form-grid-12">
+                    {/* Shared item cell — enforces the system item-code rule (master
                       match ⇒ read-only auto-filled name; off-master ⇒ editable, itemId
                       null). Controller keeps the existing required-name validation and
                       onSubmit error display; code + itemId are mirrored via setValue so
                       the submit shape (onValid) is unchanged. */}
-                  <Controller
-                    control={control}
-                    name={`lines.${idx}.itemName` as const}
-                    rules={{ required: 'Item name is required' }}
-                    render={({ field, fieldState }) => (
-                      <LineItemPicker
-                        code={watch(`lines.${idx}.itemCodeText`) ?? ''}
-                        itemId={watch(`lines.${idx}.itemId`) ?? null}
-                        itemName={field.value}
+                    <Controller
+                      control={control}
+                      name={`lines.${idx}.itemName` as const}
+                      rules={{ required: 'Item name is required' }}
+                      render={({ field, fieldState }) => (
+                        <LineItemPicker
+                          code={watch(`lines.${idx}.itemCodeText`) ?? ''}
+                          itemId={watch(`lines.${idx}.itemId`) ?? null}
+                          itemName={field.value}
+                          readOnly={locked}
+                          nameError={fieldState.error?.message}
+                          onChange={(next) => {
+                            setValue(`lines.${idx}.itemCodeText`, next.code, { shouldDirty: true });
+                            setValue(`lines.${idx}.itemId`, next.itemId ?? undefined, {
+                              shouldDirty: true,
+                            });
+                            field.onChange(next.name);
+                          }}
+                        />
+                      )}
+                    />
+                    <div className="form-grp">
+                      <label className="form-label">
+                        Received<span className="req">★</span>
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        className="innovic-input"
                         readOnly={locked}
-                        nameError={fieldState.error?.message}
-                        onChange={(next) => {
-                          setValue(`lines.${idx}.itemCodeText`, next.code, { shouldDirty: true });
-                          setValue(`lines.${idx}.itemId`, next.itemId ?? undefined, {
-                            shouldDirty: true,
-                          });
-                          field.onChange(next.name);
-                        }}
+                        {...register(`lines.${idx}.receivedQty` as const, {
+                          valueAsNumber: true,
+                          min: { value: 0, message: 'Min 0' },
+                        })}
                       />
-                    )}
-                  />
-                  <div className="form-grp">
-                    <label className="form-label">
-                      Received<span className="req">★</span>
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="innovic-input"
-                      readOnly={locked}
-                      {...register(`lines.${idx}.receivedQty` as const, {
-                        valueAsNumber: true,
-                        min: { value: 0, message: 'Min 0' },
-                      })}
-                    />
-                  </div>
+                    </div>
 
-                  <div className="form-grp">
-                    <label className="form-label">Vendor Challan No.</label>
-                    <input
-                      className="innovic-input"
-                      autoComplete="off"
-                      readOnly={locked}
-                      {...register(`lines.${idx}.dcRefNo` as const)}
-                    />
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">QC Status</label>
-                    <select
-                      className="innovic-select"
-                      disabled={locked}
-                      {...register(`lines.${idx}.qcStatus` as const)}
-                    >
-                      {GRN_QC_STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {GRN_QC_STATUS_LABELS[s]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">Accepted</label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="innovic-input"
-                      readOnly={locked}
-                      {...register(`lines.${idx}.qcAcceptedQty` as const, {
-                        valueAsNumber: true,
-                      })}
-                    />
-                  </div>
+                    <div className="form-grp">
+                      <label className="form-label">Vendor Challan No.</label>
+                      <input
+                        className="innovic-input"
+                        autoComplete="off"
+                        readOnly={locked}
+                        {...register(`lines.${idx}.dcRefNo` as const)}
+                      />
+                    </div>
+                    <div className="form-grp">
+                      <label className="form-label">QC Status</label>
+                      <select
+                        className="innovic-select"
+                        disabled={locked}
+                        {...register(`lines.${idx}.qcStatus` as const)}
+                      >
+                        {GRN_QC_STATUSES.map((s) => (
+                          <option key={s} value={s}>
+                            {GRN_QC_STATUS_LABELS[s]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-grp">
+                      <label className="form-label">Accepted</label>
+                      <input
+                        type="number"
+                        min={0}
+                        className="innovic-input"
+                        readOnly={locked}
+                        {...register(`lines.${idx}.qcAcceptedQty` as const, {
+                          valueAsNumber: true,
+                        })}
+                      />
+                    </div>
 
-                  <div className="form-grp">
-                    <label className="form-label">Rejected</label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="innovic-input"
-                      readOnly={locked}
-                      {...register(`lines.${idx}.qcRejectedQty` as const, {
-                        valueAsNumber: true,
-                      })}
-                    />
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">QC Date</label>
-                    <input
-                      type="date"
-                      className="innovic-input"
-                      readOnly={locked}
-                      {...register(`lines.${idx}.qcDate` as const)}
-                    />
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">👤 Inspected By</label>
-                    {/* Until now the server stamped whoever SAVED the GRN, which
+                    <div className="form-grp">
+                      <label className="form-label">Rejected</label>
+                      <input
+                        type="number"
+                        min={0}
+                        className="innovic-input"
+                        readOnly={locked}
+                        {...register(`lines.${idx}.qcRejectedQty` as const, {
+                          valueAsNumber: true,
+                        })}
+                      />
+                    </div>
+                    <div className="form-grp">
+                      <label className="form-label">QC Date</label>
+                      <input
+                        type="date"
+                        className="innovic-input"
+                        readOnly={locked}
+                        {...register(`lines.${idx}.qcDate` as const)}
+                      />
+                    </div>
+                    <div className="form-grp">
+                      <label className="form-label">👤 Inspected By</label>
+                      {/* Until now the server stamped whoever SAVED the GRN, which
                         is usually the storekeeper and not the inspector. Locked
                         the same way as QC Status above: disabled, but still
                         showing the recorded name. */}
-                    <SearchableSelect
-                      value={watch(`lines.${idx}.qcInspectedByUserId`) ?? null}
-                      onChange={(id) => {
-                        setValue(`lines.${idx}.qcInspectedByUserId`, id, { shouldDirty: true });
-                        // Read the SHORTENED list, not the raw one, so the box and
-                        // the dropdown agree -- and so the name stamped on the GRN
-                        // line is the one the person actually saw. Null, not '',
-                        // because this field is nullable.
-                        const picked = qcOptions.find((u) => u.id === id);
-                        setValue(
-                          `lines.${idx}.qcInspectedByName`,
-                          picked ? qcSelectedLabel(picked) : null,
-                          { shouldDirty: true },
-                        );
-                      }}
-                      options={qcOptions}
-                      onSearch={NO_SERVER_SEARCH}
-                      loading={qcUsers.isFetching}
-                      valueLabel={watch(`lines.${idx}.qcInspectedByName`) ?? ''}
-                      selectedLabel={qcSelectedLabel}
-                      disabled={locked}
-                      placeholder="🔍 Select QC person…"
-                      emptyText="No QC users — set them up in Access Control"
-                    />
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">QC Remarks</label>
-                    <input
-                      className="innovic-input"
-                      autoComplete="off"
-                      readOnly={locked}
-                      {...register(`lines.${idx}.qcRemarks` as const)}
-                    />
-                  </div>
-
-                  <div className="form-grp form-full">
-                    <label className="form-label">Line Remarks</label>
-                    <input
-                      className="innovic-input"
-                      autoComplete="off"
-                      readOnly={locked}
-                      {...register(`lines.${idx}.remarks` as const)}
-                    />
-                  </div>
-
-                  <div className="form-grp form-full">
-                    <label className="form-label">QC Report</label>
-                    {locked ? (
-                      <div className="text3" style={{ fontSize: 11 }}>
-                        {watch(`lines.${idx}.qcReportName`) ?? '— none —'}
-                      </div>
-                    ) : (
-                      <QcReportAttach
-                        companyId={companyId}
-                        fileName={watch(`lines.${idx}.qcReportName`) ?? null}
-                        onUploaded={(path, name) => {
-                          setValue(`lines.${idx}.qcReportPath`, path, { shouldDirty: true });
-                          setValue(`lines.${idx}.qcReportName`, name, { shouldDirty: true });
+                      <SearchableSelect
+                        value={watch(`lines.${idx}.qcInspectedByUserId`) ?? null}
+                        onChange={(id) => {
+                          setValue(`lines.${idx}.qcInspectedByUserId`, id, { shouldDirty: true });
+                          // Read the SHORTENED list, not the raw one, so the box and
+                          // the dropdown agree -- and so the name stamped on the GRN
+                          // line is the one the person actually saw. Null, not '',
+                          // because this field is nullable.
+                          const picked = qcOptions.find((u) => u.id === id);
+                          setValue(
+                            `lines.${idx}.qcInspectedByName`,
+                            picked ? qcSelectedLabel(picked) : null,
+                            { shouldDirty: true },
+                          );
                         }}
-                        onClear={() => {
-                          setValue(`lines.${idx}.qcReportPath`, null, { shouldDirty: true });
-                          setValue(`lines.${idx}.qcReportName`, null, { shouldDirty: true });
-                        }}
+                        options={qcOptions}
+                        onSearch={NO_SERVER_SEARCH}
+                        loading={qcUsers.isFetching}
+                        valueLabel={watch(`lines.${idx}.qcInspectedByName`) ?? ''}
+                        selectedLabel={qcSelectedLabel}
+                        disabled={locked}
+                        placeholder="🔍 Select QC person…"
+                        emptyText="No QC users — set them up in Access Control"
                       />
-                    )}
+                    </div>
+                    <div className="form-grp f-lg">
+                      <label className="form-label">QC Remarks</label>
+                      <input
+                        className="innovic-input"
+                        autoComplete="off"
+                        readOnly={locked}
+                        {...register(`lines.${idx}.qcRemarks` as const)}
+                      />
+                    </div>
+
+                    <div className="form-grp f-lg">
+                      <label className="form-label">Line Remarks</label>
+                      <input
+                        className="innovic-input"
+                        autoComplete="off"
+                        readOnly={locked}
+                        {...register(`lines.${idx}.remarks` as const)}
+                      />
+                    </div>
+
+                    <div className="form-grp f-full">
+                      <label className="form-label">QC Report</label>
+                      {locked ? (
+                        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                          {watch(`lines.${idx}.qcReportName`) ?? '— none —'}
+                        </div>
+                      ) : (
+                        <QcReportAttach
+                          companyId={companyId}
+                          fileName={watch(`lines.${idx}.qcReportName`) ?? null}
+                          onUploaded={(path, name) => {
+                            setValue(`lines.${idx}.qcReportPath`, path, { shouldDirty: true });
+                            setValue(`lines.${idx}.qcReportName`, name, { shouldDirty: true });
+                          }}
+                          onClear={() => {
+                            setValue(`lines.${idx}.qcReportPath`, null, { shouldDirty: true });
+                            setValue(`lines.${idx}.qcReportName`, null, { shouldDirty: true });
+                          }}
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div style={{ marginTop: 16 }}>
-        {props.submitError ? (
-          <div
-            style={{
-              color: 'var(--red2)',
-              background: 'var(--red3)',
-              border: '1px solid #fca5a5',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
-          >
-            {props.submitError}
+              );
+            })}
           </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+        )}
+      </Panel>
+
+      {/* Bottom bar only when the page has not put Save in its sticky header. */}
+      {props.formId ? null : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
           {props.onCancel ? (
             <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
               Cancel
             </button>
           ) : null}
-          {/* Create footer derived from the legacy CALL SITE: addGRN() passes an
-              explicit saveLabel 'Create GRN' to showModalLg (L26567/L26622), and
-              showModalLg L28044 renders `&#10003; ${_saveLabel}` on a
-              .btn-success. Edit has no legacy counterpart — left as-is. */}
-          <button
-            type="submit"
-            className={`btn ${isEdit ? 'btn-primary' : 'btn-success'}`}
-            disabled={formState.isSubmitting || (isCreate && !docNoValid)}
-          >
+          <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
             {props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save GRN')}
           </button>
         </div>
-      </div>
+      )}
     </form>
   );
 }

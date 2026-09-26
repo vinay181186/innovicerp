@@ -38,6 +38,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
+import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
 import { invoiceDocHtml, printInvoice } from '../lib/print';
 
@@ -175,31 +176,32 @@ function InvoiceDetailPage(): React.JSX.Element {
             label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
           />
         </div>
+        {/* One primary next step (Add Payment) + the Actions menu for the rest. */}
         <div style={{ display: 'flex', gap: 8 }}>
+          <ActionMenu
+            items={[
+              {
+                label: 'Print',
+                onClick: () => {
+                  if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
+                },
+              },
+            ]}
+          />
           {perms.entry && inv.status !== 'paid' ? (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => setPayOpen((v) => !v)}
-            >
+            <button type="button" className="btn btn-primary" onClick={() => setPayOpen((v) => !v)}>
               💳 Add Payment
             </button>
           ) : null}
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => {
-              if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
-            }}
-          >
-            🖨 Print
-          </button>
         </div>
       </div>
 
       <div style={{ fontSize: 13, marginBottom: 10 }}>
-        Customer: <b>{inv.clientName ?? '—'}</b> · SO No.: <b>{inv.soCode ?? '—'}</b> · Due Date:{' '}
-        <b>{fmtDate(inv.dueDate)}</b>
+        Customer: <b>{inv.clientName ?? '—'}</b> · SO No.:{' '}
+        <Link to="/sales-orders/$id" params={{ id: inv.salesOrderId }} className="fw-700">
+          {inv.soCode ?? '—'}
+        </Link>{' '}
+        · Due Date: <b>{fmtDate(inv.dueDate)}</b>
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>

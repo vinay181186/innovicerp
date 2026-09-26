@@ -6,11 +6,11 @@
 // dispatch's SO and prefills the lines from that dispatch.
 
 import type { InvoiceableLine } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Plus, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createRoute, useNavigate } from '@tanstack/react-router';
+import { Plus, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect as LineSearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -18,7 +18,16 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
 import { useDispatchDetail } from '@/modules/customer-dispatches/api';
-import { useCreateInvoice, useFinanceSoOptions, useInvoiceableSo, useNextInvoiceCode } from '../api';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import {
+  useCreateInvoice,
+  useFinanceSoOptions,
+  useInvoiceableSo,
+  useNextInvoiceCode,
+} from '../api';
 
 export const invoiceNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -36,11 +45,12 @@ interface LineCard {
   rate: string;
 }
 
-// Shared grid: # | Item Code | Item Name | Order | Dispatched | Invoiced |
-// Available | Invoice Qty | Rate | ×
-// The 50px slot after '#' is POL — the CUSTOMER's own purchase-order line
-// number, which sits immediately before the item code everywhere.
-const GRID = '30px 50px 1.3fr 1.6fr 60px 84px 70px 78px 92px 92px 30px';
+// Shared grid: # | POL | Item Code | Item Name | To Invoice | Invoice Qty |
+// Rate | Amount | ▸ More | ×  — 8 data columns; Order / Dispatched / Invoiced
+// open under the card with "▸ More". The 50px slot after '#' is POL — the
+// CUSTOMER's own purchase-order line number, which sits immediately before the
+// item code everywhere.
+const GRID = '30px 50px 1.3fr 1.6fr 78px 84px 96px 110px 64px 30px';
 
 function InvoiceNewPage(): React.JSX.Element {
   const navigate = useNavigate();
@@ -170,6 +180,39 @@ function InvoiceNewPage(): React.JSX.Element {
     }
   }
 
+  // Ctrl+S runs the same Save as the header button, only while it is enabled.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  const runSave = useCallback(() => void submitRef.current(), []);
+  useSaveShortcut(runSave, !create.isPending);
+  const dirty = cards.length > 0 || remarks !== '' || (soId !== '' && !dispatchId);
+
+  // SO picker rows: "SO code — Customer", filtered client-side over the list
+  // already loaded (no server search on this endpoint).
+  const soOptions = useMemo(
+    () =>
+      (soOpts?.options ?? []).map((o) => ({
+        id: o.salesOrderId,
+        code: o.soCode,
+        name: o.customer ?? '',
+      })),
+    [soOpts],
+  );
+  const soValueLabel = useMemo(() => {
+    const o = soOptions.find((x) => x.id === soId);
+    return o ? `${o.code} — ${o.name}` : undefined;
+  }, [soOptions, soId]);
+
+  // ▸ More — the reference quantities (Order / Dispatched / Invoiced) per card.
+  const [openMore, setOpenMore] = useState<ReadonlySet<number>>(new Set());
+  const toggleMore = (id: number): void =>
+    setOpenMore((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
@@ -182,236 +225,339 @@ function InvoiceNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link to="/invoices" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Invoices
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <span className="panel-title">📄 Create Invoice</span>
-        </div>
-        <div className="panel-body">
-          {fromDispatch && fromDispatch.status !== 'cancelled' ? (
-            <div
-              style={{
-                background: 'var(--bg3)',
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                padding: '8px 12px',
-                fontSize: 12,
-                marginBottom: 12,
-              }}
+      <PageHeader
+        sticky
+        icon="📄"
+        title="Create Invoice"
+        backLabel="Back to Invoices"
+        onBack={() => exit.leave(goBack)}
+        dirty={dirty}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={create.isPending}
+              onClick={() => void submit()}
             >
-              🚚 Invoicing dispatch <b style={{ color: 'var(--cyan)' }}>{fromDispatch.code}</b> — SO and
-              line qtys prefilled from this dispatch (editable below).
-            </div>
-          ) : null}
-          <div className="form-grid">
-            <div className="form-grp">
-              <label className="form-label">Invoice No.</label>
-              <input className="innovic-input" readOnly value={next?.code ?? '(auto on save)'} />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Invoice Date</label>
-              <input type="date" className="innovic-input" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Select SO<span className="req">★</span></label>
-              <select className="innovic-select" value={soId} onChange={(e) => onSoChange(e.target.value)}>
-                <option value="">-- Select SO --</option>
-                {(soOpts?.options ?? []).map((o) => (
-                  <option key={o.salesOrderId} value={o.salesOrderId}>
-                    {o.soCode} — {o.customer ?? ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Payment Terms (days)</label>
-              <input type="number" className="innovic-input" min={0} value={termsDays} onChange={(e) => setTermsDays(e.target.value)} />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">GST %</label>
-              <select className="innovic-select" value={gstPercent} onChange={(e) => setGstPercent(e.target.value)}>
-                {['0', '5', '12', '18', '28'].map((g) => (
-                  <option key={g} value={g}>{g}%</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Remarks</label>
-              <input className="innovic-input" placeholder="Notes..." value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-            </div>
-          </div>
-
-          {soId ? (
-            <div style={{ marginTop: 14 }}>
-              <div className="cyan fw-700" style={{ fontSize: 11, marginBottom: 6 }}>
-                ▸ ITEMS AVAILABLE TO INVOICE
-              </div>
-              <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-                Add a line, then pick an item code — name and quantities auto-fill from this SO.
-              </div>
-
-              {cards.length > 0 ? (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: GRID,
-                    gap: 8,
-                    padding: '0 10px 4px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    letterSpacing: 0.4,
-                    color: 'var(--text3)',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  <span>Ln</span>
-                  <span style={{ textAlign: 'center', color: 'var(--purple)' }}>POL</span>
-                  <span>Item Code ★</span>
-                  <span>Item Name</span>
-                  <span style={{ textAlign: 'center' }}>Order Qty</span>
-                  <span style={{ textAlign: 'center', color: 'var(--green2)' }}>Dispatched</span>
-                  <span style={{ textAlign: 'center' }}>Invoiced</span>
-                  <span style={{ textAlign: 'center', color: 'var(--amber2)' }}>To Invoice</span>
-                  <span style={{ textAlign: 'center', color: 'var(--green2)' }}>Invoice Qty</span>
-                  <span style={{ textAlign: 'center' }}>Rate</span>
-                  <span />
-                </div>
-              ) : null}
-
-              {cards.map((card, idx) => {
-                const line = resolveLine(card.soLineId);
-                const usedElsewhere = new Set(
-                  cards.filter((c) => c.id !== card.id && c.soLineId).map((c) => c.soLineId),
-                );
-                const opts = lines
-                  .filter((l) => !usedElsewhere.has(l.salesOrderLineId))
-                  // The dropdown labels each option with the drawing revision —
-                  // "IN-IT-0007/B" — because two SO lines for the same part at
-                  // different revisions are otherwise indistinguishable here.
-                  // What the picker SUBMITS is still the SO line id, so this is
-                  // a label only; a line with no revision keeps the bare code.
-                  .map((l) => ({
-                    id: l.salesOrderLineId,
-                    code: itemCodeWithRev(l.itemCode, l.itemRevision, '') || null,
-                    name: l.itemName,
-                  }));
-                return (
-                  <div
-                    key={card.id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: GRID,
-                      gap: 8,
-                      alignItems: 'center',
-                      background: 'var(--bg)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 8,
-                      padding: 10,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <span className="mono fw-700" style={{ textAlign: 'center', color: 'var(--text3)' }}>
-                      {idx + 1}
-                    </span>
-                    <span
-                      className="mono fw-700"
-                      style={{ textAlign: 'center', color: 'var(--purple)' }}
-                    >
-                      {line?.clientPoLineNo ?? '—'}
-                    </span>
-                    <SearchableSelect
-                      value={card.soLineId}
-                      onChange={(id) => {
-                        const l = id ? lines.find((x) => x.salesOrderLineId === id) : null;
-                        patchLine(card.id, { soLineId: id, ...(l ? { rate: String(l.rate) } : {}) });
-                      }}
-                      onSearch={() => {}}
-                      options={opts}
-                      placeholder="🔍 code or name…"
-                      emptyText="No items to invoice"
-                      // Item Code field shows the code only; the adjacent Item
-                      // Name field carries the name. The open dropdown still
-                      // renders "CODE — Name" so you can search by either.
-                      selectedLabel={(o) => o.code ?? o.name}
-                      valueLabel={
-                        line
-                          ? itemCodeWithRev(line.itemCode, line.itemRevision, line.itemName)
-                          : undefined
-                      }
-                    />
-                    <input
-                      className="innovic-input"
-                      readOnly
-                      placeholder="auto-filled"
-                      value={line?.itemName ?? ''}
-                      style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
-                    />
-                    <span className="mono" style={{ textAlign: 'center' }}>{line ? line.orderQty : '—'}</span>
-                    <span className="mono green" style={{ textAlign: 'center' }}>{line ? line.dispatchedQty : '—'}</span>
-                    <span className="mono text3" style={{ textAlign: 'center' }}>{line ? line.invoicedQty : '—'}</span>
-                    <span className="mono fw-700 amber" style={{ textAlign: 'center' }}>{line ? line.availableQty : '—'}</span>
-                    <input
-                      type="number"
-                      className="innovic-input fw-700 green"
-                      min={0}
-                      max={line?.availableQty ?? undefined}
-                      value={card.qty}
-                      disabled={!line || line.availableQty <= 0}
-                      onChange={(e) => patchLine(card.id, { qty: e.target.value })}
-                      onBlur={(e) => {
-                        if (!line) return;
-                        const clamped = Math.max(0, Math.min(line.availableQty, Number(e.target.value) || 0));
-                        patchLine(card.id, { qty: e.target.value.trim() === '' ? '' : String(clamped) });
-                      }}
-                      style={{ textAlign: 'center' }}
-                    />
-                    <input
-                      type="number"
-                      className="innovic-input"
-                      min={0}
-                      step="0.01"
-                      value={card.rate}
-                      disabled={!line}
-                      onChange={(e) => patchLine(card.id, { rate: e.target.value })}
-                      style={{ textAlign: 'right' }}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      title="Remove line"
-                      onClick={() => removeLine(card.id)}
-                      style={{ color: 'var(--red2)', padding: 4 }}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                );
-              })}
-
-              <button type="button" className="btn btn-ghost btn-sm" onClick={addLine} style={{ marginTop: 4 }}>
-                <Plus size={14} /> Add Line
-              </button>
-
-              <div style={{ display: 'flex', gap: 20, justifyContent: 'flex-end', marginTop: 12, fontSize: 13 }}>
-                <span className="text3">Subtotal: <b className="mono fw-700 text2">₹{inrFormat(subtotal)}</b></span>
-                <span className="text3">GST: <b className="mono fw-700 amber">₹{inrFormat(gstAmt)}</b></span>
-                <span className="text3">Total: <b className="mono fw-700 green">₹{inrFormat(grand)}</b></span>
-              </div>
-            </div>
-          ) : null}
-
-          {err ? <div className="form-error" style={{ marginTop: 10 }}>{err}</div> : null}
-
-          <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>Cancel</button>
-            <button type="button" className="btn btn-success" disabled={create.isPending} onClick={() => void submit()}>
               {create.isPending ? 'Saving…' : 'Save Invoice'}
             </button>
+          </>
+        }
+      />
+
+      {/* Save error right under the header's Save. */}
+      {err ? (
+        <Banner tone="error" role="alert">
+          {err}
+        </Banner>
+      ) : null}
+
+      <Panel title="Invoice Details">
+        {fromDispatch && fromDispatch.status !== 'cancelled' ? (
+          <div
+            style={{
+              background: 'var(--bg3)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: '8px 12px',
+              marginBottom: 12,
+            }}
+          >
+            🚚 Invoicing dispatch <b style={{ color: 'var(--cyan)' }}>{fromDispatch.code}</b> — SO
+            and line qtys prefilled from this dispatch (editable below).
           </div>
-        </div>
-      </div>
+        ) : null}
+        <FormGrid>
+          {/* Row 1 — Select SO · Invoice No. · Invoice Date (6 + 3 + 3). */}
+          <FormField label="Select SO" required size="lg" htmlFor="invoiceSo">
+            <SearchableSelect
+              id="invoiceSo"
+              value={soId || null}
+              onChange={(id) => onSoChange(id ?? '')}
+              options={soOptions}
+              valueLabel={soValueLabel}
+              placeholder="🔍 Type SO number or customer…"
+              emptyText="No sales order matches"
+            />
+          </FormField>
+          <FormField label="Invoice No." size="sm" htmlFor="invoiceNo">
+            <input
+              id="invoiceNo"
+              className="innovic-input"
+              readOnly
+              value={next?.code ?? '(auto on save)'}
+            />
+          </FormField>
+          <FormField label="Invoice Date" size="sm" htmlFor="invoiceDate">
+            <input
+              id="invoiceDate"
+              type="date"
+              className="innovic-input"
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
+            />
+          </FormField>
+
+          {/* Row 2 — Payment Terms · GST % · Remarks (3 + 3 + 6). */}
+          <FormField label="Payment Terms (days)" size="sm" htmlFor="termsDays">
+            <input
+              id="termsDays"
+              type="number"
+              className="innovic-input"
+              min={0}
+              value={termsDays}
+              onChange={(e) => setTermsDays(e.target.value)}
+            />
+          </FormField>
+          <FormField label="GST %" size="sm" htmlFor="gstPercent">
+            <select
+              id="gstPercent"
+              className="innovic-select"
+              value={gstPercent}
+              onChange={(e) => setGstPercent(e.target.value)}
+            >
+              {['0', '5', '12', '18', '28'].map((g) => (
+                <option key={g} value={g}>
+                  {g}%
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Remarks" size="lg" htmlFor="invoiceRemarks">
+            <input
+              id="invoiceRemarks"
+              className="innovic-input"
+              placeholder="Notes..."
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
+
+      {soId ? (
+        <Panel
+          title="Items Available to Invoice"
+          actions={
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
+              <Plus size={14} /> Add Line
+            </button>
+          }
+        >
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 8 }}>
+            Add a line, then pick an item code — name and quantities auto-fill from this SO.
+          </div>
+
+          {cards.length > 0 ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: GRID,
+                gap: 8,
+                padding: '0 10px 4px',
+                fontSize: 'var(--fs-xs)',
+                fontWeight: 700,
+                letterSpacing: 0.4,
+                color: 'var(--text3)',
+                textTransform: 'uppercase',
+              }}
+            >
+              <span>Ln</span>
+              <span style={{ textAlign: 'center', color: 'var(--purple)' }}>POL</span>
+              <span>Item Code ★</span>
+              <span>Item Name</span>
+              <span style={{ textAlign: 'right', color: 'var(--amber2)' }}>To Invoice</span>
+              <span style={{ textAlign: 'right', color: 'var(--green2)' }}>Invoice Qty</span>
+              <span style={{ textAlign: 'right' }}>Rate</span>
+              <span style={{ textAlign: 'right' }}>Amount</span>
+              <span />
+              <span />
+            </div>
+          ) : null}
+
+          {cards.map((card, idx) => {
+            const line = resolveLine(card.soLineId);
+            const usedElsewhere = new Set(
+              cards.filter((c) => c.id !== card.id && c.soLineId).map((c) => c.soLineId),
+            );
+            const opts = lines
+              .filter((l) => !usedElsewhere.has(l.salesOrderLineId))
+              // The dropdown labels each option with the drawing revision —
+              // "IN-IT-0007/B" — because two SO lines for the same part at
+              // different revisions are otherwise indistinguishable here.
+              // What the picker SUBMITS is still the SO line id, so this is
+              // a label only; a line with no revision keeps the bare code.
+              .map((l) => ({
+                id: l.salesOrderLineId,
+                code: itemCodeWithRev(l.itemCode, l.itemRevision, '') || null,
+                name: l.itemName,
+              }));
+            // Same clamp the subtotal above uses — a preview only; the server
+            // recomputes every amount.
+            const lineAmount = line
+              ? Math.max(0, Math.min(line.availableQty, Number(card.qty) || 0)) *
+                (Number(card.rate) || 0)
+              : 0;
+            const moreOpen = openMore.has(card.id);
+            return (
+              <div
+                key={card.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: GRID,
+                  gap: 8,
+                  alignItems: 'center',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 8,
+                }}
+              >
+                <span
+                  className="mono fw-700"
+                  style={{ textAlign: 'center', color: 'var(--text3)' }}
+                >
+                  {idx + 1}
+                </span>
+                <span
+                  className="mono fw-700"
+                  style={{ textAlign: 'center', color: 'var(--purple)' }}
+                >
+                  {line?.clientPoLineNo ?? '—'}
+                </span>
+                <LineSearchableSelect
+                  value={card.soLineId}
+                  onChange={(id) => {
+                    const l = id ? lines.find((x) => x.salesOrderLineId === id) : null;
+                    patchLine(card.id, { soLineId: id, ...(l ? { rate: String(l.rate) } : {}) });
+                  }}
+                  onSearch={() => {}}
+                  options={opts}
+                  placeholder="🔍 code or name…"
+                  emptyText="No items to invoice"
+                  // Item Code field shows the code only; the adjacent Item
+                  // Name field carries the name. The open dropdown still
+                  // renders "CODE — Name" so you can search by either.
+                  selectedLabel={(o) => o.code ?? o.name}
+                  valueLabel={
+                    line
+                      ? itemCodeWithRev(line.itemCode, line.itemRevision, line.itemName)
+                      : undefined
+                  }
+                />
+                <input
+                  className="innovic-input"
+                  readOnly
+                  placeholder="auto-filled"
+                  value={line?.itemName ?? ''}
+                  style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
+                />
+                <span className="mono fw-700 amber" style={{ textAlign: 'right' }}>
+                  {line ? line.availableQty : '—'}
+                </span>
+                <input
+                  type="number"
+                  className="innovic-input fw-700 green"
+                  min={0}
+                  max={line?.availableQty ?? undefined}
+                  value={card.qty}
+                  disabled={!line || line.availableQty <= 0}
+                  onChange={(e) => patchLine(card.id, { qty: e.target.value })}
+                  onBlur={(e) => {
+                    if (!line) return;
+                    const clamped = Math.max(
+                      0,
+                      Math.min(line.availableQty, Number(e.target.value) || 0),
+                    );
+                    patchLine(card.id, {
+                      qty: e.target.value.trim() === '' ? '' : String(clamped),
+                    });
+                  }}
+                  style={{ textAlign: 'right' }}
+                />
+                <input
+                  type="number"
+                  className="innovic-input"
+                  min={0}
+                  step="0.01"
+                  value={card.rate}
+                  disabled={!line}
+                  onChange={(e) => patchLine(card.id, { rate: e.target.value })}
+                  style={{ textAlign: 'right' }}
+                />
+                <span className="mono fw-700" style={{ textAlign: 'right' }}>
+                  {line ? `₹${inrFormat(lineAmount)}` : '—'}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  aria-expanded={moreOpen}
+                  title="Order, Dispatched and Invoiced qty for this line"
+                  onClick={() => toggleMore(card.id)}
+                >
+                  {moreOpen ? '▾' : '▸ More'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  title="Remove line"
+                  onClick={() => removeLine(card.id)}
+                  style={{ color: 'var(--red2)' }}
+                >
+                  <X size={14} />
+                </button>
+                {moreOpen ? (
+                  <div
+                    className="text3"
+                    style={{
+                      gridColumn: '1 / -1',
+                      display: 'flex',
+                      gap: 'var(--sp-4)',
+                      justifyContent: 'flex-end',
+                      fontSize: 'var(--fs-xs)',
+                    }}
+                  >
+                    <span>
+                      Order Qty <b className="mono text2">{line ? line.orderQty : '—'}</b>
+                    </span>
+                    <span>
+                      Dispatched <b className="mono green">{line ? line.dispatchedQty : '—'}</b>
+                    </span>
+                    <span>
+                      Invoiced <b className="mono text2">{line ? line.invoicedQty : '—'}</b>
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+
+          {/* Totals — right-aligned under the Amount column, one per row. */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'auto 140px',
+              justifyContent: 'end',
+              columnGap: 'var(--sp-3)',
+              rowGap: 'var(--sp-1)',
+              marginTop: 12,
+              textAlign: 'right',
+            }}
+          >
+            <span className="text3">Subtotal</span>
+            <b className="mono fw-700 text2">₹{inrFormat(subtotal)}</b>
+            <span className="text3">GST</span>
+            <b className="mono fw-700 amber">₹{inrFormat(gstAmt)}</b>
+            <span className="text3">Total</span>
+            <b className="mono fw-700 green">₹{inrFormat(grand)}</b>
+          </div>
+        </Panel>
+      ) : null}
     </div>
   );
 }
