@@ -25,7 +25,7 @@ export default async function setup(): Promise<void> {
     // Tests will fail in their own beforeAll; nothing useful to do here.
     return;
   }
-  // ADR-185 — named so the stock-ledger write-lock (0147) lets teardown through.
+  // ADR-185 — named so the stock-ledger write-lock (0149) lets teardown through.
   const sql = postgres(url, {
     prepare: false,
     max: 1,

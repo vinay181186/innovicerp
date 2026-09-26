@@ -9935,9 +9935,9 @@ to explain:
   left alone (op_log is append-only; they stay accountable through `created_by`).
 - **Job Card edit**: the item cannot change once production is logged; a Production Order's card
   keeps the order's qty; no card goes below what an operation has completed.
-- **Store Issue** against a JC / Production Order stores a real link (0147); a JC code that does not
+- **Store Issue** against a JC / Production Order stores a real link (0149); a JC code that does not
   exist is refused before stock moves.
-- **Stock ledger** rows cannot be edited or deleted (0147 trigger); corrections are opposite rows.
+- **Stock ledger** rows cannot be edited or deleted (0149 trigger); corrections are opposite rows.
 - **Empty Trash** falls back to row-by-row only for a table whose set delete was blocked, so one
   row in use no longer keeps its whole table in Trash.
 - Plan delete explains itself truthfully: a plan with order history stays.

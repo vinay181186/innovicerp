@@ -3682,7 +3682,7 @@ export const storeIssues = pgTable(
       (): AnyPgColumn => storeTransactions.id,
       { onDelete: 'set null' },
     ),
-    // ADR-185 (migration 0147) — the Job Card / Production Order the material
+    // ADR-185 (migration 0149) — the Job Card / Production Order the material
     // was issued against, as a real link (ref_no stays as typed). Set on issue
     // when the reference names a card or an order; null for other purposes.
     jobCardId: uuid('job_card_id').references((): AnyPgColumn => jobCards.id, {
