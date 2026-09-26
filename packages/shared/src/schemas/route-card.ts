@@ -12,9 +12,9 @@
 //   outsource — OSP step (legacy: opType='OSP', isOSP=true, plus
 //               ospVendorCode / ospVendor / ospLeadDays)
 //
-// Cycle time is stored in HOURS in cycle_time_min — column name is a
-// legacy carry-over (see ISSUE-NN); UI labels read "Cycle (hrs)" so
-// the user-facing semantics stay aligned with legacy.
+// Cycle time is stored in MINUTES PER PIECE in cycle_time_min, and every
+// UI label reads "Cycle Time (min)". (Legacy stored hours; ADR-029 #2 is
+// superseded — the value is minutes per piece everywhere.)
 
 import { z } from 'zod';
 import { OP_TYPES } from '../enums/op-type';
@@ -76,7 +76,7 @@ export const routeCardOpSchema = z.object({
   machineCodeText: z.string().nullable(),
   operation: z.string(),
   opType: rcOpTypeSchema,
-  cycleTimeMin: z.string(), // numeric stored as string; legacy stores HOURS here
+  cycleTimeMin: z.string(), // numeric stored as string; MINUTES per piece
   program: z.string().nullable(),
   toolNo: z.string().nullable(),
   toolDetails: z.string().nullable(),
@@ -186,7 +186,7 @@ export interface ListRouteCardsResponse {
 //   outsource — operation required + at least one of
 //              (ospVendorId, ospVendorCodeText) must be present
 //
-// cycleTimeMin is the legacy "cycleTime" value (hours) parsed to a
+// cycleTimeMin is the cycle time in MINUTES per piece, parsed to a
 // non-negative float. opSeq is implicit (index + 1 at insert time)
 // so the form doesn't have to track it.
 export const createRouteCardOpInputSchema = z

@@ -380,7 +380,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
               key: 'open',
               label: 'Open',
               count: openCount,
-              color: 'var(--amber)',
+              color: 'var(--blue)',
               active: search.status === 'open',
               onClick: toggleStatus('open'),
               title: 'Open Production Orders — Job Card in progress or waiting to be closed',

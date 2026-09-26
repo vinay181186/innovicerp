@@ -23,8 +23,8 @@
 //   Department lg · Linked user lg                      → 6 + 6 = 12
 //   Skills / Machines full                              → 12
 //
-// Linked user is the auth user's id, so it is mono: it is a code, and a code
-// that wraps mid-string is unreadable in a proportional face.
+// Linked user shows the login's NAME (looked up in the Task Board's active-user
+// list); only a link to a user missing from that list falls back to the id.
 
 import type { Operator } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -32,6 +32,7 @@ import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
+import { useTaskUserOptions } from '@/modules/tasks/api';
 import { ConfirmDialog } from '@/ui/feedback';
 import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useOperator, useSoftDeleteOperator } from '../api';
@@ -162,10 +163,14 @@ function OperatorDetailPage(): React.JSX.Element {
 
 function OperatorFacts(props: { operator: Operator }): React.JSX.Element {
   const { operator } = props;
+  const { data: users } = useTaskUserOptions(Boolean(operator.userId));
+  const linkedName = operator.userId
+    ? (users?.options.find((u) => u.id === operator.userId)?.name ?? operator.userId)
+    : null;
   return (
     <ReadGrid>
       <ReadField label="Department" size="lg" value={operator.department} />
-      <ReadField label="Linked User" size="lg" mono value={operator.userId} />
+      <ReadField label="Linked User" size="lg" value={linkedName} />
 
       <ReadField label="Skills / Machines" size="full" pre value={operator.skills} />
     </ReadGrid>

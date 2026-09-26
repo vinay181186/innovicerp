@@ -245,7 +245,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                 <th>Group</th>
                 <th>Machine / Vendor</th>
                 <th>Operation</th>
-                <th className="td-ctr">Cycle Time (h)</th>
+                <th className="td-ctr">Cycle Time (min)</th>
                 <th>Program / Lead</th>
                 <th>Tool No.</th>
                 <th>Tool Details</th>
@@ -485,7 +485,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                 <th>Op Type</th>
                                 <th>Machine / Vendor</th>
                                 <th>Operation</th>
-                                <th className="td-ctr">Cycle Time (h)</th>
+                                <th className="td-ctr">Cycle Time (min)</th>
                                 <th>Program / Lead</th>
                                 <th>Tool No.</th>
                                 <th>Tool Details</th>

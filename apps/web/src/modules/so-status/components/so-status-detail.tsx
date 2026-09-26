@@ -684,6 +684,7 @@ const OP_CODE_LABEL: Record<string, string> = {
   process: 'In-house',
   outsource: 'Outsource',
   qc: 'QC',
+  in_progress: 'Partly Completed',
   qc_pending: 'QC Pending',
   complete: 'Completed',
   pr_raised: 'PR Raised',
@@ -729,8 +730,9 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
 
 // Mirrors legacy's `ic` ternary (L4337) over our richer op-status union.
 function opChipColor(op: SoStatusOp): string {
-  if (op.status === 'complete') return 'var(--green)';
-  if (op.status === 'qc_pending' || op.status === 'in_progress' || op.status === 'running') return 'var(--amber)';
+  // Running = an open machine session (green, owner decision wave 2).
+  if (op.status === 'complete' || op.status === 'running') return 'var(--green)';
+  if (op.status === 'qc_pending' || op.status === 'in_progress') return 'var(--amber)';
   if (op.opType === 'outsource') {
     if (op.outsourceStatus === 'sent' || op.outsourceStatus === 'po_created') return 'var(--purple)';
     if (op.outsourceStatus === 'pr_raised') return 'var(--blue)';

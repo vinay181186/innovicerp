@@ -58,9 +58,8 @@ const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
   cancelled: { cls: 'b-grey', label: 'Cancelled' },
 };
 
-// ADR-170 — derived status of a route-card-driven plan. Same badge classes as
-// the old statuses; amber = blocked (no route card), blue = ready for a
-// Production Order, cyan = PO open, green = PO closed.
+// ADR-170 — derived status of a route-card-driven plan. grey = no route card
+// yet, blue = ready for a Production Order, amber = PO open, green = PO closed.
 // Status column wording (user, 2026-09-19): where the plan stands, in the
 // planner's own words — "RC" is the route card. The shared labels stay as
 // they are for the other screens that print them.
@@ -78,9 +77,10 @@ const TYPE_LABEL: Record<PlanType, string> = {
 };
 
 const DERIVED_BADGE: Record<PlanDerivedStatus, string> = {
-  route_card_pending: 'b-amber',
+  // Wave 2 (owner): same colour per state as the other badges.
+  route_card_pending: 'b-grey',
   gen_production_order: 'b-blue',
-  in_production: 'b-cyan',
+  in_production: 'b-amber',
   production_complete: 'b-green',
 };
 

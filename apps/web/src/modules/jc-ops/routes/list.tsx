@@ -487,9 +487,9 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
   const colors: Record<string, string> = {
     complete: 'var(--green)',
     qc_pending: 'var(--amber)',
-    running: 'var(--blue)',
-    in_progress: 'var(--blue)',
-    available: 'var(--cyan)',
+    running: 'var(--green)',
+    in_progress: 'var(--amber)',
+    available: 'var(--blue)',
     waiting: 'var(--text3)',
     pr_raised: 'var(--amber)',
     po_created: 'var(--blue)',

@@ -432,13 +432,15 @@ function JobQueuePage(): React.JSX.Element {
 // Legacy's `In Progress`/`At Vendor` map to .b-yellow, which legacy defines ONLY
 // in its print-only <style> block (L10559) — so on legacy's screen they render as
 // a bare .badge. We reproduce that with no b-* class rather than invent a tint.
+// Wave 2 (owner, 2026-09-26) overrides the legacy note above: in_progress now
+// reads "Partly Completed" (amber) and running (an open session) is green.
 const OP_STATUS: Record<string, { label: string; cls: string }> = {
   complete: { label: 'Completed', cls: 'b-green' },
-  in_progress: { label: 'In Progress', cls: '' },
+  in_progress: { label: 'Partly Completed', cls: 'b-amber' },
   available: { label: 'Available', cls: 'b-blue' },
-  waiting: { label: 'Waiting', cls: 'b-red' },
+  waiting: { label: 'Waiting', cls: 'b-grey' },
   qc_pending: { label: 'QC Pending', cls: 'b-amber' },
-  running: { label: 'Running', cls: '' },
+  running: { label: 'Running', cls: 'b-green' },
   ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
   pr_raised: { label: 'PR Raised', cls: 'b-amber' },
   po_created: { label: 'PO Created', cls: 'b-blue' },

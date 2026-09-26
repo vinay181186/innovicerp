@@ -41,7 +41,7 @@
 //     edit+approve pair only L5 Department Admin and above hold.
 //
 // JC STATUS COLOURS are now <StatusBadge kind="jc">, whose map
-// (open grey · qc_pending amber · complete cyan · closed green · no_ops red)
+// (open grey · qc_pending amber · complete green · closed green · no_ops red)
 // is the SAME map the local jc-status-badge.tsx carries, checked value by
 // value — nothing about what a colour means has changed. That file stays: the
 // Job Card detail view, the stat tiles and two Production Order screens still

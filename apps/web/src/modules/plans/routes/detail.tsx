@@ -390,7 +390,7 @@ function PlanDetailPage(): React.JSX.Element {
                   <th>Operation</th>
                   <th>Op Type</th>
                   <th>Planned Machine</th>
-                  <th>Cycle Time (h)</th>
+                  <th>Cycle Time (min)</th>
                   <th>QC Required</th>
                   <th>OSP Vendor</th>
                   {priceHidden ? null : <th>OSP Cost</th>}

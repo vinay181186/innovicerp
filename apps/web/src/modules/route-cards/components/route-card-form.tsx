@@ -3,7 +3,7 @@
 // Header: RC No (auto on create), Item picker (one active RC per item),
 // optional notes, revision indicator.
 //
-// Op editor: per-row Machine / Operation / Cycle(h) / Program /
+// Op editor: per-row Machine / Operation / Cycle (min per piece) / Program /
 // Tool fields + Add Op / Add OSP Op / Add QC Op buttons. Mirrors legacy
 // rcOpsHtml (L10208), which is the single op renderer shared by BOTH
 // legacy entry points — addRouteCard() (L6939, via _rcCheckExisting
@@ -48,7 +48,7 @@ export interface RouteCardFormOpDraft {
   machineCodeText: string; // displayed value; also stored as fallback
   operation: string;
   opType: RouteCardOpType;
-  cycleTimeMin: string; // legacy unit: HOURS
+  cycleTimeMin: string; // MINUTES per piece
   program: string;
   toolNo: string;
   toolDetails: string;
@@ -100,8 +100,8 @@ export function emptyProcessOp(): RouteCardFormOpDraft {
     machineCodeText: '',
     operation: '',
     opType: 'process',
-    // Legacy renders `${op.cycleTime||''}` with a "hrs" placeholder (L10216 /
-    // L10240) — a blank cell, not a literal 0. opsToInput coerces '' → 0.
+    // Legacy renders `${op.cycleTime||''}` as a blank cell (L10216 /
+    // L10240), not a literal 0. opsToInput coerces '' → 0.
     cycleTimeMin: '',
     program: '',
     toolNo: '',
@@ -685,7 +685,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 <th style={{ width: 150 }}>Machine / Vendor ★</th>
                 <th>Operation ★</th>
                 <th className="text3" style={{ width: 90 }}>
-                  Cycle Time (h)
+                  Cycle Time (min)
                 </th>
                 <th style={{ width: 90 }}>Program / Lead</th>
                 <th className="cyan" style={{ width: 90 }}>
@@ -938,7 +938,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           className="innovic-input"
           value={op.cycleTimeMin}
           onChange={(e) => onChange({ cycleTimeMin: e.target.value })}
-          placeholder="hrs"
+          placeholder="min"
           style={{ textAlign: 'right' }}
         />
       </td>

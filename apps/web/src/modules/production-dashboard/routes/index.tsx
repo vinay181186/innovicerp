@@ -40,12 +40,14 @@ export const productionDashboardRoute = createRoute({
 // stylesheet (L10559-10561), never in its main sheet at L10, so legacy renders
 // both as an unstyled `.badge` on screen. Empty class reproduces that exactly;
 // neither class exists in our theme either. Mirrors machine-loading's map.
+// Wave 2 (owner, 2026-09-26) overrides the legacy note above: in_progress now
+// reads "Partly Completed" (amber) and running (an open session) is green.
 const OP_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
   complete: { label: 'Completed', cls: 'b-green' },
-  in_progress: { label: 'In Progress', cls: '' },
-  running: { label: 'Running', cls: '' },
+  in_progress: { label: 'Partly Completed', cls: 'b-amber' },
+  running: { label: 'Running', cls: 'b-green' },
   available: { label: 'Available', cls: 'b-blue' },
-  waiting: { label: 'Waiting', cls: 'b-red' },
+  waiting: { label: 'Waiting', cls: 'b-grey' },
   qc_pending: { label: 'QC Pending', cls: 'b-amber' },
 };
 

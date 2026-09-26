@@ -93,19 +93,20 @@ const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
 };
 
 const PLAN_STATUS_COLOR: Record<PlanStatus, string> = {
-  in_planning: 'var(--amber)',
+  // Same colour per state as <StatusBadge kind="plan"> (wave 2).
+  in_planning: 'var(--text3)',
   planned: 'var(--blue)',
   jc_created: 'var(--cyan)',
-  pr_created: 'var(--purple)',
-  in_production: 'var(--cyan)',
+  pr_created: 'var(--cyan)',
+  in_production: 'var(--amber)',
   complete: 'var(--green)',
   cancelled: 'var(--text3)',
 };
 
 const DERIVED_STATUS_COLOR: Record<PlanDerivedStatus, string> = {
-  route_card_pending: 'var(--amber)',
+  route_card_pending: 'var(--text3)',
   gen_production_order: 'var(--blue)',
-  in_production: 'var(--cyan)',
+  in_production: 'var(--amber)',
   production_complete: 'var(--green)',
 };
 

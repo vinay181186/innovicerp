@@ -10,11 +10,13 @@ import type { ComputedJcOpStatus, RunningOpStatus } from '@innovic/shared';
 // (HTML L10555-10561), so on the legacy SCREEN they render as a bare `.badge`
 // with no fill. We reproduce that by emitting `badge` alone — matching legacy's
 // rendering while using only classes that exist in innovic-theme.css.
+// Wave 2 (owner, 2026-09-26) overrides the legacy note above: in_progress now
+// reads "Partly Completed" (amber) and running (an open session) is green.
 const JC_OP_BADGE: Record<ComputedJcOpStatus, string> = {
-  waiting: 'b-red',
+  waiting: 'b-grey',
   available: 'b-blue',
-  in_progress: '', // legacy b-yellow — undefined on screen
-  running: '', // legacy b-running — undefined on screen
+  in_progress: 'b-amber', // Partly Completed — some qty done, no open session
+  running: 'b-green', // an open machine session
   qc_pending: 'b-amber',
   complete: 'b-green',
   pr_raised: 'b-amber',
@@ -34,7 +36,7 @@ const RUNNING_TONE: Record<RunningOpStatus, string> = {
 const LABELS: Record<ComputedJcOpStatus, string> = {
   waiting: 'Waiting',
   available: 'Available',
-  in_progress: 'In Progress',
+  in_progress: 'Partly Completed',
   running: 'Running',
   qc_pending: 'QC Pending',
   complete: 'Completed',
