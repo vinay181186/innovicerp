@@ -1,5 +1,5 @@
 // GRN form (UI-003-05) — header + dynamic line items; QC shown read-only (Incoming QC inspects, ADR-189).
-// QC-completed lines lock client-side (server enforces with ConflictError).
+// A line Incoming QC has inspected any of locks client-side (server enforces with ConflictError).
 
 import {
   type CreateGoodsReceiptNoteInput,
@@ -27,6 +27,8 @@ import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 interface LineFormValue {
   id?: string;
   existingQcStatus?: GrnQcStatus;
+  /** Accepted + rejected as saved — any inspected qty freezes the line (ADR-189). */
+  existingInspectedQty?: number;
   purchaseOrderLineId?: string;
   itemId?: string;
   itemCodeText: string;
@@ -405,12 +407,18 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {fields.map((field, idx) => {
-              const locked = field.existingQcStatus === 'completed';
+              // Mirrors the server (ADR-189): once Incoming QC has inspected ANY
+              // qty on a line (accepted + rejected > 0), its item and received
+              // qty cannot change and it cannot be removed — not only once QC is
+              // fully cleared. Challan no. and line remarks stay editable until
+              // QC is cleared, as before (the server accepts those edits).
+              const qcCleared = field.existingQcStatus === 'completed';
+              const locked = qcCleared || (field.existingInspectedQty ?? 0) > 0;
               return (
                 <div
                   key={field.id}
                   style={{
-                    border: `1px solid ${locked ? 'var(--green)' : 'var(--border)'}`,
+                    border: `1px solid ${qcCleared ? 'var(--green)' : 'var(--border)'}`,
                     borderRadius: 8,
                     padding: 10,
                     background: 'var(--bg2)',
@@ -432,11 +440,11 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       Line {idx + 1}
                       {locked ? (
                         <span
-                          className="badge b-green"
+                          className={qcCleared ? 'badge b-green' : 'badge b-amber'}
                           style={{ marginLeft: 8 }}
-                          title="QC is done on this line, so it cannot be changed."
+                          title="Incoming QC has inspected this line, so its item and qty cannot be changed and it cannot be removed."
                         >
-                          QC Cleared
+                          {qcCleared ? 'QC Cleared' : 'QC In Progress'}
                         </span>
                       ) : null}
                     </span>
@@ -500,7 +508,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       <input
                         className="innovic-input"
                         autoComplete="off"
-                        readOnly={locked}
+                        readOnly={qcCleared}
                         {...register(`lines.${idx}.dcRefNo` as const)}
                       />
                     </div>
@@ -600,7 +608,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       <input
                         className="innovic-input"
                         autoComplete="off"
-                        readOnly={locked}
+                        readOnly={qcCleared}
                         {...register(`lines.${idx}.remarks` as const)}
                       />
                     </div>
@@ -655,6 +663,7 @@ function detailToFormValues(detail: GoodsReceiptNoteDetail): FormValues {
       (l): LineFormValue => ({
         id: l.id,
         existingQcStatus: l.qcStatus,
+        existingInspectedQty: Number(l.qcAcceptedQty) + Number(l.qcRejectedQty),
         ...(l.purchaseOrderLineId ? { purchaseOrderLineId: l.purchaseOrderLineId } : {}),
         ...(l.itemId ? { itemId: l.itemId } : {}),
         itemCodeText: l.itemCodeText ?? '',

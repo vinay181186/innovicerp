@@ -37,6 +37,7 @@ import {
   prBalanceColor,
   prOrderBalance,
 } from '../lib/pr-balance';
+import { prConvertible, usePrApprovalOn } from '../lib/pr-convertible';
 import { PrStatusBadge } from './pr-status-badge';
 import { PR_TYPE_LABELS } from '../lib/pr-labels';
 
@@ -154,6 +155,8 @@ export function PrCard({
   // How much is on a live purchase order and how much is still to buy. This is
   // what the card now says instead of the old yes/no "has a PO".
   const bal = prOrderBalance(pr);
+  // ADR-189: while PR approval is on, an un-approved PR cannot become a PO.
+  const prApprovalOn = usePrApprovalOn();
   const openDetail = (): void => {
     void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } });
   };
@@ -262,8 +265,9 @@ export function PrCard({
             {/* Raise a PO for what is LEFT. The old gate was
                 `status === 'open' || 'approved'`, so the first partial PO flipped
                 the PR to `po_created` and took the button away with 90 of 100
-                still unordered (ADR-152). Cancelled PRs are never orderable. */}
-            {canEntry && pr.status !== 'cancelled' && bal.balance > 0 ? (
+                still unordered (ADR-152). Cancelled PRs are never orderable, and
+                while PR approval is on an un-approved PR is not either (ADR-189). */}
+            {canEntry && prConvertible(pr, prApprovalOn) && bal.balance > 0 ? (
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: pr.id }}

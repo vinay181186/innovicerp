@@ -39,6 +39,7 @@ import { type SearchableOption, SearchableSelect } from '@/components/shared/sea
 import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 import { prBalanceText } from '@/modules/purchase-requests/lib/pr-balance';
+import { prConvertible, usePrApprovalOn } from '@/modules/purchase-requests/lib/pr-convertible';
 
 /** Why the PR box is greyed out. The vendor is a HARD prerequisite now, not a
  *  hint: a PR belongs to a vendor, so there is no honest list to show until the
@@ -151,17 +152,21 @@ export function PrPicker({
   // left can never have its PRs shown under the new vendor's name.
   const rows = listQ.data?.items ?? [];
   const isFetching = listQ.isFetching;
+  // ADR-189: while PR approval is on, an un-approved PR is refused by the API.
+  const prApprovalOn = usePrApprovalOn();
 
-  // The balance filter is the server's (`convertibleOnly` above). Two things are
+  // The balance filter is the server's (`convertibleOnly` above). Three things are
   // still decided here:
   //   • a PR already taken on ANOTHER line of this same PO — one request, one
   //     line on one document, or the same balance gets ordered twice;
   //   • `cancelled`, as a belt-and-braces guard so a cancelled PR can never be
-  //     offered even if a stale page is on screen.
+  //     offered even if a stale page is on screen;
+  //   • while PR approval is on, a PR not yet approved (ADR-189) — the server's
+  //     own rule, mirrored by `prConvertible`.
   // Nothing here looks at `poId` or `po_created` any more: on a part-ordered PR
   // both say "has a PO" while 90 of 100 are still to buy.
   const excluded = new Set((excludeIds ?? []).filter((x) => x !== value));
-  const convertible = rows.filter((pr) => pr.status !== 'cancelled' && !excluded.has(pr.id));
+  const convertible = rows.filter((pr) => prConvertible(pr, prApprovalOn) && !excluded.has(pr.id));
 
   // "Shaft 50mm · 90 of 100 left" — the buyer is choosing how much to order, so
   // the quantity STILL AVAILABLE is what the option has to say, not the PR's

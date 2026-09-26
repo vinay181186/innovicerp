@@ -272,7 +272,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 11 }}>
-            👤 Inspected By<span className="req">★</span>
+            Inspected By<span className="req">★</span>
           </label>
           {/* The whole QC list comes back in one small response, so the
               picker filters it in the browser and there is no ?search= to
@@ -291,7 +291,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 11, color: 'var(--green2)' }}>
-            ✅ Accepted (max {o.pendingQty})
+            Accepted (max {o.pendingQty})
           </label>
           <input
             type="number"
@@ -312,7 +312,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 11, color: 'var(--red2)' }}>
-            ❌ Rejected
+            Rejected
           </label>
           <input
             type="number"

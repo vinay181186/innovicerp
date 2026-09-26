@@ -40,6 +40,7 @@ import {
 import { CloseBalanceModal } from '../components/close-balance-modal';
 import { PrStatusBadge } from '../components/pr-status-badge';
 import { prBalanceClosedText, prBalanceColor, prOrderBalance } from '../lib/pr-balance';
+import { prConvertible, usePrApprovalOn } from '../lib/pr-convertible';
 import { PR_TYPE_LABELS } from '../lib/pr-labels';
 
 export const purchaseRequestDetailRoute = createRoute({
@@ -60,6 +61,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // a different key than its destination is the "button that only fails on
   // click" pattern this whole pass exists to remove.
   const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
+  const prApprovalOn = usePrApprovalOn();
   const softDelete = useSoftDeletePurchaseRequest();
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Short-closing the remainder is a SIGN-OFF, not data entry, so it rides the
@@ -126,7 +128,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // What is still to order. A PR for 100 with a PO for 10 has 90 left, so
   // "has a PO" is no longer the test for whether another PO may be raised.
   const bal = prOrderBalance(detail);
-  const canOrder = detail.status !== 'cancelled' && bal.balance > 0 && canCreatePo;
+  // ADR-189: while PR approval is on, the PR must be Approved before a PO.
+  const canOrder = prConvertible(detail, prApprovalOn) && bal.balance > 0 && canCreatePo;
   // Offered only when there is something to close: part of it bought, part of
   // it still outstanding, nothing closed yet, request not cancelled. A PR with
   // NOTHING ordered is a Reject, not a close — the API refuses it by name, so
