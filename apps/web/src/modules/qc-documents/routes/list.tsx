@@ -49,6 +49,19 @@ const searchSchema = z.object({
   search: z.string().optional(),
 });
 
+/** Screen words for the stored category codes (the code stays the value). */
+const CATEGORY_LABEL: Record<QcDocCategory, string> = {
+  'qc-docs': 'QC Docs',
+  drawing: 'Drawing',
+  inspection: 'Inspection',
+  tpi: 'TPI',
+  'incoming-qc': 'Incoming QC',
+  'po-docs': 'PO Docs',
+  design: 'Design',
+  dispatch: 'Dispatch',
+  other: 'Other',
+};
+
 export const qcDocumentsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'qc-docs',
@@ -188,7 +201,7 @@ function MatrixView(): React.JSX.Element {
   const rowsAll = matrix?.rows ?? [];
   const overallLabel = (ov: string): string =>
     ov === 'complete'
-      ? 'Complete'
+      ? 'Completed'
       : ov === 'partial'
         ? 'In Progress'
         : ov === 'no_jc'
@@ -424,7 +437,9 @@ function MatrixView(): React.JSX.Element {
                     className="empty-state"
                     style={{ color: 'var(--red)' }}
                   >
-                    {error instanceof Error ? error.message : 'Failed to load matrix'}
+                    {error instanceof Error
+                      ? error.message
+                      : 'Could not load QC Documents. Try again.'}
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
@@ -477,8 +492,8 @@ function MatrixView(): React.JSX.Element {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-        💡 ✅ Done (date) + ⬇ Download | ⏳ Pending (qty) | Waiting | — not applicable | Not
-        uploaded = QC done but no report attached
+        💡 ✅ Completed (date) + ⬇ Download | ⏳ Pending (qty) | Waiting | — not applicable | Report
+        Missing = QC completed but no report attached
       </div>
 
       {detailJcId ? (
@@ -496,7 +511,7 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
     if (cell.hasDoc) {
       return (
         <td>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--green)' }}>✅ Done</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--green)' }}>✅ Completed</div>
           <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate)}</div>
           <button
             type="button"
@@ -524,9 +539,11 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
     }
     return (
       <td>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green)' }}>✅ Done</div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green)' }}>✅ Completed</div>
         <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate)}</div>
-        <div style={{ fontSize: 9, color: 'var(--amber)', fontStyle: 'italic' }}>Not uploaded</div>
+        <div style={{ fontSize: 9, color: 'var(--amber)', fontStyle: 'italic' }}>
+          Report Missing
+        </div>
       </td>
     );
   }
@@ -621,9 +638,10 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
   for (const r of matrix.rows) {
     const cells = r.cells.map((c) => {
       if (!c.applicable) return '—';
-      if (c.done) return c.hasDoc ? `✅ Done (${fmtDate(c.docDate)})` : 'Done - No report';
+      if (c.done)
+        return c.hasDoc ? `✅ Completed (${fmtDate(c.docDate)})` : 'Completed - Report Missing';
       if (c.pending)
-        return `⏳ Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} acc` : ''}`;
+        return `⏳ Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} Accepted` : ''}`;
       return 'Waiting';
     });
     const overall =
@@ -732,7 +750,7 @@ function LineDetailModal({
             </div>
           ) : isError ? (
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+              {error instanceof Error ? error.message : 'Could not load line details. Try again.'}
             </div>
           ) : data ? (
             <LineDetailBody
@@ -920,9 +938,9 @@ function DocSection({
       ? 'var(--amber)'
       : 'var(--text3)';
   const statusLabel = isDone
-    ? '✅ Complete'
+    ? '✅ Completed'
     : uploads.length > 0
-      ? `⏳ Partial (${totalUploaded}/${totalNeeded})`
+      ? `⏳ Partly Uploaded (${totalUploaded}/${totalNeeded})`
       : '— No uploads';
 
   const nextSrFrom = uploads.length > 0 ? (uploads[uploads.length - 1]?.srTo ?? 0) + 1 : 1;
@@ -933,11 +951,11 @@ function DocSection({
 
   async function onUpload(file: File): Promise<void> {
     if (!companyId) {
-      setErr('No company on session');
+      setErr('Session expired — log in again');
       return;
     }
     if (srTo < srFrom) {
-      setErr('To must be ≥ From');
+      setErr('Sr. To must be ≥ Sr. From');
       return;
     }
     setErr(null);
@@ -959,7 +977,7 @@ function DocSection({
       };
       await create.mutateAsync(input);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload document. Try again.');
     } finally {
       setBusy(false);
     }
@@ -1250,7 +1268,7 @@ function RegisterView(): React.JSX.Element {
             <option value="">All categories</option>
             {QC_DOC_CATEGORIES.map((c) => (
               <option key={c} value={c}>
-                {c}
+                {CATEGORY_LABEL[c]}
               </option>
             ))}
           </select>
@@ -1277,7 +1295,7 @@ function RegisterView(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Doc Type</th>
+                <th>Document Type</th>
                 <th>File Name</th>
                 <th>Category</th>
                 <th>JC No.</th>
@@ -1305,7 +1323,9 @@ function RegisterView(): React.JSX.Element {
               ) : isError ? (
                 <tr>
                   <td colSpan={11} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load QC documents'}
+                    {error instanceof Error
+                      ? error.message
+                      : 'Could not load QC Documents. Try again.'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
@@ -1323,7 +1343,7 @@ function RegisterView(): React.JSX.Element {
                     </td>
                     <td style={{ fontSize: 12 }}>{d.fileName}</td>
                     <td className="text3" style={{ fontSize: 11 }}>
-                      {d.category}
+                      {(CATEGORY_LABEL as Record<string, string>)[d.category] ?? d.category}
                     </td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
                       {d.jcCodeText ?? '—'}
@@ -1444,7 +1464,7 @@ function UploadModal({
       await create.mutateAsync(input);
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload document. Try again.');
     } finally {
       setBusy(false);
     }
@@ -1509,7 +1529,9 @@ function UploadModal({
                 onChange={(e) => setCategory(e.target.value as QcDocCategory)}
               >
                 {QC_DOC_CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {CATEGORY_LABEL[c]}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1528,7 +1550,7 @@ function UploadModal({
                 className="innovic-input"
                 value={soCode}
                 onChange={(e) => setSoCode(e.target.value)}
-                placeholder="SO-001"
+                placeholder="IN-SO-00001"
               />
             </div>
           </div>

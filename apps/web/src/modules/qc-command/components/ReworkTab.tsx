@@ -32,7 +32,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
         </div>
         {rework.length === 0 ? (
           <div className="empty-state" style={{ color: 'var(--green)' }}>
-            ✅ No rework cycles — all items passed QC cleanly
+            ✅ No rework cycles — all items accepted at first QC
           </div>
         ) : (
           <div className="tbl-wrap">

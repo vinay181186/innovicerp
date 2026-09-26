@@ -120,7 +120,7 @@ export function CapaView(props: {
       ) : isError || !data ? (
         <div className="panel">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load CAPA'}
+            {error instanceof Error ? error.message : 'Could not load CAPA. Try again.'}
           </div>
         </div>
       ) : (
@@ -140,7 +140,7 @@ export function CapaView(props: {
               }}
             >
               <span style={{ fontSize: 16 }}>⚠️</span>
-              <b style={{ color: 'var(--amber)' }}>{overdue.length} CAPA(s) overdue!</b>{' '}
+              <b style={{ color: 'var(--amber)' }}>{overdue.length} CAPAs past Target Date:</b>{' '}
               {overdue.map((c) => c.code).join(', ')}
             </div>
           ) : null}
@@ -177,7 +177,7 @@ export function CapaView(props: {
                     <th>CAPA No.</th>
                     <th>CAPA Type</th>
                     <th>CAPA Date</th>
-                    <th>NC Ref</th>
+                    <th>NC No.</th>
                     <th>Problem</th>
                     <th>Root Cause</th>
                     <th>Responsible</th>
@@ -277,7 +277,7 @@ export function CapaView(props: {
                               style={{ fontSize: 10 }}
                               onClick={() => setModal({ kind: 'edit', capa: c, readOnly: true })}
                             >
-                              👁
+                              👁 View
                             </button>
                             {canEdit && c.status !== 'Closed' ? (
                               <button
@@ -286,7 +286,7 @@ export function CapaView(props: {
                                 style={{ fontSize: 10 }}
                                 onClick={() => setModal({ kind: 'edit', capa: c, readOnly: false })}
                               >
-                                ✏
+                                ✏ Edit
                               </button>
                             ) : null}
                             {c.status !== 'Closed' ? (
@@ -426,7 +426,7 @@ function NewCapaModal({
   async function submit(): Promise<void> {
     setErr(null);
     if (!problem.trim()) {
-      setErr('Describe the problem.');
+      setErr('Problem Description is required');
       return;
     }
     const input: CreateCapaInput = {
@@ -444,7 +444,7 @@ function NewCapaModal({
       await create.mutateAsync(input);
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Create failed');
+      setErr(e instanceof Error ? e.message : 'Could not save CAPA. Try again.');
     }
   }
 
@@ -543,7 +543,7 @@ function NewCapaModal({
           disabled={create.isPending}
           onClick={() => void submit()}
         >
-          {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Create CAPA
+          {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save CAPA
         </button>
       </div>
     </Overlay>
@@ -599,7 +599,7 @@ function EditCapaModal({
       await update.mutateAsync({ id: capa.id, input: f });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Update failed');
+      setErr(e instanceof Error ? e.message : 'Could not save CAPA. Try again.');
     }
   }
 
@@ -819,7 +819,7 @@ function EditCapaModal({
             disabled={update.isPending}
             onClick={() => void submit()}
           >
-            {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save CAPA
+            {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save Changes
           </button>
         ) : null}
       </div>

@@ -4,7 +4,7 @@
 // replacement this one continues. Renders nothing when there is
 // nothing to link.
 
-import type { NcRegister } from '@innovic/shared';
+import { NC_STATUS_LABELS, type NcRegister } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 
 export function NcLinksBlock(props: {
@@ -53,7 +53,7 @@ export function NcLinksBlock(props: {
             params={{ id: detail.parentNcId }}
             className="mono fw-700"
             style={{ ...linkStyle, color: 'var(--red)' }}
-            title="The NC whose return-to-vendor replacement was rejected again (ADR-167)"
+            title="Earlier NC whose vendor replacement was rejected again"
           >
             {detail.parentNcCode ?? '…'}
           </Link>
@@ -81,7 +81,7 @@ export function NcLinksBlock(props: {
                 params={{ id: s.id }}
                 className="mono"
                 style={{ ...linkStyle, color: 'var(--red)' }}
-                title={`${Number(s.rejectedQty)} pcs · ${s.status}`}
+                title={`${Number(s.rejectedQty)} pcs · ${NC_STATUS_LABELS[s.status]}`}
               >
                 {s.code}
               </Link>

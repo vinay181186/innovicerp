@@ -137,19 +137,21 @@ export function useIncomingQcInspect(props: {
     const acc = Number(accept || '0');
     const rej = Number(reject || '0');
     if (!Number.isInteger(acc) || acc < 0 || !Number.isInteger(rej) || rej < 0) {
-      setErr('Accept/Reject must be non-negative integers.');
+      setErr('Accepted and Rejected must be whole numbers, 0 or more.');
       return;
     }
     if (acc + rej <= 0) {
-      setErr('Enter an accept and/or reject qty.');
+      setErr('Enter the Accepted and/or Rejected qty.');
       return;
     }
     if (acc + rej > o.pendingQty) {
-      setErr(`Total ${acc + rej} exceeds pending ${o.pendingQty}.`);
+      setErr(
+        `Accepted + Rejected (${acc + rej}) cannot be more than QC Pending (${o.pendingQty}).`,
+      );
       return;
     }
     if (!qcBy.trim()) {
-      setErr('Enter who did the QC (QC By).');
+      setErr('Inspected By is required.');
       return;
     }
     try {
@@ -176,7 +178,7 @@ export function useIncomingQcInspect(props: {
       setQcReportName(null);
       onDone();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'QC submit failed');
+      setErr(e instanceof Error ? e.message : 'Could not save QC Inspection. Try again.');
     }
   }
 
@@ -282,7 +284,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 10 }}>
-            👤 QC By ★
+            👤 Inspected By ★
           </label>
           {/* The whole QC list comes back in one small response, so the
               picker filters it in the browser and there is no ?search= to
@@ -376,7 +378,7 @@ export function IncomingQcInspectFormView(props: {
           disabled={form.submitting}
           onClick={() => void form.doSubmit()}
         >
-          {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit QC
+          {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit Inspection
         </button>
       </div>
     </div>

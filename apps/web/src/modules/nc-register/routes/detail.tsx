@@ -7,7 +7,12 @@
 // under the server's closure gate. The legacy in-route rework row (one with
 // `reworkOpSeq`) keeps its old "Close rework" button.
 
-import { type DisposeNcResult, type NcRegister, opSrNo } from '@innovic/shared';
+import {
+  type DisposeNcResult,
+  NC_REASON_CATEGORY_LABELS,
+  type NcRegister,
+  opSrNo,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -187,7 +192,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       });
       void navigate({ to: '/nc-register' });
     } catch (e) {
-      setCapaError(e instanceof Error ? e.message : 'Failed to create CAPA.');
+      setCapaError(e instanceof Error ? e.message : 'Could not create CAPA. Try again.');
     }
   };
 
@@ -207,7 +212,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       );
       setReworkDoneQty('');
     } catch (e) {
-      setCloseError(e instanceof Error ? e.message : 'Failed to close rework.');
+      setCloseError(e instanceof Error ? e.message : 'Could not close rework. Try again.');
     }
   };
 
@@ -218,7 +223,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
     try {
       await closeNc.mutateAsync();
     } catch (e) {
-      setCloseError(e instanceof Error ? e.message : 'Failed to close the NC.');
+      setCloseError(e instanceof Error ? e.message : 'Could not close the NC. Try again.');
     }
   };
 
@@ -423,7 +428,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 <Note tone="red">
                   {softDelete.error instanceof Error
                     ? softDelete.error.message
-                    : 'Failed to delete NC.'}
+                    : 'Could not delete NC. Try again.'}
                 </Note>
               ) : null}
               {closeError ? <Note tone="red">{closeError}</Note> : null}
@@ -458,17 +463,17 @@ function NcRegisterDetailPage(): React.JSX.Element {
             },
             {
               key: 'failed',
-              label: 'Failed',
+              label: 'Rejected Again',
               count: Number(detail.failedQty),
               color: 'var(--amber)',
-              sub: 'QC-rejected again',
+              sub: 'QC rejected after recovery',
             },
             {
               key: 'open',
               label: 'Open',
               count: ncOpenQty(detail),
               color: 'var(--blue)',
-              sub: 'rejected − cleared − failed',
+              sub: 'rejected − cleared − rejected again',
             },
             ...(isRtv
               ? [
@@ -500,7 +505,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             createDc.isError
               ? createDc.error instanceof Error
                 ? createDc.error.message
-                : 'Failed to create the delivery challan'
+                : 'Could not save DC. Try again.'
               : null
           }
           onSubmit={async (input) => {
@@ -539,7 +544,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             dispose.isError
               ? dispose.error instanceof Error
                 ? dispose.error.message
-                : 'Failed to dispose NC'
+                : 'Could not save disposition. Try again.'
               : null
           }
           result={disposeResult}
@@ -645,7 +650,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
               ) : null}
             </InlinePair>
             {detail.sourcePoCode ? (
-              <InlinePair label="Source PO:">
+              <InlinePair label="Source PO No.:">
                 <span className="td-code" style={{ color: 'var(--text)' }}>
                   {detail.sourcePoCode}
                 </span>
@@ -660,7 +665,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
             ) : null}
           </>
         ) : isReworkDisp ? (
-          <InlinePair label="Rework Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
+          <InlinePair label="Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
         ) : (
           <InlinePair label="Operation:">
             {/* Op numbers show in tens (display rule, see opSrNo). */}
@@ -675,7 +680,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
         <InlinePair label="Operator:">{detail.operatorText ?? '—'}</InlinePair>
         <InlinePair label="Reported By:">{detail.reportedByText ?? '—'}</InlinePair>
         <InlinePair label="Reason Category:">
-          {detail.reasonCategory.replaceAll('_', ' ')}
+          {NC_REASON_CATEGORY_LABELS[detail.reasonCategory]}
         </InlinePair>
         <InlinePair label="Reason:">{detail.reason ?? '—'}</InlinePair>
         {detail.timeLogged ? (
@@ -707,7 +712,7 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
         DISPOSITION
       </div>
       <div className="form-grid" style={{ fontSize: 12 }}>
-        <InlinePair label="Action:">
+        <InlinePair label="Disposition:">
           <NcDispositionBadge disposition={detail.disposition} />
         </InlinePair>
         <InlinePair label="Disposition Date:">{detail.dispositionDate ?? '—'}</InlinePair>

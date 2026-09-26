@@ -121,7 +121,7 @@ function QcProcessDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete QC process.'
+      : 'Could not delete QC Process. Try again.'
     : null;
 
   return (

@@ -66,7 +66,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'Response',
       'Inspector',
       'Organization',
-      'Cert No.',
+      'TPI Certificate No.',
     ],
     ...rows.map((l) => [
       l.jcCode,
@@ -142,7 +142,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
       ) : isError || !data ? (
         <div className="panel">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load TPI'}
+            {error instanceof Error ? error.message : 'Could not load TPI. Try again.'}
           </div>
         </div>
       ) : (
@@ -230,7 +230,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                     <th>Response</th>
                     <th>Inspector</th>
                     <th>Organization</th>
-                    <th>Cert No.</th>
+                    <th>TPI Certificate No.</th>
                     <th>Report</th>
                   </tr>
                 </thead>
@@ -398,19 +398,19 @@ function PendingTpi(props: {
     const acc = Number(accept || '0');
     const rej = Number(reject || '0');
     if (!Number.isInteger(acc) || acc < 0 || !Number.isInteger(rej) || rej < 0) {
-      setErr('Accept/Reject must be non-negative integers.');
+      setErr('Accepted and Rejected must be whole numbers, 0 or more.');
       return;
     }
     if (acc + rej <= 0) {
-      setErr('Enter accept and/or reject qty.');
+      setErr('Enter the Accepted and/or Rejected qty.');
       return;
     }
     if (acc + rej > o.qcPending) {
-      setErr(`Total ${acc + rej} exceeds pending ${o.qcPending}.`);
+      setErr(`Accepted + Rejected (${acc + rej}) cannot be more than Pending (${o.qcPending}).`);
       return;
     }
     if (!inspector.trim() || !organization.trim()) {
-      setErr('Inspector and Organization are required.');
+      setErr('Inspector Name and Organization are required.');
       return;
     }
     const input: SubmitQcLogInput = {
@@ -431,7 +431,7 @@ function PendingTpi(props: {
       await submit.mutateAsync(input);
       onDone();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'TPI submit failed');
+      setErr(e instanceof Error ? e.message : 'Could not save TPI Inspection. Try again.');
     }
   }
 

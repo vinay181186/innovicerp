@@ -170,7 +170,7 @@ function QcProcessesListPage(): React.JSX.Element {
         title: (p) => p.description ?? '',
       },
       {
-        header: 'Std Time (min)',
+        header: 'Default Cycle Time (min)',
         width: '11%',
         className: 'mono',
         nowrap: true,
@@ -294,7 +294,9 @@ function QcProcessesListPage(): React.JSX.Element {
           {isError ? (
             <PageState
               state="error"
-              message={error instanceof Error ? error.message : 'Failed to load QC processes'}
+              message={
+                error instanceof Error ? error.message : 'Could not load QC Processes. Try again.'
+              }
             />
           ) : (
             <Panel bodyPadding="none">

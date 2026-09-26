@@ -119,7 +119,7 @@ function TpiMasterDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete inspector.'
+      : 'Could not delete Inspector. Try again.'
     : null;
 
   return (

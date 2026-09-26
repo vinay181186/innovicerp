@@ -59,6 +59,11 @@ function dispColor(d: IncomingQcCompletedRow['disposition']): string {
   return 'var(--green)';
 }
 
+/** Screen word for the stored QC result code. */
+function dispLabel(d: IncomingQcCompletedRow['disposition']): string {
+  return d === 'Partial Accept' ? 'Partly Accepted' : d;
+}
+
 function IncomingQcPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useIncomingQc();
   const { data: eff } = useMyAccess();
@@ -139,7 +144,7 @@ function IncomingQcPage(): React.JSX.Element {
       ) : isError || !data ? (
         <div className="panel">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load incoming QC'}
+            {error instanceof Error ? error.message : 'Could not load Incoming QC. Try again.'}
           </div>
         </div>
       ) : (
@@ -228,8 +233,8 @@ function IncomingQcPage(): React.JSX.Element {
                     <th>Item Code</th>
                     <th>Item Name</th>
                     <th>Received</th>
-                    <th style={{ color: 'var(--amber)' }}>⏳ Waiting</th>
-                    <th style={{ color: 'var(--amber)' }}>Pending QC</th>
+                    <th style={{ color: 'var(--amber)' }}>Days Waiting</th>
+                    <th style={{ color: 'var(--amber)' }}>QC Pending</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -286,7 +291,7 @@ function IncomingQcPage(): React.JSX.Element {
                     <th>GRN No.</th>
                     <th>GRN Date</th>
                     <th style={{ color: 'var(--green)' }}>QC Date</th>
-                    <th>Response</th>
+                    <th>Days to Inspect</th>
                     <th>Vendor</th>
                     {/* POL = the CUSTOMER's own PO line number off the SO line
                         behind this receipt. */}
@@ -296,7 +301,7 @@ function IncomingQcPage(): React.JSX.Element {
                     <th>Received</th>
                     <th style={{ color: 'var(--green)' }}>Accepted</th>
                     <th style={{ color: 'var(--red)' }}>Rejected</th>
-                    <th>Disposition</th>
+                    <th>QC Result</th>
                     <th>Remarks</th>
                     <th>Report</th>
                   </tr>
@@ -459,7 +464,7 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
       </td>
       <td>
         <span className="fw-700" style={{ color: dispColor(r.disposition) }}>
-          {r.disposition}
+          {dispLabel(r.disposition)}
         </span>
       </td>
       <td

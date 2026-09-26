@@ -170,7 +170,7 @@ const PENDING_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['POL', 5, { color: 'var(--purple)' }],
   ['Item Code', 17],
   ['Vendor · GRN / SO · Op', 21],
-  ['Pending QC', 6],
+  ['QC Pending', 6],
   ['Called', 14],
   ['Stage', 14],
   ['Action', 10],
@@ -183,7 +183,7 @@ const COMPLETED_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['Accepted', 5],
   ['Rejected', 5],
   ['Called → Attended', 14],
-  ['Inspector · Log Ref', 18],
+  ['Inspected By · Log Ref', 18],
   ['Verdict', 10],
 ];
 export function QcSheetTable(props: {
@@ -320,6 +320,12 @@ function InspectorCell(props: {
 
 type Verdict = 'ACCEPTED' | 'PARTIAL' | 'REJECTED';
 
+const VERDICT_LABEL: Record<Verdict, string> = {
+  ACCEPTED: 'Accepted',
+  PARTIAL: 'Partly Accepted',
+  REJECTED: 'Rejected',
+};
+
 function VerdictCell(props: {
   verdict: Verdict;
   reportPath: string | null;
@@ -343,7 +349,7 @@ function VerdictCell(props: {
           color: red ? 'var(--red)' : 'var(--text2)',
         }}
       >
-        {props.verdict}
+        {VERDICT_LABEL[props.verdict]}
       </span>
     </td>
   );

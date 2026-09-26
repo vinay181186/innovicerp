@@ -149,19 +149,19 @@ export function useQcCallInspect(props: {
     const acc = Number(accept || '0');
     const rej = Number(reject || '0');
     if (!Number.isInteger(acc) || acc < 0 || !Number.isInteger(rej) || rej < 0) {
-      setErr('Accept/Reject must be non-negative integers.');
+      setErr('Accepted and Rejected must be whole numbers, 0 or more.');
       return;
     }
     if (acc + rej <= 0) {
-      setErr('Enter accept and/or reject qty.');
+      setErr('Enter the Accepted and/or Rejected qty.');
       return;
     }
     if (acc + rej > o.qcPending) {
-      setErr(`Total ${acc + rej} exceeds pending ${o.qcPending}.`);
+      setErr(`Accepted + Rejected (${acc + rej}) cannot be more than QC Pending (${o.qcPending}).`);
       return;
     }
     if (!inspector.trim()) {
-      setErr('Enter who did the QC (QC By).');
+      setErr('Inspected By is required.');
       return;
     }
     // Nobody touched the dropdown, so the field still holds the seeded name of
@@ -193,7 +193,7 @@ export function useQcCallInspect(props: {
       void queryClient.invalidateQueries({ queryKey: tpiKeys.all });
       onDone();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'QC submit failed');
+      setErr(e instanceof Error ? e.message : 'Could not save QC Inspection. Try again.');
     }
   }
 
@@ -258,7 +258,7 @@ export function QcCallInspectFormView(props: {
     <div style={{ padding: '14px 16px', borderTop: '2px solid var(--green)' }}>
       {/* Legacy L4167: QC Entry header naming the JC/Op and the operation. */}
       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
-        ✅ QC Entry — {o.jcCode} Op{opSrNo(o.opSeq)} — {o.operation}
+        ✅ QC Inspection — {o.jcCode} Op{opSrNo(o.opSeq)} — {o.operation}
       </div>
       <div className="form-grid">
         <div className="form-grp">
@@ -332,7 +332,7 @@ export function QcCallInspectFormView(props: {
         </div>
         <div className="form-grp form-full">
           <label className="form-label" style={{ fontSize: 10 }}>
-            👤 QC By ★
+            👤 Inspected By ★
           </label>
           {/* The whole QC list comes back in one small response, so the
               picker filters it in the browser and there is no ?search= to
@@ -384,7 +384,7 @@ export function QcCallInspectFormView(props: {
           disabled={form.submitting}
           onClick={() => void form.doSubmit()}
         >
-          {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit QC
+          {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit Inspection
         </button>
       </div>
     </div>

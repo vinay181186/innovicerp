@@ -1,6 +1,6 @@
 // NC disposition → legacy .badge .b-* class (UI-002). Text comes from
 // NC_DISPOSITION_LABELS (the QC document's vocabulary — `scrap` reads
-// "Reject / Scrap"), so the badge matches the dispose panel's choices.
+// "Scrap"), so the badge matches the dispose panel's choices.
 
 import { NC_DISPOSITION_LABELS, type NcDisposition } from '@innovic/shared';
 

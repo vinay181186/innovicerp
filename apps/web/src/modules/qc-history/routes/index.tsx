@@ -117,7 +117,7 @@ function QcHistoryPage(): React.JSX.Element {
       ) : isError || !data ? (
         <div className="panel">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load QC history'}
+            {error instanceof Error ? error.message : 'Could not load QC History. Try again.'}
           </div>
         </div>
       ) : (
@@ -130,7 +130,7 @@ function QcHistoryPage(): React.JSX.Element {
             style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 14 }}
           >
             <div className="stat-card amber">
-              <div className="stat-label">Pending QC Ops</div>
+              <div className="stat-label">QC Pending Ops</div>
               <div className="stat-val">{data.stats.pendingOps}</div>
             </div>
             <div className="stat-card red">
@@ -236,7 +236,7 @@ function QcHistoryPage(): React.JSX.Element {
             <div className="panel" style={{ marginBottom: 14 }}>
               <div className="panel-hdr">
                 <span className="panel-title" style={{ color: 'var(--amber)' }}>
-                  ⏳ Pending QC ({pending.length})
+                  ⏳ QC Pending ({pending.length})
                 </span>
               </div>
               <div className="tbl-wrap">
@@ -268,7 +268,7 @@ function QcHistoryPage(): React.JSX.Element {
                     {pending.length === 0 ? (
                       <tr>
                         <td colSpan={14} className="empty-state">
-                          ✅ No pending QC
+                          ✅ Nothing QC Pending
                         </td>
                       </tr>
                     ) : (
@@ -305,7 +305,7 @@ function QcHistoryPage(): React.JSX.Element {
                       <th style={{ color: 'var(--red)' }}>Rejected</th>
                       <th>QC Date</th>
                       <th>Shift</th>
-                      <th>Inspector</th>
+                      <th>Inspected By</th>
                       <th>Remarks</th>
                       <th>Report</th>
                     </tr>

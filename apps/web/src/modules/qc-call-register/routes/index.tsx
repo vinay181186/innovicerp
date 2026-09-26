@@ -370,7 +370,7 @@ function QcCallRegisterPage(): React.JSX.Element {
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
         <div className="panel">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load QC call register'}
+            {error instanceof Error ? error.message : 'Could not load QC Call Register. Try again.'}
           </div>
         </div>
       </div>,

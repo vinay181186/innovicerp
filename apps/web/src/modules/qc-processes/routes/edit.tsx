@@ -100,7 +100,7 @@ function QcProcessEditPage(): React.JSX.Element {
             mode="edit"
             detail={detail}
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save Changes"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: UpdateQcProcessInput) => {
               setSubmitError(null);
@@ -108,7 +108,9 @@ function QcProcessEditPage(): React.JSX.Element {
                 await update.mutateAsync(values);
                 exit.leave(goBack);
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
+                setSubmitError(
+                  e instanceof Error ? e.message : 'Could not save QC Process. Try again.',
+                );
               }
             }}
           />

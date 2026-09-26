@@ -75,7 +75,7 @@ export function AssignModal({
       });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Assign failed');
+      setErr(e instanceof Error ? e.message : 'Could not assign inspector. Try again.');
     }
   }
 

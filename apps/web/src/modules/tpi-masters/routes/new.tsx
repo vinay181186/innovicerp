@@ -72,7 +72,7 @@ function TpiMasterNewPage(): React.JSX.Element {
           <TpiMasterForm
             mode="create"
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save Inspector"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateTpiMasterInput) => {
               setSubmitError(null);
@@ -82,7 +82,9 @@ function TpiMasterNewPage(): React.JSX.Element {
                   () => void navigate({ to: '/tpi-masters/$id', params: { id: created.id } }),
                 );
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to create inspector.');
+                setSubmitError(
+                  e instanceof Error ? e.message : 'Could not save Inspector. Try again.',
+                );
               }
             }}
           />

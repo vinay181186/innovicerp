@@ -11,6 +11,7 @@ import {
   type DisposeNcInput,
   type DisposeNcResult,
   NC_DISPOSITION_LABELS,
+  NC_REASON_CATEGORY_LABELS,
   type NcDisposition,
   type NcRegister,
   opSrNo,
@@ -170,7 +171,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             <span className="red">{Number(nc.rejectedQty)} pcs</span>
           </CtxField>
           <CtxField label="REASON">
-            {nc.reasonCategory.replaceAll('_', ' ')}
+            {NC_REASON_CATEGORY_LABELS[nc.reasonCategory]}
             {nc.reason ? ` — ${nc.reason}` : ''}
           </CtxField>
         </div>
@@ -268,8 +269,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                     />
                   )}
                   <div className="form-help">
-                    Legacy in-route rework: increments{' '}
-                    <span className="mono">jc_ops.rework_qty</span> for the picked op.
+                    Pieces go back to the chosen operation for rework.
                   </div>
                 </div>
               ) : null}
@@ -337,8 +337,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
 
             {action === 'use_as_is' && (nc.opSeq == null || nc.jcOpId == null) ? (
               <Note tone="amber">
-                ⚠ Use-As-Is needs the NC to have a resolved op_seq + jc_op_id. This NC has none —
-                server will reject.
+                ⚠ Use As Is is not possible: this NC has no operation. Choose another disposition.
               </Note>
             ) : null}
 
@@ -361,7 +360,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 disabled={pending || !action || !qtyValid}
               >
                 {pending ? <Loader2 size={13} className="animate-spin" /> : null}
-                Save
+                Save Disposition
               </button>
             </div>
           </form>

@@ -236,7 +236,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             id="ncDate"
             type="date"
             className="innovic-input"
-            {...register('ncDate', { required: 'Date is required' })}
+            {...register('ncDate', { required: 'NC Date is required' })}
           />
         </div>
 
@@ -249,7 +249,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
               <select
                 id="jobCardId"
                 className="innovic-select"
-                {...register('jobCardId', { required: 'Job card is required' })}
+                {...register('jobCardId', { required: 'JC No. is required' })}
               >
                 <option value="">-- Select JC --</option>
                 {jcs.map((jc) => (
@@ -281,7 +281,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                 onChange={(e) => onItemCodeChange(e.target.value)}
               />
               {/* itemId is the submitted value; hidden so RHF can validate it. */}
-              <input type="hidden" {...register('itemId', { required: 'Item is required' })} />
+              <input type="hidden" {...register('itemId', { required: 'Item Code is required' })} />
               {watch('itemId') ? (
                 <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                   ✓ {watch('itemNameText') ?? ''}
@@ -297,7 +297,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             </div>
             <div className="form-grp">
               <label className="form-label" htmlFor="nc-so">
-                SO No. (snapshot)
+                SO No.
               </label>
               <SearchableSelect
                 id="nc-so"
@@ -420,14 +420,14 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             id="reportedByText"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Operator name (snapshot)"
+            placeholder="Operator name"
             {...register('reportedByText')}
           />
         </div>
 
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="reason">
-            Problem / Defect Description<span className="req">★</span>
+            Defect Description<span className="req">★</span>
           </label>
           <textarea
             id="reason"
@@ -435,7 +435,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             rows={3}
             placeholder="Describe the defect or problem in detail..."
             {...register('reason', {
-              validate: (v) => (v?.trim().length ?? 0) > 0 || 'Describe the problem/defect',
+              validate: (v) => (v?.trim().length ?? 0) > 0 || 'Defect Description is required',
             })}
           />
           {errors.reason?.message ? (
@@ -475,8 +475,8 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             </button>
           ) : null}
           <button type="submit" className="btn btn-success" disabled={formState.isSubmitting}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}✓{' '}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Save')}
+            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+            {props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save NC')}
           </button>
         </div>
       </div>

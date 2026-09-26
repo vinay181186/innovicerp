@@ -258,7 +258,9 @@ function TpiMastersListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load TPI inspectors'}
+          message={
+            error instanceof Error ? error.message : 'Could not load TPI Inspectors. Try again.'
+          }
         />
       ) : (
         <Panel bodyPadding="none">

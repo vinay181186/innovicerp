@@ -74,7 +74,9 @@ export function SoQcStatusView(): React.JSX.Element {
       ) : detail.isError || !detail.data ? (
         <div className="panel">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {detail.error instanceof Error ? detail.error.message : 'Failed to load SO QC status'}
+            {detail.error instanceof Error
+              ? detail.error.message
+              : 'Could not load SO QC status. Try again.'}
           </div>
         </div>
       ) : (
@@ -390,7 +392,7 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               </td>
               <td>
                 <span className={`badge ${g.status === 'done' ? 'b-green' : 'b-amber'}`}>
-                  {g.status === 'done' ? '✅ Accepted' : '⏳ Pending'}
+                  {g.status === 'done' ? '✅ Inspected' : '⏳ Pending'}
                 </span>
               </td>
               <td>
@@ -418,7 +420,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>JC No.</th>
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Organization</th>
-            <th>Inspector</th>
+            <th>Inspected By</th>
             <th>Accepted</th>
             <th>Rejected</th>
             <th>Inspection Date</th>
@@ -451,7 +453,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               <td>{t.date ?? '—'}</td>
               <td>
                 <span className={`badge ${t.status === 'passed' ? 'b-green' : 'b-amber'}`}>
-                  {t.status === 'passed' ? '✅ Passed' : '⚠ Partial'}
+                  {t.status === 'passed' ? '✅ Accepted' : '⚠ Partly Accepted'}
                 </span>
               </td>
               <td>
@@ -580,7 +582,7 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
         marginBottom: 16,
       }}
     >
-      <Card label="QC OPS" value={`${t.qcPassed}/${t.qcOps}`} sub="passed" color={allDone(t.qcPassed, t.qcOps)} />
+      <Card label="QC OPS" value={`${t.qcPassed}/${t.qcOps}`} sub="accepted" color={allDone(t.qcPassed, t.qcOps)} />
       <Card label="INCOMING QC" value={`${t.grnDone}/${t.grn}`} sub="done" color={allDone(t.grnDone, t.grn)} />
       <Card
         label="QC PENDING"

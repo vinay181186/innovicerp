@@ -123,7 +123,7 @@ function NcRegisterNewPage(): React.JSX.Element {
             mode="create"
             initial={seed}
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save NC"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateNcRegisterInput) => {
               setSubmitError(null);
@@ -133,7 +133,7 @@ function NcRegisterNewPage(): React.JSX.Element {
                   () => void navigate({ to: '/nc-register/$id', params: { id: created.id } }),
                 );
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to report NC.');
+                setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');
               }
             }}
           />

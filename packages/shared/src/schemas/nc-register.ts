@@ -313,7 +313,7 @@ export const NC_DISPOSITION_LABELS: Record<NcDisposition, string> = {
   rework: 'Rework',
   repair: 'Repair',
   return_to_vendor: 'Return to Vendor',
-  scrap: 'Reject / Scrap',
+  scrap: 'Scrap',
   use_as_is: 'Use As Is',
   make_fresh: 'Make Fresh',
 };

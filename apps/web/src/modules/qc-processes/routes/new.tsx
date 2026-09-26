@@ -73,7 +73,7 @@ function QcProcessNewPage(): React.JSX.Element {
           <QcProcessForm
             mode="create"
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save QC Process"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateQcProcessInput) => {
               setSubmitError(null);
@@ -83,7 +83,9 @@ function QcProcessNewPage(): React.JSX.Element {
                   () => void navigate({ to: '/qc-processes/$id', params: { id: created.id } }),
                 );
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to create QC process.');
+                setSubmitError(
+                  e instanceof Error ? e.message : 'Could not save QC Process. Try again.',
+                );
               }
             }}
           />

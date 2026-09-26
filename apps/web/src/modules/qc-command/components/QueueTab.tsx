@@ -104,7 +104,7 @@ export function QueueTab({
           tip — just the sort bar and this line. */}
       {sorted.length === 0 ? (
         <div className="empty-state" style={{ color: 'var(--green)' }}>
-          ✅ No pending QC items
+          ✅ No QC Pending items
         </div>
       ) : (
         <>
@@ -117,7 +117,7 @@ export function QueueTab({
                     <th>JC / Op</th>
                     <th>Operation</th>
                     <th>SO / Customer</th>
-                    <th className="td-ctr">Pending QC</th>
+                    <th className="td-ctr">QC Pending</th>
                     <th className="td-ctr">Attempt</th>
                     <th>Due Date</th>
                     <th>Assigned To</th>
@@ -278,7 +278,7 @@ export function QueueTab({
           {showActions ? (
             <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
               💡 "Pick Up" assigns this item to you. "Assign" allocates it to any inspector. Attempt
-              counter increments on rework.
+              goes up by 1 after each rework.
             </div>
           ) : null}
         </>

@@ -325,7 +325,7 @@ function NcRegisterListPage(): React.JSX.Element {
             </div>
           ) : isError ? (
             <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load NCs'}
+              {error instanceof Error ? error.message : 'Could not load NCs. Try again.'}
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
@@ -440,7 +440,7 @@ function NcRegisterListPage(): React.JSX.Element {
                             style={{ fontSize: 10 }}
                             title="Close the rework on this NC's detail page"
                           >
-                            ✅ Close
+                            ✅ Close Rework
                           </Link>
                         ) : null}
                         {canCreateCapa && nc.status !== 'pending' && !nc.linkedCapaCode ? (
@@ -579,7 +579,7 @@ function NcRegisterListPage(): React.JSX.Element {
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
             💡 Click the NC number (or the card) to open it. An NC is raised automatically when a QC
             operation rejects pieces (or with ❌ Report NC); then click <b>✏ Dispose</b> to decide:
-            Rework, Repair, Return to Vendor, Reject / Scrap, Use As Is, or Make Fresh.
+            Rework, Repair, Return to Vendor, Scrap, Use As Is, or Make Fresh.
           </div>
 
           <div

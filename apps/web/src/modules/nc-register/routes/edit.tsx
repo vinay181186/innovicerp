@@ -1,6 +1,6 @@
 // NC edit route (UI-003-06). Editable only while status='pending'.
 
-import type { UpdateNcRegisterInput } from '@innovic/shared';
+import { NC_STATUS_LABELS, type UpdateNcRegisterInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -89,9 +89,7 @@ function NcRegisterEditPage(): React.JSX.Element {
         <div className="panel">
           <div className="panel-hdr">
             <div>
-              <div className="panel-title">
-                Cannot edit a {detail.status.replaceAll('_', ' ')} NC
-              </div>
+              <div className="panel-title">Cannot edit a {NC_STATUS_LABELS[detail.status]} NC</div>
               <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                 Disposed and closed NCs are permanent records. Disposition workflow lives on the
                 detail page.
@@ -137,7 +135,7 @@ function NcRegisterEditPage(): React.JSX.Element {
             mode="edit"
             detail={detail}
             submitError={submitError}
-            submitLabel="Save changes"
+            submitLabel="Save Changes"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: UpdateNcRegisterInput) => {
               setSubmitError(null);
@@ -145,7 +143,7 @@ function NcRegisterEditPage(): React.JSX.Element {
                 await update.mutateAsync(values);
                 exit.leave(goBack);
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
+                setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');
               }
             }}
           />
