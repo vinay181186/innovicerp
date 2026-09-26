@@ -165,7 +165,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
         title="Edit GRN"
         subtitle={<span className="td-code">{detail.code}</span>}
         backLabel="Back to GRN"
-        onBack={() => exit.leave(goBack)}
+        onBack={goBack}
         dirty={formStatus.dirty}
         actions={
           <>

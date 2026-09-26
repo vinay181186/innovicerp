@@ -230,7 +230,7 @@ function InvoiceNewPage(): React.JSX.Element {
         icon="📄"
         title="Create Invoice"
         backLabel="Back to Invoices"
-        onBack={() => exit.leave(goBack)}
+        onBack={goBack}
         dirty={dirty}
         actions={
           <>
@@ -277,7 +277,11 @@ function InvoiceNewPage(): React.JSX.Element {
             <SearchableSelect
               id="invoiceSo"
               value={soId || null}
-              onChange={(id) => onSoChange(id ?? '')}
+              // The picker reports null the moment the user starts typing. Only a
+              // real pick may change the SO: clearing it wipes every line card.
+              onChange={(id) => {
+                if (id) onSoChange(id);
+              }}
               options={soOptions}
               valueLabel={soValueLabel}
               placeholder="🔍 Type SO number or customer…"

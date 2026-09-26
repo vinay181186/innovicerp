@@ -138,6 +138,7 @@ function RouteCardEditPage(): React.JSX.Element {
         submitting={update.isPending}
         submitError={submitError}
         onCancel={() => exit.leave(goBack)}
+        onBack={goBack}
       />
     </>
   );

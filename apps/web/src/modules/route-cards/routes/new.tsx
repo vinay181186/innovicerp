@@ -91,6 +91,7 @@ function RouteCardNewPage(): React.JSX.Element {
         submitting={create.isPending}
         submitError={submitError}
         onCancel={() => exit.leave(goBack)}
+        onBack={goBack}
       />
     </>
   );

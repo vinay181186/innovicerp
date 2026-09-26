@@ -233,6 +233,11 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       })),
     [soOpts],
   );
+  // The picker shows a chosen SO only through valueLabel (e.g. arriving ?so=).
+  const soValueLabel = useMemo(() => {
+    const o = soOptions.find((x) => x.id === soId);
+    return o ? `${o.code} — ${o.name}` : undefined;
+  }, [soOptions, soId]);
 
   if (eff && !perms.entry) {
     return (
@@ -250,7 +255,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
         icon="🚚"
         title="New Customer Dispatch"
         backLabel="Back to Customer Dispatch"
-        onBack={() => exit.leave(goBack)}
+        onBack={goBack}
         dirty={dirty}
         actions={
           <>
@@ -288,8 +293,13 @@ function CustomerDispatchNewPage(): React.JSX.Element {
             <SearchableSelect
               id="dispatchSo"
               value={soId || null}
-              onChange={(id) => setSoId(id ?? '')}
+              // Null arrives on the first keystroke; only a real pick changes the
+              // SO, or typing would clear the auto-filled lines.
+              onChange={(id) => {
+                if (id) setSoId(id);
+              }}
               options={soOptions}
+              valueLabel={soValueLabel}
               placeholder="🔍 Type SO number or customer…"
               emptyText="No sales order matches"
             />

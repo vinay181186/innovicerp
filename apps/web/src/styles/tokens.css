@@ -51,10 +51,12 @@
    * (breadcrumbs, stat labels, form help, empty states). Darkened to
    * #7b8aa0 = 3.3:1 on --bg / 3.5:1 on white — still below AA. Darkened
    * again 2026-09-26 (ERPNext gap report) to #5f6d84 = 4.8:1 on --bg,
-   * 4.6:1 on --bg4: muted text is read, so it must clear 4.5:1.
+   * 4.6:1 on --bg4: muted text is read, so it must clear 4.5:1. --text2
+   * moved down with it (#667085 → #4d5a6e, 6.9:1) so secondary text still
+   * reads stronger than muted text.
    */
   --text: #172b4d;
-  --text2: #667085;
+  --text2: #4d5a6e;
   --text3: #5f6d84;
 
   /* ─── Brand accents (3-tier each: solid / dark / pale-bg) ──────

@@ -118,7 +118,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
         pageTitle="New JWSO Order"
         pageSubtitle="Customer-supplied raw material → we machine and deliver."
         backLabel="Back to JWSO Master"
-        onBack={() => exit.leave(goBack)}
+        onBack={goBack}
         onSubmit={onSubmit}
         onPoFileChange={(f) => {
           poFileRef.current = f;
@@ -225,7 +225,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
         detail={detail}
         pageTitle={`Edit Job-Work Order — ${detail.code}`}
         backLabel="Back to JWSO"
-        onBack={() => exit.leave(goBack)}
+        onBack={goBack}
         onSubmit={onSubmit}
         onPoFileChange={(f) => {
           poFileRef.current = f;

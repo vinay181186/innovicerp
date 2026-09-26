@@ -38,6 +38,9 @@ export function ActionMenu({
   label = 'Actions',
 }: ActionMenuProps): React.JSX.Element | null {
   const [open, setOpen] = useState(false);
+  // Where the menu is drawn. `position: fixed` against the button's rectangle,
+  // so a parent panel's `overflow: hidden` cannot clip it.
+  const [at, setAt] = useState<{ top: number; right: number } | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
@@ -49,11 +52,19 @@ export function ActionMenu({
     function onKey(e: KeyboardEvent): void {
       if (e.key === 'Escape') setOpen(false);
     }
+    function onMove(): void {
+      setOpen(false);
+    }
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    // A fixed menu would float away from its button; close it instead.
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
     };
   }, [open]);
 
@@ -88,12 +99,21 @@ export function ActionMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
-        onClick={() => setOpen((o) => !o)}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setAt({ top: r.bottom + 4, right: window.innerWidth - r.right });
+          setOpen((o) => !o);
+        }}
       >
         {label} ▾
       </button>
-      {open ? (
-        <div id={menuId} role="menu" className="action-menu">
+      {open && at ? (
+        <div
+          id={menuId}
+          role="menu"
+          className="action-menu"
+          style={{ position: 'fixed', top: at.top, right: at.right }}
+        >
           {safe.map(row)}
           {safe.length > 0 && danger.length > 0 ? <div className="action-menu-sep" /> : null}
           {danger.map(row)}

@@ -95,6 +95,8 @@ interface RouteCardFormProps {
   submitting: boolean;
   submitError: string | null;
   onCancel: () => void;
+  /** Header Back — a plain navigation, so the router's exit guard asks first. */
+  onBack?: () => void;
 }
 
 export function emptyProcessOp(): RouteCardFormOpDraft {
@@ -144,6 +146,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     submitting,
     submitError,
     onCancel,
+    onBack,
   } = props;
   const [header, setHeader] = useState<RouteCardFormHeaderDraft>(initialHeader);
   const [ops, setOps] = useState<RouteCardFormOpDraft[]>(initialOps);
@@ -432,7 +435,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         sticky
         title={mode === 'create' ? 'New Route Card' : `Edit Route Card — ${routeCard?.code ?? ''}`}
         backLabel="Back to Route Cards"
-        onBack={onCancel}
+        onBack={onBack ?? onCancel}
         actions={
           <>
             <button type="button" className="btn btn-ghost" onClick={onCancel}>

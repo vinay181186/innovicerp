@@ -200,7 +200,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           </>
         }
         backLabel="Back to DC"
-        onBack={() => exit.leave(goBack)}
+        onBack={goBack}
         dirty={dirty}
         actions={
           <>

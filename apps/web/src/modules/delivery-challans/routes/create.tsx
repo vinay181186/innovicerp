@@ -120,7 +120,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         icon="📦"
         title="Create OSP Delivery Challan"
         backLabel="Back to Delivery Challans"
-        onBack={() => exit.leave(goBack)}
+        onBack={goBack}
         dirty={save.dirty}
         actions={
           <>

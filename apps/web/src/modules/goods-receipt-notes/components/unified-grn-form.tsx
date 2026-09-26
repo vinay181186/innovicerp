@@ -146,7 +146,7 @@ export function UnifiedGrnForm({
         icon="📥"
         title="New GRN"
         backLabel="Back to GRN list"
-        onBack={() => exit.leave(goBack)}
+        onBack={goBack}
         dirty={status.dirty}
         actions={
           <>
