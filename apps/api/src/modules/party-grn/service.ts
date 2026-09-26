@@ -224,7 +224,7 @@ export async function getPartyGrnDetail(id: string, user: AuthContext): Promise<
       LIMIT 1
     `);
     const hRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
-    if (!hRow) throw new NotFoundError(`Party GRN ${id} not found`);
+    if (!hRow) throw new NotFoundError('Party GRN not found. Refresh the page.');
 
     const lineRows = await tx
       .select()
@@ -282,7 +282,7 @@ export async function createPartyGrn(
   const companyId = requireCompany(user);
   const userId = user.id;
   if (input.lines.length === 0) {
-    throw new ValidationError('At least one line is required');
+    throw new ValidationError('Add at least one row.');
   }
 
   return withUserContext(user, async (tx) => {
@@ -304,7 +304,7 @@ export async function createPartyGrn(
       )
       .limit(1);
     const jw = jwRows[0];
-    if (!jw) throw new NotFoundError(`Job Work Order ${input.jobWorkOrderId} not found`);
+    if (!jw) throw new NotFoundError('Selected JWSO was not found. Please select the JWSO again.');
 
     // 2) Validate all party materials exist + lock for stock update
     const materialIds = Array.from(new Set(input.lines.map((l) => l.partyMaterialId)));
@@ -326,7 +326,7 @@ export async function createPartyGrn(
     const pmById = new Map(pmRows.map((p) => [p.id, p]));
     for (const id of materialIds) {
       if (!pmById.has(id)) {
-        throw new NotFoundError(`Party material ${id} not found`);
+        throw new NotFoundError('Selected Party Material was not found. Please select it again.');
       }
     }
 
@@ -356,7 +356,7 @@ export async function createPartyGrn(
       })
       .returning();
     const header = headerInserted[0];
-    if (!header) throw new ValidationError('Failed to insert party GRN header');
+    if (!header) throw new ValidationError('Could not save Party GRN. Try again.');
 
     // 4b) Over-receipt guard: cumulative received per JW line (matched by the
     // line number) must not exceed that line's order qty. Lines with no line
@@ -400,7 +400,7 @@ export async function createPartyGrn(
     for (const [idx, ln] of input.lines.entries()) {
       const pm = pmById.get(ln.partyMaterialId);
       if (!pm) {
-        throw new NotFoundError(`Party material ${ln.partyMaterialId} not found`);
+        throw new NotFoundError('Selected Party Material was not found. Please select it again.');
       }
 
       // ADR-102: the JWSO line is mandatory and must be a real line on THIS
@@ -410,15 +410,15 @@ export async function createPartyGrn(
       const lnKey = String(ln.jwLineNoText ?? '').trim();
       if (!lnKey) {
         throw new ValidationError(
-          `Line ${idx + 1}: pick which JWSO line this material is for. ` +
-            `${jw.code} has line(s) ${jwLines.map((l) => l.lineNo).join(', ')}.`,
+          `Row #${idx + 1}: pick which JWSO Ln this material is for. ` +
+            `${jw.code} has Ln ${jwLines.map((l) => l.lineNo).join(', ')}.`,
         );
       }
       const jwLine = lineByNo.get(lnKey);
       if (!jwLine) {
         throw new ValidationError(
-          `Line ${idx + 1}: ${jw.code} has no line ${lnKey}. ` +
-            `Available line(s): ${jwLines.map((l) => l.lineNo).join(', ')}.`,
+          `Row #${idx + 1}: ${jw.code} has no Ln ${lnKey}. ` +
+            `Its Ln: ${jwLines.map((l) => l.lineNo).join(', ')}.`,
         );
       }
       const { orderQty, partName, itemId: lineItemId, itemCodeText: lineItemCode } = jwLine;
@@ -430,9 +430,9 @@ export async function createPartyGrn(
       // the real part shows none received.
       if (pm.itemId != null && lineItemId != null && pm.itemId !== lineItemId) {
         throw new ValidationError(
-          `Line ${idx + 1}: ${pm.code} is "${pm.name}"` +
-            `${pm.itemCodeText ? ` (item ${pm.itemCodeText})` : ''}, but ${jw.code} line ${lnKey} is ` +
-            `"${partName}"${lineItemCode ? ` (item ${lineItemCode})` : ''}. ` +
+          `Row #${idx + 1}: ${pm.code} is "${pm.name}"` +
+            `${pm.itemCodeText ? ` (Item Code ${pm.itemCodeText})` : ''}, but ${jw.code} Ln ${lnKey} is ` +
+            `"${partName}"${lineItemCode ? ` (Item Code ${lineItemCode})` : ''}. ` +
             `Pick the material for this part, or pick the line this material belongs to.`,
         );
       }
@@ -441,8 +441,8 @@ export async function createPartyGrn(
       // against a different customer's order.
       if (pm.clientId != null && jw.clientId != null && pm.clientId !== jw.clientId) {
         throw new ValidationError(
-          `Line ${idx + 1}: ${pm.code} belongs to a different client than ${jw.code}. ` +
-            `Party material can only be received against its own client's order.`,
+          `Row #${idx + 1}: ${pm.code} belongs to another Customer than ${jw.code}. ` +
+            `Party Material can only be received against its own Customer's order.`,
         );
       }
 
@@ -452,13 +452,13 @@ export async function createPartyGrn(
         const already = receivedByLineNo.get(lnKey) ?? 0;
         const remaining = Math.max(0, orderQty - already);
         if (ln.receivedQty > remaining) {
-          const part = partName ? `${partName} (line ${lnKey})` : `Line ${lnKey}`;
+          const part = partName ? `${partName} (Ln ${lnKey})` : `Ln ${lnKey}`;
           const note =
             already > 0
-              ? `Ordered ${orderQty}, already received ${already}, so only ${remaining} more can be received.`
-              : `Ordered ${orderQty}, so at most ${orderQty} can be received.`;
+              ? ` — Order Qty ${orderQty}, already Received ${already}.`
+              : ` — Order Qty ${orderQty}.`;
           throw new ValidationError(
-            `${part}: you entered ${ln.receivedQty}, but ${note} Please reduce the quantity.`,
+            `${part}: Qty (${ln.receivedQty}) cannot be more than Pending (${remaining})${note} Please reduce the Qty.`,
           );
         }
         receivedByLineNo.set(lnKey, already + ln.receivedQty);
@@ -521,7 +521,7 @@ export async function cancelPartyGrn(
   await requireFormAccess(user, 'party_create', 'approve');
   const companyId = requireCompany(user);
   const trimmed = (reason ?? '').trim();
-  if (!trimmed) throw new ValidationError('A reason is required to cancel a Party GRN');
+  if (!trimmed) throw new ValidationError('Reason is required to cancel a Party GRN.');
 
   return withUserContext(user, async (tx) => {
     const headRows = await tx
@@ -532,7 +532,7 @@ export async function cancelPartyGrn(
       )
       .limit(1);
     const head = headRows[0];
-    if (!head) throw new NotFoundError(`Party GRN ${id} not found`);
+    if (!head) throw new NotFoundError('Party GRN not found. Refresh the page.');
 
     const lines = await tx
       .select({
@@ -574,8 +574,8 @@ export async function cancelPartyGrn(
       if (pm.stockQty - qty < 0) {
         throw new ValidationError(
           `Cannot cancel ${head.code}: it received ${qty} of ${code}, but only ${pm.stockQty} ` +
-            `are still on hand — the rest has been issued to production. Reverse the material ` +
-            `issue first, then cancel this GRN.`,
+            `are still in stock — the rest has been issued to production. Cancel the Party Material ` +
+            `Issue first, then cancel this GRN.`,
         );
       }
     }

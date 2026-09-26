@@ -10,7 +10,7 @@ export const stockMovementLogReport: RegisteredReport = {
     slug: 'stock-movement-log',
     title: 'Stock movement log',
     description:
-      'Per-row ledger of store_transactions with item code + name + qty + stock-after over a date range. Filter by source type to scope to GRN-QC, dispatch, or manual adjustments.',
+      'Every stock movement with item code, name, qty and stock after, over a date range. Filter by source type to scope to GRN QC, dispatch, or manual adjustments.',
     group: 'Inventory',
     filters: [
       { key: 'fromDate', label: 'Txn Date From', kind: 'date' },

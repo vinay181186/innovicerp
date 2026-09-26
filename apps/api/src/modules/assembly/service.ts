@@ -125,7 +125,7 @@ export async function getAssemblyTracker(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+    if (!so) throw new NotFoundError('Sales Order not found. Refresh the page.');
 
     // BOM resolve (header + child lines). Equipment SO without a BOM still
     // works — the components list is just empty and canAssemble = 0.
@@ -556,7 +556,7 @@ export async function markUnitAssembled(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+    if (!so) throw new NotFoundError('Sales Order not found. Refresh the page.');
     if (so.type !== 'equipment') {
       throw new ValidationError('Assembly tracker only applies to Equipment SOs');
     }
@@ -581,7 +581,7 @@ export async function markUnitAssembled(
     const balance = unitsRequired > 0 ? Math.max(0, unitsRequired - alreadyAssembled) : requestedQty;
     if (unitsRequired > 0 && requestedQty > balance) {
       throw new ConflictError(
-        `Cannot assemble ${requestedQty} — only ${balance} unit(s) remain on order (orderQty=${unitsRequired})`,
+        `Qty (${requestedQty}) cannot be more than Pending (${balance}) of Order Qty ${unitsRequired}.`,
       );
     }
 
@@ -698,7 +698,7 @@ export async function startAssembly(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+    if (!so) throw new NotFoundError('Sales Order not found. Refresh the page.');
     if (so.type !== 'equipment') {
       throw new ValidationError('Assembly tracker only applies to Equipment SOs');
     }
@@ -721,7 +721,7 @@ export async function startAssembly(
     const balance = unitsRequired > 0 ? Math.max(0, unitsRequired - committed) : requestedQty;
     if (unitsRequired > 0 && requestedQty > balance) {
       throw new ConflictError(
-        `Cannot start ${requestedQty} — only ${balance} unit(s) remain on order (orderQty=${unitsRequired}).`,
+        `Qty (${requestedQty}) cannot be more than Pending (${balance}) of Order Qty ${unitsRequired}.`,
       );
     }
 
@@ -792,7 +792,7 @@ export async function stopAssembly(
       )
       .limit(1);
     const batch = existing[0];
-    if (!batch) throw new NotFoundError(`Assembly unit ${unitId} not found`);
+    if (!batch) throw new NotFoundError('Assembly unit not found. Refresh the page.');
     if (batch.status !== 'in_progress') {
       throw new ConflictError(`Unit #${batch.unitNo} is not in progress — nothing to complete.`);
     }
@@ -801,7 +801,7 @@ export async function stopAssembly(
     const completedQty = Math.max(1, Math.round(input.completedQty));
     if (completedQty > remaining) {
       throw new ConflictError(
-        `Cannot complete ${completedQty} — only ${remaining} left in this batch.`,
+        `Completed (${completedQty}) cannot be more than Pending (${remaining}) in this batch.`,
       );
     }
 
@@ -927,7 +927,7 @@ export async function markUnitDispatched(
       )
       .limit(1);
     const row = existing[0];
-    if (!row) throw new NotFoundError(`Assembly unit ${unitId} not found`);
+    if (!row) throw new NotFoundError('Assembly unit not found. Refresh the page.');
     if (row.status !== 'completed') {
       throw new ConflictError(
         `Unit #${row.unitNo} is still in assembly — complete (Stop) it before dispatching.`,
@@ -985,7 +985,7 @@ export async function undoLastUnit(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+    if (!so) throw new NotFoundError('Sales Order not found. Refresh the page.');
 
     const latest = await tx
       .select()
@@ -1064,7 +1064,7 @@ export async function setReadinessOverride(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+    if (!so) throw new NotFoundError('Sales Order not found. Refresh the page.');
 
     // Resolve child item id if the code matches a known item (best-effort).
     const itemRows = await tx
@@ -1117,7 +1117,7 @@ export async function setReadinessOverride(
       {
         action: 'OVERRIDE_READY',
         entity: 'AssemblyTracking',
-        detail: `${so.code} — ${childItemCode} ready=${input.readyQtyOverride}`,
+        detail: `${so.code} — ${childItemCode} Ready ${input.readyQtyOverride}`,
         refId: so.code,
       },
       companyId,
@@ -1457,7 +1457,7 @@ export async function getAssemblyRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Sales order ${soId} not found`);
+    if (!header) throw new NotFoundError('Sales Order not found. Refresh the page.');
 
     // ── Upstream: distinct BOM masters referenced by this SO's assembly units ─
     const unitBomRows = await tx

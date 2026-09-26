@@ -132,7 +132,7 @@ export async function createPartyMaterialIssue(
       )
       .limit(1);
     const jw = jwRows[0];
-    if (!jw) throw new NotFoundError(`Job Work Order ${input.jobWorkOrderId} not found`);
+    if (!jw) throw new NotFoundError('Selected JWSO was not found. Please select the JWSO again.');
 
     // 2) Optional JC (for traceability) — and cross-check its owning JWSO.
     // A Job Card sourced from a JW line already belongs to a specific JWSO
@@ -163,16 +163,16 @@ export async function createPartyMaterialIssue(
       )
       .limit(1);
     const jc = jcRows[0];
-    if (!jc) throw new NotFoundError(`Job Card ${input.jobCardId} not found`);
+    if (!jc) throw new NotFoundError('Selected JC was not found. Please pick the JC No. again.');
     const jcCodeText: string = jc.code;
     if (jc.sourceJwLineId && jc.jcJobWorkOrderId && jc.jcJobWorkOrderId !== jw.id) {
       throw new ValidationError(
-        `Job Card ${jc.code} belongs to a different Job Work Order — it cannot be issued against ${jw.code}.`,
+        `JC ${jc.code} belongs to another JWSO — it cannot be issued against ${jw.code}.`,
       );
     }
     if (!jc.sourceJwLineId) {
       throw new ValidationError(
-        `Job Card ${jc.code} is not linked to a Job Work Order line, so client material cannot be issued to it.`,
+        `JC ${jc.code} is not linked to a JWSO line, so customer material cannot be issued.`,
       );
     }
 
@@ -201,27 +201,28 @@ export async function createPartyMaterialIssue(
       )
       .limit(1);
     const pm = pmRows[0];
-    if (!pm) throw new NotFoundError(`Party material ${input.partyMaterialId} not found`);
+    if (!pm)
+      throw new NotFoundError('Selected Party Material was not found. Please select it again.');
 
     // ADR-103: same two identity checks the Party GRN got in ADR-102. Without
     // them the gate can be unlocked with the wrong customer's material, or with
     // the right customer's material for a different part.
     if (pm.clientId != null && jw.clientId != null && pm.clientId !== jw.clientId) {
       throw new ValidationError(
-        `${pm.code} belongs to a different client than ${jw.code}. ` +
-          `Party material can only be issued against its own client's order.`,
+        `${pm.code} belongs to another Customer than ${jw.code}. ` +
+          `Party Material can only be issued against its own Customer's order.`,
       );
     }
     if (pm.itemId != null && jc.lineItemId != null && pm.itemId !== jc.lineItemId) {
       throw new ValidationError(
-        `${pm.code} is "${pm.name}"${pm.itemCodeText ? ` (item ${pm.itemCodeText})` : ''}, but ` +
+        `${pm.code} is "${pm.name}"${pm.itemCodeText ? ` (Item Code ${pm.itemCodeText})` : ''}, but ` +
           `${jc.code} makes "${jc.linePartName}". Issue the material for this part.`,
       );
     }
 
     if (input.qty > pm.stockQty) {
       throw new ValidationError(
-        `Cannot issue ${input.qty} — only ${pm.stockQty} of party material ${pm.code} in stock. Receive more via a Party GRN first.`,
+        `Qty (${input.qty}) cannot be more than stock of ${pm.code} (${pm.stockQty}). Receive more via a Party GRN first.`,
       );
     }
 
@@ -262,9 +263,9 @@ export async function createPartyMaterialIssue(
     const remainingForLine = Math.max(0, receivedForLine - issuedForLine);
     if (input.qty > remainingForLine) {
       throw new ValidationError(
-        `Cannot issue ${input.qty} for "${jc.linePartName}" (${jw.code} line ${lineNo ?? '?'}). ` +
-          `${receivedForLine} received for this part, ${issuedForLine} already issued, ` +
-          `so only ${remainingForLine} can be issued. Record a Party GRN for the balance first.`,
+        `Qty (${input.qty}) for "${jc.linePartName}" (${jw.code} Ln ${lineNo ?? '?'}) cannot be more than ` +
+          `Pending to Issue (${remainingForLine}) — Received ${receivedForLine}, already Issued ${issuedForLine}. ` +
+          `Record a Party GRN for the rest first.`,
       );
     }
 
@@ -282,9 +283,9 @@ export async function createPartyMaterialIssue(
     if (input.qty > jcRemaining) {
       throw new ValidationError(
         jcRemaining === 0
-          ? `${jc.code} already has all ${jc.orderQty} pieces of material issued. Nothing more is needed for this job card.`
+          ? `${jc.code} already has all ${jc.orderQty} pieces of material issued. Nothing more is needed for this JC.`
           : `${jc.code} is making ${jc.orderQty} pieces and ${alreadyToJc} are already issued, ` +
-              `so only ${jcRemaining} more can be issued. You entered ${input.qty}.`,
+              `so only ${jcRemaining} more can be issued. Qty entered: ${input.qty}.`,
       );
     }
 
@@ -310,7 +311,7 @@ export async function createPartyMaterialIssue(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to insert party material issue');
+    if (!row) throw new ValidationError('Could not save Party Material Issue. Try again.');
 
     // 5) Draw down party stock
     await tx
@@ -362,7 +363,7 @@ export async function cancelPartyMaterialIssue(
   await requireFormAccess(user, 'party_create', 'approve');
   const companyId = requireCompany(user);
   const trimmed = (reason ?? '').trim();
-  if (!trimmed) throw new ValidationError('A reason is required to cancel a material issue');
+  if (!trimmed) throw new ValidationError('Reason is required to cancel a Party Material Issue.');
 
   return withUserContext(user, async (tx) => {
     const rows = await tx
@@ -386,7 +387,7 @@ export async function cancelPartyMaterialIssue(
       )
       .limit(1);
     const iss = rows[0];
-    if (!iss) throw new NotFoundError(`Party material issue ${id} not found`);
+    if (!iss) throw new NotFoundError('Party Material Issue not found. Refresh the page.');
 
     if (iss.jobCardId) {
       // How much of this job card's material has already been turned into
@@ -409,7 +410,7 @@ export async function cancelPartyMaterialIssue(
       if (issued - iss.qty < consumed) {
         throw new ValidationError(
           `Cannot cancel ${iss.code}: ${consumed} piece(s) have already been machined on ` +
-            `${iss.jcCodeText ?? 'this job card'} against the ${issued} issued. ` +
+            `${iss.jcCodeText ?? 'this JC'} against the ${issued} issued. ` +
             `Cancelling would leave it short by ${consumed - (issued - iss.qty)}. ` +
             `That material is already used — record a scrap/adjustment instead.`,
         );

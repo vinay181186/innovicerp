@@ -557,7 +557,7 @@ describe('purchase-requests service', () => {
     // refusal must send the user to that button by name, not just say no.
     await expect(
       service.closePurchaseRequestBalance(pr.id, { reason: 'customer cut the order' }, admin),
-    ).rejects.toThrow(/use Reject/);
+    ).rejects.toThrow(/Use Reject/);
     await expect(
       service.closePurchaseRequestBalance(pr.id, { reason: 'customer cut the order' }, admin),
     ).rejects.toBeInstanceOf(ValidationError);

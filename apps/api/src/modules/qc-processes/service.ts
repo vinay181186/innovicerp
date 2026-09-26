@@ -90,7 +90,7 @@ export async function getQcProcess(id: string, user: AuthContext): Promise<QcPro
       .where(and(eq(qcProcesses.id, id), isNull(qcProcesses.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`QC process ${id} not found`);
+    if (!row) throw new NotFoundError('QC Process not found. Refresh the page.');
     return row as unknown as QcProcess;
   });
 }
@@ -117,7 +117,7 @@ export async function createQcProcess(
       )
       .limit(1);
     if (existing.length > 0) {
-      throw new ConflictError(`QC process "${input.code}" already exists`);
+      throw new ConflictError(`QC Process "${input.code}" already exists`);
     }
 
     const inserted = await tx
@@ -151,7 +151,7 @@ export async function updateQcProcess(
       .from(qcProcesses)
       .where(and(eq(qcProcesses.id, id), isNull(qcProcesses.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`QC process ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('QC Process not found. Refresh the page.');
 
     const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
     if (input.description !== undefined) updates.description = emptyToNull(input.description);
@@ -194,7 +194,7 @@ export async function softDeleteQcProcess(id: string, user: AuthContext): Promis
       .where(and(eq(qcProcesses.id, id), isNull(qcProcesses.deletedAt)))
       .limit(1);
     const row = existing[0];
-    if (!row) throw new NotFoundError(`QC process ${id} not found`);
+    if (!row) throw new NotFoundError('QC Process not found. Refresh the page.');
 
     // The server itself writes this name. ADR-069 Rule B appends this process
     // (DEFAULT_FINAL_QC_OP, "Final Inspection") automatically as the final QC
@@ -204,7 +204,7 @@ export async function softDeleteQcProcess(id: string, user: AuthContext): Promis
     // position of generating a QC step whose name nothing defines.
     if (row.code === DEFAULT_FINAL_QC_OP) {
       throw new ConflictError(
-        `"${row.code}" cannot be deleted — the system adds it automatically as the final QC step on job cards that need one (ADR-069). Set it to Inactive instead.`,
+        `"${row.code}" is the automatic Final Inspection step and cannot be deleted. Set it Inactive.`,
       );
     }
 
@@ -239,7 +239,7 @@ export async function softDeleteQcProcess(id: string, user: AuthContext): Promis
         .filter((s): s is string => s !== null)
         .join(', ');
       throw new ConflictError(
-        `QC process "${row.code}" is in use by ${where} and cannot be deleted. Set it to Inactive instead — it will stop appearing in the pickers while the existing documents keep working.`,
+        `QC Process "${row.code}" is in use by ${where} and cannot be deleted. Set it to Inactive instead — it will stop appearing in the pickers while the existing documents keep working.`,
       );
     }
 

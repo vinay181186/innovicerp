@@ -12,7 +12,7 @@ export const itemsOnHandReport: RegisteredReport = {
     slug: 'items-on-hand',
     title: 'Items + on-hand stock',
     description:
-      'Items master joined to `v_item_stock` for current on-hand qty. Items with no ledger history show 0. Useful for the daily stock-check.',
+      'Every item in Item Master with its current on-hand qty. Items with no stock movement show 0. Useful for the daily stock-check.',
     group: 'Inventory',
     filters: [],
     columns: [

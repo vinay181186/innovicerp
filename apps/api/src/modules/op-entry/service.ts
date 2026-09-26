@@ -46,6 +46,7 @@ import {
   assertProductionOrderNotShortClosed,
   assertProductionOrderNotShortClosedForOp,
 } from '../../lib/production-order-stop';
+import { codeLabel, labelOf, OP_LOG_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onRecoveryJobCardQc } from '../nc-register/recovery';
@@ -98,7 +99,7 @@ export async function listJcOpsEnriched(
 ): Promise<JcOpEnriched[]> {
   const companyId = requireCompany(user);
   if (!input.jobCardId && !input.jobCardCode && !input.machineId) {
-    throw new ValidationError('Provide jobCardId, jobCardCode, or machineId');
+    throw new ValidationError('Please select a JC No. or a Machine.');
   }
   return withUserContext(user, async (tx) => {
     let filter: SQL;
@@ -538,7 +539,7 @@ export async function listOpMachineOutput(
 ): Promise<OpMachineOutput[]> {
   const companyId = requireCompany(user);
   if (!input.jcOpId && !input.jobCardId) {
-    throw new ValidationError('Provide jcOpId or jobCardId');
+    throw new ValidationError('Please select a JC No. or an Operation.');
   }
   return withUserContext(user, async (tx) => {
     const result = await tx.execute(sql`
@@ -699,7 +700,7 @@ async function loadJcOp(
     .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId)))
     .limit(1);
   const op = rows[0];
-  if (!op) throw new NotFoundError(`Op ${jcOpId} not found`);
+  if (!op) throw new NotFoundError('Operation not found. Refresh the page and try again.');
   return op as JcOpRow;
 }
 
@@ -908,20 +909,20 @@ export async function loadMaterialCap(
 export function materialCapMessage(cap: MaterialCap, allowed: number, asked: number): string {
   if (!cap.issuedBased) {
     return (
-      `Qty ${asked} exceeds client material received. Only ${allowed} can be worked now ` +
-      `(received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
-      `Record a Party Material GRN for the balance to continue.`
+      `Qty (${asked}) is more than customer material received. Only ${allowed} can be worked now ` +
+      `(Received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
+      `Record a Party GRN for the rest to continue.`
     );
   }
   if (allowed <= 0) {
     return cap.received === 0
-      ? `No client material has been issued to this job card yet, so work cannot start. ` +
+      ? `No customer material has been issued to this JC yet, so work cannot start. ` +
           `Issue material from Party Material Issue first (JWSO ${cap.jwCode}).`
-      : `All ${cap.received} issued piece(s) are already accounted for on this job card. ` +
-          `Issue more client material to continue (JWSO ${cap.jwCode}).`;
+      : `All ${cap.received} issued piece(s) are already used on this JC. ` +
+          `Issue more customer material to continue (JWSO ${cap.jwCode}).`;
   }
   return (
-    `Qty ${asked} is more than the client material issued to this job card. ` +
+    `Qty (${asked}) is more than the customer material issued to this JC. ` +
     `Only ${allowed} can be worked now (${cap.received} of ${cap.orderQty} issued, ` +
     `JWSO ${cap.jwCode}). Issue more material from Party Material Issue to continue.`
   );
@@ -1020,16 +1021,14 @@ async function writeProductionLog(
   await assertProductionOrderNotShortClosed(tx, op.jobCardId);
   if (op.opType === 'outsource') {
     throw new ValidationError(
-      'This is an outsource operation; use the procurement flow, not Op Entry',
+      'This is an OSP operation. Record it through its PR / PO, not Op Entry.',
     );
   }
   // T-040d / ISSUE-001 — production-complete logs are not valid against QC ops.
   // QC ops use POST /op-entry/qc-log which writes log_type='qc' with split
   // accept/reject qty.
   if (op.opType === 'qc') {
-    throw new ValidationError(
-      'This is a QC operation; use the QC inspection flow (POST /op-entry/qc-log)',
-    );
+    throw new ValidationError('This is a QC operation. Record it from QC Pending, not Op Entry.');
   }
 
   // Serialize concurrent production logs on the SAME op: lock the jc_ops row
@@ -1039,7 +1038,7 @@ async function writeProductionLog(
 
   const snapshot = await loadAvailability(tx, input.jcOpId);
   if (snapshot.computedStatus === 'qc_pending') {
-    throw new ValidationError('Operation is waiting for QC clearance — go to QC dashboard');
+    throw new ValidationError('This operation is QC Pending. Record the inspection first.');
   }
   // Client-material gate: on the first op of a JWSO Job Card, cap the loggable
   // qty at the client material available for this part — ISSUED to this job
@@ -1060,8 +1059,8 @@ async function writeProductionLog(
     }
     throw new ValidationError(
       input.rejectQty > 0
-        ? `Qty ${input.qty} + rejected ${input.rejectQty} exceeds available ${snapshot.available} — cannot exceed planned qty`
-        : `Qty ${input.qty} exceeds available ${snapshot.available} — cannot exceed planned qty`,
+        ? `Completed + Rejected (${input.qty + input.rejectQty}) cannot be more than Pending (${snapshot.available}). Reduce the qty.`
+        : `Completed (${input.qty}) cannot be more than Pending (${snapshot.available}). Reduce the qty.`,
     );
   }
 
@@ -1333,15 +1332,13 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       .where(and(eq(jcOps.id, input.jcOpId), eq(jcOps.companyId, companyId)))
       .limit(1);
     const op = opRows[0];
-    if (!op) throw new NotFoundError(`Op ${input.jcOpId} not found`);
+    if (!op) throw new NotFoundError('Operation not found. Refresh the page and try again.');
     // ADR-182 — no inspection may be recorded on a short-closed order's card.
     await assertProductionOrderNotShortClosed(tx, op.jobCardId);
 
     const isQcBearing = op.opType === 'qc' || op.qcRequired;
     if (!isQcBearing) {
-      throw new ValidationError(
-        'This operation does not require QC; use POST /op-entry/op-log for production logs',
-      );
+      throw new ValidationError('This operation has no QC step. Use Complete on Op Entry instead.');
     }
 
     // Serialize concurrent QC logs on the SAME op (over-inspection race).
@@ -1356,7 +1353,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     );
     const total = input.qty + input.rejectQty;
     if (qcPending <= 0) {
-      throw new ValidationError('No QC pending on this operation');
+      throw new ValidationError('Nothing is QC Pending on this operation.');
     }
     // ADR-103: NO client-material gate on QC. Client-supplied material never
     // goes through inspection — a Party GRN is followed straight by an issue,
@@ -1366,7 +1363,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // capping it again would double-count the same restriction.
     if (total > qcPending) {
       throw new ValidationError(
-        `Total qty ${total} exceeds QC pending ${qcPending} — cannot inspect more than what's pending`,
+        `Accepted + Rejected (${total}) cannot be more than QC Pending (${qcPending}).`,
       );
     }
 
@@ -1756,8 +1753,8 @@ async function applyTimingChange(
       action: 'OP_LOG_TIME_EDIT',
       entity: 'Op',
       detail:
-        `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — ${row.logType} entry ${row.logNo} ` +
-        `retimed ${was} → ${now} (qty ${row.qty} unchanged)${via}`,
+        `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — ${labelOf(OP_LOG_TYPE_LABEL, row.logType)} entry ${row.logNo} ` +
+        `time changed ${was} → ${now} (qty ${row.qty} unchanged)${via}`,
       refId: jc?.code ?? row.logNo,
     },
     companyId,
@@ -2050,7 +2047,7 @@ export async function decideOpLogTimeChange(
     const req = rows[0];
     if (!req) throw new NotFoundError('Change request not found');
     if (req.status !== 'pending') {
-      throw new ValidationError(`This request was already ${req.status}`);
+      throw new ValidationError(`This request was already ${codeLabel(req.status)}.`);
     }
 
     if (input.decision === 'approve') {
@@ -2124,11 +2121,15 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
     // ADR-182 — a short-closed order's Job Card cannot be started either.
     await assertProductionOrderNotShortClosed(tx, op.jobCardId);
     if (op.opType === 'outsource') {
-      throw new ValidationError('Cannot start outsource operation on shop floor');
+      throw new ValidationError(
+        'Cannot start an OSP operation here. Raise the PR from the Job Card.',
+      );
     }
     const snapshot = await loadAvailability(tx, input.jcOpId);
     if (snapshot.available <= 0) {
-      throw new ValidationError('No qty available to start for this operation');
+      throw new ValidationError(
+        'Nothing Pending on this operation — the previous operation must complete pieces first.',
+      );
     }
     // Client-material gate: the first op of a JWSO Job Card can only start once
     // client material has been ISSUED to it (ADR-103) — zero issued means the
@@ -2141,12 +2142,12 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
         throw new ValidationError(
           cap.issuedBased
             ? cap.received === 0
-              ? `Cannot start — no client material has been issued to this job card. ` +
+              ? `Cannot start — no customer material has been issued to this JC. ` +
                 `Issue material from Party Material Issue first (JWSO ${cap.jwCode}).`
               : `Cannot start — all ${cap.received} issued piece(s) are already accounted for. ` +
-                `Issue more client material to continue (JWSO ${cap.jwCode}).`
-            : `No client material available to start. Received ${cap.received} of ${cap.orderQty} ` +
-                `for this part (JWSO ${cap.jwCode}). Record a Party Material GRN first.`,
+                `Issue more customer material to continue (JWSO ${cap.jwCode}).`
+            : `No customer material available to start. Received ${cap.received} of ${cap.orderQty} ` +
+                `for this part (JWSO ${cap.jwCode}). Record a Party GRN first.`,
         );
       }
     }
@@ -2167,7 +2168,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       }
     } else {
       if (!input.machineId) {
-        throw new ValidationError('Select the machine this operation will actually run on');
+        throw new ValidationError('Please select the Actual Machine.');
       }
       const m = await tx
         .select({ id: machines.id, code: machines.code })
@@ -2219,7 +2220,9 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       // Both partial unique indexes (one running per op; one running per
       // non-OSP machine) raise unique_violation = SQLSTATE 23505.
       if ((e as { code?: string }).code === '23505') {
-        throw new ConflictError('Operation already running OR machine busy with another op');
+        throw new ConflictError(
+          'Cannot start: this operation is running or the machine is busy. Stop Operation first.',
+        );
       }
       throw e;
     }
@@ -2402,9 +2405,9 @@ export async function stopOp(
       .where(and(eq(runningOps.id, runningOpId), eq(runningOps.companyId, companyId)))
       .limit(1);
     const row = existing[0];
-    if (!row) throw new NotFoundError(`Running op ${runningOpId} not found`);
+    if (!row) throw new NotFoundError('Running operation not found. Refresh the page.');
     if (row.status !== 'running') {
-      throw new ValidationError(`Running op already in status "${row.status}"`);
+      throw new ValidationError('This operation is already stopped. Refresh the page.');
     }
     // ADR-183 — a whole batch can fail. The machine ran, QC looked at what came
     // off it, and none of it passed; that entry is qty 0 with rejects, and it

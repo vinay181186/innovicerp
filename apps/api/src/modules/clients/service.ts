@@ -109,7 +109,7 @@ export async function getClient(id: string, user: AuthContext): Promise<Client> 
       .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Client ${id} not found`);
+    if (!row) throw new NotFoundError('Customer not found. It may have been moved to Trash.');
     return row as unknown as Client;
   });
 }
@@ -159,10 +159,10 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
       if (dup) {
         if (dup.deletedAt) {
           throw new ConflictError(
-            `Client code "${code}" belongs to a deleted client — restore it instead of re-creating`,
+            `Customer Code "${code}" is in Trash. Restore it from Trash instead.`,
           );
         }
-        throw new ConflictError(`Client code "${code}" already exists`);
+        throw new ConflictError(`Customer Code "${code}" already exists.`);
       }
 
       const inserted = await tx
@@ -256,14 +256,14 @@ export async function createClientsBulk(
       const name = c.name.trim();
       const nameKey = name.toLowerCase();
       if (takenNames.has(nameKey)) {
-        skipped.push({ index, name, reason: 'a client with this name already exists' });
+        skipped.push({ index, name, reason: 'a Customer with this name already exists' });
         continue;
       }
 
       let code = c.code?.trim();
       if (code) {
         if (takenCodes.has(code.toLowerCase())) {
-          skipped.push({ index, name, reason: `code "${code}" is already used` });
+          skipped.push({ index, name, reason: `Customer Code "${code}" is already used` });
           continue;
         }
       } else {
@@ -327,7 +327,8 @@ export async function updateClient(
       .from(clients)
       .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Client ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Customer not found. It may have been moved to Trash.');
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.name !== undefined) updates.name = input.name;
@@ -357,7 +358,8 @@ export async function softDeleteClient(id: string, user: AuthContext): Promise<{
       .from(clients)
       .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Client ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Customer not found. It may have been moved to Trash.');
     await tx
       .update(clients)
       .set({ deletedAt: new Date(), updatedBy: user.id })

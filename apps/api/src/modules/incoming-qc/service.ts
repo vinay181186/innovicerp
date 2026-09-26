@@ -228,7 +228,7 @@ async function mirrorIncomingQcOntoNextQcOp(
       operatorName: user.fullName ?? user.email,
       // No machine on QC: inspection is not machining (op-entry, ISSUE-010).
       machineId: null,
-      remarks: 'Incoming QC (auto — same inspection)',
+      remarks: 'Incoming QC (from the same inspection)',
       createdBy: user.id,
     })
     .returning({ id: opLog.id });
@@ -523,6 +523,8 @@ export async function submitIncomingQc(
       .select({
         id: goodsReceiptNoteLines.id,
         grnId: goodsReceiptNoteLines.goodsReceiptNoteId,
+        grnCode: goodsReceiptNotes.code,
+        lineNo: goodsReceiptNoteLines.lineNo,
         itemId: goodsReceiptNoteLines.itemId,
         receivedQty: goodsReceiptNoteLines.receivedQty,
         acceptedQty: goodsReceiptNoteLines.qcAcceptedQty,
@@ -546,7 +548,7 @@ export async function submitIncomingQc(
       )
       .limit(1);
     const line = rows[0];
-    if (!line) throw new NotFoundError(`GRN line ${grnLineId} not found`);
+    if (!line) throw new NotFoundError('GRN line not found. Refresh the page.');
 
     // ADR-182 — an OSP return belonging to a short-closed Production Order's
     // Job Card cannot be inspected. A plain purchase GRN resolves to no jc_op
@@ -559,13 +561,13 @@ export async function submitIncomingQc(
     const remaining = line.receivedQty - priorAccepted - priorRejected;
     if (remaining <= 0) {
       throw new ConflictError(
-        'This item is already fully inspected — create a reversing GRN line to change it.',
+        'QC is already Completed for this GRN line. It can no longer be changed.',
       );
     }
     const thisTotal = input.acceptedQty + input.rejectedQty;
     if (thisTotal > remaining) {
       throw new ValidationError(
-        `Accept + reject (${thisTotal}) exceeds the remaining qty (${remaining}).`,
+        `Accepted + Rejected (${thisTotal}) cannot be more than QC Pending Qty (${remaining}).`,
       );
     }
 
@@ -740,8 +742,8 @@ export async function submitIncomingQc(
       {
         action: 'EDIT',
         entity: 'GoodsReceiptNote',
-        detail: `Incoming QC — ${input.acceptedQty} accepted, ${input.rejectedQty} rejected`,
-        refId: line.grnId,
+        detail: `${line.grnCode} Row #${line.lineNo} — Incoming QC: Accepted ${input.acceptedQty}, Rejected ${input.rejectedQty}`,
+        refId: line.grnCode,
       },
       companyId,
       user,

@@ -239,7 +239,7 @@ export async function updateCapa(
         ),
       )
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`CAPA ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('CAPA not found. Refresh the page.');
 
     // Only set provided fields; '' clears a date.
     const patch: Partial<typeof capaRecords.$inferInsert> = {

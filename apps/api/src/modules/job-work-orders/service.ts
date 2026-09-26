@@ -77,7 +77,7 @@ async function assertClientExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Client ${clientId} not found in this company`);
+    throw new ValidationError('Selected Customer was not found. Please select the Customer again.');
   }
   return rows[0]!.name;
 }
@@ -155,9 +155,7 @@ async function assertItemIdsExist(
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = unique.filter((id) => !found.has(id));
-    throw new ValidationError(`Item id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('Item not found. Please select the Item Code again.');
   }
 }
 
@@ -170,7 +168,7 @@ function resolveLineItemRefs(
   }
   const code = line.itemCodeText?.trim();
   if (!code) {
-    throw new ValidationError('itemId or itemCodeText is required');
+    throw new ValidationError('Item Code is required.');
   }
   const found = resolved.get(code);
   return found ? { itemId: found, itemCodeText: null } : { itemId: null, itemCodeText: code };
@@ -179,7 +177,7 @@ function resolveLineItemRefs(
 function assignLineNos(lines: JobWorkOrderLineInput[], startFrom: number): number[] {
   const provided = lines.filter((l) => l.lineNo !== undefined);
   if (provided.length > 0 && provided.length !== lines.length) {
-    throw new ValidationError('Provide lineNo on every line or none');
+    throw new ValidationError('Ln is required on every row, or leave all blank.');
   }
   if (provided.length === 0) {
     return lines.map((_, i) => startFrom + i);
@@ -189,7 +187,7 @@ function assignLineNos(lines: JobWorkOrderLineInput[], startFrom: number): numbe
   for (const l of lines) {
     const n = l.lineNo!;
     if (seen.has(n)) {
-      throw new ValidationError(`Duplicate lineNo ${n} within input`);
+      throw new ValidationError(`Ln ${n} is used twice. Each row needs its own Ln.`);
     }
     seen.add(n);
     out.push(n);
@@ -401,7 +399,7 @@ export async function getJobWorkOrder(id: string, user: AuthContext): Promise<Jo
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Job work order ${id} not found`);
+    if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
     const lineRows = await tx
       .select()
@@ -467,7 +465,7 @@ export async function getJobWorkOrderRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Job work order ${id} not found`);
+    if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
     // JW lines drive the job-card / plan joins and the upstream item link.
     const lineRows = await tx
@@ -753,7 +751,7 @@ export async function createJobWorkOrder(
         )
         .limit(1);
       if (dup.length > 0) {
-        throw new ConflictError(`Job work order code "${code}" already exists`);
+        throw new ConflictError(`JWSO No. "${code}" already exists.`);
       }
 
       // Client master link is enforced by the create schema (route boundary).
@@ -903,7 +901,7 @@ export async function updateJobWorkOrder(
       )
       .limit(1);
     const existingHdr = existingHdrRows[0];
-    if (!existingHdr) throw new NotFoundError(`Job work order ${id} not found`);
+    if (!existingHdr) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;
@@ -1156,7 +1154,7 @@ export async function softDeleteJobWorkOrder(id: string, user: AuthContext): Pro
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`Job work order ${id} not found`);
+      throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
     }
     const now = new Date();
     await tx

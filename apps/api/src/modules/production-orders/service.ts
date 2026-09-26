@@ -84,6 +84,7 @@ import { closeBlockedReason } from '../../lib/production-order-close-guard';
 import { planCoverage, productionOrderCapError } from '../../lib/production-order-cap';
 import { readPlanOrderCoverage } from '../../lib/plan-order-coverage';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { labelOf, PLAN_STATUS_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { buildJobCardFromOps, type JcBuildOp } from '../plans/service';
 import type {
@@ -587,7 +588,7 @@ async function readDetailInTx(
     )
     .limit(1);
   const row = rows[0];
-  if (!row) throw new NotFoundError(`Production Order ${id} not found`);
+  if (!row) throw new NotFoundError('Production Order not found. Refresh the page.');
   const item = toListItem(row as PoRow);
   const [settled, closes] = await Promise.all([
     readJcSettledWithLosses(tx, item),
@@ -692,7 +693,9 @@ export async function createProductionOrder(
   // ADR-182 — no material, no order. Checked before anything is read or
   // written, and worded exactly as the screen words it.
   if (input.rawMaterialAvailable !== true) {
-    throw new ValidationError('No raw material — you cannot create the production order.');
+    throw new ValidationError(
+      'Raw Material is required. Set it on the Route Card, then save the Production Order.',
+    );
   }
   const actualSize = input.actualSize?.trim() ? input.actualSize.trim() : null;
 
@@ -715,7 +718,7 @@ export async function createProductionOrder(
         .limit(1)
         .for('update');
       const plan = planRows[0];
-      if (!plan) throw new NotFoundError(`Plan ${input.planId} not found`);
+      if (!plan) throw new NotFoundError('Plan not found. Refresh the page.');
 
       if (plan.opsSource !== 'route_card') {
         throw new ValidationError(
@@ -748,7 +751,7 @@ export async function createProductionOrder(
 
       if (plan.planStatus !== 'planned') {
         throw new ValidationError(
-          `Plan ${plan.code} is '${plan.planStatus}' — only a planned plan can be turned into a Production Order`,
+          `Plan ${plan.code} is ${labelOf(PLAN_STATUS_LABEL, plan.planStatus)}. Only a Planned plan can make a Production Order.`,
         );
       }
 
@@ -796,13 +799,13 @@ export async function createProductionOrder(
           .limit(1);
         if (!anyForItem[0]) {
           throw new ValidationError(
-            `No route card for this item — create it in Item Master first (${itemLabel})`,
+            `No Route Card for this item — create it in Item Master first (${itemLabel}).`,
           );
         }
-        throw new NotFoundError(`Route card ${input.routeCardId} not found or no longer active`);
+        throw new NotFoundError('Route Card not found or no longer active. Pick it again.');
       }
       if (rc.itemId !== itemId) {
-        throw new ValidationError(`Route card ${rc.code} is not for item ${itemLabel}`);
+        throw new ValidationError(`Route Card ${rc.code} is not for item ${itemLabel}.`);
       }
 
       const rcOps = await tx
@@ -812,7 +815,7 @@ export async function createProductionOrder(
         .orderBy(asc(routeCardOps.opSeq));
       if (rcOps.length === 0) {
         throw new ValidationError(
-          `Route card ${rc.code} has no operations — add them in Item Master first`,
+          `Route Card ${rc.code} has no operations — add them in Item Master first.`,
         );
       }
       // Same routing rule Execute applies to a plan's ops: a QC op may not sit
@@ -833,7 +836,7 @@ export async function createProductionOrder(
         // Order should do for it is still the user's call; until then the branch
         // refuses in plain words rather than building a Job Card with no work.
         throw new ValidationError(
-          'Direct-purchase items are bought, not produced — this route card cannot raise a Production Order yet',
+          'Direct Purchase items are bought, not produced — this Route Card cannot raise a Production Order yet.',
         );
       }
       if (rc.planType === 'full_outsource' && !rcOps.some((op) => op.opType === 'outsource')) {
@@ -841,7 +844,9 @@ export async function createProductionOrder(
         // the IN-JWPR for each outsource op and adds no terminal QC, since the
         // OSP return is inspected at Incoming QC) — but only if there IS an
         // outsource op to raise it for.
-        throw new ValidationError('Full-outsource route card must have an outsource operation');
+        throw new ValidationError(
+          'This Route Card is Full Outsource but has no OSP operation. Add one.',
+        );
       }
 
       // route_card_ops → the builder's op shape. Same field mapping as
@@ -1117,7 +1122,7 @@ export async function closeProductionOrder(
       )
       .limit(1)
       .for('update');
-    if (!locked[0]) throw new NotFoundError(`Production Order ${id} not found`);
+    if (!locked[0]) throw new NotFoundError('Production Order not found. Refresh the page.');
     // ADR-182 — a short-closed order is dead. Refused before anything is read
     // or written, in the same words every other stopped-order refusal uses.
     await assertProductionOrderNotShortClosed(tx, locked[0].jobCardId);
@@ -1154,7 +1159,7 @@ export async function closeProductionOrder(
       // otherwise pieces still to come would be wrongly written off as lost.
       if (!jcDone) {
         throw new ValidationError(
-          `Cannot finish Production Order ${current.code} — Job Card ${current.jcCodeText} is not complete yet (${st}). Close finished pieces as they clear, or wait until the order is done.`,
+          `Cannot Finish Short ${current.code} — JC No. ${current.jcCodeText} is not Completed yet.`,
         );
       }
       // Finish credits ALL finished pieces now; only the never-made remainder is
@@ -1166,14 +1171,14 @@ export async function closeProductionOrder(
       // Does NOT require the JC to be complete.
       if (available <= 0) {
         throw new ValidationError(
-          `No finished pieces available to close for Production Order ${current.code} — Job Card ${current.jcCodeText} has finished ${snap.finishedQty}, all credited. Close more as its operations clear.`,
+          `All ${snap.finishedQty} Completed pieces on JC No. ${current.jcCodeText} are already closed.`,
         );
       }
       creditNow = input.qty === undefined ? available : input.qty;
     }
     if (creditNow > available) {
       throw new ValidationError(
-        `Cannot close ${creditNow} — only ${available} finished piece(s) are available (JC ${current.jcCodeText} finished ${snap.finishedQty}, ${alreadyCredited} already credited).`,
+        `Close Qty (${creditNow}) cannot be more than Pending (${available}).`,
       );
     }
 
@@ -1204,7 +1209,7 @@ export async function closeProductionOrder(
         txnType: 'in',
         qty: creditNow,
         sourceRef: `${current.code}#${seq}`,
-        remarks: `Production Order ${current.code} close #${seq} — JC ${current.jcCodeText} credited ${creditNow} (${newCredited} of ${current.orderQty})`,
+        remarks: `Production Order ${current.code} close #${seq} — JC ${current.jcCodeText} closed ${creditNow} (${newCredited} of ${current.orderQty})`,
         userId: user.id,
       });
       const closeRows = await tx
@@ -1270,8 +1275,8 @@ export async function closeProductionOrder(
         action: 'CLOSE',
         entity: 'Production Order',
         detail: input.finish
-          ? `${current.code} finished — JC ${current.jcCodeText} credited ${creditNow} (${newCredited} of ${current.orderQty}), ${lostQty ?? 0} lost`
-          : `${current.code} ${finalStatus === 'closed' ? 'closed' : 'partial close'} — JC ${current.jcCodeText} credited ${creditNow} (${newCredited} of ${current.orderQty})`,
+          ? `${current.code} Finish Short — JC ${current.jcCodeText} closed ${creditNow} (${newCredited} of ${current.orderQty}), ${lostQty ?? 0} lost`
+          : `${current.code} ${finalStatus === 'closed' ? 'Closed' : 'Partly Closed'} — JC ${current.jcCodeText} closed ${creditNow} (${newCredited} of ${current.orderQty})`,
         refId: current.code,
       },
       companyId,
@@ -1333,7 +1338,7 @@ export async function reverseProductionOrderClose(
       .limit(1)
       .for('update');
     const po = locked[0];
-    if (!po) throw new NotFoundError(`Production Order ${id} not found`);
+    if (!po) throw new NotFoundError('Production Order not found. Refresh the page.');
     // ADR-182 — nothing may be undone on a stopped order either: its credited
     // pieces stay credited exactly as they were when it was short closed.
     await assertProductionOrderNotShortClosed(tx, po.jobCardId);
@@ -1357,8 +1362,7 @@ export async function reverseProductionOrderClose(
       )
       .limit(1);
     const close = closeRows[0];
-    if (!close)
-      throw new NotFoundError(`Close ${input.closeId} not found on this Production Order`);
+    if (!close) throw new NotFoundError('That close entry was not found. Refresh the page.');
     if (close.isReversal) throw new ValidationError('That entry is itself a reversal.');
     const priorReversal = await tx
       .select({ id: productionOrderCloses.id })
@@ -1465,7 +1469,7 @@ export async function reverseProductionOrderClose(
         action: 'REVERSE',
         entity: 'Production Order',
         detail:
-          `${po.code} — reversed close of ${close.qty} (now ${newCredited} of ${po.orderQty} credited)` +
+          `${po.code} — reversed close of ${close.qty} (now ${newCredited} of ${po.orderQty} closed)` +
           (unbooked > 0 ? `, ${unbooked} reservation released` : ''),
         refId: po.code,
       },
@@ -1518,7 +1522,7 @@ export async function shortCloseProductionOrder(
   const companyId = requireCompany(user);
 
   const reason = input.reason.trim();
-  if (!reason) throw new ValidationError('Say why the order is being short closed');
+  if (!reason) throw new ValidationError('Short Close Reason is required.');
 
   return withUserContext(user, async (tx) => {
     // Lock the order so a short close and a concurrent close cannot both win.
@@ -1545,7 +1549,7 @@ export async function shortCloseProductionOrder(
       .limit(1)
       .for('update');
     const po = locked[0];
-    if (!po) throw new NotFoundError(`Production Order ${id} not found`);
+    if (!po) throw new NotFoundError('Production Order not found. Refresh the page.');
     if (po.status === 'short_closed') {
       throw new ConflictError(`Production Order ${po.code} is already short closed`);
     }
@@ -1617,8 +1621,8 @@ export async function shortCloseProductionOrder(
         action: 'SHORT_CLOSE',
         entity: 'Production Order',
         detail:
-          `${po.code} short closed — JC ${po.jcCodeText} stopped at ${credited} of ${po.orderQty} ` +
-          `credited; ${Math.max(0, po.orderQty - credited)} returned to plan ${po.planCodeText}` +
+          `${po.code} Short Closed — JC ${po.jcCodeText} stopped at ${credited} of ${po.orderQty} ` +
+          `closed; ${Math.max(0, po.orderQty - credited)} returned to plan ${po.planCodeText}` +
           `${planReopened ? ' (plan re-opened for a new Production Order)' : ''}. ${reason}`,
         refId: po.code,
       },

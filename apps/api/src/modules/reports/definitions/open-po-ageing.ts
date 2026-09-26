@@ -11,7 +11,7 @@ export const openPoAgeingReport: RegisteredReport = {
     slug: 'open-po-ageing',
     title: 'Open PO ageing',
     description:
-      'POs not yet closed or cancelled, with `days_open` computed from po_date. Sorted oldest first to surface stuck procurement.',
+      'POs not yet Closed or Cancelled, with Days Open counted from the PO Date. Sorted oldest first to surface stuck procurement.',
     group: 'Procurement',
     filters: [
       {

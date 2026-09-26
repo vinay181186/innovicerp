@@ -123,9 +123,9 @@ export async function getSavedReport(id: string, user: AuthContext): Promise<Sav
       .limit(1);
 
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Saved report ${id} not found`);
+    if (!row) throw new NotFoundError('Saved report not found. Refresh the page.');
     if (row.ownerId !== user.id && !row.isShared && !isManager(user)) {
-      throw new NotFoundError(`Saved report ${id} not found`);
+      throw new NotFoundError('Saved report not found. Refresh the page.');
     }
     return rowToSavedReport(
       row as typeof savedReports.$inferSelect & { ownerEmail: string | null },
@@ -210,7 +210,7 @@ export async function updateSavedReport(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Saved report ${id} not found`);
+    if (!existing) throw new NotFoundError('Saved report not found. Refresh the page.');
     assertCanWrite(existing, user);
 
     const nextSourceKey = input.sourceKey ?? existing.sourceKey;
@@ -278,7 +278,7 @@ export async function softDeleteSavedReport(id: string, user: AuthContext): Prom
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Saved report ${id} not found`);
+    if (!existing) throw new NotFoundError('Saved report not found. Refresh the page.');
     assertCanWrite(existing, user);
 
     await tx

@@ -160,7 +160,7 @@ async function assertItemExists(
     .where(and(eq(items.companyId, companyId), eq(items.id, id), isNull(items.deletedAt)))
     .limit(1);
   const r = rows[0];
-  if (!r) throw new ValidationError(`Item id "${id}" not found`);
+  if (!r) throw new ValidationError('Item not found. Pick the Item Code from Item Master.');
   return { code: r.code, name: r.name };
 }
 
@@ -173,7 +173,9 @@ async function assertMachineIdsExist(
   const unique = Array.from(new Set(ids.filter((x): x is string => Boolean(x))));
   if (lookup.byId.size !== unique.length) {
     const missing = unique.filter((id) => !lookup.byId.has(id));
-    throw new ValidationError(`Machine id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError(
+      `Machine not found on this Route Card (${missing.length} row(s)). Pick it again from the list.`,
+    );
   }
   return lookup;
 }
@@ -187,7 +189,9 @@ async function assertVendorIdsExist(
   const unique = Array.from(new Set(ids.filter((x): x is string => Boolean(x))));
   if (lookup.byId.size !== unique.length) {
     const missing = unique.filter((id) => !lookup.byId.has(id));
-    throw new ValidationError(`Vendor id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError(
+      `Vendor not found on this Route Card (${missing.length} row(s)). Pick it again from the list.`,
+    );
   }
   return lookup;
 }
@@ -381,7 +385,7 @@ async function loadRouteCardDetail(
     )
     .limit(1);
   const header = headers[0];
-  if (!header) throw new NotFoundError(`Route card ${id} not found`);
+  if (!header) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
 
   // Item display
   const itemRows = await tx
@@ -637,7 +641,7 @@ export async function createRouteCard(
       .limit(1);
     if (existing.length > 0) {
       throw new ConflictError(
-        `An active route card already exists for ${item.code} (${existing[0]!.code}). Edit that one to add a revision.`,
+        `An active Route Card already exists for ${item.code} (${existing[0]!.code}). Edit that one to add a revision.`,
       );
     }
 
@@ -655,7 +659,7 @@ export async function createRouteCard(
           ),
         )
         .limit(1);
-      if (dup.length > 0) throw new ConflictError(`Route card code "${code}" already exists`);
+      if (dup.length > 0) throw new ConflictError(`Route Card No. "${code}" already exists`);
     }
 
     const rawMaterial = await resolveRcRawMaterial(tx, companyId, input);
@@ -727,7 +731,7 @@ export async function updateRouteCard(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Route card ${id} not found`);
+    if (!header) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
 
     // Validate item exists (may have changed if user re-pointed).
     const item = await assertItemExists(tx, input.itemId, companyId);
@@ -748,7 +752,7 @@ export async function updateRouteCard(
         .limit(1);
       if (other.length > 0) {
         throw new ConflictError(
-          `Another route card already covers ${item.code} (${other[0]!.code}).`,
+          `Another Route Card already covers ${item.code} (${other[0]!.code}).`,
         );
       }
     }
@@ -767,7 +771,7 @@ export async function updateRouteCard(
           ),
         )
         .limit(1);
-      if (dup.length > 0) throw new ConflictError(`Route card code "${input.code}" already exists`);
+      if (dup.length > 0) throw new ConflictError(`Route Card No. "${input.code}" already exists`);
     }
 
     // Routing rule: a QC op may not sit directly after an OSP op. Same as
@@ -876,7 +880,7 @@ export async function updateRouteCard(
 
 export async function softDeleteRouteCard(id: string, user: AuthContext): Promise<RouteCard> {
   if (user.role !== 'admin') {
-    throw new AuthorizationError(`Role "${user.role}" cannot delete route cards — admin required`);
+    throw new AuthorizationError('You do not have permission to delete Route Cards. Ask an admin.');
   }
   await requireFormAccess(user, 'routecard_create', 'edit');
   await requireFormAccess(user, 'routecard_create', 'approve');
@@ -895,7 +899,7 @@ export async function softDeleteRouteCard(id: string, user: AuthContext): Promis
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Route card ${id} not found`);
+    if (!header) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
 
     // Look up the item for the activity-log label only; downstream
     // JC creation uses route_card_ops snapshots, so no link block.

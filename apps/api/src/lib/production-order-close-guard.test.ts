@@ -71,13 +71,13 @@ describe('closeBlockedReason (ADR-170 + partial close ADR-179)', () => {
         creditedQty: 20,
       }),
     ).toBe(
-      'No finished pieces to close yet for Job Card IN-JC-26-00055 (open) — credit pieces as its operations clear, or finish the order once it is complete',
+      'No Completed pieces to close yet on JC No. IN-JC-26-00055. Try again once its last operation completes pieces.',
     );
   });
 
   it('blocks an in-progress JC with nothing finished yet', () => {
     expect(closeBlockedReason({ ...base, jcFinishedQty: 0 })).toBe(
-      'No finished pieces to close yet for Job Card IN-JC-26-00055 (open) — credit pieces as its operations clear, or finish the order once it is complete',
+      'No Completed pieces to close yet on JC No. IN-JC-26-00055. Try again once its last operation completes pieces.',
     );
   });
 
@@ -101,7 +101,7 @@ describe('closeBlockedReason (ADR-170 + partial close ADR-179)', () => {
 
   it('reads a missing JC row (null status) with nothing finished as no_ops and blocks', () => {
     expect(closeBlockedReason({ ...base, jcComputedStatus: null, jcFinishedQty: 0 })).toBe(
-      'No finished pieces to close yet for Job Card IN-JC-26-00055 (no_ops) — credit pieces as its operations clear, or finish the order once it is complete',
+      'No Completed pieces to close yet on JC No. IN-JC-26-00055. Try again once its last operation completes pieces.',
     );
   });
 });

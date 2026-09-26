@@ -142,7 +142,7 @@ export async function createUser(input: CreateUserInput, user: AuthContext): Pro
 
   let userId: string;
   if (error || !data.user) {
-    const msg = error?.message ?? 'Failed to create the auth account';
+    const msg = error?.message ?? 'Could not create the login. Try again.';
     // Supabase returns 422 with this wording when the email already has a login.
     if (!/already.*regist|already.*been.*regist|already.*exist/i.test(msg)) {
       throw new ValidationError(msg);
@@ -236,7 +236,7 @@ export async function getUser(id: string, user: AuthContext): Promise<User> {
       .where(and(eq(users.id, id), isNull(users.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`User ${id} not found`);
+    if (!row) throw new NotFoundError('User not found. Refresh the page.');
     return row as unknown as User;
   });
 }
@@ -267,9 +267,9 @@ export async function updateUser(
       .from(users)
       .where(and(eq(users.id, id), isNull(users.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`User ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('User not found. Refresh the page.');
     if (existing[0]!.companyId !== user.companyId) {
-      throw new NotFoundError(`User ${id} not found`);
+      throw new NotFoundError('User not found. Refresh the page.');
     }
 
     const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
@@ -308,7 +308,8 @@ export async function setUserPassword(
       .where(and(eq(users.id, id), isNull(users.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row || row.companyId !== user.companyId) throw new NotFoundError(`User ${id} not found`);
+    if (!row || row.companyId !== user.companyId)
+      throw new NotFoundError('User not found. Refresh the page.');
   });
 
   // email_confirm: true so a never-confirmed account becomes login-ready too —
@@ -335,9 +336,9 @@ export async function softDeleteUser(id: string, user: AuthContext): Promise<{ o
       .from(users)
       .where(and(eq(users.id, id), isNull(users.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`User ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('User not found. Refresh the page.');
     if (existing[0]!.companyId !== user.companyId) {
-      throw new NotFoundError(`User ${id} not found`);
+      throw new NotFoundError('User not found. Refresh the page.');
     }
 
     await tx

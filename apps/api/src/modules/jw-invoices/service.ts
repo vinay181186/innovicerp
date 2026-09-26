@@ -99,7 +99,7 @@ export async function createJwInvoice(
       )
       .limit(1);
     const line = lineRows[0];
-    if (!line) throw new NotFoundError(`Job Work Order line ${input.jobWorkOrderLineId} not found`);
+    if (!line) throw new NotFoundError('Selected JWSO line was not found. Please pick it again.');
 
     const jwRows = await tx
       .select({
@@ -112,20 +112,20 @@ export async function createJwInvoice(
       .where(and(eq(jobWorkOrders.id, line.jwId), isNull(jobWorkOrders.deletedAt)))
       .limit(1);
     const jw = jwRows[0];
-    if (!jw) throw new NotFoundError(`Job Work Order ${line.jwId} not found`);
+    if (!jw) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
     // GUARD — bill only what has been returned to the customer, minus already invoiced.
     const billable = line.returnedQty - line.invoicedQty;
     if (input.qty > billable) {
       throw new ConflictError(
-        `Cannot invoice ${input.qty} — only ${Math.max(0, billable)} billable ` +
-          `(returned ${line.returnedQty}, already invoiced ${line.invoicedQty}). ` +
+        `Qty (${input.qty}) cannot be more than To Invoice (${Math.max(0, billable)}) — ` +
+          `Returned ${line.returnedQty}, already Invoiced ${line.invoicedQty}. ` +
           `Return the processed goods to the customer before billing.`,
       );
     }
 
     const rate = input.rate ?? Number(line.rate);
-    if (!(rate >= 0)) throw new ValidationError('Rate must be a non-negative number');
+    if (!(rate >= 0)) throw new ValidationError('Rate cannot be less than 0.');
     const gstPercent = Number(jw.gstPercent);
     const taxable = input.qty * rate;
     const gstAmount = (taxable * gstPercent) / 100;
@@ -154,7 +154,7 @@ export async function createJwInvoice(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to insert JW invoice');
+    if (!row) throw new ValidationError('Could not save JW Invoice. Try again.');
 
     await tx
       .update(jobWorkOrderLines)

@@ -37,6 +37,7 @@ import type {
   UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import {
   bomMasters,
   items,
@@ -87,6 +88,7 @@ import {
 } from '../../lib/plan-order-coverage';
 import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
+import { labelOf, PLAN_STATUS_LABEL, PLAN_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { nextJcCode } from '../job-cards/service';
 import { saveRouteCardForItem } from '../route-cards/service';
@@ -136,7 +138,7 @@ function numericToString(v: number | null | undefined): string | null {
 }
 
 function detail(plan: { code: string; planType: string; itemNameText: string | null }): string {
-  return `${plan.code} — ${plan.itemNameText ?? plan.planType}`;
+  return `${plan.code} — ${plan.itemNameText ?? labelOf(PLAN_TYPE_LABEL, plan.planType)}`;
 }
 
 /** The customer's drawing revision for whichever SO line a plan hangs on.
@@ -358,7 +360,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const row = headers[0];
-    if (!row) throw new NotFoundError(`Plan ${id} not found`);
+    if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     const opRows = await tx
       .select()
@@ -442,9 +444,8 @@ async function assertBomChildQtyWithinRequirement(
   const remaining = required - alreadyPlanned;
   if (planQty > remaining) {
     throw new ValidationError(
-      `Plan qty ${planQty} exceeds remaining ${Math.max(0, remaining)} for BOM part ` +
-        `${bomChildCode} (needs ${required} = ${Number(req.qtyPerSet)} per set x ${req.orderQty} ` +
-        `ordered, already planned ${alreadyPlanned}). Reduce the plan qty.`,
+      `Plan Qty (${planQty}) for ${bomChildCode} cannot be more than Pending to Plan ` +
+        `(${Math.max(0, remaining)}).`,
     );
   }
 }
@@ -519,8 +520,7 @@ async function assertPlanQtyWithinRemaining(
   const remaining = orderQty - alreadyPlanned;
   if (planQty > remaining) {
     throw new ValidationError(
-      `Plan qty ${planQty} exceeds remaining ${Math.max(0, remaining)} for this line ` +
-        `(ordered ${orderQty}, already planned ${alreadyPlanned}). Reduce the plan qty.`,
+      `Plan Qty (${planQty}) cannot be more than Pending to Plan (${Math.max(0, remaining)}).`,
     );
   }
 }
@@ -587,7 +587,7 @@ export async function createPlan(input: CreatePlanInput, user: AuthContext): Pro
       // un-orderable plan.
       if (planType === 'direct_purchase') {
         throw new ValidationError(
-          `Route card for ${input.itemCodeText ?? 'this item'} is marked Direct Purchase (legacy) — ` +
+          `Route Card for ${input.itemCodeText ?? 'this item'} is marked Direct Purchase (legacy) — ` +
             'set the item\'s Source to Buy in Item Master and use "+ PR" on the line instead',
         );
       }
@@ -700,11 +700,11 @@ export async function updatePlan(
       .limit(1)
       .for('update');
     const row = existing[0];
-    if (!row) throw new NotFoundError(`Plan ${id} not found`);
+    if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     if (!EDITABLE_STATUSES.includes(row.planStatus)) {
       throw new ValidationError(
-        `Plan in status '${row.planStatus}' cannot be edited (only in_planning / planned)`,
+        `Plan ${row.code} is ${labelOf(PLAN_STATUS_LABEL, row.planStatus)}. Only In Planning or Planned plans can be edited.`,
       );
     }
 
@@ -894,7 +894,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const row = existing[0];
-    if (!row) throw new NotFoundError(`Plan ${id} not found`);
+    if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     if (row.planStatus === 'planned') {
       // Idempotent: caller sent finalize again on an already-planned row.
@@ -902,7 +902,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
     }
     if (row.planStatus !== 'in_planning') {
       throw new ValidationError(
-        `Plan in status '${row.planStatus}' cannot be finalized (must be in_planning)`,
+        `Only an In Planning plan can be marked Planned. This one is ${labelOf(PLAN_STATUS_LABEL, row.planStatus)}.`,
       );
     }
 
@@ -920,9 +920,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
         .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
       const ops = opCheck[0]?.c ?? 0;
       if (Number(ops) === 0) {
-        throw new ValidationError(
-          `${row.planType} plan requires at least 1 operation to be finalized`,
-        );
+        throw new ValidationError('Add at least one operation before marking the plan Planned.');
       }
     }
 
@@ -936,7 +934,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
       {
         action: 'PLAN_FINALIZED',
         entity: 'Plan',
-        detail: `${row.code} — ${row.planType} marked Planned`,
+        detail: `${row.code} — ${labelOf(PLAN_TYPE_LABEL, row.planType)} marked Planned`,
         refId: row.code,
       },
       companyId,
@@ -967,11 +965,11 @@ export async function softDeletePlan(id: string, user: AuthContext): Promise<{ o
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const row = existing[0];
-    if (!row) throw new NotFoundError(`Plan ${id} not found`);
+    if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     if (!EDITABLE_STATUSES.includes(row.planStatus)) {
       throw new ConflictError(
-        `Plan in status '${row.planStatus}' cannot be deleted — cancel via the workflow instead`,
+        `Plan ${row.code} is ${labelOf(PLAN_STATUS_LABEL, row.planStatus)}. Only In Planning or Planned plans can be deleted.`,
       );
     }
 
@@ -1135,7 +1133,7 @@ export async function executePlan(id: string, user: AuthContext): Promise<Execut
       .limit(1)
       .for('update');
     const plan = existing[0];
-    if (!plan) throw new NotFoundError(`Plan ${id} not found`);
+    if (!plan) throw new NotFoundError('Plan not found. It may have been deleted.');
     // ADR-170 — a route-card-driven plan is never executed here: its Job Card
     // is built by a Production Order, which is where the Route Card and the
     // target date are chosen.
@@ -1146,7 +1144,7 @@ export async function executePlan(id: string, user: AuthContext): Promise<Execut
     }
     if (plan.planStatus !== 'planned') {
       throw new ValidationError(
-        `Plan in status '${plan.planStatus}' cannot be executed (must be planned)`,
+        `Only a Planned plan can create a JC / PR. This one is ${labelOf(PLAN_STATUS_LABEL, plan.planStatus)}.`,
       );
     }
 
@@ -1451,16 +1449,14 @@ async function executeManufacture(
     .where(and(eq(planOps.planId, plan.id), isNull(planOps.deletedAt)))
     .orderBy(asc(planOps.opSeq));
   if (ops.length === 0) {
-    throw new ValidationError(`${plan.planType} plan cannot be executed with zero operations`);
+    throw new ValidationError('Add at least one operation before running this plan.');
   }
   // Routing rule: a QC op may not sit directly after an OSP op. A plan-born JC
   // is never a rework/repair child, so no exemption. Checked on the plan's own
   // ops (already ordered by op_seq), before the terminal QC op is appended.
   assertNoQcDirectlyAfterOutsource(ops);
   if (!plan.itemId) {
-    throw new ValidationError(
-      `${plan.planType} plan requires a resolved itemId to create a JC (item_code_text alone is not enough)`,
-    );
+    throw new ValidationError('Please select the Item Code from Item Master first.');
   }
   const itemId = plan.itemId;
 
@@ -1528,8 +1524,8 @@ async function executeManufacture(
       entity: 'Plan',
       detail:
         raisedPrCodes.length > 0
-          ? `${plan.code} → JC ${jc.code} (${plan.planType}, ${ops.length} ops) + OSP PR ${raisedPrCodes.join(', ')}`
-          : `${plan.code} → JC ${jc.code} (${plan.planType}, ${ops.length} ops)`,
+          ? `${plan.code} → JC ${jc.code} (${labelOf(PLAN_TYPE_LABEL, plan.planType)}, ${ops.length} operations) + OSP PR ${raisedPrCodes.join(', ')}`
+          : `${plan.code} → JC ${jc.code} (${labelOf(PLAN_TYPE_LABEL, plan.planType)}, ${ops.length} operations)`,
       refId: plan.code,
     },
     plan.companyId,
@@ -1548,7 +1544,7 @@ async function executeDirectPurchase(
   user: AuthContext,
 ): Promise<ExecutePlanResult> {
   if (!plan.dpVendorId && !plan.dpVendorCodeText) {
-    throw new ValidationError('direct_purchase plan requires a vendor before execute');
+    throw new ValidationError('Vendor is required for a Direct Purchase plan.');
   }
   const today = new Date().toISOString().slice(0, 10);
   const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
@@ -1589,7 +1585,7 @@ async function executeDirectPurchase(
     {
       action: 'PLAN_EXECUTED',
       entity: 'Plan',
-      detail: `${plan.code} → PR ${pr.code} (direct_purchase)`,
+      detail: `${plan.code} → PR ${pr.code} (Direct Purchase)`,
       refId: plan.code,
     },
     plan.companyId,
@@ -1608,10 +1604,10 @@ async function executeFullOutsource(
   user: AuthContext,
 ): Promise<ExecutePlanResult> {
   if (!plan.foVendorId && !plan.foVendorCodeText) {
-    throw new ValidationError('full_outsource plan requires a vendor before execute');
+    throw new ValidationError('Vendor is required for a Full Outsource plan.');
   }
   if (!plan.foProcess) {
-    throw new ValidationError('full_outsource plan requires a process description before execute');
+    throw new ValidationError('Process is required for a Full Outsource plan.');
   }
   const today = new Date().toISOString().slice(0, 10);
 
@@ -1736,7 +1732,7 @@ async function executeFullOutsource(
     {
       action: 'PLAN_EXECUTED',
       entity: 'Plan',
-      detail: `${plan.code} → ${jc ? `JC ${jc.code} + ` : ''}PR ${jwPr.code} (full_outsource)`,
+      detail: `${plan.code} → ${jc ? `JC ${jc.code} + ` : ''}PR ${jwPr.code} (Full Outsource)`,
       refId: plan.code,
     },
     plan.companyId,
@@ -1951,9 +1947,11 @@ async function insertOps(
   user: AuthContext,
 ): Promise<void> {
   const seen = new Set<number>();
-  for (const op of ops) {
+  for (const [i, op] of ops.entries()) {
     if (seen.has(op.opSeq)) {
-      throw new ValidationError(`Duplicate op_seq ${op.opSeq} within plan ops`);
+      throw new ValidationError(
+        `Row #${i + 1}: Op ${opSrNo(op.opSeq)} is used twice. Each Op number must be unique.`,
+      );
     }
     seen.add(op.opSeq);
   }
@@ -2011,7 +2009,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     .where(and(eq(plans.id, id), eq(plans.companyId, companyId)))
     .limit(1);
   const row = headers[0];
-  if (!row) throw new NotFoundError(`Plan ${id} not found after write`);
+  if (!row) throw new NotFoundError('Plan not found. Refresh the page.');
   const opRows = await tx
     .select()
     .from(planOps)
@@ -2166,7 +2164,7 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Plan ${id} not found`);
+    if (!header) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     const row = (
       id_: string,
@@ -2431,7 +2429,7 @@ export async function reserveStock(
         entity: 'Reservation',
         detail:
           `${input.soCodeText} L${input.lineNo} — reserved ${input.qty} of ${itemCode ?? 'item'} ` +
-          `(available ${created.position.availableQty} left, physical unchanged at ${created.position.physicalQty})`,
+          `(available ${created.position.availableQty}, physical unchanged at ${created.position.physicalQty})`,
         refId: input.soCodeText,
       },
       companyId,

@@ -11,7 +11,7 @@ export const soOpenBacklogReport: RegisteredReport = {
     slug: 'so-open-backlog',
     title: 'SO open backlog',
     description:
-      'Open SO lines with pending qty (order_qty - completed JC qty) and line value. Filter by SO type or due-date window; sorted by due date ascending.',
+      'Open SO lines with Pending qty (Order Qty minus Completed JC qty) and line value. Filter by SO type or Due Date window; sorted by Due Date ascending.',
     group: 'Sales',
     filters: [
       { key: 'fromDueDate', label: 'Due Date From', kind: 'date' },

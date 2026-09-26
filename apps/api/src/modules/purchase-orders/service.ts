@@ -76,6 +76,19 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
+// Screen words for PO status codes, for error text only (matches the web's
+// po-labels.ts). Unknown codes fall back to Title Case.
+const PO_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  open: 'Open',
+  partial: 'Partly Received',
+  qc_pending: 'QC Pending',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
+};
+const poStatusLabel = (status: string): string =>
+  PO_STATUS_LABEL[status] ?? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 function poDetail(code: string, vendorCodeText: string | null | undefined): string {
   return vendorCodeText ? `${code} — ${vendorCodeText}` : code;
 }
@@ -110,12 +123,12 @@ function assertPrCanTakeAnotherPo(
 ): void {
   if (balance.balanceClosed) {
     throw new ConflictError(
-      `PR ${pr.code} has had its remaining balance closed — nothing further can be ordered against it`,
+      `PR ${pr.code} is Short Closed. Nothing more can be ordered against it.`,
     );
   }
   if (balance.balanceQty <= 0) {
     throw new ConflictError(
-      `PR ${pr.code} has nothing left to order (${balance.orderedQty} of ${pr.qty} already on a purchase order)`,
+      `PR ${pr.code} has no Pending Qty (${balance.orderedQty} of ${pr.qty} already on a PO).`,
     );
   }
 }
@@ -131,9 +144,9 @@ function assertPrQtyWithinBalance(
   lineCount: number,
 ): void {
   if (askedQty > balanceQty) {
-    const asks = lineCount > 1 ? `these ${lineCount} lines ask` : 'this line asks';
+    const onLines = lineCount > 1 ? ` (across ${lineCount} lines)` : '';
     throw new ValidationError(
-      `PR ${pr.code} has ${balanceQty} left to order; ${asks} for ${askedQty}.`,
+      `Qty (${askedQty})${onLines} cannot be more than Pending Qty (${balanceQty}) on PR ${pr.code}.`,
     );
   }
 }
@@ -210,7 +223,8 @@ async function assertLinesWithinPrBalances(
     );
   const prById = new Map(prRows.map((r) => [r.id, r]));
   for (const prId of prIds) {
-    if (!prById.has(prId)) throw new NotFoundError(`Purchase request ${prId} not found`);
+    if (!prById.has(prId))
+      throw new NotFoundError('PR not found. It may have been moved to Trash.');
   }
 
   // What THIS purchase order already contributes to each PR's ordered quantity.
@@ -238,7 +252,7 @@ async function assertLinesWithinPrBalances(
   const balances = await loadPrBalances(tx, prRows);
   for (const pr of prRows) {
     if (pr.status === 'cancelled') {
-      throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
+      throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
     }
     const balance = balances.get(pr.id)!;
     const mine = mineByPr.get(pr.id) ?? 0;
@@ -271,7 +285,7 @@ async function assertVendorExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Vendor ${vendorId} not found in this company`);
+    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
   }
 }
 
@@ -287,9 +301,7 @@ async function assertItemIdsExist(
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = unique.filter((id) => !found.has(id));
-    throw new ValidationError(`Item id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('Item not found. Please select the Item Code again.');
   }
 }
 
@@ -319,7 +331,7 @@ function resolveLineItemRefs(
   }
   const code = line.itemCodeText?.trim();
   if (!code) {
-    throw new ValidationError('itemId or itemCodeText is required');
+    throw new ValidationError('Item Code is required.');
   }
   const found = resolved.get(code);
   return found ? { itemId: found, itemCodeText: null } : { itemId: null, itemCodeText: code };
@@ -328,7 +340,7 @@ function resolveLineItemRefs(
 function assignLineNos(lines: PurchaseOrderLineInput[], startFrom: number): number[] {
   const provided = lines.filter((l) => l.lineNo !== undefined);
   if (provided.length > 0 && provided.length !== lines.length) {
-    throw new ValidationError('Provide lineNo on every line or none');
+    throw new ValidationError('Ln is required on every row, or leave all blank.');
   }
   if (provided.length === 0) {
     return lines.map((_, i) => startFrom + i);
@@ -338,7 +350,7 @@ function assignLineNos(lines: PurchaseOrderLineInput[], startFrom: number): numb
   for (const l of lines) {
     const n = l.lineNo!;
     if (seen.has(n)) {
-      throw new ValidationError(`Duplicate lineNo ${n} within input`);
+      throw new ValidationError(`Ln ${n} is used twice. Each row needs its own Ln.`);
     }
     seen.add(n);
     out.push(n);
@@ -660,7 +672,7 @@ export async function getPurchaseOrder(
       )
       .limit(1);
     const headerRow = headerRows[0];
-    if (!headerRow) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!headerRow) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
     const lineRows = await tx
       .select({
@@ -985,9 +997,9 @@ export async function createPurchaseOrder(
       const prById = new Map(prRows.map((r) => [r.id, r]));
       for (const prId of distinctPrIds) {
         const pr = prById.get(prId);
-        if (!pr) throw new NotFoundError(`Purchase request ${prId} not found`);
+        if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
         if (pr.status === 'cancelled') {
-          throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
+          throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
         }
         sourcePrs.push(pr);
       }
@@ -1507,7 +1519,7 @@ export async function updatePurchaseOrder(
       )
       .limit(1);
     const existingHdr = existingHdrRows[0];
-    if (!existingHdr) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!existingHdr) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
     // The lines as they stand BEFORE this save. Loaded here, once, because both
     // the goods-movement lock below and the revision check further down compare
@@ -1541,7 +1553,7 @@ export async function updatePurchaseOrder(
     const lockReason = goodsDoc
       ? `already has goods moved against it (${goodsDoc})`
       : existingHdr.status === 'cancelled'
-        ? 'is cancelled'
+        ? 'is Cancelled'
         : null;
     if (lockReason !== null) {
       const h0 = input.header;
@@ -1550,17 +1562,17 @@ export async function updatePurchaseOrder(
         input.lines !== undefined &&
         (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))
       ) {
-        lockedChanges.push('lines / rates');
+        lockedChanges.push('Lines / Rates');
       }
       if (h0.vendorId !== undefined && (h0.vendorId ?? null) !== existingHdr.vendorId) {
-        lockedChanges.push('vendor');
+        lockedChanges.push('Vendor');
       }
       if (h0.poType !== undefined && h0.poType !== existingHdr.poType)
-        lockedChanges.push('PO type');
+        lockedChanges.push('PO Type');
       if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate)
-        lockedChanges.push('PO date');
+        lockedChanges.push('PO Date');
       if (h0.taxType !== undefined && (h0.taxType ?? null) !== existingHdr.taxType) {
-        lockedChanges.push('tax type');
+        lockedChanges.push('Tax Type');
       }
       for (const [label, next, current] of [
         ['SGST %', h0.sgstPct, existingHdr.sgstPct],
@@ -1573,7 +1585,7 @@ export async function updatePurchaseOrder(
         throw new ValidationError(
           `PO ${existingHdr.code} ${lockReason}, so ${lockedChanges.join(', ')} ` +
             `can no longer be changed. Raise a new PO for the difference. ` +
-            `Due date, remarks and the PR reference can still be edited.`,
+            `Due Date, Remarks and PR No. can still be edited.`,
         );
       }
     }
@@ -1844,7 +1856,7 @@ export async function softDeletePurchaseOrder(
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`Purchase order ${id} not found`);
+      throw new NotFoundError('PO not found. It may have been moved to Trash.');
     }
     // G9a: a PO with goods moved against it cannot simply vanish — the
     // challan / receipt would point at nothing. Cancelled challans do not
@@ -1852,7 +1864,7 @@ export async function softDeletePurchaseOrder(
     const liveDoc = await poLiveGoodsDoc(tx, companyId, id);
     if (liveDoc) {
       throw new ConflictError(
-        `PO ${row.code} has goods moved against it (${liveDoc}); cancel that document first`,
+        `Cannot delete PO ${row.code}: goods have moved against it (${liveDoc}). Cancel that document first.`,
       );
     }
     const now = new Date();
@@ -2155,7 +2167,7 @@ async function releaseJcOpsForCancelledPo(
       {
         action: 'UPDATE',
         entity: 'PurchaseRequest',
-        detail: `${pr.code} back to ${backTo} — its only purchase order ${po.code} was cancelled`,
+        detail: `${pr.code} back to ${backTo === 'approved' ? 'Approved' : 'Open'} — PO ${po.code} was cancelled`,
         refId: pr.code,
       },
       companyId,
@@ -2196,9 +2208,9 @@ export async function createPurchaseOrderFromPr(
       )
       .limit(1);
     const pr = prRows[0];
-    if (!pr) throw new NotFoundError(`Purchase request ${input.prId} not found`);
+    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     if (pr.status === 'cancelled') {
-      throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
+      throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
     }
     // Quantity, not a boolean (ADR-152 phase 2): a PR is convertible for as
     // long as it has balance left, so a PR for 100 already covered for 10 can
@@ -2263,7 +2275,7 @@ export async function createPurchaseOrderFromPr(
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Purchase order code "${code}" already exists`);
+      throw new ConflictError(`PO No. "${code}" already exists.`);
     }
 
     // Stored totals from the single PR-derived line (qty × est cost) + header tax.
@@ -2503,7 +2515,7 @@ async function getPurchaseOrderInternal(
     )
     .limit(1);
   const row = rows[0];
-  if (!row) throw new NotFoundError(`Purchase order ${id} not found`);
+  if (!row) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
   const lineRows = await tx
     .select({ row: purchaseOrderLines, sourcePrCode: purchaseRequests.code })
@@ -2547,7 +2559,7 @@ export async function approvePurchaseOrder(
     );
     if (!isApprover) {
       throw new AuthorizationError(
-        'You are not authorized to approve POs. Ask an admin to add you to the approvers list.',
+        'You do not have permission to approve POs. Ask an admin to add you to the approvers list.',
       );
     }
 
@@ -2563,9 +2575,11 @@ export async function approvePurchaseOrder(
       )
       .limit(1);
     const po = existing[0];
-    if (!po) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!po) throw new NotFoundError('PO not found. It may have been moved to Trash.');
     if (po.status !== 'draft') {
-      throw new ValidationError(`PO ${po.code} is ${po.status}; only draft POs can be approved`);
+      throw new ValidationError(
+        `Cannot approve PO ${po.code}: it is ${poStatusLabel(po.status)}. Only Draft POs can be approved.`,
+      );
     }
 
     // Segregation of duty (0100): the raiser cannot sign off their own PO.
@@ -2600,7 +2614,10 @@ export async function approvePurchaseOrder(
         action: 'APPROVE',
         entity: 'Purchase Order',
         detail:
-          po.code + ' approved by ' + (user.email ?? user.id) + (remarks ? ' — ' + remarks : ''),
+          po.code +
+          ' approved by ' +
+          (user.fullName || user.email) +
+          (remarks ? ' — ' + remarks : ''),
         refId: po.code,
       },
       companyId,
@@ -2622,13 +2639,13 @@ export async function rejectPurchaseOrder(
   const companyId = requireCompany(user);
 
   if (!reason || !reason.trim()) {
-    throw new ValidationError('Rejection reason is required');
+    throw new ValidationError('Reason is required to Reject.');
   }
 
   return withUserContext(user, async (tx) => {
     const { isApprover } = await loadApprovalContext(tx, companyId, user.id, user.role);
     if (!isApprover) {
-      throw new AuthorizationError('You are not authorized to reject POs.');
+      throw new AuthorizationError('You do not have permission to reject POs. Ask an admin.');
     }
 
     const existing = await tx
@@ -2643,9 +2660,11 @@ export async function rejectPurchaseOrder(
       )
       .limit(1);
     const po = existing[0];
-    if (!po) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!po) throw new NotFoundError('PO not found. It may have been moved to Trash.');
     if (po.status !== 'draft') {
-      throw new ValidationError(`PO ${po.code} is ${po.status}; only draft POs can be rejected`);
+      throw new ValidationError(
+        `Cannot reject PO ${po.code}: it is ${poStatusLabel(po.status)}. Only Draft POs can be rejected.`,
+      );
     }
 
     // Segregation of duty (0100) — the other half of approve. Rejecting is a
@@ -2746,7 +2765,7 @@ export async function createPurchaseOrderFromPrBatch(
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Purchase order code "${code}" already exists`);
+      throw new ConflictError(`PO No. "${code}" already exists.`);
     }
 
     // Load all PRs.
@@ -2761,11 +2780,13 @@ export async function createPurchaseOrderFromPrBatch(
         ),
       );
     if (prRows.length !== input.prIds.length) {
-      throw new NotFoundError('Some PR IDs not found in this company');
+      throw new NotFoundError(
+        'Some selected PRs no longer exist. Refresh the list and select again.',
+      );
     }
     for (const pr of prRows) {
       if (pr.status === 'cancelled') {
-        throw new ConflictError(`PR ${pr.code} is cancelled — cannot convert`);
+        throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
       }
     }
 
@@ -2911,7 +2932,7 @@ export async function createPurchaseOrderFromPrBatch(
       {
         action: 'CREATE',
         entity: 'PurchaseOrder',
-        detail: `${header.code} (JWPO-OSP) — ${sortedPrs.length} lines to ${vendorRow?.name ?? input.vendorId}`,
+        detail: `${header.code} (Job Work PO) — ${sortedPrs.length} lines to ${vendorRow?.name ?? 'Vendor'}`,
         refId: header.code,
       },
       companyId,
@@ -2990,7 +3011,7 @@ export async function getPurchaseOrderRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!header) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
     // Upstream: vendor (source supplier).
     const vendorRows = header.vendorId

@@ -68,9 +68,9 @@ async function moveReturnStock(
   const before = Number(bal[0]?.on_hand ?? 0);
   if (dir === 'out' && qty > before) {
     throw new ConflictError(
-      `Insufficient stock to return${component ? ` ${component.code}` : ''}: ` +
-        `on-hand ${before}, requested ${qty}. ` +
-        `Complete machining + final QC so the parts are booked in before returning them.`,
+      `${component ? `${component.code}: ` : ''}Return Qty (${qty}) cannot be more than ` +
+        `In Stock (${before}). ` +
+        `Complete machining and final QC so the parts are booked in before returning them.`,
     );
   }
   const after = dir === 'out' ? before - qty : before + qty;
@@ -302,7 +302,7 @@ export async function createJwReturnChallan(
       )
       .limit(1);
     const line = lineRows[0];
-    if (!line) throw new NotFoundError(`Job Work Order line ${input.jobWorkOrderLineId} not found`);
+    if (!line) throw new NotFoundError('Selected JWSO line was not found. Please pick it again.');
 
     const jwRows = await tx
       .select({ id: jobWorkOrders.id, code: jobWorkOrders.code, clientId: jobWorkOrders.clientId })
@@ -310,21 +310,21 @@ export async function createJwReturnChallan(
       .where(and(eq(jobWorkOrders.id, line.jwId), isNull(jobWorkOrders.deletedAt)))
       .limit(1);
     const jw = jwRows[0];
-    if (!jw) throw new NotFoundError(`Job Work Order ${line.jwId} not found`);
+    if (!jw) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
     // 2) GUARD — cannot return more than produced (terminal QC-accepted) − already returned
     const produced = await producedForLine(tx, line.id);
     const returnable = produced - line.returnedQty;
     if (input.qty > returnable) {
       throw new ValidationError(
-        `Cannot return ${input.qty} — only ${Math.max(0, returnable)} produced & available ` +
-          `(machined-accepted ${produced}, already returned ${line.returnedQty}). ` +
-          `Complete machining + QC before returning this quantity.`,
+        `Qty (${input.qty}) cannot be more than Available (${Math.max(0, returnable)}) — ` +
+          `Produced ${produced}, already Returned ${line.returnedQty}. ` +
+          `Complete QC first.`,
       );
     }
     if (input.qty > line.orderQty - line.returnedQty) {
       throw new ConflictError(
-        `Return would exceed the ordered qty (${line.orderQty}); already returned ${line.returnedQty}.`,
+        `Qty (${input.qty}) cannot be more than Pending (${line.orderQty - line.returnedQty}) — Order Qty ${line.orderQty}, Returned ${line.returnedQty}.`,
       );
     }
 
@@ -342,7 +342,8 @@ export async function createJwReturnChallan(
           ),
         )
         .limit(1);
-      if (!jcRows[0]) throw new NotFoundError(`Job Card ${input.jobCardId} not found`);
+      if (!jcRows[0])
+        throw new NotFoundError('Selected JC was not found. Please pick the JC No. again.');
       jobCardId = jcRows[0].id;
     }
 
@@ -368,7 +369,7 @@ export async function createJwReturnChallan(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to insert JW return challan');
+    if (!row) throw new ValidationError('Could not save JW Return. Try again.');
 
     // 4b) ADR-106 — take the goods out of own stock. They were booked in by the
     // Job Card's final QC (qc_accept); shipping them back is what removes them.
@@ -472,9 +473,9 @@ export async function cancelJwReturnChallan(
       )
       .limit(1);
     const ret = retRows[0];
-    if (!ret) throw new NotFoundError(`JW return challan ${id} not found`);
+    if (!ret) throw new NotFoundError('JW Return not found. Refresh the page.');
     if (ret.status === 'cancelled') {
-      throw new ConflictError(`JW return challan ${ret.code} is already cancelled`);
+      throw new ConflictError(`JW Return ${ret.code} is already Cancelled.`);
     }
 
     // Lock the JW line before unwinding its returned_qty
@@ -498,7 +499,7 @@ export async function cancelJwReturnChallan(
       )
       .limit(1);
     const line = lineRows[0];
-    if (!line) throw new NotFoundError(`Job Work Order line ${ret.jobWorkOrderLineId} not found`);
+    if (!line) throw new NotFoundError('JWSO line not found. Refresh the page.');
 
     // 0) ADR-106 — the goods never left, so put them back in own stock. Written
     // as a compensating 'in' row rather than deleting the 'out', so the ledger
@@ -540,7 +541,7 @@ export async function cancelJwReturnChallan(
       .where(eq(jwReturnChallans.id, ret.id))
       .returning();
     const row = updated[0];
-    if (!row) throw new ConflictError(`Failed to cancel JW return challan ${ret.code}`);
+    if (!row) throw new ConflictError(`Could not cancel JW Return ${ret.code}. Try again.`);
 
     // 2) DECREMENT the line's returned_qty by the return's qty (clamp at 0)
     const newReturned = Math.max(0, line.returnedQty - ret.qty);

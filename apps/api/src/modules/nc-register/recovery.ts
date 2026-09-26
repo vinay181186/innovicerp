@@ -77,7 +77,7 @@ export function userDisplayName(user: AuthContext): string {
  */
 export function ncCloseBlockedReason(nc: NcGateInput): string | null {
   if (nc.status === 'closed') return null;
-  if (nc.status === 'pending') return 'No disposition chosen';
+  if (nc.status === 'pending') return 'Please select a Disposition first.';
 
   const rejected = Math.round(n(nc.rejectedQty));
   const open = ncOpenQty(nc);
@@ -179,7 +179,7 @@ export async function createRecoveryJobCard(
     )
     .limit(1);
   const parent = parentRows[0];
-  if (!parent) throw new ValidationError(`Origin JC ${nc.jobCardId} not found`);
+  if (!parent) throw new ValidationError('Original Job Card not found. Refresh the page.');
   // ADR-182 — a stopped order spawns no rework / repair child: the pieces it
   // would recover belong to work that has been abandoned.
   await assertProductionOrderNotShortClosed(tx, parent.id);
@@ -220,7 +220,8 @@ export async function createRecoveryJobCard(
     })
     .returning({ id: jobCards.id, code: jobCards.code });
   const child = inserted[0];
-  if (!child) throw new ValidationError(`Failed to create ${label.toLowerCase()} job card`);
+  if (!child)
+    throw new ValidationError(`Could not create the ${label.toLowerCase()} JC. Try again.`);
   await seedRecoveryOps(tx, nc, parent.id, child.id, user);
   return child;
 }
@@ -373,7 +374,7 @@ async function loadNc(tx: DbTransaction, ncId: string, companyId: string): Promi
     )
     .limit(1);
   const nc = rows[0];
-  if (!nc) throw new NotFoundError(`NC ${ncId} not found`);
+  if (!nc) throw new NotFoundError('NC not found. Refresh the page.');
   return nc;
 }
 
@@ -504,7 +505,7 @@ export async function climbRecoveryToAncestors(
         {
           action: 'NC_RECOVERY_QC',
           entity: 'NonConformance',
-          detail: `${nc.code} — recovery climbed from ${viaCode}: +${a} cleared${f ? `, +${f} failed` : ''}`,
+          detail: `${nc.code} — recovery from ${viaCode}: ${a} Accepted${f ? `, ${f} Rejected` : ''}`,
           refId: nc.code,
         },
         companyId,
@@ -582,7 +583,7 @@ export async function onRecoveryJobCardQc(
   if (thisSeq == null || lastSeq == null || thisSeq !== lastSeq) return;
 
   if (!jc.parentNcId) {
-    throw new NotFoundError(`Recovery job card ${jc.code} has no parent NC`);
+    throw new NotFoundError(`Recovery JC ${jc.code} has no NC linked. Refresh the page.`);
   }
   const accepted = Math.max(0, Math.round(args.acceptedQty));
   const rejected = Math.max(0, Math.round(args.rejectedQty));
@@ -611,7 +612,7 @@ export async function onRecoveryJobCardQc(
     {
       action: 'NC_RECOVERY_QC',
       entity: 'NonConformance',
-      detail: `${jc.code} terminal QC: accepted ${accepted}, rejected ${rejected} — accepted climbed to the parent chain`,
+      detail: `${jc.code} Final Inspection: ${accepted} Accepted, ${rejected} Rejected; Accepted returned to the original JC.`,
       refId: jc.code,
     },
     companyId,
@@ -642,9 +643,7 @@ export async function onNcChallanReceived(
 ): Promise<void> {
   const nc = await loadNc(tx, args.ncId, companyId);
   if (nc.deliveryChallanId && nc.deliveryChallanId !== args.deliveryChallanId) {
-    throw new ConflictError(
-      `Challan ${args.deliveryChallanId} is not the return-to-vendor challan on ${nc.code}`,
-    );
+    throw new ConflictError(`This DC is not the return-to-vendor DC for ${nc.code}.`);
   }
   const received = Math.max(0, Math.round(args.receivedQty));
   if (received === 0) return;
@@ -753,9 +752,7 @@ export async function onNcChallanCancelled(
 ): Promise<void> {
   const nc = await loadNc(tx, args.ncId, companyId);
   if (nc.deliveryChallanId !== args.deliveryChallanId) {
-    throw new ConflictError(
-      `Challan ${args.deliveryChallanId} is not the return-to-vendor challan on ${nc.code}`,
-    );
+    throw new ConflictError(`This DC is not the return-to-vendor DC for ${nc.code}.`);
   }
   const alreadyReceived = Math.round(n(nc.rtvReceivedQty));
   if (alreadyReceived > 0) {
@@ -852,7 +849,7 @@ export async function onNcChallanCancelled(
           action: 'PO_RECEIVED_ADJUST',
           entity: 'PurchaseOrderLine',
           detail:
-            `PO line ${before.lineNo} received_qty ${before.receivedQty} → ${after.receivedQty} ` +
+            `PO Ln ${before.lineNo} Received ${before.receivedQty} → ${after.receivedQty} ` +
             `(return-to-vendor challan for ${sent} pcs on ${nc.code} cancelled)`,
           refId: nc.code,
         },
@@ -949,7 +946,7 @@ export async function onNcReplacementQc(
             action: 'PO_RECEIVED_ADJUST',
             entity: 'PurchaseOrderLine',
             detail:
-              `PO line ${before.lineNo} received_qty ${before.receivedQty} → ${after.receivedQty} ` +
+              `PO Ln ${before.lineNo} Received ${before.receivedQty} → ${after.receivedQty} ` +
               `(${accepted} replacement accepted, ${rejected} failed on ${nc.code})`,
             refId: nc.code,
           },
@@ -975,7 +972,7 @@ export async function onNcReplacementQc(
       detail:
         `${nc.code} — ${viaText} Incoming QC: accepted ${accepted}, rejected ${rejected}; ` +
         `cleared ${ledger.cleared}/${Math.round(n(nc.rejectedQty))}, failed ${ledger.failed}` +
-        (ledger.closed ? '; CLOSED' : ''),
+        (ledger.closed ? '; Closed' : ''),
       refId: nc.code,
     },
     companyId,

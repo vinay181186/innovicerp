@@ -11,7 +11,7 @@ export const jcStatusSummaryReport: RegisteredReport = {
     slug: 'jc-status-summary',
     title: 'Job-card status summary',
     description:
-      'Open job cards grouped by computed status (from v_jc_status) with per-item breakdown. Surfaces stuck JCs at a glance.',
+      'Open Job Cards grouped by JC status with a per-item breakdown. Surfaces stuck JCs at a glance.',
     group: 'Operations',
     filters: [],
     columns: [

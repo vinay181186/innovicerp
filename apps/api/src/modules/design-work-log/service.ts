@@ -128,7 +128,7 @@ export async function createDesignWorkLogEntry(
       )
       .limit(1);
     const proj = projRows[0];
-    if (!proj) throw new NotFoundError(`Design project ${input.designProjectId} not found`);
+    if (!proj) throw new NotFoundError('Design Project not found. Refresh the page.');
 
     const inserted = await tx
       .insert(designWorkLog)
@@ -146,7 +146,7 @@ export async function createDesignWorkLogEntry(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to log work');
+    if (!row) throw new ValidationError('Could not log work. Try again.');
     return {
       id: row.id,
       logDate: dateLike(row.logDate),
@@ -182,7 +182,7 @@ export async function deleteDesignWorkLogEntry(id: string, user: AuthContext): P
         ),
       )
       .limit(1);
-    if (!rows[0]) throw new NotFoundError(`Work log entry ${id} not found`);
+    if (!rows[0]) throw new NotFoundError('Work log entry not found. Refresh the page.');
     await tx
       .update(designWorkLog)
       .set({ deletedAt: new Date(), updatedAt: new Date(), updatedBy: userId })

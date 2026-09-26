@@ -10,7 +10,7 @@ export const jcAgeingReport: RegisteredReport = {
     slug: 'jc-ageing',
     title: 'JC ageing',
     description:
-      'Open job cards (computed_status not closed/complete) sorted oldest-first to surface stuck production. `days_open` is CURRENT_DATE - jc_date.',
+      'Open Job Cards (not yet Completed or Closed) sorted oldest-first to surface stuck production. Days Open is today minus the JC Date.',
     group: 'Operations',
     filters: [
       {

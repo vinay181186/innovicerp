@@ -387,7 +387,7 @@ export async function creditGrnQcStock(args: {
     sourceRef: `${grnCode} / ln ${grnLineId.slice(0, 8)}`,
     stockBefore,
     stockAfter,
-    remarks: `GRN QC accept · ${qty} pcs`,
+    remarks: `GRN QC Accepted · ${qty} pcs`,
     createdBy: adminUserId,
   });
 }

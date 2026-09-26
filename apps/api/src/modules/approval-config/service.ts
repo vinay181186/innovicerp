@@ -129,7 +129,7 @@ export async function saveApprovalConfig(
       {
         action: 'CONFIG',
         entity: 'Approval Configuration',
-        detail: `PO approval: ${input.poApproval ? 'ON' : 'OFF'} · limit ₹${input.poManagerLimit} · invoice approval: ${input.invoiceApproval ? 'ON' : 'OFF'} · op-entry edit approval: ${input.opEntryEditApproval ? 'ON' : 'OFF'} · approvers: ${validApproverIds.length}`,
+        detail: `PO Approval: ${input.poApproval ? 'On' : 'Off'} · Limit ₹${input.poManagerLimit} · Invoice Approval: ${input.invoiceApproval ? 'On' : 'Off'} · Op Entry Edit Approval: ${input.opEntryEditApproval ? 'On' : 'Off'} · Approvers: ${validApproverIds.length}`,
         refId: null,
       },
       companyId,
