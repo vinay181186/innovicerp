@@ -188,7 +188,7 @@ export function TopNav(): React.JSX.Element {
                         <Link
                           key={it.to}
                           to={it.to}
-                          search={it.search}
+                          {...(it.search ? { search: it.search } : {})}
                           role="menuitem"
                           className={`tn-link${on ? ' on' : ''}`}
                         >
