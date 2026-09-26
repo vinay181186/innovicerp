@@ -10168,3 +10168,18 @@ grandTotal }` — Σ Order Qty × Rate over every line, GST at the SO's GST %, r
   links, SO totals footer from `totals`, Billed columns on Customer Dispatch, Related panels on
   Customer / Vendor / Item, Assigned To on the QC Call Register, and the BOM's linked-SO-lines
   table.
+
+## ADR-189 Addendum: PO-approved task auto-close removed; PO list by JWSO; Op Log JC id
+
+**Date:** 2026-09-26
+
+- **No auto-close on PO approval.** Every task linked to a PO is raised by hand from the PO
+  screens with the suggested title "Follow up on PO …" — a delivery chase, not an approval
+  request — and nothing on the task (no kind, no system-set title) tells an approval task apart.
+  Approving a PO therefore no longer closes any task. The QC call, GRN and NC hooks stay.
+- **`GET /purchase-orders?jobWorkOrderId=`** returns only job-work / service POs with a line
+  that traces to that JWSO: PO line → JC op (`source_jc_op_id`, or its source PR's
+  `source_jc_op_id`) → job card → `source_jw_line_id` → JWSO line. Used by the JW DC `?jw=`
+  landing to pre-pick the PO.
+- **Op Log rows carry `jobCardId`** beside `jcNo`, so Log No. / JC No. open the job card
+  directly.

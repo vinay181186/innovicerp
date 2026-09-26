@@ -10,7 +10,7 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -453,8 +453,9 @@ function NewOutwardModal({
 }: {
   onClose: () => void;
   /** `?jw=` deep link from a JWSO. An outward DC is keyed by the job-work PO,
-   *  not the JWSO, and the PO list carries no JWSO reference — so the JWSO is
-   *  named here for the storekeeper, who then picks the PO that carries it. */
+   *  not the JWSO, so the PO list is asked for the POs whose lines trace to
+   *  that JWSO (`jobWorkOrderId`, ADR-189 addendum): exactly one is pre-picked,
+   *  several narrow the PO picker to them, none leaves the full picker. */
   forJwId?: string | undefined;
 }): React.JSX.Element {
   const { data: forJw } = useJobWorkOrder(forJwId);
@@ -481,10 +482,26 @@ function NewOutwardModal({
     limit: 200,
     offset: 0,
   });
-  const poData = useMemo(
-    () => ({ items: [...(poDataJw?.items ?? []), ...(poDataSvc?.items ?? [])] }),
-    [poDataJw, poDataSvc],
+  // `?jw=` — the job-work / service POs carrying this JWSO's work.
+  const { data: poDataForJw } = usePurchaseOrdersList(
+    { jobWorkOrderId: forJwId, limit: 200, offset: 0 },
+    { enabled: Boolean(forJwId) },
   );
+  const forJwPos = forJwId ? (poDataForJw?.items ?? null) : null;
+  const poData = useMemo(
+    () =>
+      forJwPos && forJwPos.length > 0
+        ? { items: forJwPos }
+        : { items: [...(poDataJw?.items ?? []), ...(poDataSvc?.items ?? [])] },
+    [forJwPos, poDataJw, poDataSvc],
+  );
+  // Exactly one PO carries the JWSO → pick it (once; the user may change it).
+  const [prePicked, setPrePicked] = useState(false);
+  useEffect(() => {
+    if (prePicked || !forJwPos) return;
+    setPrePicked(true);
+    if (forJwPos.length === 1 && forJwPos[0]) setPoId(forJwPos[0].id);
+  }, [forJwPos, prePicked]);
   const selectedPo = useMemo(() => poData.items.find((p) => p.id === poId) ?? null, [poData, poId]);
 
   const { data: poLines } = useJwDcPoLines(poId ?? undefined);
@@ -568,8 +585,12 @@ function NewOutwardModal({
           }}
         >
           For JWSO <span className="td-code">{forJw.code}</span>
-          {forJw.customerName ? <> · {forJw.customerName}</> : null} — pick the job-work PO that
-          carries this JWSO&apos;s work.
+          {forJw.customerName ? <> · {forJw.customerName}</> : null}
+          {forJwPos && forJwPos.length === 1
+            ? ' — the PO carrying this JWSO’s work is picked below.'
+            : forJwPos && forJwPos.length > 1
+              ? ` — ${forJwPos.length} POs carry this JWSO’s work; pick one below.`
+              : ' — pick the job-work PO that carries this JWSO’s work.'}
         </div>
       ) : null}
       <div className="form-grid" style={{ marginBottom: 14 }}>

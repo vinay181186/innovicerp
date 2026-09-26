@@ -14,11 +14,12 @@ import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
-import { useBomMaster, useDeleteBomMaster } from '../api';
+import { useBomLinkedSoLines, useBomMaster, useDeleteBomMaster } from '../api';
 
 export const bomMasterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -48,6 +49,7 @@ function BomMasterDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'bom_create');
   const del = useDeleteBomMaster();
   const [delError, setDelError] = useState<string | null>(null);
+  const [showLinked, setShowLinked] = useState(false);
   // Legacy _bomViewSnapshot (L8812) — which revision's archived part list is open.
   const [snapshotRev, setSnapshotRev] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -198,9 +200,15 @@ function BomMasterDetailPage(): React.JSX.Element {
               <span className="form-label">Linked SO Lines</span>
               <div>
                 {detail.linkedSoCount > 0 ? (
-                  <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
-                    {detail.linkedSoCount}
-                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ color: 'var(--green2)', fontWeight: 700 }}
+                    title="Show the SO lines built from this BOM"
+                    onClick={() => setShowLinked(true)}
+                  >
+                    {detail.linkedSoCount} — View
+                  </button>
                 ) : (
                   <span className="text3">—</span>
                 )}
@@ -348,6 +356,14 @@ function BomMasterDetailPage(): React.JSX.Element {
 
       <RelatedDocsPanel module="bom-masters" id={detail.id} />
 
+      {showLinked ? (
+        <LinkedSoLinesModal
+          bomId={detail.id}
+          bomNo={detail.bomNo}
+          onClose={() => setShowLinked(false)}
+        />
+      ) : null}
+
       {openSnapshot ? (
         <div
           className="overlay"
@@ -424,6 +440,101 @@ function BomMasterDetailPage(): React.JSX.Element {
           onCancel={() => setConfirmDelete(false)}
         />
       ) : null}
+    </div>
+  );
+}
+
+/** The SO lines whose BOM is this one (ADR-189, GET /bom-masters/:id/linked-so-lines). */
+function LinkedSoLinesModal({
+  bomId,
+  bomNo,
+  onClose,
+}: {
+  bomId: string;
+  bomNo: string;
+  onClose: () => void;
+}): React.JSX.Element {
+  const { data, isLoading, isError } = useBomLinkedSoLines(bomId, true);
+  const lines = data?.lines ?? [];
+  return (
+    <div
+      className="overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="modal modal-lg">
+        <div className="modal-hdr">
+          <span className="modal-title">
+            {bomNo} — Linked SO Lines ({lines.length})
+          </span>
+          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="modal-body">
+          {isLoading ? (
+            <div className="text3" style={{ fontSize: 12 }}>
+              <Loader2 size={13} className="animate-spin" /> Loading…
+            </div>
+          ) : isError ? (
+            <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+              Could not load the linked SO lines. Try again.
+            </div>
+          ) : lines.length === 0 ? (
+            <div className="text3" style={{ fontSize: 12 }}>
+              No SO line is built from this BOM.
+            </div>
+          ) : (
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>SO No.</th>
+                  <th>POL</th>
+                  <th>Item Code</th>
+                  <th>Item Name</th>
+                  <th className="th-num">Order Qty</th>
+                  <th>Line Status</th>
+                  <th>Due Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l) => (
+                  <tr key={l.salesOrderLineId}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <Link
+                        to="/sales-orders/$id"
+                        params={{ id: l.salesOrderId }}
+                        className="td-code"
+                      >
+                        {l.soCode}
+                      </Link>
+                    </td>
+                    <td className="mono">{l.clientPoLineNo ?? '—'}</td>
+                    <td
+                      className="mono fw-700"
+                      style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+                    >
+                      {itemCodeWithRev(l.itemCode, l.itemRevision)}
+                    </td>
+                    <td>{l.itemName ?? '—'}</td>
+                    <td className="td-num mono fw-700">{l.orderQty}</td>
+                    <td>
+                      <StatusBadge kind="so" status={l.lineStatus} />
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(l.dueDate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-primary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

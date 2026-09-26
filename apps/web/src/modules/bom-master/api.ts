@@ -1,6 +1,7 @@
 // TanStack Query hooks for BOM Master (Phase A item 1 / ADR-028).
 
 import type {
+  BomLinkedSoLinesResponse,
   BomMaster,
   BomMasterDetail,
   CreateBomMasterInput,
@@ -18,6 +19,7 @@ export const bomMastersKeys = {
   details: () => [...bomMastersKeys.all, 'detail'] as const,
   detail: (id: string) => [...bomMastersKeys.details(), id] as const,
   nextCode: () => [...bomMastersKeys.all, 'next-code'] as const,
+  linkedSoLines: (id: string) => [...bomMastersKeys.detail(id), 'linked-so-lines'] as const,
 };
 
 function toQueryString(q: ListBomMastersQuery): string {
@@ -46,6 +48,15 @@ export function useBomMaster(id: string | undefined) {
     queryKey: id ? bomMastersKeys.detail(id) : bomMastersKeys.detail('__missing__'),
     queryFn: () => apiFetch<BomMasterDetail>(`/bom-masters/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+/** SO lines built from this BOM (ADR-189) — fetched only when the list is opened. */
+export function useBomLinkedSoLines(id: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: bomMastersKeys.linkedSoLines(id ?? '__missing__'),
+    queryFn: () => apiFetch<BomLinkedSoLinesResponse>(`/bom-masters/${id}/linked-so-lines`),
+    enabled: !!id && enabled,
   });
 }
 

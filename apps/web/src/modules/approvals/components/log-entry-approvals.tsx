@@ -12,12 +12,14 @@
 
 import { type OpLogChangeStatus, type OpLogTimeChangeRequest, opSrNo } from '@innovic/shared';
 import { Check, Loader2, X } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests } from '@/modules/op-entry/api';
 import { ListHeader } from '@/ui/layout';
+import { approvalsKeys } from '../api';
 
 // The op-log entry type as the user reads it (codes stay as stored).
 const LOG_TYPE_LABEL: Record<string, string> = { start: 'Start', complete: 'Completed', qc: 'QC' };
@@ -34,13 +36,22 @@ const SUB_TABS: Array<{ key: OpLogChangeStatus; label: string; empty: string }> 
 
 export function LogEntryApprovals({
   pendingCount,
+  tabs,
 }: {
   /** Waiting-queue size, shown as a badge beside the tabs. */
   pendingCount?: number | undefined;
+  /** The Approvals inbox's PR · PO · Log Entry switch, shown under the header. */
+  tabs?: React.ReactNode;
 }): React.JSX.Element {
   const [sub, setSub] = useState<OpLogChangeStatus>('pending');
   const list = useOpLogTimeChangeRequests({ status: sub, limit: 200 });
   const decide = useDecideOpLogTimeChange();
+  // A decision also shrinks the Approvals inbox (its Log Entry count and the
+  // nav badge), which is a separate query.
+  const qc = useQueryClient();
+  const refreshInbox = (): void => {
+    void qc.invalidateQueries({ queryKey: approvalsKeys.inbox() });
+  };
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
@@ -108,7 +119,9 @@ export function LogEntryApprovals({
             })}
           </>
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {list.isLoading ? (
         <div className="empty-state">
@@ -141,12 +154,15 @@ export function LogEntryApprovals({
                 setRejectReason('');
               }}
               onCancelReject={() => setRejectingId(null)}
-              onApprove={() => decide.mutate({ id: r.id, decision: 'approve' })}
+              onApprove={() =>
+                decide.mutate({ id: r.id, decision: 'approve' }, { onSuccess: refreshInbox })
+              }
               onReject={() =>
                 decide.mutate(
                   { id: r.id, decision: 'reject', decisionReason: rejectReason.trim() },
                   {
                     onSuccess: () => {
+                      refreshInbox();
                       setRejectingId(null);
                       setRejectReason('');
                     },

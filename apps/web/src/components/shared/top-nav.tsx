@@ -35,7 +35,7 @@ import { GlobalSearch } from '@/components/shared/global-search';
 import { canViewForm, useMyAccess } from '@/lib/access-control';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { signOut, useSession } from '@/lib/session';
-import { usePendingTimeChangeCount } from '@/modules/op-entry/api';
+import { useApprovalInboxTotal } from '@/modules/approvals/api';
 import { Icon } from '@/ui/core';
 import { initials, ORDERED_SECTIONS, shouldShowSection, type NavSection } from './nav-sections';
 
@@ -59,9 +59,10 @@ export function TopNav(): React.JSX.Element {
   const { pathname } = useLocation();
   const { data: eff } = useMyAccess();
   const isAdmin = me?.role === 'admin';
-  // Badge on System Settings → Approvals (ADR-130). Only fetched for someone
-  // who can actually decide; everyone else gets 0 and no request.
-  const pendingApprovals = usePendingTimeChangeCount(isAdmin || me?.role === 'manager');
+  // Badge on System Settings → Approvals: everything waiting for THIS user
+  // (ADR-189 inbox — PR + PO + Log Entry). The server lists only rows the
+  // caller may approve, so someone who approves nothing sees no badge.
+  const pendingApprovals = useApprovalInboxTotal(!!me);
 
   // Which module's menu is open. Remembered in sessionStorage so it survives
   // a page reload (user, 2026-09-21: pick a page, then pick "Create SO" from
@@ -182,8 +183,8 @@ export function TopNav(): React.JSX.Element {
                           </span>
                           <span>{it.label}</span>
                           {/* Only the Approvals item carries a count today. It is
-                              0 (and the query disabled) for anyone who cannot
-                              approve, so it never nags an operator. */}
+                              0 for anyone with nothing to approve, so it never
+                              nags an operator. */}
                           {it.to === '/approvals' && pendingApprovals > 0 ? (
                             <span className="badge b-amber" style={{ marginLeft: 'auto' }}>
                               {pendingApprovals}

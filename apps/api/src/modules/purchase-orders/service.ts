@@ -47,7 +47,6 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { autoCloseLinkedTasks } from '../tasks/service';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
 import { loadPrBalances } from '../purchase-requests/service';
 import {
@@ -552,6 +551,28 @@ export async function listPurchaseOrders(
     const vendorFrag = input.vendorId ? sql`AND po.vendor_id = ${input.vendorId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND po.po_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND po.po_date <= ${input.toDate}::date` : sql``;
+    // ADR-189 addendum — `?jobWorkOrderId=`: only the job-work / service POs
+    // that carry work for that JWSO. A PO line reaches the JWSO through the JC
+    // op it sends out (pol.source_jc_op_id, or the source PR's
+    // source_jc_op_id) → jc_ops.job_card_id → job_cards.source_jw_line_id →
+    // job_work_order_lines.job_work_order_id. There is no direct PO → JWSO link.
+    const jwFrag = input.jobWorkOrderId
+      ? sql`AND po.po_type IN ('job_work', 'service')
+          AND EXISTS (
+            SELECT 1
+            FROM public.purchase_order_lines jpol
+            LEFT JOIN public.purchase_requests jpr
+              ON jpr.id = jpol.source_pr_id AND jpr.deleted_at IS NULL
+            JOIN public.jc_ops jop
+              ON jop.id = COALESCE(jpol.source_jc_op_id, jpr.source_jc_op_id)
+            JOIN public.job_cards jjc ON jjc.id = jop.job_card_id AND jjc.deleted_at IS NULL
+            JOIN public.job_work_order_lines jjwl
+              ON jjwl.id = jjc.source_jw_line_id AND jjwl.deleted_at IS NULL
+            WHERE jpol.purchase_order_id = po.id
+              AND jpol.deleted_at IS NULL
+              AND jjwl.job_work_order_id = ${input.jobWorkOrderId}::uuid
+          )`
+      : sql``;
 
     const result = await tx.execute(sql`
       SELECT
@@ -617,6 +638,7 @@ export async function listPurchaseOrders(
         ${vendorFrag}
         ${fromFrag}
         ${toFrag}
+        ${jwFrag}
       ORDER BY po.po_date DESC, po.code DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
@@ -642,6 +664,7 @@ export async function listPurchaseOrders(
         ${vendorFrag}
         ${fromFrag}
         ${toFrag}
+        ${jwFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
@@ -2724,12 +2747,9 @@ export async function approvePurchaseOrder(
       user,
     );
 
-    // ADR-189 — a task raised against this PO closes itself on approval.
-    await autoCloseLinkedTasks(
-      tx,
-      { companyId, refTypes: ['purchase_order'], refId: id, doneLabel: `PO ${po.code} approved` },
-      user,
-    );
+    // ADR-189 addendum — no task auto-close here: a PO-linked task is usually a
+    // delivery follow-up ("Follow up on PO …"), not an approval request, and
+    // nothing on the task tells the two apart.
 
     return getPurchaseOrderInternal(tx, id, companyId);
   });

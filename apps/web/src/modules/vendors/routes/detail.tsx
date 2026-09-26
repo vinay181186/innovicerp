@@ -23,6 +23,7 @@ import type { Vendor } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -152,6 +153,10 @@ function VendorDetailPage(): React.JSX.Element {
       >
         <VendorFacts vendor={vendor} />
       </DetailHeader>
+
+      {/* Purchase Orders, Delivery Challans Out and GRNs for this vendor
+          (ADR-189). Hides when empty. */}
+      <RelatedDocsPanel module="vendors" id={vendor.id} />
 
       {confirmDelete ? (
         <ConfirmDialog

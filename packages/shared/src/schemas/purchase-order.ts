@@ -339,7 +339,10 @@ export const createPurchaseOrderFromPrBatchInputSchema = z.object({
     code: z.string().min(1).max(64).regex(codeRegex),
     poDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'poDate must be YYYY-MM-DD'),
     poType: poTypeSchema.default('job_work'),
-    dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD').optional(),
+    dueDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
+      .optional(),
     taxType: z.string().max(32).optional(),
     sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
     cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
@@ -368,6 +371,8 @@ export const listPurchaseOrdersQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Only job-work / service POs whose lines trace to this JWSO (ADR-189 addendum). */
+  jobWorkOrderId: z.string().uuid().optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

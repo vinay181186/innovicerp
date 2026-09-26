@@ -38,6 +38,11 @@ import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api'
 import { fmtIstDateTime } from '../lib/format';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 
+/** ₹ with Indian grouping, to the paise — the SO totals strip. */
+function fmtInr(n: number): string {
+  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 /** The file the user asked to look at, or null when nothing is open.
  *
  *  Every 📎 on this page used to `window.open` a signed URL, which let the
@@ -187,6 +192,21 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
       >
         <SoReadGrid detail={detail} />
+        {/* ADR-189 — the SO's money, summed on the server. Null when this
+            user's access hides prices, and then the strip is not shown. */}
+        {detail.totals ? (
+          <QtyStrip
+            style={{ marginTop: 'var(--sp-3)' }}
+            items={[
+              { label: 'Subtotal', value: fmtInr(detail.totals.subtotal) },
+              {
+                label: `GST ${detail.totals.gstPercent}%`,
+                value: fmtInr(detail.totals.gstAmount),
+              },
+              { label: 'Grand Total', value: fmtInr(detail.totals.grandTotal) },
+            ]}
+          />
+        ) : null}
       </DetailHeader>
 
       <SoFilesPanel
@@ -408,7 +428,9 @@ function lineColumns(opts: {
       render: (l) => <span style={{ color: 'var(--green2)' }}>{l.billedQty}</span>,
     },
     {
-      header: 'Pending',
+      // Order − Billed: still to invoice (NAMING.md "To Bill"), not the
+      // qty still owed on the order ("Pending").
+      header: 'To Bill',
       align: 'right',
       width: '7%',
       headColor: 'var(--red)',

@@ -7,6 +7,8 @@ export interface OpLogListItem {
   logType: 'start' | 'complete' | 'qc';
   logDate: string;
   jcNo: string;
+  /** The job card's id — Log No. / JC No. link straight to /job-cards/$id. */
+  jobCardId?: string | undefined;
   itemCode: string | null;
   // WHAT was being made. A JC number says WHICH JOB, not WHICH PART, so the
   // register names the item beside the number. `itemRevision` is the CUSTOMER'S

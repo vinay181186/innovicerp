@@ -132,7 +132,9 @@ function AlertDrillPage() {
                           // `type` here — the payload's only per-column signal:
                           //   first col  → `mono fw-700` + cyan (L22385 etc.)
                           //   number     → `td-num mono` (right-aligned qty)
-                          //   date       → font-size 11 (L22385)
+                          // ADR-189: the row carries `navPage` (not a column) —
+                          // the record code opens its document.
+                          const nav = row['navPage'];
                           return (
                             <td
                               key={c.key}
@@ -143,15 +145,18 @@ function AlertDrillPage() {
                                     ? 'td-num mono'
                                     : undefined
                               }
-                              style={
-                                ci === 0
-                                  ? { color: 'var(--cyan)' }
-                                  : c.type === 'date'
-                                    ? { fontSize: 11 }
-                                    : undefined
-                              }
+                              style={ci === 0 ? { color: 'var(--cyan)' } : undefined}
                             >
-                              {display}
+                              {ci === 0 && typeof nav === 'string' && nav ? (
+                                <Link
+                                  to={nav}
+                                  style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                                >
+                                  {display}
+                                </Link>
+                              ) : (
+                                display
+                              )}
                             </td>
                           );
                         })}

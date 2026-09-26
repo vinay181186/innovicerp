@@ -37,6 +37,7 @@ import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useMyCompany } from '@/modules/settings/api';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
@@ -222,6 +223,9 @@ function ItemDetailPage(): React.JSX.Element {
       </div>
 
       <StockHistoryCard itemId={item.id} />
+
+      {/* Open PRs, POs and GRNs for this item (ADR-189). Hides when empty. */}
+      <RelatedDocsPanel module="items" id={item.id} />
     </div>
   );
 }

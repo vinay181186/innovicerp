@@ -8,7 +8,7 @@
 // (see service.ts note — legacy `delLog` violates CLAUDE.md Rule #8).
 
 import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -254,13 +254,36 @@ function OpLogListPage(): React.JSX.Element {
                 items.map((r) => (
                   <tr key={r.id}>
                     {/* Log No. and JC No. both open the job card the entry was
-                        logged against (resolved from the JC number — the op-log
-                        feed carries the number, not the card's id). */}
+                        logged against — straight to /job-cards/$id when the row
+                        carries the card's id (ADR-189 addendum), else resolved
+                        from the JC number through search. */}
                     <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      <DocRefLink entity="Job Card" refId={r.jcNo} label={r.logNo} />
+                      {r.jobCardId ? (
+                        <Link
+                          to="/job-cards/$id"
+                          params={{ id: r.jobCardId }}
+                          className="mono fw-700"
+                          title={`Open ${r.jcNo}`}
+                        >
+                          {r.logNo}
+                        </Link>
+                      ) : (
+                        <DocRefLink entity="Job Card" refId={r.jcNo} label={r.logNo} />
+                      )}
                     </td>
                     <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
-                      <DocRefLink entity="Job Card" refId={r.jcNo} />
+                      {r.jobCardId ? (
+                        <Link
+                          to="/job-cards/$id"
+                          params={{ id: r.jobCardId }}
+                          className="mono fw-700"
+                          title={`Open ${r.jcNo}`}
+                        >
+                          {r.jcNo}
+                        </Link>
+                      ) : (
+                        <DocRefLink entity="Job Card" refId={r.jcNo} />
+                      )}
                     </td>
                     {/* POL — '—' when no sales order sits behind the card. */}
                     <td className="mono fw-700" style={{ color: 'var(--purple)' }}>

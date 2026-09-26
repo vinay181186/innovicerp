@@ -28,7 +28,7 @@ import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
-import { useCancelDispatch, useDispatchRegister } from '../api';
+import { useCancelDispatch, useDispatchList, useDispatchRegister } from '../api';
 import { type DispatchGroup, DispatchCard } from '../components/dispatch-card';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
@@ -84,6 +84,13 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
   const { data, isLoading, isFetching, isError, error } = useDispatchRegister();
   const { data: company } = useMyCompany();
+  // ADR-189 — how far each dispatch is invoiced lives on the dispatch-grain
+  // list, not the line-grain register this page is built from.
+  const { data: dispatchList } = useDispatchList();
+  const billedById = useMemo(
+    () => new Map((dispatchList?.dispatches ?? []).map((d) => [d.id, d.billedStatus])),
+    [dispatchList],
+  );
   const cancel = useCancelDispatch();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
@@ -395,6 +402,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
               <DispatchCard
                 key={g.dispatchId}
                 g={g}
+                billedStatus={billedById.get(g.dispatchId)}
                 isOpen={expanded.has(g.dispatchId)}
                 canCancel={canCancel}
                 cancelPending={cancel.isPending}
