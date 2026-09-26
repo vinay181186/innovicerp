@@ -2,7 +2,7 @@
 //
 // Rendered as one CARD per GRN, the same layout the SO Master list uses
 // (sales-orders/routes/list.tsx, reference supplied 2026-08-11): frozen header
-// band with status pills, accent bar, identity row with badges, metric strip,
+// band with the filter bar, accent bar, identity row with badges, metric strip,
 // meta line, and the GRN's lines inside an expandable panel. Replaced a
 // twelve-column table; no field was dropped in the move, only regrouped.
 //
@@ -173,9 +173,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* THE list header (ui/layout ListHeader): title · count · search ·
-          Expand all · + New GRN, with the QC-status pills and the count strip
-          pinned inside the same band. */}
+      {/* THE list header (ui/layout ListHeader): title · count · Expand all ·
+          + New GRN, then the filter bar (search · QC status with counts ·
+          Clear), with the read-only "Today" tile inside the same band. */}
       <ListHeader
         title="GRN"
         icon="📥"
@@ -186,6 +186,39 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search GRN no., PO, vendor, DC, invoice…"
         updating={isFetching && !isLoading}
+        filters={
+          // QC status, every GRN_QC_STATUSES value, with the summary counts
+          // the old pill row + KPI strip showed folded into the labels (owner
+          // decision 2026-09-26). Same `qcStatus` search param, same query.
+          <select
+            className="innovic-select"
+            aria-label="QC status"
+            title="QC status"
+            value={search.qcStatus ?? ''}
+            onChange={(e) => {
+              const v = e.target.value as GrnQcStatus | '';
+              void navigate({
+                search: (prev) => ({ ...prev, qcStatus: v === '' ? undefined : v, page: 1 }),
+                replace: true,
+              });
+            }}
+          >
+            <option value="">{withCount('All', data?.summary?.total)}</option>
+            {GRN_QC_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {withCount(GRN_QC_STATUS_LABELS[s], qcCountFor(s, data?.summary))}
+              </option>
+            ))}
+          </select>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, qcStatus: undefined, page: 1 }),
+            replace: true,
+          });
+        }}
+        filtersActive={search.qcStatus !== undefined || searchInput !== ''}
         tools={
           <button
             type="button"
@@ -205,46 +238,10 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           ) : null
         }
       >
-        {/* QC-status filter as pills — every GRN_QC_STATUSES value gets one.
-            Same `qcStatus` search param, same query. */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-          {([null, ...GRN_QC_STATUSES] as (GrnQcStatus | null)[]).map((s) => {
-            const active = (search.qcStatus ?? null) === s;
-            return (
-              <button
-                key={s ?? 'all'}
-                type="button"
-                className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                style={{
-                  fontSize: 11,
-                  textTransform: 'capitalize',
-                  borderRadius: 999,
-                  padding: '3px 12px',
-                }}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, qcStatus: s ?? undefined, page: 1 }),
-                    replace: true,
-                  })
-                }
-              >
-                {s ? GRN_QC_STATUS_LABELS[s] : 'All'}
-              </button>
-            );
-          })}
-        </div>
-        {data?.summary ? (
-          <GrnKpiStrip
-            summary={data.summary}
-            activeStatus={search.qcStatus ?? null}
-            onSelectStatus={(s) => {
-              void navigate({
-                search: (prev) => ({ ...prev, qcStatus: s, page: 1 }),
-                replace: true,
-              });
-            }}
-          />
-        ) : null}
+        {/* Read-only context tile: the three filtering tiles (Total / QC
+            Pending / QC Cleared) moved into the QC-status dropdown's option
+            labels; "Today" has no filter behind it, so it stays here. */}
+        {data?.summary ? <GrnTodayStrip today={data.summary.today} /> : null}
       </ListHeader>
 
       {isLoading ? (
@@ -583,57 +580,46 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
   );
 }
 
-// PL-GRN-1b — 4-tile stat strip mirroring legacy renderGRN L26483–26488.
-// Clicking Total / QC Pending / QC Cleared filters by qcStatus. Today
-// is informational (we don't have a "filter by today's date" yet — the
-// Today tile shows the count for context only).
-function GrnKpiStrip({
-  summary,
-  activeStatus,
-  onSelectStatus,
-}: {
-  summary: { total: number; qcPending: number; qcCleared: number; today: number };
-  activeStatus: GrnQcStatus | null;
-  onSelectStatus: (next: GrnQcStatus | undefined) => void;
-}): React.JSX.Element {
+// PL-GRN-1b — legacy renderGRN L26483–26488 showed four tiles. Total / QC
+// Pending / QC Cleared filtered by qcStatus; they are now the counts in the
+// QC-status dropdown (2026-09-26 filter bar). "Today" never filtered — it is
+// context only — so it stays as a read-only tile.
+
+interface GrnSummary {
+  total: number;
+  qcPending: number;
+  qcCleared: number;
+  today: number;
+}
+
+/** "Label (N)" when a count is known, bare label otherwise. */
+function withCount(label: string, n: number | undefined): string {
+  return n === undefined ? label : `${label} (${n})`;
+}
+
+/** The summary count behind one QC status — the same mapping the old KPI
+ *  tiles used (QC Pending → pending, QC Cleared → completed). In-progress
+ *  has no summary count. */
+function qcCountFor(s: GrnQcStatus, summary: GrnSummary | undefined): number | undefined {
+  if (!summary) return undefined;
+  if (s === 'pending') return summary.qcPending;
+  if (s === 'completed') return summary.qcCleared;
+  return undefined;
+}
+
+function GrnTodayStrip({ today }: { today: number }): React.JSX.Element {
   return (
-    <div>
-      <StatStrip
-        items={[
-          {
-            key: 'all',
-            label: 'Total GRNs',
-            count: summary.total,
-            color: 'var(--cyan)',
-            onClick: () => onSelectStatus(undefined),
-            active: activeStatus === null,
-          },
-          {
-            key: 'qcpending',
-            label: 'QC Pending',
-            count: summary.qcPending,
-            color: 'var(--amber2)',
-            onClick: () => onSelectStatus('pending'),
-            active: activeStatus === 'pending',
-          },
-          {
-            key: 'qccleared',
-            label: 'QC Cleared',
-            count: summary.qcCleared,
-            color: 'var(--green2)',
-            onClick: () => onSelectStatus('completed'),
-            active: activeStatus === 'completed',
-          },
-          {
-            // Read-only total (no onClick) — legacy showed a "Today" count for
-            // context only, with no filter behind it.
-            key: 'today',
-            label: 'Today',
-            count: summary.today,
-            color: 'var(--blue)',
-          },
-        ]}
-      />
-    </div>
+    <StatStrip
+      items={[
+        {
+          // Read-only total (no onClick) — legacy showed a "Today" count for
+          // context only, with no filter behind it.
+          key: 'today',
+          label: 'Today',
+          count: today,
+          color: 'var(--blue)',
+        },
+      ]}
+    />
   );
 }

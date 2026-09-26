@@ -98,9 +98,9 @@ function StoreInventoryPage(): React.JSX.Element {
         <StockLedger />
       ) : (
         <>
-          {/* THE list header (ui/layout ListHeader): title · count · search ·
-              + Manual Receipt, with the item-count strip (which doubles as
-              the Low / Zero filter) pinned inside the same band. */}
+          {/* THE list header (ui/layout ListHeader): title · count · + Manual
+              Receipt, then the filter bar (search · stock filter with counts ·
+              Clear), with the read-only "Items in Stock" tile in the band. */}
           <ListHeader
             title="Store / Inventory"
             icon="📦"
@@ -112,6 +112,30 @@ function StoreInventoryPage(): React.JSX.Element {
             search={search}
             onSearch={setSearch}
             searchPlaceholder="Search item code, name, material, UOM…"
+            filters={
+              // Stock filter, with the item counts the old strip tiles showed
+              // in the option labels (owner decision 2026-09-26).
+              <select
+                className="innovic-select"
+                aria-label="Stock filter"
+                title="Stock filter"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as FilterKey)}
+              >
+                <option value="all">{withCount('All Items', data?.summary.totalItems)}</option>
+                <option value="low">
+                  {withCount('Low Stock Alert', data?.summary.lowStockCount)}
+                </option>
+                <option value="zero">
+                  {withCount('Zero Stock', data?.summary.zeroStockCount)}
+                </option>
+              </select>
+            }
+            onClearFilters={() => {
+              setFilter('all');
+              setSearch('');
+            }}
+            filtersActive={filter !== 'all' || search !== ''}
             primary={
               canEdit ? (
                 <button
@@ -124,9 +148,7 @@ function StoreInventoryPage(): React.JSX.Element {
               ) : null
             }
           >
-            {data ? (
-              <KpiStrip summary={data.summary} filter={filter} setFilter={setFilter} />
-            ) : null}
+            {data ? <KpiStrip summary={data.summary} /> : null}
           </ListHeader>
 
           {isLoading ? (
@@ -400,49 +422,28 @@ function StoreInventoryPage(): React.JSX.Element {
 // ONE strip, one row — the shared <StatStrip>, not a grid of cards. Item
 // counts only: the ADR-180 piece totals (Reserved, Available) were removed
 // because they summed kg + Nos + m into one meaningless number.
+// 2026-09-26 filter bar: Total / Low / Zero filtered the table, so they are now
+// the counts in the Stock filter dropdown. "Items in Stock" never filtered —
+// it stays here as a read-only tile.
 function KpiStrip({
   summary,
-  filter,
-  setFilter,
 }: {
   summary: ListStoreInventoryResponse['summary'];
-  filter: FilterKey;
-  setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
   const items: StatStripItem[] = [
-    {
-      key: 'all',
-      label: 'Total Items',
-      count: summary.totalItems,
-      color: 'var(--cyan)',
-      active: filter === 'all',
-      onClick: () => setFilter('all'),
-    },
     {
       key: 'inStock',
       label: 'Items in Stock',
       count: summary.itemsInStockCount,
       color: 'var(--green2)',
     },
-    {
-      key: 'low',
-      label: 'Low Stock Alert',
-      count: summary.lowStockCount,
-      color: 'var(--red2)',
-      sub: 'Below minimum level',
-      active: filter === 'low',
-      onClick: () => setFilter(filter === 'low' ? 'all' : 'low'),
-    },
-    {
-      key: 'zero',
-      label: 'Zero Stock',
-      count: summary.zeroStockCount,
-      color: 'var(--amber2)',
-      active: filter === 'zero',
-      onClick: () => setFilter(filter === 'zero' ? 'all' : 'zero'),
-    },
   ];
   return <StatStrip items={items} />;
+}
+
+/** "Label (N)" when a count is known, bare label otherwise. */
+function withCount(label: string, n: number | undefined): string {
+  return n === undefined ? label : `${label} (${n})`;
 }
 
 function AdjustModal({

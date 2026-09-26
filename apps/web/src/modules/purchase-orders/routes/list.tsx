@@ -207,8 +207,8 @@ function PurchaseOrdersListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* THE list header (ui/layout ListHeader): title · count · search ·
-          status / type filters · view toggle · + New PO. */}
+      {/* THE list header (ui/layout ListHeader): title · count · view toggle ·
+          + New PO, then the filter bar (search · status · type · Clear). */}
       <ListHeader
         title="Purchase Orders"
         icon="📋"
@@ -226,11 +226,12 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search PO no, vendor, PR, item, status, type, date…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
             <select
               className="innovic-select"
               aria-label="PO status"
+              title="PO status"
               value={search.status ?? ''}
               onChange={(e) => {
                 const v = e.target.value as PoStatus | '';
@@ -239,7 +240,6 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 140 }}
             >
               <option value="">All statuses</option>
               {PO_STATUSES.map((s) => (
@@ -251,6 +251,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
             <select
               className="innovic-select"
               aria-label="PO type"
+              title="PO type"
               value={search.poType ?? ''}
               onChange={(e) => {
                 const v = e.target.value as PoType | '';
@@ -259,7 +260,6 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 140 }}
             >
               <option value="">All types</option>
               {PO_TYPES.map((t) => (
@@ -268,9 +268,25 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                 </option>
               ))}
             </select>
-            <ViewToggle value={view} onChange={changeView} />
           </>
         }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              search: undefined,
+              status: undefined,
+              poType: undefined,
+              page: 1,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={
+          search.status !== undefined || search.poType !== undefined || searchInput !== ''
+        }
+        tools={<ViewToggle value={view} onChange={changeView} />}
         primary={
           canAdd ? (
             <Link to="/purchase-orders/from-pr" className="btn btn-primary">

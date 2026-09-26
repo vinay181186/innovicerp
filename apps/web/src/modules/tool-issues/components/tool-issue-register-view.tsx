@@ -18,7 +18,6 @@ import { useMemo, useState } from 'react';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useItemsList } from '../../items/api';
-import { StatStrip } from '@/ui/data';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   useCreateToolIssue,
@@ -80,9 +79,8 @@ export function ToolIssueRegisterView({
 
   return (
     <div>
-      {/* THE list header (ui/layout ListHeader): title · count · search ·
-          + Issue Tool, with the status counts (which double as the filter)
-          pinned inside the same band. */}
+      {/* THE list header (ui/layout ListHeader): title · count · + Issue Tool,
+          then the filter bar (search · status with counts · Clear). */}
       <ListHeader
         title="Tool Issue Register"
         icon="🔧"
@@ -95,6 +93,38 @@ export function ToolIssueRegisterView({
           setPage(1);
         }}
         searchPlaceholder="Search issue no, item, issued to, reference…"
+        filters={
+          // Status, with the counts the old strip tiles showed in the option
+          // labels (owner decision 2026-09-26). Overdue is offered only when
+          // there is one (legacy L24016) or it is the current choice.
+          <select
+            className="innovic-select"
+            aria-label="Tool issue status"
+            title="Tool issue status"
+            value={filter}
+            onChange={(e) => {
+              setFilter(e.target.value as FilterKey);
+              setPage(1);
+            }}
+          >
+            <option value="all">{withCount('All', data?.summary?.total)}</option>
+            <option value="out">{withCount(FILTER_LABELS.out, data?.summary?.out)}</option>
+            <option value="returned">
+              {withCount(FILTER_LABELS.returned, data?.summary?.returned)}
+            </option>
+            {(data?.summary?.overdue ?? 0) > 0 || filter === 'overdue' ? (
+              <option value="overdue">
+                {withCount(FILTER_LABELS.overdue, data?.summary?.overdue)}
+              </option>
+            ) : null}
+          </select>
+        }
+        onClearFilters={() => {
+          setFilter('all');
+          setSearch('');
+          setPage(1);
+        }}
+        filtersActive={filter !== 'all' || search !== ''}
         primary={
           canIssue ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
@@ -102,18 +132,7 @@ export function ToolIssueRegisterView({
             </button>
           ) : null
         }
-      >
-        {data?.summary ? (
-          <KpiStrip
-            summary={data.summary}
-            filter={filter}
-            setFilter={(k) => {
-              setFilter(k);
-              setPage(1);
-            }}
-          />
-        ) : null}
-      </ListHeader>
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -333,60 +352,9 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
   );
 }
 
-function KpiStrip({
-  summary,
-  filter,
-  setFilter,
-}: {
-  summary: { total: number; out: number; returned: number; overdue: number };
-  filter: FilterKey;
-  setFilter: (k: FilterKey) => void;
-}): React.JSX.Element {
-  // Clicking the active tile again clears it back to All (as before).
-  const pick = (k: FilterKey) => () => setFilter(k === filter && k !== 'all' ? 'all' : k);
-  return (
-    <StatStrip
-      items={[
-        {
-          key: 'all',
-          label: 'Total',
-          count: summary.total,
-          color: 'var(--blue)',
-          active: filter === 'all',
-          onClick: pick('all'),
-        },
-        {
-          key: 'out',
-          label: 'Currently Out',
-          count: summary.out,
-          color: 'var(--red2)',
-          active: filter === 'out',
-          onClick: pick('out'),
-        },
-        {
-          key: 'returned',
-          label: 'Returned',
-          count: summary.returned,
-          color: 'var(--green2)',
-          active: filter === 'returned',
-          onClick: pick('returned'),
-        },
-        // Legacy only emits the Overdue tile when the count is non-zero (L24016).
-        ...(summary.overdue > 0
-          ? [
-              {
-                key: 'overdue',
-                label: 'Overdue',
-                count: summary.overdue,
-                color: 'var(--red2)',
-                active: filter === 'overdue',
-                onClick: pick('overdue'),
-              },
-            ]
-          : []),
-      ]}
-    />
-  );
+/** "Label (N)" when a count is known, bare label otherwise. */
+function withCount(label: string, n: number | undefined): string {
+  return n === undefined ? label : `${label} (${n})`;
 }
 
 function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {

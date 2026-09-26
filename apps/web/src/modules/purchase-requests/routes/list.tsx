@@ -3,8 +3,8 @@
 // _29-04-2026.html L6217-6310): status counts → filter row → the PR book.
 //
 // Styled to SO Master (sales-orders/routes/list.tsx) 2026-08-13:
-//  - The four status COUNT CARDS are one `<StatStrip>` row (styling skill
-//    Rule 3) — same counts, same click-to-filter, no per-tile cards.
+//  - The four status COUNTS ride in the status dropdown's option labels
+//    (2026-09-26 filter bar; they were a clickable StatStrip row before).
 //  - Title + search + status filter + New PR sit in the frozen header band.
 //  - The 11-column table (nowrap on every cell, three free-text columns) is one
 //    `.panel` card per PR, so the page no longer scrolls sideways and the PR No.
@@ -33,7 +33,6 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
@@ -203,7 +202,21 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     [navigate],
   );
 
-  const toggleStatus = (s: PrStatus) => () => setStatusFilter(search.status === s ? undefined : s);
+  // Status counts ride in the status dropdown's option labels (owner decision
+  // 2026-09-26: one filter bar, no capsule row). Cancelled has no count query.
+  const statusCounts: Partial<Record<PrStatus, number>> = {
+    open: openCount,
+    approved: approvedCount,
+    po_created: poCreatedCount,
+  };
+
+  const clearFilters = useCallback((): void => {
+    setSearchInput('');
+    void navigate({
+      search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+      replace: true,
+    });
+  }, [navigate]);
 
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -283,9 +296,9 @@ function PurchaseRequestsListPage(): React.JSX.Element {
         <OutsourceJobsView />
       ) : (
         <>
-          {/* THE list header (ui/layout ListHeader): title · count · search ·
-              status filter · + New PR, with the count strip and the
-              "Create PO from selected" bar pinned inside the same band. */}
+          {/* THE list header (ui/layout ListHeader): title · count · + New PR,
+              then the filter bar (search · status with counts · Clear), with
+              the "Create PO from selected" bar pinned inside the same band. */}
           <ListHeader
             title="Purchase Requests"
             icon="📄"
@@ -296,7 +309,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
             onSearch={setSearchInput}
             searchPlaceholder="Search PR no, item, vendor, SO/JC, PO…"
             updating={isFetching && !isLoading}
-            tools={
+            filters={
               <select
                 className="innovic-select"
                 value={search.status ?? ''}
@@ -304,17 +317,21 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                   const v = e.target.value as PrStatus | '';
                   setStatusFilter(v === '' ? undefined : v);
                 }}
-                style={{ width: 160 }}
                 aria-label="PR status"
+                title="PR status"
               >
-                <option value="">All statuses</option>
+                <option value="">All PRs ({allCount})</option>
                 {PR_STATUSES.map((s) => (
                   <option key={s} value={s}>
-                    {PR_STATUS_LABELS[s]}
+                    {statusCounts[s] !== undefined
+                      ? `${PR_STATUS_LABELS[s]} (${statusCounts[s]})`
+                      : PR_STATUS_LABELS[s]}
                   </option>
                 ))}
               </select>
             }
+            onClearFilters={clearFilters}
+            filtersActive={search.status !== undefined || searchInput !== ''}
             primary={
               perms.entry ? (
                 <Link to="/purchase-requests/new" className="btn btn-primary">
@@ -323,43 +340,6 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               ) : null
             }
           >
-            <StatStrip
-              items={[
-                {
-                  key: 'open',
-                  label: 'Open',
-                  count: openCount,
-                  color: 'var(--amber2)',
-                  active: search.status === 'open',
-                  onClick: toggleStatus('open'),
-                },
-                {
-                  key: 'approved',
-                  label: 'Approved (Awaiting PO)',
-                  count: approvedCount,
-                  color: 'var(--blue)',
-                  active: search.status === 'approved',
-                  onClick: toggleStatus('approved'),
-                },
-                {
-                  key: 'po_created',
-                  label: 'PO Created',
-                  count: poCreatedCount,
-                  color: 'var(--green2)',
-                  active: search.status === 'po_created',
-                  onClick: toggleStatus('po_created'),
-                },
-                {
-                  key: 'all',
-                  label: 'All PRs',
-                  count: allCount,
-                  color: 'var(--cyan)',
-                  active: search.status === undefined,
-                  onClick: () => setStatusFilter(undefined),
-                  title: 'Clear the status filter',
-                },
-              ]}
-            />
             {selectedList.length > 0 ? (
               <div
                 style={{

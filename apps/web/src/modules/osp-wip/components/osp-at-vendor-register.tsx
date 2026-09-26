@@ -23,7 +23,7 @@ const FILTER_LABELS: Record<FilterKey, string | undefined> = {
 export function OspAtVendorRegister(): React.JSX.Element {
   // Opens on 'all', not 'at_vendor'. The at-vendor bucket is empty whenever
   // every outsourced op has come back, so defaulting to it showed an empty
-  // table on a register that does have rows. The KPI tile still filters to it.
+  // table on a register that does have rows. The Bucket dropdown still filters to it.
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
 
@@ -34,9 +34,9 @@ export function OspAtVendorRegister(): React.JSX.Element {
 
   return (
     <div>
-      {/* THE list header (ui/layout ListHeader): title · count · search, with
-          the qty buckets (which double as the filter) pinned inside the same
-          band. */}
+      {/* THE list header (ui/layout ListHeader): title · count, then the filter
+          bar (search · bucket with its qty · Clear), with the read-only
+          "Total Sent" tile inside the same band. */}
       <ListHeader
         title="At-Vendor Register"
         icon="🚚"
@@ -46,15 +46,40 @@ export function OspAtVendorRegister(): React.JSX.Element {
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search JC, item, SO, vendor…"
-        tools={
-          filter !== 'all' ? (
-            <button type="button" className="btn btn-ghost" onClick={() => setFilter('all')}>
-              Show All
-            </button>
-          ) : null
+        filters={
+          // The qty buckets that used to be clickable strip tiles, now one
+          // dropdown with the same numbers in the option labels (owner
+          // decision 2026-09-26). The old "Show All" button is the bar's Clear.
+          <select
+            className="innovic-select"
+            aria-label="Bucket"
+            title="Bucket"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as FilterKey)}
+          >
+            <option value="all">
+              {data ? `Outsourced Ops (${data.summary.totalOps})` : 'Outsourced Ops'}
+            </option>
+            <option value="at_vendor">
+              {data
+                ? `At Vendor (${data.summary.atVendorQty} · ${data.summary.opsAtVendor} ops)`
+                : 'At Vendor'}
+            </option>
+            <option value="not_sent">
+              {data ? `Not Sent (${data.summary.notSentQty})` : 'Not Sent'}
+            </option>
+            <option value="ready_to_send">
+              {data ? `Ready to Send (${data.summary.readyToSendQty})` : 'Ready to Send'}
+            </option>
+          </select>
         }
+        onClearFilters={() => {
+          setFilter('all');
+          setSearch('');
+        }}
+        filtersActive={filter !== 'all' || search !== ''}
       >
-        {data ? <KpiStrip summary={data.summary} filter={filter} setFilter={setFilter} /> : null}
+        {data ? <KpiStrip summary={data.summary} /> : null}
       </ListHeader>
 
       {isLoading ? (
@@ -238,53 +263,13 @@ function Row({ row }: { row: OspWipRow }): React.JSX.Element {
   );
 }
 
-function KpiStrip({
-  summary,
-  filter,
-  setFilter,
-}: {
-  summary: ListOspWipResponse['summary'];
-  filter: FilterKey;
-  setFilter: (k: FilterKey) => void;
-}): React.JSX.Element {
-  // ONE strip (styling rule 3). Clicking an active bucket again clears it.
-  const pick = (k: FilterKey) => () => setFilter(filter === k ? 'all' : k);
+// The filtering buckets (Outsourced Ops / At Vendor / Not Sent / Ready to
+// Send) moved into the Bucket dropdown (2026-09-26 filter bar). "Total Sent"
+// never filtered, so it stays as a read-only tile.
+function KpiStrip({ summary }: { summary: ListOspWipResponse['summary'] }): React.JSX.Element {
   return (
     <StatStrip
       items={[
-        {
-          key: 'all',
-          label: 'Outsourced Ops',
-          count: summary.totalOps,
-          color: 'var(--cyan)',
-          active: filter === 'all',
-          onClick: () => setFilter('all'),
-        },
-        {
-          key: 'at_vendor',
-          label: 'At Vendor',
-          count: summary.atVendorQty,
-          color: 'var(--amber2)',
-          sub: `${summary.opsAtVendor} ops still out`,
-          active: filter === 'at_vendor',
-          onClick: pick('at_vendor'),
-        },
-        {
-          key: 'not_sent',
-          label: 'Not Sent',
-          count: summary.notSentQty,
-          color: 'var(--blue)',
-          active: filter === 'not_sent',
-          onClick: pick('not_sent'),
-        },
-        {
-          key: 'ready_to_send',
-          label: 'Ready to Send',
-          count: summary.readyToSendQty,
-          color: 'var(--purple)',
-          active: filter === 'ready_to_send',
-          onClick: pick('ready_to_send'),
-        },
         {
           key: 'sent',
           label: 'Total Sent',

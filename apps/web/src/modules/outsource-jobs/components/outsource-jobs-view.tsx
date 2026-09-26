@@ -45,7 +45,6 @@ import { Loader2, X } from 'lucide-react';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { useEffect, useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
@@ -291,9 +290,9 @@ export function OutsourceJobsView(): React.JSX.Element {
 
   return (
     <div>
-      {/* THE list header (ui/layout ListHeader): title · count · search ·
-          JC filter · Create PO from Selected, with the counts (which double as
-          the status filter) pinned inside the same band. */}
+      {/* THE list header (ui/layout ListHeader): title · count · Create PO
+          from Selected, then the filter bar (search · status with counts ·
+          JC No. · Clear). */}
       <ListHeader
         title="Outsource Jobs (OSP)"
         icon="📦"
@@ -310,22 +309,47 @@ export function OutsourceJobsView(): React.JSX.Element {
         search={searchText}
         onSearch={setSearchText}
         searchPlaceholder="Search PR no, JC, item, process, vendor, qty, due, status…"
-        tools={
-          <select
-            className="innovic-select"
-            aria-label="JC No."
-            value={soNo ?? ''}
-            onChange={(e) => setSoNo(e.target.value || undefined)}
-            style={{ width: 200 }}
-          >
-            <option value="">All JC Nos.</option>
-            {soNos.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+        filters={
+          <>
+            {/* Status band, with the counts the old strip showed in the option
+                labels (owner decision 2026-09-26). No qty total: it would add
+                different items' quantities together. */}
+            <select
+              className="innovic-select"
+              aria-label="OSP status"
+              title="OSP status"
+              value={statusBand ?? ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setStatusBand(v === 'open' || v === 'po_created' ? v : undefined);
+              }}
+            >
+              <option value="">All ({totalPR})</option>
+              <option value="open">Open ({openPR})</option>
+              <option value="po_created">PO Created ({poCreated})</option>
+            </select>
+            <select
+              className="innovic-select"
+              aria-label="JC No."
+              title="JC No."
+              value={soNo ?? ''}
+              onChange={(e) => setSoNo(e.target.value || undefined)}
+            >
+              <option value="">All JC Nos.</option>
+              {soNos.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </>
         }
+        onClearFilters={() => {
+          setSearchText('');
+          setSoNo(undefined);
+          setStatusBand(undefined);
+        }}
+        filtersActive={statusBand !== undefined || soNo !== undefined || searchText !== ''}
         primary={
           canEdit && selectedIds.size > 0 ? (
             <button
@@ -338,39 +362,7 @@ export function OutsourceJobsView(): React.JSX.Element {
             </button>
           ) : null
         }
-      >
-        {/* Counts — ONE strip (styling rule 3). No qty total: it would add
-            different items' quantities together. */}
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: 'All',
-              count: totalPR,
-              color: 'var(--cyan)',
-              active: statusBand === undefined,
-              onClick: () => setStatusBand(undefined),
-            },
-            {
-              key: 'open',
-              label: 'Open',
-              count: openPR,
-              color: 'var(--amber2)',
-              active: statusBand === 'open',
-              onClick: () => setStatusBand((prev) => (prev === 'open' ? undefined : 'open')),
-            },
-            {
-              key: 'po_created',
-              label: 'PO Created',
-              count: poCreated,
-              color: 'var(--green2)',
-              active: statusBand === 'po_created',
-              onClick: () =>
-                setStatusBand((prev) => (prev === 'po_created' ? undefined : 'po_created')),
-            },
-          ]}
-        />
-      </ListHeader>
+      />
 
       <div className="panel">
         <div className="tbl-wrap">
