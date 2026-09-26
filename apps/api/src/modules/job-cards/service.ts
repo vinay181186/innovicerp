@@ -67,6 +67,7 @@ import type {
   ListJobCardsQuery,
   ListJobCardsResponse,
 } from './schema';
+import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -651,7 +652,7 @@ async function resolveLinkedSource(
             -- "Already in JCs" excludes rework/repair children, exactly as
             -- assertLineBalance does — they re-make pieces the parent card
             -- already covers (QC-NC audit 2026-09-21, gap 3).
-            COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
+            COALESCE((SELECT SUM(${jcEffectiveQtySql('jc')}) FROM public.job_cards jc
               WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
                 AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
           FROM public.sales_order_lines sol
@@ -692,7 +693,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         COALESCE(so.customer_name, cli.name) AS "customerName",
         sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
         sol.client_po_line_no AS "clientPoLineNo",
-        COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
+        COALESCE((SELECT SUM(${jcEffectiveQtySql('jc')}) FROM public.job_cards jc
           WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
             AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
       FROM public.sales_order_lines sol
@@ -1534,8 +1535,18 @@ async function assertLineBalance(
       return;
     }
 
+    // ADR-185 — an SO line's "already on JCs" is the same JC Qty the SO screens
+    // state (lib/jc-effective-qty.ts: a stopped order's card counts what it
+    // credited). No double claim with the plan's Pending is possible: a card
+    // on an SO line is only ever MADE from Planning (createJobCard refuses a
+    // manual one), so this check runs on an edit, with the card itself left
+    // out. JW lines keep the literal card qty.
+    const cardQty =
+      lineTable === salesOrderLines
+        ? sql<number>`COALESCE(SUM(${jcEffectiveQtySql('"job_cards"')}), 0)::int`
+        : sql<number>`COALESCE(SUM(${jobCards.orderQty}), 0)::int`;
     const sumRows = await tx
-      .select({ s: sql<number>`COALESCE(SUM(${jobCards.orderQty}), 0)::int` })
+      .select({ s: cardQty })
       .from(jobCards)
       .where(
         and(

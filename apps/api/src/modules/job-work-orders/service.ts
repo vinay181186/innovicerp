@@ -50,6 +50,7 @@ import type {
   ListJobWorkOrdersResponse,
   UpdateJobWorkOrderInput,
 } from './schema';
+import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -311,7 +312,7 @@ export async function listJobWorkOrders(
         GROUP BY job_work_order_id
       ) agg ON agg.job_work_order_id = jw.id
       LEFT JOIN (
-        SELECT l.job_work_order_id, SUM(jc.order_qty) AS jc_qty
+        SELECT l.job_work_order_id, SUM(${jcEffectiveQtySql('jc')}) AS jc_qty
         FROM public.job_cards jc
         JOIN public.job_work_order_lines l
           ON l.id = jc.source_jw_line_id AND l.deleted_at IS NULL

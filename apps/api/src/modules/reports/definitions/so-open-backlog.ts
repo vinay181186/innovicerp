@@ -4,6 +4,7 @@
 // sales_order_lines → sales_orders → items → clients → v_jc_status.
 
 import { sql } from 'drizzle-orm';
+import { jcEffectiveQtySql } from '../../../lib/jc-effective-qty';
 import type { RegisteredReport } from '../registry';
 
 export const soOpenBacklogReport: RegisteredReport = {
@@ -69,21 +70,26 @@ export const soOpenBacklogReport: RegisteredReport = {
         COALESCE(it.name, sol.part_name)         AS item_name,
         sol.order_qty                            AS order_qty,
         COALESCE((
-          SELECT SUM(GREATEST(0, jc.order_qty))
+          -- ADR-185 — the shared JC Qty rule (a stopped order's card counts
+          -- what it credited); rework / repair children re-make pieces the
+          -- parent already counts, so they are left out.
+          SELECT SUM(GREATEST(0, ${jcEffectiveQtySql('jc')}))
           FROM public.job_cards jc
           LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
           WHERE jc.source_so_line_id = sol.id
             AND jc.deleted_at IS NULL
+            AND jc.recovery_kind IS NULL
             AND v.computed_status IN ('complete', 'closed')
         ), 0)::int                               AS completed_qty,
         GREATEST(
           0,
           sol.order_qty - COALESCE((
-            SELECT SUM(GREATEST(0, jc.order_qty))
+            SELECT SUM(GREATEST(0, ${jcEffectiveQtySql('jc')}))
             FROM public.job_cards jc
             LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
             WHERE jc.source_so_line_id = sol.id
               AND jc.deleted_at IS NULL
+              AND jc.recovery_kind IS NULL
               AND v.computed_status IN ('complete', 'closed')
           ), 0)
         )::int                                   AS pending_qty,

@@ -11,6 +11,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { useExecutePlan, useFinalizePlan, usePlan, useSoftDeletePlan } from '../api';
+import { DERIVED_BADGE, DERIVED_LABEL } from '../lib/derived-status';
 
 export const planDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -152,11 +153,20 @@ function PlanDetailPage(): React.JSX.Element {
               {plan.itemName ??
                 plan.itemNameText ??
                 itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
-              <StatusBadge
-                kind="plan"
-                status={plan.planStatus}
-                label={STATUS_LABEL[plan.planStatus]}
-              />
+              {/* ADR-185 — a route-card plan states its DERIVED status, the
+                  same word and colour the Plans list shows for it; only old
+                  plans keep their stored status label. */}
+              {plan.derivedStatus ? (
+                <span className={`badge ${DERIVED_BADGE[plan.derivedStatus]}`}>
+                  {DERIVED_LABEL[plan.derivedStatus]}
+                </span>
+              ) : (
+                <StatusBadge
+                  kind="plan"
+                  status={plan.planStatus}
+                  label={STATUS_LABEL[plan.planStatus]}
+                />
+              )}
               <span className="text3" style={{ fontSize: 12 }}>
                 {TYPE_LABEL[plan.planType]}
               </span>
@@ -267,6 +277,14 @@ function PlanDetailPage(): React.JSX.Element {
             <KV label="Plan Date" value={plan.planDate} />
             <KV label="Order Qty" value={plan.orderQty} />
             <KV label="Plan Qty" value={plan.planQty} />
+            {/* ADR-185 — the same Covered / Pending the Plans list shows for
+                this plan (one SQL definition serves both). Route-card plans only. */}
+            {plan.derivedStatus ? (
+              <>
+                <KV label="Covered" value={plan.coveredQty} />
+                <KV label="Pending" value={plan.pendingQty} />
+              </>
+            ) : null}
             <KV label="Planned Start Date" value={plan.plannedStartDate ?? '—'} />
             <KV label="Planned End Date" value={plan.plannedEndDate ?? '—'} />
             <KV label="Customer Dispatch Date" value={plan.customerDispatchDate ?? '—'} />

@@ -2,7 +2,7 @@
 // Per ADR-030.
 
 import { z } from 'zod';
-import { PLAN_STATUSES, type PlanStatus } from '../enums/plan-status';
+import { PLAN_EFFECTIVE_STATUSES, PLAN_STATUSES, type PlanStatus } from '../enums/plan-status';
 import { PLAN_TYPES, type PlanType } from '../enums/plan-type';
 import { OP_TYPES, type OpType } from '../enums/op-type';
 import { PLAN_OPS_SOURCES, type PlanOpsSource } from '../enums/plan-ops-source';
@@ -163,13 +163,22 @@ export const planDetailSchema = planSchema.extend({
    *  Read-only: the Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
+  /** ADR-185 — the same three facts the Plans list states for this plan,
+   *  computed by the same code (lib/plan-order-coverage.ts +
+   *  lib/plan-derived-status.ts). Null derived status for old
+   *  (ops_source 'plan') plans, which keep their stored label. */
+  derivedStatus: planDerivedStatusSchema.nullable().default(null),
+  coveredQty: z.number().int().nonnegative().default(0),
+  pendingQty: z.number().int().nonnegative().default(0),
 });
 export type PlanDetail = z.infer<typeof planDetailSchema>;
 
 // ─── List query ──────────────────────────────────────────────────────────
 
 export const listPlansQuerySchema = z.object({
-  status: planStatusSchema.optional(),
+  /** ADR-185 — the status the row SHOWS (PLAN_EFFECTIVE_STATUSES): stored
+   *  status for old plans, derived status for route-card plans. */
+  status: z.enum(PLAN_EFFECTIVE_STATUSES).optional(),
   planType: planTypeSchema.optional(),
   search: z.string().trim().min(1).max(100).optional(),
   soLineId: z.string().uuid().optional(),
@@ -443,6 +452,10 @@ export const planningDashboardKpiSchema = z.object({
   prCreated: z.number().int().nonnegative(),
   inProduction: z.number().int().nonnegative(),
   complete: z.number().int().nonnegative(),
+  /** ADR-185 — route-card plans waiting for a route card / for a Production
+   *  Order. Every tile counts plans by the status their row shows. */
+  rcPending: z.number().int().nonnegative().default(0),
+  rcCreated: z.number().int().nonnegative().default(0),
 });
 export type PlanningDashboardKpi = z.infer<typeof planningDashboardKpiSchema>;
 

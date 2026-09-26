@@ -75,6 +75,7 @@ import {
 } from '../../lib/stock-reservation';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { derivePlanStatus } from '../../lib/plan-derived-status';
+import { soLineCoveredRaw } from '../../lib/so-line-coverage';
 import {
   PLAN_ACTIVE_ORDER_COUNT_SQL,
   PLAN_COVERED_QTY_SQL,
@@ -183,6 +184,16 @@ const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
 
 const DERIVED_STATUS_SQL = planDerivedStatusSql(HAS_ROUTE_CARD_SQL);
 
+// ADR-185 — the status a plan's ROW shows (PLAN_EFFECTIVE_STATUSES): the
+// derived status for a live route-card plan (production_complete spelled
+// 'complete', like the stored word the tile uses), the stored status
+// otherwise. The list filter AND the KPI tile counts both read this, so the
+// tile a user clicks lists exactly the rows it counted.
+const EFFECTIVE_STATUS_SQL = sql<string>`COALESCE(
+  REPLACE((${DERIVED_STATUS_SQL})::text, 'production_complete', 'complete'),
+  ${plans.planStatus}::text
+)`;
+
 export async function listPlans(
   query: ListPlansQuery,
   user: AuthContext,
@@ -191,7 +202,7 @@ export async function listPlans(
 
   return withUserContext(user, async (tx) => {
     const conditions = [eq(plans.companyId, companyId), isNull(plans.deletedAt)];
-    if (query.status) conditions.push(eq(plans.planStatus, query.status));
+    if (query.status) conditions.push(sql`${EFFECTIVE_STATUS_SQL} = ${query.status}`);
     if (query.planType) conditions.push(eq(plans.planType, query.planType));
     if (query.soLineId) conditions.push(eq(plans.soLineId, query.soLineId));
     if (query.opsSource) conditions.push(eq(plans.opsSource, query.opsSource));
@@ -344,6 +355,14 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         itemName: items.name,
         itemRevision: SO_LINE_REVISION,
         clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
+        // ADR-185 — the same Covered / Pending / derived-status facts the
+        // Plans list states, from the same SQL, so the list and the detail can
+        // never show one plan two ways.
+        coveredQty: PLAN_COVERED_QTY_SQL,
+        pendingQty: PLAN_PENDING_QTY_SQL,
+        activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
+        openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
+        hasRouteCard: HAS_ROUTE_CARD_SQL,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -378,6 +397,16 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       itemName: row.itemName ?? null,
       ops: opRows.map(toPlanOp),
       priceVisible: showMoney,
+      derivedStatus: derivePlanStatus({
+        opsSource: row.plan.opsSource,
+        planStatus: row.plan.planStatus,
+        hasRouteCard: Boolean(row.hasRouteCard),
+        activeOrderCount: Number(row.activeOrderCount ?? 0),
+        openOrderCount: Number(row.openOrderCount ?? 0),
+        pendingQty: Number(row.pendingQty ?? 0),
+      }),
+      coveredQty: Number(row.coveredQty ?? 0),
+      pendingQty: Number(row.pendingQty ?? 0),
     };
     return showMoney ? detail : hidePlanMoney(detail);
   });
@@ -1766,11 +1795,13 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
 
   return withUserContext(user, async (tx) => {
     const [statusCounts, recentRows, needsPlanningRows] = await Promise.all([
+      // ADR-185 — counted by the status each row SHOWS (EFFECTIVE_STATUS_SQL),
+      // the same expression the list filters on.
       tx
-        .select({ status: plans.planStatus, c: count() })
+        .select({ status: sql<string>`${EFFECTIVE_STATUS_SQL}`, c: count() })
         .from(plans)
         .where(and(eq(plans.companyId, companyId), isNull(plans.deletedAt)))
-        .groupBy(plans.planStatus),
+        .groupBy(sql`1`),
       tx
         .select({
           plan: plans,
@@ -1794,7 +1825,8 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         .where(and(eq(plans.companyId, companyId), isNull(plans.deletedAt)))
         .orderBy(desc(plans.planDate), asc(plans.code))
         .limit(50),
-      // needsPlanning = SO lines on open SOs with NO non-cancelled plan covering them.
+      // needsPlanning = open SO lines on open SOs with qty still TO PLAN (ADR-185,
+      // lib/so-line-coverage.ts) — the same rows the Needs Planning table lists.
       // Counts each unplanned SO line once. Same shape as the legacy renderPlanDashboard
       // "Needs Planning" tile: open SO lines that haven't been planned yet.
       tx.execute(sql`
@@ -1806,16 +1838,12 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
           AND so.deleted_at IS NULL
           AND sol.deleted_at IS NULL
           AND sol.status = 'open'
-          AND NOT EXISTS (
-            SELECT 1 FROM public.plans p
-            WHERE p.so_line_id = sol.id
-              AND p.deleted_at IS NULL
-              AND p.plan_status <> 'cancelled'
-          )
+          -- ADR-185 — exactly the rows the Needs Planning table lists.
+          AND sol.order_qty > ${sql.raw(soLineCoveredRaw('sol'))}
       `),
     ]);
 
-    const byStatus = new Map<PlanStatus, number>();
+    const byStatus = new Map<string, number>();
     for (const r of statusCounts) byStatus.set(r.status, Number(r.c));
 
     const recentIds = recentRows.map((r) => r.plan.id);
@@ -1840,6 +1868,8 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         jcCreated: byStatus.get('jc_created') ?? 0,
         prCreated: byStatus.get('pr_created') ?? 0,
         inProduction: byStatus.get('in_production') ?? 0,
+        rcPending: byStatus.get('route_card_pending') ?? 0,
+        rcCreated: byStatus.get('gen_production_order') ?? 0,
         complete: byStatus.get('complete') ?? 0,
       },
       recentPlans: recentRows.map((r) => ({
@@ -1865,15 +1895,6 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
 
   return withUserContext(user, async (tx) => {
     const rows = await tx.execute(sql`
-      WITH planned_qty AS (
-        SELECT so_line_id, COALESCE(SUM(plan_qty), 0)::int AS qty
-        FROM public.plans
-        WHERE company_id = ${companyId}::uuid
-          AND deleted_at IS NULL
-          AND plan_status <> 'cancelled'
-          AND so_line_id IS NOT NULL
-        GROUP BY so_line_id
-      )
       SELECT
         sol.id            AS so_line_id,
         so.id             AS so_id,
@@ -1894,17 +1915,21 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
         so.customer_name  AS customer_name,
         sol.due_date::text AS due_date,
         sol.order_qty     AS order_qty,
-        COALESCE(pq.qty, 0)::int AS planned_qty,
-        GREATEST(sol.order_qty - COALESCE(pq.qty, 0), 0)::int AS remaining_qty
+        -- ADR-185 — the one "covered / to plan" rule (lib/so-line-coverage.ts),
+        -- the same figures SO Planning states for this line and the same rows
+        -- the Needs Planning KPI tile counts. Covered is computed ONCE per
+        -- line (the LATERAL) and to-plan derived from it.
+        cov.covered       AS planned_qty,
+        GREATEST(sol.order_qty - cov.covered, 0)::int AS remaining_qty
       FROM public.sales_order_lines sol
       JOIN public.sales_orders so ON so.id = sol.sales_order_id
-      LEFT JOIN planned_qty pq ON pq.so_line_id = sol.id
+      CROSS JOIN LATERAL (SELECT ${sql.raw(soLineCoveredRaw('sol'))} AS covered) cov
       WHERE so.company_id = ${companyId}::uuid
         AND so.status = 'open'
         AND so.deleted_at IS NULL
         AND sol.deleted_at IS NULL
         AND sol.status = 'open'
-        AND COALESCE(pq.qty, 0) < sol.order_qty
+        AND sol.order_qty > cov.covered
       ORDER BY sol.due_date ASC NULLS LAST, so.code ASC, sol.line_no ASC
     `);
 
@@ -2005,6 +2030,12 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       itemName: items.name,
       itemRevision: SO_LINE_REVISION,
       clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
+      // ADR-185 — same facts, same SQL as getPlan and the Plans list.
+      coveredQty: PLAN_COVERED_QTY_SQL,
+      pendingQty: PLAN_PENDING_QTY_SQL,
+      activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
+      openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
+      hasRouteCard: HAS_ROUTE_CARD_SQL,
     })
     .from(plans)
     .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -2040,6 +2071,16 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     // (see hidePlanMoney, which sets this false). Default true so the field is
     // always present and the gate stays the single decision point.
     priceVisible: true,
+    derivedStatus: derivePlanStatus({
+      opsSource: row.plan.opsSource,
+      planStatus: row.plan.planStatus,
+      hasRouteCard: Boolean(row.hasRouteCard),
+      activeOrderCount: Number(row.activeOrderCount ?? 0),
+      openOrderCount: Number(row.openOrderCount ?? 0),
+      pendingQty: Number(row.pendingQty ?? 0),
+    }),
+    coveredQty: Number(row.coveredQty ?? 0),
+    pendingQty: Number(row.pendingQty ?? 0),
   };
 }
 

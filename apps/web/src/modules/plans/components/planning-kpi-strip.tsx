@@ -14,17 +14,30 @@
 // only what draws them changed. `#8b5cf6` became var(--purple), the token that
 // same violet already has.
 
-import type { PlanStatus } from '@innovic/shared';
+import type { PlanEffectiveStatus } from '@innovic/shared';
 import { StatStrip, type StatStripItem } from '@/ui/data';
 
-type StatusTile = { status: PlanStatus; label: string; color: string; kpiKey: string };
+type StatusTile = { status: PlanEffectiveStatus; label: string; color: string; kpiKey: string };
 
 const STATUS_TILES: StatusTile[] = [
   { status: 'in_planning', label: 'In Planning', color: 'var(--amber)', kpiKey: 'inPlanning' },
   { status: 'planned', label: 'Planned (Ready)', color: 'var(--blue)', kpiKey: 'planned' },
+  // ADR-185 — route-card plans are counted by the status their row shows.
+  { status: 'route_card_pending', label: 'RC Pending', color: 'var(--amber)', kpiKey: 'rcPending' },
+  {
+    status: 'gen_production_order',
+    label: 'RC Created',
+    color: 'var(--blue)',
+    kpiKey: 'rcCreated',
+  },
   { status: 'jc_created', label: 'JC Created', color: 'var(--cyan)', kpiKey: 'jcCreated' },
   { status: 'pr_created', label: 'PR Created (Buy)', color: 'var(--purple)', kpiKey: 'prCreated' },
-  { status: 'in_production', label: 'In Production', color: 'var(--cyan)', kpiKey: 'inProduction' },
+  {
+    status: 'in_production',
+    label: 'In Production',
+    color: 'var(--amber)',
+    kpiKey: 'inProduction',
+  },
   { status: 'complete', label: 'Completed', color: 'var(--green)', kpiKey: 'complete' },
 ];
 
@@ -36,9 +49,9 @@ export function PlanningKpiStrip({
   onSelectNeedsPlanning,
 }: {
   kpi: Record<string, number>;
-  activeStatus: PlanStatus | undefined;
+  activeStatus: PlanEffectiveStatus | undefined;
   needsPlanning: boolean;
-  onSelectStatus: (s: PlanStatus | undefined) => void;
+  onSelectStatus: (s: PlanEffectiveStatus | undefined) => void;
   onSelectNeedsPlanning: () => void;
 }): React.JSX.Element {
   const items: StatStripItem[] = [

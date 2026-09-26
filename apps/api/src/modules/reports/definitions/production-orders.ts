@@ -16,7 +16,9 @@ import type { RegisteredReport } from '../registry';
 
 // ADR-182 added 'short_closed' — an order stopped at any stage. Blank picks
 // every status, so the filter is only about narrowing to one of these.
-const STATUS_OPTIONS = ['open', 'closed', 'short_closed'] as const;
+// ADR-185: 'partially_closed' was missing, so a partly credited order could
+// not be picked out here although the Production Orders list shows it.
+const STATUS_OPTIONS = ['open', 'partially_closed', 'closed', 'short_closed'] as const;
 
 export const productionOrdersReport: RegisteredReport = {
   definition: {
@@ -47,6 +49,8 @@ export const productionOrdersReport: RegisteredReport = {
       { key: 'status', label: 'Production Order Status', type: 'text' },
       { key: 'closed_at', label: 'Closed Date', type: 'datetime' },
       { key: 'credited_qty', label: 'Credited Qty', type: 'number' },
+      // ADR-185 — the lost pieces the order detail states (finish / short close).
+      { key: 'lost_qty', label: 'Lost Qty', type: 'number' },
     ],
   },
   async run({ tx, companyId, filters }) {
@@ -77,7 +81,8 @@ export const productionOrdersReport: RegisteredReport = {
         ), 0)::int AS finished_qty,
         po.status,
         to_char(po.closed_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI') AS closed_at,
-        po.credited_qty::int AS credited_qty
+        po.credited_qty::int AS credited_qty,
+        po.lost_qty::int AS lost_qty
       FROM public.production_orders po
       LEFT JOIN public.v_jc_status s ON s.job_card_id = po.job_card_id
       WHERE po.company_id = ${companyId}::uuid
@@ -103,6 +108,7 @@ export const productionOrdersReport: RegisteredReport = {
       status: String(r['status'] ?? ''),
       closed_at: (r['closed_at'] as string | null) ?? null,
       credited_qty: r['credited_qty'] != null ? Number(r['credited_qty']) : null,
+      lost_qty: r['lost_qty'] != null ? Number(r['lost_qty']) : null,
     }));
 
     return { columns: productionOrdersReport.definition.columns, rows };

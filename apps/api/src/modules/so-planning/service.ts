@@ -55,6 +55,7 @@ import {
   PLAN_PENDING_QTY_SQL,
 } from '../../lib/plan-order-coverage';
 import { readReservedByLine, readStockPositions } from '../../lib/stock-reservation';
+import { soLineCoveredRaw, soLinePlannedRaw } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 
@@ -262,6 +263,18 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         soType: salesOrders.type,
         totalLines: sql<number>`count(${salesOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${salesOrderLines.orderQty}), 0)::int`.as('total_qty'),
+        // ADR-185 — per line, by the one shared rule (lib/so-line-coverage.ts):
+        // Plan Qty = plans + a Buy line's PRs (the detail pane's totalPlanned);
+        // the % uses covered (+ direct cards) capped at the line qty, so one
+        // over-covered line cannot hide another's gap.
+        plannedQty:
+          sql<number>`coalesce(sum(${sql.raw(soLinePlannedRaw('"sales_order_lines"'))}), 0)::int`.as(
+            'planned_qty',
+          ),
+        coveredQty:
+          sql<number>`coalesce(sum(LEAST(${sql.raw(soLineCoveredRaw('"sales_order_lines"'))}, ${salesOrderLines.orderQty})), 0)::int`.as(
+            'covered_qty',
+          ),
         maxDueDate: sql<string | null>`max(${salesOrderLines.dueDate})::text`.as('max_due'),
         // Aggregated item code + part name across this SO's lines, for the
         // client-side item search on the Planning page.
@@ -276,7 +289,9 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         and(
           eq(salesOrderLines.salesOrderId, salesOrders.id),
           isNull(salesOrderLines.deletedAt),
-          eq(salesOrderLines.status, 'open'),
+          // ADR-185 — the same lines the detail pane lists (a produced line
+          // still counts toward the order's totals); only cancelled ones drop.
+          sql`${salesOrderLines.status} <> 'cancelled'`,
         ),
       )
       .where(
@@ -289,100 +304,8 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
       .groupBy(salesOrders.id, salesOrders.code, salesOrders.customerName, salesOrders.type)
       .orderBy(desc(salesOrders.code));
 
-    const soIds = soRows.map((r) => r.soId);
-
-    // 2. Planned-qty rollup per SO via the plans table (so_line_id link).
-    const plannedAgg =
-      soIds.length === 0
-        ? []
-        : await tx
-            .select({
-              soId: salesOrders.id,
-              plannedQty: sql<number>`coalesce(sum(${plans.planQty}), 0)::int`.as('planned_qty'),
-            })
-            .from(plans)
-            .innerJoin(salesOrderLines, eq(salesOrderLines.id, plans.soLineId))
-            .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
-            .where(
-              and(
-                inArray(salesOrders.id, soIds),
-                isNull(plans.deletedAt),
-                sql`${plans.planStatus} <> 'cancelled'`,
-              ),
-            )
-            .groupBy(salesOrders.id);
-    const plannedMap = new Map<string, number>();
-    for (const r of plannedAgg) plannedMap.set(r.soId, Number(r.plannedQty));
-
-    // 2b. Direct (plan-less) Job Card qty per SO — JCs on open SO lines not
-    // linked to any non-cancelled plan. Folded into coverage so the dot/pct
-    // reflect production that bypassed planning (matches SO Status Review).
-    const directAgg =
-      soIds.length === 0
-        ? []
-        : await tx
-            .select({
-              soId: salesOrders.id,
-              directQty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int`.as('direct_qty'),
-            })
-            .from(jobCards)
-            .innerJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
-            .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
-            .leftJoin(
-              plans,
-              and(
-                eq(plans.jcId, jobCards.id),
-                isNull(plans.deletedAt),
-                sql`${plans.planStatus} <> 'cancelled'`,
-              ),
-            )
-            .where(
-              and(
-                inArray(salesOrders.id, soIds),
-                isNull(jobCards.deletedAt),
-                isNull(plans.id),
-                // A rework/repair child inherits the line link but re-makes
-                // pieces the parent JC already covers — counting it as extra
-                // coverage read "12 of 10" (QC-NC audit 2026-09-21, gap 3).
-                isNull(jobCards.recoveryKind),
-              ),
-            )
-            .groupBy(salesOrders.id);
-    const directMap = new Map<string, number>();
-    for (const r of directAgg) directMap.set(r.soId, Number(r.directQty));
-
-    // 2c. ADR-171 — live purchase-request qty per SO on BUY lines. Counted as
-    // planned so the left-pane % matches the right-pane lines (a buy line is
-    // covered by its PR the way a make line is covered by its plan). Same
-    // filter as loadPrsByLine; make-line PRs are deliberately left out.
-    const prAgg =
-      soIds.length === 0
-        ? []
-        : await tx
-            .select({
-              soId: salesOrders.id,
-              prQty: sql<number>`coalesce(sum(${purchaseRequests.qty}), 0)::int`.as('pr_qty'),
-            })
-            .from(purchaseRequests)
-            .innerJoin(salesOrderLines, eq(salesOrderLines.id, purchaseRequests.sourceSoLineId))
-            .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
-            .innerJoin(items, eq(items.id, salesOrderLines.itemId))
-            .where(
-              and(
-                inArray(salesOrders.id, soIds),
-                eq(purchaseRequests.companyId, companyId),
-                isNull(purchaseRequests.deletedAt),
-                isNull(purchaseRequests.sourceJcOpId),
-                eq(purchaseRequests.prType, 'standard'),
-                NOT_A_PLAN_PR,
-                sql`${purchaseRequests.status} <> 'cancelled'`,
-                eq(items.procurementType, 'buy'),
-              ),
-            )
-            .groupBy(salesOrders.id);
-    for (const r of prAgg) {
-      plannedMap.set(r.soId, (plannedMap.get(r.soId) ?? 0) + Number(r.prQty));
-    }
+    // ADR-185 — planned / PR / direct-JC coverage per SO now comes from the
+    // shared rule in the select above (lib/so-line-coverage.ts).
 
     // ── Job Work Orders ───────────────────────────────────────────────────
     // Same shape as SO but off job_work_orders / job_work_order_lines and the
@@ -406,7 +329,8 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         and(
           eq(jobWorkOrderLines.jobWorkOrderId, jobWorkOrders.id),
           isNull(jobWorkOrderLines.deletedAt),
-          eq(jobWorkOrderLines.status, 'open'),
+          // ADR-185 — same line set as the SO rows and the JW detail pane.
+          sql`${jobWorkOrderLines.status} <> 'cancelled'`,
         ),
       )
       .where(
@@ -467,6 +391,11 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
                 inArray(jobWorkOrders.id, jwIds),
                 isNull(jobCards.deletedAt),
                 isNull(plans.id),
+                // ADR-185 — only a card for the line's own item is direct cover.
+                sql`${jobCards.itemId} IS NOT DISTINCT FROM ${jobWorkOrderLines.itemId}`,
+                // ADR-185 — a Production Order's card belongs to its plan (the
+                // plan's Covered counts it); only order-less cards are direct.
+                isNull(jobCards.productionOrderId),
                 // Rework/repair children are not extra coverage (gap 3).
                 isNull(jobCards.recoveryKind),
               ),
@@ -489,9 +418,12 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
       soType: string,
       planned: number,
       direct: number,
+      /** ADR-185 — covered qty already capped per line (SO rows); JW rows
+       *  still pass planned + direct. */
+      coveredForPct?: number,
     ) => {
       const totalQty = Number(r.totalQty);
-      const coveredQty = planned + direct;
+      const coveredQty = coveredForPct ?? planned + direct;
       const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
       return {
         soId: r.soId,
@@ -510,10 +442,10 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
     };
 
     // Named `listItems`, not `items`: that name is the items TABLE in this
-    // module (the 2c PR roll-up above joins it).
+    // module (the coverage and PR reads above join it).
     const listItems = [
       ...soRows.map((r) =>
-        buildItem(r, 'so', r.soType, plannedMap.get(r.soId) ?? 0, directMap.get(r.soId) ?? 0),
+        buildItem(r, 'so', r.soType, Number(r.plannedQty ?? 0), 0, Number(r.coveredQty ?? 0)),
       ),
       ...jwRows.map((r) =>
         buildItem(r, 'jw', 'job_work', jwPlannedMap.get(r.soId) ?? 0, jwDirectMap.get(r.soId) ?? 0),
@@ -575,7 +507,14 @@ export async function getPlanningSoDetail(
       })
       .from(salesOrderLines)
       .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
-      .where(and(eq(salesOrderLines.salesOrderId, soId), isNull(salesOrderLines.deletedAt)))
+      .where(
+        and(
+          eq(salesOrderLines.salesOrderId, soId),
+          isNull(salesOrderLines.deletedAt),
+          // ADR-185 — the same line set as the left-pane totals.
+          sql`${salesOrderLines.status} <> 'cancelled'`,
+        ),
+      )
       .orderBy(asc(salesOrderLines.lineNo));
 
     const lineIds = lineRows.map((r) => r.line.id);
@@ -728,6 +667,7 @@ export async function getPlanningSoDetail(
               id: jobCards.id,
               code: jobCards.code,
               soLineId: jobCards.sourceSoLineId,
+              itemId: jobCards.itemId,
               orderQty: jobCards.orderQty,
             })
             .from(jobCards)
@@ -735,6 +675,9 @@ export async function getPlanningSoDetail(
               and(
                 inArray(jobCards.sourceSoLineId, lineIds),
                 isNull(jobCards.deletedAt),
+                // ADR-185 — a Production Order's card belongs to its plan, never
+                // a direct card, whether or not it is the plan's jc_id.
+                isNull(jobCards.productionOrderId),
                 // Rework/repair children are not extra coverage (gap 3, see
                 // the list aggregate above).
                 isNull(jobCards.recoveryKind),
@@ -742,8 +685,12 @@ export async function getPlanningSoDetail(
             )
             .orderBy(asc(jobCards.code));
     const directJcByLine = new Map<string, { qty: number; codes: string[] }>();
+    // ADR-185 — only a card for the line's OWN item is direct coverage; a BOM
+    // cascade's child cards (other items on the parent line) are not.
+    const lineItemById = new Map(lineRows.map((r) => [r.line.id, r.line.itemId]));
     for (const jc of jcRows) {
       if (!jc.soLineId || linkedJcIds.has(jc.id)) continue;
+      if ((jc.itemId ?? null) !== (lineItemById.get(jc.soLineId) ?? null)) continue;
       const entry = directJcByLine.get(jc.soLineId) ?? { qty: 0, codes: [] };
       entry.qty += jc.orderQty;
       entry.codes.push(jc.code);
@@ -904,7 +851,14 @@ async function getJwPlanningDetail(
     })
     .from(jobWorkOrderLines)
     .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
-    .where(and(eq(jobWorkOrderLines.jobWorkOrderId, jwId), isNull(jobWorkOrderLines.deletedAt)))
+    .where(
+      and(
+        eq(jobWorkOrderLines.jobWorkOrderId, jwId),
+        isNull(jobWorkOrderLines.deletedAt),
+        // ADR-185 — the same line set as the left-pane totals.
+        sql`${jobWorkOrderLines.status} <> 'cancelled'`,
+      ),
+    )
     .orderBy(asc(jobWorkOrderLines.lineNo));
 
   const lineIds = lineRows.map((r) => r.line.id);
@@ -1014,14 +968,25 @@ async function getJwPlanningDetail(
             id: jobCards.id,
             code: jobCards.code,
             jwLineId: jobCards.sourceJwLineId,
+            itemId: jobCards.itemId,
             orderQty: jobCards.orderQty,
           })
           .from(jobCards)
-          .where(and(inArray(jobCards.sourceJwLineId, lineIds), isNull(jobCards.deletedAt)))
+          .where(
+            and(
+              inArray(jobCards.sourceJwLineId, lineIds),
+              isNull(jobCards.deletedAt),
+              // ADR-185 — a Production Order's card belongs to its plan.
+              isNull(jobCards.productionOrderId),
+            ),
+          )
           .orderBy(asc(jobCards.code));
   const directJcByLine = new Map<string, { qty: number; codes: string[] }>();
+  // ADR-185 — only a card for the line's OWN item is direct coverage.
+  const jwLineItemById = new Map(lineRows.map((r) => [r.line.id, r.line.itemId]));
   for (const jc of jcRows) {
     if (!jc.jwLineId || linkedJcIds.has(jc.id)) continue;
+    if ((jc.itemId ?? null) !== (jwLineItemById.get(jc.jwLineId) ?? null)) continue;
     const entry = directJcByLine.get(jc.jwLineId) ?? { qty: 0, codes: [] };
     entry.qty += jc.orderQty;
     entry.codes.push(jc.code);
@@ -1418,47 +1383,15 @@ export async function raisePlanningPr(
         );
       }
 
-      // 3. What the line still has left — the same numbers the Planning line
-      //    shows: orderQty − plans planned − live PR qty − direct JC qty.
-      const plannedAgg = await tx
-        .select({ qty: sql<number>`coalesce(sum(${plans.planQty}), 0)::int` })
-        .from(plans)
-        .where(
-          and(
-            eq(plans.soLineId, soLineId),
-            isNull(plans.deletedAt),
-            sql`${plans.planStatus} <> 'cancelled'`,
-          ),
-        );
-      const plannedQty = Number(plannedAgg[0]?.qty ?? 0);
-
-      const prQty = (await loadPrsByLine(tx, companyId, [soLineId])).get(soLineId)?.prQty ?? 0;
-
-      // Direct (plan-less) JCs on the line — same rule as the detail read (7b).
-      const directAgg = await tx
-        .select({ qty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int` })
-        .from(jobCards)
-        .leftJoin(
-          plans,
-          and(
-            eq(plans.jcId, jobCards.id),
-            isNull(plans.deletedAt),
-            sql`${plans.planStatus} <> 'cancelled'`,
-          ),
-        )
-        .where(
-          and(
-            eq(jobCards.sourceSoLineId, soLineId),
-            isNull(jobCards.deletedAt),
-            isNull(plans.id),
-            // Rework/repair children are not extra coverage (gap 3).
-            isNull(jobCards.recoveryKind),
-          ),
-        );
-      const directJcQty = Number(directAgg[0]?.qty ?? 0);
-
-      const orderQty = row.line.orderQty;
-      const remaining = Math.max(0, orderQty - plannedQty - prQty - directJcQty);
+      // 3. What the line still has left to plan — ADR-185: read off the ONE
+      //    shared rule (lib/so-line-coverage.ts), the same figure the Planning
+      //    line and the Needs Planning table state, never rebuilt by hand here.
+      const leftRows = (await tx.execute(sql`
+        SELECT GREATEST(sol.order_qty - ${sql.raw(soLineCoveredRaw('sol'))}, 0)::int AS to_plan
+        FROM public.sales_order_lines sol
+        WHERE sol.id = ${soLineId}::uuid
+      `)) as unknown as Array<{ to_plan: number }>;
+      const remaining = Number(leftRows[0]?.to_plan ?? 0);
       if (input.qty > remaining) {
         throw new ValidationError(
           `PR Qty (${input.qty}) cannot be more than Pending (${remaining}) on SO ${row.soCode} ` +
