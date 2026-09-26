@@ -34,8 +34,7 @@ function CostCenterEditPage(): React.JSX.Element {
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have edit access to Cost Centre Master. Ask an admin for L2 Data Entry or
-        above in Finance.
+        You do not have permission to edit Cost Centres. Ask an admin.
       </div>
     );
   }
@@ -57,7 +56,7 @@ function CostCenterEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Cost center not found'}
+            {error instanceof Error ? error.message : 'Cost Centre not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -82,7 +81,7 @@ function CostCenterEditPage(): React.JSX.Element {
               {detail.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
-              ✏ Edit Cost Centre
+              Edit Cost Centre
             </div>
           </div>
         </div>

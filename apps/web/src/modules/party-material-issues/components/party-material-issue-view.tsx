@@ -82,7 +82,7 @@ export function PartyMaterialIssueView({
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Party Material Issues. Ask an admin.
       </div>
     );
   }
@@ -130,11 +130,10 @@ export function PartyMaterialIssueView({
                   <th>JWSO No.</th>
                   <th>JC No.</th>
                   {/* TWO different items sit side by side here and the headers
-                      have to keep them apart. "Item Made" is OUR produced part,
-                      off the job card; "Material" is the CLIENT'S supplied
-                      stock this issue debits. A JC number alone says WHICH JOB,
-                      not WHICH PART, which is why the first column now exists. */}
-                  <th>Item Name</th>
+                      have to keep them apart. "Item Code" is OUR produced part
+                      (CODE/REV, name under it), off the job card; "Material" is
+                      the CUSTOMER'S supplied stock this issue debits. */}
+                  <th>Item Code</th>
                   <th>Material</th>
                   <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     Issue Qty
@@ -147,7 +146,7 @@ export function PartyMaterialIssueView({
                 {rows.length === 0 ? (
                   <tr>
                     <td colSpan={canCancel ? 9 : 8} className="empty-state">
-                      No party material issues — click + New Issue
+                      {term ? 'No Party Material Issues match.' : 'No Party Material Issues yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -315,7 +314,7 @@ function CancelIssueModal({
           Returns <b style={{ color: 'var(--green2)' }}>{row.qty}</b> to party stock. Refused if
           already machined.
         </div>
-        <Field label="Reason ★">
+        <Field label="Reason" required>
           <input
             type="text"
             className="innovic-input"
@@ -402,20 +401,20 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
   const onSave = (): void => {
     setErr(null);
     if (!jobWorkOrderId) {
-      setErr('Select a JWSO');
+      setErr('JWSO No. is required.');
       return;
     }
     if (!jobCardId) {
-      setErr('Select the Job Card this material is for — work cannot start without it.');
+      setErr('JC No. is required. Work cannot start without it.');
       return;
     }
     if (!partyMaterialId) {
-      setErr('Select a party material');
+      setErr('Party Material is required.');
       return;
     }
     const q = Number(qty);
     if (!Number.isFinite(q) || q <= 0) {
-      setErr('Qty must be ≥ 1');
+      setErr('Issue Qty must be 1 or more.');
       return;
     }
     const input: CreatePartyMaterialIssueInput = {
@@ -462,7 +461,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          📤 New Party Material Issue
+          New Party Material Issue
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -474,7 +473,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
               onChange={(e) => setIssueDate(e.target.value)}
             />
           </Field>
-          <Field label="Issue Qty ★">
+          <Field label="Issue Qty" required>
             <input
               type="number"
               min={1}
@@ -492,7 +491,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           </Field>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JWSO No. ★">
+            <Field label="JWSO No." required>
               <SearchableSelect
                 id="pmi-jwso"
                 value={jobWorkOrderId}
@@ -510,7 +509,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           </div>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JC No. ★">
+            <Field label="JC No." required>
               <SearchableSelect
                 id="pmi-jc"
                 value={jobCardId}
@@ -524,7 +523,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           </div>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Party Material ★">
+            <Field label="Party Material" required>
               <SearchableSelect
                 id="pmi-material"
                 value={partyMaterialId}
@@ -535,13 +534,13 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
                 options={pmAll.map((p) => ({
                   id: p.id,
                   code: p.code,
-                  name: `${p.name} · stock ${p.stockQty}`,
+                  name: `${p.name} · Available ${p.stockQty}`,
                 }))}
               />
             </Field>
             {selectedPm ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                Available party stock:{' '}
+                Available:{' '}
                 <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
                   {selectedPm.stockQty}
                 </span>{' '}
@@ -604,23 +603,18 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
 
 function Field({
   label,
+  required = false,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
+      <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
         {label}
+        {required ? <span className="req">★</span> : null}
       </div>
       {children}
     </div>

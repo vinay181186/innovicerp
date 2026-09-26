@@ -253,6 +253,15 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const rmItems = items.filter((it) => it.code.toLowerCase().includes('-rm'));
   // Code → master item, for auto-filling the line from the item master (bug 2.1).
   const itemsByCode = new Map(items.map((it) => [it.code.trim().toUpperCase(), it]));
+  // Line Item Code picker: the shared SearchableSelect, server-searched like the
+  // SO form's, so a code beyond the 200-row page above can still be picked.
+  const [lineItemSearch, setLineItemSearch] = useState('');
+  const { data: lineItemsData, isFetching: lineItemsFetching } = useItemsList({
+    ...(lineItemSearch.trim() ? { search: lineItemSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const lineItems = lineItemsData?.items ?? [];
 
   // ── JWSO No.: live duplicate/format check (parity with the SO form). ──
   const [docNoValid, setDocNoValid] = useState(true);
@@ -311,9 +320,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
    *  Rate, Qty, Drawing No. and Rev are always user-entered and are never
    *  touched here — the drawing lives on the JWSO line, not the item master
    *  (user decision 2026-09-21). */
-  function fillLineFromItem(idx: number, codeValue: string): void {
+  function fillLineFromItem(idx: number, codeValue: string, picked?: (typeof items)[number]): void {
     const lineKey = fields[idx]?.id ?? String(idx);
-    const it = itemsByCode.get(codeValue.trim().toUpperCase());
+    const it = picked ?? itemsByCode.get(codeValue.trim().toUpperCase());
     if (it) {
       // Matched a master item — the code is the key, so the master wins: refresh
       // all three derived fields (replace, not fill-only), even across a change
@@ -346,6 +355,14 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     // — leaving it would save blank/new text against the old item.
     setValue(`lines.${idx}.itemId`, undefined);
     delete prevMatchedCodeRef.current[lineKey];
+  }
+
+  /** The line's Item Code picker returned an item id (or null when cleared). */
+  function pickLineItem(idx: number, id: string | null): void {
+    const it = id ? lineItems.find((x) => x.id === id) : undefined;
+    const code = it?.code ?? '';
+    setValue(`lines.${idx}.itemCodeText`, code, { shouldDirty: true });
+    fillLineFromItem(idx, code, it);
   }
 
   const watchedLines = watch('lines');
@@ -539,6 +556,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     // blocked by this: every pre-existing row was backfilled to '0' in the
     // database, and detailToFormValues keeps that '0' (falling back to '0' again
     // if the API has not started sending the column yet) — '0' is non-blank.
+    // Item Code is the key of a JWSO line, as on the SO form.
+    const badCode = values.lines.findIndex((l) => !l.itemId && !l.itemCodeText.trim());
+    if (badCode >= 0) {
+      setLineError(`Line ${badCode + 1}: Item Code is required.`);
+      return;
+    }
     const badRev = values.lines.findIndex((l) => !String(l.revision ?? '').trim());
     if (badRev >= 0) {
       setLineError(
@@ -681,13 +704,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           {errorBanners}
         </>
       ) : null}
-      <datalist id="dlJwItems">
-        {items.map((it) => (
-          <option key={it.id} value={it.code}>
-            {it.name}
-          </option>
-        ))}
-      </datalist>
       <datalist id="dlRmItems">
         {rmItems.map((it) => (
           <option key={it.id} value={it.code}>
@@ -706,7 +722,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         <div className="form-grid-12">
           <div className="form-grp f-lg">
             <label className="form-label">
-              Customer<span className="req">★</span> (type to search)
+              Customer<span className="req">★</span>
             </label>
             <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
@@ -741,7 +757,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             </div>
             <input
               type="hidden"
-              {...register('header.clientId', { required: 'Customer is required' })}
+              {...register('header.clientId', { required: 'Customer is required.' })}
             />
             {errors.header?.clientId?.message ? (
               <div className="form-error">{errors.header.clientId.message}</div>
@@ -759,7 +775,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               }}
             >
               <label className="form-label" htmlFor="clientPoNo" style={{ marginBottom: 0 }}>
-                Client PO No. {isCreate ? <span className="req">★</span> : null}
+                Client PO No.
               </label>
               <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
               {emailFileName ? (
@@ -894,20 +910,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           {/* Client Material Details (legacy L12839) — right after the customer,
             since it is the customer who supplies it. */}
           <div className="form-grp f-lg">
-            <label className="form-label">Customer Material (Party Supplied Item)</label>
+            <label className="form-label">Customer Material</label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 className="innovic-input"
                 style={{ flex: 1 }}
                 autoComplete="off"
                 list="dlRmItems"
-                placeholder="🔍 Search -rm items…"
+                placeholder="🔍 Search raw material…"
                 {...register('header.clientMaterial')}
               />
               <Link
                 to="/items/new"
                 className="btn btn-ghost btn-sm"
-                title="Create a new -rm item"
+                title="Create a new raw material item"
                 style={{ whiteSpace: 'nowrap' }}
               >
                 + New
@@ -927,7 +943,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             ) : null}
           </div>
           <div className="form-grp f-sm">
-            <label className="form-label">Material Qty (Customer Supplied)</label>
+            <label className="form-label">Material Qty</label>
             <input
               type="number"
               min={0}
@@ -960,7 +976,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               id="jwDate"
               type="date"
               className="innovic-input"
-              {...register('header.jwDate', { required: 'Date is required' })}
+              {...register('header.jwDate', { required: 'JWSO Date is required.' })}
             />
           </div>
           <div className="form-grp f-sm">
@@ -1025,7 +1041,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       {/* Line items */}
       <Section
         standalone={standalone}
-        title="JWSO Line Items"
+        title="Line Items"
         table
         actions={
           <>
@@ -1123,10 +1139,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           <thead>
             <tr>
               <th style={{ width: '4%' }}>Ln</th>
-              <th style={{ width: '16%' }}>Item Code</th>
-              <th style={{ width: '22%' }}>
-                Item Name <span className="req">★</span>
+              <th style={{ width: '16%' }}>
+                Item Code <span className="req">★</span>
               </th>
+              <th style={{ width: '22%' }}>Item Name</th>
               <th style={{ width: '8%' }}>
                 Drawing Rev <span className="req">★</span>
               </th>
@@ -1156,10 +1172,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 const amt =
                   (Number(watchedLines?.[idx]?.orderQty) || 0) *
                   (Number(watchedLines?.[idx]?.rate) || 0);
-                // On-master item → name is derived + read-only; off-master (free
-                // text code with no master match) keeps the name editable.
+                // On-master item → name is derived + read-only; an older
+                // off-master line (code with no master link) keeps it editable.
                 const lineItemCode = (watchedLines?.[idx]?.itemCodeText ?? '').trim().toUpperCase();
-                const lineOnMaster = lineItemCode ? itemsByCode.has(lineItemCode) : false;
+                const lineOnMaster =
+                  Boolean(watchedLines?.[idx]?.itemId) ||
+                  (lineItemCode ? itemsByCode.has(lineItemCode) : false);
                 const isOpen = openMore.has(field.id);
                 // How many of the folded fields hold a value — shown on the
                 // toggle so a filled Material / BOM is never hidden silently.
@@ -1177,14 +1195,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                         {idx + 1}
                       </td>
                       <td>
-                        <input
-                          className="innovic-input"
-                          autoComplete="off"
-                          list="dlJwItems"
-                          placeholder="🔍 ITM-001"
-                          {...register(`lines.${idx}.itemCodeText` as const, {
-                            onChange: (e) => fillLineFromItem(idx, e.target.value),
-                          })}
+                        <SearchableSelect
+                          id={`jwln-ic-${idx}`}
+                          value={watchedLines?.[idx]?.itemId ?? null}
+                          onChange={(id) => pickLineItem(idx, id)}
+                          onSearch={setLineItemSearch}
+                          loading={lineItemsFetching}
+                          options={lineItems.map((it) => ({
+                            id: it.id,
+                            code: it.code,
+                            name: it.name,
+                          }))}
+                          placeholder="🔍 Search item code or name..."
+                          valueLabel={watchedLines?.[idx]?.itemCodeText || undefined}
+                          selectedLabel={(o) => o.code ?? o.name}
                         />
                       </td>
                       <td>
@@ -1204,7 +1228,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                               : undefined
                           }
                           {...register(`lines.${idx}.partName` as const, {
-                            required: 'Item Name is required',
+                            required: 'Item Name is required.',
                           })}
                         />
                         {errors.lines?.[idx]?.partName?.message ? (
@@ -1447,7 +1471,7 @@ function QuickAddClient({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 12 }}>
-          🏢 New Customer
+          New Customer
         </div>
         <div className="form-grp">
           <label className="form-label">
@@ -1480,7 +1504,7 @@ function QuickAddClient({
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">GST No.</label>
+          <label className="form-label">GSTIN</label>
           <input
             className="innovic-input"
             value={gstNumber}
@@ -1488,7 +1512,6 @@ function QuickAddClient({
             placeholder="Optional"
           />
         </div>
-        <div className="form-help">Code auto-generates (CLI-###).</div>
         {err ? (
           <div className="form-error" style={{ marginTop: 6 }}>
             {err}
@@ -1523,7 +1546,7 @@ function Tot({
 }): React.JSX.Element {
   return (
     <div style={{ textAlign: 'right' }}>
-      <div className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+      <div className="text3" style={{ fontSize: 11 }}>
         {label}
       </div>
       <div

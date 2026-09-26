@@ -17,6 +17,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useClientsList } from '../../clients/api';
 import { useItem } from '../../items/api';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
@@ -67,15 +68,13 @@ function PartyMaterialsListPage(): React.JSX.Element {
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
 
-  const onDelete = (row: PartyMaterialListItem): void => {
-    if (row.stockQty > 0) {
-      window.alert(
-        `Cannot delete "${row.code}" — stock qty is ${row.stockQty}. Issue material first.`,
-      );
-      return;
-    }
-    if (!window.confirm(`Delete party material "${row.code} — ${row.name}"?`)) return;
-    deleteMut.mutate(row.id);
+  // The material the Delete dialog is asking about, or null when closed. A row
+  // with stock on hand never gets here — its Delete button is disabled.
+  const [deleteRow, setDeleteRow] = useState<PartyMaterialListItem | null>(null);
+  const onDelete = async (): Promise<void> => {
+    if (!deleteRow) return;
+    await deleteMut.mutateAsync(deleteRow.id);
+    setDeleteRow(null);
   };
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -85,7 +84,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Party Materials. Ask an admin.
       </div>
     );
   }
@@ -93,7 +92,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">🏭 Party Material Master</div>
+        <div className="section-hdr m-0">Party Material Master</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"
@@ -137,7 +136,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                   <th>Code</th>
                   <th>Material Name</th>
                   <th>Description</th>
-                  <th>Material</th>
+                  <th>Grade</th>
                   <th className="td-ctr">UOM</th>
                   <th>Customer</th>
                   <th className="th-num" style={{ color: 'var(--green2)' }}>
@@ -156,7 +155,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                 {data.items.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="empty-state">
-                      No party materials — click + Add Material
+                      {search.trim() ? 'No Party Materials match.' : 'No Party Materials yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -213,7 +212,13 @@ function PartyMaterialsListPage(): React.JSX.Element {
                             type="button"
                             className="btn btn-danger btn-sm"
                             style={{ fontSize: 11 }}
-                            onClick={() => onDelete(pm)}
+                            disabled={pm.stockQty > 0}
+                            title={
+                              pm.stockQty > 0
+                                ? `Cannot delete: ${pm.stockQty} in stock. Issue it first.`
+                                : undefined
+                            }
+                            onClick={() => setDeleteRow(pm)}
                           >
                             Delete
                           </button>
@@ -269,6 +274,16 @@ function PartyMaterialsListPage(): React.JSX.Element {
 
       {showAdd ? <AddPartyMaterialModal onClose={() => setShowAdd(false)} /> : null}
       {editRow ? <EditPartyMaterialModal row={editRow} onClose={() => setEditRow(null)} /> : null}
+      {deleteRow ? (
+        <ConfirmDialog
+          title={`Delete Party Material ${deleteRow.code}?`}
+          message={`${deleteRow.name} will be removed from the Party Material Master.`}
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={onDelete}
+          onCancel={() => setDeleteRow(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -429,15 +444,15 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
     const c = code.trim();
     const nm = autoName.trim();
     if (!c) {
-      setErr('Material code is missing');
+      setErr('Code is required.');
       return;
     }
     if (!clientId) {
-      setErr('Customer is required');
+      setErr('Customer is required.');
       return;
     }
     if (!nm) {
-      setErr('Pick an item so the material name is filled');
+      setErr('Item Code is required. Material Name fills from it.');
       return;
     }
     const input: CreatePartyMaterialInput = { code: c, name: nm, uom, clientId };
@@ -452,10 +467,10 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
   };
 
   return (
-    <ModalShell onClose={onClose} title="🏭 Add Party Material">
+    <ModalShell onClose={onClose} title="Add Party Material">
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {/* 1. Material Code (auto, read-only) + UOM */}
-        <Field label="Code (auto)">
+        <Field label="Code">
           <input type="text" className="innovic-input" value={code} readOnly disabled />
         </Field>
         <Field label="UOM">
@@ -474,7 +489,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 2. Client — who supplies the material */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Customer ★ (who supplies this material)">
+          <Field label="Customer" required>
             <SearchableSelect
               id="pmClient"
               value={clientId}
@@ -523,7 +538,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 5. Material Name — auto-fetched from the item, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material Name ★ (auto)">
+          <Field label="Material Name">
             <input
               type="text"
               className="innovic-input"
@@ -550,7 +565,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 7. Material / Grade — auto-fetched from the item, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material / Grade (auto)">
+          <Field label="Grade">
             <input
               type="text"
               className="innovic-input"
@@ -564,7 +579,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 8. JC No — auto-fetched Job Card linked to the SO/JW line, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JC No. (auto)">
+          <Field label="JC No.">
             <input
               type="text"
               className="innovic-input"
@@ -609,9 +624,8 @@ function EditPartyMaterialModal({
   const [clientSearch, setClientSearch] = useState('');
   const [clientId, setClientId] = useState<string | null>(row.clientId);
   const [err, setErr] = useState<string | null>(null);
-  const [clientFocused, setClientFocused] = useState(false);
 
-  const { data: clientsData } = useClientsList({
+  const { data: clientsData, isFetching: clientsFetching } = useClientsList({
     search: clientSearch.trim() || undefined,
     limit: 50,
     offset: 0,
@@ -634,11 +648,11 @@ function EditPartyMaterialModal({
     setErr(null);
     const nm = name.trim();
     if (!nm) {
-      setErr('Name is required');
+      setErr('Material Name is required.');
       return;
     }
     if (!clientId) {
-      setErr('Customer is required');
+      setErr('Customer is required.');
       return;
     }
     const input: UpdatePartyMaterialInput = {
@@ -659,7 +673,7 @@ function EditPartyMaterialModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`🏭 Edit Party Material — ${row.code}`}>
+    <ModalShell onClose={onClose} title={`Edit Party Material ${row.code}`}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="Code">
           <input
@@ -685,7 +699,7 @@ function EditPartyMaterialModal({
         </Field>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Linked Item (from Item Master)">
+          <Field label="Item Code">
             <input
               type="text"
               className="innovic-input"
@@ -699,7 +713,7 @@ function EditPartyMaterialModal({
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material Name ★">
+          <Field label="Material Name" required>
             <input
               type="text"
               className="innovic-input"
@@ -721,7 +735,7 @@ function EditPartyMaterialModal({
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material / Grade">
+          <Field label="Grade">
             <input
               type="text"
               className="innovic-input"
@@ -732,34 +746,23 @@ function EditPartyMaterialModal({
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Customer">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="🔍 Click to browse or type customer code / name to change…"
-              value={
-                selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientSearch
+          <Field label="Customer" required>
+            <SearchableSelect
+              id="pmEditClient"
+              value={clientId}
+              onChange={setClientId}
+              onSearch={setClientSearch}
+              loading={clientsFetching}
+              options={(clientsData?.clients ?? []).map((c) => ({
+                id: c.id,
+                code: c.code,
+                name: c.name,
+              }))}
+              placeholder="🔍 Type customer code or name…"
+              valueLabel={
+                selectedClient?.code ? `${selectedClient.code} — ${selectedClient.name}` : undefined
               }
-              onFocus={() => setClientFocused(true)}
-              onBlur={() => setTimeout(() => setClientFocused(false), 150)}
-              onChange={(e) => {
-                setClientId(null);
-                setClientSearch(e.target.value);
-              }}
             />
-            {!clientId && (clientSearch || clientFocused) && clientsData ? (
-              <Picklist
-                items={clientsData.clients.slice(0, 20).map((c) => ({
-                  id: c.id,
-                  label: `${c.code} — ${c.name}`,
-                  sub: null,
-                }))}
-                onPick={(id) => {
-                  setClientId(id);
-                  setClientSearch('');
-                }}
-              />
-            ) : null}
           </Field>
         </div>
       </div>
@@ -852,62 +855,20 @@ function ModalActions({
 
 function Field({
   label,
+  required = false,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
+      <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
         {label}
+        {required ? <span className="req">★</span> : null}
       </div>
       {children}
-    </div>
-  );
-}
-
-function Picklist({
-  items,
-  onPick,
-}: {
-  items: Array<{ id: string; label: string; sub: string | null }>;
-  onPick: (id: string) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 4,
-        background: 'var(--bg2)',
-        marginTop: 4,
-        maxHeight: 180,
-        overflowY: 'auto',
-      }}
-    >
-      {items.map((it) => (
-        <div
-          key={it.id}
-          onClick={() => onPick(it.id)}
-          style={{
-            padding: '6px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span> : null}
-        </div>
-      ))}
     </div>
   );
 }

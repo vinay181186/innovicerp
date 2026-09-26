@@ -104,7 +104,7 @@ function SoCycleTimePage(): React.JSX.Element {
   const title = 'SO Cycle Time Report';
   if (isLoading) {
     return (
-      <ReportShell title={title} icon="⏱">
+      <ReportShell title={title}>
         <div className="empty-state">
           <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
         </div>
@@ -113,7 +113,7 @@ function SoCycleTimePage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <ReportShell title={title} icon="⏱">
+      <ReportShell title={title}>
         <div className="empty-state" style={{ color: 'var(--red2)' }}>
           {error instanceof Error ? error.message : 'Could not load SO cycle time. Try again.'}
         </div>
@@ -124,7 +124,6 @@ function SoCycleTimePage(): React.JSX.Element {
   return (
     <ReportShell
       title={title}
-      icon="⏱"
       filters={
         <>
           <ReportFilter label="Search" htmlFor="sct-search" size="lg">
@@ -173,7 +172,7 @@ function SoCycleTimePage(): React.JSX.Element {
               count: `${averages.production}d`,
               color: 'var(--cyan)',
             },
-            { key: 'qc', label: 'Avg QC', count: `${averages.qc}d`, color: 'var(--red)' },
+            { key: 'qc', label: 'Avg QC', count: `${averages.qc}d`, color: 'var(--text)' },
             {
               key: 'assembly',
               label: 'Avg Assembly',
@@ -222,7 +221,7 @@ function SoCycleTimePage(): React.JSX.Element {
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="empty-state">
-                    No SOs match
+                    {search.trim() || filter !== 'all' ? 'No SOs match.' : 'No SOs yet.'}
                   </td>
                 </tr>
               ) : (
@@ -249,7 +248,7 @@ function SoCycleTimePage(): React.JSX.Element {
                       <td>{TYPE_LABEL[r.type ?? ''] ?? r.type ?? '—'}</td>
                       <td>
                         <span
-                          className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-grey' : 'b-cyan'}`}
+                          className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-grey' : 'b-blue'}`}
                         >
                           {done ? 'Completed' : soStatusLabel(r.status)}
                         </span>

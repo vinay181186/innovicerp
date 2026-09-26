@@ -25,7 +25,7 @@ import { BomPlanningModal } from '@/modules/so-planning/components/bom-planning-
 import { CreatePlanModal } from '@/modules/so-planning/components/create-plan-modal';
 import { EditPlanModal } from '@/modules/so-planning/components/edit-plan-modal';
 import { useSoTimeline } from '@/modules/so-timeline/api';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { SoTimelineBody } from '@/modules/so-timeline/components/timeline-body';
 import { useSoStatus } from '../api';
 import { exportSoStatusExcel } from '../lib/export';
@@ -51,7 +51,7 @@ const LINE_STATUS_COLOR: Record<SoStatusLine['status'], string> = {
   complete: 'var(--green)',
   qc_pending: 'var(--amber)',
   no_jc: 'var(--text3)',
-  in_progress: 'var(--cyan)',
+  in_progress: 'var(--amber)',
 };
 const LINE_STATUS_LABEL: Record<SoStatusLine['status'], string> = {
   complete: 'Completed',
@@ -75,7 +75,7 @@ const CHIP_TINT = {
 } satisfies Record<string, ChipTint>;
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayIst();
 }
 
 export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Element {
@@ -106,7 +106,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
   if (isError || !data) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)', padding: 24 }}>
-        {error instanceof Error ? error.message : 'Unable to load SO status'}
+        {error instanceof Error ? error.message : 'Could not load SO status. Try again.'}
       </div>
     );
   }
@@ -126,7 +126,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
       {/* Action bar (legacy L4552-4556) */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ fontSize: 15, fontWeight: 700 }}>
-          SO Status
+          SO Status Detail
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button
@@ -201,7 +201,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
               marginBottom: -1,
             }}
           >
-            {t === 'status' ? 'Status' : '📅 Timeline'}
+            {t === 'status' ? 'Status' : 'Timeline'}
           </button>
         ))}
       </div>
@@ -338,21 +338,21 @@ function EquipmentBomBanner({
   return (
     <div style={{ marginTop: 10, display: 'flex', gap: 16, flexWrap: 'wrap', padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, border: '1px solid var(--border)' }}>
       <div>
-        <div className="text3" style={{ fontSize: 11 }}>EQUIPMENT</div>
+        <div className="text3" style={{ fontSize: 11 }}>Equipment</div>
         <div style={{ fontWeight: 700, color: 'var(--purple)' }}>{info.equipmentItemCode ?? '—'} {info.equipmentItemName ?? ''}</div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 11 }}>EQUIP QTY</div>
+        <div className="text3" style={{ fontSize: 11 }}>Order Qty</div>
         <div style={{ fontWeight: 700, fontSize: 16 }}>{info.equipmentQty}</div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 11 }}>BOM STATUS</div>
+        <div className="text3" style={{ fontSize: 11 }}>BOM Status</div>
         <div style={{ fontWeight: 700, color: bomStatusColor }}>{bomStatus ?? 'BOM Pending'}</div>
       </div>
       {bomLinked && info.bomNo ? (
         <>
           <div>
-            <div className="text3" style={{ fontSize: 11 }}>LINKED BOM</div>
+            <div className="text3" style={{ fontSize: 11 }}>Linked BOM</div>
             <div style={{ fontWeight: 700, color: 'var(--green2)' }}>{info.bomNo} BOM Rev {info.bomRev ?? '—'}</div>
             <div className="text3" style={{ fontSize: 11 }}>{info.bomName} ({info.bomPartsCount} items)</div>
           </div>
@@ -394,13 +394,13 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
             <tr>
               <th>Sr No</th><th>Item Code</th><th>Item Name</th><th>Qty / Set</th>
               <th style={{ color: 'var(--cyan)', fontWeight: 800 }} title="Equipment Qty × Qty per Set">Total Need</th><th>BOM Type</th>
-              <th style={{ color: 'var(--green2)' }}>Stock</th>
+              <th style={{ color: 'var(--green2)' }}>Physical</th>
               <th style={{ color: 'var(--red2)' }}>Pending</th><th>Plan Status</th>
             </tr>
           </thead>
           <tbody>
             {items.map((c, idx) => {
-              const typeLabel = c.bomType === 'manufacture' ? '🏭 Mfg' : c.bomType === 'purchase' ? '🛒 Buy' : '🏭 Outsrc';
+              const typeLabel = c.bomType === 'manufacture' ? 'Make' : c.bomType === 'purchase' ? 'Buy' : 'Outsource';
               const typeColor = c.bomType === 'manufacture' ? 'var(--cyan)' : c.bomType === 'purchase' ? 'var(--green)' : 'var(--amber)';
               const rowBg = c.shortfall > 0 ? 'rgba(239,68,68,0.03)' : 'rgba(34,197,94,0.03)';
               return (
@@ -416,7 +416,7 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
                   <td>
                     {c.planStatus ? (
                       <>
-                        <span style={{ fontWeight: 700, color: c.planStatus === 'in_planning' ? 'var(--amber)' : c.planStatus === 'jc_created' ? 'var(--cyan)' : 'var(--green)' }}>{c.planStatus === 'in_planning' ? 'In Planning' : c.planStatus === 'jc_created' ? 'JC Created' : c.planStatus?.replaceAll('_', ' ')}</span>
+                        <span style={{ fontWeight: 700, color: c.planStatus === 'in_planning' ? 'var(--amber)' : c.planStatus === 'jc_created' ? 'var(--cyan)' : 'var(--green)' }}>{c.planStatus === 'in_planning' ? 'In Planning' : c.planStatus === 'jc_created' ? 'JC Created' : opCodeLabel(c.planStatus)}</span>
                         {c.jcCode ? <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', marginLeft: 6 }}>{c.jcCode}</span> : null}
                       </>
                     ) : (
@@ -480,11 +480,10 @@ function LinePanel({
         </div>
         <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap', marginLeft: 'auto' }}>
           <div style={{ textAlign: 'center' }}>
-            <div className="text3" style={{ fontSize: 11 }}>ORDER QTY</div>
+            <div className="text3" style={{ fontSize: 11 }}>Order Qty</div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{line.orderQty}</div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div className="text3" style={{ fontSize: 11 }}>PROGRESS</div>
             <div style={{ width: 90, height: 8, background: 'var(--bg5)', borderRadius: 4, margin: '4px auto 2px' }}>
               <div style={{ width: `${line.completionPct}%`, height: '100%', background: statusColor, borderRadius: 4 }} />
             </div>
@@ -503,10 +502,10 @@ function LinePanel({
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <Chip label="JC Issued" icon="📋" tint={CHIP_TINT.cyan} qty={line.chips.jcIssued.qty} total={line.chips.jcIssued.total} />
           <Chip label="PO Raised" icon="🛒" tint={CHIP_TINT.purple} qty={line.chips.poRaised.qty} total={line.chips.poRaised.total} />
-          <Chip label="GRN Recd" icon="📦" tint={CHIP_TINT.blue} qty={line.chips.grnReceived.qty} total={line.chips.grnReceived.total} />
+          <Chip label="GRN Received" icon="📦" tint={CHIP_TINT.blue} qty={line.chips.grnReceived.qty} total={line.chips.grnReceived.total} />
           <Chip label="QC Accepted" icon="✅" tint={CHIP_TINT.green} qty={line.chips.qcAccepted.qty} total={line.chips.qcAccepted.total} />
-          <Chip label="Completed" icon="⚙" tint={CHIP_TINT.green2} qty={line.chips.produced.qty} total={line.chips.produced.total} />
-          <Chip label="Dispatched" icon="🚚" tint={CHIP_TINT.amber} qty={line.chips.dispatched.qty} total={line.chips.dispatched.total} />
+          <Chip label="JC Completed" icon="⚙" tint={CHIP_TINT.green2} qty={line.chips.produced.qty} total={line.chips.produced.total} />
+          <Chip label="Dispatched" icon="🚚" tint={CHIP_TINT.green} qty={line.chips.dispatched.qty} total={line.chips.dispatched.total} />
         </div>
         <OutsourceAlertRows alert={line.outsourceAlert} />
       </div>
@@ -525,13 +524,13 @@ function LinePanel({
                   line behind this card, immediately before the item code. */}
               <th>JC No.</th><th style={{ color: 'var(--purple)' }}>POL</th><th>Item Code</th><th>Item Name</th><th>Order Qty</th><th>Completed</th>
               <th style={{ color: 'var(--red2)' }}>Pending</th><th>Priority</th><th>Due Date</th>
-              <th>JC Status</th><th>Operations</th><th></th>
+              <th>JC Status</th><th>Operations</th>
             </tr>
           </thead>
           <tbody>
             {line.jobCards.length === 0 ? (
               <tr>
-                <td colSpan={12} className="text3" style={{ padding: '10px 14px', fontSize: 12, fontStyle: 'italic' }}>
+                <td colSpan={11} className="text3" style={{ padding: '10px 14px', fontSize: 12, fontStyle: 'italic' }}>
                   No Job Cards linked to this SO line.
                 </td>
               </tr>
@@ -570,14 +569,6 @@ function LinePanel({
         ) : !showAssemblyBom && !isEquipmentLine ? (
           <span style={{ fontSize: 11, color: 'var(--green2)', fontWeight: 700 }}>✓ Fully Planned</span>
         ) : null}
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--purple)', border: '1px solid rgba(124,58,237,0.25)', fontWeight: 700, fontSize: 11 }}
-          onClick={() => navigate({ to: '/purchase-orders/from-pr' })}
-        >
-          🛒 Create PO
-        </button>
       </div>
     </div>
   );
@@ -614,7 +605,7 @@ function OutsourceAlertRows({ alert }: { alert: SoStatusOutsourceAlert }): React
 
 function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoStatusPendingOsPrOp[] }): React.JSX.Element {
   const navigate = useNavigate();
-  const jcColor = jc.status === 'complete' ? 'var(--green)' : jc.status === 'qc_pending' ? 'var(--amber)' : 'var(--cyan)';
+  const jcColor = jc.status === 'complete' ? 'var(--green)' : 'var(--amber)';
   // Legacy shows "▶N running" beside the JC No (L4349) off db.runningOps; the
   // server flags each op with `running`, so this counts server-owned rows only.
   const runCount = jc.ops.filter((op) => op.running).length;
@@ -647,7 +638,7 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
       <td><JcStatusBadge status={jc.status} /></td>
       <td style={{ whiteSpace: 'nowrap' }}>
         {jc.ops.map((op) => <OpChip key={op.id} op={op} />)}
-        {jc.ops.length === 0 ? <span className="text3" style={{ fontSize: 11 }}>no ops</span> : null}
+        {jc.ops.length === 0 ? <span className="text3" style={{ fontSize: 11 }}>No operations</span> : null}
         {pendingOpsForJc.length > 0 ? (
           <div style={{ marginTop: 2 }}>
             {pendingOpsForJc.map((p) => (
@@ -659,14 +650,11 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
                 title={`Raise PR for Op ${opSrNo(p.opSeq)} — ${p.operation}`}
                 onClick={() => navigate({ to: '/purchase-requests', search: { jc: p.jcCode, op: p.opSeq } as never })}
               >
-                📋 PR Op{opSrNo(p.opSeq)}
+                📋 PR Op {opSrNo(p.opSeq)}
               </button>
             ))}
           </div>
         ) : null}
-      </td>
-      <td>
-        <Link to="/job-cards/$id" params={{ id: jc.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }}>View</Link>
       </td>
     </tr>
   );
@@ -723,7 +711,7 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
           ...(isOS ? { background: 'rgba(255,176,32,0.06)' } : {}),
         }}
       >
-        {isOS ? '🏭' : ''}Op{opSrNo(op.opSeq)}{op.qcRequired ? '✓' : ''}
+        {isOS ? '🏭' : ''}Op {opSrNo(op.opSeq)}{op.qcRequired ? '✓' : ''}
       </span>{' '}
     </>
   );
@@ -784,7 +772,7 @@ function JcStatusBadge({ status }: { status: 'complete' | 'qc_pending' | 'in_pro
   const map: Record<typeof status, { cls: string; label: string }> = {
     complete: { cls: 'b-green', label: 'Completed' },
     qc_pending: { cls: 'b-amber', label: 'QC Pending' },
-    in_progress: { cls: 'b-blue', label: 'In Progress' },
+    in_progress: { cls: 'b-amber', label: 'In Progress' },
     no_ops: { cls: 'b-grey', label: 'No Operations' },
   };
   const m = map[status];

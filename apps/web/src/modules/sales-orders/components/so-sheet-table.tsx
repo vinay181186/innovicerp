@@ -15,7 +15,7 @@
 import type { SalesOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { ChevronDown, ChevronRight, Eye, Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { SoStatusBadge } from './so-status-badge';
 import { soTypeLabel } from '../lib/so-status-label';
@@ -201,7 +201,7 @@ export function SoSheetTable({
                       }}
                     >
                       <span>
-                        Client PO:{' '}
+                        Client PO No.{' '}
                         <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                           {so.clientPoNo ?? '—'}
                         </span>
@@ -266,24 +266,14 @@ export function SoSheetTable({
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <Link
-                        to="/sales-orders/$id"
-                        params={{ id: so.id }}
-                        className="btn btn-ghost btn-sm btn-icon"
-                        style={ICON_BTN}
-                        title="View"
-                        aria-label="View"
-                      >
-                        <Eye size={ICON} />
-                      </Link>
                       {canEdit ? (
                         <Link
                           to="/sales-orders/$id/edit"
                           params={{ id: so.id }}
                           className="btn btn-ghost btn-sm btn-icon"
                           style={ICON_BTN}
-                          title="Add line"
-                          aria-label="Add line"
+                          title="Edit"
+                          aria-label="Edit"
                         >
                           <Pencil size={ICON} />
                         </Link>

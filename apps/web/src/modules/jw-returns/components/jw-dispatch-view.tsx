@@ -16,6 +16,7 @@ import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { statusText } from '@/lib/status-text';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useCancelJwReturn, useCreateJwReturnChallan, useJwReturnsList } from '../api';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
@@ -61,11 +62,12 @@ export function JwDispatchView({
   const rows = data?.items ?? [];
   const cancelMut = useCancelJwReturn();
 
-  const onCancel = (id: string, code: string): void => {
-    if (!confirm(`Cancel JW Return ${code}? Returned qty goes back to pending.`)) {
-      return;
-    }
-    cancelMut.mutate(id);
+  // The return the Cancel dialog is asking about, or null when closed.
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
+  const onCancel = async (): Promise<void> => {
+    if (!cancelTarget) return;
+    await cancelMut.mutateAsync(cancelTarget.id);
+    setCancelTarget(null);
   };
 
 
@@ -119,8 +121,8 @@ export function JwDispatchView({
                   <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     Return Qty
                   </th>
-                  <th>Transport</th>
-                  <th>Vehicle</th>
+                  <th>Transporter</th>
+                  <th>Vehicle No.</th>
                   <th>Return Status</th>
                   {canWrite ? <th className="td-ctr">Actions</th> : null}
                 </tr>
@@ -129,7 +131,7 @@ export function JwDispatchView({
                 {rows.length === 0 ? (
                   <tr>
                     <td colSpan={canWrite ? 10 : 9} className="empty-state">
-                      No JW returns — click + New Return
+                      {term ? 'No JW Returns match.' : 'No JW Returns yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -168,8 +170,6 @@ export function JwDispatchView({
                         style={{
                           fontSize: 11,
                           fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.04em',
                           padding: '2px 6px',
                           borderRadius: 4,
                           color:
@@ -195,7 +195,7 @@ export function JwDispatchView({
                             className="btn btn-ghost"
                             style={{ color: 'var(--red2)' }}
                             disabled={cancelMut.isPending}
-                            onClick={() => onCancel(r.id, r.code)}
+                            onClick={() => setCancelTarget({ id: r.id, code: r.code })}
                           >
                             {cancelMut.isPending && cancelMut.variables === r.id ? (
                               <>
@@ -217,6 +217,17 @@ export function JwDispatchView({
         )}
       </div>
 
+      {cancelTarget ? (
+        <ConfirmDialog
+          title={`Cancel JW Return ${cancelTarget.code}?`}
+          message="The returned qty goes back to Pending."
+          confirmLabel="Cancel Return"
+          cancelLabel="Keep it"
+          pendingLabel="Cancelling…"
+          onConfirm={onCancel}
+          onCancel={() => setCancelTarget(null)}
+        />
+      ) : null}
       {showModal ? <NewJwReturnModal onClose={() => setShowModal(false)} /> : null}
     </div>
   );
@@ -391,7 +402,7 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
               }}
             />
           </Field>
-          <Field label="Transport">
+          <Field label="Transporter">
             <input
               type="text"
               className="innovic-input"

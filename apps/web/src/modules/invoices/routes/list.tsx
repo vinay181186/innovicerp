@@ -50,8 +50,8 @@ type InvoiceListRow = ListInvoicesResponse['invoices'][number];
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
 
 const TABS = [
-  { key: 'so', label: '🧾 SO Invoices' },
-  { key: 'jw', label: '🔧 JW Invoices (Labour)' },
+  { key: 'so', label: 'SO Invoices' },
+  { key: 'jw', label: 'JW Invoices (Labour)' },
 ];
 
 function InvoiceListPage(): React.JSX.Element {
@@ -109,7 +109,7 @@ function InvoiceListPage(): React.JSX.Element {
               },
               {
                 key: 'received',
-                label: 'Total Received',
+                label: 'Paid Amount',
                 count: inr(s.totalReceived ?? 0),
                 color: 'var(--cyan)',
               },
@@ -127,9 +127,15 @@ function InvoiceListPage(): React.JSX.Element {
                 sub: <span style={{ color: 'var(--red2)' }}>{s.overdueCount} inv</span>,
               },
             ]),
-        { key: 'unpaid', label: 'Unpaid', count: s.unpaidCount, color: 'var(--red2)' },
-        { key: 'partial', label: 'Partly Paid', count: s.partialCount, color: 'var(--amber2)' },
-        { key: 'paid', label: 'Paid', count: s.paidCount, color: 'var(--green2)' },
+        { key: 'unpaid', label: 'Unpaid', count: s.unpaidCount, color: 'var(--red2)', sub: 'inv' },
+        {
+          key: 'partial',
+          label: 'Partly Paid',
+          count: s.partialCount,
+          color: 'var(--amber2)',
+          sub: 'inv',
+        },
+        { key: 'paid', label: 'Paid', count: s.paidCount, color: 'var(--green2)', sub: 'inv' },
       ]
     : [];
 
@@ -160,7 +166,7 @@ function InvoiceListPage(): React.JSX.Element {
           render: (inv) => <span style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</span>,
         },
         {
-          header: 'Outstanding Amount',
+          header: 'Outstanding',
           width: '9%',
           align: 'right',
           className: 'mono fw-700',
@@ -174,13 +180,6 @@ function InvoiceListPage(): React.JSX.Element {
       ];
 
   const columns: DataTableColumn<InvoiceListRow>[] = [
-    {
-      header: 'Sr No',
-      width: '5%',
-      className: 'text3',
-      nowrap: true,
-      render: (_inv, i) => i + 1,
-    },
     {
       header: 'Invoice No.',
       width: priceHidden ? '15%' : '12%',
@@ -213,7 +212,7 @@ function InvoiceListPage(): React.JSX.Element {
     },
     {
       header: 'Customer',
-      width: priceHidden ? '26%' : '12%',
+      width: priceHidden ? '31%' : '17%',
       align: 'left',
       className: 'fw-700',
       ellipsis: true,
@@ -241,11 +240,7 @@ function InvoiceListPage(): React.JSX.Element {
             status={inv.status}
             label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
           />
-          {inv.overdue ? (
-            <span className="fw-700" style={{ fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}>
-              ⚠ OVERDUE
-            </span>
-          ) : null}
+          {inv.overdue ? <span className="badge b-red">Overdue</span> : null}
         </span>
       ),
     },
@@ -265,7 +260,6 @@ function InvoiceListPage(): React.JSX.Element {
     <div>
       {tabs}
       <ListHeader
-        icon="📄"
         title="Invoices"
         count={data ? data.invoices.length : undefined}
         noun="invoice"
@@ -295,24 +289,21 @@ function InvoiceListPage(): React.JSX.Element {
               loading={isLoading}
               rowKey={(inv) => inv.id}
               onRowClick={(inv) => openInvoice(inv.id)}
-              empty="No invoices yet. Click + New Invoice."
+              empty="No Invoices yet."
               rowActions={(inv) => (
                 <RowActions
-                  // View is a ROUTE, so it stays a real link — ctrl-click /
-                  // middle-click / "open in new tab" keep working, as they did
-                  // on the legacy screen. An onView button silently lost that.
-                  viewTo={`/invoices/${inv.id}`}
-                  renderLink={(p) => <Link {...p} />}
+                  // Row click opens the invoice (ERPNext list); the Invoice
+                  // No. stays a real link for ctrl-click / new tab.
                   extra={
                     perms.entry && inv.status !== 'paid' ? (
                       <Link
                         to="/invoices/$id"
                         params={{ id: inv.id }}
                         className="btn btn-ghost btn-sm"
-                        title="Add payment"
+                        title="Add Payment"
                         style={{ color: 'var(--green2)' }}
                       >
-                        💳 Pay
+                        💳 Add Payment
                       </Link>
                     ) : null
                   }

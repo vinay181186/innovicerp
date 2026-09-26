@@ -43,7 +43,7 @@ import { SoSheetTable } from '../components/so-sheet-table';
 import { SoStatusBadge } from '../components/so-status-badge';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import {
   ItemBadge,
   ItemThumbnailCell,
@@ -98,8 +98,6 @@ function QtyBox({
         style={{
           fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -278,7 +276,7 @@ function SalesOrdersListPage(): React.JSX.Element {
   // The table machinery (TanStack column defs + SortableHead) is gone with it:
   // a card list has no column headers to click, so per-column sorting goes too.
   // It only ever sorted the 25 rows already on screen.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
   const rows = data?.items ?? [];
   const allExpanded = rows.length > 0 && rows.every((r) => expandedIds.has(r.id));
 
@@ -300,7 +298,7 @@ function SalesOrdersListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view SOs. Ask an admin.
       </div>
     );
   }
@@ -413,7 +411,7 @@ function SalesOrdersListPage(): React.JSX.Element {
             ) : null}
             {canCreate ? (
               <Link to="/sales-orders/new" className="btn btn-primary">
-                + New SO / WO
+                + New SO
               </Link>
             ) : null}
           </div>
@@ -527,7 +525,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         </div>
       ) : rows.length === 0 ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
-          No orders — click + New SO / WO
+          {search.search || search.status || search.type ? 'No SOs match.' : 'No SOs yet.'}
         </div>
       ) : view === 'list' ? (
         // ── LIST VIEW (the ruled sheet) ──────────────────────────────────────
@@ -692,7 +690,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                     <span className="text2">{fmtDate(so.soDate)}</span>
                     <span>·</span>
                     <span>
-                      PO{' '}
+                      Client PO No.{' '}
                       <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                         {so.clientPoNo ?? '—'}
                       </span>
@@ -757,11 +755,9 @@ function SalesOrdersListPage(): React.JSX.Element {
         }}
       >
         <span>
-          {total === 0
-            ? 'No sales orders'
-            : total > LIST_LIMIT
-              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-              : null}
+          {total > LIST_LIMIT
+            ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+            : null}
         </span>
       </div>
       {previewPath ? (
@@ -849,7 +845,7 @@ function EquipmentSoExpand({
             code · name) rather than a string. The equipment line is an SO line
             like any other, so its drawing revision renders as CODE/REV (ADR-177). */}
         <div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>EQUIPMENT</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment</div>
           <ItemBadge
             size="row"
             code={line.itemCode ?? line.itemCodeText}
@@ -858,10 +854,10 @@ function EquipmentSoExpand({
             imagePath={line.itemImagePath}
           />
         </div>
-        <Fact label="EQUIP QTY" value={String(line.orderQty)} big />
-        <Fact label="DUE DATE" value={fmtDate(line.dueDate)} />
+        <Fact label="Order Qty" value={String(line.orderQty)} big />
+        <Fact label="Due Date" value={fmtDate(line.dueDate)} />
         <div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>BOM STATUS</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>BOM Status</div>
           <div
             style={{
               fontWeight: 700,
@@ -916,20 +912,7 @@ function EquipmentSoExpand({
           ) : null}
         </div>
       </div>
-      {so.bomMasterId ? (
-        <EquipmentBomItems soId={so.id} />
-      ) : (
-        <div
-          style={{
-            padding: '4px 32px 12px',
-            color: 'var(--amber2)',
-            fontSize: 12,
-            fontWeight: 600,
-          }}
-        >
-          ⚠ No BOM linked.
-        </div>
-      )}
+      {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : null}
       <ConfirmDialog
         open={confirmDelete}
         title={`Move SO ${so.code} to Trash?`}
@@ -961,7 +944,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
           marginBottom: 4,
         }}
       >
-        ▸ BOM ITEMS — {data?.header.equipmentInfo?.bomNo ?? ''} ×{' '}
+        BOM Items — {data?.header.equipmentInfo?.bomNo ?? ''} ×{' '}
         {data?.header.equipmentInfo?.equipmentQty ?? 0} sets
       </div>
       {/* tbl-ctr — the table-alignment standard: data centred, headers untouched. */}
@@ -977,7 +960,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
             </th>
             <th>BOM Type</th>
             <th className="th-num" style={{ color: 'var(--green2)' }}>
-              Stock
+              Physical
             </th>
             <th className="th-num" style={{ color: 'var(--red2)' }}>
               Pending
@@ -987,11 +970,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
         <tbody>
           {items.map((c, idx) => {
             const typeLabel =
-              c.bomType === 'manufacture'
-                ? '🏭 Mfg'
-                : c.bomType === 'purchase'
-                  ? '🛒 Buy'
-                  : '🏭 Outsrc';
+              c.bomType === 'manufacture' ? 'Make' : c.bomType === 'purchase' ? 'Buy' : 'Outsource';
             const typeColor =
               c.bomType === 'manufacture'
                 ? 'var(--cyan)'

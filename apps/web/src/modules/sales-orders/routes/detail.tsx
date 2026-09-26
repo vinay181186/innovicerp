@@ -25,6 +25,7 @@ import { ItemBadge } from '@/components/shared/item-badge';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { inrFormat } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -97,7 +98,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </Link>
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Sales order not found'}
+          message={error instanceof Error ? error.message : 'SO not found. Refresh the page.'}
         />
       </>
     );
@@ -204,7 +205,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
             items={[
               { label: 'Total Qty', value: totalQty },
               ...(!priceHidden && totalValue > 0
-                ? [{ label: 'Value', value: `₹${totalValue.toFixed(2)}` }]
+                ? [{ label: 'Value', value: `₹ ${inrFormat(totalValue)}` }]
                 : []),
             ]}
           />
@@ -218,7 +219,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
       </Panel>
 
       {detail.milestones.length > 0 ? (
-        <Panel title={`📅 Delivery Schedule (${detail.milestones.length})`} bodyPadding="none">
+        <Panel title={`Delivery Schedule (${detail.milestones.length})`} bodyPadding="none">
           <DataTable
             columns={MILESTONE_COLUMNS}
             rows={detail.milestones}
@@ -245,7 +246,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
 
       {/* SO Documents — file store folded in from the former standalone screen. */}
       <div className="section-hdr" style={{ marginTop: 'var(--sp-5)' }}>
-        📁 SO Documents
+        SO Documents
       </div>
       <SoDocumentsSection soId={detail.id} />
 
@@ -431,7 +432,7 @@ function lineColumns(opts: {
             className: 'mono',
             nowrap: true,
             render: (l: SalesOrderLine) =>
-              Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—',
+              Number(l.rate) > 0 ? `₹ ${inrFormat(Number(l.rate))}` : '—',
           },
         ]),
     {
@@ -504,7 +505,7 @@ function SoFilesPanel({
 
   async function onPick(file: File): Promise<void> {
     if (!companyId) {
-      setErr('No company on session — cannot upload.');
+      setErr('Could not upload file. Sign in again and retry.');
       return;
     }
     setBusy(true);

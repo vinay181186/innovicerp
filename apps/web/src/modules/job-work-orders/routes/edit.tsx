@@ -104,8 +104,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have create access to JWSO Master. Ask an admin for L2 Data Entry or above in
-        Sales.
+        You do not have permission to create JWSOs. Ask an admin.
       </div>
     );
   }
@@ -115,7 +114,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
       {exit.dialog}
       <JobWorkOrderForm
         mode="create"
-        pageTitle="New JWSO Order"
+        pageTitle="New JWSO"
         pageSubtitle="Customer-supplied raw material → we machine and deliver."
         backLabel="Back to JWSO Master"
         onBack={goBack}
@@ -186,8 +185,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have edit access to JWSO Master. Ask an admin for L2 Data Entry or above in
-        Sales.
+        You do not have permission to edit JWSOs. Ask an admin.
       </div>
     );
   }
@@ -195,7 +193,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   if (isLoading) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading job-work order…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading JWSO…
       </div>
     );
   }
@@ -210,7 +208,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Job-work order not found'}
+            {error instanceof Error ? error.message : 'JWSO not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -223,7 +221,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
       <JobWorkOrderForm
         mode="edit"
         detail={detail}
-        pageTitle={`Edit Job-Work Order — ${detail.code}`}
+        pageTitle={`Edit JWSO ${detail.code}`}
         backLabel="Back to JWSO"
         onBack={goBack}
         onSubmit={onSubmit}

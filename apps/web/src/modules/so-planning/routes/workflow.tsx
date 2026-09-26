@@ -277,7 +277,7 @@ function PlanningWorkflowPage(): JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view SO / JWSO Planning. Ask an admin.
       </div>
     );
   }
@@ -502,58 +502,39 @@ function OrderList({
 /** Fixed-layout column widths (percent, sum 100). The table is `table-layout:
  *  fixed` at 100% width so it can never grow a horizontal scrollbar; long
  *  text wraps inside its column instead. */
-// ADR-180 columns: Physical / Reserved / Available are three different numbers
-// and each gets its own column, with the wording the whole app now uses.
-// PHYSICAL = on the shelf · RESERVED = promised but still on the shelf ·
-// AVAILABLE = Physical − Reserved.
+// ADR-180: Available = Physical − Reserved. Physical and the two Reserved
+// figures sit in the Available cell's tooltip (and "n reserved here" under it)
+// rather than three more columns — the planner needs them only when allocating.
 const LINE_COLS: { key: string; label: string; width: number; title?: string }[] = [
   { key: 'line', label: 'Ln', width: 3 },
-  { key: 'item', label: 'Item Code', width: 9 },
-  { key: 'name', label: 'Item Name', width: 9 },
-  { key: 'orderQty', label: 'Order Qty', width: 4 },
-  {
-    key: 'dispatched',
-    label: 'Dispatched',
-    width: 5,
-    title: 'Already shipped to the customer against this line',
-  },
-  {
-    key: 'physical',
-    label: 'Physical',
-    width: 4,
-    title: 'On the shelf',
-  },
-  {
-    key: 'reservedAll',
-    label: 'Reserved (all lines)',
-    width: 5,
-    title: 'Promised to every SO line for this item, still on the shelf',
-  },
-  {
-    key: 'reservedLine',
-    label: 'Reserved (this line)',
-    width: 5,
-    title: 'Booked to this SO line',
-  },
+  { key: 'item', label: 'Item Code', width: 11 },
+  { key: 'name', label: 'Item Name', width: 11 },
+  { key: 'orderQty', label: 'Order Qty', width: 5 },
   {
     key: 'available',
     label: 'Available',
-    width: 4,
-    title: 'Physical − Reserved: free stock anyone may still be promised',
+    width: 6,
+    title: 'Physical − Reserved: free stock. Hover a number for Physical and Reserved.',
   },
   {
     key: 'balance',
     label: 'Pending to Plan',
-    width: 5,
-    title: 'Still to make or buy',
+    width: 6,
+    title:
+      'Order − Planned − direct Job Cards: still to plan. The same number + Plan / + PR use. Hover a number for Balance (Order − Dispatched − Reserved).',
   },
-  { key: 'planned', label: 'Plan Qty', width: 4 },
-  { key: 'inProd', label: 'In Production', width: 4 },
-  { key: 'remaining', label: 'Pending', width: 5 },
-  { key: 'due', label: 'Due Date', width: 5 },
-  { key: 'status', label: 'Plan Status', width: 6 },
-  { key: 'plans', label: 'Plans', width: 15 },
-  { key: 'action', label: 'Action', width: 8 },
+  { key: 'planned', label: 'Plan Qty', width: 5 },
+  { key: 'inProd', label: 'In Production', width: 5 },
+  {
+    key: 'dispatched',
+    label: 'Dispatched',
+    width: 6,
+    title: 'Already shipped to the customer against this line',
+  },
+  { key: 'due', label: 'Due Date', width: 6 },
+  { key: 'status', label: 'Plan Status', width: 7 },
+  { key: 'plans', label: 'Plans', width: 19 },
+  { key: 'action', label: 'Action', width: 10 },
 ];
 
 /** A cell that may hold long text: wraps inside its fixed column instead of
@@ -569,10 +550,7 @@ function HeaderField({
 }): JSX.Element {
   return (
     <div style={{ minWidth: 0 }}>
-      <div
-        className="mono text3"
-        style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em' }}
-      >
+      <div className="mono text3" style={{ fontSize: 11 }}>
         {label}
       </div>
       <div style={{ fontSize: 13 }}>{children}</div>
@@ -742,14 +720,13 @@ function OrderDetail({
         {so.lines.length === 0 ? (
           <div className="empty-state">This order has no lines.</div>
         ) : (
-          // `tbl-wrap` so the ADR-180 stock columns (Physical / Reserved /
-          // Available / Pending to Plan) scroll sideways on a narrow screen
-          // instead of crushing every number into two lines. On a normal wide
-          // screen the sheet still fills the panel exactly as before.
+          // `tbl-wrap` so the sheet scrolls sideways on a narrow screen instead
+          // of crushing every number into two lines. On a normal wide screen
+          // the sheet still fills the panel exactly as before.
           <div className="tbl-wrap">
             <table
               className="innovic-table"
-              style={{ tableLayout: 'fixed', width: '100%', minWidth: 1500, margin: 0 }}
+              style={{ tableLayout: 'fixed', width: '100%', minWidth: 1200, margin: 0 }}
             >
               <colgroup>
                 {LINE_COLS.map((c) => (
@@ -807,45 +784,29 @@ function OrderDetail({
                         {line.itemName ?? '—'}
                       </td>
                       <td className="mono fw-700">{line.orderQty}</td>
-                      {/* ADR-180 stock block. Physical never moves when stock is
-                        reserved — only a dispatch/issue changes it. */}
-                      <td
-                        className="mono"
-                        style={{ color: line.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
-                      >
-                        {line.dispatchedQty}
-                      </td>
-                      <td
-                        className="mono fw-700"
-                        style={{ color: line.physicalQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}
-                      >
-                        {line.physicalQty}
-                      </td>
-                      <td
-                        className="mono"
-                        style={{
-                          color: line.totalReservedQty > 0 ? 'var(--purple)' : 'var(--text3)',
-                        }}
-                      >
-                        {line.totalReservedQty}
-                      </td>
-                      <td
-                        className="mono fw-700"
-                        style={{ color: line.reservedQty > 0 ? 'var(--purple)' : 'var(--text3)' }}
-                      >
-                        {line.reservedQty}
-                      </td>
+                      {/* ADR-180: Physical never moves when stock is reserved —
+                        only a dispatch/issue changes it. */}
                       <td
                         className="mono fw-700"
                         style={{ color: line.availableQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+                        title={`Physical ${line.physicalQty} · Reserved (all lines) ${line.totalReservedQty} · Reserved (this line) ${line.reservedQty}`}
                       >
                         {line.availableQty}
+                        {line.reservedQty > 0 ? (
+                          <div
+                            className="mono"
+                            style={{ fontSize: 11, fontWeight: 400, color: 'var(--purple)' }}
+                          >
+                            {line.reservedQty} reserved here
+                          </div>
+                        ) : null}
                       </td>
                       <td
                         className="mono fw-700"
-                        style={{ color: line.balanceToPlan > 0 ? 'var(--amber)' : 'var(--green)' }}
+                        style={{ color: line.remaining > 0 ? 'var(--amber)' : 'var(--green)' }}
+                        title={`Balance (Order − Dispatched − Reserved) ${line.balanceToPlan}`}
                       >
-                        {line.balanceToPlan}
+                        {line.remaining}
                       </td>
                       <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                         {line.totalPlanned}
@@ -857,10 +818,10 @@ function OrderDetail({
                         {line.directJcQty}
                       </td>
                       <td
-                        className="mono fw-700"
-                        style={{ color: line.remaining > 0 ? 'var(--amber)' : 'var(--green)' }}
+                        className="mono"
+                        style={{ color: line.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
                       >
-                        {line.remaining}
+                        {line.dispatchedQty}
                       </td>
                       <td className="mono">{fmtDate(line.dueDate)}</td>
                       <td style={wrapCell}>
@@ -976,12 +937,12 @@ function OrderDetail({
                             </button>
                           ) : null}
                           {/* ADR-171: a BUY line is purchased, not planned. SO
-                            lines get + PR; a JWSO line is the client's own
+                            lines get + PR; a JWSO line is the customer's own
                             material and is never bought in. */}
                           {line.itemProcurementType === 'buy' ? (
                             so.source === 'jw' ? (
                               <span className="text3" style={{ fontSize: 11 }}>
-                                Buy item — client material
+                                Buy item — Customer material
                               </span>
                             ) : line.remaining > 0 && perms.entry ? (
                               <button
@@ -1016,7 +977,7 @@ function OrderDetail({
                               disabled={allocateCap(lineFacts(so.soCode, line)) <= 0}
                               title={
                                 allocateCap(lineFacts(so.soCode, line)) > 0
-                                  ? `Reserve up to ${allocateCap(lineFacts(so.soCode, line))} pcs of free stock to this line`
+                                  ? `Allocate up to ${allocateCap(lineFacts(so.soCode, line))} pcs of free stock to this line`
                                   : 'Nothing can be allocated to this line right now'
                               }
                               onClick={() =>
@@ -1101,7 +1062,7 @@ function OrderDetail({
               onDone={(result) => {
                 setModal({ kind: 'none' });
                 setStockNote({
-                  what: `Allocated ${result.qtyMoved} pcs to line ${targetLine.lineNo}`,
+                  what: `Allocated ${result.qtyMoved} pcs to Ln ${targetLine.lineNo}`,
                   physicalQty: result.physicalQty,
                   reservedQty: result.reservedQty,
                   availableQty: result.availableQty,
@@ -1123,7 +1084,7 @@ function OrderDetail({
               onDone={(result) => {
                 setModal({ kind: 'none' });
                 setStockNote({
-                  what: `Released ${result.qtyMoved} pcs from line ${targetLine.lineNo}`,
+                  what: `Released ${result.qtyMoved} pcs from Ln ${targetLine.lineNo}`,
                   physicalQty: result.physicalQty,
                   reservedQty: result.reservedQty,
                   availableQty: result.availableQty,
@@ -1423,7 +1384,7 @@ function PlanChip({
   const isDP = plan.planType === 'direct_purchase';
   const isFO = plan.planType === 'full_outsource';
   const typeIcon = isDP ? '🛒' : isFO ? '📦' : '🏭';
-  const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Mfg';
+  const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Make';
   const isRouteCard = plan.opsSource === 'route_card';
   const statusLabel =
     isRouteCard && plan.derivedStatus
@@ -1440,7 +1401,7 @@ function PlanChip({
     plan.plannedEndDate ? `End: ${fmtDate(plan.plannedEndDate)}` : null,
     plan.rawMaterialGradeText ? `Grade: ${plan.rawMaterialGradeText}` : null,
     plan.rawMaterialSizeText ? `Size: ${plan.rawMaterialSizeText}` : null,
-    plan.remarks ? `Remark: ${plan.remarks}` : null,
+    plan.remarks ? `Remarks: ${plan.remarks}` : null,
   ]
     .filter((s): s is string => s !== null)
     .join('\n');
@@ -1546,7 +1507,7 @@ function PlanChip({
           />
           {plan.foMatPrCode ? (
             <span style={{ color: 'var(--amber2)', marginLeft: 4 }}>
-              Mat:
+              Material:
               <PrLink id={plan.foMatPrId} code={plan.foMatPrCode} color="var(--amber)" />
             </span>
           ) : null}

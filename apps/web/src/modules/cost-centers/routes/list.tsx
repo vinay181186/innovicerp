@@ -124,13 +124,6 @@ function CostCentersListPage(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<CostCenter>[]>(
     () => [
       {
-        header: 'Sr No',
-        width: '5%',
-        className: 'text3',
-        // Server-paged list: the serial number continues across pages.
-        render: (_cc, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
-      },
-      {
         header: 'Code',
         width: '11%',
         nowrap: true,
@@ -152,7 +145,7 @@ function CostCentersListPage(): React.JSX.Element {
       },
       {
         header: 'Name',
-        width: '22%',
+        width: '27%',
         align: 'left',
         className: 'fw-700',
         ellipsis: true,
@@ -188,7 +181,7 @@ function CostCentersListPage(): React.JSX.Element {
         render: (cc) => <StatusBadge kind="active" status={String(cc.isActive)} />,
       },
     ],
-    [currentPage],
+    [],
   );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -204,7 +197,6 @@ function CostCentersListPage(): React.JSX.Element {
           the primary action stay put while the rows scroll underneath. */}
       <ListHeader
         title="Cost Centre Master"
-        icon="🏢"
         // Count comes from the list response's `total` — the only aggregate
         // GET /cost-centers returns.
         count={total}
@@ -281,7 +273,7 @@ function CostCentersListPage(): React.JSX.Element {
         primary={
           canAdd ? (
             <Link to="/cost-centers/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> Add Cost Centre
+              <Icon name="plus" size={14} /> New Cost Centre
             </Link>
           ) : null
         }
@@ -300,14 +292,17 @@ function CostCentersListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText="No cost centres. Click + Add Cost Centre."
+            emptyText={
+              search.search || search.isActive !== undefined || search.type || search.department
+                ? 'No Cost Centres match.'
+                : 'No Cost Centres yet.'
+            }
             onRowClick={(cc) => void navigate({ to: '/cost-centers/$id', params: { id: cc.id } })}
             rowActionsWidth="10%"
             rowActions={(cc) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/cost-centers/${cc.id}`}
+                // Row click opens the cost centre (ERPNext list); Edit is a
+                // ROUTE, so it stays a real link for ctrl-click / new tab.
                 editTo={canEdit ? `/cost-centers/${cc.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed: the confirm dialog
@@ -321,8 +316,8 @@ function CostCentersListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move cost centre ${cc.code} to Trash?`,
-                  message: `${cc.code} — ${cc.name} stops appearing in the Cost Centre Master and in every cost centre picker. You can restore it from Trash.`,
+                  title: `Move Cost Centre ${cc.code} to Trash?`,
+                  message: 'You can restore it from Trash.',
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',
                 }}

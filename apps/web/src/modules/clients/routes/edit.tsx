@@ -47,8 +47,7 @@ function ClientNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have create access to Customer Master. Ask an admin for L2 Data Entry or above
-        in Sales.
+        You do not have permission to create Customers. Ask an admin.
       </div>
     );
   }
@@ -61,12 +60,7 @@ function ClientNewPage(): React.JSX.Element {
       </Link>
       <div className="panel">
         <div className="panel-hdr">
-          <div>
-            <div className="panel-title">New Customer</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Create a master record for a customer.
-            </div>
-          </div>
+          <div className="panel-title">New Customer</div>
         </div>
         <div className="panel-body">
           <ClientForm
@@ -109,8 +103,7 @@ function ClientEditPage(): React.JSX.Element {
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have edit access to Customer Master. Ask an admin for L2 Data Entry or above
-        in Sales.
+        You do not have permission to edit Customers. Ask an admin.
       </div>
     );
   }
@@ -133,7 +126,7 @@ function ClientEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Customer not found'}
+            {error instanceof Error ? error.message : 'Customer not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -149,7 +142,7 @@ function ClientEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to customer
+        <ArrowLeft size={14} /> Back to Customer
       </Link>
       <div className="panel">
         <div className="panel-hdr">

@@ -1,30 +1,30 @@
-// Tax-invoice document — ports legacy _printInvoice (L21314, line verified).
-// `invoiceDocHtml` builds the full A4-portrait document (inline styles only)
-// so the SAME markup renders as the on-screen preview on the invoice detail
-// page AND in the print window (user direction 2026-06-06: screen = print).
+// Tax-invoice document — ports legacy _printInvoice (L21314).
+//
+// It renders on `@/lib/print/sheet-print` — THE INNOVIC SHEET, the same paper
+// as the Delivery Challan, Purchase Order, GRN and JW Invoice (one letterhead,
+// one type scale, one table, Times). It used to be its own boxed layout with a
+// "TAX INVOICE" banner; every print document now renders on the sheet.
+// `invoiceSheetHtml` is also what the detail page previews (screen = print).
 // GST split: home state (GSTIN prefix 24/Gujarat) → SGST+CGST, else IGST.
 //
-// NOT a verbatim mirror. Verified deltas against L21314-21375:
-//  - Company header/footer come from letterheadHeaderHtml/FooterHtml (the
-//    companies row) instead of legacy's hardcoded "INNOVIC TECHNOLOGY" block
-//    (L21349-21352). Deliberate: user direction 2026-06-06 names Invoice as a
-//    full-letterhead doc (lib/print/letterhead.ts). Legacy has no footer strip.
-//  - @page pins A4 portrait; legacy only set margins (L21338).
-// Known GAPS vs legacy (reported, need a shared/API change — do NOT stub):
-//  - Bill To omits the client's ADDRESS. Legacy prints it (L21355) from the
-//    clients row; InvoiceDetail carries clientCode but no address field.
-//  - The signature block omits legacy's left "PAN: AQKPM4121A / E. & O.E."
-//    (L21371). `companies` has no PAN column, and hardcoding it would fight the
-//    letterhead direction ("text comes from the companies row").
-//  - Dates print in the sheet's date format (challanDate → "06 Sep 2026"),
-//    the same as every other printed document; legacy used fmt() (L21360/21363).
+// Known gaps vs legacy (need a shared/API change — do NOT stub):
+//  - Bill To omits the client's ADDRESS; InvoiceDetail carries no address field.
+//  - There is no 'INVOICE' print-template doc type yet, so no special notes /
+//    terms / footer blocks print; the sheet's own signatory line does.
 
 import type { Company, InvoiceDetail } from '@innovic/shared';
-import { companyAddressLines } from '@/lib/print/company';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { buildDocCompany } from '@/lib/print/company';
 import { inrFormat } from '@/lib/print/doc-print';
-import { letterheadFooterHtml, letterheadHeaderHtml } from '@/lib/print/letterhead';
-import { challanDate } from '@/lib/print/sheet-print';
+import {
+  type SheetField,
+  type SheetPrintModel,
+  buildSheetHtml,
+  challanDate,
+  openSheetPrintWindow,
+} from '@/lib/print/sheet-print';
+
+const FALLBACK_UOM = 'NOS';
 
 const STATE_MAP: Record<string, string> = {
   '24': 'Gujarat',
@@ -70,124 +70,94 @@ function numWords(num: number): string {
   return s.trim();
 }
 
-const esc = (s: string): string =>
-  s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] ?? c);
-
-const TD = 'border:1px solid #999;padding:5px 6px;font-size:11px';
-const TH = 'background:#f0f0f0;border:1px solid #999;padding:5px 6px;font-size:10px;font-weight:700;text-align:center';
-
-// The full invoice document (white sheet, black text, inline styles only).
-// Rendered 1:1 on the detail page preview and in the print window.
-export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | undefined): string {
+/** The invoice as an Innovic Sheet print model. */
+function invoiceSheetModel(inv: InvoiceDetail, company: Company | null | undefined): SheetPrintModel {
   const gst = inv.clientGst ?? '';
   const stateCode = gst ? gst.substring(0, 2) : '24';
   const isIGST = stateCode !== '24';
-  // Money hidden for L1 Viewers: drop Rate/Amount columns, tax rows, totals and
-  // amount-in-words from the printed invoice. TOLD by the server, not inferred
-  // from a null money field — the same test the detail page makes. A null
-  // grandTotal also means "no value yet", so probing it blanked the money on a
-  // printed invoice for users fully entitled to see it.
+  // Money hidden for L1 Viewers: TOLD by the server (priceVisible), never
+  // inferred from a null money field. Rate / Amount print an em dash and no
+  // money block or amount-in-words follows.
   const priceHidden = inv.priceVisible === false;
+  const money = (n: number | null | undefined): string => (priceHidden ? '—' : inrFormat(n ?? 0));
   const gstPct = inv.gstPercent ?? 0;
-  const amtWords = `Indian Rupees ${numWords(Math.floor(inv.grandTotal ?? 0))} Only`;
-  const coName = company?.name ?? 'Innovic Technology';
-  const coAddr = companyAddressLines(company);
-
-  const lineRows = inv.lines
-    .map(
-      (l, i) =>
-        `<tr><td style="${TD};text-align:center">${i + 1}</td>` +
-        // POL — the CUSTOMER's own purchase-order line number, printed beside
-        // (never instead of) the item code, so the customer can tie every line
-        // of this tax invoice back to their own purchase order.
-        `<td style="${TD};text-align:center">${esc(l.clientPoLineNo ?? '') || '&mdash;'}</td>` +
-        // Code and name are two CELLS now, not a code with the name stacked
-        // beneath it in small grey type. A long name used to wrap inside the
-        // one cell and push the row height around, and there was no column to
-        // run the names down. An em dash where a name is missing: a blank cell
-        // on a tax invoice reads as something having gone wrong.
-        // The code carries the customer's drawing revision — "IN-IT-0007/B" —
-        // so the tax invoice states the same revision as the job card and the
-        // dispatch note. No revision on the SO line leaves the code bare.
-        `<td style="${TD}">${esc(itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, '')) || '&mdash;'}</td>` +
-        `<td style="${TD}">${esc(l.itemName) || '&mdash;'}</td>` +
-        `<td style="${TD};text-align:right">${l.qty.toFixed(1)}</td>` +
-        `<td style="${TD};text-align:center;font-size:10px">${esc(l.uom?.trim() || 'NOS')}</td>` +
-        (priceHidden
-          ? ''
-          : `<td style="${TD};text-align:right">${inrFormat(l.rate ?? 0)}</td>` +
-            `<td style="${TD};text-align:right;font-weight:700">${inrFormat(l.lineAmount ?? 0)}</td>`) +
-        `</tr>`,
-    )
-    .join('');
-
+  const gstAmount = inv.gstAmount ?? 0;
   const taxRows = isIGST
-    ? `<tr><td colspan="7" style="${TD};text-align:right">IGST @ ${gstPct}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount ?? 0)}</td></tr>`
-    : `<tr><td colspan="7" style="${TD};text-align:right">SGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>` +
-      `<tr><td colspan="7" style="${TD};text-align:right">CGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>`;
+    ? [{ label: `IGST @ ${gstPct}%`, value: money(gstAmount) }]
+    : [
+        { label: `SGST @ ${gstPct / 2}%`, value: money(gstAmount / 2) },
+        { label: `CGST @ ${gstPct / 2}%`, value: money(gstAmount / 2) },
+      ];
 
-  return `<div style="background:#fff;color:#1e293b;font-family:Arial,sans-serif;font-size:11px;line-height:1.35;padding:18px">
-    <div style="border:2px solid #333">
-      ${letterheadHeaderHtml({ name: coName, gstin: company?.gstNumber })}
-      <div style="text-align:center;padding:8px;border-bottom:2px solid #333;font-size:17px;font-weight:900;letter-spacing:2px">TAX INVOICE</div>
-      <div style="display:flex;border-bottom:1px solid #999">
-        <div style="flex:1;padding:8px 10px;font-size:10px;border-right:1px solid #999">
-          <div style="font-weight:700;font-size:11px;text-decoration:underline;margin-bottom:3px">Customer</div>
-          <div style="font-weight:700;font-size:12px">${esc(inv.clientName ?? '')}</div>
-          ${gst ? `<div>GSTIN: <b>${esc(gst)}</b></div>` : ''}
-          ${STATE_MAP[stateCode] ? `<div>State: ${STATE_MAP[stateCode]}, Code: ${stateCode}</div>` : ''}
-        </div>
-        <div style="flex:1;padding:8px 10px;font-size:10px">
-          <div style="font-weight:700;font-size:11px;text-decoration:underline;margin-bottom:3px">Invoice Details</div>
-          <div style="font-weight:700;font-size:14px;color:#1a5276">${esc(inv.code)}</div>
-          <div>Invoice Date: ${esc(challanDate(inv.invoiceDate))}</div>
-          <div>SO No.: <b>${esc(inv.soCode ?? '')}</b></div>
-          ${inv.clientPoNo ? `<div>Client PO No.: <b>${esc(inv.clientPoNo)}</b></div>` : ''}
-          <div>Payment Terms: ${inv.paymentTermsDays} Days</div>
-          <div>Due Date: <b>${esc(challanDate(inv.dueDate))}</b></div>
-        </div>
-      </div>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr><th style="${TH}">Sr No</th><th style="${TH}">POL</th><th style="${TH};text-align:left">Item Code</th><th style="${TH};text-align:left">Item Name</th><th style="${TH}">Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
-        <tbody>${lineRows}
-          ${
-            priceHidden
-              ? ''
-              : `<tr style="font-weight:700;background:#f5f5f5"><td colspan="7" style="${TD};text-align:right">Subtotal</td><td style="${TD};text-align:right">${inrFormat(inv.subtotal ?? 0)}</td></tr>` +
-                taxRows +
-                `<tr><td colspan="7" style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">Total</td><td style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">₹ ${inrFormat(inv.grandTotal ?? 0)}</td></tr>`
-          }
-        </tbody>
-      </table>
-      ${priceHidden ? '' : `<div style="padding:8px 10px;border-top:1px solid #999;font-size:10px"><b>Amount in Words:</b> <i>${esc(amtWords)}</i></div>`}
-      <div style="padding:15px 10px;display:flex;justify-content:flex-end;border-top:1px solid #999">
-        <div style="text-align:right">
-          <div style="font-weight:700">for ${esc(coName)}</div>
-          <div style="margin-top:40px;border-top:1px solid #333;padding-top:4px;font-size:10px">Authorised Signatory</div>
-        </div>
-      </div>
-      ${letterheadFooterHtml({ addressLines: coAddr, email: company?.email, phone: company?.phone })}
-    </div>
-  </div>`;
+  const uoms = new Set(inv.lines.map((l) => l.uom?.trim() || FALLBACK_UOM));
+  const totalQty = inv.lines.reduce((sum, l) => sum + l.qty, 0);
+  // Quantities print rounded to 2 dp with no trailing zeros: 12, 2.5, 0.33 --
+  // a float sum (0.1 + 0.2) must not print as 0.30000000000000004.
+  const qtyText = (n: number): string => String(Math.round(n * 100) / 100);
+
+  const recipientFields: SheetField[] = [
+    { label: 'Customer Code', value: inv.clientCode ?? '', variant: 'mono' },
+    { label: 'Name', value: inv.clientName ?? '', variant: 'name' },
+    { label: 'GSTIN', value: gst, variant: 'mono' },
+  ];
+  if (STATE_MAP[stateCode]) {
+    recipientFields.push({ label: 'State', value: `${STATE_MAP[stateCode]}, Code: ${stateCode}` });
+  }
+
+  const documentFields: SheetField[] = [
+    { label: 'Invoice No.', value: inv.code, variant: 'mono', strong: true },
+    { label: 'Invoice Date', value: challanDate(inv.invoiceDate), variant: 'mono' },
+    { label: 'SO No.', value: inv.soCode ?? '', variant: 'mono' },
+    ...(inv.clientPoNo
+      ? [{ label: 'Client PO No.', value: inv.clientPoNo, variant: 'mono' as const }]
+      : []),
+    { label: 'Payment Terms', value: `${inv.paymentTermsDays} Days` },
+    { label: 'Due Date', value: challanDate(inv.dueDate), variant: 'mono' },
+  ];
+
+  return {
+    title: 'Tax Invoice',
+    windowTitle: `Invoice ${inv.code}`,
+    columns: 'po',
+    blocks: {},
+    data: {},
+    company: buildDocCompany(company),
+    recipient: { label: 'Customer', fields: recipientFields },
+    document: { label: 'Invoice', fields: documentFields },
+    lines: inv.lines.map((l) => ({
+      // CODE/REV — the customer's drawing revision rides on the code, the same
+      // as the job card and the dispatch note.
+      itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
+      pol: l.clientPoLineNo ?? null,
+      itemName: l.itemName,
+      uom: l.uom?.trim() || FALLBACK_UOM,
+      qty: qtyText(l.qty),
+      rate: money(l.rate),
+      amount: money(l.lineAmount),
+    })),
+    totalQty: qtyText(totalQty),
+    totalUom: uoms.size === 1 ? [...uoms][0] ?? '' : '',
+    ...(priceHidden
+      ? {}
+      : {
+          money: {
+            subtotal: money(inv.subtotal),
+            taxRows,
+            grand: money(inv.grandTotal),
+            // Whole rupees, as legacy printed it (see numWords above).
+            amountInWords: `Indian Rupees ${numWords(Math.floor(inv.grandTotal ?? 0))} Only`,
+          },
+        }),
+  };
 }
 
-// Print window: A4 PORTRAIT pinned via @page, same document markup as the
-// on-screen preview.
-/** Returns false if the popup was blocked, so the caller can say so. It used to
- *  return void and swallow the blocked window — the user clicked Print and
- *  nothing at all happened. */
+/** The sheet markup (no <style>) — the detail page previews exactly this. */
+export function invoiceSheetHtml(inv: InvoiceDetail, company: Company | null | undefined): string {
+  return buildSheetHtml(invoiceSheetModel(inv, company));
+}
+
+/** Opens the print window. Returns false if the popup was blocked, so the
+ *  caller can say so. */
 export function printInvoice(inv: InvoiceDetail, company: Company | null | undefined): boolean {
-  const w = window.open('', '_blank', 'width=850,height=900');
-  if (!w) return false;
-  w.document.write(
-    `<!DOCTYPE html><html><head><title>Invoice ${esc(inv.code)}</title>` +
-      `<style>@page{size:A4 portrait;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}body{background:#fff}` +
-      `@media print{.no-print{display:none!important}}` +
-      `.print-btn{position:fixed;top:10px;right:10px;background:#1a5276;color:#fff;border:none;padding:10px 24px;font-size:14px;cursor:pointer;border-radius:6px;font-weight:700}</style></head><body>` +
-      `<button class="print-btn no-print" onclick="window.print()">🖨 Print</button>` +
-      invoiceDocHtml(inv, company) +
-      `</body></html>`,
-  );
-  w.document.close();
-  return true;
+  return openSheetPrintWindow(invoiceSheetModel(inv, company));
 }

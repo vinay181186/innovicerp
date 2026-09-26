@@ -104,7 +104,7 @@ function SoCostingDetailPage(): React.JSX.Element {
           <Stat
             label="Cost Centre"
             value={`${data.costCenter}${data.costCenterName ? ` — ${data.costCenterName}` : ''}`}
-            color="var(--teal, #0d9488)"
+            color="var(--teal)"
           />
         ) : null}
         {priceHidden ? null : (
@@ -112,7 +112,12 @@ function SoCostingDetailPage(): React.JSX.Element {
             <Stat label="Material" value={m2(data.grandMaterial)} color="var(--blue)" />
             <Stat label="Outsource" value={m2(data.grandOutsource)} color="var(--amber)" />
             <Stat label="Machine Time" value={m2(data.grandMachineTime)} color="var(--cyan)" />
-            <Stat label="Total" value={m2(data.grandTotal)} color="var(--green)" fontSize={16} />
+            <Stat
+              label="Total Cost"
+              value={m2(data.grandTotal)}
+              color="var(--green)"
+              fontSize={16}
+            />
           </>
         )}
       </div>
@@ -216,7 +221,7 @@ function LineRows({
               {op.jcNo}
             </td>
             <td style={{ fontSize: 11 }}>
-              Op{opSrNo(op.opSeq)}: {op.operation}
+              Op {opSrNo(op.opSeq)}: {op.operation}
             </td>
             <td className="text3" style={{ fontSize: 11 }}>
               {typeLabel}

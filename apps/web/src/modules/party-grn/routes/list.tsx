@@ -92,7 +92,7 @@ function PartyGrnListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Party GRNs. Ask an admin.
       </div>
     );
   }
@@ -126,7 +126,7 @@ function PartyGrnListPage(): React.JSX.Element {
               marginBottom: -1,
             }}
           >
-            {t === 'receive' ? '📥 Receive (Party GRN)' : '📤 Issue'}
+            {t === 'receive' ? 'Receive (Party GRN)' : 'Issue'}
           </button>
         ))}
       </div>
@@ -165,7 +165,7 @@ function PartyGrnListPage(): React.JSX.Element {
             >
               <div>
                 <div className="section-hdr" style={{ marginBottom: 0 }}>
-                  📥 Party GRN
+                  Party GRN
                 </div>
                 <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
                   {data?.total ?? 0} GRN{(data?.total ?? 0) === 1 ? '' : 's'}
@@ -195,24 +195,17 @@ function PartyGrnListPage(): React.JSX.Element {
               </div>
             </div>
 
-            {/* Read-only totals across the whole company, not filters — no onClick,
-            so each cell renders as a <div> instead of a button that does
-            nothing. They do NOT follow the search box. */}
+            {/* Read-only count, not a filter — no onClick, so the cell renders as
+            a <div>. It follows the search box, like the GRN count beside the
+            title (which is why a separate "Total GRNs" tile is not repeated). */}
             <StatStrip
               items={[
-                {
-                  key: 'grns',
-                  label: 'Total GRNs',
-                  count: summary.totalGrns,
-                  color: 'var(--cyan)',
-                  title: 'Every party GRN on record',
-                },
                 {
                   key: 'today',
                   label: 'Today',
                   count: summary.today,
                   color: 'var(--amber2)',
-                  title: 'GRNs recorded today',
+                  title: 'Party GRNs dated today',
                 },
               ]}
             />
@@ -229,7 +222,7 @@ function PartyGrnListPage(): React.JSX.Element {
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No party material GRNs — click + New Party GRN
+              {search.trim() ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
             </div>
           ) : (
             rows.map((g) => (

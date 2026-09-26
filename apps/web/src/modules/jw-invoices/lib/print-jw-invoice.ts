@@ -175,9 +175,6 @@ export function printJwInvoice(args: {
     { label: 'Invoice No.', value: invoice.code, variant: 'mono', strong: true },
     { label: 'Invoice Date', value: challanDate(invoice.invoiceDate), variant: 'mono' },
     { label: 'JWSO No.', value: invoice.jwCodeText ?? '', variant: 'mono' },
-    // Spelled out as a field, not left to the reader: this is a service bill
-    // against material the client already owns.
-    { label: 'Nature of Charge', value: 'Job work — labour / processing' },
   ];
 
   const model: SheetPrintModel = {
@@ -186,6 +183,8 @@ export function printJwInvoice(args: {
     // The money column set: Sr · Item detail · UOM · Qty · Rate · Amount, with
     // the subtotal / tax / total block under the quantity total.
     columns: 'po',
+    // Like the PO: no blank "Prepared By" panel on a job-work bill.
+    hidePreparedBy: true,
     blocks,
     data,
     company: buildDocCompany(company),

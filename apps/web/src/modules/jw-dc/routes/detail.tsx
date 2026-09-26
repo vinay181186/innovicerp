@@ -15,11 +15,13 @@
 import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
+import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
 import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
@@ -39,6 +41,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
   const { data: vendor } = useVendor(dc?.vendorId ?? undefined);
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
+  const [printBlocked, setPrintBlocked] = useState(false);
 
   if (isLoading) {
     return (
@@ -57,7 +60,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'JW DC not found'}
+            {error instanceof Error ? error.message : 'JW DC not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -72,21 +75,17 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
       templates: templates?.items ?? [],
       currentUser: me?.email,
     });
-    if (!ok) window.alert('Allow popups to print.');
+    setPrintBlocked(!ok);
   };
 
-  const statusColor =
-    dc.returnStatus === 'fully_returned'
-      ? 'var(--green)'
-      : dc.returnStatus === 'partial'
-        ? 'var(--cyan)'
-        : 'var(--red)';
+  // Returned = done (green); Partly Returned / At Vendor = under way (amber).
+  const statusClass = dc.returnStatus === 'fully_returned' ? 'b-green' : 'b-amber';
   const statusLabel =
     dc.returnStatus === 'fully_returned'
       ? 'Returned'
       : dc.returnStatus === 'partial'
         ? 'Partly Returned'
-        : 'Out';
+        : 'At Vendor';
 
   return (
     <div>
@@ -108,9 +107,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
               {dc.vendorNameText ?? dc.vendorCodeText ?? '—'}
-              <span style={{ fontWeight: 700, color: statusColor, fontSize: 12 }}>
-                {statusLabel}
-              </span>
+              <span className={`badge ${statusClass}`}>{statusLabel}</span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -120,6 +117,11 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
+          {printBlocked ? (
+            <Banner tone="error" role="alert">
+              Could not open the print window. Allow pop-ups for this site and try again.
+            </Banner>
+          ) : null}
           <DetailGrid dc={dc} />
         </div>
       </div>
@@ -128,8 +130,8 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div className="panel-title">Line Items ({dc.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            sent <b style={{ color: 'var(--text)' }}>{dc.totalSentQty}</b> · returned{' '}
-            <b style={{ color: 'var(--green2)' }}>{dc.totalReturnedQty}</b> · pending{' '}
+            Sent <b style={{ color: 'var(--text)' }}>{dc.totalSentQty}</b> · Received{' '}
+            <b style={{ color: 'var(--green2)' }}>{dc.totalReturnedQty}</b> · Pending{' '}
             <b style={{ color: dc.pendingQty > 0 ? 'var(--red)' : 'var(--green)' }}>
               {dc.pendingQty}
             </b>
@@ -167,7 +169,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                     <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                       {l.clientPoLineNo ?? '—'}
                     </td>
-                    <td className="mono" style={{ fontSize: 11 }}>
+                    <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                       {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
                     </td>
                     <td>{l.itemName ?? l.itemNameText ?? '—'}</td>
@@ -206,8 +208,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
 }
 
 // Field order + labels mirror legacy `_jwdcViewOut`'s info block (L24599-24606):
-// DC NO. / DATE / JWPO / VENDOR / TOTAL SENT / VEHICLE. `.form-label` uppercases,
-// so these render in legacy's caps.
+// DC No. / DC Date / PO No. / Vendor / Total Sent / Vehicle No.
 function DetailGrid(props: { dc: JwDcOutwardDetail }): React.JSX.Element {
   const { dc } = props;
   return (
@@ -218,7 +219,7 @@ function DetailGrid(props: { dc: JwDcOutwardDetail }): React.JSX.Element {
       <Pair label="SO No." value={dc.soCode ?? '—'} />
       <Pair label="Vendor" value={dc.vendorNameText ?? dc.vendorCodeText ?? '—'} />
       <Pair label="Total Sent" value={`${dc.totalSentQty} pcs`} />
-      <Pair label="Vehicle" value={dc.vehicleNo ?? '—'} />
+      <Pair label="Vehicle No." value={dc.vehicleNo ?? '—'} />
     </div>
   );
 }

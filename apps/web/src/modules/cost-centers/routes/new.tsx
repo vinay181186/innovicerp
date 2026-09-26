@@ -38,7 +38,7 @@ function CostCenterNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You cannot create Cost Centres. Ask an admin.
+        You do not have permission to create Cost Centres. Ask an admin.
       </div>
     );
   }
@@ -51,7 +51,7 @@ function CostCenterNewPage(): React.JSX.Element {
       </Link>
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">🏢 Add Cost Centre</div>
+          <div className="panel-title">New Cost Centre</div>
         </div>
         <div className="panel-body">
           <CostCenterForm

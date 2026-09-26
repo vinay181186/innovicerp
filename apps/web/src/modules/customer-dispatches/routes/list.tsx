@@ -27,6 +27,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useCancelDispatch, useDispatchRegister } from '../api';
 import { type DispatchGroup, DispatchCard } from '../components/dispatch-card';
 import { exportDispatchRegister } from '../lib/export-excel';
@@ -96,6 +97,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
   );
   const [soFilter, setSoFilter] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Item-wise Summary is folded away by default so the Dispatch Log is first.
+  const [showSummary, setShowSummary] = useState(false);
+  const [cancelling, setCancelling] = useState<DispatchGroup | null>(null);
 
   const allRows = useMemo(() => data?.rows ?? [], [data]);
   const soOptions = useMemo(
@@ -204,7 +208,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
             marginBottom: -1,
           }}
         >
-          {t === 'so' ? '🚚 Customer Dispatch' : '📦 JW Return'}
+          {t === 'so' ? 'Customer Dispatch' : 'JW Return'}
         </button>
       ))}
     </div>
@@ -213,7 +217,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Customer Dispatches. Ask an admin.
       </div>
     );
   }
@@ -260,7 +264,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
         >
           <div>
             <div className="section-hdr" style={{ marginBottom: 0 }}>
-              📦 Customer Dispatch
+              Customer Dispatch
             </div>
             <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
               {groups.length} dispatch{groups.length === 1 ? '' : 'es'}
@@ -351,7 +355,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 key: 'pcs',
                 label: 'Total Dispatched',
                 count: totalPcs,
-                color: 'var(--red2)',
+                color: 'var(--green2)',
                 sub: 'pieces',
               },
               {
@@ -376,6 +380,18 @@ function CustomerDispatchListPage(): React.JSX.Element {
       ) : (
         <>
           {summary.length > 0 ? (
+            <div style={{ marginBottom: 8 }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                aria-expanded={showSummary}
+                onClick={() => setShowSummary((v) => !v)}
+              >
+                {showSummary ? '▾ Hide summary' : '▸ Show summary'}
+              </button>
+            </div>
+          ) : null}
+          {summary.length > 0 && showSummary ? (
             <div className="panel" style={{ marginBottom: 14 }}>
               <div className="panel-hdr">
                 <span className="panel-title">Item-wise Summary</span>
@@ -400,7 +416,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                           {s.code}
                         </td>
                         <td className="fw-700">{s.name}</td>
-                        <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
+                        <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                           {s.total}
                         </td>
                         <td className="mono td-num" style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -423,16 +439,15 @@ function CustomerDispatchListPage(): React.JSX.Element {
               color: 'var(--cyan)',
               fontFamily: 'var(--mono)',
               fontWeight: 700,
-              letterSpacing: '0.06em',
               margin: '4px 0 8px',
             }}
           >
-            DISPATCH LOG
+            Dispatch Log
           </div>
 
           {groups.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No dispatches recorded yet — click + New Dispatch
+              {search || soFilter ? 'No Dispatches match.' : 'No Dispatches yet.'}
             </div>
           ) : (
             groups.map((g) => (
@@ -443,16 +458,26 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 canCancel={canCancel}
                 cancelPending={cancel.isPending}
                 onToggle={() => toggle(g.dispatchId)}
-                onCancel={() => {
-                  if (confirm(`Cancel Dispatch ${g.code}? Stock will be reversed.`)) {
-                    cancel.mutate(g.dispatchId);
-                  }
-                }}
+                onCancel={() => setCancelling(g)}
               />
             ))
           )}
         </>
       )}
+      {cancelling ? (
+        <ConfirmDialog
+          title={`Cancel Dispatch ${cancelling.code}?`}
+          message="Stock will be reversed."
+          confirmLabel="Cancel Dispatch"
+          cancelLabel="Keep"
+          pendingLabel="Cancelling…"
+          onConfirm={async () => {
+            await cancel.mutateAsync(cancelling.dispatchId);
+            setCancelling(null);
+          }}
+          onCancel={() => setCancelling(null)}
+        />
+      ) : null}
     </div>
   );
 }

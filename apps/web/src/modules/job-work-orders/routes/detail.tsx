@@ -1,10 +1,16 @@
 // JW detail page (UI-003-04).
 
-import type { JobWorkOrderDetail, JobWorkOrderLine, JwDocumentFile } from '@innovic/shared';
+import {
+  type JobWorkOrderDetail,
+  type JobWorkOrderLine,
+  type JwDocumentFile,
+  SO_DOC_CATEGORY_LABELS,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { inrFormat } from '@/lib/print/doc-print';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -13,7 +19,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDeleteJwDocument, useJwDocuments } from '@/modules/jwso-documents/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { useJobWorkOrder, useSoftDeleteJobWorkOrder } from '../api';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
@@ -42,7 +48,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   if (isLoading) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading job-work order…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading JWSO…
       </div>
     );
   }
@@ -56,7 +62,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Job-work order not found'}
+            {error instanceof Error ? error.message : 'JWSO not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -67,17 +73,17 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view JWSOs. Ask an admin.
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(detail.id, {
-      onSuccess: () => {
-        void navigate({ to: '/job-work-orders', replace: true });
-      },
-    });
+  // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
+  // shows a failure inside the dialog.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(detail.id);
+    setConfirmDelete(false);
+    void navigate({ to: '/job-work-orders', replace: true });
   };
 
   // Access matrix (jw_create) replaces the old admin/manager role flags.
@@ -115,86 +121,61 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
           </>
         }
         actions={
-          confirmDelete ? (
-            <>
-              <span className="text3" style={{ fontSize: 'var(--fs-sm)', alignSelf: 'center' }}>
-                Move JWSO {detail.code} to Trash? You can restore it from Trash.
-              </span>
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={onDelete}
-                disabled={softDelete.isPending}
-              >
-                {softDelete.isPending ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <Trash2 size={13} />
-                )}
-                Move to Trash
-              </button>
-              <button
-                type="button"
+          <>
+            {canEdit ? (
+              <Link
+                to="/job-work-orders/$id/edit"
+                params={{ id: detail.id }}
                 className="btn btn-ghost btn-sm"
-                onClick={() => setConfirmDelete(false)}
-                disabled={softDelete.isPending}
               >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              {canEdit ? (
-                <Link
-                  to="/job-work-orders/$id/edit"
-                  params={{ id: detail.id }}
-                  className="btn btn-ghost btn-sm"
-                >
-                  <Pencil size={13} /> Edit
-                </Link>
-              ) : null}
-              <ActionMenu
-                items={[
-                  {
-                    label: 'Delete',
-                    danger: true,
-                    hidden: !canDelete,
-                    onClick: () => setConfirmDelete(true),
-                  },
-                ]}
-              />
-            </>
-          )
+                <Pencil size={13} /> Edit
+              </Link>
+            ) : null}
+            <ActionMenu
+              items={[
+                {
+                  label: 'Delete',
+                  danger: true,
+                  hidden: !canDelete,
+                  onClick: () => setConfirmDelete(true),
+                },
+              ]}
+            />
+          </>
         }
       >
-        {softDelete.isError ? (
-          <Banner tone="error" role="alert">
-            {softDelete.error instanceof Error
-              ? softDelete.error.message
-              : 'Could not move the JWSO to Trash. Try again.'}
-          </Banner>
-        ) : null}
         <DetailGrid detail={detail} />
       </DetailHeader>
 
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Move JWSO ${detail.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
+
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>
+          <div className="panel-title" style={{ color: 'var(--blue)' }}>
             Line Items ({detail.lines.length})
           </div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
+            Total Qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
             {!priceHidden && lineValueTotal > 0 ? (
               <>
                 {' '}
-                · value{' '}
-                <b style={{ color: 'var(--green2, var(--green))' }}>₹{lineValueTotal.toFixed(2)}</b>
+                · Value{' '}
+                <b style={{ color: 'var(--green2, var(--green))' }}>₹{inrFormat(lineValueTotal)}</b>
               </>
             ) : null}
             {clientMatTotal > 0 ? (
               <>
                 {' '}
-                · customer material{' '}
+                · Customer Material{' '}
                 <b style={{ color: 'var(--text)' }}>
                   {partyReceivedTotal}/{clientMatTotal}
                 </b>
@@ -232,7 +213,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
               {detail.lines.length === 0 ? (
                 <tr>
                   <td colSpan={priceHidden ? 8 : 10} className="empty-state">
-                    No lines on this JW yet.
+                    No lines yet.
                   </td>
                 </tr>
               ) : (
@@ -310,20 +291,19 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
               <th>Document Type</th>
               <th>Category</th>
               <th>Uploaded By</th>
-              <th className="th-num">Size</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="empty-state">
+                <td colSpan={5} className="empty-state">
                   <Loader2 className="inline h-4 w-4 animate-spin" /> Loading documents…
                 </td>
               </tr>
             ) : files.length === 0 ? (
               <tr>
-                <td colSpan={6} className="empty-state">
+                <td colSpan={5} className="empty-state">
                   No documents yet. Upload a Client PO from the JWSO form.
                 </td>
               </tr>
@@ -371,7 +351,6 @@ function DocRow(props: {
   deleting: boolean;
 }): React.JSX.Element {
   const { file: f } = props;
-  const sizeKb = f.fileSize != null ? `${(f.fileSize / 1024).toFixed(0)} KB` : '—';
   return (
     <tr>
       <td>
@@ -387,14 +366,11 @@ function DocRow(props: {
       <td className="text3" style={{ fontSize: 11 }}>
         {f.docType ?? '—'}
       </td>
-      <td className="mono" style={{ fontSize: 11 }}>
-        {f.category}
+      <td style={{ fontSize: 11 }}>
+        {(SO_DOC_CATEGORY_LABELS as Record<string, string>)[f.category] ?? f.category}
       </td>
       <td className="text3" style={{ fontSize: 11 }}>
         {f.uploadedByText ?? '—'}
-      </td>
-      <td className="mono td-num" style={{ fontSize: 11 }}>
-        {sizeKb}
       </td>
       <td>
         {props.canDelete ? (
@@ -469,7 +445,7 @@ function LineRow(props: {
             {Number(l.rate ?? 0).toFixed(2)}
           </td>
           <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
-            {(l.orderQty * Number(l.rate ?? 0)).toFixed(2)}
+            {inrFormat(l.orderQty * Number(l.rate ?? 0))}
           </td>
         </>
       )}
@@ -515,7 +491,7 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
           )
         }
       />
-      <StripItem label="🟢 Customer Material" value={detail.clientMaterial ?? '—'} />
+      <StripItem label="Customer Material" value={detail.clientMaterial ?? '—'} />
       <StripItem label="Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
       <div style={{ flex: '1 1 240px', minWidth: 200 }}>
         <span className="form-label">Remarks</span>

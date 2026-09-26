@@ -18,6 +18,7 @@
 
 import type { SoCycleTimeRow } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+import { todayIst } from '@/lib/date';
 import { fmtDate } from '@/lib/print/doc-print';
 
 /** A phase timestamp as the IST calendar day (dd-mm-yyyy). The phases are
@@ -47,7 +48,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 function stamp(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayIst();
 }
 
 export function exportSoCycleTime(rows: SoCycleTimeRow[]): void {

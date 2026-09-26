@@ -12,7 +12,7 @@ import type {
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatStrip } from '@/ui/data';
 import { ReportFilter, ReportShell, reportTotalRowStyle } from '@/ui/data/ReportShell';
@@ -27,10 +27,10 @@ export const pendingSoValueRoute = createRoute({
 });
 
 const FILTERS: Array<{ key: PendingSoValueFilter; label: string }> = [
-  { key: 'open', label: 'Open / Pending' },
+  { key: 'open', label: 'Open' },
   { key: 'all', label: 'All SOs' },
   { key: 'overdue', label: 'Overdue' },
-  { key: 'completed', label: 'Completed' },
+  { key: 'completed', label: 'Closed' },
 ];
 
 function PendingSoValuePage(): React.JSX.Element {
@@ -73,7 +73,6 @@ function PendingSoValuePage(): React.JSX.Element {
   return (
     <ReportShell
       title="Pending SO Value"
-      icon="💰"
       filters={
         <>
           <ReportFilter label="SO Filter" htmlFor="psv-filter">
@@ -111,12 +110,6 @@ function PendingSoValuePage(): React.JSX.Element {
         data ? (
           <>
             <ListFooter total={data.rows.length} shown={filtered.length} noun="SO" />
-            {/* Legacy's tip opens "Click any SO row to see line-level breakdown."
-                (_psvDetail L19382) — that modal was never ported, so only the
-                second, true clause is copied. */}
-            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
-              💡 Pending Value = Order Value − Dispatched Value.
-            </div>
           </>
         ) : null
       }
@@ -146,8 +139,8 @@ function PendingSoValuePage(): React.JSX.Element {
               <div className="empty-state">
                 <div className="empty-icon">💰</div>
                 {data.rows.length === 0
-                  ? `No SOs match filter "${filter}".`
-                  : 'No SOs match your search.'}
+                  ? `No SOs in ${FILTERS.find((f) => f.key === filter)?.label ?? 'this filter'}.`
+                  : 'No SOs match.'}
               </div>
             </div>
           </div>
@@ -164,12 +157,16 @@ function PendingSoValuePage(): React.JSX.Element {
                     {priceHidden ? null : (
                       <>
                         <th className="th-num">Order Value</th>
-                        <th className="th-num">Dispatched</th>
-                        <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                        <th className="th-num">Dispatched Value</th>
+                        <th
+                          className="th-num"
+                          style={{ color: 'var(--amber2)' }}
+                          title="Order Value − Dispatched Value"
+                        >
                           Pending Value
                         </th>
                         <th className="th-num">Invoiced</th>
-                        <th className="th-num">Amount Received</th>
+                        <th className="th-num">Received</th>
                         <th className="th-num">Outstanding</th>
                       </>
                     )}
@@ -185,7 +182,7 @@ function PendingSoValuePage(): React.JSX.Element {
                   <tfoot>
                     <tr style={reportTotalRowStyle}>
                       <td colSpan={4} style={{ color: 'var(--text2)' }}>
-                        TOTAL ({tfootTotals.soCount} SOs)
+                        Total ({tfootTotals.soCount} SOs)
                       </td>
                       <td className="td-num mono">{inr(tfootTotals.orderValue)}</td>
                       <td className="td-num mono">{inr(tfootTotals.dispatchedValue)}</td>
@@ -284,7 +281,7 @@ function PsvRow({
   row: PendingSoValueRow;
   priceHidden: boolean;
 }): React.JSX.Element {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
   const pending = Number(row.pendingValue ?? 0);
   const outstanding = Number(row.outstandingValue ?? 0);
   const overdue = row.dueDate !== null && row.dueDate < today && pending > 0;
@@ -344,12 +341,10 @@ function PsvRow({
   );
 }
 
-// Legacy badge() L1959-1970 maps the SO statuses it knows: Open→b-cyan,
-// Closed/Completed→b-green, Cancelled→b-red. 'draft' and 'dispatched' have no
-// entry there, so legacy falls through to b-grey — mirrored here.
+// App status colours: Open → blue, Closed / Dispatched → green, anything
+// else (Draft, Cancelled) → grey.
 function badgeColor(status: string): string {
-  if (status === 'open') return 'cyan';
-  if (status === 'closed') return 'green';
-  if (status === 'cancelled') return 'red';
+  if (status === 'open') return 'blue';
+  if (status === 'closed' || status === 'dispatched') return 'green';
   return 'grey';
 }

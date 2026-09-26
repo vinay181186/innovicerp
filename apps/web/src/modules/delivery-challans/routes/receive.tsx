@@ -10,7 +10,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -63,7 +63,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   );
   const exit = useExitConfirm({ onExit: goBack });
 
-  const [receiptDate, setReceiptDate] = useState(todayLocal());
+  const [receiptDate, setReceiptDate] = useState(todayIst());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
   const [remarks, setRemarks] = useState('');
   const [lineDrafts, setLineDrafts] = useState<LineDraft[]>([]);
@@ -158,7 +158,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
-          ⛔ You do not have entry access to receive against a delivery challan.
+          You do not have permission to receive against a DC. Ask an admin.
         </div>
       </div>
     );
@@ -167,7 +167,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   if (isLoading) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading delivery challan…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading DC…
       </div>
     );
   }
@@ -181,7 +181,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Delivery challan not found'}
+            {error instanceof Error ? error.message : 'DC not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -214,7 +214,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               disabled={!canSubmit}
             >
               {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              {submitting ? 'Recording…' : 'Record receipt'}
+              {submitting ? 'Saving…' : 'Save Receipt'}
             </button>
           </>
         }
@@ -230,12 +230,12 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
       <form id={RECEIVE_FORM_ID} onSubmit={(e) => void onSubmit(e)}>
         <div className="panel">
           <div className="panel-hdr">
-            <h2 className="panel-title">Receipt header</h2>
+            <h2 className="panel-title">Receipt Header</h2>
           </div>
           <div className="panel-body">
-            {/* 12-column grid: Receipt date · Vendor invoice · Remarks (3 + 3 + 6). */}
+            {/* 12-column grid: Receipt Date · Vendor Invoice · Remarks (3 + 3 + 6). */}
             <FormGrid>
-              <FormField label="Receipt date" required size="sm" htmlFor="receiptDate">
+              <FormField label="Receipt Date" required size="sm" htmlFor="receiptDate">
                 <input
                   id="receiptDate"
                   type="date"
@@ -245,7 +245,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   required
                 />
               </FormField>
-              <FormField label="Vendor invoice" size="sm" htmlFor="vendorInvoice">
+              <FormField label="Vendor Invoice" size="sm" htmlFor="vendorInvoice">
                 <input
                   id="vendorInvoice"
                   type="text"

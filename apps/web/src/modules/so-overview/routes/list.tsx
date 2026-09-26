@@ -12,10 +12,10 @@ import type {
   SoOverviewRow,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Activity, ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoOverview, useSoOverviewDetail } from '../api';
@@ -34,8 +34,8 @@ export const soOverviewListRoute = createRoute({
 
 const STATUS_BADGE: Record<SoOverallStatus, { cls: string; label: string }> = {
   not_started: { cls: 'b-grey', label: 'Not Started' },
-  in_progress: { cls: 'b-cyan', label: 'In Progress' },
-  on_track: { cls: 'b-green', label: 'On Track' },
+  in_progress: { cls: 'b-amber', label: 'In Progress' },
+  on_track: { cls: 'b-blue', label: 'On Track' },
   delayed: { cls: 'b-red', label: 'Delayed' },
   completed: { cls: 'b-green', label: 'Completed' },
   blocked: { cls: 'b-red', label: 'Blocked' },
@@ -43,8 +43,8 @@ const STATUS_BADGE: Record<SoOverallStatus, { cls: string; label: string }> = {
 
 const STAGE_BADGE: Record<SoOverviewItemStage, { cls: string; label: string; icon: string }> = {
   not_released: { cls: 'b-grey', label: 'Not Released', icon: '○' },
-  in_production: { cls: 'b-cyan', label: 'In Production', icon: '⚙' },
-  outsourced: { cls: 'b-blue', label: 'Outsourced', icon: '🏭' },
+  in_production: { cls: 'b-amber', label: 'In Production', icon: '⚙' },
+  outsourced: { cls: 'b-amber', label: 'Outsourced', icon: '🏭' },
   quality_check: { cls: 'b-amber', label: 'QC Pending', icon: '🔬' },
   finished: { cls: 'b-green', label: 'Completed', icon: '✅' },
   hold: { cls: 'b-red', label: 'Blocked', icon: '🚫' },
@@ -91,7 +91,7 @@ function SoOverviewPage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📋 SO Overview</div>
+        <div className="section-hdr m-0">SO Overview</div>
         <div className="flex items-center gap-2">
           <input
             className="innovic-input"
@@ -100,7 +100,7 @@ function SoOverviewPage(): React.JSX.Element {
             // but our server (so-overview/service.ts L100-104) only ILIKEs
             // code / customerName / clientPoNo. Placeholder states what actually
             // works rather than repeating legacy's wider claim.
-            placeholder="🔍 Search SO# / customer / PO…"
+            placeholder="🔍 Search SO No. / customer / Client PO No.…"
             value={search ?? ''}
             onChange={(e) =>
               void navigate({
@@ -165,7 +165,13 @@ function SoOverviewPage(): React.JSX.Element {
             value={overallFilter}
             onChange={setOverallFilter}
           />
-          <OverviewTable rows={filteredRows} onRowClick={setDrillSoId} />
+          <OverviewTable
+            rows={filteredRows}
+            onRowClick={setDrillSoId}
+            filtered={
+              !!search || (status !== undefined && status !== 'all') || overallFilter !== 'all'
+            }
+          />
         </>
       ) : null}
     </div>
@@ -216,14 +222,11 @@ function OverallStatusPills({
           <button
             key={opt.value}
             type="button"
-            className="btn btn-sm"
+            className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
             style={{
               fontSize: 11,
               padding: '3px 10px',
               borderRadius: 12,
-              background: active ? 'var(--cyan)' : 'var(--bg4)',
-              color: active ? '#fff' : 'var(--text2)',
-              border: `1px solid ${active ? 'var(--cyan)' : 'var(--border)'}`,
             }}
             onClick={() => onChange(active && opt.value !== 'all' ? 'all' : opt.value)}
           >
@@ -238,9 +241,11 @@ function OverallStatusPills({
 function OverviewTable({
   rows,
   onRowClick,
+  filtered,
 }: {
   rows: SoOverviewRow[];
   onRowClick: (soId: string) => void;
+  filtered: boolean;
 }): React.JSX.Element {
   return (
     <>
@@ -254,7 +259,7 @@ function OverviewTable({
                 <th>SO Type</th>
                 <th>Equipment</th>
                 <th>Lines</th>
-                <th>SO Status</th>
+                <th>Progress Status</th>
                 <th>Progress</th>
                 <th>Order Qty</th>
                 <th style={{ color: 'var(--green2)' }}>Completed</th>
@@ -262,14 +267,13 @@ function OverviewTable({
                 <th>Due Date</th>
                 <th>Alerts</th>
                 <th>SO Date</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="empty-state">
-                    No open SOs found
+                  <td colSpan={13} className="empty-state">
+                    {filtered ? 'No SOs match.' : 'No SOs yet.'}
                   </td>
                 </tr>
               ) : (
@@ -291,7 +295,7 @@ function Row({
   onRowClick: (soId: string) => void;
 }): React.JSX.Element {
   const badge = STATUS_BADGE[row.overallStatus];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
   const overdue =
     row.earliestDueDate !== null &&
     row.earliestDueDate < today &&
@@ -357,16 +361,6 @@ function Row({
       <td className="text2" style={{ fontSize: 11 }}>
         {fmtDate(row.soDate)}
       </td>
-      <td onClick={(e) => e.stopPropagation()}>
-        <Link
-          to="/sales-orders/$id/status"
-          params={{ id: row.id }}
-          className="btn btn-ghost btn-sm"
-          title="Open SO Status drill-down"
-        >
-          <Activity size={13} />
-        </Link>
-      </td>
     </tr>
   );
 }
@@ -408,7 +402,7 @@ function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
   }
   if (row.stageCounts.hold > 0) {
     flags.push(
-      <span key="hold" style={{ color: 'var(--red2)', fontSize: 11 }} title="Lines on hold">
+      <span key="hold" style={{ color: 'var(--red2)', fontSize: 11 }} title="Blocked lines">
         🚫{row.stageCounts.hold}
       </span>,
     );
@@ -424,13 +418,15 @@ function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
 }
 
 /** Legacy colours the progress bar by overall STATUS, not by percentage
- *  (L9122 / L9148): Delayed → red, Completed → green, everything else cyan. */
+ *  (L9122 / L9148): Delayed → red, Completed → green, everything else amber. */
 function barColor(status: SoOverallStatus): string {
   return status === 'delayed'
     ? 'var(--red)'
     : status === 'completed'
       ? 'var(--green)'
-      : 'var(--cyan)';
+      : status === 'on_track'
+        ? 'var(--blue)'
+        : 'var(--amber)';
 }
 
 function ProgBar({ pct, status }: { pct: number; status: SoOverallStatus }): React.JSX.Element {
@@ -483,7 +479,7 @@ function SoOverviewDrill({
 
 function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Element {
   const { so, isEquipmentDrill, bomNo, bomRev, childRows } = data;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
   const overdue =
     so.earliestDueDate !== null &&
     so.earliestDueDate < today &&
@@ -701,8 +697,8 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
           }}
         >
           {isEquipmentDrill
-            ? `📦 BOM Items — ${bomNo ?? ''}`
-            : '📋 SO Line Items'}{' '}
+            ? `BOM Items — ${bomNo ?? ''}`
+            : 'Line Items'}{' '}
           ({childRows.length})
         </div>
       </div>
@@ -740,7 +736,7 @@ function DrillItemsTable({
             <th>Item Code</th>
             <th>Item Name</th>
             <th>Stage</th>
-            <th>SO Status</th>
+            <th>Status</th>
             <th>Order Qty</th>
             <th style={{ color: 'var(--amber2)' }}>Issued</th>
             <th style={{ color: 'var(--cyan)' }}>In Production</th>

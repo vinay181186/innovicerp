@@ -236,8 +236,6 @@ function LinePanel({
                   fontSize: 11,
                   fontWeight: 700,
                   color: 'var(--text3)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
                 }}
               >
                 {SO_DOC_CATEGORY_LABELS[cat]} ({catFiles.length})

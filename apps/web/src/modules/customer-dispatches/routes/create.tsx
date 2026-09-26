@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
@@ -45,7 +45,7 @@ export const customerDispatchNewRoute = createRoute({
 });
 
 function todayStr(): string {
-  return todayLocal();
+  return todayIst();
 }
 
 function CustomerDispatchNewPage(): React.JSX.Element {
@@ -156,8 +156,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       lineErrors.set(
         c.id,
         cap === line.pendingQty
-          ? `Only ${cap} still pending on this line — reduce the qty to ${cap} or less.`
-          : `Only ${cap} can be dispatched now (this line's reserved stock plus free stock) — reduce the qty to ${cap} or less.`,
+          ? `Dispatch Qty cannot be more than Pending (${cap}).`
+          : `Dispatch Qty cannot be more than Dispatchable (${cap}).`,
       );
       continue;
     }
@@ -172,8 +172,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!soId) return setErr('Please select an SO');
-    if (cards.length === 0) return setErr('Add at least one line');
+    if (!soId) return setErr('SO No. is required.');
+    if (cards.length === 0) return setErr('Add at least one line.');
 
     // Resolve each card → SO line and VALIDATE (no silent clamp): an over-qty is
     // a hard block so the user sees why, instead of us quietly reducing it.
@@ -183,12 +183,12 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       if (!line) return setErr('Pick an item on every line (or remove the empty line).');
       const raw = c.qty.trim() === '' ? 0 : Number(c.qty);
       if (Number.isNaN(raw) || raw < 0) {
-        return setErr(`${line.itemName}: enter a valid dispatch quantity.`);
+        return setErr(`${line.itemName}: enter a valid Dispatch Qty.`);
       }
       const lineCap = Math.min(line.availableQty, line.pendingQty);
       if (raw > lineCap) {
         return setErr(
-          `${line.itemName}: only ${lineCap} can be dispatched (you entered ${raw}). Reduce the qty to ${lineCap} or less.`,
+          `${line.itemName}: Dispatch Qty (${raw}) cannot be more than Dispatchable (${lineCap}).`,
         );
       }
       if (raw <= 0) continue;
@@ -198,7 +198,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       salesOrderLineId,
       qty,
     }));
-    if (payloadLines.length === 0) return setErr('Enter a dispatch qty on at least one line');
+    if (payloadLines.length === 0) return setErr('Enter a Dispatch Qty on at least one line.');
 
     try {
       await create.mutateAsync({
@@ -242,7 +242,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You cannot create Dispatches. Ask an admin.
+        You do not have permission to create Dispatches. Ask an admin.
       </div>
     );
   }
@@ -252,7 +252,6 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       {exit.dialog}
       <PageHeader
         sticky
-        icon="🚚"
         title="New Customer Dispatch"
         backLabel="Back to Customer Dispatch"
         onBack={goBack}
@@ -268,7 +267,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               disabled={!canSave}
               title={
                 lineErrors.size > 0
-                  ? 'Fix the highlighted lines — dispatch qty cannot exceed the pending qty.'
+                  ? 'Fix the highlighted lines — Dispatch Qty cannot be more than Pending.'
                   : undefined
               }
               onClick={() => void submit()}
@@ -288,8 +287,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
 
       <Panel title="Dispatch Details">
         <FormGrid>
-          {/* Row 1 — Sales Order · Dispatch Date · Dispatch No. (6 + 3 + 3). */}
-          <FormField label="Sales Order" required size="lg" htmlFor="dispatchSo">
+          {/* Row 1 — SO No. · Dispatch Date · Dispatch No. (6 + 3 + 3). */}
+          <FormField label="SO No." required size="lg" htmlFor="dispatchSo">
             <SearchableSelect
               id="dispatchSo"
               value={soId || null}
@@ -301,7 +300,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               options={soOptions}
               valueLabel={soValueLabel}
               placeholder="🔍 Type SO number or customer…"
-              emptyText="No sales order matches"
+              emptyText="No SOs match."
             />
           </FormField>
           <FormField label="Dispatch Date" size="sm" htmlFor="dispatchDate">
@@ -322,8 +321,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
             />
           </FormField>
 
-          {/* Row 2 — Transport · Vehicle No. (6 + 6). */}
-          <FormField label="Transport" size="lg" htmlFor="transport">
+          {/* Row 2 — Transporter · Vehicle No. (6 + 6). */}
+          <FormField label="Transporter" size="lg" htmlFor="transport">
             <input
               id="transport"
               className="innovic-input"

@@ -7,6 +7,7 @@
 
 import { normalizeRevision, type SalesOrderListItem } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+import { todayIst } from '@/lib/date';
 import { coerceDate } from '@/lib/xlsx-import';
 import { soStatusLabel } from './so-status-label';
 
@@ -71,7 +72,7 @@ export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<voi
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
 
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = todayIst();
   const filename = `Sales Orders Export ${stamp}.xlsx`;
   const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
   const blob = new Blob([buffer], { type: XLSX_MIME });

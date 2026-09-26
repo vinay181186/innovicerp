@@ -91,7 +91,7 @@ function SalesOrderNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You cannot create SOs. Ask an admin.
+        You do not have permission to create SOs. Ask an admin.
       </div>
     );
   }
@@ -142,7 +142,7 @@ function SalesOrderEditPage(): React.JSX.Element {
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You cannot edit SOs. Ask an admin.
+        You do not have permission to edit SOs. Ask an admin.
       </div>
     );
   }

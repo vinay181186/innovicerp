@@ -16,7 +16,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { useDispatchDetail } from '@/modules/customer-dispatches/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -36,7 +36,7 @@ export const invoiceNewRoute = createRoute({
   component: InvoiceNewPage,
 });
 
-const todayStr = (): string => todayLocal();
+const todayStr = (): string => todayIst();
 
 interface LineCard {
   id: number;
@@ -45,7 +45,7 @@ interface LineCard {
   rate: string;
 }
 
-// Shared grid: # | POL | Item Code | Item Name | To Invoice | Invoice Qty |
+// Shared grid: # | POL | Item Code | Item Name | Pending | Invoice Qty |
 // Rate | Amount | ▸ More | ×  — 8 data columns; Order / Dispatched / Invoiced
 // open under the card with "▸ More". The 50px slot after '#' is POL — the
 // CUSTOMER's own purchase-order line number, which sits immediately before the
@@ -149,8 +149,8 @@ function InvoiceNewPage(): React.JSX.Element {
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!soId) return setErr('Select an SO');
-    if (cards.length === 0) return setErr('Add at least one line');
+    if (!soId) return setErr('SO No. is required.');
+    if (cards.length === 0) return setErr('Add at least one line.');
     const byLine = new Map<string, { qty: number; rate: number }>();
     for (const c of cards) {
       const l = resolveLine(c.soLineId);
@@ -164,7 +164,7 @@ function InvoiceNewPage(): React.JSX.Element {
       qty: v.qty,
       rate: v.rate,
     }));
-    if (payloadLines.length === 0) return setErr('Enter an invoice qty on at least one line');
+    if (payloadLines.length === 0) return setErr('Enter an Invoice Qty on at least one line.');
     try {
       const created = await create.mutateAsync({
         salesOrderId: soId,
@@ -216,8 +216,7 @@ function InvoiceNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have create access to Invoices. Ask an admin for L2 Data Entry or above in
-        Finance.
+        You do not have permission to create Invoices. Ask an admin.
       </div>
     );
   }
@@ -227,8 +226,7 @@ function InvoiceNewPage(): React.JSX.Element {
       {exit.dialog}
       <PageHeader
         sticky
-        icon="📄"
-        title="Create Invoice"
+        title="New Invoice"
         backLabel="Back to Invoices"
         onBack={goBack}
         dirty={dirty}
@@ -267,13 +265,13 @@ function InvoiceNewPage(): React.JSX.Element {
               marginBottom: 12,
             }}
           >
-            🚚 Invoicing dispatch <b style={{ color: 'var(--cyan)' }}>{fromDispatch.code}</b> — SO
-            and line qtys prefilled from this dispatch (editable below).
+            Invoicing Dispatch <b style={{ color: 'var(--cyan)' }}>{fromDispatch.code}</b> — SO and
+            quantities filled from it.
           </div>
         ) : null}
         <FormGrid>
-          {/* Row 1 — Select SO · Invoice No. · Invoice Date (6 + 3 + 3). */}
-          <FormField label="Select SO" required size="lg" htmlFor="invoiceSo">
+          {/* Row 1 — SO No. · Invoice No. · Invoice Date (6 + 3 + 3). */}
+          <FormField label="SO No." required size="lg" htmlFor="invoiceSo">
             <SearchableSelect
               id="invoiceSo"
               value={soId || null}
@@ -285,7 +283,7 @@ function InvoiceNewPage(): React.JSX.Element {
               options={soOptions}
               valueLabel={soValueLabel}
               placeholder="🔍 Type SO number or customer…"
-              emptyText="No sales order matches"
+              emptyText="No SOs match."
             />
           </FormField>
           <FormField label="Invoice No." size="sm" htmlFor="invoiceNo">
@@ -345,17 +343,13 @@ function InvoiceNewPage(): React.JSX.Element {
 
       {soId ? (
         <Panel
-          title="Items Available to Invoice"
+          title="Items"
           actions={
             <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
               <Plus size={14} /> Add Line
             </button>
           }
         >
-          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 8 }}>
-            Add a line, then pick an item code — name and quantities auto-fill from this SO.
-          </div>
-
           {cards.length > 0 ? (
             <div
               style={{
@@ -365,17 +359,19 @@ function InvoiceNewPage(): React.JSX.Element {
                 padding: '0 10px 4px',
                 fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
-                letterSpacing: 0.4,
                 color: 'var(--text3)',
-                textTransform: 'uppercase',
               }}
             >
               <span>Ln</span>
               <span style={{ textAlign: 'center', color: 'var(--purple)' }}>POL</span>
-              <span>Item Code ★</span>
+              <span>
+                Item Code<span className="req">★</span>
+              </span>
               <span>Item Name</span>
-              <span style={{ textAlign: 'right', color: 'var(--amber2)' }}>To Invoice</span>
-              <span style={{ textAlign: 'right', color: 'var(--green2)' }}>Invoice Qty</span>
+              <span style={{ textAlign: 'right', color: 'var(--amber2)' }}>Pending</span>
+              <span style={{ textAlign: 'right', color: 'var(--green2)' }}>
+                Invoice Qty<span className="req">★</span>
+              </span>
               <span style={{ textAlign: 'right' }}>Rate</span>
               <span style={{ textAlign: 'right' }}>Amount</span>
               <span />

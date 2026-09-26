@@ -258,7 +258,6 @@ function ClientsListPage(): React.JSX.Element {
           StatStrip stay put while the rows scroll underneath. */}
       <ListHeader
         title="Customer Master"
-        icon="🏢"
         count={total}
         noun="customer"
         filterNote={
@@ -328,18 +327,13 @@ function ClientsListPage(): React.JSX.Element {
             columns={columns}
             rows={visibleRows}
             loading={isLoading}
-            emptyText={
-              search.status
-                ? `No ${search.status} customers`
-                : 'No customers yet — click + New Customer'
-            }
+            emptyText={search.status || search.search ? 'No Customers match.' : 'No Customers yet.'}
             onRowClick={(c) => void navigate({ to: '/clients/$id', params: { id: c.id } })}
             rowActionsWidth="11%"
             rowActions={(c) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/clients/${c.id}`}
+                // Row click opens the customer (ERPNext list); Edit is a
+                // ROUTE, so it stays a real link for ctrl-click / new tab.
                 editTo={canEdit ? `/clients/${c.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed. The confirm
@@ -355,7 +349,7 @@ function ClientsListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move ${c.code} to Trash?`,
+                  title: `Move Customer ${c.code} to Trash?`,
                   message: 'You can restore it from Trash.',
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',

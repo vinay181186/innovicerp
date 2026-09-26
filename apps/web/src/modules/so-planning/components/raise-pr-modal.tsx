@@ -106,7 +106,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO</span>
             <br />
             <b className="mono">
-              {so.soCode} L{line.lineNo}
+              {so.soCode} Ln {line.lineNo}
             </b>
           </div>
           <div>
@@ -128,19 +128,19 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
         </div>
         <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
           <div style={tileStyle}>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>ORDER QTY</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</div>
             <div className="mono fw-700" style={{ fontSize: 20 }}>
               {line.orderQty}
             </div>
           </div>
           <div style={tileStyle}>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>ALREADY RAISED</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Already Raised</div>
             <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--purple)' }}>
               {line.prQty}
             </div>
           </div>
           <div style={{ ...tileStyle, border: '1px solid var(--green)' }}>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>PENDING</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Pending</div>
             <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green2)' }}>
               {remaining}
             </div>
@@ -193,7 +193,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
       </div>
       <div className="form-grp">
         <label className="form-label" htmlFor="raise-pr-remark">
-          Remark
+          Remarks
         </label>
         <textarea
           id="raise-pr-remark"

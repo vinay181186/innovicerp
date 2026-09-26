@@ -19,20 +19,20 @@ export const soStatusIndexRoute = createRoute({
 });
 
 // Map our richer overallStatus → legacy left-card dot colour
-// (green=complete, amber=blocked, red=delayed, cyan/blue=in progress, grey=none).
+// (green=complete, red=blocked/delayed, blue=on track, amber=under way, grey=none).
 function dotColor(status: string, hasWork: boolean): string {
   switch (status) {
     case 'completed':
       return 'var(--green)';
     case 'blocked':
-      return 'var(--amber)';
     case 'delayed':
       return 'var(--red)';
     case 'on_track':
+      return 'var(--blue)';
     case 'in_progress':
-      return 'var(--cyan)';
+      return 'var(--amber)';
     default:
-      return hasWork ? 'var(--cyan)' : 'var(--text3)';
+      return hasWork ? 'var(--amber)' : 'var(--text3)';
   }
 }
 
@@ -117,21 +117,19 @@ function SoStatusIndexPage(): React.JSX.Element {
             className="text3"
             style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', marginBottom: 6 }}
           >
-            SELECT SO / WO
+            Select SO
           </div>
           <input
             className="innovic-input"
             style={{ width: '100%', fontSize: 12 }}
-            placeholder="🔍 Search SO, customer, client PO, status…"
+            placeholder="🔍 Search SO, customer, Client PO No., status…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         {filtered.length === 0 ? (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 12 }}>
-            {data.rows.length === 0
-              ? 'No SOs found. Add SOs in SO Master.'
-              : 'No SOs match your search.'}
+            {data.rows.length === 0 ? 'No SOs yet.' : 'No SOs match.'}
           </div>
         ) : (
           filtered.map((r) => {
@@ -202,7 +200,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                 ) : null}
                 <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
                   <span className="text3" style={{ fontSize: 11 }}>
-                    Qty: <b>{r.totalRequiredQty}</b>
+                    Order Qty: <b>{r.totalRequiredQty}</b>
                   </span>
                   <span className="text3" style={{ fontSize: 11 }}>
                     Completed: <b style={{ color: 'var(--green2)' }}>{r.totalDoneQty}</b>

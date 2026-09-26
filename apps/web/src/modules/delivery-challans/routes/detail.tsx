@@ -22,6 +22,7 @@ import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
@@ -35,6 +36,9 @@ export const deliveryChallanDetailRoute = createRoute({
   path: 'delivery-challans/$id',
   component: DeliveryChallanDetailPage,
 });
+
+/** Whole pieces print whole (12, not 12.00); a real fraction keeps ≤2dp. */
+const fmtQty = (n: number): string => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 interface LineAgg {
   receivedQty: number;
@@ -113,7 +117,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'DC not found'}
+            {error instanceof Error ? error.message : 'DC not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -127,7 +131,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view DCs. Ask an admin.
       </div>
     );
   }
@@ -144,6 +148,8 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   const canReceive = dc.status === 'issued' && perms.entry;
   const canCancel = dc.status === 'issued' && perms.edit && perms.approve;
 
+  // ConfirmDialog shows a rejection inside the dialog; cancelError is kept for
+  // the dialog's own error line.
   const onCancel = async (): Promise<void> => {
     setCancelError(null);
     try {
@@ -241,61 +247,20 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               </Link>
             ) : null}
             {canCancel ? (
-              confirmCancel ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12 }}>
-                    Cancel DC?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={() => void onCancel()}
-                    disabled={cancel.isPending}
-                  >
-                    {cancel.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Ban size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmCancel(false)}
-                    disabled={cancel.isPending}
-                  >
-                    Keep
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmCancel(true)}
-                >
-                  <Ban size={13} /> Cancel DC
-                </button>
-              )
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => {
+                  setCancelError(null);
+                  setConfirmCancel(true);
+                }}
+              >
+                <Ban size={13} /> Cancel DC
+              </button>
             ) : null}
           </div>
         </div>
         <div className="panel-body">
-          {cancelError ? (
-            <div
-              style={{
-                color: 'var(--red2)',
-                background: 'var(--red3)',
-                border: '1px solid var(--red)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {cancelError}
-            </div>
-          ) : null}
           <HeaderGrid dc={dc} />
         </div>
       </div>
@@ -318,7 +283,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                   <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
-                  <th>Sent Qty</th>
+                  <th>Sent</th>
                   <th>Received</th>
                   <th>Rejected</th>
                   <th>Pending</th>
@@ -328,7 +293,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                 {dc.lines.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="empty-state">
-                      No lines
+                      No lines yet.
                     </td>
                   </tr>
                 ) : (
@@ -357,14 +322,14 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                           {itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision)}
                         </td>
                         <td>{line.itemName ?? line.itemNameText ?? '—'}</td>
-                        <td className="mono fw-700">{ship.toFixed(2)}</td>
+                        <td className="mono fw-700">{fmtQty(ship)}</td>
                         <td className="mono" style={{ color: 'var(--green2)' }}>
-                          {received.toFixed(2)}
+                          {fmtQty(received)}
                         </td>
                         <td className="mono" style={{ color: 'var(--red2)' }}>
-                          {rejected.toFixed(2)}
+                          {fmtQty(rejected)}
                         </td>
-                        <td className="mono">{remaining.toFixed(2)}</td>
+                        <td className="mono">{fmtQty(remaining)}</td>
                       </tr>
                     );
                   })
@@ -376,14 +341,14 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                     <td colSpan={4} style={{ fontWeight: 700 }}>
                       Total
                     </td>
-                    <td className="mono fw-700">{totals.ship.toFixed(2)}</td>
+                    <td className="mono fw-700">{fmtQty(totals.ship)}</td>
                     <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
-                      {totals.received.toFixed(2)}
+                      {fmtQty(totals.received)}
                     </td>
                     <td className="mono fw-700" style={{ color: 'var(--red2)' }}>
-                      {totals.rejected.toFixed(2)}
+                      {fmtQty(totals.rejected)}
                     </td>
-                    <td className="mono fw-700">{totals.remaining.toFixed(2)}</td>
+                    <td className="mono fw-700">{fmtQty(totals.remaining)}</td>
                   </tr>
                 </tfoot>
               ) : null}
@@ -395,6 +360,19 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
       <DcReceiptsPanel receipts={dc.receipts} lineLookup={lineLookup} />
 
       <RelatedDocsPanel module="delivery-challans" id={dc.id} />
+
+      {confirmCancel ? (
+        <ConfirmDialog
+          title={`Cancel DC ${dc.code}?`}
+          message="The DC will be marked Cancelled."
+          confirmLabel="Cancel DC"
+          cancelLabel="Keep"
+          pendingLabel="Cancelling…"
+          onConfirm={onCancel}
+          onCancel={() => setConfirmCancel(false)}
+          errorText={cancelError}
+        />
+      ) : null}
     </div>
   );
 }
@@ -412,7 +390,7 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
           is NOT NULL), so the same cell is labelled NC and linked to the NC,
           instead of showing that code as an amber "snapshot PO". */}
       <Pair
-        label={dc.ncId ? 'NC' : 'PO No.'}
+        label={dc.ncId ? 'NC No.' : 'PO No.'}
         value={
           dc.ncId ? (
             <Link
@@ -445,10 +423,10 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
       {/* Written server-side at create-DC time ("Return to vendor — rework");
           only an NC challan has one, so the cell is not shown otherwise. */}
       {dc.ncId && dc.reason ? <Pair label="Reason" value={dc.reason} /> : null}
-      <Pair label="Transport" value={dc.transport ?? '—'} />
-      <Pair label="Vehicle No" value={dc.vehicleNo ?? '—'} />
+      <Pair label="Transporter" value={dc.transport ?? '—'} />
+      <Pair label="Vehicle No." value={dc.vehicleNo ?? '—'} />
       <Pair
-        label="Issued on"
+        label="Issued On"
         value={
           <span className="mono" style={{ fontSize: 12 }}>
             {fmtDateTime(dc.createdAt)}

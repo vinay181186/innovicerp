@@ -5,6 +5,7 @@
 
 import type { CustomerDispatchRegisterRow, CustomerDispatchStatus } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 // Status code → the word the user reads (no shared label map exists yet).
@@ -59,6 +60,6 @@ export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFi
   const suffix = soFilter ? ` ${soFilter}` : '';
   XLSX.writeFile(
     wb,
-    `Dispatch Register Export${suffix} ${new Date().toISOString().slice(0, 10)}.xlsx`,
+    `Dispatch Register Export${suffix} ${todayIst()}.xlsx`,
   );
 }

@@ -928,7 +928,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               id="soDate"
               type="date"
               className="innovic-input"
-              {...register('header.soDate', { required: 'Date is required' })}
+              {...register('header.soDate', { required: 'SO Date is required.' })}
             />
           </FormField>
           <FormField label="Due Date" size="sm" htmlFor="soDueDate">
@@ -1004,7 +1004,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 (CONVENTIONS "Item pickers"). Editable while nothing resolves — an
                 edit form holding an off-master legacy row still needs it typed. */}
             <FormField
-              label="Description"
+              label="Item Name"
               required
               size="lg"
               htmlFor="so-equip-desc"
@@ -1015,9 +1015,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 className="innovic-input"
                 autoComplete="off"
                 readOnly={!!equipItem}
-                placeholder="Equipment description"
+                placeholder="Equipment name"
                 {...register('lines.0.partName', {
-                  required: isEquip ? 'Description is required' : false,
+                  required: isEquip ? 'Item Name is required.' : false,
                 })}
               />
             </FormField>
@@ -1048,7 +1048,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             {/* No ★ — the server defaults this to 0; `setValueAs` turns a cleared
                 box into 0 instead of NaN (which went over the wire as null). */}
             <FormField
-              label="SO Value (₹ / unit)"
+              label="Rate (₹)"
               size="sm"
               htmlFor="so-equip-rate"
               error={errors.lines?.[0]?.rate?.message}
@@ -1063,7 +1063,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   setValueAs: (v: string | number | null | undefined) =>
                     v === '' || v === null || v === undefined ? 0 : Number(v),
                   validate: (v) =>
-                    !isEquip || (Number.isFinite(v) && v >= 0) || 'SO Value cannot be negative',
+                    !isEquip || (Number.isFinite(v) && v >= 0) || 'Rate cannot be negative.',
                 })}
               />
             </FormField>
@@ -1452,7 +1452,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 <table className="innovic-table tbl-ctr">
                   <thead>
                     <tr>
-                      <th style={{ width: 80 }}>Lot</th>
+                      <th style={{ width: 80 }}>Lot No.</th>
                       <th className="th-num">Qty</th>
                       <th>Due Date</th>
                       <th>Remarks</th>

@@ -78,7 +78,7 @@ function CostCenterDetailPage(): React.JSX.Element {
   }
 
   if (isLoading) {
-    return <PageState state="loading" message="⟳ Loading cost centre…" />;
+    return <PageState state="loading" message="Loading cost centre…" />;
   }
 
   if (isError || !data) {
@@ -87,7 +87,9 @@ function CostCenterDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Cost Centre not found'}
+          message={
+            error instanceof Error ? error.message : 'Cost Centre not found. Refresh the page.'
+          }
         />
       </div>
     );
@@ -146,8 +148,8 @@ function CostCenterDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Move cost centre ${data.code} to Trash?`}
-          message={`${data.name} will be removed from the Cost Centre Master. You can restore it from Trash.`}
+          title={`Move Cost Centre ${data.code} to Trash?`}
+          message="You can restore it from Trash."
           confirmLabel="Move to Trash"
           pendingLabel="Moving to Trash…"
           onConfirm={onDelete}

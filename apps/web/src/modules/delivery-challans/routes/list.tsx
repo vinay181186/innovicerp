@@ -128,7 +128,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view DCs. Ask an admin.
       </div>
     );
   }
@@ -167,7 +167,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
               marginBottom: -1,
             }}
           >
-            {t === 'outward' ? '🚛 Outward DC' : '🚚 At-Vendor Register'}
+            {t === 'outward' ? 'Outward DC' : 'At-Vendor Register'}
           </button>
         ))}
       </div>
@@ -205,7 +205,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
             >
               <div>
                 <div className="section-hdr" style={{ marginBottom: 0 }}>
-                  🚛 OSP Outward DC
+                  OSP Outward DC
                 </div>
                 <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
                   {total} DC{total === 1 ? '' : 's'}
@@ -282,7 +282,6 @@ function DeliveryChallansListPage(): React.JSX.Element {
                   count: (data?.summary?.totalDispatched ?? 0).toLocaleString('en-IN', {
                     maximumFractionDigits: 2,
                   }),
-                  color: 'var(--red2)',
                   sub: 'pieces',
                   title: 'Total quantity sent out on the DCs matching this filter',
                 },
@@ -313,7 +312,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No DCs yet — click New DC.
+              {search.search || search.status ? 'No DCs match.' : 'No DCs yet.'}
             </div>
           ) : (
             rows.map((dc) => <DcCard key={dc.id} dc={dc} />)
@@ -365,10 +364,6 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 Next <ChevronRight size={14} />
               </button>
             </div>
-          </div>
-
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-            💡 Click a card to open the DC · <b>+ Receive</b> books material back from the vendor.
           </div>
         </>
       )}

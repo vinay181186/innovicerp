@@ -41,7 +41,7 @@ import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { type ExitConfirm, useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
@@ -83,9 +83,9 @@ const PO_STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-const SOURCE_META: Record<DcSource, { label: string; icon: string }> = {
-  po: { label: 'Against PO', icon: '📦' },
-  nc: { label: 'Against NC', icon: '🧾' },
+const SOURCE_META: Record<DcSource, { label: string }> = {
+  po: { label: 'Against PO' },
+  nc: { label: 'Against NC' },
 };
 
 function DeliveryChallanNewPage(): React.JSX.Element {
@@ -117,8 +117,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
       {exit.dialog}
       <PageHeader
         sticky
-        icon="📦"
-        title="Create OSP Delivery Challan"
+        title="New OSP Delivery Challan"
         backLabel="Back to Delivery Challans"
         onBack={goBack}
         dirty={save.dirty}
@@ -145,7 +144,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
             not navigation; switching unmounts the other side below. */}
         <div className="form-grp" style={{ maxWidth: 220, marginBottom: 14 }}>
           <label className="form-label" htmlFor="dc-source">
-            DC against
+            DC Against
           </label>
           <select
             id="dc-source"
@@ -155,7 +154,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           >
             {(['po', 'nc'] as const).map((s) => (
               <option key={s} value={s}>
-                {SOURCE_META[s].icon} {SOURCE_META[s].label}
+                {SOURCE_META[s].label}
               </option>
             ))}
           </select>
@@ -354,7 +353,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
         </div>
       ) : isError ? (
         <div className="empty-state" style={{ color: 'var(--red2)' }}>
-          Could not load purchase orders.
+          Could not load POs. Try again.
         </div>
       ) : eligible.length === 0 ? (
         <div className="empty-state" style={{ color: 'var(--amber2)' }}>
@@ -366,8 +365,8 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           <table className="innovic-table" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th>PO No. / NC No.</th>
-                <th>Raised Date</th>
+                <th>PO No.</th>
+                <th>PO Date</th>
                 <th>Vendor</th>
                 <th>PO Type</th>
                 <th>PO Status</th>
@@ -443,7 +442,7 @@ function PoDcFormBody({
 
   const [code, setCode] = useState('');
   const [codeValid, setCodeValid] = useState(false);
-  const [dcDate, setDcDate] = useState(todayLocal());
+  const [dcDate, setDcDate] = useState(todayIst());
   const [transport, setTransport] = useState('');
   // Vehicle number is kept apart from the transporter NAME (`transport`) — the
   // OSP DC print and the gate register need the two separately.
@@ -525,7 +524,7 @@ function PoDcFormBody({
   if (!perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-        ⛔ You do not have entry access to create an OSP delivery challan.
+        You do not have permission to create DCs. Ask an admin.
       </div>
     );
   }
@@ -541,7 +540,7 @@ function PoDcFormBody({
   if (poError || !po) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)' }}>
-        Could not load PO.
+        Could not load PO. Try again.
       </div>
     );
   }
@@ -621,26 +620,24 @@ function PoDcFormBody({
           }}
         >
           <div>
-            {/* Reads "PO No / NC No" because this same summary slot carries the
-                NC number on the Against-NC form. */}
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>PO No. / NC No.</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>PO No.</span>
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {po.code}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>VENDOR</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Vendor</span>
             <br />
             <b>{po.vendorName ?? po.vendorCodeText ?? '—'}</b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>PROCESS</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Process</span>
             <br />
             <b style={{ color: 'var(--purple)' }}>{po.remarks || ''}</b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>LINES</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Lines</span>
             <br />
             <b>{po.lines.length}</b>
           </div>
@@ -657,7 +654,7 @@ function PoDcFormBody({
         </button>
       </div>
 
-      {/* 12-column grid: DC No. · DC Date · Transporter · Vehicle No (3 + 3 + 4 + 2). */}
+      {/* 12-column grid: DC No. · DC Date · Transporter · Vehicle No. (3 + 3 + 4 + 2). */}
       <FormGrid>
         <div className="f-sm">
           <DocNumberInput
@@ -685,10 +682,10 @@ function PoDcFormBody({
             className="innovic-input"
             value={transport}
             onChange={(e) => setTransport(e.target.value)}
-            placeholder="Transport name"
+            placeholder="Transporter name"
           />
         </FormField>
-        <FormField label="Vehicle No" size="xs" htmlFor="dc-vehicle-no">
+        <FormField label="Vehicle No." size="xs" htmlFor="dc-vehicle-no">
           <input
             id="dc-vehicle-no"
             className="innovic-input"
@@ -732,7 +729,7 @@ function PoDcFormBody({
                 PO Qty
               </th>
               <th className="th-num" style={{ width: '12%', color: 'var(--green2)' }}>
-                Send Now ★
+                Send Now<span className="req">★</span>
               </th>
               <th style={{ width: '16%' }}>Material</th>
               <th style={{ width: '20%' }}>Remarks</th>
@@ -766,7 +763,7 @@ function PoDcFormBody({
                         a bare code that gains a revision the moment it is saved. */}
                     <td
                       className="mono"
-                      style={{ color: 'var(--purple)', fontWeight: 700, whiteSpace: 'nowrap' }}
+                      style={{ color: 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap' }}
                     >
                       {itemCodeWithRev(l.itemCodeText, l.itemRevision)}
                     </td>
@@ -976,7 +973,7 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
         </div>
       ) : isError ? (
         <div className="empty-state" style={{ color: 'var(--red2)' }}>
-          Could not load NCs.
+          Could not load NCs. Try again.
         </div>
       ) : eligible.length === 0 ? (
         <div className="empty-state" style={{ color: 'var(--amber2)' }}>
@@ -1062,7 +1059,7 @@ function NcDcFormBody({
 
   // Only what createNcDcInputSchema takes: dcDate, vendor, transport, vehicleNo,
   // remarks. No lines, no qty — the server derives the line from the NC.
-  const [dcDate, setDcDate] = useState(todayLocal());
+  const [dcDate, setDcDate] = useState(todayIst());
   const [vendorId, setVendorId] = useState<string | null>(null);
   // The picker's label is "CODE — Name"; the challan stores the code text next to
   // the id (the DC's ADR-015 pair), so the code is peeled off here.
@@ -1087,7 +1084,7 @@ function NcDcFormBody({
   if (!canCreateDc) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-        ⛔ You cannot create a return challan. Ask an admin.
+        You do not have permission to create a return DC. Ask an admin.
       </div>
     );
   }
@@ -1103,7 +1100,7 @@ function NcDcFormBody({
   if (isError || !nc) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)' }}>
-        Could not load NC.
+        Could not load NC. Try again.
       </div>
     );
   }
@@ -1176,7 +1173,7 @@ function NcDcFormBody({
           }}
         >
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>PO No. / NC No.</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>NC No.</span>
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {nc.code}
@@ -1192,7 +1189,7 @@ function NcDcFormBody({
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>ITEM</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Item</span>
             <br />
             <b className="mono fw-700" style={{ color: 'var(--text)' }}>
               {itemCode}
@@ -1202,7 +1199,7 @@ function NcDcFormBody({
             </div>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>QTY TO RETURN</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Qty to Return</span>
             <br />
             <b className="mono" style={{ color: 'var(--red2)' }}>
               {Number(nc.rejectedQty)} pcs
@@ -1267,10 +1264,10 @@ function NcDcFormBody({
             maxLength={200}
             value={transport}
             onChange={(e) => setTransport(e.target.value)}
-            placeholder="Transport name"
+            placeholder="Transporter name"
           />
         </FormField>
-        <FormField label="Vehicle No" size="xs" htmlFor="ncdc-vehicle-no">
+        <FormField label="Vehicle No." size="xs" htmlFor="ncdc-vehicle-no">
           <input
             id="ncdc-vehicle-no"
             className="innovic-input"

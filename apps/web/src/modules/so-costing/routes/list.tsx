@@ -12,7 +12,7 @@
 //    detail disagree on the same figure. 2dp keeps them consistent.
 
 import type { ListSoCostingResponse } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -35,6 +35,7 @@ function SoCostingListPage(): React.JSX.Element {
     staleTime: 30_000,
   });
   const [search, setSearch] = useState('');
+  const navigate = useNavigate();
 
   const rows = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -66,7 +67,7 @@ function SoCostingListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr">💰 SO Costing</div>
+      <div className="section-hdr">SO Costing</div>
       <input
         className="innovic-input"
         placeholder="🔍 Search SO, customer…"
@@ -91,13 +92,25 @@ function SoCostingListPage(): React.JSX.Element {
                 <th>Cost Centre</th>
                 {priceHidden ? null : (
                   <>
-                    <th className="th-num" style={{ color: 'var(--blue)' }}>
+                    <th
+                      className="th-num"
+                      style={{ color: 'var(--blue)' }}
+                      title="With-material POs"
+                    >
                       Material
                     </th>
-                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                    <th
+                      className="th-num"
+                      style={{ color: 'var(--amber2)' }}
+                      title="Job-work / OSP POs"
+                    >
                       Outsource
                     </th>
-                    <th className="th-num" style={{ color: 'var(--cyan)' }}>
+                    <th
+                      className="th-num"
+                      style={{ color: 'var(--cyan)' }}
+                      title="Cycle time × Completed × machine rate"
+                    >
                       Machine Time
                     </th>
                     <th className="th-num" style={{ color: 'var(--green2)' }}>
@@ -111,17 +124,22 @@ function SoCostingListPage(): React.JSX.Element {
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={priceHidden ? 5 : 10} className="empty-state">
-                    No SOs found
+                    {search.trim() ? 'No SOs match.' : 'No SOs yet.'}
                   </td>
                 </tr>
               ) : (
                 rows.map((r) => (
-                  <tr key={r.soId}>
+                  <tr
+                    key={r.soId}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => void navigate({ to: '/so-costing/$id', params: { id: r.soId } })}
+                  >
                     <td className="mono fw-700">
                       <Link
                         to="/so-costing/$id"
                         params={{ id: r.soId }}
                         style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                        onClick={(e) => e.stopPropagation()}
                       >
                         {r.soNo}
                       </Link>
@@ -134,7 +152,7 @@ function SoCostingListPage(): React.JSX.Element {
                         {money(r.soValue)}
                       </td>
                     )}
-                    <td style={{ fontSize: 11, color: 'var(--teal, #0d9488)' }}>
+                    <td style={{ fontSize: 11, color: 'var(--teal)' }}>
                       {r.costCenter
                         ? `${r.costCenter}${r.costCenterName ? ` — ${r.costCenterName}` : ''}`
                         : '—'}
@@ -161,10 +179,6 @@ function SoCostingListPage(): React.JSX.Element {
             </tbody>
           </table>
         </div>
-      </div>
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Click an SO for the line-level breakdown. Material = with-material POs, Outsource =
-        job-work/OSP POs, Machine Time = cycle-time × completed × machine rate.
       </div>
     </div>
   );

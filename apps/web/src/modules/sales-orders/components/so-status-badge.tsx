@@ -5,10 +5,10 @@ import type { SoStatus } from '@innovic/shared';
 import { SO_STATUS_LABEL } from '../lib/so-status-label';
 
 const CLASSES: Record<SoStatus, string> = {
-  draft: 'b-amber',
+  draft: 'b-grey',
   open: 'b-blue',
   closed: 'b-green',
-  dispatched: 'b-cyan',
+  dispatched: 'b-green',
   cancelled: 'b-grey',
 };
 

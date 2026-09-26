@@ -21,13 +21,14 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useJobWorkOrder, useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
 
 // No pagination — mirror the SO/WO list: load all matching JWSOs in one fetch
@@ -69,8 +70,8 @@ function MaterialCell({
   return <span style={{ color: 'var(--red2)', fontWeight: 700 }}>✕ Not Received</span>;
 }
 
-/** One cell of the card's metric strip — big number over a small caps label,
- *  mirroring the SO/WO list (TOTAL QTY / JC QTY / LINES). */
+/** One cell of the card's metric strip — big number over a small label,
+ *  mirroring the SO list (Total Qty / JC Qty / Lines). */
 function QtyBox({
   label,
   value,
@@ -102,8 +103,6 @@ function QtyBox({
         style={{
           fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -161,14 +160,17 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
   const deleteMut = useSoftDeleteJobWorkOrder();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const toggleExpand = (id: string): void => setExpandedId((prev) => (prev === id ? null : id));
 
-  const onDelete = (jwId: string, code: string): void => {
-    if (confirm(`Move JWSO ${code} to Trash? You can restore it from Trash.`))
-      deleteMut.mutate(jwId);
+  // The JWSO the Move-to-Trash dialog is asking about, or null when closed.
+  const [trashTarget, setTrashTarget] = useState<{ id: string; code: string } | null>(null);
+  const onDelete = async (): Promise<void> => {
+    if (!trashTarget) return;
+    await deleteMut.mutateAsync(trashTarget.id);
+    setTrashTarget(null);
   };
 
   const total = data?.total ?? 0;
@@ -180,7 +182,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view JWSOs. Ask an admin.
       </div>
     );
   }
@@ -274,7 +276,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       ) : rows.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 20 }}>
-            No Job Work Sales Orders — click + New JWSO Order
+            {search.search || search.status ? 'No JWSOs match.' : 'No JWSOs yet.'}
           </div>
         </div>
       ) : (
@@ -347,7 +349,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                           type="button"
                           className="btn btn-danger btn-sm"
                           disabled={deleteMut.isPending}
-                          onClick={() => onDelete(jw.jwId, jw.code)}
+                          onClick={() => setTrashTarget({ id: jw.jwId, code: jw.code })}
                         >
                           Delete
                         </button>
@@ -402,7 +404,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                     <span className="text2">{fmtDate(jw.jwDate)}</span>
                     <span>·</span>
                     <span>
-                      PO{' '}
+                      Client PO No.{' '}
                       <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                         {jw.clientPoNo ?? '—'}
                       </span>
@@ -464,6 +466,17 @@ function JobWorkOrdersListPage(): React.JSX.Element {
               : `Showing all ${total} JWSO${total === 1 ? '' : 's'}`}
         </span>
       </div>
+
+      {trashTarget ? (
+        <ConfirmDialog
+          title={`Move JWSO ${trashTarget.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          onConfirm={onDelete}
+          onCancel={() => setTrashTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -512,11 +525,10 @@ function JwLinesTable({
           color: 'var(--blue)',
           fontFamily: 'var(--mono)',
           fontWeight: 700,
-          letterSpacing: '0.06em',
           marginBottom: 6,
         }}
       >
-        ▸ LINE ITEMS — {jw.code}
+        Line Items
       </div>
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
@@ -542,7 +554,7 @@ function JwLinesTable({
           {jw.lines.length === 0 ? (
             <tr>
               <td colSpan={cols} className="empty-state">
-                No lines yet
+                No lines yet.
               </td>
             </tr>
           ) : (

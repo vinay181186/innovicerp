@@ -626,7 +626,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO / JWSO</span>
             <br />
             <b className="mono">
-              {plan.soCodeText ?? '—'} L{plan.lineNo ?? '—'}
+              {plan.soCodeText ?? '—'} Ln {plan.lineNo ?? '—'}
             </b>
           </div>
           <div>
@@ -739,8 +739,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             className="mono fw-700 text3"
             style={{
               fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '.08em',
               marginBottom: 6,
             }}
           >
@@ -784,8 +782,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             className="mono fw-700"
             style={{
               fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '.08em',
               marginBottom: 6,
               color: 'var(--blue)',
             }}
@@ -821,7 +817,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             </div>
             <div className="form-grp" style={{ flex: '2.4 1 200px', minWidth: 0 }}>
               <label className="form-label" style={{ color: 'var(--blue)' }}>
-                Remark
+                Remarks
               </label>
               <input
                 className="innovic-input"

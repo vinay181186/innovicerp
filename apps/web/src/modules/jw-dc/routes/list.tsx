@@ -8,7 +8,7 @@ import {
   type CreateJwDcOutwardLineInput,
   type JwDcOutwardListItem,
 } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -65,10 +65,10 @@ function JwDcPage(): React.JSX.Element {
           color="var(--purple)"
           onClick={() => setTab('outward')}
         >
-          📤 Outward (to Vendor)
+          Outward (to Vendor)
         </TabButton>
         <TabButton active={tab === 'inward'} color="var(--green)" onClick={() => setTab('inward')}>
-          📥 Inward (Return from Vendor)
+          Inward (Return from Vendor)
         </TabButton>
       </div>
 
@@ -127,7 +127,7 @@ function OutwardView(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📤 Outward Register (Returnable Gate Pass)</div>
+        <div className="section-hdr m-0">Outward Register</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"
@@ -182,14 +182,13 @@ function OutwardView(): React.JSX.Element {
                     Pending
                   </th>
                   <th>DC Status</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="empty-state">
-                      No outward DCs. Click + New Outward DC.
+                    <td colSpan={10} className="empty-state">
+                      {search.trim() ? 'No outward DCs match.' : 'No outward DCs yet.'}
                     </td>
                   </tr>
                 ) : (
@@ -246,23 +245,24 @@ function OutwardView(): React.JSX.Element {
 }
 
 function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
-  const stColor =
-    dc.returnStatus === 'fully_returned'
-      ? 'var(--green)'
-      : dc.returnStatus === 'partial'
-        ? 'var(--cyan)'
-        : 'var(--red)';
+  const navigate = useNavigate();
+  // Returned = done (green); Partly Returned / Out (at the vendor) = under way (amber).
+  const stClass = dc.returnStatus === 'fully_returned' ? 'b-green' : 'b-amber';
   const stLabel =
     dc.returnStatus === 'fully_returned'
       ? 'Returned'
       : dc.returnStatus === 'partial'
         ? 'Partly Returned'
-        : 'Out';
+        : 'At Vendor';
 
   return (
-    <tr>
+    <tr
+      style={{ cursor: 'pointer' }}
+      onClick={() => void navigate({ to: '/jw-dc/$id', params: { id: dc.id } })}
+    >
       <td className="mono fw-700">
         <Link
+          onClick={(e) => e.stopPropagation()}
           to="/jw-dc/$id"
           params={{ id: dc.id }}
           style={{ color: 'var(--purple)', textDecoration: 'underline dotted' }}
@@ -292,19 +292,7 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
         {dc.pendingQty}
       </td>
       <td>
-        <span style={{ fontWeight: 700, color: stColor }}>{stLabel}</span>
-      </td>
-      <td>
-        <div style={{ display: 'flex', gap: 3 }}>
-          <Link
-            to="/jw-dc/$id"
-            params={{ id: dc.id }}
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-          >
-            👁 View
-          </Link>
-        </div>
+        <span className={`badge ${stClass}`}>{stLabel}</span>
       </td>
     </tr>
   );
@@ -332,7 +320,7 @@ function InwardView(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📥 Inward Register (JW DC Returns)</div>
+        <div className="section-hdr m-0">Inward Register</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"
@@ -389,7 +377,7 @@ function InwardView(): React.JSX.Element {
                 {data.items.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="empty-state">
-                      No inward entries. Click + New Inward Entry when material returns from vendor.
+                      {search.trim() ? 'No inward entries match.' : 'No inward entries yet.'}
                     </td>
                   </tr>
                 ) : (
@@ -541,14 +529,14 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const onSave = (): void => {
     setErr(null);
     if (!poId) {
-      setErr('Please select a PO');
+      setErr('PO No. is required.');
       return;
     }
     const valid: CreateJwDcOutwardLineInput[] = lines
       .filter((l) => l.checked && l.sendQty > 0)
       .map((l) => ({ purchaseOrderLineId: l.purchaseOrderLineId, sentQty: l.sendQty }));
     if (valid.length === 0) {
-      setErr('Check at least one line and enter qty to send');
+      setErr('Tick at least one line and enter Send Now.');
       return;
     }
     const input: CreateJwDcOutwardInput = {
@@ -650,7 +638,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
               fontSize: 12,
             }}
           >
-            PO Lines — Select items to send
+            PO Lines
           </div>
           <table style={{ width: '100%' }}>
             <thead>
@@ -665,13 +653,13 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
                   PO Qty
                 </th>
                 <th className="th-num" style={{ color: 'var(--amber2)', padding: 6 }}>
-                  Already Sent
+                  Sent
                 </th>
                 <th className="th-num" style={{ color: 'var(--green2)', padding: 6 }}>
-                  Available
+                  Pending
                 </th>
                 <th className="th-num" style={{ color: 'var(--cyan)', padding: 6 }}>
-                  Qty to Send
+                  Send Now<span className="req">★</span>
                 </th>
               </tr>
             </thead>
@@ -848,14 +836,14 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
   const onSave = (): void => {
     setErr(null);
     if (!dcId) {
-      setErr('Select a DC');
+      setErr('JW DC is required.');
       return;
     }
     const valid: CreateJwDcInwardLineInput[] = [];
     for (const l of lines) {
       if (l.receivedQty <= 0) continue;
       if (l.okQty + l.rejectedQty !== l.receivedQty) {
-        setErr(`Row ${l.itemCode}: Accepted + Rejected must equal Received`);
+        setErr(`${l.itemCode}: Accepted + Rejected must equal Receive Now.`);
         return;
       }
       valid.push({
@@ -866,7 +854,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
       });
     }
     if (valid.length === 0) {
-      setErr('Enter received qty for at least one line');
+      setErr('Enter Receive Now for at least one line.');
       return;
     }
     const input: CreateJwDcInwardInput = {
@@ -904,7 +892,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
   return (
     <ModalShell
       onClose={onClose}
-      title="📥 New Inward Entry"
+      title="New Inward Entry"
       onSave={onSave}
       saving={createMut.isPending}
       saveLabel="Save Inward"
@@ -930,7 +918,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
         </div>
         <div className="form-grp form-full">
           <label className="form-label">
-            JW DC<span className="req">★</span> (select DC with pending returns)
+            JW DC<span className="req">★</span>
           </label>
           <select
             className="innovic-select"
@@ -983,7 +971,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
               fontSize: 12,
             }}
           >
-            DC Lines — Enter received quantities
+            DC Lines
           </div>
           <table style={{ width: '100%' }}>
             <thead>

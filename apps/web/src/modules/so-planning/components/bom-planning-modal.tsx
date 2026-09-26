@@ -368,12 +368,12 @@ function BomBody({
           {mode === 'equipment' ? (
             <>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>EQUIPMENT SO</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment SO</span>
                 <br />
                 <b style={{ color: 'var(--cyan)' }}>{data.soCode}</b>
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>EQUIPMENT</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment</span>
                 <br />
                 <b style={{ color: 'var(--purple)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
@@ -382,7 +382,7 @@ function BomBody({
                 </b>
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>EQUIP QTY</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.orderQty}</b>
               </div>
@@ -394,7 +394,7 @@ function BomBody({
                 </b>
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM ITEMS</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM Items</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.children.length}</b>
               </div>
@@ -402,7 +402,7 @@ function BomBody({
           ) : (
             <>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>ASSEMBLY</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Assembly</span>
                 <br />
                 <b style={{ color: 'var(--purple)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
@@ -416,12 +416,12 @@ function BomBody({
                 <b className="mono">{data.soCode}</b>
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>ORDER QTY</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.orderQty}</b> units
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM ITEMS</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM Items</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.children.length}</b>
               </div>

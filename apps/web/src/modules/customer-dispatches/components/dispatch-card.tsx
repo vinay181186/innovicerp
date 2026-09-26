@@ -59,8 +59,6 @@ function QtyBox({
         style={{
           fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -165,7 +163,7 @@ export function DispatchCard(props: {
           }}
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <QtyBox label="Total Qty" value={g.totalQty} color="var(--red)" />
+            <QtyBox label="Total Qty" value={g.totalQty} color="var(--green2)" />
             <QtyBox label="Lines" value={g.lines.length} bordered />
           </div>
           <div
@@ -213,21 +211,19 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
           color: 'var(--blue)',
           fontFamily: 'var(--mono)',
           fontWeight: 700,
-          letterSpacing: '0.06em',
           marginBottom: 6,
         }}
       >
-        ▸ DISPATCHED ITEMS — {g.code}
+        Items
       </div>
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Sr No</th>
             <th>JC No.</th>
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
-            <th className="th-num" style={{ color: 'var(--red2)' }}>
+            <th className="th-num" style={{ color: 'var(--green2)' }}>
               Dispatch Qty
             </th>
             <th className="td-ctr">UOM</th>
@@ -237,7 +233,6 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
         <tbody>
           {g.lines.map((l, i) => (
             <tr key={`${l.dispatchId}-${i}`} style={{ background: 'var(--bg)' }}>
-              <td className="td-ctr mono">{i + 1}</td>
               <td className="td-code" style={{ color: 'var(--cyan)', fontSize: 11 }}>
                 {l.jcNo ?? <span style={{ color: 'var(--text3)' }}>—</span>}
               </td>
@@ -250,11 +245,11 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
               {/* Code carries the customer's drawing revision — "IN-IT-0007/B"
                   — read off the SO line this piece shipped against. A line with
                   no SO behind it keeps the bare code. */}
-              <td className="td-code" style={{ color: 'var(--purple)' }}>
+              <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                 {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
               </td>
               <td className="fw-700">{l.itemName}</td>
-              <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
+              <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                 {l.qty}
               </td>
               <td className="td-ctr">

@@ -94,7 +94,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             autoComplete="off"
             readOnly={isEdit}
             {...register('code', {
-              required: !isEdit ? 'Code is required' : false,
+              required: !isEdit ? 'Code is required.' : false,
               maxLength: { value: 64, message: 'Code cannot be longer than 64 characters' },
             })}
           />
@@ -111,7 +111,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             autoComplete="off"
             {...(isEdit ? {} : { placeholder: 'e.g. Machine Shop Floor' })}
             {...register('name', {
-              required: 'Name is required',
+              required: 'Name is required.',
               maxLength: { value: 255, message: 'Name cannot be longer than 255 characters' },
             })}
           />

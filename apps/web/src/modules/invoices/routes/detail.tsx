@@ -36,12 +36,13 @@ import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
 import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
-import { invoiceDocHtml, printInvoice } from '../lib/print';
+import { SHEET_STYLE } from '@/lib/print/sheet-print';
+import { invoiceSheetHtml, printInvoice } from '../lib/print';
 
 /** Invoice status → the words the user reads; the stored codes are unchanged. */
 const INVOICE_STATUS_LABEL: Record<string, string> = {
@@ -61,16 +62,25 @@ export const invoiceDetailRoute = createRoute({
 // shared inrFormat() is 2dp and is what the print doc uses — a different
 // format for a different surface, matching legacy's own split.
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
-// Uses the shared todayLocal() helper (local calendar date) so the payment-date
-// default is today in IST, not the UTC "yesterday" before ~05:30 IST.
-const todayStr = (): string => todayLocal();
+// Uses the shared todayIst() helper so the payment-date default is today in
+// IST, not the UTC "yesterday" before ~05:30 IST.
+const todayStr = (): string => todayIst();
 
 function InvoiceDetailPage(): React.JSX.Element {
   const { id } = invoiceDetailRoute.useParams();
   const { data: inv, isLoading, isError, error } = useInvoice(id);
   const { data: company } = useMyCompany();
   const addPayment = useAddPayment(id);
-  const docHtml = useMemo(() => (inv ? invoiceDocHtml(inv, company) : ''), [inv, company]);
+  // The preview is the print: the same Innovic Sheet markup + stylesheet, in an
+  // iframe so the sheet's paper styles never leak into the app's own CSS.
+  const docHtml = useMemo(
+    () =>
+      inv
+        ? `<!DOCTYPE html><html><head><style>${SHEET_STYLE}.no-print{display:none!important}</style></head><body>${invoiceSheetHtml(inv, company)}</body></html>`
+        : '',
+    [inv, company],
+  );
+  const [previewHeight, setPreviewHeight] = useState(1123);
 
   const [payOpen, setPayOpen] = useState(false);
   const [payDate, setPayDate] = useState(todayStr());
@@ -85,7 +95,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Invoices. Ask an admin.
       </div>
     );
   }
@@ -108,7 +118,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   async function submitPayment(): Promise<void> {
     setPayErr(null);
     const amount = Number(payAmt);
-    if (!amount || amount <= 0) return setPayErr('Enter a payment amount');
+    if (!amount || amount <= 0) return setPayErr('Amount is required.');
     try {
       await addPayment.mutateAsync({
         paymentDate: payDate,
@@ -170,7 +180,7 @@ function InvoiceDetailPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📄 Invoice — {inv.code}{' '}
+          Invoice {inv.code}{' '}
           <StatusBadge
             kind="invoice"
             status={inv.status}
@@ -225,7 +235,7 @@ function InvoiceDetailPage(): React.JSX.Element {
       {payOpen ? (
         <div className="panel" style={{ marginBottom: 14 }}>
           <div className="panel-hdr">
-            <span className="panel-title">💳 Record Payment</span>
+            <span className="panel-title">Add Payment</span>
           </div>
           <div className="panel-body">
             <div className="form-grid">
@@ -239,7 +249,9 @@ function InvoiceDetailPage(): React.JSX.Element {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label">Amount ★</label>
+                <label className="form-label">
+                  Amount<span className="req">★</span>
+                </label>
                 <input
                   type="number"
                   className="innovic-input"
@@ -298,7 +310,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                 disabled={addPayment.isPending}
                 onClick={() => void submitPayment()}
               >
-                {addPayment.isPending ? 'Saving…' : 'Record Payment'}
+                {addPayment.isPending ? 'Saving…' : 'Add Payment'}
               </button>
             </div>
           </div>
@@ -306,24 +318,29 @@ function InvoiceDetailPage(): React.JSX.Element {
       ) : null}
 
       {/* A4-portrait paper preview — identical markup to the print output. */}
-      <div
-        style={{
-          maxWidth: 794, // A4 @96dpi: 794 × 1123
-          minHeight: 1123,
-          margin: '0 auto 14px',
-          background: '#fff',
-          boxShadow: '0 2px 14px rgba(0,0,0,.25)',
-          borderRadius: 4,
-          overflow: 'hidden',
+      <iframe
+        title={`Invoice ${inv.code} preview`}
+        // Self-built, esc()'d sheet HTML shared with the print window.
+        srcDoc={docHtml}
+        onLoad={(e) => {
+          const h = e.currentTarget.contentDocument?.documentElement.scrollHeight;
+          if (h) setPreviewHeight(h);
         }}
-        // Self-built, esc()'d document HTML shared with the print window.
-        dangerouslySetInnerHTML={{ __html: docHtml }}
+        style={{
+          display: 'block',
+          width: '100%',
+          maxWidth: 860,
+          height: previewHeight,
+          margin: '0 auto 14px',
+          border: 'none',
+          borderRadius: 4,
+        }}
       />
 
       {inv.payments.length > 0 && !priceHidden ? (
         <div className="panel">
           <div className="panel-hdr">
-            <span className="panel-title">💳 PAYMENTS ({inv.payments.length})</span>
+            <span className="panel-title">Payments ({inv.payments.length})</span>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -332,7 +349,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                   <th>Payment Date</th>
                   <th>Amount</th>
                   <th>Mode</th>
-                  <th>Ref No.</th>
+                  <th>Reference No.</th>
                   <th>Notes</th>
                 </tr>
               </thead>

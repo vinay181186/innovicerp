@@ -82,7 +82,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
   const onSave = (): void => {
     setErr(null);
     if (!jwId) {
-      setErr('Select a JWSO');
+      setErr('JWSO No. is required.');
       return;
     }
     const validLines: CreatePartyGrnLineInput[] = [];
@@ -106,7 +106,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
       }
       const q = Number(l.receivedQty);
       if (!Number.isFinite(q) || q <= 0) {
-        setErr(`Row ${i + 1}: Received must be 1 or more`);
+        setErr(`Line ${i + 1}: Received must be 1 or more.`);
         return;
       }
       // ADR-102: the JWSO line is mandatory — the order-qty cap and the
@@ -140,7 +140,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
       validLines.push(ln);
     }
     if (validLines.length === 0) {
-      setErr('Add at least one line');
+      setErr('Add at least one line.');
       return;
     }
     const input: CreatePartyGrnInput = {
@@ -186,7 +186,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 12 }}>
-          📥 New Party GRN
+          New Party GRN
         </div>
 
         {/* Native <datalist> rather than a custom absolute dropdown: a custom one
@@ -314,10 +314,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
                 color: 'var(--cyan)',
                 fontFamily: 'var(--mono)',
                 fontWeight: 700,
-                letterSpacing: '0.06em',
               }}
             >
-              INWARD LINE ITEMS
+              Line Items
             </span>
           </div>
           <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>

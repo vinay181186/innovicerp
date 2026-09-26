@@ -4,7 +4,7 @@
 // per receipt. Each line increments party_materials.stock_qty + received_qty.
 // Mirrors legacy renderPartyGRN + addPartyGRN (HTML L24251 / L24298).
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePartyGrnInput,
   ListPartyGrnQuery,
@@ -137,21 +137,18 @@ export async function listPartyGrn(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(partyGrn.companyId, companyId), isNull(partyGrn.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(partyGrn)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
-
-    // Summary (3 tiles) across ALL non-deleted party_grn for the company.
-    const today = new Date().toISOString().slice(0, 10);
+    // Total + summary follow the same filters as the rows (search box included),
+    // so the count beside the title and the pager agree with what is listed.
+    // "Today" is the IST calendar day, not UTC (UTC was yesterday before 05:30).
     const sumRows = (await tx.execute(sql`
       SELECT
         COUNT(*)::int AS total_grns,
         COALESCE(SUM(agg.total_received), 0)::int AS total_received,
-        COUNT(*) FILTER (WHERE pg.grn_date = ${today}::date)::int AS today_count
+        COUNT(*) FILTER (
+          WHERE pg.grn_date = (now() AT TIME ZONE 'Asia/Kolkata')::date
+        )::int AS today_count
       FROM public.party_grn pg
+      LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT SUM(received_qty)::int AS total_received
         FROM public.party_grn_lines pgl
@@ -159,8 +156,14 @@ export async function listPartyGrn(
       ) agg ON true
       WHERE pg.company_id = ${companyId}::uuid
         AND pg.deleted_at IS NULL
+        ${searchFrag}
+        ${jwFrag}
+        ${clientFrag}
+        ${fromFrag}
+        ${toFrag}
     `)) as unknown as Array<Record<string, unknown>>;
     const sum = sumRows[0] ?? {};
+    const total = Number(sum['total_grns'] ?? 0);
     const summary = {
       totalGrns: Number(sum['total_grns'] ?? 0),
       totalReceived: Number(sum['total_received'] ?? 0),

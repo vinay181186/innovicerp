@@ -229,7 +229,7 @@ export function AllocateStockModal({
             ? 'This line has no stock-tracked item'
             : cap <= 0
               ? 'Nothing can be allocated to this line right now'
-              : `Reserve ${valid ? typed : 0} pcs to ${facts.soCode} line ${facts.lineNo}`
+              : `Allocate ${valid ? typed : 0} pcs to ${facts.soCode} Ln ${facts.lineNo}`
         }
       >
         {reserve.isPending ? 'Allocating…' : 'Allocate'}
@@ -278,7 +278,7 @@ export function AllocateStockModal({
         />
         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
           {cap > 0
-            ? `Max ${cap}.`
+            ? `Max ${cap}`
             : shown.availableQty <= 0
               ? 'No free stock to allocate — Available is 0.'
               : 'This line is already covered by what has been dispatched and reserved to it.'}
@@ -287,7 +287,7 @@ export function AllocateStockModal({
 
       <div className="form-grp">
         <label className="form-label" htmlFor="allocate-remarks">
-          Remarks (optional)
+          Remarks
         </label>
         <input
           id="allocate-remarks"
@@ -407,7 +407,7 @@ export function ReleaseStockModal({
           style={{ width: 160, fontSize: 16, fontWeight: 700 }}
         />
         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-          {max > 0 ? `Max ${max}.` : 'Nothing is reserved to this line.'}
+          {max > 0 ? `Max ${max}` : 'Nothing is reserved to this line.'}
         </div>
       </div>
 

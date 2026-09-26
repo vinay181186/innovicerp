@@ -74,7 +74,7 @@ function ClientDetailPage(): React.JSX.Element {
   }
 
   if (isLoading) {
-    return <PageState state="loading" message="⟳ Loading customer…" />;
+    return <PageState state="loading" message="Loading customer…" />;
   }
 
   if (isError || !client) {
@@ -83,7 +83,7 @@ function ClientDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Customer not found'}
+          message={error instanceof Error ? error.message : 'Customer not found. Refresh the page.'}
         />
       </div>
     );
@@ -149,8 +149,8 @@ function ClientDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Move customer ${client.code} to Trash?`}
-          message={`${client.name} will be removed from the Customer Master. You can restore it from Trash.`}
+          title={`Move Customer ${client.code} to Trash?`}
+          message="You can restore it from Trash."
           confirmLabel="Move to Trash"
           pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
@@ -166,17 +166,18 @@ function ClientFacts(props: { client: Client }): React.JSX.Element {
   const { client } = props;
   return (
     <ReadGrid>
-      <ReadField label="Contact Person" size="lg" value={client.contactPerson} />
-      <ReadField label="Email" size="lg" value={client.email} />
-
-      <ReadField label="Phone" size="lg" mono value={client.phone} />
-      <ReadField label="GSTIN" size="lg" mono value={client.gstNumber} />
+      {/* Same order as the Customer form: the address block, then contact. */}
+      <ReadField label="Address" size="full" pre value={client.addressLine1} />
 
       <ReadField label="City" size="lg" value={client.city} />
       <ReadField label="State" size="md" value={client.state} />
       <ReadField label="Pincode" size="xs" mono value={client.pincode} />
 
-      <ReadField label="Address" size="full" pre value={client.addressLine1} />
+      <ReadField label="Contact Person" size="lg" value={client.contactPerson} />
+      <ReadField label="Email" size="lg" value={client.email} />
+
+      <ReadField label="Phone" size="lg" mono value={client.phone} />
+      <ReadField label="GSTIN" size="lg" mono value={client.gstNumber} />
     </ReadGrid>
   );
 }

@@ -56,8 +56,6 @@ function QtyBox({
         style={{
           fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -190,7 +188,11 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
           }}
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <QtyBox label="Sent" value={Number(dc.totalQty).toFixed(2)} />
+            {/* Whole pieces print whole (12, not 12.00); a real fraction keeps ≤2dp. */}
+            <QtyBox
+              label="Sent"
+              value={Number(dc.totalQty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+            />
             {/* lineCount was already fetched and already printed on the register
                 (lib/print-dispatch-register.ts) but never shown on screen. */}
             <QtyBox label="Lines" value={dc.lineCount} bordered />

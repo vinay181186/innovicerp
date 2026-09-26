@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoicesList } from '../api';
@@ -113,6 +114,7 @@ export function JwInvoiceView({
                   <th>Invoice Date</th>
                   <th>JWSO No.</th>
                   <th>Customer</th>
+                  <th>Item Code</th>
                   <th>Item Name</th>
                   <th>Invoice Qty</th>
                   {priceHidden ? null : (
@@ -135,8 +137,8 @@ export function JwInvoiceView({
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={priceHidden ? 7 : 12} className="empty-state">
-                      No JW invoices — click + New Invoice
+                    <td colSpan={priceHidden ? 8 : 13} className="empty-state">
+                      {term ? 'No JW Invoices match.' : 'No JW Invoices yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -157,6 +159,12 @@ export function JwInvoiceView({
                       {r.jwCodeText ?? '—'}
                     </td>
                     <td className="fw-700">{r.clientName ?? '—'}</td>
+                    <td
+                      className="mono fw-700"
+                      style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+                    >
+                      {itemCodeWithRev(r.itemCode, r.itemRevision)}
+                    </td>
                     <td className="text2" style={{ fontSize: 12 }}>
                       {r.partName ?? '—'}
                     </td>

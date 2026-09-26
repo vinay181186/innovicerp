@@ -52,8 +52,6 @@ function QtyBox({
         style={{
           fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -146,7 +144,7 @@ export function PartyGrnCard({
             </span>
             <span>·</span>
             <span>
-              DC <span className="text2">{g.dcNo ?? '—'}</span>
+              Customer Challan No. <span className="text2">{g.dcNo ?? '—'}</span>
             </span>
             <span>·</span>
             {/* receivedByText is the user's email, so it can be long — clipped

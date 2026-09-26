@@ -135,6 +135,25 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
         </div>
 
         <div className="form-grp">
+          <label className="form-label" htmlFor="city">
+            City
+          </label>
+          <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="state">
+            State
+          </label>
+          <input id="state" className="innovic-input" autoComplete="off" {...register('state')} />
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="pincode">
+            Pincode
+          </label>
+          <input id="pincode" className="innovic-input" autoComplete="off" {...register('pincode')} />
+        </div>
+        <div className="form-grp">
           <label className="form-label" htmlFor="contactPerson">
             Contact Person
           </label>
@@ -161,25 +180,6 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
           <input id="gstNumber" className="innovic-input" autoComplete="off" {...register('gstNumber')} />
         </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="city">
-            City
-          </label>
-          <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="state">
-            State
-          </label>
-          <input id="state" className="innovic-input" autoComplete="off" {...register('state')} />
-        </div>
-
-        <div className="form-grp">
-          <label className="form-label" htmlFor="pincode">
-            Pincode
-          </label>
-          <input id="pincode" className="innovic-input" autoComplete="off" {...register('pincode')} />
-        </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
             Status
@@ -227,7 +227,6 @@ function EditClientForm(props: EditMode): React.JSX.Element {
             Code
           </label>
           <input id="code" className="innovic-input" value={props.client.code} readOnly />
-          <div className="form-help">Code cannot be changed after creation.</div>
         </div>
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="name">
@@ -244,6 +243,25 @@ function EditClientForm(props: EditMode): React.JSX.Element {
           <input id="addressLine1" className="innovic-input" autoComplete="off" placeholder="Street address" {...register('addressLine1')} />
         </div>
 
+        <div className="form-grp">
+          <label className="form-label" htmlFor="city">
+            City
+          </label>
+          <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="state">
+            State
+          </label>
+          <input id="state" className="innovic-input" autoComplete="off" {...register('state')} />
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="pincode">
+            Pincode
+          </label>
+          <input id="pincode" className="innovic-input" autoComplete="off" {...register('pincode')} />
+        </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="contactPerson">
             Contact Person
@@ -271,25 +289,6 @@ function EditClientForm(props: EditMode): React.JSX.Element {
           <input id="gstNumber" className="innovic-input" autoComplete="off" {...register('gstNumber')} />
         </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="city">
-            City
-          </label>
-          <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="state">
-            State
-          </label>
-          <input id="state" className="innovic-input" autoComplete="off" {...register('state')} />
-        </div>
-
-        <div className="form-grp">
-          <label className="form-label" htmlFor="pincode">
-            Pincode
-          </label>
-          <input id="pincode" className="innovic-input" autoComplete="off" {...register('pincode')} />
-        </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
             Status
@@ -330,7 +329,7 @@ function FormFooter(props: {
           style={{
             color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--red)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,
