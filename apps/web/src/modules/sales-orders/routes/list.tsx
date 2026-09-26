@@ -40,6 +40,7 @@ import {
 } from '../api';
 import { SoSheetTable } from '../components/so-sheet-table';
 import { SoStatusBadge } from '../components/so-status-badge';
+import { SO_STATUS_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
 import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 
@@ -210,7 +211,8 @@ function SalesOrdersListPage(): React.JSX.Element {
 
   const softDelete = useSoftDeleteSalesOrder();
   const onDeleteSo = (so: SalesOrderListItem): void => {
-    if (confirm(`Delete SO ${so.code}? This soft-deletes the whole order.`)) softDelete.mutate(so.id);
+    if (confirm(`Move SO ${so.code} to Trash? You can restore it from Trash.`))
+      softDelete.mutate(so.id);
   };
 
   // Export status banner — an export that finds nothing, or fails, says so here.
@@ -320,7 +322,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
           <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>SO / WO Orders</div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>SO Master</div>
             {/* Count comes from the list response's `total` — the only aggregate
                 the endpoint returns. The reference mock also shows "N open ·
                 N overdue"; those are not derivable without a new API, and
@@ -328,7 +330,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                 the whole book, so they are left out rather than faked. */}
             <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
               {total} order{total === 1 ? '' : 's'}
-              {search.status ? <> · <span className="text2">{search.status}</span> only</> : null}
+              {search.status ? <> · <span className="text2">{SO_STATUS_LABEL[search.status]}</span> only</> : null}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -417,10 +419,10 @@ function SalesOrdersListPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load sales orders'}
+          {error instanceof Error ? error.message : 'Could not load sales orders. Try again.'}
         </div>
       ) : rows.length === 0 ? (
-        <div className="panel empty-state" style={{ padding: 24 }}>No orders — click + New SO/WO</div>
+        <div className="panel empty-state" style={{ padding: 24 }}>No orders — click + New SO / WO</div>
       ) : view === 'list' ? (
         // ── LIST VIEW (the ruled sheet) ──────────────────────────────────────
         <SoSheetTable
@@ -533,7 +535,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                       ) : null}
                       {canDelete && so.status !== 'closed' ? (
                         <button type="button" className="btn btn-danger btn-sm" onClick={() => onDeleteSo(so)}>
-                          Del
+                          Delete
                         </button>
                       ) : null}
                     </div>
@@ -626,7 +628,7 @@ function SalesOrdersListPage(): React.JSX.Element {
 function SoExpandedPanel({ soId, soType, canEdit, canDelete }: { soId: string; soType: SoType; canEdit: boolean; canDelete: boolean }): React.JSX.Element {
   const { data, isLoading, isError, error } = useSalesOrder(soId);
   if (isLoading) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}><Loader2 size={12} className="inline animate-spin" /> Loading lines…</div>;
-  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load SO detail'}</div>;
+  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Could not load SO detail. Try again.'}</div>;
   return soType === 'equipment' ? <EquipmentSoExpand so={data} canEdit={canEdit} canDelete={canDelete} /> : <ComponentSoExpand so={data} canEdit={canEdit} />;
 }
 
@@ -660,7 +662,7 @@ function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; c
           ) : (
             <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}>⚠ No BOM linked — assign one in Edit.</span>
           )}
-          {canDelete ? <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} onClick={() => { if (confirm(`Delete SO ${so.code}?`)) softDelete.mutate(so.id); }}>Del</button> : null}
+          {canDelete ? <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} onClick={() => { if (confirm(`Move SO ${so.code} to Trash? You can restore it from Trash.`)) softDelete.mutate(so.id); }}>Delete</button> : null}
         </div>
       </div>
       {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : <div style={{ padding: '4px 32px 12px', color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>⚠ No BOM linked. Edit this SO to assign a BOM from BOM Master.</div>}
@@ -787,7 +789,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
                         <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}>Edit</Link>
-                        <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 10 }} disabled={update.isPending} onClick={() => onDeleteLine(l.id)}>Del</button>
+                        <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 10 }} disabled={update.isPending} onClick={() => onDeleteLine(l.id)}>Delete</button>
                       </div>
                     </td>
                   ) : null}

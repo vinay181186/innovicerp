@@ -59,7 +59,7 @@ function SoCostingListPage(): React.JSX.Element {
   if (isError || !data) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
+        {error instanceof Error ? error.message : 'Could not load SO costing. Try again.'}
       </div>
     );
   }

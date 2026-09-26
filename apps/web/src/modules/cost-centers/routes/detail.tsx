@@ -87,7 +87,7 @@ function CostCenterDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Cost center not found'}
+          message={error instanceof Error ? error.message : 'Cost Centre not found'}
         />
       </div>
     );
@@ -105,7 +105,7 @@ function CostCenterDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete cost centre.'
+      : 'Could not move the cost centre to Trash. Try again.'
     : null;
 
   return (
@@ -146,10 +146,10 @@ function CostCenterDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete cost centre ${data.code}?`}
-          message={`${data.name} will be removed from the Cost Centre Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move cost centre ${data.code} to Trash?`}
+          message={`${data.name} will be removed from the Cost Centre Master. You can restore it from Trash.`}
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}

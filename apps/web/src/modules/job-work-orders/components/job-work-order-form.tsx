@@ -415,7 +415,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       const parts: string[] = [];
       // Say where the names came from — the sheet no longer has a Part Name
       // column, so it should be obvious the master filled them in.
-      if (added) parts.push(`Added ${added} line(s) — Part Name filled from Item Master.`);
+      if (added) parts.push(`Added ${added} line(s) — Item Name filled from Item Master.`);
       if (missing.length) {
         const uniq = Array.from(new Set(missing));
         parts.push(
@@ -449,7 +449,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     // if the API has not started sending the column yet) — '0' is non-blank.
     const badRev = values.lines.findIndex((l) => !String(l.revision ?? '').trim());
     if (badRev >= 0) {
-      setLineError(`Line ${badRev + 1}: enter the drawing Rev — the revision printed on the client's drawing.`);
+      setLineError(`Line ${badRev + 1}: enter the drawing Rev — the revision printed on the customer's drawing.`);
       return;
     }
     // ADR-177: a saved line's Rev never goes backwards (B → A, 2 → 1). Checked
@@ -603,20 +603,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 onSearch={setClientSearch}
                 loading={clientsFetching}
                 options={clients.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
-                placeholder="🔍 Type client code or name…"
+                placeholder="🔍 Type customer code or name…"
                 valueLabel={
                   selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientLabel || undefined
                 }
               />
             </div>
-            <button type="button" className="btn btn-ghost btn-sm" title="Add a new client without leaving this form" style={{ whiteSpace: 'nowrap' }} onClick={() => setShowAddClient(true)}>+ New</button>
+            <button type="button" className="btn btn-ghost btn-sm" title="Add a new customer without leaving this form" style={{ whiteSpace: 'nowrap' }} onClick={() => setShowAddClient(true)}>+ New</button>
           </div>
-          <input type="hidden" {...register('header.clientId', { required: 'Pick a client from the master' })} />
+          <input type="hidden" {...register('header.clientId', { required: 'Customer is required' })} />
           {errors.header?.clientId?.message ? (
             <div className="form-error">{errors.header.clientId.message}</div>
           ) : null}
           <div className="form-help">
-            Job Work orders must reference a client from the master. Not listed? Use <b>+ New</b>.
+            JWSOs must reference a customer from the master. Not listed? Use <b>+ New</b>.
           </div>
         </div>
 
@@ -764,7 +764,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           bought part is refused server-side: job work runs on client-supplied
           material.) */}
       <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
-        Assembly BOM — leave blank unless the client ships parts for you to assemble.
+        Assembly BOM — leave blank unless the customer ships parts for you to assemble.
       </div>
 
       {/* Same shape as the SO line editor: one row per line in a fixed-layout
@@ -811,7 +811,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       <input className="innovic-input" autoComplete="off" list="dlJwItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const, { onChange: (e) => fillLineFromItem(idx, e.target.value) })} />
                     </td>
                     <td>
-                      <input className="innovic-input" autoComplete="off" placeholder="Part name" readOnly={lineOnMaster} title={lineOnMaster ? 'Auto-filled from Item Master (item code is the key)' : undefined} style={lineOnMaster ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined} {...register(`lines.${idx}.partName` as const, { required: 'Part name is required' })} />
+                      <input className="innovic-input" autoComplete="off" placeholder="Item Name" readOnly={lineOnMaster} title={lineOnMaster ? 'Auto-filled from Item Master (item code is the key)' : undefined} style={lineOnMaster ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined} {...register(`lines.${idx}.partName` as const, { required: 'Item Name is required' })} />
                       {errors.lines?.[idx]?.partName?.message ? <div className="form-error" style={{ fontSize: 10 }}>{errors.lines[idx]?.partName?.message}</div> : null}
                     </td>
                     <td><input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.material` as const)} /></td>
@@ -836,7 +836,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                     <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
                     <td>
-                      <select className="innovic-select" title="Leave blank unless the client ships parts for you to assemble." {...register(`lines.${idx}.sourceBomMasterId` as const)}>
+                      <select className="innovic-select" title="Leave blank unless the customer ships parts for you to assemble." {...register(`lines.${idx}.sourceBomMasterId` as const)}>
                         <option value="">— none (plain machining) —</option>
                         {jwUsableBoms.map((b) => (
                           <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName}</option>
@@ -880,7 +880,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               .btn-success. Same label in both modes, by construction. */}
           <button type="submit" className="btn btn-success" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? '✓ Save JW'}
+            {props.submitLabel ?? (isCreate ? 'Save JWSO' : 'Save Changes')}
           </button>
         </div>
       </div>
@@ -911,7 +911,7 @@ function QuickAddClient({
   async function onSave(): Promise<void> {
     setErr(null);
     if (!name.trim()) {
-      setErr('Client name is required.');
+      setErr('Customer is required.');
       return;
     }
     try {
@@ -924,7 +924,7 @@ function QuickAddClient({
       });
       onCreated(c.id, `${c.code} — ${c.name}`);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to create client.');
+      setErr(e instanceof Error ? e.message : 'Could not save Customer. Try again.');
     }
   }
 
@@ -940,7 +940,7 @@ function QuickAddClient({
         <div className="section-hdr" style={{ marginBottom: 12 }}>🏢 New Customer</div>
         <div className="form-grp">
           <label className="form-label">Customer<span className="req">★</span></label>
-          <input className="innovic-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Company / client name" />
+          <input className="innovic-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Company / customer name" />
         </div>
         <div className="form-grp">
           <label className="form-label">Contact Person</label>
@@ -959,7 +959,7 @@ function QuickAddClient({
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 14 }}>
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button type="button" className="btn btn-primary" disabled={create.isPending} onClick={() => void onSave()}>
-            {create.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Add Client
+            {create.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Add Customer
           </button>
         </div>
       </div>

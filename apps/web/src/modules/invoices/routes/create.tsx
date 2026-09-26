@@ -166,7 +166,7 @@ function InvoiceNewPage(): React.JSX.Element {
       });
       exit.leave(() => void navigate({ to: '/invoices/$id', params: { id: created.id } }));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to create invoice');
+      setErr(e instanceof Error ? e.message : 'Could not save Invoice. Try again.');
     }
   }
 
@@ -273,7 +273,7 @@ function InvoiceNewPage(): React.JSX.Element {
                   <span style={{ textAlign: 'center' }}>Order Qty</span>
                   <span style={{ textAlign: 'center', color: 'var(--green)' }}>Dispatched</span>
                   <span style={{ textAlign: 'center' }}>Invoiced</span>
-                  <span style={{ textAlign: 'center', color: 'var(--amber)' }}>Available</span>
+                  <span style={{ textAlign: 'center', color: 'var(--amber)' }}>To Invoice</span>
                   <span style={{ textAlign: 'center', color: 'var(--green)' }}>Invoice Qty</span>
                   <span style={{ textAlign: 'center' }}>Rate</span>
                   <span />
@@ -407,7 +407,7 @@ function InvoiceNewPage(): React.JSX.Element {
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>Cancel</button>
             <button type="button" className="btn btn-success" disabled={create.isPending} onClick={() => void submit()}>
-              {create.isPending ? 'Saving…' : '✓ Create Invoice'}
+              {create.isPending ? 'Saving…' : 'Save Invoice'}
             </button>
           </div>
         </div>

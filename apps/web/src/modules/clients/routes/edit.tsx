@@ -40,14 +40,14 @@ function ClientNewPage(): React.JSX.Element {
         () => void navigate({ to: '/clients/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create client');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Customer. Try again.');
     }
   };
 
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to Client Master. Ask an admin for L2 Data Entry or above
+        ⛔ You do not have create access to Customer Master. Ask an admin for L2 Data Entry or above
         in Sales.
       </div>
     );
@@ -57,12 +57,12 @@ function ClientNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <Link to="/clients" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Client Master
+        <ArrowLeft size={14} /> Back to Customer Master
       </Link>
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">New Client</div>
+            <div className="panel-title">New Customer</div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Create a master record for a customer.
             </div>
@@ -102,15 +102,15 @@ function ClientEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/clients/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update client');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');
     }
   };
 
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have edit access to Client Master. Ask an admin for L2 Data Entry or above in
-        Sales.
+        ⛔ You do not have edit access to Customer Master. Ask an admin for L2 Data Entry or above
+        in Sales.
       </div>
     );
   }
@@ -118,7 +118,7 @@ function ClientEditPage(): React.JSX.Element {
   if (isLoading) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading client…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading customer…
       </div>
     );
   }
@@ -133,7 +133,7 @@ function ClientEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Client not found'}
+            {error instanceof Error ? error.message : 'Customer not found'}
           </div>
         </div>
       </div>
@@ -149,7 +149,7 @@ function ClientEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to client
+        <ArrowLeft size={14} /> Back to customer
       </Link>
       <div className="panel">
         <div className="panel-hdr">
@@ -161,7 +161,7 @@ function ClientEditPage(): React.JSX.Element {
               {client.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit Client — {client.name}
+              Edit Customer — {client.name}
             </div>
           </div>
         </div>

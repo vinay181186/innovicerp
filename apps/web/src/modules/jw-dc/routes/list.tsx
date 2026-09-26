@@ -136,7 +136,7 @@ function OutwardView(): React.JSX.Element {
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search DC, JWPO, vendor…"
+            placeholder="🔍 Search DC, PO, vendor…"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -166,7 +166,7 @@ function OutwardView(): React.JSX.Element {
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load outward DCs'}
+              {error instanceof Error ? error.message : 'Could not load outward DCs. Try again.'}
             </div>
           </div>
         ) : data ? (
@@ -176,7 +176,7 @@ function OutwardView(): React.JSX.Element {
                 <tr>
                   <th>DC No.</th>
                   <th>DC Date</th>
-                  <th>JWPO</th>
+                  <th>PO No.</th>
                   <th>SO No.</th>
                   <th>Vendor</th>
                   <th className="td-ctr">Items</th>
@@ -267,9 +267,9 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
         : 'var(--red)';
   const stLabel =
     dc.returnStatus === 'fully_returned'
-      ? 'Fully Returned'
+      ? 'Returned'
       : dc.returnStatus === 'partial'
-        ? 'Partial'
+        ? 'Partly Returned'
         : 'Out';
 
   return (
@@ -383,7 +383,7 @@ function InwardView(): React.JSX.Element {
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load inward entries'}
+              {error instanceof Error ? error.message : 'Could not load inward entries. Try again.'}
             </div>
           </div>
         ) : data ? (
@@ -568,7 +568,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const onSave = (): void => {
     setErr(null);
     if (!poId) {
-      setErr('Select a JWPO');
+      setErr('Please select a PO');
       return;
     }
     const valid: CreateJwDcOutwardLineInput[] = lines
@@ -588,7 +588,10 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save JW DC. Check the lines and try again.',
+        ),
     });
   };
 
@@ -625,14 +628,14 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
         </div>
         <div className="form-grp form-full">
           <label className="form-label">
-            JWPO<span className="req">★</span>
+            PO No.<span className="req">★</span>
           </label>
           <select
             className="innovic-select"
             value={poId ?? ''}
             onChange={(e) => setPoId(e.target.value || null)}
           >
-            <option value="">-- Select JWPO --</option>
+            <option value="">-- Select PO --</option>
             {poData.items.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.code} — {p.vendorName ?? p.vendorCodeText ?? ''}
@@ -873,7 +876,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
     for (const l of lines) {
       if (l.receivedQty <= 0) continue;
       if (l.okQty + l.rejectedQty !== l.receivedQty) {
-        setErr(`Line ${l.itemCode}: OK + Rejected must equal Received`);
+        setErr(`Row ${l.itemCode}: Accepted + Rejected must equal Received`);
         return;
       }
       valid.push({
@@ -898,7 +901,10 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save Inward. Check the lines and try again.',
+        ),
     });
   };
 
@@ -1187,7 +1193,7 @@ function ModalShell({
                 <Loader2 size={14} className="inline animate-spin" /> Saving…
               </>
             ) : (
-              <>✓ {saveLabel}</>
+              <>{saveLabel}</>
             )}
           </button>
         </div>

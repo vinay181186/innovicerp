@@ -65,7 +65,7 @@ function CostCenterNewPage(): React.JSX.Element {
             mode="create"
             suggestedCode={suggestedCode}
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save Cost Centre"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateCostCenterInput) => {
               setSubmitError(null);
@@ -75,7 +75,9 @@ function CostCenterNewPage(): React.JSX.Element {
                   () => void navigate({ to: '/cost-centers/$id', params: { id: created.id } }),
                 );
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to create cost centre.');
+                setSubmitError(
+                  e instanceof Error ? e.message : 'Could not save Cost Centre. Try again.',
+                );
               }
             }}
           />

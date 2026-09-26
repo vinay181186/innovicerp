@@ -21,6 +21,13 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useInvoiceList } from '../api';
 
+/** Invoice status → the words the user reads; the stored codes are unchanged. */
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  unpaid: 'Unpaid',
+  partial: 'Partly Paid',
+  paid: 'Paid',
+};
+
 // Deep-link seed for Global Search: `?tab=jw&search=IN-JI-26-0001` opens the
 // JW tab with its box pre-filled. Read ONCE into local state — tab clicks and
 // typing stay local. The SO Invoices tab has no search box of its own, so
@@ -134,7 +141,7 @@ function InvoiceListPage(): React.JSX.Element {
               },
             ]),
         { key: 'unpaid', label: 'Unpaid', count: s.unpaidCount, color: 'var(--red)' },
-        { key: 'partial', label: 'Partial', count: s.partialCount, color: 'var(--amber)' },
+        { key: 'partial', label: 'Partly Paid', count: s.partialCount, color: 'var(--amber)' },
         { key: 'paid', label: 'Paid', count: s.paidCount, color: 'var(--green)' },
       ]
     : [];
@@ -166,7 +173,7 @@ function InvoiceListPage(): React.JSX.Element {
           render: (inv) => <span style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</span>,
         },
         {
-          header: 'Balance',
+          header: 'Outstanding Amount',
           width: '9%',
           align: 'right',
           className: 'mono fw-700',
@@ -242,7 +249,11 @@ function InvoiceListPage(): React.JSX.Element {
           {/* kind="invoice", not "doc": the generic map paints unpaid amber and
               partial blue, which disagreed with the detail page's own colours
               for the SAME invoice. One status, one colour, both screens. */}
-          <StatusBadge kind="invoice" status={inv.status} />
+          <StatusBadge
+            kind="invoice"
+            status={inv.status}
+            label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
+          />
           {inv.overdue ? (
             <span className="fw-700" style={{ fontSize: 'var(--fs-xs)', color: 'var(--red)' }}>
               ⚠ OVERDUE
@@ -286,7 +297,7 @@ function InvoiceListPage(): React.JSX.Element {
       {isError || (!isLoading && !data) ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load'}
+          message={error instanceof Error ? error.message : 'Could not load invoices. Try again.'}
         />
       ) : (
         <>

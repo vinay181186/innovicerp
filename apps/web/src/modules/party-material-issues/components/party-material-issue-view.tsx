@@ -115,7 +115,9 @@ export function PartyMaterialIssueView({
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load party material issues'}
+              {error instanceof Error
+                ? error.message
+                : 'Could not load party material issues. Try again.'}
             </div>
           </div>
         ) : data ? (
@@ -251,8 +253,8 @@ export function PartyMaterialIssueView({
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 Party Material Issue debits client-supplied (party) stock when it is issued to a Job Card
-        for in-house machining. Linked to JWSO No. / Job Card.
+        💡 Party Material Issue debits customer-supplied (party) stock when it is issued to a Job
+        Card for in-house machining. Linked to JWSO No. / Job Card.
       </div>
 
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
@@ -282,7 +284,8 @@ function CancelIssueModal({
       { id: row.id, reason: reason.trim() },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to cancel'),
+        onError: (e) =>
+          setErr(e instanceof Error ? e.message : 'Could not cancel issue. Try again.'),
       },
     );
   };
@@ -435,7 +438,10 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save Issue. Check the lines and try again.',
+        ),
     });
   };
 

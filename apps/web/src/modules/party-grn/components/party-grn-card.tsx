@@ -141,7 +141,7 @@ export function PartyGrnCard({
             <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{g.jwCodeText ?? '—'}</span>
             <span>·</span>
             <span>
-              PO <span className="text2">{g.clientPoNo ?? '—'}</span>
+              Client PO No. <span className="text2">{g.clientPoNo ?? '—'}</span>
             </span>
             <span>·</span>
             <span>

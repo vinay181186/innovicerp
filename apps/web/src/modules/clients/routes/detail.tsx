@@ -41,7 +41,7 @@ export const clientDetailRoute = createRoute({
   component: ClientDetailPage,
 });
 
-const BACK_LABEL = 'Back to Client Master';
+const BACK_LABEL = 'Back to Customer Master';
 
 /** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
  *  state has no header to hang it on, so it renders the same control on its
@@ -74,7 +74,7 @@ function ClientDetailPage(): React.JSX.Element {
   }
 
   if (isLoading) {
-    return <PageState state="loading" message="⟳ Loading client…" />;
+    return <PageState state="loading" message="⟳ Loading customer…" />;
   }
 
   if (isError || !client) {
@@ -83,7 +83,7 @@ function ClientDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Client not found'}
+          message={error instanceof Error ? error.message : 'Customer not found'}
         />
       </div>
     );
@@ -108,7 +108,7 @@ function ClientDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete client.'
+      : 'Could not move the customer to Trash. Try again.'
     : null;
 
   return (
@@ -149,10 +149,10 @@ function ClientDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete client ${client.code}?`}
-          message={`${client.name} will be removed from the Client Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move customer ${client.code} to Trash?`}
+          message={`${client.name} will be removed from the Customer Master. You can restore it from Trash.`}
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}
@@ -166,11 +166,11 @@ function ClientFacts(props: { client: Client }): React.JSX.Element {
   const { client } = props;
   return (
     <ReadGrid>
-      <ReadField label="Contact person" size="lg" value={client.contactPerson} />
+      <ReadField label="Contact Person" size="lg" value={client.contactPerson} />
       <ReadField label="Email" size="lg" value={client.email} />
 
       <ReadField label="Phone" size="lg" mono value={client.phone} />
-      <ReadField label="GST number" size="lg" mono value={client.gstNumber} />
+      <ReadField label="GSTIN" size="lg" mono value={client.gstNumber} />
 
       <ReadField label="City" size="lg" value={client.city} />
       <ReadField label="State" size="md" value={client.state} />

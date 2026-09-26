@@ -141,14 +141,14 @@ function ClientsListPage(): React.JSX.Element {
         setImportMsg(
           errors.length
             ? `Nothing to import. ${errors.length} row issue(s): ${fmtList(errors)}`
-            : 'Nothing to import — the sheet has no client rows.',
+            : 'Nothing to import — the sheet has no customer rows.',
         );
         return;
       }
       const res = await bulkCreate.mutateAsync({ clients: payloads });
       const skips = res.skipped.map((s) => `Row ${s.index} "${s.name}": ${s.reason}`);
       setImportMsg(
-        `Imported ${res.created}/${payloads.length} client(s).` +
+        `Imported ${res.created}/${payloads.length} customer(s).` +
           (skips.length ? ` ${skips.length} skipped: ${fmtList(skips)}` : '') +
           (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
       );
@@ -257,18 +257,24 @@ function ClientsListPage(): React.JSX.Element {
       {/* The frozen header band: title, count, search, primary action and the
           StatStrip stay put while the rows scroll underneath. */}
       <ListHeader
-        title="Client Master"
+        title="Customer Master"
         icon="🏢"
         count={total}
-        noun="client"
-        filterNote={search.status}
+        noun="customer"
+        filterNote={
+          search.status === 'active'
+            ? 'Active'
+            : search.status === 'inactive'
+              ? 'Inactive'
+              : undefined
+        }
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
         primary={
           canAdd ? (
             <Link to="/clients/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> New Client
+              <Icon name="plus" size={14} /> New Customer
             </Link>
           ) : null
         }
@@ -279,7 +285,7 @@ function ClientsListPage(): React.JSX.Element {
           items={[
             {
               key: 'all',
-              label: 'All Clients',
+              label: 'All Customers',
               count: total,
               color: 'var(--cyan)',
               active: search.status === undefined,
@@ -314,7 +320,7 @@ function ClientsListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load clients'}
+          message={error instanceof Error ? error.message : 'Could not load customers. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">
@@ -323,7 +329,9 @@ function ClientsListPage(): React.JSX.Element {
             rows={visibleRows}
             loading={isLoading}
             emptyText={
-              search.status ? `No ${search.status} clients` : 'No clients yet — click + New Client'
+              search.status
+                ? `No ${search.status} customers`
+                : 'No customers yet — click + New Customer'
             }
             onRowClick={(c) => void navigate({ to: '/clients/$id', params: { id: c.id } })}
             rowActionsWidth="11%"
@@ -347,8 +355,8 @@ function ClientsListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move client ${c.name} to Trash?`,
-                  message: `${c.code} — ${c.name} stops appearing in the Client Master and in every client picker.`,
+                  title: `Move customer ${c.name} to Trash?`,
+                  message: `${c.code} — ${c.name} stops appearing in the Customer Master and in every customer picker. You can restore it from Trash.`,
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',
                 }}
@@ -361,9 +369,9 @@ function ClientsListPage(): React.JSX.Element {
       <ListFooter
         total={total}
         shown={visibleRows.length}
-        noun="client"
+        noun="customer"
         limit={LIST_LIMIT}
-        hint="Click a row to open the client. Click a count above to filter by status."
+        hint="Click a row to open the customer. Click a count above to filter by status."
         // Excel template + import sit below the count line (mirror of Vendor
         // Master). The file input is hidden and only opened by the button.
         actions={

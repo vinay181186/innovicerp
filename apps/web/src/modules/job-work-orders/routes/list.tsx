@@ -25,6 +25,7 @@ import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader } from '@/components/
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
+import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
 
@@ -122,7 +123,8 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const toggleExpand = (id: string): void => setExpandedId((prev) => (prev === id ? null : id));
 
   const onDelete = (jwId: string, code: string): void => {
-    if (confirm(`Move JW ${code} to Trash?`)) deleteMut.mutate(jwId);
+    if (confirm(`Move JWSO ${code} to Trash? You can restore it from Trash.`))
+      deleteMut.mutate(jwId);
   };
 
   const total = data?.total ?? 0;
@@ -160,27 +162,27 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>JWSO Master — Job Work Sales Order (Material from Client)</div>
+          <div className="section-hdr" style={{ marginBottom: 0 }}>JWSO Master — Material from Customer</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input className="innovic-input" placeholder="Search this list…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
             <select className="innovic-select" value={search.status ?? ''} onChange={(e) => { const v = e.target.value as SoStatus | ''; void navigate({ search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 130, fontSize: 12 }}>
               <option value="">All statuses</option>
-              {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+              {SO_STATUSES.map((s) => <option key={s} value={s}>{SO_STATUS_LABEL[s]}</option>)}
             </select>
             {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
-            {canCreate ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JWSO Order</Link> : null}
+            {canCreate ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JWSO</Link> : null}
           </div>
         </div>
       </div>
 
       <div style={{ padding: '10px 14px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, marginBottom: 14, fontSize: 12, color: 'var(--text2)' }}>
-        <b style={{ color: 'var(--green)' }}>📌 Job Work:</b> Client provides raw material → We machine/process it → Deliver finished parts back to client. Track client material receipt here.
+        <b style={{ color: 'var(--green)' }}>📌 Job Work:</b> Customer provides raw material → We machine/process it → Deliver finished parts back to customer. Receive customer material on Party GRN.
       </div>
 
       {isLoading ? (
         <div className="panel"><div className="empty-state" style={{ padding: 20 }}><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</div></div>
       ) : isError ? (
-        <div className="panel"><div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load job work orders'}</div></div>
+        <div className="panel"><div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Could not load JWSOs. Try again.'}</div></div>
       ) : rows.length === 0 ? (
         <div className="panel"><div className="empty-state" style={{ padding: 20 }}>No Job Work Sales Orders — click + New JWSO Order</div></div>
       ) : (
@@ -233,7 +235,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                       ) : null}
                       {canDelete ? (
                         <button type="button" className="btn btn-danger btn-sm" disabled={deleteMut.isPending} onClick={() => onDelete(jw.jwId, jw.code)}>
-                          Del
+                          Delete
                         </button>
                       ) : null}
                     </div>
@@ -323,7 +325,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 function JwExpandedPanel({ jwId, canEdit }: { jwId: string; canEdit: boolean }): React.JSX.Element {
   const { data, isLoading, isError, error } = useJobWorkOrder(jwId);
   if (isLoading) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}><Loader2 size={12} className="inline animate-spin" /> Loading lines…</div>;
-  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load JWSO detail'}</div>;
+  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Could not load JWSO detail. Try again.'}</div>;
   return <JwLinesTable jw={data} canEdit={canEdit} />;
 }
 

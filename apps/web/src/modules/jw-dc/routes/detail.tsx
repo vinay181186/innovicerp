@@ -82,9 +82,9 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
         : 'var(--red)';
   const statusLabel =
     dc.returnStatus === 'fully_returned'
-      ? 'Fully Returned'
+      ? 'Returned'
       : dc.returnStatus === 'partial'
-        ? 'Partial'
+        ? 'Partly Returned'
         : 'Out';
 
   return (
@@ -210,7 +210,7 @@ function DetailGrid(props: { dc: JwDcOutwardDetail }): React.JSX.Element {
     <div className="form-grid form-grid-3">
       <Pair label="DC No." value={dc.code} />
       <Pair label="DC Date" value={dc.dcDate} />
-      <Pair label="JWPO" value={dc.jwpoCodeText ?? '—'} />
+      <Pair label="PO No." value={dc.jwpoCodeText ?? '—'} />
       <Pair label="SO No." value={dc.soCode ?? '—'} />
       <Pair label="Vendor" value={dc.vendorNameText ?? dc.vendorCodeText ?? '—'} />
       <Pair label="Total Sent" value={`${dc.totalSentQty} pcs`} />

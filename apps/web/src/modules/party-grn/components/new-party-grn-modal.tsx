@@ -109,7 +109,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
       }
       const q = Number(l.receivedQty);
       if (!Number.isFinite(q) || q <= 0) {
-        setErr(`Line ${i + 1}: qty must be ≥ 1`);
+        setErr(`Row ${i + 1}: Received must be 1 or more`);
         return;
       }
       // ADR-102: the JWSO line is mandatory — the order-qty cap and the
@@ -150,7 +150,10 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save GRN. Check the lines and try again.',
+        ),
     });
   };
 
@@ -180,7 +183,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 12 }}>
-          📥 New Party Material GRN
+          📥 New Party GRN
         </div>
 
         {/* Native <datalist> rather than a custom absolute dropdown: a custom one
@@ -255,7 +258,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-dc">DC No.</label>
+            <label className="form-label" htmlFor="pgrn-dc">
+              Customer Challan No.
+            </label>
             <input
               id="pgrn-dc"
               type="text"
@@ -263,7 +268,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
               autoComplete="off"
               value={dcNo}
               onChange={(e) => setDcNo(e.target.value)}
-              placeholder="Client's challan no."
+              placeholder="Customer's challan no."
             />
           </div>
           <div className="form-grp">

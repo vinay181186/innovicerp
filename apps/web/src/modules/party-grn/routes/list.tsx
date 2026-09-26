@@ -126,7 +126,7 @@ function PartyGrnListPage(): React.JSX.Element {
               marginBottom: -1,
             }}
           >
-            {t === 'receive' ? '📥 Receive (GRN)' : '📤 Issue'}
+            {t === 'receive' ? '📥 Receive (Party GRN)' : '📤 Issue'}
           </button>
         ))}
       </div>
@@ -165,7 +165,7 @@ function PartyGrnListPage(): React.JSX.Element {
             >
               <div>
                 <div className="section-hdr" style={{ marginBottom: 0 }}>
-                  📥 Party Material GRN
+                  📥 Party GRN
                 </div>
                 <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
                   {data?.total ?? 0} GRN{(data?.total ?? 0) === 1 ? '' : 's'}
@@ -175,7 +175,7 @@ function PartyGrnListPage(): React.JSX.Element {
                 <input
                   type="text"
                   className="innovic-input"
-                  placeholder="🔍 Search JWSO, client, material…"
+                  placeholder="🔍 Search JWSO, customer, material…"
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value);
@@ -212,7 +212,7 @@ function PartyGrnListPage(): React.JSX.Element {
                   label: 'Total Received',
                   count: summary.totalReceived,
                   color: 'var(--green)',
-                  title: 'Total quantity of client material received',
+                  title: 'Total quantity of customer material received',
                 },
                 {
                   key: 'today',
@@ -246,11 +246,11 @@ function PartyGrnListPage(): React.JSX.Element {
               <div
                 style={{ fontWeight: 700, color: 'var(--amber)', fontSize: 13, marginBottom: 2 }}
               >
-                Record Party Material GRNs here
+                Record Party GRNs here
               </div>
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-                This is the home for client-supplied (party) material. When a client sends raw
-                material against a Job Work order, record its receipt right here — just click{' '}
+                This is the home for customer-supplied (party) material. When a customer sends raw
+                material against a JWSO, record its receipt right here — just click{' '}
                 <b>+ New Party GRN</b>. Every party-material receipt is entered and tracked on this
                 screen.
               </div>
@@ -264,7 +264,7 @@ function PartyGrnListPage(): React.JSX.Element {
             </div>
           ) : isError ? (
             <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load party GRNs'}
+              {error instanceof Error ? error.message : 'Could not load party GRNs. Try again.'}
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>

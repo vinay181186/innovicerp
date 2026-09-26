@@ -32,7 +32,7 @@ export function CancelPartyGrnModal({
       { id: row.id, reason: reason.trim() },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to cancel'),
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not cancel GRN. Try again.'),
       },
     );
   };

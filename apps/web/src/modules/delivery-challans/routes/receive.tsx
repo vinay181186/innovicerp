@@ -126,7 +126,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
       await receive.mutateAsync({ dcId: id, input });
       exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id } }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to record receipt.');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save receipt. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -269,7 +269,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code · Name</th>
                     <th>Sent</th>
-                    <th>Received so far</th>
+                    <th>Received</th>
                     <th>Pending</th>
                     <th>Receive Now</th>
                   </tr>

@@ -683,14 +683,14 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
               disabled={formState.isSubmitting || !docNoValid}
               onClick={() => void handleSubmit(onValid(true))()}
-              title="Save this Sales Order as a draft (status: draft)"
+              title="Save as Draft — not yet released to planning"
             >
-              Save as draft
+              Save as Draft
             </button>
           ) : null}
           <button type="submit" className="btn btn-success btn-sm" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? 'Save SO'}
+            {props.submitLabel ?? (isCreate ? 'Save SO' : 'Save Changes')}
           </button>
         </div>
       </div>
@@ -739,7 +739,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 onSearch={setClientSearch}
                 loading={clientsFetching}
                 options={clients.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
-                placeholder="🔍 Type client code or name..."
+                placeholder="🔍 Type customer code or name..."
                 valueLabel={
                   selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientLabel || undefined
                 }
@@ -747,7 +747,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             </div>
             <button type="button" className="btn btn-ghost btn-sm" title="Add a new customer without leaving this form" style={{ whiteSpace: 'nowrap' }} onClick={() => setShowAddClient(true)}>+ New</button>
           </div>
-          <input type="hidden" {...register('header.clientId', { required: 'Pick a client from the master' })} />
+          <input type="hidden" {...register('header.clientId', { required: 'Customer is required' })} />
           {errors.header?.clientId?.message ? (
             <div className="form-error">{errors.header.clientId.message}</div>
           ) : null}
@@ -1231,7 +1231,7 @@ function QuickAddClient({
   async function onSave(): Promise<void> {
     setErr(null);
     if (!name.trim()) {
-      setErr('Client name is required.');
+      setErr('Customer is required.');
       return;
     }
     try {
@@ -1244,7 +1244,7 @@ function QuickAddClient({
       });
       onCreated(c.id, `${c.code} — ${c.name}`);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to create client.');
+      setErr(e instanceof Error ? e.message : 'Could not save Customer. Try again.');
     }
   }
 
@@ -1260,7 +1260,7 @@ function QuickAddClient({
         <div className="section-hdr" style={{ marginBottom: 12 }}>🏢 New Customer</div>
         <div className="form-grp">
           <label className="form-label">Customer<span className="req">★</span></label>
-          <input className="innovic-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Company / client name" />
+          <input className="innovic-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Company / customer name" />
         </div>
         <div className="form-grp">
           <label className="form-label">Contact Person</label>
@@ -1279,7 +1279,7 @@ function QuickAddClient({
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 14 }}>
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button type="button" className="btn btn-primary" disabled={create.isPending} onClick={() => void onSave()}>
-            {create.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Add Client
+            {create.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Add Customer
           </button>
         </div>
       </div>

@@ -22,6 +22,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { exportSoCycleTime } from '../lib/export';
 
 export const soCycleTimeRoute = createRoute({
@@ -31,7 +32,7 @@ export const soCycleTimeRoute = createRoute({
 });
 
 const TYPE_LABEL: Record<string, string> = {
-  component_manufacturing: 'Component Mfg',
+  component_manufacturing: 'Component',
   equipment: 'Equipment',
   with_material: 'With Material',
 };
@@ -44,7 +45,7 @@ const FILTERS: { value: string; label: string }[] = [
   // vocabulary (SO_TYPES) has no 'job work'; the last two mirror legacy's
   // "<Type> Only" pattern over the types we actually have.
   { value: 'equipment', label: 'Equipment Only' },
-  { value: 'component_manufacturing', label: 'Component Mfg Only' },
+  { value: 'component_manufacturing', label: 'Component Only' },
   { value: 'with_material', label: 'With Material Only' },
 ];
 
@@ -107,7 +108,7 @@ function SoCycleTimePage(): React.JSX.Element {
   if (isError || !data) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
+        {error instanceof Error ? error.message : 'Could not load SO cycle time. Try again.'}
       </div>
     );
   }
@@ -220,7 +221,7 @@ function SoCycleTimePage(): React.JSX.Element {
                         <span
                           className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-grey' : 'b-cyan'}`}
                         >
-                          {done ? 'Done' : r.status}
+                          {done ? 'Completed' : soStatusLabel(r.status)}
                         </span>
                       </td>
                       <DurCell v={r.durations.design} />

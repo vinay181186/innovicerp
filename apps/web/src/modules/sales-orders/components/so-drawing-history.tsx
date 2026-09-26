@@ -174,11 +174,11 @@ export function SoDrawingHistory({
                     written on the paper. */}
                 <tr>
                   <th style={{ width: '9%' }}>#</th>
-                  <th style={{ width: '10%' }}>Rev</th>
+                  <th style={{ width: '10%' }}>Drawing Rev</th>
                   <th style={{ width: '12%' }}>Change</th>
                   <th style={{ width: '31%' }}>File</th>
                   <th style={{ width: '16%' }}>Revised By</th>
-                  <th style={{ width: '18%' }}>When</th>
+                  <th style={{ width: '18%' }}>Revised On</th>
                   <th style={{ width: '4%' }} />
                 </tr>
               </thead>
@@ -202,7 +202,7 @@ export function SoDrawingHistory({
                         <td className="mono" style={{ fontWeight: 700, color: 'var(--text3)' }}>
                           #{r.revisionNo}
                           {i === 0 ? (
-                            <span className="badge b-blue" style={{ marginLeft: 6 }}>current</span>
+                            <span className="badge b-blue" style={{ marginLeft: 6 }}>Current</span>
                           ) : null}
                         </td>
                         {/* The customer's revision as it stood when this drawing change
@@ -216,7 +216,7 @@ export function SoDrawingHistory({
                           title={
                             r.lineRevisionText === null
                               ? 'Revision not recorded for this drawing change.'
-                              : `Line Rev ${r.lineRevisionText} at this drawing change`
+                              : `Drawing Rev ${r.lineRevisionText} at this drawing change`
                           }
                         >
                           {r.lineRevisionText === null ? (

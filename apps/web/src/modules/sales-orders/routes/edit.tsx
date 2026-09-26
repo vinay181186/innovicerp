@@ -82,7 +82,7 @@ function SalesOrderNewPage(): React.JSX.Element {
       }
       exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id: created.id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create sales order');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save SO. Try again.');
     }
   };
 
@@ -171,7 +171,7 @@ function SalesOrderEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update sales order');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');
     }
   };
 

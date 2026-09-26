@@ -13,6 +13,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { usePendingSoValue } from '../api';
 
 export const pendingSoValueRoute = createRoute({
@@ -84,7 +85,9 @@ function PendingSoValuePage(): React.JSX.Element {
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load pending SO value'}
+              {error instanceof Error
+                ? error.message
+                : 'Could not load pending SO value. Try again.'}
             </div>
           </div>
         </div>
@@ -130,7 +133,7 @@ function PendingSoValuePage(): React.JSX.Element {
                             Pending Value
                           </th>
                           <th>Invoiced</th>
-                          <th>Received</th>
+                          <th>Amount Received</th>
                           <th>Outstanding</th>
                         </>
                       )}
@@ -325,7 +328,7 @@ function PsvRow({
         </>
       )}
       <td>
-        <span className={`badge b-${badgeColor(row.status)}`}>{row.status}</span>
+        <span className={`badge b-${badgeColor(row.status)}`}>{soStatusLabel(row.status)}</span>
       </td>
     </tr>
   );

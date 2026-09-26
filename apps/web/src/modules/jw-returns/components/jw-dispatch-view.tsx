@@ -61,7 +61,7 @@ export function JwDispatchView({
   const cancelMut = useCancelJwReturn();
 
   const onCancel = (id: string, code: string): void => {
-    if (!confirm(`Cancel JW Dispatch ${code}? This reverses the returned-qty cascade.`)) {
+    if (!confirm(`Cancel JW Return ${code}? Returned qty goes back to pending.`)) {
       return;
     }
     cancelMut.mutate(id);
@@ -75,7 +75,7 @@ export function JwDispatchView({
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search return no., date, JWSO, client, part, transport, status…"
+            placeholder="🔍 Search return no., date, JWSO, customer, part, transport, status…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 260, fontSize: 12 }}
@@ -102,7 +102,7 @@ export function JwDispatchView({
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load JW returns'}
+              {error instanceof Error ? error.message : 'Could not load JW returns. Try again.'}
             </div>
           </div>
         ) : (
@@ -217,9 +217,8 @@ export function JwDispatchView({
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 JW Dispatch returns machined goods to the customer against a Job Work Order
-        line. Return qty cannot exceed what has been produced (QC-accepted) minus already
-        returned.
+        💡 JW Return sends machined goods back to the customer against a JWSO line. Return qty
+        cannot exceed what has been produced (QC-accepted) minus already returned.
       </div>
 
       {showModal ? <NewJwReturnModal onClose={() => setShowModal(false)} /> : null}
@@ -284,7 +283,12 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error
+            ? e.message
+            : 'Could not save JW Return. Check the lines and try again.',
+        ),
     });
   };
 
@@ -314,7 +318,7 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          📦 New JW Dispatch
+          📦 New JW Return
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

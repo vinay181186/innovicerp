@@ -45,9 +45,9 @@ const STAGE_BADGE: Record<SoOverviewItemStage, { cls: string; label: string; ico
   not_released: { cls: 'b-grey', label: 'Not Released', icon: '○' },
   in_production: { cls: 'b-cyan', label: 'In Production', icon: '⚙' },
   outsourced: { cls: 'b-blue', label: 'Outsourced', icon: '🏭' },
-  quality_check: { cls: 'b-amber', label: 'Quality Check', icon: '🔬' },
-  finished: { cls: 'b-green', label: 'Finished', icon: '✅' },
-  hold: { cls: 'b-red', label: 'Hold / Blocked', icon: '🚫' },
+  quality_check: { cls: 'b-amber', label: 'QC Pending', icon: '🔬' },
+  finished: { cls: 'b-green', label: 'Completed', icon: '✅' },
+  hold: { cls: 'b-red', label: 'Blocked', icon: '🚫' },
 };
 
 /** Per-row status filter (different from header.status — this filters the
@@ -154,7 +154,7 @@ function SoOverviewPage(): React.JSX.Element {
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load SO overview'}
+              {error instanceof Error ? error.message : 'Could not load SO overview. Try again.'}
             </div>
           </div>
         </div>
@@ -287,7 +287,7 @@ function OverviewTable({
                 <th>Lines</th>
                 <th>SO Status</th>
                 <th>Progress</th>
-                <th>Required</th>
+                <th>Order Qty</th>
                 <th style={{ color: 'var(--green)' }}>Completed</th>
                 <th style={{ color: 'var(--red)' }}>Pending</th>
                 <th>Due Date</th>
@@ -505,7 +505,7 @@ function SoOverviewDrill({
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load SO detail'}
+              {error instanceof Error ? error.message : 'Could not load SO detail. Try again.'}
             </div>
           </div>
         </div>
@@ -671,14 +671,14 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
         </div>
         <div style={{ display: 'flex', gap: 24, marginTop: 8, fontSize: 12 }}>
           <span>
-            Required: <b>{so.totalRequiredQty}</b>
+            Order Qty: <b>{so.totalRequiredQty}</b>
           </span>
           <span>
             Completed:{' '}
             <b style={{ color: 'var(--green)' }}>{so.totalDoneQty}</b>
           </span>
           <span>
-            Balance:{' '}
+            Pending:{' '}
             <b style={{ color: so.totalBalanceQty > 0 ? 'var(--red)' : 'var(--green)' }}>
               {so.totalBalanceQty}
             </b>
@@ -801,10 +801,10 @@ function DrillItemsTable({
             <th>Item Name</th>
             <th>Stage</th>
             <th>SO Status</th>
-            <th>Required</th>
+            <th>Order Qty</th>
             <th style={{ color: 'var(--amber)' }}>Issued</th>
-            <th style={{ color: 'var(--cyan)' }}>In Prod</th>
-            <th style={{ color: 'var(--amber)' }}>QC Pend</th>
+            <th style={{ color: 'var(--cyan)' }}>In Production</th>
+            <th style={{ color: 'var(--amber)' }}>QC Pending</th>
             <th style={{ color: 'var(--purple)' }}>At Vendor</th>
             <th style={{ color: 'var(--green)' }}>Completed</th>
             <th style={{ color: 'var(--red)' }}>Pending</th>

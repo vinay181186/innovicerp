@@ -157,7 +157,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="gstNumber">
-            GST Number
+            GSTIN
           </label>
           <input id="gstNumber" className="innovic-input" autoComplete="off" {...register('gstNumber')} />
         </div>
@@ -200,7 +200,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Customer'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -267,7 +267,7 @@ function EditClientForm(props: EditMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="gstNumber">
-            GST Number
+            GSTIN
           </label>
           <input id="gstNumber" className="innovic-input" autoComplete="off" {...register('gstNumber')} />
         </div>
@@ -310,7 +310,7 @@ function EditClientForm(props: EditMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Changes'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />

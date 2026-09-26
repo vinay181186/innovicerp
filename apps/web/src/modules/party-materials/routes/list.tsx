@@ -93,12 +93,12 @@ function PartyMaterialsListPage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">🏭 Party Supplied Material Master</div>
+        <div className="section-hdr m-0">🏭 Party Material Master</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search material, client…"
+            placeholder="🔍 Search material, customer…"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -124,7 +124,9 @@ function PartyMaterialsListPage(): React.JSX.Element {
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load party materials'}
+              {error instanceof Error
+                ? error.message
+                : 'Could not load party materials. Try again.'}
             </div>
           </div>
         ) : data ? (
@@ -213,7 +215,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                             style={{ fontSize: 11 }}
                             onClick={() => onDelete(pm)}
                           >
-                            Del
+                            Delete
                           </button>
                         ) : null}
                       </div>
@@ -266,8 +268,8 @@ function PartyMaterialsListPage(): React.JSX.Element {
       ) : null}
 
       <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 Party Material Master tracks raw materials supplied by clients for Job Work orders. Stock
-        is updated via Party Material GRN. Separate from company inventory.
+        💡 Party Material Master tracks raw materials supplied by customers for JWSOs. Stock is
+        updated via Party GRN. Separate from company inventory.
       </div>
 
       {showAdd ? <AddPartyMaterialModal onClose={() => setShowAdd(false)} /> : null}
@@ -436,7 +438,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
       return;
     }
     if (!clientId) {
-      setErr('Client is required');
+      setErr('Customer is required');
       return;
     }
     if (!nm) {
@@ -449,7 +451,8 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
     if (itemId) input.itemId = itemId;
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(e instanceof Error ? e.message : 'Could not save Material. Try again.'),
     });
   };
 
@@ -484,7 +487,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
               onSearch={setClientSearch}
               loading={clientsFetching}
               options={clientOptions}
-              placeholder="🔍 Type client code or name…"
+              placeholder="🔍 Type customer code or name…"
             />
           </Field>
         </div>
@@ -500,8 +503,8 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
               loading={soFetching || jwFetching}
               options={orderOptions}
               disabled={!clientId}
-              placeholder={clientId ? '🔍 Type SO / JWSO no…' : 'Pick a client first'}
-              emptyText="No orders for this client"
+              placeholder={clientId ? '🔍 Type SO / JWSO no…' : 'Pick a customer first'}
+              emptyText="No orders for this customer"
             />
           </Field>
         </div>
@@ -640,7 +643,7 @@ function EditPartyMaterialModal({
       return;
     }
     if (!clientId) {
-      setErr('Client is required');
+      setErr('Customer is required');
       return;
     }
     const input: UpdatePartyMaterialInput = {
@@ -654,7 +657,8 @@ function EditPartyMaterialModal({
       { id: row.id, input },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to update'),
+        onError: (e) =>
+          setErr(e instanceof Error ? e.message : 'Could not save changes. Try again.'),
       },
     );
   };
@@ -737,7 +741,7 @@ function EditPartyMaterialModal({
             <input
               type="text"
               className="innovic-input"
-              placeholder="🔍 Click to browse or type client code / name to change…"
+              placeholder="🔍 Click to browse or type customer code / name to change…"
               value={
                 selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientSearch
               }

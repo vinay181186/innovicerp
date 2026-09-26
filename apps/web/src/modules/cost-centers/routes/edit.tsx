@@ -91,7 +91,7 @@ function CostCenterEditPage(): React.JSX.Element {
             mode="edit"
             detail={detail}
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save Changes"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: UpdateCostCenterInput) => {
               setSubmitError(null);
@@ -99,7 +99,9 @@ function CostCenterEditPage(): React.JSX.Element {
                 await update.mutateAsync(values);
                 exit.leave(goBack);
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
+                setSubmitError(
+                  e instanceof Error ? e.message : 'Could not save changes. Try again.',
+                );
               }
             }}
           />

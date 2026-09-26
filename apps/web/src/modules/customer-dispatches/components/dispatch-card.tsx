@@ -107,7 +107,9 @@ export function DispatchCard(props: {
             {g.code}
           </span>
           <span className="fw-700" style={{ fontSize: 13 }}>{g.customer ?? '—'}</span>
-          <span className={`badge ${cancelled ? 'b-grey' : 'b-green'}`}>{g.status}</span>
+          <span className={`badge ${cancelled ? 'b-grey' : 'b-green'}`}>
+            {cancelled ? 'Cancelled' : 'Dispatched'}
+          </span>
           <span style={{ flex: 1 }} />
           {/* Stop the row-toggle when clicking an action button. */}
           {!cancelled ? (
@@ -198,14 +200,14 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Ln</th>
+            <th style={{ width: 36 }}>Sr No</th>
             <th>JC No.</th>
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
             <th className="td-ctr" style={{ color: 'var(--red)' }}>Dispatch Qty</th>
             <th className="td-ctr">UOM</th>
-            <th className="td-ctr">Stock B→A</th>
+            <th className="td-ctr">Stock Before → After</th>
           </tr>
         </thead>
         <tbody>

@@ -35,6 +35,7 @@ import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
+import { SO_STATUS_LABEL } from '../lib/so-status-label';
 
 /** The file the user asked to look at, or null when nothing is open.
  *
@@ -125,7 +126,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
         renderLink={(p) => <Link {...p} />}
         code={detail.code}
         name={detail.customerName ?? 'Untitled customer'}
-        badges={<StatusBadge kind="so" status={detail.status} />}
+        badges={
+          <StatusBadge kind="so" status={detail.status} label={SO_STATUS_LABEL[detail.status]} />
+        }
         actions={
           <>
             <AssignTaskButton
@@ -238,12 +241,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
           user does not lose it along with the error. */}
       <ConfirmDialog
         open={confirmDelete}
-        title={`Delete sales order ${detail.code}?`}
+        title={`Move SO ${detail.code} to Trash?`}
         message={`${detail.code} and its ${detail.lines.length} line${
           detail.lines.length === 1 ? '' : 's'
-        } will be removed from the Sales Order list.`}
-        confirmLabel="Delete"
-        pendingLabel="Deleting…"
+        } will be removed from the Sales Order list. You can restore it from Trash.`}
+        confirmLabel="Move to Trash"
+        pendingLabel="Moving to Trash…"
         onCancel={() => setConfirmDelete(false)}
         onConfirm={async () => {
           await softDelete.mutateAsync(detail.id);
@@ -402,7 +405,7 @@ function lineColumns(opts: {
     {
       header: 'SO Status',
       width: '10%',
-      render: (l) => <StatusBadge kind="so" status={l.status} />,
+      render: (l) => <StatusBadge kind="so" status={l.status} label={SO_STATUS_LABEL[l.status]} />,
     },
   ];
 }

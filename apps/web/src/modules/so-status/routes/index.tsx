@@ -73,7 +73,7 @@ function SoStatusIndexPage(): React.JSX.Element {
   if (isError || !data) {
     return (
       <div className="empty-state" style={{ color: 'var(--red)', padding: 24 }}>
-        {error instanceof Error ? error.message : 'Failed to load SO list'}
+        {error instanceof Error ? error.message : 'Could not load SO list. Try again.'}
       </div>
     );
   }

@@ -49,7 +49,7 @@ const JW_INVOICE_UOM = 'NOS';
 // default lands in the contract, theirs wins and this yields to it.
 const MATERIAL_NOTE =
   'This invoice is for the labour / processing charge only. The material processed under ' +
-  'it is supplied by the client and remains the property of the client throughout — no ' +
+  'it is supplied by the customer and remains the property of the customer throughout — no ' +
   'material value is charged on this invoice.';
 
 export function printJwInvoice(args: {

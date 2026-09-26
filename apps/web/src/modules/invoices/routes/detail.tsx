@@ -41,6 +41,13 @@ import { StatusBadge } from '@/ui/core';
 import { useAddPayment, useInvoice } from '../api';
 import { invoiceDocHtml, printInvoice } from '../lib/print';
 
+/** Invoice status → the words the user reads; the stored codes are unchanged. */
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  unpaid: 'Unpaid',
+  partial: 'Partly Paid',
+  paid: 'Paid',
+};
+
 export const invoiceDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'invoices/$id',
@@ -91,7 +98,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   if (isError || !inv) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
+        {error instanceof Error ? error.message : 'Could not load invoice. Try again.'}
       </div>
     );
   }
@@ -113,7 +120,7 @@ function InvoiceDetailPage(): React.JSX.Element {
       setPayRef('');
       setPayNotes('');
     } catch (e) {
-      setPayErr(e instanceof Error ? e.message : 'Failed to record payment');
+      setPayErr(e instanceof Error ? e.message : 'Could not save payment. Try again.');
     }
   }
 
@@ -139,7 +146,7 @@ function InvoiceDetailPage(): React.JSX.Element {
         { label: 'TOTAL', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green)' },
         { label: 'PAID', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
         {
-          label: 'BALANCE',
+          label: 'OUTSTANDING AMOUNT',
           value: inr(inv.balance ?? 0),
           size: 18,
           color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)',
@@ -161,7 +168,12 @@ function InvoiceDetailPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📄 Invoice — {inv.code} <StatusBadge kind="invoice" status={inv.status} />
+          📄 Invoice — {inv.code}{' '}
+          <StatusBadge
+            kind="invoice"
+            status={inv.status}
+            label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
+          />
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {perms.entry && inv.status !== 'paid' ? (

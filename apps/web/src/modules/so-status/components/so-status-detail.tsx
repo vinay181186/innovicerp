@@ -53,7 +53,7 @@ const LINE_STATUS_COLOR: Record<SoStatusLine['status'], string> = {
   in_progress: 'var(--cyan)',
 };
 const LINE_STATUS_LABEL: Record<SoStatusLine['status'], string> = {
-  complete: 'Complete',
+  complete: 'Completed',
   qc_pending: 'QC Pending',
   no_jc: 'No JC',
   in_progress: 'In Progress',
@@ -134,7 +134,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
             style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)', fontSize: 11 }}
             onClick={() => exportSoStatusExcel(data)}
           >
-            ⬇ Export Excel
+            ⬇ Export
           </button>
           <Link to="/sales-orders/$id" params={{ id: header.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
             ✎ Edit in SO Master
@@ -234,7 +234,9 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
             </div>
           ) : timeline.isError || !timeline.data ? (
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {timeline.error instanceof Error ? timeline.error.message : 'Failed to load timeline'}
+              {timeline.error instanceof Error
+                ? timeline.error.message
+                : 'Could not load timeline. Try again.'}
             </div>
           ) : (
             <SoTimelineBody data={timeline.data} />
@@ -414,7 +416,7 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
                   <td>
                     {c.planStatus ? (
                       <>
-                        <span style={{ fontWeight: 700, color: c.planStatus === 'in_planning' ? 'var(--amber)' : c.planStatus === 'jc_created' ? 'var(--cyan)' : 'var(--green)' }}>{c.planStatus}</span>
+                        <span style={{ fontWeight: 700, color: c.planStatus === 'in_planning' ? 'var(--amber)' : c.planStatus === 'jc_created' ? 'var(--cyan)' : 'var(--green)' }}>{c.planStatus === 'in_planning' ? 'In Planning' : c.planStatus === 'jc_created' ? 'JC Created' : c.planStatus?.replaceAll('_', ' ')}</span>
                         {c.jcCode ? <span className="mono" style={{ fontSize: 10, color: 'var(--cyan)', marginLeft: 6 }}>{c.jcCode}</span> : null}
                       </>
                     ) : (
@@ -478,7 +480,7 @@ function LinePanel({
         </div>
         <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap', marginLeft: 'auto' }}>
           <div style={{ textAlign: 'center' }}>
-            <div className="text3" style={{ fontSize: 10 }}>SO QTY</div>
+            <div className="text3" style={{ fontSize: 10 }}>ORDER QTY</div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{line.orderQty}</div>
           </div>
           <div style={{ textAlign: 'center' }}>
@@ -761,10 +763,10 @@ function Chip({ label, icon, tint, qty, total }: { label: string; icon: string; 
 
 function JcStatusBadge({ status }: { status: 'complete' | 'qc_pending' | 'in_progress' | 'no_ops' }): React.JSX.Element {
   const map: Record<typeof status, { cls: string; label: string }> = {
-    complete: { cls: 'b-green', label: 'Complete' },
+    complete: { cls: 'b-green', label: 'Completed' },
     qc_pending: { cls: 'b-amber', label: 'QC Pending' },
     in_progress: { cls: 'b-blue', label: 'In Progress' },
-    no_ops: { cls: 'b-grey', label: 'No Ops' },
+    no_ops: { cls: 'b-grey', label: 'No Operations' },
   };
   const m = map[status];
   return <span className={`badge ${m.cls}`}>{m.label}</span>;

@@ -3,6 +3,7 @@
 // → cancelled=grey.
 
 import type { DcStatus } from '@innovic/shared';
+import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 
 const CLASSES: Record<DcStatus, string> = {
   issued: 'b-amber',
@@ -11,5 +12,5 @@ const CLASSES: Record<DcStatus, string> = {
 };
 
 export function DcStatusBadge(props: { status: DcStatus }) {
-  return <span className={`badge ${CLASSES[props.status]}`}>{props.status}</span>;
+  return <span className={`badge ${CLASSES[props.status]}`}>{DC_STATUS_LABEL[props.status]}</span>;
 }

@@ -186,7 +186,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const tabBar = (
     <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
       {(['so', 'jw'] as const).map((t) => (
-        <button key={t} type="button" onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent', color: tab === t ? 'var(--cyan)' : 'var(--text3)', fontSize: 12, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', marginBottom: -1 }}>{t === 'so' ? '🚚 Customer Dispatch' : '📦 JW Dispatch'}</button>
+        <button key={t} type="button" onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent', color: tab === t ? 'var(--cyan)' : 'var(--text3)', fontSize: 12, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', marginBottom: -1 }}>{t === 'so' ? '🚚 Customer Dispatch' : '📦 JW Return'}</button>
       ))}
     </div>
   );
@@ -233,7 +233,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
           <div>
             <div className="section-hdr" style={{ marginBottom: 0 }}>
-              📦 Dispatch Register
+              📦 Customer Dispatch
             </div>
             <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
               {groups.length} dispatch{groups.length === 1 ? '' : 'es'}
@@ -349,7 +349,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
         </div>
       ) : isError || !data ? (
         <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load'}
+          {error instanceof Error ? error.message : 'Could not load dispatches. Try again.'}
         </div>
       ) : (
         <>
@@ -416,7 +416,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 cancelPending={cancel.isPending}
                 onToggle={() => toggle(g.dispatchId)}
                 onCancel={() => {
-                  if (confirm(`Cancel dispatch ${g.code} (all its lines)? This reverses the dispatched qty + stock.`)) {
+                  if (confirm(`Cancel Dispatch ${g.code}? Stock will be reversed.`)) {
                     cancel.mutate(g.dispatchId);
                   }
                 }}

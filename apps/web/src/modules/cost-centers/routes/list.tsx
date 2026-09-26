@@ -290,7 +290,9 @@ function CostCentersListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load cost centres'}
+          message={
+            error instanceof Error ? error.message : 'Could not load cost centres. Try again.'
+          }
         />
       ) : (
         <Panel bodyPadding="none">
@@ -319,9 +321,10 @@ function CostCentersListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: 'Delete this cost centre?',
-                  message: `${cc.code} — ${cc.name} stops appearing in the Cost Centre Master and in every cost centre picker.`,
-                  pendingLabel: 'Deleting…',
+                  title: `Move cost centre ${cc.code} to Trash?`,
+                  message: `${cc.code} — ${cc.name} stops appearing in the Cost Centre Master and in every cost centre picker. You can restore it from Trash.`,
+                  confirmLabel: 'Move to Trash',
+                  pendingLabel: 'Moving to Trash…',
                 }}
               />
             )}

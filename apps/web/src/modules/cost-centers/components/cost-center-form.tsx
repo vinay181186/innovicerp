@@ -95,7 +95,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             readOnly={isEdit}
             {...register('code', {
               required: !isEdit ? 'Code is required' : false,
-              maxLength: { value: 64, message: 'Max 64 chars' },
+              maxLength: { value: 64, message: 'Code cannot be longer than 64 characters' },
             })}
           />
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
@@ -112,7 +112,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             {...(isEdit ? {} : { placeholder: 'e.g. Machine Shop Floor' })}
             {...register('name', {
               required: 'Name is required',
-              maxLength: { value: 255, message: 'Max 255 chars' },
+              maxLength: { value: 255, message: 'Name cannot be longer than 255 characters' },
             })}
           />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
@@ -154,7 +154,10 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             autoComplete="off"
             {...(isEdit ? {} : { placeholder: 'Brief description of this cost centre' })}
             {...register('description', {
-              maxLength: { value: 1000, message: 'Max 1000 chars' },
+              maxLength: {
+                value: 1000,
+                message: 'Description cannot be longer than 1000 characters',
+              },
             })}
           />
           {errors.description?.message ? (

@@ -33,8 +33,8 @@ export function downloadClientTemplate(): void {
   const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
   ws['!cols'] = [22, 18, 14, 22, 18, 30, 14, 12, 8, 18].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Clients');
-  XLSX.writeFile(wb, 'Client_Import_Template.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, 'Customers');
+  XLSX.writeFile(wb, 'Customer_Import_Template.xlsx');
 }
 
 export interface ClientImportResult {

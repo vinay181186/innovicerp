@@ -34,6 +34,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
 import { useDeliveryChallansList } from '../api';
 import { DcCard } from '../components/dc-card';
+import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { printDispatchRegister } from '../lib/print-dispatch-register';
 import { OspAtVendorRegister } from '@/modules/osp-wip/components/osp-at-vendor-register';
 
@@ -100,7 +101,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
     if (!data) return;
     const bits: string[] = [];
     if (search.search) bits.push(`search "${search.search}"`);
-    if (search.status) bits.push(search.status.replaceAll('_', ' '));
+    if (search.status) bits.push(DC_STATUS_LABEL[search.status]);
     bits.push(`page ${currentPage} of ${totalPages}`);
     // The builder RETURNS false when the popup was blocked — it does not throw.
     // Catching only the throw meant a blocked print did nothing at all and said
@@ -204,14 +205,14 @@ function DeliveryChallansListPage(): React.JSX.Element {
             >
               <div>
                 <div className="section-hdr" style={{ marginBottom: 0 }}>
-                  🚛 OSP / JW Outward DC
+                  🚛 OSP Outward DC
                 </div>
                 <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
                   {total} DC{total === 1 ? '' : 's'}
                   {search.status ? (
                     <>
                       {' '}
-                      · <span className="text2">{search.status}</span> only
+                      · <span className="text2">{DC_STATUS_LABEL[search.status]}</span> only
                     </>
                   ) : null}
                 </div>
@@ -239,7 +240,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
                   <option value="">All statuses</option>
                   {DC_STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s.replaceAll('_', ' ')}
+                      {DC_STATUS_LABEL[s]}
                     </option>
                   ))}
                 </select>
@@ -254,7 +255,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
                   style={{ fontSize: 12 }}
                   onClick={onPrintRegister}
                   disabled={isLoading || !data}
-                  title="Print the dispatch register for the current filter/page"
+                  title="Print the DC register for the current filter/page"
                 >
                   <Printer size={14} /> Print Register
                 </button>
@@ -277,7 +278,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
               items={[
                 {
                   key: 'dispatched',
-                  label: 'Total Dispatched',
+                  label: 'Total Sent to Vendor',
                   count: (data?.summary?.totalDispatched ?? 0).toLocaleString('en-IN', {
                     maximumFractionDigits: 2,
                   }),
@@ -287,13 +288,13 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 },
                 {
                   key: 'entries',
-                  label: 'Dispatch Entries',
+                  label: 'DC Entries',
                   count: data?.summary?.entryCount ?? 0,
                   title: 'Number of DC lines in this filter',
                 },
                 {
                   key: 'items',
-                  label: 'Items Dispatched',
+                  label: 'Items Sent',
                   count: data?.summary?.itemCount ?? 0,
                   color: 'var(--cyan)',
                   title: 'Distinct items sent out in this filter',
@@ -309,7 +310,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
             </div>
           ) : isError ? (
             <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load DCs'}
+              {error instanceof Error ? error.message : 'Could not load DCs. Try again.'}
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>

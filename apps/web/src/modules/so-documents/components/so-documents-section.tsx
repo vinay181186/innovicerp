@@ -16,6 +16,7 @@ import { useMemo, useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
+import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 import {
   uploadSoDocFile,
   useCreateSoDocument,
@@ -94,7 +95,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
   if (isError || !data) {
     return (
       <div className="empty-state" style={{ color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load SO documents'}
+        {error instanceof Error ? error.message : 'Could not load SO documents. Try again.'}
       </div>
     );
   }
@@ -127,7 +128,9 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
         <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
           <div style={{ fontSize: 9, color: 'var(--text3)' }}>STATUS</div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>
-            <span className={`badge b-${soBadgeColor(data.so.status)}`}>{data.so.status}</span>
+            <span className={`badge b-${soBadgeColor(data.so.status)}`}>
+              {soStatusLabel(data.so.status)}
+            </span>
           </div>
         </div>
       </div>

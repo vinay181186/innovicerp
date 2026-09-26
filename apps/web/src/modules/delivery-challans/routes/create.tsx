@@ -70,6 +70,16 @@ export const deliveryChallanNewRoute = createRoute({
 type DcSource = 'po' | 'nc';
 
 // Button text + icons mirror the GRN unified form's TYPE_META style.
+/** PO status → the words the user reads; the stored codes are unchanged. */
+const PO_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  open: 'Open',
+  partial: 'Partly Received',
+  qc_pending: 'QC Pending',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
+};
+
 const SOURCE_META: Record<DcSource, { label: string; icon: string }> = {
   po: { label: 'Against PO', icon: '📦' },
   nc: { label: 'Against NC', icon: '🧾' },
@@ -334,7 +344,9 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                   <td style={{ color: 'var(--purple)' }}>
                     {p.poType === 'service' ? 'Service' : 'Job Work'}
                   </td>
-                  <td className="mono">{p.status}</td>
+                  <td className="mono">
+                    {PO_STATUS_LABEL[p.status] ?? p.status.replaceAll('_', ' ')}
+                  </td>
                   <td className="mono">{p.lineCount}</td>
                   {/* Amber once something has gone out: this PO is part-way
                       through, and the challan being raised is a balance one. */}
@@ -513,7 +525,7 @@ function PoDcFormBody({
       const created = await create.mutateAsync(input);
       exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id: created.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to create DC.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save DC. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -830,7 +842,7 @@ function PoDcFormBody({
           disabled={!canSubmit || submitting}
         >
           {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-          {submitting ? 'Creating…' : '✔ Save DC'}
+          {submitting ? 'Saving…' : 'Save DC'}
         </button>
         <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
           Cancel
@@ -1077,7 +1089,7 @@ function NcDcFormBody({
         }),
       );
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to create DC.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save DC. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -1262,7 +1274,7 @@ function NcDcFormBody({
           disabled={!canSubmit || submitting}
         >
           {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-          {submitting ? 'Creating…' : '✔ Save DC'}
+          {submitting ? 'Saving…' : 'Save DC'}
         </button>
         <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
           Cancel

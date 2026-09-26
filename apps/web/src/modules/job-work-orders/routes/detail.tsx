@@ -129,7 +129,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
+                    Move JWSO {detail.code} to Trash? You can restore it from Trash.
                   </span>
                   <button
                     type="button"
@@ -142,7 +142,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                     ) : (
                       <Trash2 size={13} />
                     )}
-                    Confirm
+                    Move to Trash
                   </button>
                   <button
                     type="button"
@@ -180,7 +180,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             >
               {softDelete.error instanceof Error
                 ? softDelete.error.message
-                : 'Failed to delete job-work order.'}
+                : 'Could not move the JWSO to Trash. Try again.'}
             </div>
           ) : null}
           <DetailGrid detail={detail} />

@@ -74,7 +74,7 @@ export function JwInvoiceView({
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search invoice, date, JWSO, client, part…"
+            placeholder="🔍 Search invoice, date, JWSO, customer, part…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 260, fontSize: 12 }}
@@ -101,7 +101,7 @@ export function JwInvoiceView({
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load JW invoices'}
+              {error instanceof Error ? error.message : 'Could not load JW invoices. Try again.'}
             </div>
           </div>
         ) : data ? (
@@ -197,8 +197,8 @@ export function JwInvoiceView({
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 JW Invoice bills the labour / processing charge for a Job Work Order line (qty × line
-        rate + GST). No material value — the client owns the material.
+        💡 JW Invoice bills the labour / processing charge for a JWSO line (qty × line rate + GST).
+        No material value — the customer owns the material.
       </div>
 
       {showModal ? <NewJwInvoiceModal onClose={() => setShowModal(false)} /> : null}
@@ -274,7 +274,10 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save Invoice. Check the lines and try again.',
+        ),
     });
   };
 

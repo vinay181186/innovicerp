@@ -149,7 +149,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
       await cancel.mutateAsync(dc.id);
       setConfirmCancel(false);
     } catch (e) {
-      setCancelError(e instanceof Error ? e.message : 'Failed to cancel DC.');
+      setCancelError(e instanceof Error ? e.message : 'Could not cancel DC. Try again.');
     }
   };
 
@@ -317,7 +317,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                   <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
-                  <th>Ship qty</th>
+                  <th>Sent Qty</th>
                   <th>Received</th>
                   <th>Rejected</th>
                   <th>Pending</th>

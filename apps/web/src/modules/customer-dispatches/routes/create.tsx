@@ -134,7 +134,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!soId) return setErr('Select an SO');
+    if (!soId) return setErr('Please select an SO');
     if (cards.length === 0) return setErr('Add at least one line');
 
     // Resolve each card → SO line and VALIDATE (no silent clamp): an over-qty is
@@ -173,7 +173,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       });
       exit.leave(goBack);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to create dispatch');
+      setErr(e instanceof Error ? e.message : 'Could not save Dispatch. Try again.');
     }
   }
 
@@ -232,7 +232,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                 }
                 onClick={() => void submit()}
               >
-                {create.isPending ? 'Saving…' : 'Create Dispatch'}
+                {create.isPending ? 'Saving…' : 'Save Dispatch'}
               </button>
             </div>
           </div>

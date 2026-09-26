@@ -78,7 +78,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
       await registerJwDoc(emailFileRef.current, me?.companyId, created.id, created.code, createDoc, 'email_reference', 'Email Reference');
       exit.leave(() => void navigate({ to: '/job-work-orders/$id', params: { id: created.id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create job-work order');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save JWSO. Try again.');
     }
   };
 
@@ -151,7 +151,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
       await registerJwDoc(emailFileRef.current, me?.companyId, id, saved.code, createDoc, 'email_reference', 'Email Reference');
       exit.leave(() => void navigate({ to: '/job-work-orders/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update job-work order');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');
     }
   };
 
