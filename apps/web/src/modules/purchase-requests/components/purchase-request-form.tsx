@@ -12,7 +12,6 @@
 import {
   type CreatePurchaseRequestInput,
   type ListItemsResponse,
-  PR_STATUSES,
   PR_TYPES,
   type PurchaseRequest,
   type PurchaseRequestDetail,
@@ -34,7 +33,7 @@ import {
   PR_USER_ENTERED_FIELDS,
   type PrFormValues,
 } from './pr-form-values';
-import { PR_STATUS_LABELS, PR_TYPE_LABELS } from '../lib/pr-labels';
+import { PR_TYPE_LABELS } from '../lib/pr-labels';
 import { PrVendorField } from './pr-vendor-field';
 
 type FormValues = PrFormValues;
@@ -187,11 +186,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             value={isEdit ? (watch('code') ?? '') : 'Auto-generated on save'}
             onChange={() => undefined}
           />
-          <div className="form-help">
-            {isEdit
-              ? 'PR No. cannot be changed after creation.'
-              : 'Allocated by the system — the next IN-PR-##### in the series.'}
-          </div>
+          {isEdit ? <div className="form-help">PR No. cannot be changed after creation.</div> : null}
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
 
@@ -234,35 +229,9 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             {...register('requiredDate')}
           />
         </div>
-        {/* Status is NOT a field on create: a new PR is always 'open', stamped
-            by the server. Letting it be picked meant a PR could be born
-            'approved' with no approvedBy/approvedAt behind it, or born
-            'po_created' and never convertible. On EDIT the current status is
-            still shown, read-only — it advances only via Approve / Reject /
-            Create PO. */}
-        {isEdit ? (
-          <div className="form-grp">
-            <label className="form-label" htmlFor="status">
-              PR Status
-            </label>
-            <select
-              id="status"
-              className="innovic-select"
-              disabled
-              style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-              {...register('status')}
-            >
-              {PR_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {PR_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
-            <div className="form-help">
-              Status changes via Approve / Reject / Create PO — not here.
-            </div>
-          </div>
-        ) : null}
+        {/* Status is NOT a field, on create or edit: a new PR is always 'open',
+            stamped by the server, and it advances only via Approve / Reject /
+            Create PO. The Edit page header shows the current status badge. */}
 
         <div className="form-grp">
           <label className="form-label" htmlFor="prType">
@@ -283,7 +252,6 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
               id="prType"
               className="innovic-input"
               readOnly
-              title="PR type is fixed when the PR is created"
               style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
               value={PR_TYPE_LABELS[watch('prType') ?? 'standard']}
             />
@@ -299,9 +267,11 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           {isEdit ? (
             <div className="form-help">PR type is fixed at creation.</div>
           ) : (
-            <div className="form-help">
-              Service = buying work (calibration, heat-treat, plating). Its PO sends
-              the item out on a DC instead of receiving stock in.
+            <div
+              className="form-help"
+              title="Service = buying work (calibration, heat-treat, plating). Its PO sends the item out on a DC instead of receiving stock in."
+            >
+              Service = work done outside (DC out).
             </div>
           )}
         </div>

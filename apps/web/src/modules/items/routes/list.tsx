@@ -486,12 +486,6 @@ function ItemsListPage(): React.JSX.Element {
         total={total}
         noun="item"
         limit={LIST_LIMIT}
-        hint={
-          <>
-            Click a row to open the item. · ★ Item Master is for defining items only. Stock /
-            Inventory is managed in <b>Store → Store / Inventory</b>.
-          </>
-        }
         // Excel template + import sit below the count line (mirror of Client
         // and Vendor Master). The file input is hidden and only opened by the
         // button.
@@ -605,8 +599,7 @@ function ImportResultBanner(props: {
                   ✕ Rows not imported ({failures.length})
                 </div>
                 <div className="text3" style={{ marginBottom: 'var(--sp-1)' }}>
-                  ⚠ These rows were rejected on save — the actual reason is shown next to each. Fix
-                  the row in your sheet and re-import.
+                  Not imported — fix and re-import:
                 </div>
                 {chips(failures)}
               </div>
@@ -643,8 +636,7 @@ function ImportResultBanner(props: {
           }
         >
           <div className="text3" style={{ marginBottom: 'var(--sp-1)' }}>
-            These were skipped (they already exist). Remove them from your sheet, or ignore —
-            they’re already saved.
+            Already exist — skipped:
           </div>
           {chips(duplicates)}
         </Banner>

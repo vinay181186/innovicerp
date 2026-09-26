@@ -84,19 +84,11 @@ export function CloseBalanceModal({
               lineHeight: 1.5,
             }}
           >
-            <div>
-              <b className="mono">{bal.ordered}</b> of <b className="mono">{bal.qty}</b> is on
-              purchase orders. Short Close stops the pending{' '}
-              <b className="mono" style={{ color: 'var(--amber)' }}>
-                {bal.balance}
-              </b>{' '}
-              from ever being ordered.
-            </div>
-            <div className="text3" style={{ marginTop: 6 }}>
-              The request still says {bal.qty} was asked for and keeps every purchase order it
-              already has — nothing is cancelled. It simply drops out of the "still to buy" list. To
-              scrap the whole request instead, use Reject.
-            </div>
+            Stop ordering the pending{' '}
+            <b className="mono" style={{ color: 'var(--amber)' }}>
+              {bal.balance}
+            </b>
+            ? Existing POs stay.
           </div>
           <div className="form-grp">
             <label className="form-label" htmlFor="pr-close-balance-reason">

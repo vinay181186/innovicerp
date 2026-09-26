@@ -75,9 +75,7 @@ export function DrawingUploadField({
             Remove
           </button>
         </div>
-      ) : (
-        <div className="form-help">Stored privately; opened via a short-lived link.</div>
-      )}
+      ) : null}
       {err ? <div className="form-error">{err}</div> : null}
       {previewOpen && value ? (
         <FilePreviewModal

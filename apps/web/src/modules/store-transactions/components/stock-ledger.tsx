@@ -81,7 +81,7 @@ export function StockLedger(): React.JSX.Element {
   const columns = useMemo<ColumnDef<StoreTransactionListItem>[]>(
     () => [
       {
-        header: 'Movement Date',
+        header: 'Date',
         accessorKey: 'txnDate',
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.txnDate}</span>,
       },
@@ -101,12 +101,12 @@ export function StockLedger(): React.JSX.Element {
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.itemName ?? ''}</span>,
       },
       {
-        header: 'Movement Type',
+        header: 'Type',
         accessorKey: 'txnType',
         cell: ({ row }) => <TxnTypeBadge type={row.original.txnType} />,
       },
       {
-        header: 'Movement Qty',
+        header: 'Qty',
         accessorKey: 'qty',
         meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => {
@@ -193,13 +193,19 @@ export function StockLedger(): React.JSX.Element {
       {data?.summary ? (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
           <KpiTile label="Movements" value={data.summary.txnCount} color="var(--cyan)" />
-          <KpiTile label="Total In" value={`+${data.summary.totalIn}`} color="var(--green)" />
-          <KpiTile label="Total Out" value={`-${data.summary.totalOut}`} color="var(--red)" />
-          <KpiTile
-            label="Net"
-            value={`${data.summary.net >= 0 ? '+' : ''}${data.summary.net}`}
-            color={data.summary.net >= 0 ? 'var(--green)' : 'var(--red)'}
-          />
+          {/* In / Out / Net only mean something for ONE item — across items they
+              would add kg, Nos and m together. */}
+          {data.summary.itemCount === 1 ? (
+            <>
+              <KpiTile label="Total In" value={`+${data.summary.totalIn}`} color="var(--green)" />
+              <KpiTile label="Total Out" value={`-${data.summary.totalOut}`} color="var(--red)" />
+              <KpiTile
+                label="Net"
+                value={`${data.summary.net >= 0 ? '+' : ''}${data.summary.net}`}
+                color={data.summary.net >= 0 ? 'var(--green)' : 'var(--red)'}
+              />
+            </>
+          ) : null}
           <KpiTile label="Items" value={data.summary.itemCount} />
         </div>
       ) : null}
@@ -217,7 +223,7 @@ export function StockLedger(): React.JSX.Element {
           />
         </div>
         <div>
-          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Movement Type</label>
+          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Type</label>
           <br />
           <select
             className="innovic-select"
@@ -342,8 +348,7 @@ export function StockLedger(): React.JSX.Element {
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
-                    No stock movements found. Transactions are auto-recorded from GRN, Issues,
-                    Dispatch, OSP DC.
+                    No stock movements found.
                   </td>
                 </tr>
               ) : (

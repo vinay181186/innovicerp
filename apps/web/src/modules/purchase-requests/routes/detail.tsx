@@ -355,8 +355,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>
-            Request detail
+          <div className="panel-title" style={{ color: 'var(--blue)' }}>
+            Request Detail
           </div>
         </div>
         <div className="panel-body">
@@ -472,10 +472,13 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
               style={{ color: prBalanceColor(bal.state), fontWeight: 700, whiteSpace: 'nowrap' }}
             >
               {bal.balance < 0 ? `⚠ ${bal.balance}` : String(bal.balance)}
-              <span className="text3" style={{ fontWeight: 400 }}>
-                {' '}
-                · {bal.label}
-              </span>
+              {/* Short closed: the banner above already says so. */}
+              {bal.closed ? null : (
+                <span className="text3" style={{ fontWeight: 400 }}>
+                  {' '}
+                  · {bal.label}
+                </span>
+              )}
             </span>
           }
         />
@@ -504,13 +507,6 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
           label="PO Created At"
           value={<span className="mono">{detail.poCreatedAt ?? '—'}</span>}
         />
-        {bal.closed ? (
-          <Fact
-            label="Short Closed At"
-            title={bal.closedReason ?? ''}
-            value={<span className="mono">{bal.closedAt?.slice(0, 10) ?? '—'}</span>}
-          />
-        ) : null}
       </div>
       <div className="divider" />
       <div style={{ minWidth: 0 }}>

@@ -123,7 +123,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const handleApprove = useCallback(
     (pr: PurchaseRequestListItem): void => {
       setActionError(null);
-      if (!window.confirm(`Approve PR ${pr.code}? A PO can then be made.`)) return;
+      if (!window.confirm(`Approve PR ${pr.code}?`)) return;
       approveMut.mutate(pr.id, {
         onError: (e) =>
           setActionError(e instanceof Error ? e.message : 'Could not approve PR. Try again.'),
@@ -254,12 +254,6 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                 </div>
                 <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
                   {total} request{total === 1 ? '' : 's'}
-                  {search.status ? (
-                    <>
-                      {' '}
-                      · <span className="text2">{PR_STATUS_LABELS[search.status]}</span> only
-                    </>
-                  ) : null}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

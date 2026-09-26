@@ -44,12 +44,7 @@ import {
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
 import { prOrderBalance } from '@/modules/purchase-requests/lib/pr-balance';
 import { PO_FORM_ITEM_DATALIST_ID, type PoFormLineValue, type PoFormValues } from './po-form-types';
-import {
-  PICK_VENDOR_FIRST_PLACEHOLDER,
-  PICK_VENDOR_FIRST_TIP,
-  noOpenPrsMessage,
-  PrPicker,
-} from './pr-picker';
+import { PICK_VENDOR_FIRST_PLACEHOLDER, noOpenPrsMessage, PrPicker } from './pr-picker';
 
 export type PoItemMasterRow = ListItemsResponse['items'][number];
 
@@ -276,19 +271,13 @@ export function PoFormLine({
   // gets to take away.
   const prDisabled = !headerVendorId;
 
-  // ONE note slot per line: amber for "do this first" (the reason the control is
-  // greyed out), blue for "there is nothing here to pick". Never both — the second
-  // only exists once a vendor is set, which is exactly when the first stops. Both
-  // are statements of the current state, so neither is dismissible: hiding one
-  // would leave a dead control with no explanation.
-  let noteText: string | null = null;
-  let noteKind = 'pof-tip-info';
-  if (prDisabled && showPrHints && !lockedPrCode) {
-    noteText = PICK_VENDOR_FIRST_TIP;
-    noteKind = 'pof-tip-warn';
-  } else if (!prDisabled && showPrHints && noPrsForVendor && !lockedPrCode) {
-    noteText = noOpenPrsMessage(vendorName);
-  }
+  // ONE note slot per line, for "there is nothing here to pick" once a vendor is
+  // set. "Select a Vendor first" is said once, by the disabled box's placeholder —
+  // not again as a tooltip and a note row.
+  const noteText: string | null =
+    !prDisabled && showPrHints && noPrsForVendor && !lockedPrCode
+      ? noOpenPrsMessage(vendorName)
+      : null;
 
   return (
     <Fragment>
@@ -298,7 +287,7 @@ export function PoFormLine({
             characters, plus the input's padding and the dropdown caret — and at
             128px the last digit was cut off, which on a document number is the
             one character you cannot afford to lose. Same width as Item Code. */}
-        <td style={{ width: 168 }} title={prDisabled ? PICK_VENDOR_FIRST_TIP : undefined}>
+        <td style={{ width: 168 }}>
           {lockedPrCode ? (
             <span className="pof-prcode" title={lockedPrCode}>
               {lockedPrCode}
@@ -421,7 +410,7 @@ export function PoFormLine({
         <tr className="pof-r-note">
           <td />
           <td colSpan={colCount - 1}>
-            <div className={`pof-tip ${noteKind}`} role="status">
+            <div className="pof-tip pof-tip-info" role="status">
               <span className="pof-tip-t">{noteText}</span>
             </div>
           </td>

@@ -56,7 +56,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
 import { PoSheetTable } from '../components/po-sheet-table';
 import { PoStatusBadge } from '../components/po-status-badge';
-import { PO_STATUS_LABELS, PO_TYPE_LABELS, poStatusLabel } from '../lib/po-labels';
+import { PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 
 // No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
 // PO list-query cap is 200; the count line flags a rare larger set.
@@ -187,14 +187,6 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
 
-  // Legacy L25347-25348: when a filter is on, the panel title names it and a
-  // "Show All" button clears it. Legacy's `_poFlt` is set by the stat cards;
-  // ours by the status / type selects, which drive the same table.
-  const activeFilter = [search.status, search.poType]
-    .filter((v): v is PoStatus | PoType => Boolean(v))
-    .map((v) => (v in PO_TYPE_LABELS ? PO_TYPE_LABELS[v as PoType] : poStatusLabel(v)))
-    .join(', ');
-
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
   // page. `eff` is undefined only while access is still loading — don't block
@@ -314,31 +306,6 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           </div>
         </div>
       </div>
-
-      {activeFilter ? (
-        <div
-          style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12 }}
-        >
-          <span className="text3">
-            Filtered:{' '}
-            <span className="amber" style={{ fontWeight: 700 }}>
-              {activeFilter}
-            </span>
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, status: undefined, poType: undefined, page: 1 }),
-                replace: true,
-              })
-            }
-          >
-            Show All
-          </button>
-        </div>
-      ) : null}
 
       {isLoading ? (
         <div className="panel">

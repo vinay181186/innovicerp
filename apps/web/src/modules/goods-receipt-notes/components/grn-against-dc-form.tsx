@@ -233,7 +233,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
       return;
     }
     if (!receiptDate) {
-      setFormError('Receipt date is required.');
+      setFormError('GRN Date is required.');
       return;
     }
     const checked = lines.map((l) => ({ ...l, error: lineQtyError(l.receiveNow, l.balance) }));
@@ -375,7 +375,6 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
             id="vendorInvoice"
             className="innovic-input"
             autoComplete="off"
-            placeholder="optional"
             value={vendorInvoiceText}
             onChange={(e) => setVendorInvoiceText(e.target.value)}
           />
@@ -388,7 +387,6 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
             id="dcRemarks"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Notes"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
           />
@@ -399,7 +397,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
         className="form-label"
         style={{ fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}
       >
-        Line Items — still out on this challan
+        Line Items
       </div>
 
       <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>

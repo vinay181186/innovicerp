@@ -210,7 +210,6 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = detail.priceVisible === false;
-  const totalValue = detail.lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
 
   return (
     <div>
@@ -440,7 +439,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
               }}
             >
               <div className="fw-700" style={{ color: 'var(--green)' }}>
-                ✅ Approve PO — {detail.code}
+                ✅ Approve PO {detail.code}?
               </div>
               <button
                 type="button"
@@ -451,49 +450,6 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
               </button>
             </div>
             <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-              <div
-                style={{
-                  background: 'var(--bg3)',
-                  padding: 12,
-                  borderRadius: 8,
-                  display: 'flex',
-                  gap: 16,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div>
-                  <span className="text3" style={{ fontSize: 10 }}>
-                    PO
-                  </span>
-                  <br />
-                  <b style={{ color: 'var(--cyan)' }}>{detail.code}</b>
-                </div>
-                <div>
-                  <span className="text3" style={{ fontSize: 10 }}>
-                    VENDOR
-                  </span>
-                  <br />
-                  <b>{detail.vendorName ?? detail.vendorCodeText ?? '—'}</b>
-                </div>
-                <div>
-                  <span className="text3" style={{ fontSize: 10 }}>
-                    LINES
-                  </span>
-                  <br />
-                  <b>{detail.lines.length}</b>
-                </div>
-                {priceHidden ? null : (
-                  <div>
-                    <span className="text3" style={{ fontSize: 10 }}>
-                      VALUE
-                    </span>
-                    <br />
-                    <b style={{ color: 'var(--green)' }}>
-                      ₹{Math.round(totalValue).toLocaleString('en-IN')}
-                    </b>
-                  </div>
-                )}
-              </div>
               <div className="form-grp">
                 <label className="form-label">Approval Remarks</label>
                 <input
@@ -599,7 +555,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                   color: 'var(--text3)',
                 }}
               >
-                PO will be cancelled and sent back to creator for correction.
+                The PO will be cancelled. Its PRs go back to pending for a new PO.
               </div>
               <div className="form-grp">
                 <label className="form-label">

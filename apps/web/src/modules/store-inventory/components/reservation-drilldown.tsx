@@ -81,11 +81,6 @@ export function ReservationDrilldown({
             <b className="mono" style={{ color: 'var(--purple)', fontSize: 16 }}>
               {data?.totalReserved ?? 0}
             </b>
-            <span className="text3">
-              {' '}
-              — promised to the lines below. These pieces are still on the shelf; Physical only
-              changes when they are dispatched or issued.
-            </span>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">

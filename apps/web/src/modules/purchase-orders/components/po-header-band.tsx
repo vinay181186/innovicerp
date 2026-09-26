@@ -101,6 +101,13 @@ export function PoHeaderBand({
 }): React.JSX.Element {
   const address = [vendor?.addressLine1, vendor?.city, vendor?.state].filter(Boolean).join(', ');
   const rejected = Boolean(detail.rejectedAt ?? detail.rejectedBy ?? detail.rejectionReason);
+  const gstParts = (
+    [
+      ['SGST', detail.sgstPct],
+      ['CGST', detail.cgstPct],
+      ['IGST', detail.igstPct],
+    ] as const
+  ).filter(([, pct]) => Number(pct) > 0);
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch' }}>
@@ -248,15 +255,19 @@ export function PoHeaderBand({
         <Col caption="Tax & Approval">
           <Row label="Tax Type" value={detail.taxType ? taxTypeLabel(detail.taxType) : '—'} />
           <Row label="Due Date" value={<span className="mono">{detail.dueDate ?? '—'}</span>} />
-          {detail.totalAmount == null ? null : (
+          {/* Only the rates that apply — a 0% rate is not shown. */}
+          {detail.totalAmount == null || gstParts.length === 0 ? null : (
             <div style={{ fontSize: 11, marginBottom: 6 }}>
               <div className="text3" style={{ marginBottom: 2 }}>
                 GST split
               </div>
               <div className="mono">
-                <span className="text2">SGST</span> {detail.sgstPct}% ·{' '}
-                <span className="text2">CGST</span> {detail.cgstPct}% ·{' '}
-                <span className="text2">IGST</span> {detail.igstPct}%
+                {gstParts.map(([label, pct], i) => (
+                  <span key={label}>
+                    {i > 0 ? ' · ' : null}
+                    <span className="text2">{label}</span> {pct}%
+                  </span>
+                ))}
               </div>
             </div>
           )}
