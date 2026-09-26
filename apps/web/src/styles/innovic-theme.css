@@ -1174,7 +1174,7 @@ table.tbl-ctr td .innovic-select {
 .innovic-input,
 .innovic-select,
 .innovic-textarea {
-  background: var(--bg2);
+  background-color: var(--bg2);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1735,4 +1735,45 @@ input[type='radio'] {
   height: 1px;
   margin: var(--sp-1) 0;
   background: var(--border);
+}
+
+/* ── Select arrow ────────────────────────────────────────────────────────────
+   The browser's own select arrow sat cramped against the text at our 28px
+   height and looked different per browser ("the dropdown padding looks
+   weird", 2026-09-26). One drawn chevron, and room on the right for it. */
+.innovic-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: calc(var(--sp-2) + 16px);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235f6d84' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--sp-2) center;
+  background-size: 10px 6px;
+  text-overflow: ellipsis;
+}
+.innovic-select[multiple] {
+  background-image: none;
+  padding-right: var(--sp-2);
+}
+
+/* ── List filter bar (ui/layout/ListHeader.tsx, row 2) ───────────────────────
+   ERPNext's standard-filter row: search first, then every filter the SAME
+   width, then Clear. Filters used to sit in the title row's toolbar, where the
+   browser squeezed them unevenly and cut date boxes off. The widths here beat
+   the .fw-* helpers on purpose — one filter width for the whole app. */
+.list-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.list-filterbar > .gs-wrap {
+  width: var(--field-lg) !important;
+  flex: 0 0 auto;
+}
+.list-filterbar .innovic-select,
+.list-filterbar .innovic-input:not(.gs-input) {
+  width: 168px !important;
+  flex: 0 0 auto;
 }
