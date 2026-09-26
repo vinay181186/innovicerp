@@ -103,8 +103,6 @@ export function StatStrip({
               style={{
                 fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
                 color: s.active ? (s.color ?? 'var(--cyan)') : 'var(--text3)',
               }}
             >

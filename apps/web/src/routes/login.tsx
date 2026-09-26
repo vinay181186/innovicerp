@@ -13,13 +13,13 @@ import { authErrorMessage } from './auth-error-message';
 import { rootRoute } from './__root';
 
 const emailSchema = z.object({
-  email: z.string().email('Please enter a valid email'),
+  email: z.string().email('Enter a valid email.'),
 });
 type EmailForm = z.infer<typeof emailSchema>;
 
 const passwordSchema = z.object({
-  email: z.string().email('Please enter a valid email'),
-  password: z.string().min(6, 'Password is at least 6 characters'),
+  email: z.string().email('Enter a valid email.'),
+  password: z.string().min(6, 'Password must be at least 6 characters.'),
 });
 type PasswordForm = z.infer<typeof passwordSchema>;
 
@@ -174,13 +174,11 @@ function ResetRequestForm(props: {
     } catch (err) {
       if (err instanceof ApiError) {
         props.onError(
-          err.code === 'network_error'
-            ? 'Could not reach the server. Please try again.'
-            : err.message,
+          err.code === 'network_error' ? 'Could not reach the server. Try again.' : err.message,
         );
         return;
       }
-      props.onError('That request could not be completed. Please try again.');
+      props.onError('Could not send the reset link. Try again.');
       return;
     }
     props.onSent(email);

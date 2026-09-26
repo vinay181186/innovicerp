@@ -58,7 +58,7 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/planning', label: 'SO/JWSO Planning', icon: '📋', formKey: 'plan_create' },
           { to: '/so-overview', label: 'SO Overview', icon: '📊' },
-          { to: '/so-status', label: 'SO Status Review', icon: '📊' },
+          { to: '/so-status', label: 'SO Status Detail', icon: '📊' },
           { to: '/assemblies', label: 'Assembly Tracker', icon: '📦' },
           { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
         ],
@@ -116,7 +116,7 @@ export const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Report',
-        items: [{ to: '/store-inventory', label: 'Store / Inventory', icon: '📦' }],
+        items: [{ to: '/store-inventory', label: 'Store Inventory', icon: '📦' }],
       },
     ],
   },
@@ -136,7 +136,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/production-orders/new', label: 'New Production Order', icon: '🏭', formKey: 'prodorder_create' },
           { to: '/op-entry', label: 'Op Entry', icon: '✚', formKey: 'op_entry' },
           { to: '/jc-ops', label: 'JC Operations', icon: '⨯', formKey: 'jc_create' },
-          { to: '/daily-report', label: 'Daily Report', icon: '📊' },
+          { to: '/daily-report', label: 'Daily Production Report', icon: '📊' },
           { to: '/production-orders/close', label: 'Close Production Order', icon: '🔒', formKey: 'prodorder_create' },
         ],
       },
@@ -161,7 +161,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/op-entry/running', label: 'Live Operations', icon: '🔴' },
           { to: '/job-queue', label: 'Job Queue', icon: '⬛' },
           { to: '/machine-loading', label: 'Machine Loading', icon: '▣' },
-          { to: '/production-schedule', label: 'Production Schedule (Gantt)', icon: '📅' },
+          { to: '/production-schedule', label: 'Production Schedule', icon: '📅' },
         ],
       },
     ],
@@ -177,7 +177,7 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/design-projects', label: 'Design Projects', icon: '📋', formKey: 'dsnproj_create' },
           { to: '/design-issues', label: 'Design Issues', icon: '⚠', formKey: 'dsnissue_create' },
-          { to: '/design-work-log', label: 'Daily Work Log', icon: '⏱', formKey: 'dsnworklog_create' },
+          { to: '/design-work-log', label: 'Design Work Log', icon: '⏱', formKey: 'dsnworklog_create' },
           { to: '/bom-masters', label: 'BOM Master', icon: '📦', formKey: 'bom_create' },
           { to: '/design-tracker', label: 'Design Tracker', icon: '🎨', formKey: 'design_create' },
           {
@@ -199,7 +199,7 @@ export const SECTIONS: readonly NavSection[] = [
       {
         items: [
           { to: '/qc-call-register', label: 'QC Call Register', icon: '📋', formKey: 'qc_submit' },
-          { to: '/qc-command', label: 'QC Command Center', icon: '🔬', formKey: 'qc_submit' },
+          { to: '/qc-command', label: 'QC Center', icon: '🔬', formKey: 'qc_submit' },
           { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬', formKey: 'qc_incoming' },
           { to: '/qc-docs', label: 'QC Documents', icon: '🗃', formKey: 'qcdocs_upload' },
           { to: '/nc-register', label: 'NC Register', icon: '⚠️', formKey: 'nc_dispose' },
@@ -313,8 +313,8 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/users', label: 'User Management', icon: '👥' },
           { to: '/access-control', label: 'Access Control', icon: '🔒' },
-          { to: '/approval-config', label: 'Approval Configuration', icon: '⚖' },
-          // The rules live next door in Approval Configuration; this is the
+          { to: '/approval-config', label: 'Approval Rules', icon: '⚖' },
+          // The rules live next door in Approval Rules; this is the
           // queue of things waiting on a manager (ADR-130).
           { to: '/approvals', label: 'Approvals', icon: '✅' },
           { to: '/print-templates', label: 'Print Templates', icon: '📄' },

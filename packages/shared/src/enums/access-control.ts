@@ -57,11 +57,11 @@ export type AccessAction = (typeof ACCESS_ACTIONS)[number];
 export const ACCESS_FORMS = [
   // Sales
   { key: 'so_create', dept: 'sales', label: 'SO Master' },
-  { key: 'jw_create', dept: 'sales', label: 'JW Master' },
-  { key: 'client_create', dept: 'sales', label: 'Client Master' },
-  { key: 'dispatch_create', dept: 'sales', label: 'Dispatch Register' },
+  { key: 'jw_create', dept: 'sales', label: 'JWSO Master' },
+  { key: 'client_create', dept: 'sales', label: 'Customer Master' },
+  { key: 'dispatch_create', dept: 'sales', label: 'Customer Dispatch' },
   // Planning
-  { key: 'plan_create', dept: 'planning', label: 'SO/JW Planning' },
+  { key: 'plan_create', dept: 'planning', label: 'SO/JWSO Planning' },
   // Production
   { key: 'jc_create', dept: 'production', label: 'Job Cards' },
   { key: 'prodorder_create', dept: 'production', label: 'Production Orders' },
@@ -71,12 +71,12 @@ export const ACCESS_FORMS = [
   { key: 'operator_create', dept: 'production', label: 'Operator Master' },
   { key: 'rawmat_create', dept: 'production', label: 'Raw Material Master' },
   // Design
-  { key: 'routecard_create', dept: 'design', label: 'Route Cards' },
+  { key: 'routecard_create', dept: 'design', label: 'Route Card Master' },
   { key: 'bom_create', dept: 'design', label: 'BOM Master' },
   { key: 'design_create', dept: 'design', label: 'Design Tracker' },
   { key: 'dsnproj_create', dept: 'design', label: 'Design Projects' },
   { key: 'dsnissue_create', dept: 'design', label: 'Design Issues' },
-  { key: 'dsnworklog_create', dept: 'design', label: 'Daily Work Log' },
+  { key: 'dsnworklog_create', dept: 'design', label: 'Design Work Log' },
   { key: 'dsndcr_create', dept: 'design', label: 'Design DCR/DCN' },
   // Store
   { key: 'item_create', dept: 'store', label: 'Item Master' },
@@ -99,10 +99,10 @@ export const ACCESS_FORMS = [
   { key: 'po_create', dept: 'purchase', label: 'Purchase Orders' },
   { key: 'vendor_create', dept: 'purchase', label: 'Vendor Master' },
   { key: 'oj_create', dept: 'purchase', label: 'Outsource Jobs' },
-  { key: 'ospdc_create', dept: 'purchase', label: 'OSP DC & Outward' },
+  { key: 'ospdc_create', dept: 'purchase', label: 'OSP Outward DC' },
   { key: 'servicepo_create', dept: 'purchase', label: 'Service PO' },
   // Finance
-  { key: 'cc_create', dept: 'finance', label: 'Cost Center Master' },
+  { key: 'cc_create', dept: 'finance', label: 'Cost Centre Master' },
   { key: 'invoice_create', dept: 'finance', label: 'Invoices' },
   // System
   { key: 'user_manage', dept: 'system', label: 'User Management' },

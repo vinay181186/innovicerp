@@ -176,9 +176,14 @@ export function RowActions({
       {button('delete', deleteClick, deleteDisabled)}
       {confirming && deleteConfirm ? (
         <ConfirmDialog
-          title={deleteConfirm.title ?? 'Delete this record?'}
-          message={deleteConfirm.message ?? 'This cannot be undone.'}
-          confirmLabel={deleteConfirm.confirmLabel ?? 'Delete'}
+          title={deleteConfirm.title ?? 'Move this record to Trash?'}
+          message={
+            deleteConfirm.message ??
+            (deleteConfirm.title ? 'This cannot be undone.' : 'You can restore it from Trash.')
+          }
+          confirmLabel={
+            deleteConfirm.confirmLabel ?? (deleteConfirm.title ? 'Delete' : 'Move to Trash')
+          }
           cancelLabel={deleteConfirm.cancelLabel ?? 'Cancel'}
           tone="danger"
           onCancel={() => setConfirming(false)}

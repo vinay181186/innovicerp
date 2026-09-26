@@ -143,32 +143,34 @@ export function renderCode(
   return <span title="No detail page for this document type">{code}</span>;
 }
 
+// The round-5 status palette (same as ui/core/StatusBadge's `doc` map):
+// grey not started / cancelled, blue open / pending, amber under way,
+// green finished, red a fault.
 function statusBadgeClass(status: string | null): string {
   switch (status) {
     case 'open':
-    case 'in_planning':
-    case 'draft':
     case 'pending':
+    case 'approved':
+      return 'b-blue';
     case 'unpaid':
+    case 'in_progress':
+    case 'partial':
+    case 'partially_paid':
+    case 'sent':
       return 'b-amber';
     case 'completed':
     case 'closed':
     case 'paid':
-    case 'approved':
     case 'received':
     case 'dispatched':
-      return 'b-green';
-    case 'in_progress':
+    case 'accepted':
     case 'assembled':
-    case 'partial':
-    case 'partially_paid':
-    case 'sent':
-      return 'b-blue';
-    case 'cancelled':
+      return 'b-green';
     case 'rejected':
     case 'overdue':
       return 'b-red';
     default:
+      // draft, in_planning, cancelled, short_closed …
       return 'b-grey';
   }
 }
@@ -257,10 +259,7 @@ function SectionBlock({
   if (nonEmpty.length === 0) return null;
   return (
     <div style={{ marginBottom: 18 }}>
-      <div
-        className="text3"
-        style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}
-      >
+      <div className="text3" style={{ fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
         {heading}
       </div>
       {nonEmpty.map((s) => (
@@ -274,13 +273,12 @@ export function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.
   if (events.length === 0) return null;
   return (
     <div>
-      <div
-        className="text3"
-        style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}
-      >
-        🕒 Document Timeline
+      <div className="text3" style={{ fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
+        Document Timeline
       </div>
-      <ul style={{ listStyle: 'none', margin: 0, padding: 0, borderLeft: '2px solid #e5e7eb' }}>
+      <ul
+        style={{ listStyle: 'none', margin: 0, padding: 0, borderLeft: '2px solid var(--border)' }}
+      >
         {events.map((e, idx) => (
           <li
             key={`${e.code ?? e.label}-${idx}`}
@@ -294,7 +292,7 @@ export function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                background: '#9ca3af',
+                background: 'var(--text3)',
               }}
             />
             <span className="text2" style={{ fontSize: 11, marginRight: 8 }}>

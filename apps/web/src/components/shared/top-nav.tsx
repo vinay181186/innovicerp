@@ -34,6 +34,7 @@ import { useEffect, useRef, useState } from 'react';
 import { GlobalSearch } from '@/components/shared/global-search';
 import { canViewForm, useMyAccess } from '@/lib/access-control';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
+import { roleLabel } from '@/lib/role-label';
 import { signOut, useSession } from '@/lib/session';
 import { usePendingTimeChangeCount } from '@/modules/op-entry/api';
 import { Icon } from '@/ui/core';
@@ -217,7 +218,10 @@ export function TopNav(): React.JSX.Element {
         >
           <Icon name="log-out" size={15} />
         </button>
-        <span className="tn-avatar" title={`${me?.email ?? 'Not signed in'} · ${me?.role ?? ''}`}>
+        <span
+          className="tn-avatar"
+          title={me?.email ? `${me.email} · ${roleLabel(me.role)}` : 'Not signed in'}
+        >
           {initials(me?.email)}
         </span>
       </div>

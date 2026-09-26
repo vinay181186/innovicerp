@@ -158,13 +158,14 @@ export function FileField({
   }
 
   const isImage = variant === 'image';
+  // Only what the user needs to know; how the file is stored is not it.
   const hint =
     help ??
-    (isImage
-      ? attached
-        ? 'Shown as a small thumbnail beside the item code on every list. Click it to see it large.'
-        : 'Optional. Resized in the browser before upload, so any photo or render works.'
-      : 'Stored privately; opened via a short-lived link.');
+    (isImage && attached
+      ? 'Shown as a small thumbnail beside the item code on every list. Click it to see it large.'
+      : isImage
+        ? 'Optional.'
+        : '');
 
   return (
     <FormField
@@ -209,7 +210,7 @@ export function FileField({
                 </button>
               ) : null}
             </div>
-            <div className="form-help">{hint}</div>
+            {hint ? <div className="form-help">{hint}</div> : null}
           </div>
           <input
             ref={hiddenInput}
@@ -244,9 +245,9 @@ export function FileField({
                 Remove
               </button>
             </div>
-          ) : (
+          ) : hint ? (
             <div className="form-help">{hint}</div>
-          )}
+          ) : null}
         </>
       )}
     </FormField>

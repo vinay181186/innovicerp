@@ -81,8 +81,6 @@ export function Timeline({
         className="text3"
         style={{
           fontSize: 'var(--fs-xs)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
           marginBottom: 'var(--sp-2)',
         }}
       >

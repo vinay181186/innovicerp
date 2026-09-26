@@ -34,8 +34,8 @@ describe('amountInWords', () => {
 
 describe('fmtDate', () => {
   it('reformats YYYY-MM-DD to dd-MM-yyyy with no timezone shift', () => {
-    expect(fmtDate('2026-05-27')).toBe('27-05-2026');
-    expect(fmtDate('2026-05-27T10:00:00Z')).toBe('27-05-2026');
+    expect(fmtDate('2026-05-27')).toBe('27-May-2026');
+    expect(fmtDate('2026-05-27T10:00:00Z')).toBe('27-May-2026');
   });
   it('returns empty for nullish', () => {
     expect(fmtDate(null)).toBe('');

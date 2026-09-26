@@ -12,7 +12,7 @@
 // hard-coded block.
 
 import type { Company } from '@innovic/shared';
-import { format } from 'date-fns';
+import { fmtDateTime } from '../date';
 import { companyAddressLines } from './company';
 import { esc } from './doc-print';
 import { letterheadLogoHtml } from './letterhead';
@@ -86,9 +86,8 @@ export function printWindow(args: {
   return true;
 }
 
-// Convenience for "Printed: <now>" meta + section markup. Same day-month-year
-// order as the sheet's dates (challanDate), never the browser's locale — a PC
-// set to US English used to print 9/26/2026.
+// Convenience for "Printed: <now>" meta + section markup. The app's one
+// display format (lib/date, IST, 24-hour), never the browser's locale.
 export function printedMeta(): string {
-  return `Printed: ${format(new Date(), 'dd MMM yyyy, h:mm a')}`;
+  return `Printed: ${fmtDateTime(new Date().toISOString())}`;
 }

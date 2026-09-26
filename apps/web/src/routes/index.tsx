@@ -1,5 +1,5 @@
 // Dashboard / home landing — mirror of legacy renderHome (L2486). Role-aware
-// (admin / operator / specialist) with Alerts, Widgets and Customize modes, a
+// (admin / operator / specialist) with Widgets and Customize modes, a
 // My Work panel, and a greeting header. Replaces the old KPI-tiles-only page.
 
 import { createRoute } from '@tanstack/react-router';
@@ -9,7 +9,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useMarkTasksViewed } from '@/modules/tasks/api';
 import { dashboardKeys, useHome } from '@/modules/dashboard/api';
 import { HomeAdmin } from '@/modules/dashboard/components/home-admin';
-import { HomeAlerts } from '@/modules/dashboard/components/home-alerts';
 import { HomeCustomize } from '@/modules/dashboard/components/home-customize';
 import { HomeOperator } from '@/modules/dashboard/components/home-operator';
 import { HomeSpecialist } from '@/modules/dashboard/components/home-specialist';
@@ -24,7 +23,8 @@ export const indexRoute = createRoute({
   component: IndexPage,
 });
 
-type Mode = 'home' | 'alerts' | 'widgets' | 'customize';
+// No Alerts mode: it repeated Tasks & Alerts › Alerts one click away.
+type Mode = 'home' | 'widgets' | 'customize';
 
 function IndexPage(): React.JSX.Element {
   const { data: home, isLoading, isError, error } = useHome();
@@ -65,29 +65,10 @@ function IndexPage(): React.JSX.Element {
             {home.dateLabel} · <b style={{ color: 'var(--text2)' }}>{roleLabel(home.role)}</b>
           </div>
         </div>
-        {/* These four switch the page's whole content, so they are a tab set in
+        {/* These switch the page's whole content, so they are a tab set in
             behaviour if not in markup. aria-pressed says which one is on —
             previously the active state was colour only (the `active` class). */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {mode === 'alerts' ? (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ fontSize: 11 }}
-              onClick={() => setMode('home')}
-            >
-              Overview
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ fontSize: 11 }}
-              onClick={() => setMode('alerts')}
-            >
-              Alerts
-            </button>
-          )}
           <button
             type="button"
             className={`btn btn-ghost ${mode === 'widgets' ? 'active' : ''}`}
@@ -106,16 +87,14 @@ function IndexPage(): React.JSX.Element {
           >
             Customize
           </button>
-          {/* Icon-only: the emoji is the whole label, so it needs a real name. */}
           <button
             type="button"
             className="btn btn-ghost"
             style={{ fontSize: 11 }}
-            title="Refresh"
             aria-label="Refresh dashboard"
             onClick={() => void qc.invalidateQueries({ queryKey: dashboardKeys.all })}
           >
-            <span aria-hidden="true">🔄</span>
+            Refresh
           </button>
         </div>
       </div>
@@ -124,8 +103,6 @@ function IndexPage(): React.JSX.Element {
         <HomeCustomize onClose={() => setMode('home')} />
       ) : mode === 'widgets' ? (
         <HomeWidgets quickLinkPages={quickLinkPages} />
-      ) : mode === 'alerts' ? (
-        <HomeAlerts quickLinkPages={quickLinkPages} />
       ) : (
         <>
           <MyWorkPanel mode={home.layout === 'operator' ? 'strip' : 'full'} />

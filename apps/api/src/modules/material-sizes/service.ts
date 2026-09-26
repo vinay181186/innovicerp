@@ -99,7 +99,7 @@ export async function getMaterialSize(id: string, user: AuthContext): Promise<Ma
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Material size ${id} not found`);
+    if (!row) throw new NotFoundError('Size not found. Refresh the page.');
     return row as unknown as MaterialSize;
   });
 }
@@ -311,7 +311,7 @@ export async function updateMaterialSize(
         ),
       )
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Material size ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('Size not found. Refresh the page.');
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.name !== undefined) updates.name = input.name.trim();
@@ -344,7 +344,7 @@ export async function softDeleteMaterialSize(id: string, user: AuthContext): Pro
         ),
       )
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Material size ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('Size not found. Refresh the page.');
     // Soft delete only. Plans and Job Cards already holding this size keep
     // their text snapshot, so nothing they print changes.
     await tx

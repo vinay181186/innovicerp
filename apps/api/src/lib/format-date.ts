@@ -32,3 +32,16 @@ export function fmtDate(d: Date | string | null | undefined): string {
   const dd = String(ist.getUTCDate()).padStart(2, '0');
   return `${dd}-${MONTHS[ist.getUTCMonth()]}-${ist.getUTCFullYear()}`;
 }
+
+/** DD-MMM-YYYY HH:mm in IST, 24-hour (26-Sep-2026 15:45). A bare calendar date
+ *  has no time, so it prints as the date alone. '' for null/empty. */
+export function fmtDateTime(d: Date | string | null | undefined): string {
+  if (d == null || d === '') return '';
+  if (typeof d === 'string' && DATE_ONLY.test(d)) return fmtDate(d);
+  const date = typeof d === 'string' ? new Date(d.replace(' ', 'T')) : d;
+  if (Number.isNaN(date.getTime())) return typeof d === 'string' ? d : '';
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const hh = String(ist.getUTCHours()).padStart(2, '0');
+  const mi = String(ist.getUTCMinutes()).padStart(2, '0');
+  return `${fmtDate(date)} ${hh}:${mi}`;
+}

@@ -7,6 +7,7 @@
 // email, the "check your inbox" card and the reset page all say the same.
 
 import { RESET_LINK_VALID_MINUTES } from '@innovic/shared';
+import { fmtDateTime } from '../../lib/format-date';
 
 const FOOTER = 'Innovic Technology — Innovic ERP';
 
@@ -33,14 +34,9 @@ export function originHost(origin: string): string {
   }
 }
 
-/** "19 Sep 2026, 3:42 pm IST" — the user's wording. */
+/** "19-Sep-2026 15:42 IST" — the app's one date-time format (lib/format-date). */
 export function formatIst(at: Date): string {
-  const formatted = new Intl.DateTimeFormat('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(at);
-  return `${formatted} IST`;
+  return `${fmtDateTime(at)} IST`;
 }
 
 export interface EmailBody {

@@ -15,7 +15,7 @@
 // scoped block deleted, so there is one style here and not two that can drift.
 //
 // Two column sets, one sheet:
-//   'challan'  Sr · Item detail · UOM · HSN · Qty · Remarks
+//   'challan'  Sr · Item detail · UOM · HSN (only when a line has one) · Qty · Remarks
 //   'po'       Sr · Item detail · UOM · Qty · Rate · Amount   (+ money totals)
 //   'grn'      Sr · Item detail · Received · Accepted · Rejected · QC status
 //              (no UOM: a GRN line does not carry one, so the column was blank
@@ -37,6 +37,7 @@
 
 import { substituteTemplateVars } from '@innovic/shared';
 import { addMonths, format, parseISO } from 'date-fns';
+import { fmtDate } from '../date';
 import { COMPANY_PAN, type DocCompany, esc, nl2br } from './doc-print';
 import { INNOVIC_LOGO_DATA_URI } from './letterhead-logo';
 
@@ -140,19 +141,23 @@ export interface SheetPrintModel {
    *  challans print one; a purchase order has no such party, so its signature
    *  strip is two panels wide. Defaults to the challan's wording. */
   receiverCell?: string;
+  /** Leave out the blank "Prepared By" foot panel. For documents that already
+   *  name their raiser in a field (PO / Service PO: "Our Contact Person"; the
+   *  JW invoice). The Tax Invoice and the challans keep it. */
+  hidePreparedBy?: boolean;
   opts?: { testBanner?: boolean };
 }
 
 /** Challan date + 3 months, in the sheet's date format. Blank in, blank out. */
 export function challanEndDate(dcDate: string | null | undefined): string {
   const d = parseSheetDate(dcDate);
-  return d ? format(addMonths(d, CHALLAN_VALIDITY_MONTHS), 'dd MMM yyyy') : '';
+  return d ? fmtDate(format(addMonths(d, CHALLAN_VALIDITY_MONTHS), 'yyyy-MM-dd'), '') : '';
 }
 
-/** The sheet's date format: 06 Sep 2026. */
+/** The sheet's date format — the app's one display format (lib/date): 06-Sep-2026. */
 export function challanDate(dcDate: string | null | undefined): string {
   const d = parseSheetDate(dcDate);
-  return d ? format(d, 'dd MMM yyyy') : '';
+  return d ? fmtDate(format(d, 'yyyy-MM-dd'), '') : '';
 }
 
 // Date-only strings parse as LOCAL midnight through parseISO, so no timezone
@@ -594,7 +599,11 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   // whose lines actually have one — a stock purchase order, a job-work invoice
   // and the job card print are unchanged, six columns as before.
   const showPol = lines.some((l) => (l.pol ?? '').trim() !== '');
-  const cols = showPol ? COLS + 1 : COLS;
+  // HSN earns its challan column only when a line carries one; otherwise the
+  // column printed a blank dotted rule on every row of every challan.
+  const showHsn = !po && !grn && lines.some((l) => (l.hsn ?? '').trim() !== '');
+  const hsnDropped = !po && !grn && !showHsn;
+  const cols = (showPol ? COLS + 1 : COLS) - (hsnDropped ? 1 : 0);
   const polHead = showPol ? '<td class="colh ctr" style="width:13mm">POL</td>' : '';
 
   const columnHeads = po
@@ -617,7 +626,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       polHead +
       '<td class="colh">Item Code</td>' +
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
-      '<td class="colh ctr" style="width:19mm">HSN</td>' +
+      (showHsn ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
       '<td class="colh" style="width:62mm">Remarks</td>';
 
@@ -647,7 +656,8 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       const hsn = l.hsn ? esc(l.hsn) : '<span class="blank"></span>';
       const remarks = l.remarks ? nl2br(l.remarks) : '';
       return (
-        `${lead}<td class="ctr">${hsn}</td>` +
+        lead +
+        (showHsn ? `<td class="ctr">${hsn}</td>` : '') +
         `<td class="qty">${esc(l.qty)}</td>` +
         `<td class="rem">${remarks}</td></tr>`
       );
@@ -661,9 +671,12 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   // Every label colspan below counts the leading columns, so each grows by one
   // when the POL column is there.
   const lbl = (n: number): number => (showPol ? n + 1 : n);
+  // The unit prints IN the quantity cell ("120 NOS"): on its own it landed
+  // under Rate / Remarks and read as a rate.
+  const totalQtyText = esc([model.totalQty, model.totalUom].filter(Boolean).join(' '));
   const qtyTotalRow = po
     ? `<tr class="total"><td colspan="${lbl(3)}" class="sumlbl">${qtyLabel}</td>` +
-      `<td class="qty">${esc(model.totalQty)}</td><td class="ctr">${esc(model.totalUom)}</td><td></td></tr>`
+      `<td class="qty">${totalQtyText}</td><td></td><td></td></tr>`
     : grn
       ? // Received / accepted / rejected each get their own total, because the
         // three are the whole point of the document.
@@ -672,8 +685,8 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         `<td class="qty">${esc(model.totalAccepted ?? '')}</td>` +
         `<td class="qty">${esc(model.totalRejected ?? '')}</td>` +
         `<td></td></tr>`
-      : `<tr class="total"><td colspan="${lbl(4)}" class="sumlbl">${qtyLabel}</td>` +
-      `<td class="qty">${esc(model.totalQty)}</td><td>${esc(model.totalUom)}</td></tr>`;
+      : `<tr class="total"><td colspan="${lbl(showHsn ? 4 : 3)}" class="sumlbl">${qtyLabel}</td>` +
+        `<td class="qty">${totalQtyText}</td><td></td></tr>`;
 
   const money = model.money;
   const moneyRows = money
@@ -690,16 +703,25 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   const wordsRow = money?.amountInWords
     ? sectionRow(
         `<div class="terms words"><b>Amount in Words</b><br><i>${esc(money.amountInWords)}</i></div>`,
+        cols,
       )
     : '';
 
   const receiver =
     model.receiverCell ?? (po ? '' : 'Received By (Vendor)<br>Name, Sign &amp; Date');
+  // A document that already names its raiser (hidePreparedBy: PO / Service PO
+  // "Our Contact Person", JW invoice) prints no blank "Prepared By" box. When
+  // the signatory is then the only panel it sits in the right half of the same
+  // two-panel strip.
+  const signatory = signature || `Authorised Signatory<br>for ${esc(company.name)}`;
   const signCells = [
-    'Prepared By',
-    signature || `Authorised Signatory<br>for ${esc(company.name)}`,
+    ...(model.hidePreparedBy ? [] : ['Prepared By']),
+    signatory,
     ...(receiver ? [receiver] : []),
   ];
+  const lone = signCells.length === 1;
+  const signGridCols = lone ? 2 : signCells.length;
+  const signCellStyle = lone ? ' style="grid-column:2;border-left:1px solid var(--paper-rule)"' : '';
 
   return `
   ${model.opts?.testBanner ? '<div class="no-print test-banner">ⓘ TEST PRINT — Sample data shown. Real data is substituted on actual prints.</div>' : ''}
@@ -715,20 +737,22 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         ${sectionRow(
           `<div class="split"><div>${boxHtml(model.recipient, '', model.shipTo)}</div>` +
             `<div>${boxHtml(model.document, PAGE_OF_ROW)}</div></div>`,
+          cols,
         )}
         <tr>${columnHeads}</tr>
         ${itemRows}
         ${qtyTotalRow}
         ${moneyRows}
         ${wordsRow}
-        ${specialNotes ? sectionRow(`<div class="terms"><b>Special Notes</b><br>${specialNotes}</div>`) : ''}
-        ${terms ? sectionRow(`<div class="terms"><b>Terms &amp; Conditions</b><br>${terms}</div>`) : ''}
+        ${specialNotes ? sectionRow(`<div class="terms"><b>Special Notes</b><br>${specialNotes}</div>`, cols) : ''}
+        ${terms ? sectionRow(`<div class="terms"><b>Terms &amp; Conditions</b><br>${terms}</div>`, cols) : ''}
         ${sectionRow(
-          `<div class="signs" style="grid-template-columns:repeat(${signCells.length},1fr)">${signCells
-            .map((c) => `<div>${c}</div>`)
+          `<div class="signs" style="grid-template-columns:repeat(${signGridCols},1fr)">${signCells
+            .map((c) => `<div${signCellStyle}>${c}</div>`)
             .join('')}</div>`,
+          cols,
         )}
-        ${footer ? sectionRow(`<div class="foot">${footer}</div>`) : ''}
+        ${footer ? sectionRow(`<div class="foot">${footer}</div>`, cols) : ''}
       </tbody>
     </table>
   </article>`;

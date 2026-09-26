@@ -149,11 +149,19 @@ export type NcRegisterListItem = z.infer<typeof ncRegisterListItemSchema>;
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
 export const createNcRegisterInputSchema = z.object({
-  code: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen'),
+  // NC No. is optional: blank (or omitted) means the server assigns the next
+  // number from the company's NC series (NC-#####), like an ERPNext naming
+  // series. A code that IS sent is kept, subject to the duplicate check.
+  code: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen')
+      .optional(),
+  ),
   ncDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ncDate must be YYYY-MM-DD'),
   jobCardId: z.string().uuid(),
   jcOpId: z.string().uuid().optional(),

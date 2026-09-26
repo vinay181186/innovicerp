@@ -16,8 +16,7 @@
 //     because this mirrors the long-standing PO line pattern;
 //   • EXACT, case-insensitive code match only — never fuzzy;
 //   • a match auto-fills the name, locks it read-only and paints it derived
-//     (.is-derived), with the exact tooltip "Auto-filled from Item Master
-//     (item code is the key)";
+//     (.is-derived) -- no tooltip: the grey derived look says it;
 //   • a MISS clears itemId to null but LEAVES THE TYPED NAME ALONE — off-master
 //     items are allowed here, deliberately unlike use-field-cascade's "a miss
 //     resets everything";
@@ -143,7 +142,6 @@ export function LineItemPicker({
           state={matchedItem ? 'derived' : undefined}
           autoComplete="off"
           readOnly={nameLocked}
-          title={matchedItem ? 'Auto-filled from Item Master (item code is the key)' : undefined}
           value={name}
           onChange={(e) =>
             onChange({

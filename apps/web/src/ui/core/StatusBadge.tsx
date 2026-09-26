@@ -1,9 +1,15 @@
 // StatusBadge — the ONE document-status chip.
 //
-// MAP and LABELS are carried VERBATIM from
-// design-ref/components/core/StatusBadge.jsx. Do not "tidy" a tone here: each
-// one reproduces a legacy colour decision, and several look wrong out of
-// context on purpose (see the notes under the map).
+// MAP and LABELS started as a copy of design-ref/components/core/StatusBadge.jsx.
+// Round 5 (owner, 2026-09-26) set ONE palette for every status, and the map now
+// follows it:
+//   grey  — Draft / Not Started / To Do / Waiting / Cancelled / Short Closed
+//   blue  — Open / Pending / Approved (awaiting the next step)
+//   amber — under way: In Progress, Partly …, In Production, At Vendor, QC Pending
+//   green — Running; Completed / Closed / Received / Accepted / Dispatched / Paid
+//   red   — Rejected / Overdue / Critical / Blocked / Down
+// Kinds that are not a document status (ncdisp, txn, rating, grn source) keep
+// their own colours.
 //
 // This component replaces eleven per-module badge files in Phase 4:
 //   sales-orders/components/so-status-badge.tsx          → kind="so"
@@ -64,16 +70,16 @@ export type StatusKind =
  * A tone, or '' for a DELIBERATELY UNFILLED badge. The legacy stylesheet
  * defined `.b-yellow` / `.b-running` only inside the print window, so on
  * screen those three JC-op states rendered as a bare `.badge`. Wave 2 (owner)
- * gave in_progress (amber) and running (green) real tones; at_vendor stays bare.
+ * gave in_progress (amber) and running (green) real tones; round 5 made at_vendor amber.
  */
 type StatusTone = BadgeTone | '';
 
 const MAP: Record<StatusKind, Record<string, StatusTone>> = {
-  so: { draft: 'amber', open: 'blue', closed: 'green', dispatched: 'cyan', cancelled: 'grey' },
+  so: { draft: 'grey', open: 'blue', closed: 'green', dispatched: 'green', cancelled: 'grey' },
   // Wave 2 (owner): one colour per state across Plan / Production Order / JC /
   // Op badges — open/pending neutral or blue, in progress amber, finished green,
   // stopped red or grey. Hence JC complete green, op waiting grey.
-  jc: { open: 'grey', qc_pending: 'amber', complete: 'green', closed: 'green', no_ops: 'red' },
+  jc: { open: 'blue', qc_pending: 'amber', complete: 'green', closed: 'green', no_ops: 'red' },
   jcop: {
     waiting: 'grey',
     available: 'blue',
@@ -83,14 +89,14 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     running: 'green',
     qc_pending: 'amber',
     complete: 'green',
-    pr_raised: 'amber',
+    pr_raised: 'blue',
     po_created: 'blue',
-    at_vendor: '',
-    received: 'cyan',
-    ready_for_pr: 'amber',
+    at_vendor: 'amber',
+    received: 'amber',
+    ready_for_pr: 'blue',
     outsource: 'amber',
   },
-  pr: { open: 'amber', approved: 'blue', po_created: 'green', cancelled: 'red' },
+  pr: { open: 'blue', approved: 'blue', po_created: 'green', cancelled: 'grey' },
   po: {
     draft: 'grey',
     open: 'blue',
@@ -99,19 +105,19 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     closed: 'green',
     cancelled: 'grey',
   },
-  // ADR-182 — `short_closed` is red: the order was stopped, not finished.
-  // Wave 2: open blue (not started), partly closed amber (under way).
-  prodorder: { open: 'blue', partially_closed: 'amber', closed: 'green', short_closed: 'red' },
-  grnqc: { pending: 'amber', in_progress: 'blue', completed: 'green' },
+  // ADR-182 — `short_closed` means the order was stopped, not finished; the
+  // round-5 palette draws it grey with Cancelled (a stop, not a fault).
+  prodorder: { open: 'blue', partially_closed: 'amber', closed: 'green', short_closed: 'grey' },
+  grnqc: { pending: 'amber', in_progress: 'amber', completed: 'green' },
   dc: { issued: 'amber', received: 'green', cancelled: 'grey' },
   nc: {
-    pending: 'amber',
+    pending: 'blue',
     disposed: 'blue',
     under_rework: 'amber',
     under_repair: 'amber',
-    sent_to_vendor: 'blue',
-    received_qc_pending: 'blue',
-    rework_done: 'cyan',
+    sent_to_vendor: 'amber',
+    received_qc_pending: 'amber',
+    rework_done: 'blue',
     closed: 'green',
   },
   ncdisp: {
@@ -135,7 +141,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
   // but `active` and `obsolete` are not in it at all, so the whole set is
   // stated here rather than half-inherited. Carried from
   // bom-master/routes/list.tsx and the identical copy on its detail page.
-  bom: { draft: 'amber', active: 'green', obsolete: 'red' },
+  bom: { draft: 'grey', active: 'green', obsolete: 'grey' },
   // Plan status, two maps because a plan has two different statuses drawn in
   // the same column (modules/plans/routes/list.tsx): the STORED planStatus for
   // old plans, and the DERIVED ADR-170 status for route-card-driven ones. They
@@ -148,8 +154,8 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
   plan: {
     in_planning: 'grey',
     planned: 'blue',
-    jc_created: 'cyan',
-    pr_created: 'cyan',
+    jc_created: 'amber',
+    pr_created: 'amber',
     in_production: 'amber',
     complete: 'green',
     cancelled: 'grey',
@@ -165,7 +171,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
   // machines/routes/list.tsx each declared for themselves. The generic `doc`
   // map has none of these four words, so every machine would fall to grey and
   // Down would stop reading as the alarm the shop floor treats it as.
-  machine: { running: 'blue', idle: 'grey', maintenance: 'amber', down: 'red' },
+  machine: { running: 'green', idle: 'grey', maintenance: 'amber', down: 'red' },
   // Master records that are simply switched off — clients, cost centres,
   // operators, vendors. Inactive is GREY, not red: red is the alarm colour and
   // a deactivated master is not a fault, it is just not in use. This restores
@@ -190,9 +196,9 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
   useractive: { active: 'green', inactive: 'amber', true: 'green', false: 'amber' },
   rating: { a: 'green', b: 'blue', c: 'amber', d: 'red' },
   task: {
-    todo: 'amber',
-    to_do: 'amber',
-    in_progress: 'blue',
+    todo: 'grey',
+    to_do: 'grey',
+    in_progress: 'amber',
     completed: 'green',
     cancelled: 'grey',
   },
@@ -205,27 +211,33 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     against_dc: 'cyan',
     against_nc: 'red',
   },
-  run: { running: 'green', done: 'grey', stopped: 'red' },
+  run: { running: 'green', done: 'green', stopped: 'red' },
   doc: {
-    open: 'amber',
-    in_planning: 'amber',
-    draft: 'amber',
-    pending: 'amber',
+    open: 'blue',
+    in_planning: 'grey',
+    draft: 'grey',
+    pending: 'blue',
     unpaid: 'amber',
     completed: 'green',
     closed: 'green',
     paid: 'green',
-    approved: 'green',
+    approved: 'blue',
     received: 'green',
     dispatched: 'green',
-    in_progress: 'blue',
-    assembled: 'blue',
-    partial: 'blue',
-    partially_paid: 'blue',
-    sent: 'blue',
-    cancelled: 'red',
+    accepted: 'green',
+    in_progress: 'amber',
+    assembled: 'green',
+    partial: 'amber',
+    partially_paid: 'amber',
+    sent: 'amber',
+    not_started: 'grey',
+    waiting: 'grey',
+    short_closed: 'grey',
+    cancelled: 'grey',
     rejected: 'red',
     overdue: 'red',
+    critical: 'red',
+    blocked: 'red',
   },
 };
 

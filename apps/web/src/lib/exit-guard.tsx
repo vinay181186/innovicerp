@@ -8,6 +8,15 @@
 //   - closing or refreshing the tab (the browser shows its own generic prompt
 //     there; a page cannot put its own words on that one)
 //
+// ONLY WHEN SOMETHING WAS CHANGED. The question is asked only after the user
+// has touched the form: an `input` / `change` event, a pick from a
+// type-to-search list ([role="option"]), or a click on any button / checkbox /
+// select on the page that is not an exit control (Back / Cancel / Close) --
+// adding a line, ticking a box, choosing a tab. The top menu bar never counts.
+// When in doubt it counts as an edit: asking once too often is cheap, losing
+// a filled form is not. An untouched form lets every exit through unasked --
+// ESC included, which then simply exits.
+//
 // WHAT IT DOES NOT CATCH, on purpose. The form's own Save / Close / Cancel.
 // Those already do the right thing and the user asked for them to stay as they
 // are. A screen wraps the navigation those buttons make in `leave(...)`, which
@@ -71,6 +80,38 @@ export function escapeBelongsToAnOpenPicker(target: EventTarget | null): boolean
   return box?.getAttribute('aria-expanded') === 'true';
 }
 
+// Anything open on the page that answers ESC by closing itself: a dropdown
+// list, a menu, a dialog / overlay. The ESC listener below runs in the CAPTURE
+// phase, so these are still open when it looks -- and that ESC is theirs.
+const OPEN_POPUP_SELECTOR =
+  '.overlay, [role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="listbox"], [role="menu"], [role="combobox"][aria-expanded="true"], [aria-haspopup][aria-expanded="true"]';
+
+// The controls whose click is a way OUT, not an edit.
+const EXIT_WORDS = /^(?:[←‹<×✕]\s*)?(?:back|cancel|close|exit|discard)\b/i;
+
+function isExitControl(el: Element): boolean {
+  const words = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim();
+  if (EXIT_WORDS.test(words)) return true;
+  // A bare arrow / cross glyph with no words.
+  return /^[←‹×✕]$/.test(words);
+}
+
+/** Did this click change the form? Used by the dirty tracker below. */
+export function clickIsAnEdit(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  // The top menu bar and the exit question itself are not the form.
+  if (target.closest('nav, [role="alertdialog"]')) return false;
+  // A pick from a type-to-search list (portaled to <body>, so checked first).
+  if (target.closest('[role="option"]')) return true;
+  const control = target.closest(
+    'button, [role="button"], [role="tab"], [role="checkbox"], [role="switch"], input[type="checkbox"], input[type="radio"], select, label',
+  );
+  if (!control) return false;
+  // Links are navigations; the router blocker below answers those.
+  if (control.closest('a[href]')) return false;
+  return !isExitControl(control);
+}
+
 function parentPath(pathname: string): string {
   const parts = pathname.replace(/\/+$/, '').split('/');
   parts.pop();
@@ -91,8 +132,44 @@ export function useExitConfirm(opts: ExitConfirmOptions = {}): ExitConfirm {
   const mounted = useRef(false);
   // The ESC popup. Navigation-triggered popups are the router's blocker, below.
   const [escOpen, setEscOpen] = useState(false);
+  // True once the user has changed any field on the page. Values a screen
+  // fills in itself (loading a record) fire no input event, so they do not count.
+  const dirty = useRef(false);
 
-  const armed = (): boolean => enabled && mounted.current && !bypass.current;
+  useEffect(() => {
+    if (!enabled) return;
+    const onEdit = (e: Event): void => {
+      if (!mounted.current) return;
+      // The global search box in the top menu bar is not part of the form.
+      if (e.target instanceof Element && e.target.closest('nav')) return;
+      dirty.current = true;
+    };
+    // Clicks: a list pick fires on mousedown (the list closes before the
+    // click lands), everything else on click. Both capture, so a handler that
+    // stops propagation cannot hide an edit.
+    const onClick = (e: Event): void => {
+      if (!mounted.current) return;
+      if (clickIsAnEdit(e.target)) dirty.current = true;
+    };
+    const onPick = (e: Event): void => {
+      if (!mounted.current) return;
+      if (e.target instanceof Element && e.target.closest('[role="option"]')) {
+        dirty.current = true;
+      }
+    };
+    document.addEventListener('input', onEdit, true);
+    document.addEventListener('change', onEdit, true);
+    document.addEventListener('click', onClick, true);
+    document.addEventListener('mousedown', onPick, true);
+    return () => {
+      document.removeEventListener('input', onEdit, true);
+      document.removeEventListener('change', onEdit, true);
+      document.removeEventListener('click', onClick, true);
+      document.removeEventListener('mousedown', onPick, true);
+    };
+  }, [enabled]);
+
+  const armed = (): boolean => enabled && mounted.current && dirty.current && !bypass.current;
   const blocker = useBlocker({
     shouldBlockFn: armed,
     enableBeforeUnload: armed,
@@ -117,20 +194,6 @@ export function useExitConfirm(opts: ExitConfirmOptions = {}): ExitConfirm {
     [allow],
   );
 
-  useEffect(() => {
-    if (!enabled) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if (!mounted.current) return;
-      if (escapeBelongsToAnOpenPicker(e.target)) return;
-      // Something else is already asking; ESC must not stack a second popup.
-      if (blocker.status === 'blocked') return;
-      setEscOpen(true);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [enabled, blocker.status]);
-
   const escExit = useCallback(() => {
     setEscOpen(false);
     leave(() => {
@@ -147,6 +210,39 @@ export function useExitConfirm(opts: ExitConfirmOptions = {}): ExitConfirm {
       }
     });
   }, [leave, navigate, opts, router]);
+  const escExitRef = useRef(escExit);
+  useEffect(() => {
+    escExitRef.current = escExit;
+  }, [escExit]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (!mounted.current) return;
+      if (escapeBelongsToAnOpenPicker(e.target)) return;
+      // ESC in the top menu bar (the global search box) is that box's key.
+      if (e.target instanceof Element && e.target.closest('nav')) return;
+      // Something else is already asking; ESC must not stack a second popup.
+      if (blocker.status === 'blocked') return;
+      // A dropdown, menu or popup is open on the page: this ESC closes it.
+      // Leaving the page (or asking to) on that same key press would be a
+      // surprise -- whether or not anything was typed.
+      if (document.querySelector(OPEN_POPUP_SELECTOR)) return;
+      // Nothing changed: nothing to lose, so ESC exits without asking.
+      if (!dirty.current) {
+        escExitRef.current();
+        return;
+      }
+      setEscOpen(true);
+    };
+    // CAPTURE phase at document, like ui/feedback/Modal.tsx: it runs BEFORE
+    // React's own handlers, while an open picker / menu still shows as open.
+    // A bubble listener on window ran after the picker had already closed
+    // itself, saw nothing open, and exited the page on the picker's ESC.
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [enabled, blocker.status]);
 
   const open = escOpen || blocker.status === 'blocked';
   const onExit = blocker.status === 'blocked' ? blocker.proceed : escExit;

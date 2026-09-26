@@ -83,6 +83,7 @@ export function SearchableSelect({
   const [query, setQuery] = useState('');
   const [highlight, setHighlight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -279,6 +280,12 @@ export function SearchableSelect({
     onChange(o.id);
     setQuery(selectedLabel ? selectedLabel(o) : optionLabel(o));
     setOpen(false);
+    // Tell the page a field changed. A pick sets the value from state, so no
+    // native event fires -- and lib/exit-guard.tsx listens for exactly those
+    // to know the form has edits worth asking about before leaving. Sent now,
+    // before React re-renders the input, so React's own onChange ignores it
+    // (the DOM value has not moved yet).
+    inputRef.current?.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
@@ -308,6 +315,7 @@ export function SearchableSelect({
           stood 12px taller than the date and select beside it on every create
           page (ERPNext gap report 2026-09-26). */}
       <input
+        ref={inputRef}
         className="innovic-input"
         id={baseId}
         type="text"

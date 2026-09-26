@@ -42,11 +42,11 @@ const EXPIRED_MESSAGE = `This reset link has expired or was already used. Links 
 
 const schema = z
   .object({
-    password: z.string().min(6, 'Password is at least 6 characters'),
+    password: z.string().min(6, 'New password must be at least 6 characters.'),
     confirm: z.string(),
   })
   .refine((v) => v.password === v.confirm, {
-    message: 'Passwords do not match',
+    message: 'New password and Confirm new password do not match.',
     path: ['confirm'],
   });
 type Form = z.infer<typeof schema>;
