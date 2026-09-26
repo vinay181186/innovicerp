@@ -9,7 +9,7 @@ export const al001PosTodayApproved: RegisteredAlert = {
     code: 'AL-001',
     dept: 'purchase',
     name: "Today's approved POs",
-    description: 'Purchase orders with po_date = today and status = open.',
+    description: 'POs dated today with PO Status Open.',
     columns: [
       { key: 'po_code', label: 'PO No.', type: 'text' },
       { key: 'po_date', label: 'PO Date', type: 'date' },

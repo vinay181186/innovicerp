@@ -1,4 +1,4 @@
-// AL-012 — Job cards overdue (production). Legacy line 22279-22280.
+// AL-012 — Overdue JCs (production). Legacy line 22279-22280.
 // Filter: due_date < today AND derived status NOT IN ('complete',
 // 'closed'). Joins v_jc_status because job_cards has no status column
 // per ADR-011 #2.
@@ -10,9 +10,8 @@ export const al012JcOverdue: RegisteredAlert = {
   definition: {
     code: 'AL-012',
     dept: 'production',
-    name: 'Job cards overdue',
-    description:
-      'Job cards with due_date in the past whose derived status is open or qc_pending (not complete/closed/no_ops).',
+    name: 'Overdue JCs',
+    description: 'JCs past their Due Date whose JC Status is not Completed or Closed.',
     columns: [
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'item', label: 'Item Code', type: 'text' },

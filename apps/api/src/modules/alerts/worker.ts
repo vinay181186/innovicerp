@@ -30,6 +30,7 @@
 // Boot wiring lives in worker-boot.ts so the test suite can import this
 // file without spinning up Redis / Resend connections.
 
+import { NC_STATUS_LABELS } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import {
@@ -40,6 +41,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { sendAlertDigest } from '../../lib/email';
+import { env } from '../../lib/env';
 import { logger } from '../../lib/logger';
 import { ALERTS, type RegisteredAlert } from './registry';
 
@@ -109,24 +111,98 @@ function effectiveActive(
   return v === undefined ? reg.definition.defaultActive : v;
 }
 
+// Screen words for the status codes the alert rules return (wording
+// clean-up 2026-09-26). Display only — the rules still return the stored
+// codes; only the email cell text changes. Keyed by alert code, then by the
+// record key, because one code means different things per document
+// (`pending` is "NC Raised" on an NC but "QC Pending" on a GRN line).
+const PO_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  open: 'Open',
+  partial: 'Partly Received',
+  qc_pending: 'QC Pending',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
+};
+const PR_STATUS_LABELS: Record<string, string> = {
+  open: 'Open',
+  approved: 'Approved',
+  po_created: 'PO Created',
+  cancelled: 'Cancelled',
+};
+const GRN_QC_STATUS_LABELS: Record<string, string> = {
+  pending: 'QC Pending',
+  in_progress: 'QC In Progress',
+  completed: 'QC Cleared',
+};
+const JC_STATUS_LABELS: Record<string, string> = {
+  open: 'Open',
+  qc_pending: 'QC Pending',
+  complete: 'Completed',
+  closed: 'Closed',
+  no_ops: 'No Operations',
+};
+const DIGEST_STATUS_LABELS: Record<string, Record<string, Record<string, string>>> = {
+  'AL-001': { status: PO_STATUS_LABELS },
+  'AL-008': { qc_status: GRN_QC_STATUS_LABELS },
+  'AL-009': { status: NC_STATUS_LABELS },
+  'AL-012': { computed_status: JC_STATUS_LABELS },
+  'AL-014': { status: PO_STATUS_LABELS },
+  'AL-015': { status: PR_STATUS_LABELS },
+};
+
+/** Cell text for the digest: status codes go through the label map; any
+ *  other lower-case code in a status column falls back to Title Case. */
+function digestCellText(code: string, key: string, value: string | number | null): string {
+  if (value == null) return '';
+  const text = String(value);
+  const mapped = DIGEST_STATUS_LABELS[code]?.[key]?.[text];
+  if (mapped) return mapped;
+  if (key.endsWith('status') && /^[a-z0-9_]+$/.test(text)) {
+    return text
+      .split('_')
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+  return text;
+}
+
+/** Link to the web app's Alerts page. The web origin is the first CORS
+ *  origin — the same one auth-recovery uses for the reset link. No origin
+ *  configured (local dev) ⇒ no link, the email names the page instead. */
+export function alertsPageUrl(origins: readonly string[] = env.ALLOWED_ORIGINS): string | null {
+  const origin = origins[0];
+  return origin ? `${origin.replace(/\/+$/, '')}/alerts` : null;
+}
+
 /** Build the HTML digest body for one user × one alert. Kept minimal in v1
  *  — table of records, scoped to the legacy alerts UX, no styling beyond
- *  inline CSS. Renders the first 50 records to cap email size. */
+ *  inline CSS. Renders the first 50 records to cap email size. Headers use
+ *  each column's label from the alert definition (raw key only if a record
+ *  carries a key the definition does not declare). */
 export function renderDigestHtml(payload: {
   userName: string;
   code: string;
   alertName: string;
+  columns?: ReadonlyArray<{ key: string; label: string }>;
+  alertsUrl?: string | null;
   records: ReadonlyArray<Record<string, string | number | null>>;
 }): string {
-  const { userName, code, alertName, records } = payload;
+  const { userName, code, alertName, columns = [], alertsUrl = null, records } = payload;
   const headerKeys = records[0] ? Object.keys(records[0]) : [];
+  const labelByKey = new Map<string, string>(columns.map((c) => [c.key, c.label] as const));
   const cap = records.slice(0, 50);
   const overflow = records.length > cap.length ? records.length - cap.length : 0;
+  const countText = `${records.length} item${records.length === 1 ? ' needs' : 's need'} attention.`;
+  const pageLink = alertsUrl
+    ? `<a href="${escapeHtml(alertsUrl)}">Alerts page</a>`
+    : 'Alerts page in Innovic ERP';
 
   const headerCells = headerKeys
     .map(
       (k) =>
-        `<th style="padding:6px 10px;border-bottom:1px solid #ddd;text-align:left;background:#f7f7f7;">${escapeHtml(k)}</th>`,
+        `<th style="padding:6px 10px;border-bottom:1px solid #ddd;text-align:left;background:#f7f7f7;">${escapeHtml(labelByKey.get(k) ?? k)}</th>`,
     )
     .join('');
   const bodyRows = cap
@@ -134,18 +210,18 @@ export function renderDigestHtml(payload: {
       (r) =>
         `<tr>${headerKeys
           .map((k) => {
-            const v = r[k];
-            return `<td style="padding:6px 10px;border-bottom:1px solid #eee;">${v == null ? '' : escapeHtml(String(v))}</td>`;
+            const v = r[k] ?? null;
+            return `<td style="padding:6px 10px;border-bottom:1px solid #eee;">${escapeHtml(digestCellText(code, k, v))}</td>`;
           })
           .join('')}</tr>`,
     )
     .join('');
 
   return `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#222;">
-<h2 style="margin-bottom:4px;">${escapeHtml(alertName)} <span style="color:#888;font-weight:normal;">(${escapeHtml(code)})</span></h2>
-<p style="margin-top:0;color:#666;">Hi ${escapeHtml(userName)} — your alert digest just refreshed. ${records.length} item${records.length === 1 ? '' : 's'} need attention.</p>
+<h2 style="margin-bottom:4px;">${escapeHtml(alertName)}</h2>
+<p style="margin-top:0;color:#666;">Hi ${escapeHtml(userName)} — your alert digest just refreshed. ${countText}</p>
 <table style="border-collapse:collapse;width:100%;font-size:14px;"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
-${overflow > 0 ? `<p style="color:#888;font-size:12px;">… and ${overflow} more. Open the dashboard for the full list.</p>` : ''}
+${overflow > 0 ? `<p style="color:#888;font-size:12px;">… and ${overflow} more. Open the ${pageLink} for the full list.</p>` : `<p style="color:#888;font-size:12px;">Open the ${pageLink} to see all alerts.</p>`}
 </body></html>`;
 }
 
@@ -242,6 +318,7 @@ export async function runDigestTick(at: Date = new Date()): Promise<RunDigestRes
         window,
         code,
         alertName: reg.definition.name,
+        columns: reg.definition.columns,
         records,
       });
       switch (success) {
@@ -268,9 +345,10 @@ async function dispatchToSubscriber(args: {
   window: Date;
   code: string;
   alertName: string;
+  columns: ReadonlyArray<{ key: string; label: string }>;
   records: ReadonlyArray<Record<string, string | number | null>>;
 }): Promise<DispatchOutcome> {
-  const { sub, window, code, alertName, records } = args;
+  const { sub, window, code, alertName, columns, records } = args;
   const subUser: AuthContext = {
     id: sub.userId,
     email: sub.email,
@@ -283,6 +361,8 @@ async function dispatchToSubscriber(args: {
     userName: sub.fullName ?? sub.email,
     code,
     alertName,
+    columns,
+    alertsUrl: alertsPageUrl(),
     records,
   });
   const subject = `[Innovic ERP] ${alertName} — ${records.length} item${records.length === 1 ? '' : 's'}`;

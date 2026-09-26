@@ -1,4 +1,4 @@
-// AL-008 — Pending GRN for QC (qc). Legacy line 22271-22272.
+// AL-008 — GRN QC Pending (qc). Legacy line 22271-22272.
 // Legacy GRN had qc_status at the document level; our schema (Phase 5)
 // has it per line. Returns one record per line whose qc_status is
 // 'pending' or 'in_progress'.
@@ -10,9 +10,8 @@ export const al008GrnPendingQc: RegisteredAlert = {
   definition: {
     code: 'AL-008',
     dept: 'qc',
-    name: 'Pending GRN for QC',
-    description:
-      'GRN lines whose QC has not been completed yet (qc_status pending or in_progress).',
+    name: 'GRN QC Pending',
+    description: 'GRN lines whose QC is not completed yet (QC Pending or QC In Progress).',
     columns: [
       { key: 'grn_code', label: 'GRN No.', type: 'text' },
       { key: 'grn_date', label: 'GRN Date', type: 'date' },

@@ -16,8 +16,7 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
     code: 'AL-015',
     dept: 'purchase',
     name: 'OSP PRs pending PO',
-    description:
-      'Outsourcing-process purchase requests (linked to a JC op) that are open/approved with no PO yet.',
+    description: 'OSP PRs (raised from a JC operation) that are Open or Approved with no PO yet.',
     columns: [
       { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'pr_date', label: 'PR Date', type: 'date' },

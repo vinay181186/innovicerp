@@ -13,8 +13,7 @@ export const al011BomPending: RegisteredAlert = {
     code: 'AL-011',
     dept: 'design',
     name: 'BOM not prepared',
-    description:
-      'Equipment-type SOs whose bom_status indicates the bill of materials has not been finalised.',
+    description: 'Equipment SOs whose BOM Status shows the BOM is not ready yet.',
     columns: [
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'customer', label: 'Customer', type: 'text' },
