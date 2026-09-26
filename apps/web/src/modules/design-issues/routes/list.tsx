@@ -8,9 +8,19 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useDesignIssuesAll } from '../api';
 
 type FilterKey = 'all' | 'open' | 'resolved' | 'critical';
+
+const FILTER_LABEL: Record<FilterKey, string> = {
+  all: 'All',
+  open: 'Open',
+  resolved: 'Resolved',
+  critical: 'Critical',
+};
 
 export const designIssuesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -24,7 +34,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
 
-  const { data, isLoading, isError, error } = useDesignIssuesAll({
+  const { data, isLoading, isFetching, isError, error } = useDesignIssuesAll({
     search: search.trim() || undefined,
     filter,
     limit: 200,
@@ -44,75 +54,67 @@ function DesignIssuesAllPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile
-          label="Total"
-          value={summary.total}
-          color="var(--blue)"
-          onClick={() => setFilter('all')}
-        />
-        <Tile
-          label="Open"
-          value={summary.open}
-          color="var(--red)"
-          onClick={() => setFilter('open')}
-        />
-        <Tile
-          label="Resolved"
-          value={summary.resolved}
-          color="var(--green)"
-          onClick={() => setFilter('resolved')}
-        />
-        <Tile
-          label="Critical"
-          value={summary.critical}
-          color="var(--red)"
-          onClick={() => setFilter('critical')}
-        />
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          ⚠ All Design Issues
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 220, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
+      <ListHeader
+        title="All Design Issues"
+        icon="⚠"
+        count={data?.total}
+        noun="issue"
+        filterNote={filter === 'all' ? undefined : FILTER_LABEL[filter]}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search issue, part, assigned to, project…"
+        updating={isFetching && !isLoading}
+        tools={
+          <Select
+            aria-label="Issue filter"
+            fieldWidth="md"
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterKey)}
-            style={{ fontSize: 12 }}
-          >
-            <option value="all">All</option>
-            <option value="open">Open</option>
-            <option value="resolved">Resolved</option>
-            <option value="critical">Critical</option>
-          </select>
-        </div>
-      </div>
+            options={(Object.keys(FILTER_LABEL) as FilterKey[]).map((k) => ({
+              value: k,
+              label: FILTER_LABEL[k],
+            }))}
+          />
+        }
+      >
+        {/* The counts double as the filter — ONE strip, not four cards. */}
+        <StatStrip
+          items={[
+            {
+              key: 'all',
+              label: 'Total',
+              count: summary.total,
+              color: 'var(--blue)',
+              active: filter === 'all',
+              onClick: () => setFilter('all'),
+            },
+            {
+              key: 'open',
+              label: 'Open',
+              count: summary.open,
+              color: 'var(--red2)',
+              active: filter === 'open',
+              onClick: () => setFilter('open'),
+            },
+            {
+              key: 'resolved',
+              label: 'Resolved',
+              count: summary.resolved,
+              color: 'var(--green2)',
+              active: filter === 'resolved',
+              onClick: () => setFilter('resolved'),
+            },
+            {
+              key: 'critical',
+              label: 'Critical',
+              count: summary.critical,
+              color: 'var(--red2)',
+              active: filter === 'critical',
+              onClick: () => setFilter('critical'),
+            },
+          ]}
+        />
+      </ListHeader>
 
       <div className="panel">
         {isLoading ? (
@@ -129,7 +131,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Issue</th>
@@ -139,7 +141,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
                   <th>Assigned To</th>
                   <th>Raised Date</th>
                   <th>Age</th>
-                  <th />
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -151,11 +153,10 @@ function DesignIssuesAllPage(): React.JSX.Element {
                   </tr>
                 ) : null}
                 {data.items.map((i) => {
-                  const stale =
-                    i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
+                  const stale = i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
                   return (
                     <tr key={i.id}>
-                      <td className="fw-700">
+                      <td className="fw-700" style={{ textAlign: 'left' }}>
                         <Link
                           to="/design-projects/$id"
                           params={{ id: i.designProjectId }}
@@ -174,7 +175,9 @@ function DesignIssuesAllPage(): React.JSX.Element {
                         <Badge value={i.status} kind="status" />
                       </td>
                       <td style={{ fontSize: 11, fontWeight: 600 }}>{i.assignedToText ?? ''}</td>
-                      <td style={{ fontSize: 11 }}>{fmtDate(i.raisedDate)}</td>
+                      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {fmtDate(i.raisedDate)}
+                      </td>
                       <td
                         className="mono fw-700"
                         style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}
@@ -202,29 +205,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
           </div>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  color,
-  onClick,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  onClick?: () => void;
-}): React.JSX.Element {
-  return (
-    <div
-      className="panel"
-      onClick={onClick}
-      style={{ textAlign: 'center', padding: 12, cursor: 'pointer' }}
-    >
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
+      {data ? <ListFooter total={data.total} noun="issue" limit={200} /> : null}
     </div>
   );
 }

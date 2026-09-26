@@ -114,16 +114,15 @@ function RouteCardsListPage(): React.JSX.Element {
     });
   }, []);
 
-  // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+12+13+24+15+5+6+11 = 90, + 10 = 100, so
-  // the table never scrolls sideways. Centred by the standard; only Item Name
-  // is left-aligned.
+  // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
+  // only Sr No keeps a width; codes, revs, counts and dates sit on one line
+  // and Item Name wraps into what is left. Centred by the standard; only Item
+  // Name is left-aligned, the op count sits right.
   const columns = useMemo<DataTableColumn<RouteCardListItem>[]>(
     () => [
       { header: 'Sr No', width: '4%', className: 'text3', render: (_rc, i) => i + 1 },
       {
         header: 'RC No.',
-        width: '12%',
         nowrap: true,
         render: (rc) => (
           <span style={{ whiteSpace: 'nowrap' }}>
@@ -166,7 +165,6 @@ function RouteCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Item Code',
-        width: '13%',
         // The item code is the main thing on this row: mono, bold, full --text.
         className: 'mono fw-700',
         nowrap: true,
@@ -174,10 +172,8 @@ function RouteCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Item Name',
-        width: '24%',
         align: 'left',
         className: 'fw-700',
-        ellipsis: true,
         render: (rc) => rc.itemName ?? '— unknown item —',
         title: (rc) => rc.itemName ?? '',
       },
@@ -185,9 +181,7 @@ function RouteCardsListPage(): React.JSX.Element {
         // Grade then size on one line — the stock this card is cut from, so the
         // master answers "what is it made of" without opening a card.
         header: 'Grade / Size',
-        width: '15%',
         className: 'mono',
-        ellipsis: true,
         title: (rc) => `${rc.rawMaterialGradeText ?? '—'} / ${rc.rawMaterialSizeText ?? '—'}`,
         render: (rc) => (
           <>
@@ -196,17 +190,15 @@ function RouteCardsListPage(): React.JSX.Element {
           </>
         ),
       },
-      { header: 'Ops', width: '5%', className: 'mono', nowrap: true, key: 'opCount' },
+      { header: 'Ops', align: 'right', className: 'mono', nowrap: true, key: 'opCount' },
       {
         header: 'Route Card Rev',
-        width: '6%',
         className: 'mono fw-700',
         nowrap: true,
         render: (rc) => <span style={{ color: 'var(--cyan)' }}>R{rc.currentRevision}</span>,
       },
       {
         header: 'Last Updated',
-        width: '11%',
         className: 'mono text2',
         nowrap: true,
         render: (rc) => fmtDate(rc.updatedAt),
@@ -225,6 +217,7 @@ function RouteCardsListPage(): React.JSX.Element {
           stay put while the rows scroll underneath. */}
       <ListHeader
         title="Route Card Master"
+        icon="🗒"
         count={total}
         noun="card"
         search={searchInput}
@@ -263,7 +256,7 @@ function RouteCardsListPage(): React.JSX.Element {
             // returning null for a collapsed row means ExpandedOps (and its
             // detail query) never mounts for it.
             renderExpanded={(rc) => (expanded.has(rc.id) ? <ExpandedOps rcId={rc.id} /> : null)}
-            rowActionsWidth="10%"
+            rowActionsWidth="1%"
             rowActions={(rc) => (
               <RowActions
                 // View and Edit are ROUTES, so they stay real links —

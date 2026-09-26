@@ -70,52 +70,63 @@ function RawMaterialPage(): React.JSX.Element {
     );
   }
 
+  // Grade | Size switch — same strip as Op Entry's By Job Card / By Machine.
+  // Drawn inside the panel's one header band (list standard 2026-09-26).
+  const tabStrip = (
+    <div
+      style={{
+        display: 'flex',
+        gap: 4,
+        borderBottom: '1px solid var(--border)',
+        marginBottom: 'var(--sp-2)',
+      }}
+    >
+      {TABS.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          onClick={() =>
+            void navigate({
+              // Switching master clears the search term — a grade search means
+              // nothing on the size list.
+              search: () => (t.key === 'grade' ? {} : { tab: 'size' }),
+              replace: true,
+            })
+          }
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: tab === t.key ? '2px solid var(--cyan)' : '2px solid transparent',
+            color: tab === t.key ? 'var(--cyan)' : 'var(--text3)',
+            fontSize: 12,
+            fontWeight: 700,
+            padding: '6px 12px',
+            cursor: 'pointer',
+            marginBottom: -1,
+          }}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div>
-      <div className="section-hdr">Raw Material Master</div>
-
-      {/* Grade | Size switch — same strip as Op Entry's By Job Card / By Machine. */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() =>
-              void navigate({
-                // Switching master clears the search term — a grade search means
-                // nothing on the size list.
-                search: () => (t.key === 'grade' ? {} : { tab: 'size' }),
-                replace: true,
-              })
-            }
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t.key ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: tab === t.key ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {tab === 'size' ? (
-        <SizeTab term={search.search} searchInput={searchInput} onSearchInput={setSearchInput} />
+        <SizeTab
+          term={search.search}
+          searchInput={searchInput}
+          onSearchInput={setSearchInput}
+          tabs={tabStrip}
+        />
       ) : (
-        <GradeTab term={search.search} searchInput={searchInput} onSearchInput={setSearchInput} />
+        <GradeTab
+          term={search.search}
+          searchInput={searchInput}
+          onSearchInput={setSearchInput}
+          tabs={tabStrip}
+        />
       )}
     </div>
   );

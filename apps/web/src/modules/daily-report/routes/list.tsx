@@ -230,7 +230,7 @@ function DailyReportPage(): React.JSX.Element {
               </div>
             </div>
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     <th>JC No.</th>
@@ -252,18 +252,23 @@ function DailyReportPage(): React.JSX.Element {
                 <tbody>
                   {g.rows.map((r) => (
                     <tr key={r.logId}>
-                      <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                      <td
+                        className="mono fw-700"
+                        style={{ color: 'var(--cyan)', whiteSpace: 'nowrap' }}
+                      >
                         {r.jcCode}
                       </td>
                       {/* POL — '—' when no sales order sits behind the card. */}
                       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                         {r.clientPoLineNo ?? '—'}
                       </td>
-                      <td className="mono" style={{ color: 'var(--purple)' }}>
+                      <td className="mono" style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}>
                         {itemCodeWithRev(r.itemCode, r.itemRevision)}
                       </td>
-                      <td>{r.itemName ?? '—'}</td>
-                      <td className="mono">{opSrNo(r.opSeq)}</td>
+                      <td style={{ textAlign: 'left' }}>{r.itemName ?? '—'}</td>
+                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                        {opSrNo(r.opSeq)}
+                      </td>
                       <td>{r.operation}</td>
                       <td>
                         <span className="badge b-grey">
@@ -274,7 +279,9 @@ function DailyReportPage(): React.JSX.Element {
                         {r.qty}
                       </td>
                       <td>{r.operator ?? '—'}</td>
-                      <td className="text3">{r.remarks ?? ''}</td>
+                      <td className="text3" style={{ textAlign: 'left' }}>
+                        {r.remarks ?? ''}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

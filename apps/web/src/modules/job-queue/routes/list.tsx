@@ -4,7 +4,7 @@
 import { opSrNo } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
 import { ActualMachineLine } from '@/components/shared/machine-split';
@@ -12,6 +12,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
 
 const searchSchema = z.object({
@@ -66,6 +67,29 @@ function JobQueuePage(): React.JSX.Element {
   );
   const displayMachines = selectedMachine ? [selectedMachine] : machines;
 
+  // Client-side search over the columns each row shows — JC no., POL, item
+  // code / name, SO no., customer, operation. The queue is one fetch, so every
+  // row is already here. While a term is typed the ▲/▼ arrows are hidden: a
+  // move swaps a row with its neighbour in the FULL queue, which a filtered
+  // view no longer shows.
+  const [searchInput, setSearchInput] = useState('');
+  const term = searchInput.trim().toLowerCase();
+  const matches = (r: (typeof machines)[number]['rows'][number]): boolean =>
+    term === '' ||
+    [
+      r.jcCode,
+      r.clientPoLineNo,
+      itemCodeWithRev(r.itemCode, r.itemRevision, ''),
+      r.itemName,
+      r.soCode,
+      r.soCustomer,
+      r.operation,
+    ].some((v) => v != null && String(v).toLowerCase().includes(term));
+  const shownMachines = term
+    ? displayMachines.filter((m) => m.rows.some(matches))
+    : displayMachines;
+  const pendingShown = displayMachines.reduce((n, m) => n + m.rows.filter(matches).length, 0);
+
   const setMachine = (code: string | null): void => {
     void navigate({ search: () => ({ machine: code ?? undefined }) });
   };
@@ -86,31 +110,40 @@ function JobQueuePage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">⬛ Job Queue</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isAdmin ? (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={backfillMut.isPending}
-              title="Link operations that carry a machine as text only to the matching machine. Safe to run repeatedly."
-              onClick={() => backfillMut.mutate()}
-            >
-              {backfillMut.isPending
-                ? 'Linking…'
-                : backfillMut.isSuccess
-                  ? `Linked ${backfillMut.data.updated} op(s) ✓`
-                  : 'Link machine codes'}
-            </button>
-          ) : null}
-          {selectedMachine ? (
-            <button type="button" className="btn btn-ghost" onClick={() => setMachine(null)}>
-              All Machines ×
-            </button>
-          ) : null}
-        </div>
-      </div>
+      <ListHeader
+        title="Job Queue"
+        icon="⬛"
+        count={isLoading ? undefined : pendingShown}
+        noun="pending op"
+        filterNote={selectedMachine ? selectedMachine.machineCode : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search JC no., POL, item, SO no., customer, operation…"
+        tools={
+          <>
+            {selectedMachine ? (
+              <button type="button" className="btn btn-ghost" onClick={() => setMachine(null)}>
+                All Machines ×
+              </button>
+            ) : null}
+            {isAdmin ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={backfillMut.isPending}
+                title="Link operations that carry a machine as text only to the matching machine. Safe to run repeatedly."
+                onClick={() => backfillMut.mutate()}
+              >
+                {backfillMut.isPending
+                  ? 'Linking…'
+                  : backfillMut.isSuccess
+                    ? `Linked ${backfillMut.data.updated} op(s) ✓`
+                    : 'Link machine codes'}
+              </button>
+            ) : null}
+          </>
+        }
+      />
 
       {/* Machine cards strip */}
       <div
@@ -172,14 +205,14 @@ function JobQueuePage(): React.JSX.Element {
             </div>
           </div>
         </div>
-      ) : displayMachines.length === 0 ? (
+      ) : shownMachines.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 32 }}>
-            No pending operations
+            {term ? 'No pending operations match this search' : 'No pending operations'}
           </div>
         </div>
       ) : (
-        displayMachines.map((m) => (
+        shownMachines.map((m) => (
           <div key={m.machineId} className="panel" style={{ marginBottom: 14 }}>
             <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
@@ -227,7 +260,7 @@ function JobQueuePage(): React.JSX.Element {
               </div>
             ) : (
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid">
                   <thead>
                     <tr>
                       <th style={{ width: 44 }}>Move</th>
@@ -253,7 +286,10 @@ function JobQueuePage(): React.JSX.Element {
                     </tr>
                   </thead>
                   <tbody>
-                    {m.rows.map((r, idx) => {
+                    {m.rows.filter(matches).map((r) => {
+                      // Queue position in the FULL queue, so Sr No and the
+                      // ▲/▼ neighbours stay true while a search narrows rows.
+                      const idx = m.rows.indexOf(r);
                       const isNext = r.available > 0 && !r.isRunning;
                       // ADR-126 — "started" has to mean started ON THIS MACHINE.
                       // The row is bucketed under the machine that runs the
@@ -282,7 +318,7 @@ function JobQueuePage(): React.JSX.Element {
                                 alignItems: 'center',
                               }}
                             >
-                              {canReorder && idx > 0 ? (
+                              {canReorder && term === '' && idx > 0 ? (
                                 <button
                                   type="button"
                                   style={queueBtnStyle}
@@ -294,7 +330,7 @@ function JobQueuePage(): React.JSX.Element {
                               ) : (
                                 <span style={{ width: 18, display: 'inline-block' }} />
                               )}
-                              {canReorder && idx < m.rows.length - 1 ? (
+                              {canReorder && term === '' && idx < m.rows.length - 1 ? (
                                 <button
                                   type="button"
                                   style={queueBtnStyle}
@@ -329,27 +365,33 @@ function JobQueuePage(): React.JSX.Element {
                             {r.clientPoLineNo ?? '—'}
                           </td>
                           <td>
+                            {/* Code (and SO no.) on one line; the item NAME wraps. */}
                             <div
                               style={{
                                 fontSize: 12,
                                 fontWeight: 600,
                                 color: 'var(--cyan)',
+                                textAlign: 'left',
                               }}
                             >
-                              {itemCodeWithRev(r.itemCode, r.itemRevision, '')}{' '}
+                              <span style={{ whiteSpace: 'nowrap' }}>
+                                {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
+                              </span>{' '}
                               {r.itemName ? `— ${r.itemName}` : ''}
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'left' }}>
                               {r.soCode ?? '—'}
                               {r.soCustomer ? ` · ${r.soCustomer}` : ''}
                             </div>
                           </td>
-                          <td className="mono">{opSrNo(r.opSeq)}</td>
+                          <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                            {opSrNo(r.opSeq)}
+                          </td>
                           <td>{r.operation}</td>
                           <td>
                             <PriorityBadge priority={r.priority} />
                           </td>
-                          <td className="text2" style={{ fontSize: 11 }}>
+                          <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                             {fmtDate(r.dueDate)}
                           </td>
                           <td className="mono td-num">{r.orderQty}</td>

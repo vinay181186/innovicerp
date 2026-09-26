@@ -3,6 +3,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { ShopFloorView } from '@/modules/shop-floor/components/shop-floor-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useRealtimeRunningOps, useRunningOps } from '../api';
 import { RunningOpsBoard } from '../components/running-ops-board';
 
@@ -19,38 +20,41 @@ function RunningOpsPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            Live Operations Board
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Real-time view of running shop-floor sessions.
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
+      <ListHeader
+        title="Live Operations"
+        icon="🔴"
+        count={isLoading ? undefined : (data ?? []).filter((r) => r.status === 'running').length}
+        noun="running session"
+        updating={isFetching && !isLoading}
+        tools={
           <Link to="/op-entry" className="btn btn-ghost btn-sm">
             <ArrowLeft size={14} /> Op Entry
           </Link>
+        }
+      >
+        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)' }}>
+          {(['table', 'machine'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: view === v ? '2px solid var(--cyan)' : '2px solid transparent',
+                color: view === v ? 'var(--cyan)' : 'var(--text3)',
+                fontSize: 12,
+                fontWeight: 700,
+                padding: '6px 12px',
+                cursor: 'pointer',
+                marginBottom: -1,
+              }}
+            >
+              {v === 'table' ? '📊 Table' : '🏭 By Machine'}
+            </button>
+          ))}
         </div>
-      </div>
-
-      <div style={{display:'flex',gap:4,borderBottom:'1px solid var(--border)',marginBottom:14}}>
-        {(['table','machine'] as const).map((v)=>(<button key={v} type="button" onClick={()=>setView(v)} style={{background:'none',border:'none',borderBottom:view===v?'2px solid var(--cyan)':'2px solid transparent',color:view===v?'var(--cyan)':'var(--text3)',fontSize:12,fontWeight:700,padding:'6px 12px',cursor:'pointer',marginBottom:-1}}>{v==='table'?'📊 Table':'🏭 By Machine'}</button>))}
-      </div>
+      </ListHeader>
 
       {view === 'machine' ? (
         <ShopFloorView />

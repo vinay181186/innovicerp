@@ -521,6 +521,60 @@ export function JobCardForm({
     });
   }, [machines]);
 
+  // Downstream inheritance (CLAUDE.md §17), the OPERATIONS half: a hand-raised
+  // JWSO Job Card seeds its routing from the item's active Route Card, exactly
+  // as a Plan loads it (plans/components/plan-form.tsx handleLoadDefaultOps).
+  // Create mode only, only while the list is still EMPTY, and once per item —
+  // so a routing the user has started typing is never replaced, and deleting
+  // every seeded row does not bring them back. The rows stay fully editable.
+  const [seededFrom, setSeededFrom] = useState<{
+    itemId: string;
+    code: string | null;
+    revision: number | null;
+  } | null>(null);
+  useEffect(() => {
+    if (isEdit || !pickedItemId || !itemRouteDefaults) return;
+    if (seededFrom?.itemId === pickedItemId) return;
+    if (ops.length > 0 || itemRouteDefaults.ops.length === 0) return;
+    setOps(
+      itemRouteDefaults.ops.map((op) => {
+        const machineCode =
+          op.machineCodeText ??
+          (op.machineId ? (machines.find((m) => m.id === op.machineId)?.code ?? '') : '');
+        const opType = op.opType ?? 'process';
+        return {
+          machineGroupId: null,
+          // Only a process op carries a machine: OSP has none (T32b) and a QC
+          // op parks on the QC lane, exactly as + Add QC Op / + Add OSP Op do.
+          machineCode: opType === 'process' ? machineCode : '',
+          operation: op.operation,
+          opType,
+          cycleTimeMin: op.cycleTimeMin ?? 0,
+          program: op.program ?? '',
+          toolNo: op.toolNo ?? '',
+          toolDetails: op.toolDetails ?? '',
+          qcRequired: op.qcRequired ?? opType === 'qc',
+          outsourceVendorCode: op.outsourceVendorText ?? '',
+          outsourceCost: op.outsourceCost ?? 0,
+          hasStarted: false,
+          available: 0,
+          inputAvail: 0,
+          completedQty: 0,
+          qcAcceptedQty: 0,
+          computedStatus: 'waiting',
+        };
+      }),
+    );
+    setSeededFrom({
+      itemId: pickedItemId,
+      code: itemRouteDefaults.routeCardCode,
+      revision: itemRouteDefaults.routeCardRevision,
+    });
+  }, [isEdit, pickedItemId, itemRouteDefaults, seededFrom, ops.length, machines]);
+  // The "from Route Card" note belongs to the item it was loaded for.
+  const seededNote =
+    seededFrom && seededFrom.itemId === pickedItemId && ops.length > 0 ? seededFrom : null;
+
   const moveOp = (i: number, dir: -1 | 1): void => {
     setOps((prev) => {
       const next = [...prev];
@@ -912,7 +966,18 @@ export function JobCardForm({
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-hdr">
           <div className="panel-title">▸ Operations — Routing Sequence</div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            {seededNote ? (
+              <span
+                className="text2"
+                style={{ fontSize: 11 }}
+                title="Loaded from the item's active Route Card — every row stays editable"
+              >
+                Operations from Route Card{' '}
+                <span className="mono fw-700">{seededNote.code ?? '—'}</span>
+                {seededNote.revision != null ? ` Rev ${seededNote.revision}` : ''}
+              </span>
+            ) : null}
             <span className="text3" style={{ fontSize: 11 }}>
               {opCount} op{opCount !== 1 ? 's' : ''}
               {qcCount > 0 ? ` + ${qcCount} QC` : ''}

@@ -14,6 +14,7 @@ import type {
   CreateRouteCardOpInput,
   Machine,
   RouteCard,
+  RouteCardDetail,
   RouteCardPlanType,
   Vendor,
 } from '@innovic/shared';
@@ -37,7 +38,7 @@ import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
-import { useNextRouteCardCode, useRouteCardsList } from '../api';
+import { useNextRouteCardCode, useRouteCard, useRouteCardsList } from '../api';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
 
@@ -97,6 +98,31 @@ interface RouteCardFormProps {
   onCancel: () => void;
   /** Header Back — a plain navigation, so the router's exit guard asks first. */
   onBack?: () => void;
+}
+
+/** A saved card's operations as editable form rows — used by the edit page to
+ *  open a card, and by "Copy ops from Route Card…" on create. One mapping, so
+ *  a copied row and an edited row can never disagree. */
+export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpDraft[] {
+  return ops.map((op) => ({
+    // Group is display-only; the form reads it back off the machine master
+    // once the machines list has loaded.
+    machineGroupId: null,
+    machineId: op.machineId ?? '',
+    machineCodeText: op.machineCode ?? op.machineCodeText ?? '',
+    operation: op.operation,
+    opType: op.opType,
+    // Legacy: `${op.cycleTime||''}` — a stored 0 renders blank, same as a
+    // freshly added row. Keeps create/edit identical (ISSUE-099).
+    cycleTimeMin: Number(op.cycleTimeMin) ? String(Number(op.cycleTimeMin)) : '',
+    program: op.program ?? '',
+    toolNo: op.toolNo ?? '',
+    toolDetails: op.toolDetails ?? '',
+    qcRequired: op.qcRequired,
+    ospVendorId: op.ospVendorId ?? '',
+    ospVendorCodeText: op.ospVendorCode ?? op.ospVendorCodeText ?? '',
+    ospLeadDays: op.ospLeadDays != null ? String(op.ospLeadDays) : '',
+  }));
 }
 
 export function emptyProcessOp(): RouteCardFormOpDraft {
@@ -223,6 +249,40 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     { enabled: mode === 'create' && Boolean(header.itemId) },
   );
   const existingCards = mode === 'create' && header.itemId ? (existingForItem?.items ?? []) : [];
+
+  // "Copy ops from Route Card…" (round-2 "Next" item, 2026-09-26). On create,
+  // pick any existing card and its operations are copied into this form as
+  // ordinary editable rows — a similar part's routing, not re-typed by hand.
+  // The copy is a one-time fill: nothing links the two cards afterwards.
+  const [copySearch, setCopySearch] = useState('');
+  const [copyFromId, setCopyFromId] = useState<string | null>(null);
+  const [copiedFrom, setCopiedFrom] = useState<{ id: string; label: string } | null>(null);
+  const { data: copyList, isFetching: copyListFetching } = useRouteCardsList(
+    { ...(copySearch.trim() ? { search: copySearch.trim() } : {}), limit: 20, offset: 0 },
+    { enabled: mode === 'create' },
+  );
+  const { data: copyDetail } = useRouteCard(copyFromId ?? undefined);
+  useEffect(() => {
+    if (!copyFromId || copyDetail?.id !== copyFromId) return;
+    if (copiedFrom?.id === copyFromId) return;
+    const typed = ops.some((o) => o.operation.trim() !== '');
+    if (
+      typed &&
+      !window.confirm(
+        `Replace the ${ops.length} operation(s) on this form with the ${copyDetail.ops.length} from ${copyDetail.code}?`,
+      )
+    ) {
+      setCopyFromId(copiedFrom?.id ?? null);
+      return;
+    }
+    setOps(detailOpsToDrafts(copyDetail.ops));
+    setCopiedFrom({
+      id: copyFromId,
+      label: `${copyDetail.code} Rev ${copyDetail.currentRevision}`,
+    });
+    // `ops` is read for the "anything typed?" question only — a keystroke in
+    // a row must not re-run the copy.
+  }, [copyFromId, copyDetail, copiedFrom]);
   const showDupBanner = existingCards.length > 0 && !dupDismissed;
 
   // Raw material prefilled from the item's latest PLAN, on create only.
@@ -666,6 +726,30 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         bodyClassName="tbl-wrap"
         actions={
           <>
+            {mode === 'create' ? (
+              <div style={{ minWidth: 240 }} title="Copy another card's operations into this form">
+                <SearchableSelect
+                  id="rc-copy-from"
+                  value={copyFromId}
+                  onChange={setCopyFromId}
+                  onSearch={setCopySearch}
+                  loading={copyListFetching}
+                  options={(copyList?.items ?? []).map((rc) => ({
+                    id: rc.id,
+                    code: rc.code,
+                    name: [rc.itemCode, rc.itemName].filter(Boolean).join(' — ') || '—',
+                  }))}
+                  placeholder="Copy ops from Route Card…"
+                  emptyText="No route cards"
+                  selectedLabel={(o) => o.code ?? o.name}
+                />
+              </div>
+            ) : null}
+            {copiedFrom && mode === 'create' ? (
+              <span className="text2" style={{ fontSize: 11 }}>
+                Copied from <span className="mono fw-700">{copiedFrom.label}</span> — edit freely
+              </span>
+            ) : null}
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('process')}>
               <Plus size={13} /> Add Op
             </button>
