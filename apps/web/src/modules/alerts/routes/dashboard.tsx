@@ -73,26 +73,33 @@ function AlertsDashboardPage() {
         onSearch={setTerm}
         searchPlaceholder="Search department, alert code, alert name…"
         updating={isFetching && !isLoading}
+        filters={
+          <label
+            style={{
+              fontSize: 11,
+              color: 'var(--text3)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showZero}
+              onChange={(e) => setShowZero(e.target.checked)}
+              style={{ accentColor: 'var(--cyan)' }}
+            />{' '}
+            Show zero records
+          </label>
+        }
+        onClearFilters={() => {
+          setShowZero(false);
+          setTerm('');
+        }}
+        filtersActive={showZero || term.trim() !== ''}
         tools={
           <>
-            <label
-              style={{
-                fontSize: 11,
-                color: 'var(--text3)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                cursor: 'pointer',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={showZero}
-                onChange={(e) => setShowZero(e.target.checked)}
-                style={{ accentColor: 'var(--cyan)' }}
-              />{' '}
-              Show zero records
-            </label>
             <Link to="/alerts/config" className="btn btn-ghost btn-sm">
               Configure
             </Link>

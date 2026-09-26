@@ -89,10 +89,14 @@ function JcOpsPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search JC no., operation, item code, POL…"
         updating={isFetching && !isLoading}
-        tools={
+        onClearFilters={() => {
+          setSearchInput('');
+          setJcCode('');
+        }}
+        filtersActive={searchInput.trim() !== '' || jcCode !== ''}
+        filters={
           <Select
             aria-label="Job Card"
-            fieldWidth="md"
             value={jcCode}
             onChange={(e) => setJcCode(e.target.value)}
             options={[

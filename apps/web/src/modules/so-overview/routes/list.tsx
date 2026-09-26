@@ -1,7 +1,7 @@
 // SO Overview list (PL-2 + PL-2b parity port). Mirrors legacy renderSOOverview
 // L9112 — list mode shows one row per open SO with overall status badge +
-// progress + alert flags; PL-2b adds status pill filter and Equipment column.
-// Clicking an SO row opens that SO's SO Status page
+// progress + alert flags; PL-2b adds the overall-status filter and Equipment column.
+// Clicking an SO row (or its Activity button) opens that SO's SO Status page
 // (/sales-orders/$id/status, owner decision 2026-09-26) — the old in-memory
 // drill view that replaced this list is gone, so Back / refresh now behave.
 
@@ -39,8 +39,9 @@ const STATUS_BADGE: Record<SoOverallStatus, { cls: string; label: string }> = {
 };
 
 /** Per-row status filter (different from header.status — this filters the
- *  *derived* overallStatus). Renders as a one-click pill row replacing the
- *  legacy dropdown. PL-2b §1.3. */
+ *  *derived* overallStatus). A dropdown in the filter bar with the counts in
+ *  its option labels (was a pill row, PL-2b §1.3; owner decision
+ *  2026-09-26). */
 type OverallStatusFilter = SoOverallStatus | 'all';
 const OVERALL_STATUS_LABELS: Array<{ value: OverallStatusFilter; label: string }> = [
   { value: 'all', label: 'All' },
@@ -56,6 +57,9 @@ function SoOverviewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { search, status } = soOverviewListRoute.useSearch();
   const [overallFilter, setOverallFilter] = useState<OverallStatusFilter>('all');
+  // Bumped by Clear so a still-pending debounced keystroke cannot re-apply
+  // the search it just cleared (SearchInput RESET SEMANTICS).
+  const [clearKey, setClearKey] = useState(0);
 
   // The box keeps what the user typed (a trailing space included); only the
   // normalised term goes to the URL. Feeding the trimmed URL term back as the
@@ -99,7 +103,8 @@ function SoOverviewPage(): React.JSX.Element {
     <div>
       {/* The ONE list header (ui/layout ListHeader). The debounced SearchInput
           rides in `searchSlot` so the URL write keeps its 300ms delay; the
-          overall-status pills sit in the sticky band. */}
+          SO status and overall-status (with counts) dropdowns sit beside it
+          in the filter bar. */}
       <ListHeader
         title="SO Overview"
         icon="📊"
@@ -114,47 +119,57 @@ function SoOverviewPage(): React.JSX.Element {
           // Our server (so-overview/service.ts) ILIKEs code / customerName /
           // clientPoNo only — the placeholder states what actually works.
           <SearchInput
-            width={280}
             debounceMs={300}
+            resetKey={clearKey}
             placeholder="Search SO No., customer, Client PO No.…"
             value={searchInput}
             onChange={setSearchInput}
           />
         }
-        tools={
-          <select
-            className="innovic-select"
-            style={{ width: 140 }}
-            value={status ?? ''}
-            onChange={(e) =>
-              void navigate({
-                to: '/so-overview',
-                search: {
-                  ...(search ? { search } : {}),
-                  status:
-                    (e.target.value as
-                      | 'open'
-                      | 'closed'
-                      | 'dispatched'
-                      | 'cancelled'
-                      | 'all'
-                      | '') || undefined,
-                },
-              })
-            }
-          >
-            <option value="">Open (default)</option>
-            <option value="closed">Closed</option>
-            <option value="dispatched">Dispatched</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="all">All</option>
-          </select>
+        filters={
+          <>
+            <select
+              className="innovic-select"
+              aria-label="SO status"
+              title="SO status"
+              value={status ?? ''}
+              onChange={(e) =>
+                void navigate({
+                  to: '/so-overview',
+                  search: {
+                    ...(search ? { search } : {}),
+                    status:
+                      (e.target.value as
+                        | 'open'
+                        | 'closed'
+                        | 'dispatched'
+                        | 'cancelled'
+                        | 'all'
+                        | '') || undefined,
+                  },
+                })
+              }
+            >
+              <option value="">Open (default)</option>
+              <option value="closed">Closed</option>
+              <option value="dispatched">Dispatched</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="all">All</option>
+            </select>
+            <OverallStatusSelect
+              rows={data?.rows ?? []}
+              value={overallFilter}
+              onChange={setOverallFilter}
+            />
+          </>
         }
-      >
-        {data ? (
-          <OverallStatusPills rows={data.rows} value={overallFilter} onChange={setOverallFilter} />
-        ) : null}
-      </ListHeader>
+        onClearFilters={() => {
+          setOverallFilter('all');
+          setClearKey((k) => k + 1);
+          void navigate({ to: '/so-overview', search: {}, replace: true });
+        }}
+        filtersActive={!!(search || status || searchInput) || overallFilter !== 'all'}
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -188,7 +203,7 @@ function SoOverviewPage(): React.JSX.Element {
   );
 }
 
-function OverallStatusPills({
+function OverallStatusSelect({
   rows,
   value,
   onChange,
@@ -208,36 +223,24 @@ function OverallStatusPills({
   };
   for (const r of rows) counts[r.overallStatus] = (counts[r.overallStatus] ?? 0) + 1;
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 6,
-        alignItems: 'center',
-      }}
+    <select
+      className="innovic-select"
+      aria-label="Overall status"
+      title="Overall status"
+      value={value}
+      onChange={(e) => onChange(e.target.value as OverallStatusFilter)}
     >
-      <span className="text3" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em' }}>
-        Filter:
-      </span>
       {OVERALL_STATUS_LABELS.map((opt) => {
-        const active = value === opt.value;
         const count = counts[opt.value] ?? 0;
-        // Skip non-"all" options when count is zero AND not active.
-        if (opt.value !== 'all' && count === 0 && !active) return null;
+        // Skip non-"all" options when count is zero AND not selected.
+        if (opt.value !== 'all' && count === 0 && value !== opt.value) return null;
         return (
-          <button
-            key={opt.value}
-            type="button"
-            className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-            aria-pressed={active}
-            style={{ borderRadius: 999, padding: '0 var(--sp-3)' }}
-            onClick={() => onChange(active && opt.value !== 'all' ? 'all' : opt.value)}
-          >
-            {opt.label} <b>{count}</b>
-          </button>
+          <option key={opt.value} value={opt.value}>
+            {opt.label} ({count})
+          </option>
         );
       })}
-    </div>
+    </select>
   );
 }
 

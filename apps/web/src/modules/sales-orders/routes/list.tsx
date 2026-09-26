@@ -31,7 +31,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ConfirmDialog } from '@/ui/feedback';
-import { ListFooter, ListHeader, PageState, StatusPills, ViewToggle } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState, ViewToggle } from '@/ui/layout';
 import { useSoStatus } from '../../so-status/api';
 import {
   fetchSalesOrdersForExport,
@@ -306,9 +306,9 @@ function SalesOrdersListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The ONE list header (ui/layout ListHeader): title · count · search ·
-          type filter · Export · + New, with the status pills and the view
-          toggle in its sticky band. Same URL params, same query as before. */}
+      {/* The ONE list header (ui/layout ListHeader): title · count · view
+          toggle · Export · + New, then the filter bar (search · status · type
+          · Clear). Same URL params, same query as before. */}
       <ListHeader
         title="SO Master"
         icon="📋"
@@ -319,10 +319,32 @@ function SalesOrdersListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search SO no., customer, client PO, part, item code…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
             <select
               className="innovic-select"
+              aria-label="SO status"
+              title="SO status"
+              value={search.status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as SoStatus | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+            >
+              <option value="">All statuses</option>
+              {SO_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {SO_STATUS_LABEL[s]}
+                </option>
+              ))}
+            </select>
+            <select
+              className="innovic-select"
+              aria-label="SO type"
+              title="SO type"
               value={search.type ?? ''}
               onChange={(e) => {
                 const v = e.target.value as SoType | '';
@@ -331,7 +353,6 @@ function SalesOrdersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 160 }}
             >
               <option value="">All types</option>
               {SELECTABLE_SO_TYPES.map((t) => (
@@ -340,6 +361,38 @@ function SalesOrdersListPage(): React.JSX.Element {
                 </option>
               ))}
             </select>
+          </>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              search: undefined,
+              status: undefined,
+              type: undefined,
+              page: 1,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={
+          search.search != null ||
+          search.status != null ||
+          search.type != null ||
+          searchInput !== ''
+        }
+        tools={
+          <>
+            {/* Expand all works on the one expandedIds set both views read. */}
+            <ViewToggle
+              value={view}
+              onChange={changeView}
+              expandAll={allExpanded}
+              onExpandAll={() =>
+                setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
+              }
+            />
             <button
               type="button"
               className="btn btn-ghost"
@@ -363,30 +416,7 @@ function SalesOrdersListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        {/* Status filter pills — every SO_STATUSES value, same `status` param.
-            Expand all works on the one expandedIds set both views read. */}
-        <StatusPills
-          options={SO_STATUSES.map((s) => ({ value: s, label: SO_STATUS_LABEL[s] }))}
-          value={search.status ?? null}
-          onChange={(s) =>
-            void navigate({
-              search: (prev) => ({ ...prev, status: (s as SoStatus | null) ?? undefined, page: 1 }),
-              replace: true,
-            })
-          }
-          right={
-            <ViewToggle
-              value={view}
-              onChange={changeView}
-              expandAll={allExpanded}
-              onExpandAll={() =>
-                setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
-              }
-            />
-          }
-        />
-      </ListHeader>
+      />
 
       {importMsg ? (
         <div

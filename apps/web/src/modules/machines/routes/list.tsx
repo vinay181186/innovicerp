@@ -55,7 +55,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { Select } from '@/ui/forms';
-import { ListFooter, ListHeader, PageHeader, PageState, RowActions } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useMachineGroupLookup, useMachinesList } from '../api';
 import { MachineGroupTab } from '../components/machine-group-tab';
@@ -120,12 +120,10 @@ function MachinesListPage(): React.JSX.Element {
 
   if (tab === 'groups') {
     return (
-      <div>
-        {/* The groups tab owns its own toolbar inside MachineGroupTab, so the
-            shell carries only the page title and the tab strip. */}
-        <PageHeader title="Machine Master">{tabs}</PageHeader>
-        <MachineGroupTab />
-      </div>
+      // The groups tab draws its own ListHeader band (title, search, the
+      // Active/Inactive dropdown, Add) with the tab strip inside it, the same
+      // way the Machines tab does — so the page keeps ONE band.
+      <MachineGroupTab tabs={tabs} />
     );
   }
 
@@ -298,10 +296,17 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         // GET /machines matches code, name, type, status and group code.
         searchPlaceholder="Search code, name, type, group, status…"
         updating={isFetching && !isLoading}
-        tools={
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+            replace: true,
+          });
+        }}
+        filtersActive={searchInput.trim() !== '' || search.status != null}
+        filters={
           <Select
             aria-label="Machine Status"
-            fieldWidth="md"
             value={search.status ?? ''}
             options={[
               { value: '', label: 'All statuses' },

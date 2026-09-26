@@ -1,9 +1,11 @@
 // Machine Master → MACHINE GROUPS tab. The master the shop floor types once —
 // VMC, CNC, Lathe — and then picks from on every machine.
 //
-// Visually this is the Raw Material Master panel (tbl-wrap + innovic-table, ONE
-// StatStrip row for the counts which double as the Active/Inactive filter,
-// clickable rows, scrolling list, inline New/Edit modal). It is a LOCAL copy
+// Visually this is the Raw Material Master panel (tbl-wrap + innovic-table,
+// clickable rows, scrolling list, inline New/Edit modal). The header is the
+// shared <ListHeader>: search, then an All / Active / Inactive dropdown whose
+// labels carry the counts (owner's filter-bar decision 2026-09-26 — it replaced
+// the clickable count strip), then Clear. It is a LOCAL copy
 // rather than a reuse of <MaterialMasterPanel> because that panel is built for a
 // two-field master (auto `code` + typed `name`) and hard-wires an Excel
 // template/import pair. A machine group has ONE value — `code` IS the word the
@@ -17,9 +19,10 @@ import type { ListMachineGroupsQuery, MachineGroup } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ConfirmDialog } from '@/ui/feedback';
+import { Select } from '@/ui/forms';
+import { ListHeader } from '@/ui/layout';
 import {
   MACHINE_GROUP_LIST_LIMIT,
   useCreateMachineGroup,
@@ -31,7 +34,7 @@ import {
 type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: MachineGroup };
 type StatusFilter = 'all' | 'active' | 'inactive';
 
-export function MachineGroupTab(): React.JSX.Element {
+export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   // Same department form as the machines themselves (machine_create sits in
   // Production): Add = entry, Edit = edit, Del = the edit+approve pair only
   // L5 Department Admin and above hold.
@@ -82,69 +85,47 @@ export function MachineGroupTab(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          marginBottom: 12,
-          gap: 8,
+      <ListHeader
+        title="Machine Master"
+        icon="⚙"
+        count={list.isLoading ? undefined : total}
+        noun="machine group"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search group, description…"
+        updating={list.isFetching && !list.isLoading}
+        filters={
+          <Select
+            aria-label="Machine Group Status"
+            title="Machine Group Status"
+            value={status}
+            options={[
+              { value: 'all', label: `All (${rows.length})` },
+              { value: 'active', label: `Active (${activeCount})` },
+              { value: 'inactive', label: `Inactive (${inactiveCount})` },
+            ]}
+            onChange={(e) => setStatus(e.target.value as StatusFilter)}
+          />
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          setStatus('all');
         }}
+        filtersActive={searchInput.trim() !== '' || status !== 'all'}
+        primary={
+          canAdd ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModal({ kind: 'new' })}
+            >
+              <Plus size={14} /> Add Machine Group
+            </button>
+          ) : null
+        }
       >
-        <input
-          className="innovic-input"
-          placeholder="🔍 Search group, description…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          style={{ width: 260, fontSize: 12 }}
-        />
-        {list.isFetching && !list.isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
-        ) : null}
-        {canAdd ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setModal({ kind: 'new' })}
-          >
-            <Plus size={14} /> Add Machine Group
-          </button>
-        ) : null}
-      </div>
-
-      {/* Counts + the Active/Inactive filter in ONE strip (styling skill Rule 3). */}
-      <div style={{ marginBottom: 12 }}>
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: 'All Groups',
-              count: rows.length,
-              color: 'var(--cyan)',
-              active: status === 'all',
-              onClick: () => setStatus('all'),
-            },
-            {
-              key: 'active',
-              label: 'Active',
-              count: activeCount,
-              color: 'var(--green2)',
-              active: status === 'active',
-              onClick: () => setStatus('active'),
-            },
-            {
-              key: 'inactive',
-              label: 'Inactive',
-              count: inactiveCount,
-              color: 'var(--amber2)',
-              active: status === 'inactive',
-              onClick: () => setStatus('inactive'),
-            },
-          ]}
-        />
-      </div>
+        {tabs}
+      </ListHeader>
 
       {softDelete.isError ? (
         <div className="panel" style={{ marginBottom: 12 }}>

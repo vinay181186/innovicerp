@@ -202,9 +202,11 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search JWSO no., customer, client PO, part, item code…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <select
             className="innovic-select"
+            aria-label="JWSO status"
+            title="JWSO status"
             value={search.status ?? ''}
             onChange={(e) => {
               const v = e.target.value as SoStatus | '';
@@ -213,7 +215,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                 replace: true,
               });
             }}
-            style={{ width: 140 }}
           >
             <option value="">All statuses</option>
             {SO_STATUSES.map((s) => (
@@ -223,6 +224,14 @@ function JobWorkOrdersListPage(): React.JSX.Element {
             ))}
           </select>
         }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+            replace: true,
+          });
+        }}
+        filtersActive={search.search != null || search.status != null || searchInput !== ''}
         primary={
           canCreate ? (
             <Link to="/job-work-orders/new" className="btn btn-primary">

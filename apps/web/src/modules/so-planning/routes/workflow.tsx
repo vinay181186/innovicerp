@@ -293,7 +293,8 @@ function PlanningWorkflowPage(): JSX.Element {
       ) : (
         <>
           {/* ── Level 1 header: the ONE list header (ui/layout ListHeader) —
-              title · count · client-side search · SO | JWSO toggle. ── */}
+              title · count, then the filter bar: client-side search · SO /
+              JWSO source dropdown · Clear. ── */}
           <ListHeader
             title="SO/JWSO Planning"
             icon="📋"
@@ -303,26 +304,23 @@ function PlanningWorkflowPage(): JSX.Element {
             onSearch={setSoSearch}
             searchPlaceholder="Search SO / JWSO No., customer, item code or name, due date, status…"
             updating={soList.isFetching && !soList.isLoading}
-            tools={
-              <div style={{ display: 'flex', gap: 4 }}>
-                {(
-                  [
-                    { key: 'so', label: 'SO' },
-                    { key: 'jw', label: 'JWSO' },
-                  ] as { key: Source; label: string }[]
-                ).map((tb) => (
-                  <button
-                    key={tb.key}
-                    type="button"
-                    className={`btn btn-sm ${src === tb.key ? 'btn-primary' : 'btn-ghost'}`}
-                    aria-pressed={src === tb.key}
-                    onClick={() => setSrc(tb.key)}
-                  >
-                    {tb.label}
-                  </button>
-                ))}
-              </div>
+            filters={
+              <select
+                className="innovic-select"
+                aria-label="Order source"
+                title="Order source"
+                value={src}
+                onChange={(e) => setSrc(e.target.value === 'jw' ? 'jw' : 'so')}
+              >
+                <option value="so">SO</option>
+                <option value="jw">JWSO</option>
+              </select>
             }
+            onClearFilters={() => {
+              setSoSearch('');
+              if (src !== 'so') setSrc('so');
+            }}
+            filtersActive={soSearch !== '' || src !== 'so'}
           />
 
           <OrderList

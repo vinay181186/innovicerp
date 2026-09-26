@@ -254,21 +254,29 @@ function CustomerDispatchListPage(): React.JSX.Element {
         onSearch={setSearch}
         searchPlaceholder="Search dispatch no., SO, JC, POL, item, customer, date…"
         updating={isFetching && !isLoading}
+        filters={
+          <select
+            className="innovic-select"
+            aria-label="SO No."
+            title="SO No."
+            value={soFilter}
+            onChange={(e) => setSoFilter(e.target.value)}
+          >
+            <option value="">All SOs</option>
+            {soOptions.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        }
+        onClearFilters={() => {
+          setSearch('');
+          setSoFilter('');
+        }}
+        filtersActive={search !== '' || soFilter !== ''}
         tools={
           <>
-            <select
-              className="innovic-select"
-              value={soFilter}
-              onChange={(e) => setSoFilter(e.target.value)}
-              style={{ width: 160 }}
-            >
-              <option value="">All SOs</option>
-              {soOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
             <button
               type="button"
               className="btn btn-ghost"

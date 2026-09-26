@@ -7,9 +7,8 @@
 // implementation, modules/clients/routes/list.tsx. The composition is that
 // file's, unchanged:
 //
-//   <ListHeader>            title · count · SearchInput · Source filter · ⟳ Updating… · primary
-//     <StatStrip>           counts that double as the item-type filter
-//   </ListHeader>
+//   <ListHeader>            title · count · ⟳ Updating… · primary, then the filter
+//                           bar: SearchInput · item type (with counts) · Source · Clear
 //   <Banner>                import error / import result (dismissible)
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint · Excel template / import
@@ -23,7 +22,7 @@
 //
 // What did NOT change: the route and its search params, the 300ms debounce on
 // the URL write, normalizeSearchTerm, the whole-master count queries (so the
-// strip's numbers do not shrink as you type), perms -> canCreate/canEdit/
+// item-type dropdown's counts do not shrink as you type), perms -> canCreate/canEdit/
 // canDelete, the one-request bulk import and its duplicate/failure buckets,
 // row click -> detail, Item Code -> detail, the thumbnail's own click (the
 // picture opens large; it never opens the row).
@@ -70,7 +69,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Badge, Button, Icon, Tag } from '@/ui/core';
-import { DataTable, Panel, StatStrip, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
@@ -163,7 +162,7 @@ function ItemsListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useItemsList(query);
 
-  // Strip counts — whole-master totals, independent of the search box.
+  // Item-type counts — whole-master totals, independent of the search box.
   const allCount = useItemsList(COUNT_ALL).data?.total ?? 0;
   const componentCount = useItemsList(COUNT_COMPONENT).data?.total ?? 0;
   const assemblyCount = useItemsList(COUNT_ASSEMBLY).data?.total ?? 0;
@@ -361,8 +360,8 @@ function ItemsListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, search, the Source filter, the
-          primary action and the StatStrip stay put while the rows scroll
+      {/* The frozen header band: title, count, primary action and the filter
+          bar (search, item type, Source) stay put while the rows scroll
           underneath. */}
       <ListHeader
         title="Item Master"
@@ -373,24 +372,59 @@ function ItemsListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search code, name, description, drawing, rev, material, UOM…"
         updating={isFetching && !isLoading}
-        tools={
-          <Select
-            fieldWidth="md"
-            value={search.procurementType ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as ItemProcurementType | '';
-              setSourceFilter(v === '' ? undefined : v);
-            }}
-            title="Make / Buy"
-            aria-label="Make / Buy"
-            options={[
-              { value: '', label: 'All — Make / Buy' },
-              ...ITEM_PROCUREMENT_TYPES.map((t) => ({
-                value: t,
-                label: ITEM_PROCUREMENT_TYPE_LABEL[t],
-              })),
-            ]}
-          />
+        filters={
+          <>
+            {/* Item type, with the whole-master counts the old StatStrip
+                showed in the option labels (owner decision 2026-09-26: one
+                filter bar, no capsule row). Same `itemType` URL param. */}
+            <Select
+              value={search.itemType ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as ItemType | '';
+                setTypeFilter(v === '' ? undefined : v);
+              }}
+              title="Item type"
+              aria-label="Item type"
+              options={[
+                { value: '', label: `All Items (${allCount})` },
+                { value: 'component', label: `Component (${componentCount})` },
+                { value: 'assembly', label: `Assembly (${assemblyCount})` },
+              ]}
+            />
+            <Select
+              value={search.procurementType ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as ItemProcurementType | '';
+                setSourceFilter(v === '' ? undefined : v);
+              }}
+              title="Make / Buy"
+              aria-label="Make / Buy"
+              options={[
+                { value: '', label: 'All — Make / Buy' },
+                ...ITEM_PROCUREMENT_TYPES.map((t) => ({
+                  value: t,
+                  label: ITEM_PROCUREMENT_TYPE_LABEL[t],
+                })),
+              ]}
+            />
+          </>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              search: undefined,
+              itemType: undefined,
+              procurementType: undefined,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={
+          search.itemType !== undefined ||
+          search.procurementType !== undefined ||
+          searchInput !== ''
         }
         primary={
           canCreate ? (
@@ -399,38 +433,7 @@ function ItemsListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        {/* Counts double as the item-type filter (styling skill, Rule 3), and
-            they are whole-master totals — not the size of the current search. */}
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: 'All Items',
-              count: allCount,
-              color: 'var(--cyan)',
-              active: search.itemType === undefined,
-              onClick: () => setTypeFilter(undefined),
-            },
-            {
-              key: 'component',
-              label: 'Component',
-              count: componentCount,
-              color: 'var(--blue)',
-              active: search.itemType === 'component',
-              onClick: () => setTypeFilter('component'),
-            },
-            {
-              key: 'assembly',
-              label: 'Assembly',
-              count: assemblyCount,
-              color: 'var(--purple)',
-              active: search.itemType === 'assembly',
-              onClick: () => setTypeFilter('assembly'),
-            },
-          ]}
-        />
-      </ListHeader>
+      />
 
       {importError ? (
         <Banner tone="error" role="alert" onDismiss={() => setImportError(null)}>

@@ -5,9 +5,11 @@
 // the ▸ chevron on the BOM No. still reveals the part list IN PLACE, right
 // under the row (legacy UX), while the row itself opens the detail page.
 //
-//   <ListHeader>            title · count · SearchInput · ⟳ Updating… · + New BOM
-//     <StatusPills>         draft | active | obsolete — a filter with no counts
-//   </ListHeader>
+//   <ListHeader>            title · count · ⟳ Updating… · + New BOM; filter bar:
+//                           SearchInput · BOM Status dropdown (All | Draft |
+//                           Active | Obsolete — no counts, the API returns none;
+//                           it replaced the status pills, owner's filter-bar
+//                           decision 2026-09-26) · Clear
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //     renderExpanded        the part list, as a nested compact DataTable
 //   <ListFooter>            count line · 💡 hint
@@ -31,10 +33,12 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { statusText } from '@/lib/status-text';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
-import { ListFooter, ListHeader, PageState, StatusPills } from '@/ui/layout';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useBomMaster, useBomMastersList } from '../api';
 
 const searchSchema = z.object({
@@ -236,8 +240,8 @@ function BomMastersListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, search, primary action and the
-          status pills stay put while the rows scroll underneath. */}
+      {/* The frozen header band: title, count, primary action and the filter
+          bar stay put while the rows scroll underneath. */}
       <ListHeader
         title="BOM Master"
         count={total}
@@ -247,6 +251,32 @@ function BomMastersListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search BOM no., name, parent item…"
         updating={isFetching && !isLoading}
+        filters={
+          <Select
+            aria-label="BOM Status"
+            title="BOM Status"
+            value={status ?? ''}
+            options={[
+              { value: '', label: 'All' },
+              ...STATUS_PILLS.map((v) => ({ value: v, label: statusText(v) })),
+            ]}
+            onChange={(e) =>
+              void navigate({
+                to: '/bom-masters',
+                search: {
+                  ...(search ? { search } : {}),
+                  status: e.target.value === '' ? undefined : (e.target.value as BomStatus),
+                },
+                replace: true,
+              })
+            }
+          />
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({ to: '/bom-masters', search: {}, replace: true });
+        }}
+        filtersActive={searchInput.trim() !== '' || status != null}
         primary={
           perms.entry ? (
             <Link to="/bom-masters/new" className="btn btn-primary">
@@ -254,25 +284,7 @@ function BomMastersListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        {/* The status filter carries no counts, so it is pills, not a
-            StatStrip — same `status` search param, same query as before. */}
-        <StatusPills
-          options={STATUS_PILLS}
-          value={status ?? null}
-          label="Filter by BOM status"
-          onChange={(v) =>
-            void navigate({
-              to: '/bom-masters',
-              search: {
-                ...(search ? { search } : {}),
-                status: (v as BomStatus | null) ?? undefined,
-              },
-              replace: true,
-            })
-          }
-        />
-      </ListHeader>
+      />
 
       {isError ? (
         <PageState

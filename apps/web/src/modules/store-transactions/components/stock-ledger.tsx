@@ -175,8 +175,8 @@ export function StockLedger(): React.JSX.Element {
 
   return (
     <div>
-      {/* THE list header (ui/layout ListHeader): title · count · search ·
-          Type / Source filters · Clear, with the movement counts pinned
+      {/* THE list header (ui/layout ListHeader): title · count, then the filter
+          bar (search · Type / Source · Clear), with the movement counts pinned
           inside the same band. */}
       <ListHeader
         title="Stock Ledger"
@@ -195,12 +195,12 @@ export function StockLedger(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search item, source ref, remarks…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
             <select
               className="innovic-select"
               aria-label="Movement type"
-              style={{ width: 110 }}
+              title="Movement type"
               value={txnType ?? ''}
               onChange={(e) => {
                 const v = e.target.value as StoreTxnType | '';
@@ -218,7 +218,7 @@ export function StockLedger(): React.JSX.Element {
             <select
               className="innovic-select"
               aria-label="Source"
-              style={{ width: 150 }}
+              title="Source"
               value={sourceType ?? ''}
               onChange={(e) => {
                 const v = e.target.value as StoreTxnSourceType | '';
@@ -233,20 +233,15 @@ export function StockLedger(): React.JSX.Element {
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => {
-                setSearchInput('');
-                setTxnType(undefined);
-                setSourceType(undefined);
-                setPage(1);
-              }}
-            >
-              ↻ Clear
-            </button>
           </>
         }
+        onClearFilters={() => {
+          setSearchInput('');
+          setTxnType(undefined);
+          setSourceType(undefined);
+          setPage(1);
+        }}
+        filtersActive={txnType !== undefined || sourceType !== undefined || searchInput !== ''}
       >
         {data?.summary ? (
           <StatStrip

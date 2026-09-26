@@ -1,6 +1,7 @@
 // Production Orders master (ADR-170). SO Master List is THE style reference:
-// <ListHeader> band (title + count + search + New), ONE StatStrip row whose
-// tiles filter (Open, All, Closed, Short Closed), a react-table grid with
+// <ListHeader> band (title + count + New; filter bar: search + a Status
+// dropdown whose labels carry the counts — All, Open, Closed, Short Closed —
+// + Clear; owner's filter-bar decision 2026-09-26), a react-table grid with
 // SortableHead, clickable rows, document codes in strong mono.
 //
 // Search is server-side (`?search=` matches PO code, plan code, POL, item code
@@ -30,11 +31,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SortableHead } from '@/components/shared/sortable-head';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useProductionOrdersList } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
@@ -119,8 +120,14 @@ function ProductionOrdersListPage(): React.JSX.Element {
     },
     [navigate],
   );
-  const toggleStatus = (s: ProductionOrderStatus) => () =>
-    setStatusFilter(search.status === s ? undefined : s);
+  const clearFilters = (): void => {
+    setSearchInput('');
+    void navigate({
+      search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+      replace: true,
+    });
+  };
+  const filtersActive = searchInput.trim() !== '' || search.status != null;
 
   const columns = useMemo<ColumnDef<ProductionOrderListItem>[]>(
     () => [
@@ -295,8 +302,8 @@ function ProductionOrdersListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* Frozen header band — title + count + search + New PO + the count strip
-          stay pinned; the table scrolls under them. */}
+      {/* Frozen header band — title + count + New PO + the filter bar stay
+          pinned; the table scrolls under them. */}
       <ListHeader
         title="Production Orders"
         icon="🏭"
@@ -307,6 +314,39 @@ function ProductionOrdersListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search Production Order No., plan, POL, item, JC, SO…"
         updating={isFetching && !isLoading}
+        onClearFilters={clearFilters}
+        filtersActive={filtersActive}
+        filters={
+          <Select
+            aria-label="Production Order Status"
+            title="Production Order Status"
+            value={search.status ?? ''}
+            options={[
+              { value: '', label: `All (${allCount})` },
+              { value: 'open', label: `Open (${openCount})` },
+              { value: 'closed', label: `Closed (${closedCount})` },
+              {
+                value: 'short_closed',
+                label: `${PRODUCTION_ORDER_STATUS_LABEL.short_closed} (${shortClosedCount})`,
+              },
+              // Partly Closed never had a tile; it stays reachable only through
+              // a link that already carries it, so the box can still show it.
+              ...(search.status === 'partially_closed'
+                ? [
+                    {
+                      value: 'partially_closed',
+                      label: PRODUCTION_ORDER_STATUS_LABEL.partially_closed,
+                    },
+                  ]
+                : []),
+            ]}
+            onChange={(e) =>
+              setStatusFilter(
+                e.target.value === '' ? undefined : (e.target.value as ProductionOrderStatus),
+              )
+            }
+          />
+        }
         primary={
           perms.entry ? (
             <Link to="/production-orders/new" className="btn btn-primary">
@@ -314,48 +354,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        <StatStrip
-          items={[
-            {
-              key: 'open',
-              label: 'Open',
-              count: openCount,
-              color: 'var(--blue)',
-              active: search.status === 'open',
-              onClick: toggleStatus('open'),
-              title: 'Open Production Orders — Job Card in progress or waiting to be closed',
-            },
-            {
-              key: 'all',
-              label: 'All',
-              count: allCount,
-              color: 'var(--cyan)',
-              active: search.status === undefined,
-              onClick: () => setStatusFilter(undefined),
-              title: 'Clear the status filter',
-            },
-            {
-              key: 'closed',
-              label: 'Closed',
-              count: closedCount,
-              color: 'var(--green2)',
-              active: search.status === 'closed',
-              onClick: toggleStatus('closed'),
-              title: 'Closed — stock credited with the finished qty',
-            },
-            {
-              key: 'short_closed',
-              label: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
-              count: shortClosedCount,
-              // Grey, same as its badge: stopped, not an alarm.
-              color: 'var(--text2)',
-              active: search.status === 'short_closed',
-              onClick: toggleStatus('short_closed'),
-            },
-          ]}
-        />
-      </ListHeader>
+      />
 
       <div className="panel">
         <div className="tbl-wrap tbl-frozen">

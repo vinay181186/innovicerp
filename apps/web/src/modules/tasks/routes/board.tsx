@@ -1,7 +1,8 @@
 // Task Board (ADR-176) — the approved Inbox / Outbox / My To-Do / All Tasks
 // board. Title row with "+ My To-Do" and "+ Assign Task" (any user), a tab
-// strip with open counts, the KPI strip (To Do / In Progress / Completed /
-// Overdue / Cancelled — the only status filter), the filter strip, the table, and a hint
+// strip with open counts, the filter bar (search + Status / Priority / Person /
+// Due Date, with the TO DO / IN PROGRESS / COMPLETED / OVERDUE counts in the
+// Status and Due Date options — they replaced the clickable KPI strip), the table, and a hint
 // line that names the view. `?view=` keeps the tab across a refresh;
 // `?task=<uuid>` (Global Search deep link) opens that task's detail on
 // arrival; `?search=` keeps the typed term. Everything else is local state.
@@ -24,7 +25,6 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListHeader } from '@/ui/layout';
 import { useMarkTasksViewed, useTaskList, useTaskUserOptions } from '../api';
@@ -39,7 +39,6 @@ import { TaskDetailModal } from '../components/task-detail-modal';
 import { TaskFilters, TaskTabs } from '../components/board-filters';
 import { TaskTable, type RowAction } from '../components/task-table';
 import { TodoModal } from '../components/todo-modal';
-import { TASK_STATUS_TONE } from '../lib/format';
 
 const searchSchema = z.object({
   task: z.string().uuid().optional(),
@@ -169,8 +168,6 @@ function TaskBoardPage(): React.JSX.Element {
   const counts = data.counts;
   const tabs: TaskView[] = data.isAdmin ? [...TASK_VIEWS] : TASK_VIEWS.filter((v) => v !== 'all');
   const tabCount = (v: TaskView): number | null => data.viewCounts[v];
-  const toggleStatus = (k: TaskStatus): void => setStatus((cur) => (cur === k ? '' : k));
-  const toggleOverdue = (): void => setDue((cur) => (cur === 'overdue' ? '' : 'overdue'));
 
   return (
     <div>
@@ -183,22 +180,45 @@ function TaskBoardPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search Task No., title, related document…"
         updating={isFetching}
+        filters={
+          <TaskFilters
+            view={view}
+            users={users}
+            departments={departments}
+            values={{ searchInput, status, priority, person, assignedBy, dept, due }}
+            counts={counts}
+            onStatus={setStatus}
+            onPriority={setPriority}
+            onPerson={setPerson}
+            onAssignedBy={setAssignedBy}
+            onDept={setDept}
+            onDue={setDue}
+          />
+        }
+        onClearFilters={() => {
+          setStatus('');
+          setPriority('');
+          setPerson('');
+          setAssignedBy('');
+          setDept('');
+          setDue('');
+          setSearchInput('');
+          void navigate({ search: (prev) => ({ ...prev, search: undefined }), replace: true });
+        }}
+        filtersActive={
+          status !== '' ||
+          priority !== '' ||
+          person !== '' ||
+          assignedBy !== '' ||
+          dept !== '' ||
+          due !== '' ||
+          searchInput.trim() !== ''
+        }
         tools={
           <>
             {data.unreadCount > 0 ? (
               <span className="badge b-red">🔔 {data.unreadCount} new</span>
             ) : null}
-            <TaskFilters
-              view={view}
-              users={users}
-              departments={departments}
-              values={{ searchInput, priority, person, assignedBy, dept, due }}
-              onPriority={setPriority}
-              onPerson={setPerson}
-              onAssignedBy={setAssignedBy}
-              onDept={setDept}
-              onDue={setDue}
-            />
             <button
               type="button"
               className="btn btn-ghost"
@@ -219,54 +239,6 @@ function TaskBoardPage(): React.JSX.Element {
         }
       >
         <TaskTabs tabs={tabs} view={view} countOf={tabCount} onChange={setView} />
-
-        {/* KPI strip — each tile is a filter (the only status filter) */}
-        <StatStrip
-          items={[
-            {
-              key: 'todo',
-              label: 'To Do',
-              count: counts.todo,
-              color: TASK_STATUS_TONE.todo.color,
-              active: status === 'todo',
-              onClick: () => toggleStatus('todo'),
-            },
-            {
-              key: 'in_progress',
-              label: 'In Progress',
-              count: counts.in_progress,
-              color: TASK_STATUS_TONE.in_progress.color,
-              active: status === 'in_progress',
-              onClick: () => toggleStatus('in_progress'),
-            },
-            {
-              key: 'completed',
-              label: 'Completed',
-              count: counts.completed,
-              color: TASK_STATUS_TONE.completed.color,
-              active: status === 'completed',
-              onClick: () => toggleStatus('completed'),
-            },
-            {
-              key: 'overdue',
-              label: 'Overdue',
-              count: counts.overdue,
-              color: TASK_STATUS_TONE.overdue.color,
-              active: due === 'overdue',
-              onClick: toggleOverdue,
-            },
-            {
-              // No count is sent for cancelled tasks; the tile still filters so
-              // the Status dropdown it replaces is not needed.
-              key: 'cancelled',
-              label: 'Cancelled',
-              count: status === 'cancelled' ? data.tasks.length : '—',
-              color: TASK_STATUS_TONE.cancelled.color,
-              active: status === 'cancelled',
-              onClick: () => toggleStatus('cancelled'),
-            },
-          ]}
-        />
       </ListHeader>
 
       {isError ? (

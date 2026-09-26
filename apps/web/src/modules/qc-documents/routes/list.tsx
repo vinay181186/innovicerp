@@ -1249,12 +1249,12 @@ function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX.Elemen
         }}
         searchPlaceholder="Search this register…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
-            {toggle}
             <select
               className="innovic-select"
-              style={{ width: 180 }}
+              aria-label="Category"
+              title="Category"
               value={search.category ?? ''}
               onChange={(e) =>
                 void navigate({
@@ -1275,6 +1275,15 @@ function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX.Elemen
             </select>
           </>
         }
+        onClearFilters={() => {
+          setTerm('');
+          void navigate({
+            search: (prev) => ({ ...prev, category: undefined, search: undefined }),
+            replace: true,
+          });
+        }}
+        filtersActive={!!search.category || term.trim() !== ''}
+        tools={toggle}
         primary={
           perms.entry ? (
             <button type="button" className="btn btn-primary" onClick={() => setUploadOpen(true)}>

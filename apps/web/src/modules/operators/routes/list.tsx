@@ -259,10 +259,17 @@ function OperatorsListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search code, name, department, skills…"
         updating={isFetching && !isLoading}
-        tools={
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+            replace: true,
+          });
+        }}
+        filtersActive={searchInput.trim() !== '' || search.status != null}
+        filters={
           <Select
             aria-label="Active"
-            fieldWidth="md"
             value={search.status ?? ''}
             options={[
               { value: '', label: 'All' },

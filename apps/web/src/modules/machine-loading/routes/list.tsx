@@ -144,13 +144,17 @@ function MachineLoadingPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search JC no., POL, item, SO no., operation…"
         updating={isFetching && !isLoading}
+        // The machine load cards below stay (they ARE this page's content —
+        // load bars, hours, days to clear); a card click still picks the
+        // machine. Clear resets that pick and the search (it replaced the old
+        // "All Machines ×" button — owner's filter-bar decision 2026-09-26).
+        onClearFilters={() => {
+          setSearchInput('');
+          clearFilter();
+        }}
+        filtersActive={term !== '' || selMachineId != null}
         tools={
           <>
-            {selMachineId ? (
-              <button type="button" className="btn btn-ghost" onClick={clearFilter}>
-                All Machines ×
-              </button>
-            ) : null}
             {/* ONE queue screen: the Job Queue, filtered to the picked machine. */}
             <Link
               to="/job-queue"

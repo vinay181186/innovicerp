@@ -181,9 +181,9 @@ function DeliveryChallansListPage(): React.JSX.Element {
         <OspAtVendorRegister />
       ) : (
         <>
-          {/* THE list header (ui/layout ListHeader): title · count · search ·
-              status filter · Print Register · + New DC, with the read-only
-              totals strip pinned inside the same band. */}
+          {/* THE list header (ui/layout ListHeader): title · count · Print
+              Register · + New DC, then the filter bar (search · status ·
+              Clear), with the read-only totals strip pinned inside the band. */}
           <ListHeader
             title="OSP Outward DC"
             icon="🚛"
@@ -194,28 +194,38 @@ function DeliveryChallansListPage(): React.JSX.Element {
             onSearch={setSearchInput}
             searchPlaceholder="Search DC, PO / NC, vendor…"
             updating={isFetching && !isLoading}
+            filters={
+              <select
+                className="innovic-select"
+                aria-label="DC status"
+                title="DC status"
+                value={search.status ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value as DcStatus | '';
+                  void navigate({
+                    search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                    replace: true,
+                  });
+                }}
+              >
+                <option value="">All statuses</option>
+                {DC_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {DC_STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            }
+            onClearFilters={() => {
+              setSearchInput('');
+              void navigate({
+                search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+                replace: true,
+              });
+            }}
+            filtersActive={search.status !== undefined || searchInput !== ''}
             tools={
               <>
-                <select
-                  className="innovic-select"
-                  aria-label="DC status"
-                  value={search.status ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value as DcStatus | '';
-                    void navigate({
-                      search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                      replace: true,
-                    });
-                  }}
-                  style={{ width: 160 }}
-                >
-                  <option value="">All statuses</option>
-                  {DC_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {DC_STATUS_LABEL[s]}
-                    </option>
-                  ))}
-                </select>
                 <button
                   type="button"
                   className="btn btn-ghost"

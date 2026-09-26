@@ -69,14 +69,15 @@ function DailyTaskReportsPage(): React.JSX.Element {
         onSearch={setTerm}
         searchPlaceholder="Search report date, user, shift…"
         updating={isFetching}
-        tools={
+        filters={
           <>
             {data.isAdmin ? (
               <select
                 className="innovic-select"
+                aria-label="User"
+                title="User"
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
-                style={{ width: 'auto' }}
               >
                 <option value="">All Users</option>
                 {data.userOptions.map((u) => (
@@ -104,6 +105,13 @@ function DailyTaskReportsPage(): React.JSX.Element {
             />
           </>
         }
+        onClearFilters={() => {
+          setUserFilter('');
+          setDateFrom('');
+          setDateTo('');
+          setTerm('');
+        }}
+        filtersActive={userFilter !== '' || dateFrom !== '' || dateTo !== '' || term.trim() !== ''}
         primary={
           <button
             type="button"

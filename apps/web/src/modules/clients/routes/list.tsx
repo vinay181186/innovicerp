@@ -8,9 +8,9 @@
 // PHASE 4 — this screen is the GROUP 1 reference implementation. It is the
 // canonical LIST composition and nothing else:
 //
-//   <ListHeader>            title · count · SearchInput · ⟳ Updating… · primary
-//     <StatStrip>           counts that double as the status filter
-//   </ListHeader>
+//   <ListHeader>            title · count · ⟳ Updating… · primary, then the
+//                           filter bar: SearchInput · status (counts in the
+//                           option labels) · Clear
 //   <Banner>                import result (dismissible)
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint · Excel template / import
@@ -24,7 +24,7 @@
 //
 // What did NOT change: the route and its search params, the 300ms debounce on
 // the URL write, normalizeSearchTerm, the single un-filtered fetch (so the
-// strip can count all three tiles), perms -> canAdd/canEdit/canDelete, the
+// status dropdown can count all three options), perms -> canAdd/canEdit/canDelete, the
 // one-request bulk import, row click -> detail, Code cell -> detail.
 
 import type { Client, ListClientsQuery } from '@innovic/shared';
@@ -35,7 +35,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import { DataTable, Panel, StatStrip, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateClients, useClientsList, useSoftDeleteClient } from '../api';
@@ -100,8 +100,8 @@ function ClientsListPage(): React.JSX.Element {
   }, [searchInput, search.search, navigate]);
 
   // One fetch of every client matching the search (no isActive server filter):
-  // the Active/Inactive split is derived + filtered client-side so the StatStrip
-  // can show real counts for all three tiles.
+  // the Active/Inactive split is derived + filtered client-side so the status
+  // dropdown can show real counts for all three options.
   const query: ListClientsQuery = useMemo(
     () => ({
       search: search.search,
@@ -258,8 +258,9 @@ function ClientsListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, search, primary action and the
-          StatStrip stay put while the rows scroll underneath. */}
+      {/* The frozen header band: title, count, primary action and the filter
+          bar (search · status with counts · Clear) stay put while the rows
+          scroll underneath. */}
       <ListHeader
         title="Customer Master"
         count={total}
@@ -274,6 +275,30 @@ function ClientsListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
+        filters={
+          <select
+            className="innovic-select"
+            aria-label="Customer status"
+            title="Customer status"
+            value={search.status ?? ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              setStatus(v === 'active' || v === 'inactive' ? v : undefined);
+            }}
+          >
+            <option value="">All Customers ({total})</option>
+            <option value="active">Active ({activeCount})</option>
+            <option value="inactive">Inactive ({inactiveCount})</option>
+          </select>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, status: undefined }),
+            replace: true,
+          });
+        }}
+        filtersActive={search.search != null || search.status != null || searchInput !== ''}
         primary={
           canAdd ? (
             <Link to="/clients/new" className="btn btn-primary">
@@ -281,38 +306,7 @@ function ClientsListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        {/* Counts double as the status filter (styling skill, Rule 3). Active
-            state = coloured label + underline, handled inside <StatStrip>. */}
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: 'All Customers',
-              count: total,
-              color: 'var(--cyan)',
-              active: search.status === undefined,
-              onClick: () => setStatus(undefined),
-            },
-            {
-              key: 'active',
-              label: 'Active',
-              count: activeCount,
-              color: 'var(--green2)',
-              active: search.status === 'active',
-              onClick: () => setStatus('active'),
-            },
-            {
-              key: 'inactive',
-              label: 'Inactive',
-              count: inactiveCount,
-              color: 'var(--text3)',
-              active: search.status === 'inactive',
-              onClick: () => setStatus('inactive'),
-            },
-          ]}
-        />
-      </ListHeader>
+      />
 
       {importMsg ? (
         <Banner tone="info" onDismiss={() => setImportMsg(null)}>

@@ -2,8 +2,10 @@
 // dispatched counts + status badge. Click-through to the per-SO tracker.
 //
 // PL-5b parity port (renderAssemblyTracker L28738–28787):
-//   - 5 status tiles (Total / Waiting / Ready / In Assembly / Completed) above table
-//   - Search input (the status tiles are the status filter)
+//   - the 5 status tile counts (Total / Waiting / Ready / In Assembly / Completed)
+//     now ride in the status dropdown's option labels (owner decision
+//     2026-09-26: no tiles/capsules beside a filter dropdown)
+//   - Search input + status filter dropdown
 //   - Due Date column
 // Legacy renders ONE screen: an accordion of per-SO cards. The port splits it —
 // this list is legacy's collapsed card header (L28782–28787); the expanded body
@@ -12,7 +14,6 @@
 //
 // Port additions with NO legacy counterpart (kept deliberately, not parity):
 //   - red/bold Due when overdue (legacy L28785 prints the date unstyled)
-//   - active-tile ring + click-to-toggle (legacy tiles only set the filter)
 //   - Dispatched column (legacy shows it only in the expanded body, L28795)
 
 import type { AssemblyListItem } from '@innovic/shared';
@@ -22,7 +23,6 @@ import { useMemo, useState } from 'react';
 import { fmtDate, todayIst } from '@/lib/date';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useAssembliesList } from '../api';
 
@@ -61,7 +61,7 @@ function statusBadgeLabel(row: AssemblyListItem): string {
   }
 }
 
-// Tile order matches legacy L28747–28749.
+// Status order + labels match legacy's tiles (L28747–28749).
 const TILES: Array<{ key: FilterKey; label: string; color: string }> = [
   { key: 'all', label: 'Total', color: 'var(--text)' },
   { key: 'waiting', label: 'Waiting', color: 'var(--text3)' },
@@ -114,9 +114,9 @@ function AssemblyListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The ONE list header (ui/layout ListHeader): title · count · search,
-          with the status tiles as one StatStrip in the band. The tiles ARE
-          the status filter (no separate dropdown); clicking one toggles it. */}
+      {/* The ONE list header (ui/layout ListHeader): title · count, then the
+          filter bar — search · status dropdown (the old tiles' counts in its
+          option labels) · Clear. */}
       <ListHeader
         title="Assembly Tracker"
         icon="🔧"
@@ -127,20 +127,27 @@ function AssemblyListPage(): React.JSX.Element {
         onSearch={setSearch}
         searchPlaceholder="Search SO no., customer, BOM no. / name, part, due date, status…"
         updating={isFetching && !isLoading}
-      >
-        {data ? (
-          <StatStrip
-            items={TILES.map((t) => ({
-              key: t.key,
-              label: t.label,
-              count: counts[t.key],
-              color: t.color,
-              active: filter === t.key,
-              onClick: () => setFilter(filter === t.key ? 'all' : t.key),
-            }))}
-          />
-        ) : null}
-      </ListHeader>
+        filters={
+          <select
+            className="innovic-select"
+            aria-label="Assembly status"
+            title="Assembly status"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as FilterKey)}
+          >
+            {TILES.map((t) => (
+              <option key={t.key} value={t.key}>
+                {`${t.key === 'all' ? 'All Status' : t.label}${data ? ` (${counts[t.key]})` : ''}`}
+              </option>
+            ))}
+          </select>
+        }
+        onClearFilters={() => {
+          setSearch('');
+          setFilter('all');
+        }}
+        filtersActive={search !== '' || filter !== 'all'}
+      />
 
       {isLoading ? (
         <div className="panel">
