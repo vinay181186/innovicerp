@@ -49,7 +49,7 @@ function NcRegisterNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/nc-register' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
-  // Tier-driven, per department (QC). The ❌ Report NC button is hidden from
+  // Tier-driven, per department (QC). The ⚠️ Report NC button is hidden from
   // anyone without entry rights, but this screen had no gate of its own —
   // typing the URL still handed over the form (an L1 Viewer, an L4 Approver).
   const { data: eff, isLoading: accessLoading } = useMyAccess();
@@ -112,7 +112,7 @@ function NcRegisterNewPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">❌ Report Non-Conformance</div>
+            <div className="panel-title">⚠️ Report Non-Conformance</div>
           </div>
         </div>
         <div className="panel-body">

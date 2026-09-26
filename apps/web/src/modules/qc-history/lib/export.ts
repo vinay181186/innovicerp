@@ -120,6 +120,8 @@ export function exportPendingQc(
         'Item Name': o.itemName ?? '',
         Operation: o.operation,
         'Order Qty': o.orderQty,
+        // Received Qty belongs to GRN calls; the column only exists when they are mixed in.
+        ...(mixed ? { 'Received Qty': '' } : {}),
         Completed: o.completed,
         Accepted: o.qcAccepted,
         Rejected: o.qcRejected,
@@ -137,7 +139,9 @@ export function exportPendingQc(
         'Drawing Rev': o.itemRevision ?? '',
         'Item Name': o.itemName ?? '',
         Operation: `Incoming · ${o.vendorName ?? ''}`,
-        'Order Qty': o.receivedQty,
+        // A GRN call has no order qty of its own — what came in is its Received Qty.
+        'Order Qty': '',
+        'Received Qty': o.receivedQty,
         Completed: '',
         Accepted: '',
         Rejected: '',

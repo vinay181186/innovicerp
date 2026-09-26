@@ -342,6 +342,9 @@ function VerdictCell(props: {
       <span
         style={{
           ...CAPS,
+          // The verdict shows its Title Case label as written, not in caps.
+          textTransform: 'none',
+          letterSpacing: 0,
           display: 'inline-block',
           padding: '3px 10px',
           borderRadius: 4,

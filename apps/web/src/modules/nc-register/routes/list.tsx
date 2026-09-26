@@ -197,7 +197,7 @@ function NcRegisterListPage(): React.JSX.Element {
           >
             {canReportNc ? (
               <Link to="/nc-register/new" className="btn btn-primary">
-                ❌ Report NC
+                ⚠️ Report NC
               </Link>
             ) : null}
           </div>
