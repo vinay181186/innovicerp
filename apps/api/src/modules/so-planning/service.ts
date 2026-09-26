@@ -55,7 +55,7 @@ import {
   PLAN_PENDING_QTY_SQL,
 } from '../../lib/plan-order-coverage';
 import { readReservedByLine, readStockPositions } from '../../lib/stock-reservation';
-import { soLineCoveredRaw, soLinePlannedRaw } from '../../lib/so-line-coverage';
+import { prCoverQtyRaw, soLineCoveredRaw, soLinePlannedRaw } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 
@@ -220,6 +220,8 @@ async function loadPrsByLine(
       id: purchaseRequests.id,
       code: purchaseRequests.code,
       qty: purchaseRequests.qty,
+      // ADR-189 — what the PR still covers (ordered only, once balance-closed).
+      coverQty: sql<number>`${sql.raw(prCoverQtyRaw('purchase_requests'))}::int`,
       status: purchaseRequests.status,
       soLineId: purchaseRequests.sourceSoLineId,
       poCode: purchaseOrders.code,
@@ -241,7 +243,7 @@ async function loadPrsByLine(
       status: r.status,
       poCode: r.poCode ?? null,
     });
-    if (r.status !== 'cancelled') entry.prQty += Number(r.qty);
+    if (r.status !== 'cancelled') entry.prQty += Number(r.coverQty);
     map.set(r.soLineId, entry);
   }
   return map;

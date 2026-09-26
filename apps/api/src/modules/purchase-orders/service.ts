@@ -58,6 +58,7 @@ import {
   withDocRevision,
 } from '@innovic/shared';
 import type { DocumentTraceability, ShortClosePurchaseOrderInput } from '@innovic/shared';
+import { PO_SHORT_CLOSE_REASON_MIN } from '@innovic/shared';
 import type {
   CreatePurchaseOrderFromPrInput,
   CreatePurchaseOrderInput,
@@ -580,6 +581,10 @@ export async function listPurchaseOrders(
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int   AS "totalQty",
         COALESCE(line_agg.received_qty, 0)::int AS "receivedQty",
+        -- ADR-189 — the one Pending rule (lib/po-pending.ts): per line, clamped,
+        -- and nothing once the PO is closed / short-closed / cancelled.
+        (CASE WHEN po.status IN ('draft', 'open', 'partial', 'qc_pending')
+              THEN COALESCE(line_agg.pending_qty, 0) ELSE 0 END)::int AS "pendingQty",
         COALESCE(dc_agg.sent_qty, 0)::int      AS "dcSentQty"
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
@@ -588,7 +593,8 @@ export async function listPurchaseOrders(
         SELECT purchase_order_id,
                COUNT(*) AS line_count,
                SUM(qty) AS total_qty,
-               SUM(received_qty) AS received_qty
+               SUM(received_qty) AS received_qty,
+               SUM(GREATEST(0, qty - COALESCE(received_qty, 0))) AS pending_qty
         FROM public.purchase_order_lines
         WHERE deleted_at IS NULL
         GROUP BY purchase_order_id
@@ -691,6 +697,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     receivedQty: Number(r['receivedQty'] ?? 0),
+    pendingQty: Number(r['pendingQty'] ?? 0),
     dcSentQty: Number(r['dcSentQty'] ?? 0),
   };
 }
@@ -1826,7 +1833,12 @@ async function mergeLines(
   showMoney: boolean,
 ): Promise<void> {
   const existing = await tx
-    .select({ id: purchaseOrderLines.id, lineNo: purchaseOrderLines.lineNo })
+    .select({
+      id: purchaseOrderLines.id,
+      lineNo: purchaseOrderLines.lineNo,
+      sourcePrId: purchaseOrderLines.sourcePrId,
+      sourceJcOpId: purchaseOrderLines.sourceJcOpId,
+    })
     .from(purchaseOrderLines)
     .where(
       and(
@@ -1857,6 +1869,16 @@ async function mergeLines(
   }
 
   const absentIds = existing.map((e) => e.id).filter((eid) => !seenInputIds.has(eid));
+  // ADR-189 — a line that covers an outsourced job-card op cannot simply be
+  // dropped on edit: the op would keep pointing at a deleted line and wait for
+  // it forever. Rejecting or short-closing the PO releases the op properly.
+  const droppedOsp = existing.find((e) => absentIds.includes(e.id) && e.sourceJcOpId);
+  if (droppedOsp) {
+    throw new ConflictError(
+      `Line ${droppedOsp.lineNo} covers an outsourced Job Card operation and cannot be removed here. ` +
+        'Reject the PO (draft) or Short Close it to release the operation.',
+    );
+  }
   if (absentIds.length > 0) {
     await tx
       .update(purchaseOrderLines)
@@ -1881,16 +1903,38 @@ async function mergeLines(
     if (u.data.sourceSoLineId !== undefined)
       lineUpdate['sourceSoLineId'] = u.data.sourceSoLineId ?? null;
     if (u.data.sourceJcOpId !== undefined) lineUpdate['sourceJcOpId'] = u.data.sourceJcOpId ?? null;
-    // The line's PR link is editable like any other field on the line. NOTE:
-    // moving or clearing it does NOT unlink the PR it used to point at (the PR
-    // keeps its po_id / 'po_created' status) — unlinking on removal is a
-    // separate decision, deliberately not taken here.
+    // The line's PR link is editable like any other field on the line. Moving
+    // or clearing it is squared up below (ADR-189): the new PR is marked
+    // converted, and the old one reopens once no live PO line holds it.
     if (u.data.sourcePrId !== undefined) lineUpdate['sourcePrId'] = u.data.sourcePrId ?? null;
     if (u.data.ramRemark !== undefined) lineUpdate['ramRemark'] = u.data.ramRemark ?? null;
     if (u.data.lineRemarks !== undefined) lineUpdate['lineRemarks'] = u.data.lineRemarks ?? null;
 
     await tx.update(purchaseOrderLines).set(lineUpdate).where(eq(purchaseOrderLines.id, u.id));
   }
+
+  // ADR-189 — PO edit follows PO create: a line added against a PR inherits the
+  // PR's SO line and job-card op (unless named), the op is linked to the new
+  // PO line, and the PR is marked converted. Same helpers as create.
+  const newPrIds = [...new Set(toInsert.flatMap((l) => (l.sourcePrId ? [l.sourcePrId] : [])))];
+  const prLinkRows =
+    newPrIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: purchaseRequests.id,
+            sourceJcOpId: purchaseRequests.sourceJcOpId,
+            sourceSoLineId: purchaseRequests.sourceSoLineId,
+          })
+          .from(purchaseRequests)
+          .where(
+            and(
+              inArray(purchaseRequests.id, newPrIds),
+              eq(purchaseRequests.companyId, companyId),
+              isNull(purchaseRequests.deletedAt),
+            ),
+          );
+  const prLinkById = new Map(prLinkRows.map((r) => [r.id, r]));
 
   if (toInsert.length > 0) {
     const survivingMax = existing
@@ -1911,8 +1955,12 @@ async function mergeLines(
         rate: rateToString(l),
         receivedQty: l.receivedQty ?? 0,
         dueDate: l.dueDate ?? null,
-        sourceSoLineId: l.sourceSoLineId ?? null,
-        sourceJcOpId: l.sourceJcOpId ?? null,
+        sourceSoLineId:
+          l.sourceSoLineId ??
+          (l.sourcePrId ? (prLinkById.get(l.sourcePrId)?.sourceSoLineId ?? null) : null),
+        sourceJcOpId:
+          l.sourceJcOpId ??
+          (l.sourcePrId ? (prLinkById.get(l.sourcePrId)?.sourceJcOpId ?? null) : null),
         sourcePrId: l.sourcePrId ?? null,
         ramRemark: l.ramRemark ?? null,
         lineRemarks: l.lineRemarks ?? null,
@@ -1920,7 +1968,83 @@ async function mergeLines(
         updatedBy: user.id,
       };
     });
-    await tx.insert(purchaseOrderLines).values(values);
+    const insertedLines = await tx.insert(purchaseOrderLines).values(values).returning();
+    for (const line of insertedLines) {
+      if (!line.sourceJcOpId) continue;
+      await linkJcOpToPoLine(tx, {
+        companyId,
+        jcOpId: line.sourceJcOpId,
+        purchaseOrderLineId: line.id,
+        qty: line.qty,
+        userId: user.id,
+      });
+    }
+  }
+
+  // PRs this save NEWLY draws on → converted (first PO stamp kept). Lines that
+  // keep their PR are not re-stamped (the form posts every line's PR on every
+  // save), and a cancelled PO never re-claims the PRs its cancel released.
+  const hdr = await tx
+    .select({ status: purchaseOrders.status })
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.id, purchaseOrderId))
+    .limit(1);
+  const poCancelled = hdr[0]?.status === 'cancelled';
+  const nowPrIds = new Set<string>(newPrIds);
+  for (const u of toUpdate) {
+    const before = existingById.get(u.id)?.sourcePrId ?? null;
+    if (u.data.sourcePrId && u.data.sourcePrId !== before) nowPrIds.add(u.data.sourcePrId);
+  }
+  for (const prId of poCancelled ? [] : nowPrIds) {
+    await tx
+      .update(purchaseRequests)
+      .set({ ...firstPoStamp(purchaseOrderId), status: 'po_created', updatedBy: user.id })
+      .where(
+        and(
+          eq(purchaseRequests.id, prId),
+          eq(purchaseRequests.companyId, companyId),
+          sql`${purchaseRequests.status} <> 'cancelled'`,
+        ),
+      );
+  }
+
+  // PRs this PO no longer draws on (line dropped or re-pointed) → back to
+  // Approved / Open when no other live PO line holds them, as a rejected PO's are.
+  const lostPrIds = new Set<string>();
+  for (const e of existing) {
+    if (!e.sourcePrId) continue;
+    const upd = toUpdate.find((u) => u.id === e.id);
+    // Not sent → unchanged; sent (a null clears it) → compare. (The web form
+    // omits an empty PR, so today only an API caller clears one.)
+    const stillHere = upd
+      ? upd.data.sourcePrId === undefined || upd.data.sourcePrId === e.sourcePrId
+      : false;
+    if (!stillHere && !nowPrIds.has(e.sourcePrId)) lostPrIds.add(e.sourcePrId);
+  }
+  for (const prId of lostPrIds) {
+    const holder = await tx
+      .select({ id: purchaseOrderLines.id })
+      .from(purchaseOrderLines)
+      .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderLines.purchaseOrderId))
+      .where(
+        and(
+          eq(purchaseOrderLines.sourcePrId, prId),
+          isNull(purchaseOrderLines.deletedAt),
+          isNull(purchaseOrders.deletedAt),
+          sql`${purchaseOrders.status} <> 'cancelled'`,
+        ),
+      )
+      .limit(1);
+    if (holder[0]) continue;
+    await tx
+      .update(purchaseRequests)
+      .set({
+        status: sql`CASE WHEN ${purchaseRequests.approvedAt} IS NOT NULL THEN 'approved' ELSE 'open' END::pr_status`,
+        poId: sql`CASE WHEN ${purchaseRequests.poId} = ${purchaseOrderId}::uuid THEN NULL ELSE ${purchaseRequests.poId} END`,
+        poCreatedAt: sql`CASE WHEN ${purchaseRequests.poId} = ${purchaseOrderId}::uuid THEN NULL ELSE ${purchaseRequests.poCreatedAt} END`,
+        updatedBy: user.id,
+      })
+      .where(and(eq(purchaseRequests.id, prId), eq(purchaseRequests.status, 'po_created')));
   }
 }
 
@@ -2828,6 +2952,13 @@ export async function shortClosePurchaseOrder(
   await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
   const reason = input.reason.trim();
+  // The route's schema checks this too; the service is the guard for every
+  // other caller (imports, scripts), so it checks again.
+  if (reason.length < PO_SHORT_CLOSE_REASON_MIN) {
+    throw new ValidationError(
+      `Give a reason for the short close (at least ${PO_SHORT_CLOSE_REASON_MIN} characters).`,
+    );
+  }
 
   return withUserContext(user, async (tx) => {
     const rows = await tx

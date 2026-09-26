@@ -3709,6 +3709,15 @@ export const storeIssues = pgTable(
       (): AnyPgColumn => productionOrders.id,
       { onDelete: 'set null' },
     ),
+    // ADR-189 (migration 0152) — reversal by an opposite 'in' ledger entry;
+    // all-or-none CHECK on who / when / why.
+    reversedAt: timestamp('reversed_at', { withTimezone: true }),
+    reversedBy: uuid('reversed_by').references(() => users.id),
+    reversalReason: text('reversal_reason'),
+    reversalStoreTransactionId: uuid('reversal_store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -3720,6 +3729,12 @@ export const storeIssues = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'store_issues_reversal_all_or_none',
+      sql`(${t.reversedAt} is null and ${t.reversedBy} is null and ${t.reversalReason} is null)
+        or (${t.reversedAt} is not null and ${t.reversedBy} is not null
+            and length(btrim(${t.reversalReason})) > 0)`,
+    ),
     uniqueIndex('store_issues_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),

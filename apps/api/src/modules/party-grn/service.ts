@@ -4,7 +4,7 @@
 // per receipt. Each line increments party_materials.stock_qty + received_qty.
 // Mirrors legacy renderPartyGRN + addPartyGRN (HTML L24251 / L24298).
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePartyGrnInput,
   ListPartyGrnQuery,
@@ -137,12 +137,21 @@ export async function listPartyGrn(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(partyGrn.companyId, companyId), isNull(partyGrn.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(partyGrn)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // ADR-189 — the pager total counts under the SAME filters as the page
+    // (it ignored search / JW / client / dates and overstated a filtered list).
+    const totalRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS total
+      FROM public.party_grn pg
+      LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
+      WHERE pg.company_id = ${companyId}::uuid
+        AND pg.deleted_at IS NULL
+        ${searchFrag}
+        ${jwFrag}
+        ${clientFrag}
+        ${fromFrag}
+        ${toFrag}
+    `)) as unknown as Array<{ total: number }>;
+    const total = Number(totalRows[0]?.total ?? 0);
 
     // Summary (3 tiles) across ALL non-deleted party_grn for the company.
     const today = new Date().toISOString().slice(0, 10);
@@ -491,6 +500,20 @@ export async function createPartyGrn(
       pm.stockQty += ln.receivedQty;
       pm.receivedQty += ln.receivedQty;
     }
+
+    // ADR-189 — a customer-material receipt is on the activity log like every
+    // other receipt (cancel already was).
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'Party GRN',
+        detail: `${header.code} · ${input.lines.length} line(s), ${input.lines.reduce((a, l) => a + l.receivedQty, 0)} pcs against ${header.jwCodeText ?? ''}`,
+        refId: header.code,
+      },
+      companyId,
+      user,
+    );
 
     return rowToPartyGrn(header);
   });

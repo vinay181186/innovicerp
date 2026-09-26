@@ -11,6 +11,7 @@
 // Adding a source = drop a new entry below + add tests. No other change.
 
 import { sql, type SQL } from 'drizzle-orm';
+import { poLinePendingRaw } from '../../lib/po-pending';
 import type { SourceDescriptor } from '@innovic/shared';
 
 export interface SourceQueryContext {
@@ -178,7 +179,8 @@ const purchaseOrdersSource: RegisteredSource = {
       pol.qty                                       AS qty,
       pol.rate                                      AS rate,
       pol.received_qty                              AS received_qty,
-      (pol.qty - pol.received_qty)::numeric(14, 2)  AS pending_qty,
+      -- ADR-189 — the one Pending rule (lib/po-pending.ts).
+      ${sql.raw(poLinePendingRaw('pol', 'po'))}::numeric(14, 2) AS pending_qty,
       pol.due_date                                  AS due_date
     FROM public.purchase_order_lines pol
     JOIN public.purchase_orders po ON po.id = pol.purchase_order_id

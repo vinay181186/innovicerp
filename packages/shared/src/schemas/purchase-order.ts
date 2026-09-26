@@ -189,6 +189,9 @@ export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
   receivedQty: z.number().int().nonnegative(),
+  /** ADR-189 — Σ per line max(0, qty − received); 0 once the PO is closed,
+   *  short-closed or cancelled. The one Pending every PO screen shows. */
+  pendingQty: z.number().int().nonnegative().default(0),
   /** Pieces already sent OUT against this PO's lines on delivery challans that
    *  are not cancelled — the same rule the DC sendable check applies per line.
    *  `dcSentQty >= totalQty` means the PO is fully sent and has nothing left
@@ -382,6 +385,14 @@ export interface ListPurchaseOrdersResponse {
 
 /** ADR-189 — stopping an issued PO is a recorded action with a reason a reader
  *  can act on (ERPNext: Close / Cancel a Purchase Order). */
+/** ADR-189 — Pending of one PO line: qty − received, never below 0, and 0 once
+ *  the PO is closed, short-closed or cancelled (nothing more will come on it).
+ *  The API's SQL twin is apps/api/src/lib/po-pending.ts. */
+export function poLinePendingQty(qty: number, receivedQty: number, poStatus: string): number {
+  if (!['draft', 'open', 'partial', 'qc_pending'].includes(poStatus)) return 0;
+  return Math.max(0, qty - receivedQty);
+}
+
 export const PO_SHORT_CLOSE_REASON_MIN = 10;
 export const shortClosePurchaseOrderInputSchema = z.object({
   reason: z

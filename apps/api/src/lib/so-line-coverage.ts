@@ -8,7 +8,8 @@
 //
 //   planned  = Σ plan_qty of live, non-cancelled plans on the line
 //            + (Buy item only) Σ qty of the line's own standard PRs that no
-//              plan raised (ADR-171; linePrFilter / NOT_A_PLAN_PR there)
+//              plan raised (ADR-171; linePrFilter / NOT_A_PLAN_PR there) —
+//              a balance-closed PR counts only what was ordered (prCoverQtyRaw)
 //   direct   = Σ order_qty of DIRECT Job Cards for the line's OWN item: no
 //              Production Order, not any plan's jc_id, not a rework / repair
 //              child. The item match keeps a BOM cascade's child cards (other
@@ -21,6 +22,23 @@
 // Callers that need more than one of these per row should compute covered
 // ONCE (in a sub-select / LATERAL) and derive to-plan from it.
 
+/**
+ * ADR-189 — how much of an SO line one PR covers: its qty, or — once its
+ * balance was closed — only what was really ordered on live POs (a short-closed
+ * PO counting what it received), so the abandoned remainder is to-plan again.
+ * Mirrors purchase-requests liveOrderedQtySql. `pr` is the PR row alias.
+ */
+export function prCoverQtyRaw(pr: string): string {
+  return `(CASE WHEN ${pr}.balance_closed_at IS NULL THEN ${pr}.qty
+    ELSE (SELECT COALESCE(SUM(CASE WHEN po_v.short_closed_at IS NOT NULL
+                                   THEN COALESCE(pol_v.received_qty, 0) ELSE pol_v.qty END), 0)
+          FROM public.purchase_order_lines pol_v
+          JOIN public.purchase_orders po_v ON po_v.id = pol_v.purchase_order_id
+          WHERE pol_v.source_pr_id = ${pr}.id AND pol_v.deleted_at IS NULL
+            AND po_v.deleted_at IS NULL AND po_v.status <> 'cancelled')
+    END)`;
+}
+
 export function soLinePlannedRaw(sol: string): string {
   return `(
     COALESCE((SELECT SUM(p_c.plan_qty) FROM public.plans p_c
@@ -28,7 +46,7 @@ export function soLinePlannedRaw(sol: string): string {
                 AND p_c.plan_status <> 'cancelled'), 0)
     + CASE WHEN COALESCE((SELECT i_c.procurement_type FROM public.items i_c
                           WHERE i_c.id = ${sol}.item_id), 'make') = 'buy'
-           THEN COALESCE((SELECT SUM(pr_c.qty) FROM public.purchase_requests pr_c
+           THEN COALESCE((SELECT SUM(${prCoverQtyRaw('pr_c')}) FROM public.purchase_requests pr_c
                           WHERE pr_c.source_so_line_id = ${sol}.id
                             AND pr_c.deleted_at IS NULL
                             AND pr_c.source_jc_op_id IS NULL

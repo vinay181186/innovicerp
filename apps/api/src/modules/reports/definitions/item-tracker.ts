@@ -12,6 +12,7 @@
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 import { jcPendingToStockQtySql } from '../../../lib/jc-effective-qty';
+import { onPoByItemSql } from '../../../lib/po-pending';
 
 export const itemTrackerReport: RegisteredReport = {
   definition: {
@@ -42,7 +43,7 @@ export const itemTrackerReport: RegisteredReport = {
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'in_stock', label: 'In Stock', type: 'number' },
       { key: 'in_production', label: 'In Production', type: 'number' },
-      { key: 'in_po_ordered', label: 'In PO (Ordered)', type: 'number' },
+      { key: 'in_po_ordered', label: 'On PO', type: 'number' },
       { key: 'total', label: 'Total', type: 'number' },
     ],
   },
@@ -77,31 +78,8 @@ export const itemTrackerReport: RegisteredReport = {
           AND (v.computed_status IS NULL OR v.computed_status NOT IN ('complete', 'closed'))
         GROUP BY jc.item_id
       ),
-      po_pending AS (
-        SELECT
-          pol.item_id,
-          SUM(GREATEST(0, pol.qty - COALESCE(grn_agg.received, 0)))::int AS qty
-        FROM public.purchase_order_lines pol
-        JOIN public.purchase_orders po ON po.id = pol.purchase_order_id
-        LEFT JOIN (
-          SELECT
-            grnl.purchase_order_line_id AS po_line_id,
-            SUM(grnl.received_qty) AS received
-          FROM public.goods_receipt_note_lines grnl
-          JOIN public.goods_receipt_notes grn ON grn.id = grnl.goods_receipt_note_id
-          WHERE grn.company_id = ${companyId}::uuid
-            AND grn.deleted_at IS NULL
-            AND grnl.deleted_at IS NULL
-          GROUP BY grnl.purchase_order_line_id
-        ) grn_agg ON grn_agg.po_line_id = pol.id
-        WHERE pol.company_id = ${companyId}::uuid
-          AND po.company_id = ${companyId}::uuid
-          AND pol.deleted_at IS NULL
-          AND po.deleted_at IS NULL
-          AND po.status <> 'closed'
-          AND pol.item_id IS NOT NULL
-        GROUP BY pol.item_id
-      )
+      -- ADR-189 — the one On PO rule (lib/po-pending.ts).
+      po_pending AS (${onPoByItemSql(companyId)})
       SELECT
         i.code                                     AS item_code,
         -- Aliased so_revision, not plain revision: the items table has its own

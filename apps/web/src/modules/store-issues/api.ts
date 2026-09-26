@@ -2,7 +2,9 @@ import type {
   CreateStoreIssueInput,
   ListStoreIssuesQuery,
   ListStoreIssuesResponse,
+  ReverseStoreIssueInput,
   StoreIssue,
+  StoreIssueListItem,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -51,6 +53,24 @@ export function useCreateStoreIssue() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: storeIssuesKeys.all });
       // Item stock changed — invalidate store-inventory + items + store-transactions
+      void qc.invalidateQueries({ queryKey: ['store-inventory'] });
+      void qc.invalidateQueries({ queryKey: ['store-transactions'] });
+      void qc.invalidateQueries({ queryKey: ['items'] });
+    },
+  });
+}
+
+/** ADR-189 — undo an issue with an opposite ledger entry (reason required). */
+export function useReverseStoreIssue() {
+  const qc = useQueryClient();
+  return useMutation<StoreIssueListItem, Error, { id: string } & ReverseStoreIssueInput>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<StoreIssueListItem>(`/store-issues/${id}/reverse`, {
+        method: 'POST',
+        json: { reason },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: storeIssuesKeys.all });
       void qc.invalidateQueries({ queryKey: ['store-inventory'] });
       void qc.invalidateQueries({ queryKey: ['store-transactions'] });
       void qc.invalidateQueries({ queryKey: ['items'] });

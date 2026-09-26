@@ -41,7 +41,10 @@ interface LineDraft {
   clientPoLineNo: string | null;
   itemNameText: string | null;
   sentQty: number;
+  /** ADR-189 — good pieces back so far; rejects are their own column, as on
+   *  the DC detail page, so "Received" means one thing on both screens. */
   alreadyReceived: number;
+  alreadyRejected: number;
   remaining: number;
   receivedQty: string;
 }
@@ -73,9 +76,20 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   useEffect(() => {
     if (!detail) return;
     const receivedByLine = computeReceivedByLine(detail);
+    const rejectedByLine = new Map<string, number>();
+    for (const r of detail.receipts) {
+      for (const rl of r.lines) {
+        rejectedByLine.set(
+          rl.deliveryChallanLineId,
+          (rejectedByLine.get(rl.deliveryChallanLineId) ?? 0) + Number(rl.rejectedQty ?? 0),
+        );
+      }
+    }
     setLineDrafts(
       detail.lines.map((l) => {
+        // Everything back so far (good + rejected) — what Pending subtracts.
         const already = receivedByLine.get(l.id) ?? 0;
+        const rejected = rejectedByLine.get(l.id) ?? 0;
         const sent = Number(l.qty);
         return {
           dcLineId: l.id,
@@ -85,7 +99,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           clientPoLineNo: l.clientPoLineNo,
           itemNameText: l.itemNameText,
           sentQty: sent,
-          alreadyReceived: already,
+          alreadyReceived: already - rejected,
+          alreadyRejected: rejected,
           remaining: Math.max(0, sent - already),
           receivedQty: '',
         };
@@ -287,6 +302,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   <th>Item Code · Name</th>
                   <th className="th-num">Sent</th>
                   <th className="th-num">Received</th>
+                  <th className="th-num">Rejected</th>
                   <th className="th-num">Pending</th>
                   <th className="th-num">Receive Now</th>
                 </tr>
@@ -310,6 +326,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                     </td>
                     <td className="mono td-num">{d.sentQty.toFixed(0)}</td>
                     <td className="mono td-num">{d.alreadyReceived.toFixed(0)}</td>
+                    <td className="mono td-num">{d.alreadyRejected.toFixed(0)}</td>
                     <td className="mono td-num fw-700">{d.remaining.toFixed(0)}</td>
                     <td className="td-num">
                       <input

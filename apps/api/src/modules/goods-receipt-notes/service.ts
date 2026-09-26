@@ -415,14 +415,26 @@ export async function listGoodsReceiptNotes(
     const poFrag = input.purchaseOrderId
       ? sql`AND grn.purchase_order_id = ${input.purchaseOrderId}::uuid`
       : sql``;
-    const qcStatusFrag = input.qcStatus
-      ? sql`AND EXISTS (
-          SELECT 1 FROM public.goods_receipt_note_lines gnl
-          WHERE gnl.goods_receipt_note_id = grn.id
-            AND gnl.deleted_at IS NULL
-            AND gnl.qc_status = ${input.qcStatus}::grn_qc_status
-        )`
-      : sql``;
+    // ADR-189 — ONE QC-pending rule for the tile, this filter, the per-GRN
+    // count and Incoming QC: a line is waiting while received − accepted −
+    // rejected > 0. 'pending' = any line waiting (what the tile counts);
+    // 'in_progress' = a line part inspected and still waiting; 'completed' =
+    // no line waiting.
+    const waiting = sql.raw('(gnl.received_qty - gnl.qc_accepted_qty - gnl.qc_rejected_qty) > 0');
+    const qcStatusFrag =
+      input.qcStatus === 'pending'
+        ? sql`AND EXISTS (SELECT 1 FROM public.goods_receipt_note_lines gnl
+            WHERE gnl.goods_receipt_note_id = grn.id AND gnl.deleted_at IS NULL AND ${waiting})`
+        : input.qcStatus === 'in_progress'
+          ? sql`AND EXISTS (SELECT 1 FROM public.goods_receipt_note_lines gnl
+              WHERE gnl.goods_receipt_note_id = grn.id AND gnl.deleted_at IS NULL AND ${waiting}
+                AND (gnl.qc_accepted_qty + gnl.qc_rejected_qty) > 0)`
+          : input.qcStatus === 'completed'
+            ? sql`AND EXISTS (SELECT 1 FROM public.goods_receipt_note_lines gnl
+                WHERE gnl.goods_receipt_note_id = grn.id AND gnl.deleted_at IS NULL)
+              AND NOT EXISTS (SELECT 1 FROM public.goods_receipt_note_lines gnl
+                WHERE gnl.goods_receipt_note_id = grn.id AND gnl.deleted_at IS NULL AND ${waiting})`
+            : sql``;
     const fromFrag = input.fromDate ? sql`AND grn.grn_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND grn.grn_date <= ${input.toDate}::date` : sql``;
 
@@ -467,7 +479,8 @@ export async function listGoodsReceiptNotes(
                SUM(received_qty) AS total_received_qty,
                SUM(qc_accepted_qty) AS qc_accepted_qty,
                SUM(qc_rejected_qty) AS qc_rejected_qty,
-               SUM(CASE WHEN qc_status != 'completed' THEN 1 ELSE 0 END) AS qc_pending_count
+               SUM(CASE WHEN received_qty - qc_accepted_qty - qc_rejected_qty > 0
+                        THEN 1 ELSE 0 END) AS qc_pending_count
         FROM public.goods_receipt_note_lines
         WHERE deleted_at IS NULL
         GROUP BY goods_receipt_note_id
@@ -486,8 +499,9 @@ export async function listGoodsReceiptNotes(
 
     // PL-GRN-1b — KPI summary across the SAME filter set (no LIMIT). Mirrors
     // legacy renderGRN L26483–26488 four-tile strip. A GRN counts as
-    // QC-cleared if all its lines have qc_status='completed'; QC-pending if
-    // any line is pending or partial. "Today" uses the company-local date —
+    // QC-pending if any line still has qty waiting (received − accepted −
+    // rejected > 0, the ADR-189 rule the filter and Incoming QC use);
+    // QC-cleared if none has. "Today" uses the company-local date —
     // we approximate with NOW()::date (UTC); IST drift is < 1 day and the
     // tile is informational. Future: take company TZ into account.
     const summaryRows = await tx.execute(sql`
@@ -501,7 +515,7 @@ export async function listGoodsReceiptNotes(
       LEFT JOIN LATERAL (
         SELECT
           COUNT(*) AS line_count,
-          BOOL_OR(qc_status != 'completed') AS has_pending
+          BOOL_OR(received_qty - qc_accepted_qty - qc_rejected_qty > 0) AS has_pending
         FROM public.goods_receipt_note_lines gnl
         WHERE gnl.goods_receipt_note_id = grn.id
           AND gnl.deleted_at IS NULL

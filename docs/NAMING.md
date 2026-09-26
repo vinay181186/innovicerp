@@ -54,6 +54,9 @@
 | Days a customer is allowed to pay an invoice in (ADR-188) | `Payment Days`                       | `paymentDays`                     | `clients.payment_days`                                                       | `Credit Days`, `Payment Terms` (that is the invoice's own, below), `paymentTermsDays` on the customer |
 | Days one invoice allows for payment                       | `Payment Terms (days)`               | `paymentTermsDays`                | `invoices.payment_terms_days` — defaulted from the customer's `Payment Days` | `Payment Days` (that is the customer's default), `creditDays`                                         |
 | Design Tracker a work-log row was logged from (ADR-188)   | Tracker (badge)                      | `designTrackerId`                 | `design_work_log.design_tracker_id`                                          | `trackerId`, `dsnId`                                                                                  |
+| Qty still to come on issued stock POs, per item (ADR-189) | `On PO` | `onPoQty` | `lib/po-pending.ts` (open / partial / qc_pending, standard POs, qty − received) | `In PO`, `PO Pending`, `Incoming` |
+| A PO stopped before it was fully received (ADR-189) | `Short closed` (+ date, reason) | `shortClosedAt` / `shortClosedBy` / `shortCloseReason` | `purchase_orders.short_closed_*` | `Force closed`, `Closed short` |
+| A store issue undone by an opposite entry (ADR-189) | `Reversed` / `Reason` | `reversedAt` / `reversedBy` / `reversalReason` | `store_issues.reversed_*` | `Cancelled`, `Deleted`, `Returned` |
 
 **Snapshot rule.** `xxxText` means "the value as it was, when the live row may be gone".
 It is only ever a fallback: read `xxx ?? xxxText`, never the snapshot alone. A `xxxText`

@@ -10090,3 +10090,40 @@ inspectors could race on one GRN line; bought-material rejects left no record.
   NC.
 - A partly received PO that is short-closed keeps its outsourced-op links; the op's un-received
   remainder is ordered on a new PO, which the multi-PO op links already allow.
+
+### Round 2 (same ADR) — one number per fact across the purchasing screens
+
+6. **One On PO / PO Pending rule** (`lib/po-pending.ts`, twin `poLinePendingQty` in shared): a PO
+   line's Pending = qty − received_qty, clamped at 0, and 0 once the PO is closed, short-closed or
+   cancelled. An item's On PO = Σ Pending over ISSUED (open / partial / qc_pending) POs, except lines
+   that cover a job-card op (our own pieces out for processing — At Vendor / in production, and their
+   GRN credits no stock) and service POs; a draft is not an order yet. Store Inventory, Item Tracker,
+   Open PO Ageing, Vendor PO Summary (Pending Value), the PO saved-report source, the SC dashboard,
+   the PO list (server `pendingQty`) and PO detail all read it. Vendor PO Summary's Total Value is the
+   saved PO total incl. GST (cancelled excluded), one row per vendor. received_qty is the stored line figure
+   (receipts minus return-to-vendor), not a fresh sum of GRN lines.
+7. **The PO print states the saved totals** (`subtotal` / `taxAmount` / `totalAmount`), with one tax
+   row per GST % the PO carries — the same formula the saved tax uses.
+8. **PO edit follows PO create**: a line added against a PR inherits the PR's SO line and job-card op,
+   the op is linked (`linkJcOpToPoLine`), the PR is marked converted; a PR the PO stops drawing on
+   reopens (Approved / Open) when no other live PO line holds it. A line that covers an outsourced op
+   cannot be dropped on edit — reject or short-close releases the op.
+9. **A balance-closed PR covers only what was ordered** on its SO line (`prCoverQtyRaw` in
+   `lib/so-line-coverage.ts`, used by the shared coverage rule and SO Planning), so the abandoned
+   remainder is To Plan again.
+10. **Store issue takes Available, not On Hand** (pieces booked for an SO are promised), needs a
+    Purpose, is on the activity log, and can be **Reversed** once with a reason (0152): an opposite
+    'in' ledger entry; the issue stays listed, marked Reversed. Manual stock adjust is on the activity
+    log with its reason. Pager totals of Store Issues and Party GRN now count under the page's filters;
+    Party GRN create is logged.
+11. **Valuation rate** ignores draft and cancelled POs. **GRN QC**: the tile, the list filter, the
+    per-GRN pending count and Incoming QC share one rule — a line waits while received − accepted −
+    rejected > 0. **DC receive page** shows Received and Rejected as separate columns, as DC detail
+    does, so "Received" means good pieces on both.
+
+### Deferred (round 2)
+
+- **Party (customer) material stays outside the stock ledger.** It is not our stock and is not valued;
+  `party_materials.stock_qty` with the Party GRN / cancel trail already accounts for it. Moving it into
+  `store_transactions` would mix owned and customer stock in every stock screen — a separate decision.
+

@@ -82,28 +82,31 @@ export function printPurchaseOrder(args: {
   // One unit under the quantity total when every line agrees; blank when units differ.
   const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? PO_UOM_FALLBACK) : '';
 
-  const subtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
+  // ADR-189 — the print states the SAVED totals (the same figures the list,
+  // detail and reports show), never its own recomputation. A tax row is printed
+  // for every GST % the PO carries, which is exactly how the saved tax is
+  // worked out (subtotal × (SGST + CGST + IGST) / 100). The line sum is only a
+  // fallback for a PO whose roll-up was never stored.
+  const lineSubtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
+  const subtotal = po.subtotal ?? Number(lineSubtotal.toFixed(2));
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
 
   const sgstPct = Number(po.sgstPct) || 0;
   const cgstPct = Number(po.cgstPct) || 0;
   const igstPct = Number(po.igstPct) || 0;
-  const isIgst = po.taxType === 'igst' || (igstPct > 0 && sgstPct === 0 && cgstPct === 0);
 
   const taxRows: { label: string; value: string }[] = [];
-  let tax = 0;
-  if (isIgst) {
-    const amt = (subtotal * igstPct) / 100;
-    tax += amt;
-    if (igstPct > 0) taxRows.push({ label: `IGST @ ${igstPct}%`, value: money(amt) });
-  } else {
-    const sAmt = (subtotal * sgstPct) / 100;
-    const cAmt = (subtotal * cgstPct) / 100;
-    tax += sAmt + cAmt;
-    if (sgstPct > 0) taxRows.push({ label: `SGST @ ${sgstPct}%`, value: money(sAmt) });
-    if (cgstPct > 0) taxRows.push({ label: `CGST @ ${cgstPct}%`, value: money(cAmt) });
+  if (igstPct > 0) {
+    taxRows.push({ label: `IGST @ ${igstPct}%`, value: money((subtotal * igstPct) / 100) });
   }
-  const grand = subtotal + tax;
+  if (sgstPct > 0) {
+    taxRows.push({ label: `SGST @ ${sgstPct}%`, value: money((subtotal * sgstPct) / 100) });
+  }
+  if (cgstPct > 0) {
+    taxRows.push({ label: `CGST @ ${cgstPct}%`, value: money((subtotal * cgstPct) / 100) });
+  }
+  const tax = po.taxAmount ?? Number(((subtotal * (sgstPct + cgstPct + igstPct)) / 100).toFixed(2));
+  const grand = po.totalAmount ?? subtotal + tax;
 
   const vendorName = vendor?.name ?? po.vendorName ?? po.vendorCodeText ?? '';
   // Full postal address for the party box — line 1 plus city / state / pincode,
