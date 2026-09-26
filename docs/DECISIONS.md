@@ -10255,3 +10255,24 @@ A study of ERPNext's ~150 standard reports against our data model (PDF "Innovic-
 - A user who could open every report through the Reports grant but whose Reports tier cannot see prices (L1/L2) no longer sees money reports there — the same price rule every other screen follows.
 - The Production copy of SO Line Tracker drops its Line Value column so Production L2 keeps it.
 - Adding a report = one definition file + one registry line; set `group`, `dept`, `showsMoney`.
+
+## ADR-192: List pages — one filter bar; a status filter is a dropdown with counts, not tiles or capsules
+
+**Date:** 2026-09-26
+**Status:** Accepted (owner decision, asked twice the same day — supersedes the round-5 "tiles are the status filter" clean-up)
+
+### Context
+
+List pages mixed filter dropdowns with rows of clickable status tiles / capsules, often both for the same field. The owner: "we already have filter dropdowns and still there are capsules, which makes the layout odd"; date boxes were squeezed in a one-row toolbar; the select padding looked off. Offered three layouts with mock-ups, the owner picked the ERPNext-style one; when a parallel session's round-5 clean-up went the other way (tiles as the only status filter, dropdown dropped), the owner confirmed: **dropdown with counts**.
+
+### Decision
+
+- `ListHeader` (apps/web/src/ui/layout/ListHeader.tsx) is two rows. Row 1: title · count … view toggle / Export / secondary buttons → the one blue primary. Row 2 — the **filter bar**: search → `filters` (every Select / date box the same 168px) → **Clear** (`onClearFilters`, `filtersActive`).
+- A status (or type / bucket) filter is a **dropdown whose option labels carry the counts** — "All PRs (120)", "Open (40)", "Overdue (4)". No clickable tile / capsule / pill rows on list pages.
+- Read-only count strips stay only on dashboards and report pages, never on a list page beside the dropdown that repeats them.
+- Selects draw one chevron with room for it (`appearance: none`).
+
+### Consequences
+
+- Every list reads the same way; filters never wrap unevenly or clip dates.
+- Any page that re-adds status tiles as a filter breaks this ADR — use the dropdown with counts.
