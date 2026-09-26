@@ -197,7 +197,7 @@ function PartyGrnListPage(): React.JSX.Element {
 
             {/* Read-only totals across the whole company, not filters — no onClick,
             so each cell renders as a <div> instead of a button that does
-            nothing. They do NOT follow the search box; see the note below. */}
+            nothing. They do NOT follow the search box. */}
             <StatStrip
               items={[
                 {
@@ -208,13 +208,6 @@ function PartyGrnListPage(): React.JSX.Element {
                   title: 'Every party GRN on record',
                 },
                 {
-                  key: 'received',
-                  label: 'Total Received',
-                  count: summary.totalReceived,
-                  color: 'var(--green)',
-                  title: 'Total quantity of customer material received',
-                },
-                {
                   key: 'today',
                   label: 'Today',
                   count: summary.today,
@@ -223,38 +216,6 @@ function PartyGrnListPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
-
-          {/* One-time explainer — deliberately OUTSIDE the band so it scrolls away
-          instead of eating pinned height. Amber wash from the token rgba
-          the old version hard-coded four raw light-mode amber hexes, which
-          ignored the theme entirely). */}
-          <div
-            style={{
-              background: 'rgba(245,158,11,0.10)',
-              border: '1px solid rgba(245,158,11,0.35)',
-              borderRadius: 8,
-              padding: '10px 14px',
-              marginBottom: 14,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-            }}
-          >
-            <div style={{ fontSize: 22 }}>📥</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{ fontWeight: 700, color: 'var(--amber)', fontSize: 13, marginBottom: 2 }}
-              >
-                Record Party GRNs here
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-                This is the home for customer-supplied (party) material. When a customer sends raw
-                material against a JWSO, record its receipt right here — just click{' '}
-                <b>+ New Party GRN</b>. Every party-material receipt is entered and tracked on this
-                screen.
-              </div>
-            </div>
           </div>
 
           {isLoading ? (
@@ -321,11 +282,6 @@ function PartyGrnListPage(): React.JSX.Element {
               </div>
             </div>
           ) : null}
-
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-            💡 The three counts above cover <b>every</b> GRN in the company — they do not follow the
-            search box, which filters only the cards below.
-          </div>
 
           {showModal ? <NewPartyGrnModal onClose={() => setShowModal(false)} /> : null}
           {cancelRow ? (

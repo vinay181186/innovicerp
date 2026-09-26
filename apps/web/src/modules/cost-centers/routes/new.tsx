@@ -38,8 +38,7 @@ function CostCenterNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to Cost Centre Master. Ask an admin for L2 Data Entry or
-        above in Finance.
+        ⛔ You cannot create Cost Centres. Ask an admin.
       </div>
     );
   }
@@ -52,13 +51,7 @@ function CostCenterNewPage(): React.JSX.Element {
       </Link>
       <div className="panel">
         <div className="panel-hdr">
-          <div>
-            <div className="panel-title">🏢 Add Cost Centre</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Master record for budgeting + reporting. Used by Sales Orders + Daily Production
-              Reports + SO Costing.
-            </div>
-          </div>
+          <div className="panel-title">🏢 Add Cost Centre</div>
         </div>
         <div className="panel-body">
           <CostCenterForm

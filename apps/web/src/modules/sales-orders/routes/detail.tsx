@@ -646,7 +646,7 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
       <ReadField label="Cost Centre" size="md" value={detail.costCenter} />
       {detail.type === 'component_manufacturing' ? null : (
         <ReadField
-          label="BOM master"
+          label="BOM"
           size="md"
           value={
             detail.bomMasterId ? (
@@ -673,7 +673,7 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
         />
       )}
       <ReadField
-        label="SO raised by"
+        label="Raised By"
         size="md"
         value={
           (detail.createdByName ?? '—') +

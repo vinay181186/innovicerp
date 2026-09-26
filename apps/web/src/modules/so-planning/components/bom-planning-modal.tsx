@@ -461,7 +461,9 @@ function BomBody({
               <th>{mode === 'equipment' ? 'Qty/Set' : 'Per Unit'}</th>
               <th>Total Need</th>
               <th style={{ color: 'var(--green)' }}>Stock</th>
-              <th style={{ color: 'var(--red)' }}>Pending</th>
+              <th style={{ color: 'var(--red)' }} title="Total Need − Current Stock">
+                Pending
+              </th>
               <th>BOM Type</th>
               <th>Plan Status</th>
               <th>Select</th>
@@ -684,8 +686,8 @@ function BomBody({
         {/* The two modes have different footnotes in legacy — equipment L8901,
             assembly L7185. They are not interchangeable. */}
         {mode === 'equipment'
-          ? 'ℹ Total Need = Equipment Qty × Qty per Set. Pending = Total Need − Current Stock.'
-          : 'ℹ Pending = Total Need − Current Stock. You can adjust Qty to Plan up to Total Need if you want to plan more than the pending qty.'}
+          ? 'Total Need = Equipment Qty × Qty per Set.'
+          : 'Qty to Plan can go up to Total Need.'}
       </div>
 
       {submitErr ? (

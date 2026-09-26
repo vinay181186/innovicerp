@@ -608,15 +608,8 @@ function SalesOrdersListPage(): React.JSX.Element {
             ? 'No sales orders'
             : total > LIST_LIMIT
               ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-              : `Showing all ${total} sales order${total === 1 ? '' : 's'}`}
+              : null}
         </span>
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-        {view === 'list' ? (
-          <>💡 Click a row to open its detail page · click ▸ before the <b>SO number</b> to show its line items · use <b>+ Line</b> to add or edit lines.</>
-        ) : (
-          <>💡 Click the <b>SO number</b> to open its detail page · click the card to show its line items · use <b>+ Line</b> to add or edit lines.</>
-        )}
       </div>
       {previewPath ? (
         <FilePreviewModal storagePath={previewPath} onClose={() => setPreviewPath(null)} />
@@ -665,7 +658,7 @@ function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; c
           {canDelete ? <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} onClick={() => { if (confirm(`Move SO ${so.code} to Trash? You can restore it from Trash.`)) softDelete.mutate(so.id); }}>Delete</button> : null}
         </div>
       </div>
-      {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : <div style={{ padding: '4px 32px 12px', color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>⚠ No BOM linked. Edit this SO to assign a BOM from BOM Master.</div>}
+      {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : <div style={{ padding: '4px 32px 12px', color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>⚠ No BOM linked.</div>}
     </div>
   );
 }
@@ -723,7 +716,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
       {/* Preview header. The row no longer navigates, so the preview carries its
           own way through to the full record — same route the SO code uses. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>▸ LINE ITEMS — {so.code}</div>
+        <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>Line Items</div>
         <Link
           to="/sales-orders/$id"
           params={{ id: so.id }}

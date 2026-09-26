@@ -252,11 +252,6 @@ export function PartyMaterialIssueView({
         ) : null}
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 Party Material Issue debits customer-supplied (party) stock when it is issued to a Job
-        Card for in-house machining. Linked to JWSO No. / Job Card.
-      </div>
-
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
       {cancelRow ? <CancelIssueModal row={cancelRow} onClose={() => setCancelRow(null)} /> : null}
     </div>
@@ -317,12 +312,8 @@ function CancelIssueModal({
           ⚠ Cancel {row.code}
         </div>
         <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
-          This returns <b style={{ color: 'var(--green)' }}>{row.qty}</b> of{' '}
-          <b>{row.partyMaterialCodeText ?? 'the material'}</b> to party stock and lowers what{' '}
-          <b>{row.jcCodeText ?? 'the job card'}</b> is allowed to produce.
-          <br />
-          If those pieces have already been machined the cancel will be refused — that material is
-          used, so record a scrap/adjustment instead.
+          Returns <b style={{ color: 'var(--green)' }}>{row.qty}</b> to party stock. Refused if
+          already machined.
         </div>
         <Field label="Reason ★">
           <input

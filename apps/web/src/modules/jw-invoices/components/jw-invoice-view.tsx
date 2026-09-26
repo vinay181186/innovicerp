@@ -196,11 +196,6 @@ export function JwInvoiceView({
         ) : null}
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 JW Invoice bills the labour / processing charge for a JWSO line (qty × line rate + GST).
-        No material value — the customer owns the material.
-      </div>
-
       {showModal ? <NewJwInvoiceModal onClose={() => setShowModal(false)} /> : null}
     </div>
   );

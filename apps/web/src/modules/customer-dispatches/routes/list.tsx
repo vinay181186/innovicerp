@@ -332,12 +332,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 label: 'Dispatch Entries',
                 count: groups.filter((g) => g.status !== 'cancelled').length,
               },
-              {
-                key: 'items',
-                label: 'Items Dispatched',
-                count: summary.length,
-                color: 'var(--cyan)',
-              },
             ]}
           />
         </div>
@@ -376,7 +370,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                         <td className="fw-700">{s.name}</td>
                         <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>{s.total}</td>
                         <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                          {s.count} dispatches
+                          {s.count}
                         </td>
                         <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
                           {s.stock ?? 0}
@@ -423,11 +417,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
               />
             ))
           )}
-
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8, padding: '0 4px' }}>
-            💡 Click a card to show the items on that dispatch · <b>🧾 Invoice</b> opens a
-            pre-filled invoice · <b>Cancel</b> reverses the dispatched qty and the stock.
-          </div>
         </>
       )}
     </div>

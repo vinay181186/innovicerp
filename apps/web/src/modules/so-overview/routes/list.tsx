@@ -9,7 +9,6 @@ import type {
   SoOverviewChildRow,
   SoOverviewDetailResponse,
   SoOverviewItemStage,
-  SoOverviewResponse,
   SoOverviewRow,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -160,7 +159,6 @@ function SoOverviewPage(): React.JSX.Element {
         </div>
       ) : data ? (
         <>
-          <SummaryStrip summary={data.summary} />
           <OverallStatusPills
             rows={data.rows}
             value={overallFilter}
@@ -206,7 +204,7 @@ function OverallStatusPills({
         className="text3"
         style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em' }}
       >
-        FILTER:
+        Filter:
       </span>
       {OVERALL_STATUS_LABELS.map((opt) => {
         const active = value === opt.value;
@@ -232,36 +230,6 @@ function OverallStatusPills({
           </button>
         );
       })}
-    </div>
-  );
-}
-
-function SummaryStrip({ summary }: { summary: SoOverviewResponse['summary'] }): React.JSX.Element {
-  // Legacy stat strip (L9139) uses .stat-grid / .stat-card <variant> /
-  // .stat-label / .stat-val. Legacy shows 4 tiles (TOTAL SOs, COMPLETED,
-  // DELAYED, IN PROGRESS); we keep all 7 server-provided counts — every one is
-  // a real field on summary, so none is browser-derived. Tile order follows
-  // legacy's own canonical status order (L9118) so it lines up with the filter
-  // pills below. Only the four real variants (cyan/amber/green/red) are used.
-  const tiles: Array<{ label: string; val: number; variant?: string; color?: string }> = [
-    { label: 'TOTAL SOs', val: summary.soCount, variant: 'cyan' },
-    { label: 'NOT STARTED', val: summary.notStartedCount, color: 'var(--text3)' },
-    { label: 'IN PROGRESS', val: summary.inProgressCount, variant: 'amber', color: 'var(--amber)' },
-    { label: 'ON TRACK', val: summary.onTrackCount, variant: 'green', color: 'var(--green)' },
-    { label: 'DELAYED', val: summary.delayedCount, variant: 'red', color: 'var(--red)' },
-    { label: 'COMPLETED', val: summary.completedCount, variant: 'green', color: 'var(--green)' },
-    { label: 'BLOCKED', val: summary.blockedCount, variant: 'red', color: 'var(--red)' },
-  ];
-  return (
-    <div className="stat-grid">
-      {tiles.map((t) => (
-        <div key={t.label} className={t.variant ? `stat-card ${t.variant}` : 'stat-card'}>
-          <div className="stat-label">{t.label}</div>
-          <div className="stat-val" style={t.color ? { color: t.color } : undefined}>
-            {t.val}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -310,10 +278,6 @@ function OverviewTable({
           </table>
         </div>
       </div>
-      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 Click any SO row to see BOM item breakdown / SO line detail with Stage &amp; Status
-        per item.
-      </div>
     </>
   );
 }
@@ -344,17 +308,17 @@ function Row({
         </Link>
         {row.clientPoNo ? (
           <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            PO {row.clientPoNo}
+            Client PO No. {row.clientPoNo}
           </div>
         ) : null}
       </td>
       <td className="fw-700">{row.customerName ?? '—'}</td>
       <td style={{ fontSize: 11 }}>
         {row.type === 'equipment'
-          ? '⚙ Equipment'
+          ? 'Equipment'
           : row.type === 'with_material'
-            ? '📦 With Material'
-            : '📋 Component'}
+            ? 'With Material'
+            : 'Component'}
       </td>
       <td style={{ color: 'var(--purple)', fontSize: 12 }}>
         {row.equipmentItemName ?? '—'}
@@ -524,7 +488,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
     so.earliestDueDate < today &&
     so.overallStatus !== 'completed';
 
-  // Stage + status chip counts.
+  // Stage chip counts.
   const stageCounts: Record<SoOverviewItemStage, number> = {
     not_released: 0,
     in_production: 0,
@@ -533,17 +497,8 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
     finished: 0,
     hold: 0,
   };
-  const statusCounts: Record<SoOverallStatus, number> = {
-    not_started: 0,
-    in_progress: 0,
-    on_track: 0,
-    delayed: 0,
-    completed: 0,
-    blocked: 0,
-  };
   for (const r of childRows) {
     stageCounts[r.stage] += 1;
-    statusCounts[r.status] += 1;
   }
 
   return (
@@ -563,40 +518,40 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
       >
         <div>
           <span className="text3" style={{ fontSize: 10 }}>
-            SO NUMBER
+            SO No.
           </span>
           <br />
           <b style={{ color: 'var(--cyan)', fontSize: 18 }}>{so.code}</b>
         </div>
         <div>
           <span className="text3" style={{ fontSize: 10 }}>
-            CUSTOMER
+            Customer
           </span>
           <br />
           <b style={{ fontSize: 14 }}>{so.customerName ?? '—'}</b>
           {so.clientPoNo ? (
             <div className="text3" style={{ fontSize: 11 }}>
-              PO: {so.clientPoNo}
+              Client PO No. {so.clientPoNo}
             </div>
           ) : null}
         </div>
         <div>
           <span className="text3" style={{ fontSize: 10 }}>
-            TYPE
+            SO Type
           </span>
           <br />
           <b>
             {so.type === 'equipment'
-              ? '⚙ Equipment'
+              ? 'Equipment'
               : so.type === 'with_material'
-                ? '📦 With Material'
-                : '📋 Component'}
+                ? 'With Material'
+                : 'Component'}
           </b>
         </div>
         {so.type === 'equipment' && so.equipmentItemName ? (
           <div>
             <span className="text3" style={{ fontSize: 10 }}>
-              EQUIPMENT
+              Equipment
             </span>
             <br />
             <b style={{ color: 'var(--purple)' }}>{so.equipmentItemName}</b>
@@ -616,7 +571,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
         ) : null}
         <div>
           <span className="text3" style={{ fontSize: 10 }}>
-            DUE DATE
+            Due Date
           </span>
           <br />
           <b style={{ color: overdue ? 'var(--red)' : 'var(--text)' }}>
@@ -625,7 +580,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
         </div>
         <div>
           <span className="text3" style={{ fontSize: 10 }}>
-            STATUS
+            Status
           </span>
           <br />
           <span className={`badge ${STATUS_BADGE[so.overallStatus].cls}`}>
@@ -694,7 +649,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
         </div>
       </div>
 
-      {/* Stage + Status chip strip */}
+      {/* Stage chip strip */}
       <div
         style={{
           display: 'flex',
@@ -709,7 +664,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
         }}
       >
         <span className="text3" style={{ fontSize: 10, fontWeight: 700 }}>
-          STAGE:
+          Stage:
         </span>
         {(Object.keys(stageCounts) as SoOverviewItemStage[]).map((k) => {
           const c = stageCounts[k];
@@ -721,22 +676,6 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
                 {meta.icon} {meta.label}
               </span>{' '}
               <b>{c}</b>
-            </span>
-          );
-        })}
-        <span
-          className="text3"
-          style={{ fontSize: 10, fontWeight: 700, marginLeft: 6 }}
-        >
-          STATUS:
-        </span>
-        {(Object.keys(statusCounts) as SoOverallStatus[]).map((k) => {
-          const c = statusCounts[k];
-          if (c === 0) return null;
-          const meta = STATUS_BADGE[k];
-          return (
-            <span key={k} style={{ fontSize: 11, marginRight: 4 }}>
-              <span className={`badge ${meta.cls}`}>{meta.label}</span> <b>{c}</b>
             </span>
           );
         })}

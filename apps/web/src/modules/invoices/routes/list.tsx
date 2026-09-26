@@ -333,13 +333,7 @@ function InvoiceListPage(): React.JSX.Element {
               )}
             />
           </div>
-          {data ? (
-            <ListFooter
-              total={data.invoices.length}
-              noun="invoice"
-              hint="Click a row to open the invoice · 💳 Pay opens the same page at its payments panel."
-            />
-          ) : null}
+          {data ? <ListFooter total={data.invoices.length} noun="invoice" /> : null}
         </>
       )}
     </div>

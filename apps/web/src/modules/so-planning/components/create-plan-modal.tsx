@@ -434,15 +434,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               width: '100%',
             }}
           />
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-            Max: {remaining} pcs (Order: {line.orderQty} − Already Planned: {line.totalPlanned})
-          </div>
-          {stock > 0 ? (
-            <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
-              💡 {suggested} pcs to make — {remaining} pending to plan − {stock} already in stock
-              {suggested === 0 ? ' (fully covered by stock)' : ''}.
-            </div>
-          ) : null}
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Max {remaining}</div>
         </div>
         <div className="form-grp" style={{ flex: '1 1 260px', minWidth: 0 }}>
           <label className="form-label" htmlFor="create-plan-remark">
@@ -620,7 +612,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
             {reservable > 0
-              ? `Max: ${reservable} pcs (Available: ${stock}, still uncovered: ${uncovered})`
+              ? `Max ${reservable}`
               : stock <= 0
                 ? 'No free stock to reserve — Available is 0.'
                 : 'This line is already fully covered — nothing left to reserve.'}

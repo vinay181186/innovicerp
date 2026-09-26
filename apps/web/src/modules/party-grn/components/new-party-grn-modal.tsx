@@ -306,9 +306,6 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             >
               INWARD LINE ITEMS
             </span>
-            <span className="text3" style={{ fontSize: 11 }}>
-              Items must exist in Party Material Master first.
-            </span>
           </div>
           <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
             + Add Line

@@ -125,7 +125,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
       {/* Action bar (legacy L4552-4556) */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ fontSize: 15, fontWeight: 700 }}>
-          SO Status — <span style={{ color: 'var(--cyan)' }}>{header.code}</span>
+          SO Status
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button
@@ -137,7 +137,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
             ⬇ Export
           </button>
           <Link to="/sales-orders/$id" params={{ id: header.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
-            ✎ Edit in SO Master
+            Open SO
           </Link>
         </div>
       </div>
@@ -151,14 +151,14 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
               {TYPE_LABEL[header.type] ?? header.type} · {lines.length} line{lines.length === 1 ? '' : 's'}
             </div>
           </div>
-          <HeaderFact label="CUSTOMER" value={header.customerName ?? '—'} sub={header.clientPoNo ? `PO: ${header.clientPoNo}` : undefined} bold />
-          <HeaderFact label="SO DATE" value={header.soDate} />
-          <HeaderFact label="DUE DATE" value={header.dueDate ?? '—'} color={dueOverdue ? 'var(--red)' : undefined} bold />
+          <HeaderFact label="Customer" value={header.customerName ?? '—'} sub={header.clientPoNo ? `Client PO No. ${header.clientPoNo}` : undefined} bold />
+          <HeaderFact label="SO Date" value={header.soDate} />
+          <HeaderFact label="Due Date" value={header.dueDate ?? '—'} color={dueOverdue ? 'var(--red)' : undefined} bold />
           {/* PROGRESS fact + header bar have no legacy counterpart — kept (ours is a superset). */}
-          <HeaderFact label="PROGRESS" value={`${header.totalDoneQty}/${header.totalQty} · ${header.overallCompletionPct}%`} />
+          <HeaderFact label="Progress" value={`${header.totalDoneQty}/${header.totalQty} · ${header.overallCompletionPct}%`} />
           {header.remarks ? (
             <div style={{ flex: 1 }}>
-              <div className="text3" style={{ fontSize: 10 }}>REMARKS</div>
+              <div className="text3" style={{ fontSize: 10 }}>Remarks</div>
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>{header.remarks}</div>
             </div>
           ) : null}
@@ -386,14 +386,13 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
     <div className="panel" style={{ marginTop: 16 }}>
       <div className="panel-hdr" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--cyan)' }}>📦 BOM Items — {bomNo} × {equipmentQty} sets</span>
-        <span className="text3" style={{ fontSize: 11 }}>(Equipment Qty × Qty per Set = Total Need)</span>
       </div>
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
             <tr>
               <th>Sr No</th><th>Item Code</th><th>Item Name</th><th>Qty / Set</th>
-              <th style={{ color: 'var(--cyan)', fontWeight: 800 }}>Total Need</th><th>BOM Type</th>
+              <th style={{ color: 'var(--cyan)', fontWeight: 800 }} title="Equipment Qty × Qty per Set">Total Need</th><th>BOM Type</th>
               <th style={{ color: 'var(--green)' }}>Stock</th>
               <th style={{ color: 'var(--red)' }}>Pending</th><th>Plan Status</th>
             </tr>
@@ -471,9 +470,9 @@ function LinePanel({
       {/* Line header (legacy L4438-4453) */}
       <div className="panel-hdr" style={{ gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="text3 mono" style={{ fontSize: 11, fontWeight: 700 }}>LINE {line.lineNo}</span>
+          <span className="text3 mono" style={{ fontSize: 11, fontWeight: 700 }}>Ln {line.lineNo}</span>
           {line.clientPoLineNo ? (
-            <span style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700 }}>[POL:{line.clientPoLineNo}]</span>
+            <span style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700 }}>POL {line.clientPoLineNo}</span>
           ) : null}
           <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--purple)' }}>{itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision, '')}</span>
           <span style={{ fontSize: 13 }}>{line.partName ?? ''}</span>
@@ -564,12 +563,11 @@ function LinePanel({
             className="btn btn-sm"
             style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--purple)', border: '1px solid rgba(124,58,237,0.25)', fontWeight: 700, fontSize: 11 }}
             onClick={onPlan}
-            title="Create a plan for this line (planning → execute → Job Card)"
           >
             <Plus size={12} /> Plan {remainingToPlan} pcs
           </button>
         ) : !showAssemblyBom && !isEquipmentLine ? (
-          <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>✓ Fully allocated</span>
+          <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>✓ Fully Planned</span>
         ) : null}
         <button
           type="button"

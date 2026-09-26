@@ -355,8 +355,8 @@ function ClientsListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move customer ${c.name} to Trash?`,
-                  message: `${c.code} — ${c.name} stops appearing in the Customer Master and in every customer picker. You can restore it from Trash.`,
+                  title: `Move ${c.code} to Trash?`,
+                  message: 'You can restore it from Trash.',
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',
                 }}
@@ -371,7 +371,6 @@ function ClientsListPage(): React.JSX.Element {
         shown={visibleRows.length}
         noun="customer"
         limit={LIST_LIMIT}
-        hint="Click a row to open the customer. Click a count above to filter by status."
         // Excel template + import sit below the count line (mirror of Vendor
         // Master). The file input is hidden and only opened by the button.
         actions={

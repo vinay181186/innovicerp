@@ -288,9 +288,8 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 },
                 {
                   key: 'entries',
-                  label: 'DC Entries',
+                  label: 'DC Lines',
                   count: data?.summary?.entryCount ?? 0,
-                  title: 'Number of DC lines in this filter',
                 },
                 {
                   key: 'items',
@@ -314,7 +313,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No OSP DCs yet — issue one from a PO detail page.
+              No DCs yet — click New DC.
             </div>
           ) : (
             rows.map((dc) => <DcCard key={dc.id} dc={dc} />)

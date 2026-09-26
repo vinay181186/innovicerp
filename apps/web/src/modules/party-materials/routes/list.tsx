@@ -267,11 +267,6 @@ function PartyMaterialsListPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 Party Material Master tracks raw materials supplied by customers for JWSOs. Stock is
-        updated via Party GRN. Separate from company inventory.
-      </div>
-
       {showAdd ? <AddPartyMaterialModal onClose={() => setShowAdd(false)} /> : null}
       {editRow ? <EditPartyMaterialModal row={editRow} onClose={() => setEditRow(null)} /> : null}
     </div>

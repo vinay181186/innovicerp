@@ -144,7 +144,6 @@ function PendingSoValuePage(): React.JSX.Element {
                     {filtered.map((row) => (
                       <PsvRow key={row.soId} row={row} priceHidden={priceHidden} />
                     ))}
-                    <TotalsRow totals={data.totals} priceHidden={priceHidden} />
                   </tbody>
                 </table>
               </div>
@@ -197,7 +196,7 @@ function KpiStrip({
     >
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
         <div className="text3" style={{ fontSize: 9 }}>
-          TOTAL ORDER VALUE
+          Order Value
         </div>
         <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--cyan)' }}>
           {inr(totals.orderValue)}
@@ -208,7 +207,7 @@ function KpiStrip({
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
         <div className="text3" style={{ fontSize: 9 }}>
-          DISPATCHED VALUE
+          Dispatched Value
         </div>
         <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
           {inr(totals.dispatchedValue)}
@@ -226,7 +225,7 @@ function KpiStrip({
         }}
       >
         <div style={{ fontSize: 9, color: 'var(--amber)', fontWeight: 700 }}>
-          PENDING DISPATCH
+          Pending Value
         </div>
         <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--amber)' }}>
           {inr(totals.pendingValue)}
@@ -237,7 +236,7 @@ function KpiStrip({
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
         <div className="text3" style={{ fontSize: 9 }}>
-          INVOICED
+          Invoiced
         </div>
         <div className="mono fw-700" style={{ fontSize: 16, color: TEAL }}>
           {inr(totals.invoicedValue)}
@@ -248,7 +247,18 @@ function KpiStrip({
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
         <div className="text3" style={{ fontSize: 9 }}>
-          OUTSTANDING
+          Received
+        </div>
+        <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
+          {inr(totals.receivedValue)}
+        </div>
+        <div className="text3" style={{ fontSize: 9 }}>
+          {pct(Number(totals.receivedValue), i)} of invoiced
+        </div>
+      </div>
+      <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
+        <div className="text3" style={{ fontSize: 9 }}>
+          Outstanding
         </div>
         <div
           className="mono fw-700"
@@ -330,50 +340,6 @@ function PsvRow({
       <td>
         <span className={`badge b-${badgeColor(row.status)}`}>{soStatusLabel(row.status)}</span>
       </td>
-    </tr>
-  );
-}
-
-function TotalsRow({
-  totals,
-  priceHidden,
-}: {
-  totals: PendingSoValueResponse['totals'];
-  priceHidden: boolean;
-}): React.JSX.Element {
-  // Legacy puts background:var(--bg4) on the <tr> (L19366). Our
-  // `.innovic-table tbody tr:nth-child(even) td` paints the cells on top of the
-  // row, so the highlight would vanish whenever the totals row lands on an even
-  // index. Carrying the background on each <td> reproduces legacy's rendering.
-  const cell = { background: 'var(--bg4)' } as const;
-  return (
-    <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
-      <td colSpan={4} className="text2" style={{ ...cell, fontSize: 12 }}>
-        TOTAL
-      </td>
-      {priceHidden ? null : (
-        <>
-          <td className="mono" style={cell}>
-            {inr(totals.orderValue)}
-          </td>
-          <td className="mono" style={{ ...cell, color: 'var(--green)' }}>
-            {inr(totals.dispatchedValue)}
-          </td>
-          <td className="mono" style={{ ...cell, color: 'var(--amber)' }}>
-            {inr(totals.pendingValue)}
-          </td>
-          <td className="mono" style={{ ...cell, color: TEAL }}>
-            {inr(totals.invoicedValue)}
-          </td>
-          <td className="mono" style={{ ...cell, color: 'var(--green)' }}>
-            {inr(totals.receivedValue)}
-          </td>
-          <td className="mono" style={{ ...cell, color: 'var(--red)' }}>
-            {inr(totals.outstandingValue)}
-          </td>
-        </>
-      )}
-      <td style={cell} />
     </tr>
   );
 }
