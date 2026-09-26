@@ -5,9 +5,11 @@ import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ReportFilter, ReportShell, reportTotalRowStyle } from '@/ui/data/ReportShell';
 import { useMachinesList } from '../../machines/api';
 import { useMyCompany } from '../../settings/api';
 import { useDailyReport } from '../api';
@@ -17,10 +19,6 @@ const searchSchema = z.object({
   date: z.string().optional(),
   machineId: z.string().optional(),
 });
-
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export const dailyReportRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -32,7 +30,8 @@ export const dailyReportRoute = createRoute({
 function DailyReportPage(): React.JSX.Element {
   const search = dailyReportRoute.useSearch();
   const navigate = dailyReportRoute.useNavigate();
-  const date = search.date ?? todayStr();
+  // IST today, not the UTC date: before 05:30 IST the UTC date is yesterday.
+  const date = search.date ?? todayIst();
   const machineId = search.machineId ?? '';
 
   const { data: machinesData } = useMachinesList({
@@ -95,56 +94,37 @@ function DailyReportPage(): React.JSX.Element {
   };
 
   return (
-    <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📊 Daily Report</div>
+    <ReportShell
+      title="Daily Report"
+      icon="📊"
+      actions={
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className="btn btn-ghost"
           onClick={onPrint}
           disabled={!data || data.groups.length === 0}
           title="Print daily production report"
         >
           🖨 Print Full Report
         </button>
-      </div>
-
-      <div className="panel" style={{ padding: 14, marginBottom: 14 }}>
-        <div
-          style={{
-            display: 'flex',
-            gap: 14,
-            alignItems: 'flex-end',
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div
-              className="text3"
-              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
-            >
-              Date
-            </div>
+      }
+      filters={
+        <>
+          <ReportFilter label="Date" htmlFor="dr-date">
             <input
+              id="dr-date"
               type="date"
               className="innovic-input"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              style={{ fontSize: 12 }}
             />
-          </div>
-          <div>
-            <div
-              className="text3"
-              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
-            >
-              Machine
-            </div>
+          </ReportFilter>
+          <ReportFilter label="Machine" htmlFor="dr-machine" size="lg">
             <select
+              id="dr-machine"
               className="innovic-select"
               value={machineId}
               onChange={(e) => setMachine(e.target.value)}
-              style={{ fontSize: 12, minWidth: 240 }}
             >
               <option value="">All Machines</option>
               {(machinesData?.machines ?? []).map((m) => (
@@ -153,33 +133,40 @@ function DailyReportPage(): React.JSX.Element {
                 </option>
               ))}
             </select>
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <KpiTile
-          label="Total Pieces"
-          value={summary.totalPieces}
-          color="var(--green)"
-          sub={fmtDate(date)}
+          </ReportFilter>
+        </>
+      }
+      kpis={
+        <StatStrip
+          items={[
+            {
+              key: 'pieces',
+              label: 'Total Pieces',
+              count: summary.totalPieces,
+              color: 'var(--green)',
+              sub: fmtDate(date),
+            },
+            { key: 'logs', label: 'Log Entries', count: summary.logEntries },
+            {
+              key: 'machines',
+              label: 'Machines Active',
+              count: summary.machinesActive,
+              color: 'var(--cyan)',
+            },
+            {
+              key: 'jcs',
+              label: 'Job Cards Active',
+              count: summary.jcsActive,
+              color: 'var(--amber)',
+            },
+          ]}
         />
-        <KpiTile label="Log Entries" value={summary.logEntries} color="var(--text)" />
-        <KpiTile label="Machines Active" value={summary.machinesActive} color="var(--cyan)" />
-        <KpiTile label="Job Cards Active" value={summary.jcsActive} color="var(--amber)" />
-      </div>
-
+      }
+    >
       {isLoading ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
+            <div className="text3">
               <Loader2 size={14} className="inline animate-spin" /> Loading…
             </div>
           </div>
@@ -198,7 +185,7 @@ function DailyReportPage(): React.JSX.Element {
             <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
             <b>No production entries for {fmtDate(date)}</b>
             <br />
-            <span className="text3" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
+            <span className="text3" style={{ marginTop: 'var(--sp-2)', display: 'block' }}>
               Log completions via Op Entry to see them here
             </span>
           </div>
@@ -216,12 +203,10 @@ function DailyReportPage(): React.JSX.Element {
               }}
             >
               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <span className="mono fw-700" style={{ fontSize: 15 }}>
+                <span className="mono fw-700" style={{ fontSize: 'var(--fs-md)' }}>
                   {g.machineCode}
                 </span>
-                <span className="text2" style={{ fontSize: 12 }}>
-                  {g.machineName ?? ''}
-                </span>
+                <span className="text2">{g.machineName ?? ''}</span>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span
@@ -229,7 +214,7 @@ function DailyReportPage(): React.JSX.Element {
                     fontFamily: 'var(--mono)',
                     fontWeight: 700,
                     color: 'var(--green2)',
-                    fontSize: 15,
+                    fontSize: 'var(--fs-md)',
                   }}
                 >
                   {g.totalQty} pcs
@@ -239,7 +224,6 @@ function DailyReportPage(): React.JSX.Element {
                   className="btn btn-ghost btn-sm"
                   onClick={() => onPrintMachine(g)}
                   title={`Print report for ${g.machineCode}`}
-                  style={{ fontSize: 11 }}
                 >
                   🖨
                 </button>
@@ -255,10 +239,10 @@ function DailyReportPage(): React.JSX.Element {
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th className="td-ctr">Op</th>
+                    <th>Op</th>
                     <th>Operation</th>
-                    <th className="td-ctr">Shift</th>
-                    <th className="td-ctr" style={{ color: 'var(--green2)' }}>
+                    <th>Shift</th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
                       Completed
                     </th>
                     <th>Operator</th>
@@ -279,70 +263,38 @@ function DailyReportPage(): React.JSX.Element {
                         {itemCodeWithRev(r.itemCode, r.itemRevision)}
                       </td>
                       <td>{r.itemName ?? '—'}</td>
-                      <td className="td-ctr mono">{opSrNo(r.opSeq)}</td>
+                      <td className="mono">{opSrNo(r.opSeq)}</td>
                       <td>{r.operation}</td>
-                      <td className="td-ctr">
-                        <span
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: 10,
-                            fontSize: 11,
-                            fontWeight: 700,
-                            background: 'var(--bg4)',
-                            color: 'var(--text2)',
-                          }}
-                        >
+                      <td>
+                        <span className="badge b-grey">
                           {SHIFT_LABELS[r.shift as Shift] ?? r.shift}
                         </span>
                       </td>
-                      <td
-                        className="td-ctr mono fw-700"
-                        style={{ fontSize: 15, color: 'var(--green2)' }}
-                      >
+                      <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
                         {r.qty}
                       </td>
                       <td>{r.operator ?? '—'}</td>
-                      <td className="text3" style={{ fontSize: 11 }}>
-                        {r.remarks ?? ''}
-                      </td>
+                      <td className="text3">{r.remarks ?? ''}</td>
                     </tr>
                   ))}
                 </tbody>
+                {/* Machine total — the server's own per-machine figure. */}
+                <tfoot>
+                  <tr style={reportTotalRowStyle}>
+                    <td colSpan={7} style={{ color: 'var(--text2)' }}>
+                      TOTAL ({g.rows.length} entries)
+                    </td>
+                    <td className="td-num mono" style={{ color: 'var(--green2)' }}>
+                      {g.totalQty}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
         ))
       )}
-    </div>
-  );
-}
-
-function KpiTile({
-  label,
-  value,
-  color,
-  sub,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  sub?: string;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ padding: 14, textAlign: 'center' }}>
-      <div
-        className="text3"
-        style={{
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          marginBottom: 6,
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 30, fontWeight: 800, color }}>{value}</div>
-      {sub ? <div style={{ fontSize: 11, color: 'var(--text3)' }}>{sub}</div> : null}
-    </div>
+    </ReportShell>
   );
 }
