@@ -29,6 +29,7 @@
 // columns (invoice_date / due_date / payment_date) are `date`, not timestamptz,
 // so no UTC-shift bug exists at these render sites.
 
+import { PAYMENT_MODES, type PaymentMode } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -73,7 +74,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   const [payOpen, setPayOpen] = useState(false);
   const [payDate, setPayDate] = useState(todayStr());
   const [payAmt, setPayAmt] = useState('');
-  const [payMode, setPayMode] = useState('NEFT');
+  const [payMode, setPayMode] = useState<PaymentMode>('NEFT');
   const [payRef, setPayRef] = useState('');
   const [payNotes, setPayNotes] = useState('');
   const [payErr, setPayErr] = useState<string | null>(null);
@@ -252,9 +253,9 @@ function InvoiceDetailPage(): React.JSX.Element {
                 <select
                   className="innovic-input"
                   value={payMode}
-                  onChange={(e) => setPayMode(e.target.value)}
+                  onChange={(e) => setPayMode(e.target.value as PaymentMode)}
                 >
-                  {['NEFT', 'RTGS', 'Cheque', 'Cash', 'UPI', 'Other'].map((m) => (
+                  {PAYMENT_MODES.map((m) => (
                     <option key={m}>{m}</option>
                   ))}
                 </select>

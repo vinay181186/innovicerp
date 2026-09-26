@@ -5,7 +5,14 @@ import * as schema from './schema';
 
 // Runtime API uses the transaction pooler (port 6543).
 // Migrations + seeds use DATABASE_URL (session pooler 5432) — see drizzle.config.ts and seed.ts.
-const queryClient = postgres(env.DATABASE_URL_POOLED, { prepare: false });
+// ADR-185 — under the test harness only, the connection names itself so the
+// stock-ledger write-lock (migration 0147) lets the suites' teardown remove
+// the ledger rows they created. Never set outside NODE_ENV=test.
+export const TEST_HARNESS_APP_NAME = 'innovic-test-harness';
+const queryClient = postgres(env.DATABASE_URL_POOLED, {
+  prepare: false,
+  ...(env.NODE_ENV === 'test' ? { connection: { application_name: TEST_HARNESS_APP_NAME } } : {}),
+});
 
 export const db = drizzle(queryClient, { schema, casing: 'snake_case' });
 

@@ -1424,7 +1424,12 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         // operatorName and linked to nobody. operatorName stays as it was: the
         // snapshot of who signed off on the day, which must not move when a
         // person is later renamed or removed.
-        qcUserId: input.qcUserId ?? null,
+        // ADR-185 — every QC log names a USER who answers for it. A path that
+        // picks no inspector login (the Op Entry form, TPI) records the
+        // logged-in user who entered and submitted the result; the person who
+        // physically inspected stays in operator_name (for TPI, tpi_inspector).
+        // qc_user_id therefore reads "accountable login", never "inspector".
+        qcUserId: input.qcUserId ?? user.id,
         // 0095 — no machine on QC: inspection is not machining, and jc_ops
         // carries the literal 'QC' as a type label, not a machine (ISSUE-010).
         // Time of the inspection, when supplied (was hard-coded null).

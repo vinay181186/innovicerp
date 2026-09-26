@@ -374,6 +374,11 @@ function InvoiceNewPage(): React.JSX.Element {
                       step="0.01"
                       value={card.rate}
                       disabled={!line}
+                      // ADR-185 — an invoice bills at the SO rate (the server
+                      // refuses any other); a price change is made on the SO.
+                      // A line with no SO rate (0) is priced here.
+                      readOnly={Number(line?.rate ?? 0) > 0}
+                      title="The SO rate. To bill a different price, change it on the Sales Order."
                       onChange={(e) => patchLine(card.id, { rate: e.target.value })}
                       style={{ textAlign: 'right' }}
                     />

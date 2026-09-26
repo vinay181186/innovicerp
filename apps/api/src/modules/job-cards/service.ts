@@ -1966,6 +1966,11 @@ export async function updateJobCard(
         // and the NC-qty cap below.
         recoveryKind: jobCards.recoveryKind,
         parentNcId: jobCards.parentNcId,
+        // ADR-185 — what the card is for and how many, as stored, so the
+        // freeze below can tell a real change from a re-save.
+        itemId: jobCards.itemId,
+        orderQty: jobCards.orderQty,
+        productionOrderId: jobCards.productionOrderId,
       })
       .from(jobCards)
       .where(
@@ -2005,6 +2010,53 @@ export async function updateJobCard(
     }
 
     const item = await resolveItem(tx, input.itemCode, companyId);
+
+    // ADR-185 — a card's item and qty are facts every other screen repeats
+    // (the order, the plan, the SO line's JC Qty), so they freeze once work
+    // exists:
+    //   - the item cannot change after any production / QC log is on the card;
+    //   - a Production Order's card keeps the ORDER's qty (change the order);
+    //   - no card may drop below what an operation has already completed.
+    const workRows = (await tx.execute(sql`
+      SELECT COUNT(l.id)::int AS logs,
+             COALESCE(MAX(vos.completed_qty), 0)::int AS done,
+             (SELECT po.order_qty FROM public.production_orders po
+              WHERE po.id = ${head.productionOrderId ?? null}::uuid AND po.deleted_at IS NULL) AS po_qty,
+             (SELECT po.code FROM public.production_orders po
+              WHERE po.id = ${head.productionOrderId ?? null}::uuid AND po.deleted_at IS NULL) AS po_code
+      FROM public.jc_ops o
+      LEFT JOIN public.op_log l ON l.jc_op_id = o.id
+      LEFT JOIN public.v_jc_op_status vos ON vos.jc_op_id = o.id
+      WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
+    `)) as unknown as Array<{
+      logs: number;
+      done: number;
+      po_qty: number | null;
+      po_code: string | null;
+    }>;
+    const work = workRows[0];
+    if (work && Number(work.logs) > 0 && (item.id ?? null) !== (head.itemId ?? null)) {
+      throw new ValidationError(
+        `${head.code} already has production logged — its item cannot be changed. Raise a new card for the other item.`,
+      );
+    }
+    // Only a CHANGE of qty is refused: a card whose qty already differs from
+    // its order (edited before this rule) still saves unchanged.
+    if (
+      work?.po_qty != null &&
+      input.orderQty !== head.orderQty &&
+      input.orderQty !== Number(work.po_qty)
+    ) {
+      throw new ValidationError(
+        `${head.code} belongs to Production Order ${work.po_code ?? ''} — its JC Qty is the order's qty (${work.po_qty}).`,
+      );
+    }
+    if (work && input.orderQty < Number(work.done)) {
+      throw new ValidationError(
+        `JC Qty (${input.orderQty}) cannot be less than what is already completed on ${head.code} (${work.done}).`,
+      );
+    }
+
     await assertLineBalance(tx, input, companyId, id, item.id, { recoveryKind: head.recoveryKind });
     // The generated terminal QC op comes back on edit with an id. If the person
     // has since retyped an op to OSP, that op is stale (Rule B never gates an

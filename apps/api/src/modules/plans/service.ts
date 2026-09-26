@@ -94,6 +94,7 @@ import { emitActivityLog } from '../activity-log/service';
 import { nextJcCode } from '../job-cards/service';
 import { saveRouteCardForItem } from '../route-cards/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
+import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 
 const EDITABLE_STATUSES: readonly PlanStatus[] = ['in_planning', 'planned'];
 
@@ -513,28 +514,56 @@ async function assertPlanQtyWithinRemaining(
     return;
   }
 
-  let orderQty: number;
   if (soLineId) {
+    // ADR-185 — lock the SO line (the SO edit guards lock it too, so a qty cut
+    // and a new plan cannot both pass), refuse a draft / cancelled order, and
+    // measure against the ONE "to plan" rule (lib/so-line-coverage.ts: plans +
+    // a Buy line's PRs + direct cards) — the figure Needs Planning shows.
     const r = (await tx.execute(sql`
-      SELECT order_qty AS "orderQty" FROM public.sales_order_lines
-      WHERE id = ${soLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-      LIMIT 1
-    `)) as unknown as Array<{ orderQty: number }>;
-    if (!r[0]) return;
-    orderQty = Number(r[0].orderQty);
-  } else {
-    const r = (await tx.execute(sql`
-      SELECT order_qty AS "orderQty" FROM public.job_work_order_lines
-      WHERE id = ${jwLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-      LIMIT 1
-    `)) as unknown as Array<{ orderQty: number }>;
-    if (!r[0]) return;
-    orderQty = Number(r[0].orderQty);
+      SELECT sol.order_qty AS "orderQty", so.status AS "soStatus", so.code AS "soCode",
+             ${sql.raw(soLineCoveredRaw('sol'))} AS "covered",
+             COALESCE((SELECT p_x.plan_qty FROM public.plans p_x
+                       WHERE p_x.id = ${excludePlanId ?? null}::uuid
+                         AND p_x.so_line_id = sol.id AND p_x.deleted_at IS NULL
+                         AND p_x.plan_status <> 'cancelled'), 0)::int AS "own"
+      FROM public.sales_order_lines sol
+      JOIN public.sales_orders so ON so.id = sol.sales_order_id
+      WHERE sol.id = ${soLineId}::uuid AND sol.company_id = ${companyId}::uuid
+        AND sol.deleted_at IS NULL
+      FOR UPDATE OF sol
+    `)) as unknown as Array<{
+      orderQty: number;
+      soStatus: string;
+      soCode: string;
+      covered: number;
+      own: number;
+    }>;
+    const line = r[0];
+    if (!line) return;
+    // A cut (or an unchanged re-save) of an existing plan only ever reduces
+    // what the line is covered by — always allowed, even on an over-covered
+    // line or a cancelled order, so a planner can fix an over-plan.
+    if (Number(line.own) > 0 && planQty <= Number(line.own)) return;
+    assertSoAcceptsWork(line.soStatus, line.soCode, 'it cannot be planned');
+    const covered = Number(line.covered) - Number(line.own);
+    const toPlan = Math.max(0, Number(line.orderQty) - covered);
+    if (planQty > toPlan) {
+      throw new ValidationError(
+        `Plan Qty (${planQty}) cannot be more than Pending to Plan (${toPlan}).`,
+      );
+    }
+    return;
   }
 
-  const lineCond = soLineId
-    ? sql`p.so_line_id = ${soLineId}::uuid`
-    : sql`p.jw_line_id = ${jwLineId}::uuid`;
+  // JW lines: Plan Qty against the order qty less the other plans.
+  const jwRows = (await tx.execute(sql`
+    SELECT order_qty AS "orderQty" FROM public.job_work_order_lines
+    WHERE id = ${jwLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+    LIMIT 1
+  `)) as unknown as Array<{ orderQty: number }>;
+  if (!jwRows[0]) return;
+  const orderQty = Number(jwRows[0].orderQty);
+  const lineCond = sql`p.jw_line_id = ${jwLineId}::uuid`;
   const excl = excludePlanId ? sql`AND p.id <> ${excludePlanId}::uuid` : sql``;
   const rows = (await tx.execute(sql`
     SELECT COALESCE(SUM(p.plan_qty), 0)::int AS "planned"
@@ -1029,8 +1058,11 @@ export async function softDeletePlan(id: string, user: AuthContext): Promise<{ o
     const orderCodes = orderRows.map((r) => r.code);
     if (orderCodes.length > 0) {
       throw new ConflictError(
-        `Plan ${row.code} has Production Order(s) ${orderCodes.join(', ')} — ` +
-          `short close them first.`,
+        // ADR-185 — the old wording told the user to short close the orders,
+        // yet a short-closed order blocks the delete too (it is history). Say
+        // what is true: a plan with order history stays.
+        `Plan ${row.code} has Production Order(s) ${orderCodes.join(', ')}. ` +
+          `A plan with order history cannot be deleted.`,
       );
     }
 

@@ -59,10 +59,16 @@ export const createInvoiceInputSchema = z.object({
 });
 export type CreateInvoiceInput = z.infer<typeof createInvoiceInputSchema>;
 
+/** ADR-185 — how a payment arrived: the fixed list the invoice screen offers,
+ *  now enforced by the server so the register can be summed by mode. Rows
+ *  stored before keep their free text (the read shape stays a string). */
+export const PAYMENT_MODES = ['NEFT', 'RTGS', 'Cheque', 'Cash', 'UPI', 'Other'] as const;
+export type PaymentMode = (typeof PAYMENT_MODES)[number];
+
 export const addPaymentInputSchema = z.object({
   paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   amount: z.coerce.number().positive(),
-  mode: z.string().max(32).default('NEFT'),
+  mode: z.enum(PAYMENT_MODES).default('NEFT'),
   refNo: z.string().max(128).optional(),
   notes: z.string().max(500).optional(),
 });

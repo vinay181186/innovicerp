@@ -194,6 +194,42 @@ export async function createStoreIssue(
     if (!itm)
       throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
 
+    // 1b) ADR-185 — material issued against a Job Card or a Production Order is
+    //     linked to it for real (job_card_id / production_order_id), so the
+    //     card and the order can account for their raw material. A reference
+    //     that names no such document is refused before any stock moves.
+    let jobCardId: string | null = null;
+    let productionOrderId: string | null = null;
+    const refNo = input.refNo?.trim() ?? '';
+    if (refNo && (input.refType === 'Job Card' || input.refType === 'Production')) {
+      // The type the storekeeper picked is looked up first, so a code that
+      // were ever shared by a card and an order links the one they meant.
+      const preferJc = input.refType === 'Job Card';
+      const refRows = (await tx.execute(sql`
+        SELECT jc_id, po_id FROM (
+          SELECT jc.id AS jc_id, jc.production_order_id AS po_id, 1 AS kind
+          FROM public.job_cards jc
+          WHERE jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL AND jc.code = ${refNo}
+          UNION ALL
+          SELECT po.job_card_id, po.id, 2
+          FROM public.production_orders po
+          WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL AND po.code = ${refNo}
+        ) r
+        ORDER BY CASE WHEN r.kind = ${preferJc ? 1 : 2} THEN 0 ELSE 1 END
+        LIMIT 1
+      `)) as unknown as Array<{ jc_id: string | null; po_id: string | null }>;
+      const ref = refRows[0];
+      if (!ref) {
+        throw new ValidationError(
+          input.refType === 'Job Card'
+            ? `Job Card ${refNo} was not found. Type the JC No. exactly as printed on the card.`
+            : `No Job Card or Production Order is numbered ${refNo}. Type the number exactly as printed.`,
+        );
+      }
+      jobCardId = ref?.jc_id ?? null;
+      productionOrderId = ref?.po_id ?? null;
+    }
+
     // 2) Lock the items row for the duration of the tx so concurrent
     //    issues cant double-spend stock.
     await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itm.id}::uuid FOR UPDATE`);
@@ -253,6 +289,8 @@ export async function createStoreIssue(
         purpose: input.purpose ?? null,
         remarks: input.remarks ?? null,
         storeTransactionId: storeTxnId,
+        jobCardId,
+        productionOrderId,
         createdBy: userId,
         updatedBy: userId,
       })

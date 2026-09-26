@@ -25,7 +25,12 @@ export default async function setup(): Promise<void> {
     // Tests will fail in their own beforeAll; nothing useful to do here.
     return;
   }
-  const sql = postgres(url, { prepare: false, max: 1 });
+  // ADR-185 — named so the stock-ledger write-lock (0147) lets teardown through.
+  const sql = postgres(url, {
+    prepare: false,
+    max: 1,
+    connection: { application_name: 'innovic-test-harness' },
+  });
 
   try {
     // 1. Transactional tables with code LIKE 'T%-%'. Order matters: tables

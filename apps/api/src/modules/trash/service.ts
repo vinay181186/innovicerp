@@ -430,6 +430,7 @@ export async function emptyTrash(user: AuthContext): Promise<{ deleted: number; 
     // next pass retries it once the other side is gone. Passes stop when one
     // deletes nothing. Rows still left are the ones other documents use: they
     // stay in Trash and are counted, never cascaded away.
+    const blockedTables = new Set<TrashEntityType>();
     for (let pass = 0; pass < ENTITIES.length; pass++) {
       let deletedThisPass = 0;
       for (const entity of ENTITIES) {
@@ -447,10 +448,28 @@ export async function emptyTrash(user: AuthContext): Promise<{ deleted: number; 
           deletedThisPass += rows.length;
         } catch (e) {
           if (!isForeignKeyViolation(e)) throw e;
+          blockedTables.add(entity.type);
         }
       }
       total += deletedThisPass;
       if (deletedThisPass === 0) break;
+    }
+    // ADR-185 review — a table whose set DELETE a foreign key refused on every
+    // pass still holds a row that is genuinely in use. So one such row does not
+    // keep every OTHER trashed row of the table in Trash, run ONE final round
+    // of savepointed per-row deletes for those tables only: the free rows go,
+    // the rows in use stay and are counted as kept. This is the only per-row
+    // path, bounded to one round and to blocked tables (§6 rule 6 exception).
+    for (const entity of ENTITIES.filter((e) => blockedTables.has(e.type))) {
+      const extra = entity.type === 'Sales Order' ? salesOrderFreeSql(companyId) : sql``;
+      const trashed = (await tx.execute(
+        sql`SELECT t.id::text AS id FROM ${sql.identifier(entity.table)} AS t
+            WHERE t.company_id = ${companyId}::uuid
+              AND t.deleted_at IS NOT NULL ${extra}`,
+      )) as unknown as { id: string }[];
+      for (const row of trashed) {
+        if ((await deleteRowGuarded(tx, entity, row.id, companyId)) === 'deleted') total += 1;
+      }
     }
     const left = (await tx.execute(
       sql.raw(`SELECT COUNT(*)::int AS n FROM (${unionSql(companyId)}) u`),

@@ -34,6 +34,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -277,7 +278,9 @@ export async function getInvoiceRelated(
         clientId: invoices.clientId,
       })
       .from(invoices)
-      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)))
+      .where(
+        and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)),
+      )
       .limit(1);
     const header = headers[0];
     if (!header) throw new NotFoundError('Invoice not found. Refresh the page.');
@@ -325,7 +328,16 @@ export async function getInvoiceRelated(
       '📄',
       'sales-order',
       so
-        ? [{ id: so.id, code: so.code, status: so.status, date: toIsoDate(so.date), linkId: null, label: null }]
+        ? [
+            {
+              id: so.id,
+              code: so.code,
+              status: so.status,
+              date: toIsoDate(so.date),
+              linkId: null,
+              label: null,
+            },
+          ]
         : [],
     );
     const clientSection = section(
@@ -334,7 +346,16 @@ export async function getInvoiceRelated(
       '👤',
       'client',
       client
-        ? [{ id: client.id, code: client.code, status: null, date: null, linkId: null, label: client.name }]
+        ? [
+            {
+              id: client.id,
+              code: client.code,
+              status: null,
+              date: null,
+              linkId: null,
+              label: client.name,
+            },
+          ]
         : [],
     );
 
@@ -439,7 +460,11 @@ export async function getInvoiceableSo(
       .from(salesOrders)
       .leftJoin(clients, eq(clients.id, salesOrders.clientId))
       .where(
-        and(eq(salesOrders.id, soId), eq(salesOrders.companyId, companyId), isNull(salesOrders.deletedAt)),
+        and(
+          eq(salesOrders.id, soId),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
       )
       .limit(1);
     const so = soRows[0];
@@ -488,6 +513,7 @@ export async function createInvoice(
       .select({
         id: salesOrders.id,
         code: salesOrders.code,
+        status: salesOrders.status,
         customer: salesOrders.customerName,
         clientId: salesOrders.clientId,
         clientCode: clients.code,
@@ -506,6 +532,37 @@ export async function createInvoice(
       .limit(1);
     const so = soRows[0];
     if (!so) throw new NotFoundError('SO not found. Refresh the page.');
+    // ADR-185 — a draft or cancelled order is not billed.
+    assertSoAcceptsWork(so.status, so.code, 'it cannot be invoiced');
+    // One invoice lists an SO line once: the To Invoice check below is per
+    // line, so a repeated line would bill the same pieces twice.
+    const seenLines = new Set<string>();
+    for (const l of input.lines) {
+      if (seenLines.has(l.salesOrderLineId)) {
+        throw new ValidationError(
+          'The same SO line is listed twice on this invoice. List it once.',
+        );
+      }
+      seenLines.add(l.salesOrderLineId);
+    }
+
+    // ADR-185 — lock the SO lines being billed BEFORE reading what is left to
+    // invoice (the dispatch path locks the same rows), so two invoices raised
+    // at once cannot both pass the check and bill the same pieces twice. The
+    // same read gives each line's item (stored on the invoice line) and the
+    // SO rate the invoice must bill at.
+    const lockedLines = (await tx.execute(sql`
+      SELECT id, item_id, rate FROM public.sales_order_lines
+      WHERE sales_order_id = ${so.id}::uuid AND company_id = ${companyId}::uuid
+        AND deleted_at IS NULL
+        AND id IN (${sql.join(
+          input.lines.map((l) => sql`${l.salesOrderLineId}::uuid`),
+          sql`, `,
+        )})
+      ORDER BY id
+      FOR UPDATE
+    `)) as unknown as Array<{ id: string; item_id: string | null; rate: string | number | null }>;
+    const lockedById = new Map(lockedLines.map((r) => [r.id, r]));
 
     // Validate qty <= available (dispatched − invoiced) per line, in-tx.
     const availLines = await loadInvoiceableLines(tx, companyId, input.salesOrderId);
@@ -518,11 +575,19 @@ export async function createInvoice(
           `Ln ${a.lineNo} (${a.itemCode ?? a.itemName}): Qty (${l.qty}) cannot be more than To Invoice (${a.availableQty}).`,
         );
       }
+      // ADR-185 — the invoice bills at the SO rate. A different price is a
+      // change to the order, made (and logged) on the Sales Order first.
+      const soRate = n(lockedById.get(l.salesOrderLineId)?.rate ?? null);
+      if (soRate > 0 && Math.abs(l.rate - soRate) > 0.005) {
+        throw new ValidationError(
+          `Ln ${a.lineNo} (${a.itemCode ?? a.itemName}): Rate (${l.rate}) must be the SO rate (${soRate}). Change it on the Sales Order first.`,
+        );
+      }
     }
 
     const lineAmounts = input.lines.map((l) => l.qty * l.rate);
     const subtotal = lineAmounts.reduce((s, v) => s + v, 0);
-    const gstAmount = Math.round((subtotal * input.gstPercent) / 100 * 100) / 100;
+    const gstAmount = Math.round(((subtotal * input.gstPercent) / 100) * 100) / 100;
     const grand = subtotal + gstAmount;
 
     const due = new Date(input.invoiceDate);
@@ -565,7 +630,8 @@ export async function createInvoice(
         companyId,
         invoiceId: header.id,
         lineNo: lineNo++,
-        itemId: null,
+        // ADR-185 — the item is stored (it was always null), read off the SO line.
+        itemId: lockedById.get(l.salesOrderLineId)?.item_id ?? null,
         itemCodeText: a.itemCode,
         itemName: a.itemName,
         qty: l.qty,
@@ -608,9 +674,16 @@ export async function addPayment(
       .select()
       .from(invoices)
       .where(
-        and(eq(invoices.id, invoiceId), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)),
+        and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.companyId, companyId),
+          isNull(invoices.deletedAt),
+        ),
       )
-      .limit(1);
+      .limit(1)
+      // ADR-185 — lock the invoice: two payments entered at once must not both
+      // read the same balance and over-pay it.
+      .for('update');
     const inv = rows[0];
     if (!inv) throw new NotFoundError('Invoice not found. Refresh the page.');
 
@@ -639,7 +712,12 @@ export async function addPayment(
     const newStatus = newPaid >= grand - 0.01 ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
     await tx
       .update(invoices)
-      .set({ totalPaid: String(newPaid), status: newStatus, updatedBy: user.id, updatedAt: new Date() })
+      .set({
+        totalPaid: String(newPaid),
+        status: newStatus,
+        updatedBy: user.id,
+        updatedAt: new Date(),
+      })
       .where(eq(invoices.id, invoiceId));
 
     await emitActivityLog(

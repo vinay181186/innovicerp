@@ -39,6 +39,7 @@ import {
   unconsumeForDispatch,
 } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
+import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -464,9 +465,14 @@ async function loadSo(
   tx: DbTransaction,
   companyId: string,
   soId: string,
-): Promise<{ id: string; code: string; customer: string | null }> {
+): Promise<{ id: string; code: string; customer: string | null; status: string }> {
   const rows = await tx
-    .select({ id: salesOrders.id, code: salesOrders.code, customer: salesOrders.customerName })
+    .select({
+      id: salesOrders.id,
+      code: salesOrders.code,
+      customer: salesOrders.customerName,
+      status: salesOrders.status,
+    })
     .from(salesOrders)
     .where(
       and(
@@ -784,6 +790,9 @@ export async function createDispatch(
 
   return withUserContext(user, async (tx) => {
     const so = await loadSo(tx, companyId, input.salesOrderId);
+    // ADR-185 — nothing ships against a draft or cancelled order (the SO
+    // picker already hides a cancelled one; the server now says so too).
+    assertSoAcceptsWork(so.status, so.code, 'nothing can be dispatched against it');
     // Lock the SO lines being dispatched BEFORE reading availability, so two
     // concurrent dispatches on the same line serialize instead of both passing
     // the qty check and over-dispatching.
@@ -793,6 +802,9 @@ export async function createDispatch(
         .select({ id: salesOrderLines.id })
         .from(salesOrderLines)
         .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, lineIds)))
+        // ADR-185 review — the same row order invoice create locks in (by id),
+        // so a dispatch and an invoice on one SO can never deadlock.
+        .orderBy(asc(salesOrderLines.id))
         .for('update');
 
       // Also lock the ITEM rows these lines are for, in a stable order.

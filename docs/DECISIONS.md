@@ -9919,3 +9919,25 @@ The Production Orders report gains Lost Qty and the missing 'partially_closed' f
   these facts.
 - Reports that state a JC's own Order Qty (JC Status Summary, JC Ageing) keep the card's literal
   qty: that is a fact about the card, not about the order line.
+
+### ADR-185 addendum (2026-09-26): the writes follow the same rules
+
+The screens now agree; the write paths were made to refuse what the screens would otherwise have
+to explain:
+
+- **Plan create / edit** checks Plan Qty against the same "to plan" figure Needs Planning shows
+  (plans + Buy PRs + direct cards), under a lock on the SO line, and refuses a draft or cancelled
+  SO. **Dispatch** and **invoice** refuse a draft or cancelled SO too.
+- **Invoice** locks the SO lines it bills (no double billing from two invoices at once), stores the
+  item (it was always null) and bills at the SO rate; a different price is changed on the SO first.
+  **Payment** locks the invoice (no over-payment race); the mode is one of a fixed list.
+- **QC log** always names an inspector: the logged-in user when the form sends none. Old rows are
+  left alone (op_log is append-only; they stay accountable through `created_by`).
+- **Job Card edit**: the item cannot change once production is logged; a Production Order's card
+  keeps the order's qty; no card goes below what an operation has completed.
+- **Store Issue** against a JC / Production Order stores a real link (0147); a JC code that does not
+  exist is refused before stock moves.
+- **Stock ledger** rows cannot be edited or deleted (0147 trigger); corrections are opposite rows.
+- **Empty Trash** falls back to row-by-row only for a table whose set delete was blocked, so one
+  row in use no longer keeps its whole table in Trash.
+- Plan delete explains itself truthfully: a plan with order history stays.
