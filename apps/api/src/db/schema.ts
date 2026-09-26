@@ -283,6 +283,9 @@ export const clients = pgTable(
     city: text('city'),
     state: text('state'),
     pincode: text('pincode'),
+    // Payment Days (ADR-188): days allowed to pay an invoice; the default for a
+    // new invoice's Payment Terms. Null = not set. DB check 0..365 (0150).
+    paymentDays: integer('payment_days'),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -1938,6 +1941,10 @@ export const purchaseOrders = pgTable(
     rejectedBy: uuid('rejected_by').references(() => users.id),
     rejectedAt: timestamp('rejected_at', { withTimezone: true }),
     rejectionReason: text('rejection_reason'),
+    // ADR-189 (0151) — who stopped an issued PO, when and why (all or none).
+    shortClosedAt: timestamp('short_closed_at', { withTimezone: true }),
+    shortClosedBy: uuid('short_closed_by').references(() => users.id),
+    shortCloseReason: text('short_close_reason'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -1950,6 +1957,13 @@ export const purchaseOrders = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    // ADR-189 (0151) — who / when / why of a short close, all or none.
+    check(
+      'purchase_orders_short_close_all_or_none',
+      sql`(${t.shortClosedAt} is null and ${t.shortClosedBy} is null and ${t.shortCloseReason} is null)
+        or (${t.shortClosedAt} is not null and ${t.shortClosedBy} is not null
+            and length(btrim(${t.shortCloseReason})) > 0)`,
+    ),
     uniqueIndex('purchase_orders_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -2450,9 +2464,7 @@ export const ncRegister = pgTable(
       .references(() => companies.id),
     code: text('code').notNull(),
     ncDate: date('nc_date').notNull(),
-    jobCardId: uuid('job_card_id')
-      .notNull()
-      .references((): AnyPgColumn => jobCards.id),
+    jobCardId: uuid('job_card_id').references((): AnyPgColumn => jobCards.id),
     jcOpId: uuid('jc_op_id').references((): AnyPgColumn => jcOps.id, {
       onDelete: 'set null',
     }),
@@ -2527,6 +2539,11 @@ export const ncRegister = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    // ADR-189 (0151) — a bought-material NC has no job card but a GRN line.
+    check(
+      'nc_register_job_card_or_grn_line',
+      sql`${t.jobCardId} is not null or ${t.grnLineId} is not null`,
+    ),
     uniqueIndex('nc_register_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -4588,6 +4605,11 @@ export const designWorkLog = pgTable(
     designProjectId: uuid('design_project_id').references((): AnyPgColumn => designProjects.id, {
       onDelete: 'set null',
     }),
+    // ADR-188: a row logged from a Design Tracker entry ("Log Time") keeps the
+    // tracker it came from. Null for rows entered on the Design Work Log itself.
+    designTrackerId: uuid('design_tracker_id').references((): AnyPgColumn => designTracker.id, {
+      onDelete: 'set null',
+    }),
     taskText: text('task_text'),
     category: text('category').notNull().default('Design'),
     hours: numeric('hours', { precision: 6, scale: 2 }).notNull(),
@@ -4611,6 +4633,9 @@ export const designWorkLog = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('design_work_log_project_idx')
       .on(t.designProjectId)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_work_log_tracker_idx')
+      .on(t.designTrackerId)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('design_work_log_company_read', {
       for: 'select',

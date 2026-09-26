@@ -3,18 +3,22 @@
 // dot, line count, customer, BOM-Pending tag, Qty/Done/progress) and a right
 // detail pane (the shared SoStatusDetailView). Reuses GET /so-overview for the
 // left list; the right pane fetches GET /so-status/$id on selection.
+// The selected SO lives in the URL (`?so=<id>`) so refresh and Back keep it.
 
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { z } from 'zod';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { SearchInput } from '@/ui/forms';
 import { useSoOverview } from '../../so-overview/api';
 import { SoStatusDetailView } from '../components/so-status-detail';
 
 export const soStatusIndexRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'so-status',
+  validateSearch: z.object({ so: z.string().optional() }),
   component: SoStatusIndexPage,
 });
 
@@ -38,7 +42,11 @@ function dotColor(status: string, hasWork: boolean): string {
 
 function SoStatusIndexPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { so: selectedId } = soStatusIndexRoute.useSearch();
+  const navigate = soStatusIndexRoute.useNavigate();
+  const selectSo = (id: string): void => {
+    void navigate({ search: (prev) => ({ ...prev, so: id }), replace: true });
+  };
   const { data, isLoading, isError, error } = useSoOverview({});
 
   // The left pane holds every SO the overview returns (one fetch, no paging),
@@ -119,12 +127,11 @@ function SoStatusIndexPage(): React.JSX.Element {
           >
             Select SO
           </div>
-          <input
-            className="innovic-input"
-            style={{ width: '100%', fontSize: 12 }}
-            placeholder="🔍 Search SO, customer, Client PO No., status…"
+          <SearchInput
+            width="full"
+            placeholder="Search SO, customer, Client PO No., status…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={setSearch}
           />
         </div>
         {filtered.length === 0 ? (
@@ -139,7 +146,7 @@ function SoStatusIndexPage(): React.JSX.Element {
             return (
               <div
                 key={r.id}
-                onClick={() => setSelectedId(r.id)}
+                onClick={() => selectSo(r.id)}
                 style={{
                   padding: '10px 14px',
                   cursor: 'pointer',

@@ -16,14 +16,7 @@ export async function trashRoutes(app: FastifyInstance): Promise<void> {
     return service.restoreFromTrash(body, req.user);
   });
 
-  app.post('/trash/perm-delete', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    const body = restoreTrashInputSchema.parse(req.body);
-    return service.permDeleteTrash(body, req.user);
-  });
-
-  app.post('/trash/empty', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return service.emptyTrash(req.user);
-  });
+  // ADR-188: no permanent delete inside the app. POST /trash/perm-delete and
+  // POST /trash/empty were removed; hard deletes run only through documented
+  // admin scripts after a backup (CLAUDE.md §6 rule 8).
 }

@@ -43,7 +43,7 @@
 // its address and GSTIN already belonged.
 
 import type { PurchaseOrderLine } from '@innovic/shared';
-import { poSendsMaterialOut } from '@innovic/shared';
+import { PO_SHORT_CLOSE_REASON_MIN, poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Send, X } from 'lucide-react';
 import { useState } from 'react';
@@ -64,6 +64,7 @@ import {
   useApprovePurchaseOrder,
   usePurchaseOrder,
   useRejectPurchaseOrder,
+  useShortClosePurchaseOrder,
   useSoftDeletePurchaseOrder,
 } from '../api';
 import { PoHeaderBand } from '../components/po-header-band';
@@ -95,6 +96,10 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const [approveRemarks, setApproveRemarks] = useState('');
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  // ADR-189 — Short Close of an issued PO.
+  const shortCloseMut = useShortClosePurchaseOrder();
+  const [scOpen, setScOpen] = useState(false);
+  const [scReason, setScReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
 
@@ -209,6 +214,22 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
     }
   }
 
+  async function doShortClose(): Promise<void> {
+    if (!detail) return;
+    setActionError(null);
+    if (scReason.trim().length < PO_SHORT_CLOSE_REASON_MIN) {
+      setActionError(`Give a reason (at least ${PO_SHORT_CLOSE_REASON_MIN} characters).`);
+      return;
+    }
+    try {
+      await shortCloseMut.mutateAsync({ id: detail.id, reason: scReason.trim() });
+      setScOpen(false);
+      setScReason('');
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not short close the PO. Try again.');
+    }
+  }
+
   const totalQty = detail.lines.reduce((s, l) => s + l.qty, 0);
   const receivedQty = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
   // Money is hidden for L1 Viewers: the API nulls the header amount and every
@@ -249,6 +270,15 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
               {detail.code}
             </div>
             <PoStatusBadge status={detail.status} />
+            {detail.shortClosedAt ? (
+              <span
+                className="text3"
+                style={{ fontSize: 12 }}
+                title={detail.shortCloseReason ?? ''}
+              >
+                Short closed {detail.shortClosedAt.slice(0, 10)} — {detail.shortCloseReason}
+              </span>
+            ) : null}
           </div>
           {/* ONE primary next step + an Actions menu for the rest. While the PO
               awaits approval, Approve IS the next step (primary) with Reject
@@ -305,6 +335,23 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                   hidden: !canEdit,
                   onClick: () =>
                     void navigate({ to: '/purchase-orders/$id/edit', params: { id: detail.id } }),
+                },
+                {
+                  // ADR-189 — stop an issued PO: cancelled if nothing moved,
+                  // otherwise closed short (un-received qty back to its PRs).
+                  label: 'Short Close',
+                  danger: true,
+                  hidden:
+                    !canEdit ||
+                    !(
+                      detail.status === 'open' ||
+                      detail.status === 'partial' ||
+                      detail.status === 'qc_pending'
+                    ),
+                  onClick: () => {
+                    setActionError(null);
+                    setScOpen(true);
+                  },
                 },
                 {
                   label: 'Delete',
@@ -607,6 +654,117 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                     </>
                   ) : (
                     'Reject PO'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ADR-189 — Short Close modal */}
+      {scOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setScOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.45)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            padding: '10vh 16px',
+            zIndex: 60,
+          }}
+        >
+          <div
+            className="panel"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(1100px, 96vw)' }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 16px',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <div className="fw-700" style={{ color: 'var(--red2)' }}>
+                ⏹ Short Close PO — {detail.code}
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setScOpen(false)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ padding: 16, display: 'grid', gap: 12 }}>
+              <div
+                style={{
+                  background: 'rgba(239,68,68,0.05)',
+                  padding: 12,
+                  border: '1px solid var(--red)',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  color: 'var(--text3)',
+                }}
+              >
+                Nothing received or sent yet → the PO is cancelled and its PRs go back to pending.
+                Otherwise it is closed short: what was received stays, and the rest goes back to its
+                PRs as Pending. Refused while material sent on a DC is still at the vendor.
+              </div>
+              <div className="form-grp">
+                <label className="form-label">
+                  Short Close Reason <span className="req">★</span>
+                </label>
+                <textarea
+                  className="innovic-input"
+                  rows={3}
+                  value={scReason}
+                  onChange={(e) => setScReason(e.target.value)}
+                  placeholder="Why is this PO being stopped (at least 10 characters)…"
+                />
+              </div>
+              {actionError ? (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    background: 'rgba(239,68,68,0.06)',
+                    border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: 6,
+                    color: 'var(--red2)',
+                    fontSize: 12,
+                  }}
+                >
+                  {actionError}
+                </div>
+              ) : null}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setScOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  disabled={shortCloseMut.isPending}
+                  onClick={() => void doShortClose()}
+                >
+                  {shortCloseMut.isPending ? (
+                    <>
+                      <Loader2 className="inline h-3 w-3 animate-spin" /> Closing…
+                    </>
+                  ) : (
+                    'Short Close PO'
                   )}
                 </button>
               </div>

@@ -1,24 +1,20 @@
 // SO Overview list (PL-2 + PL-2b parity port). Mirrors legacy renderSOOverview
 // L9112 — list mode shows one row per open SO with overall status badge +
-// progress + alert flags; PL-2b adds status pill filter, Equipment column,
-// and in-screen drill (legacy _soOvShowSODetail L9146) replacing the row
-// with a per-item view that has its own Back button.
+// progress + alert flags; PL-2b adds status pill filter and Equipment column.
+// Clicking an SO row opens that SO's SO Status page
+// (/sales-orders/$id/status, owner decision 2026-09-26) — the old in-memory
+// drill view that replaced this list is gone, so Back / refresh now behave.
 
-import type {
-  SoOverallStatus,
-  SoOverviewChildRow,
-  SoOverviewDetailResponse,
-  SoOverviewItemStage,
-  SoOverviewRow,
-} from '@innovic/shared';
+import type { SoOverallStatus, SoOverviewRow } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useSoOverview, useSoOverviewDetail } from '../api';
+import { SearchInput } from '@/ui/forms';
+import { useSoOverview } from '../api';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -41,15 +37,6 @@ const STATUS_BADGE: Record<SoOverallStatus, { cls: string; label: string }> = {
   blocked: { cls: 'b-red', label: 'Blocked' },
 };
 
-const STAGE_BADGE: Record<SoOverviewItemStage, { cls: string; label: string; icon: string }> = {
-  not_released: { cls: 'b-grey', label: 'Not Released', icon: '○' },
-  in_production: { cls: 'b-amber', label: 'In Production', icon: '⚙' },
-  outsourced: { cls: 'b-amber', label: 'Outsourced', icon: '🏭' },
-  quality_check: { cls: 'b-amber', label: 'QC Pending', icon: '🔬' },
-  finished: { cls: 'b-green', label: 'Completed', icon: '✅' },
-  hold: { cls: 'b-red', label: 'Blocked', icon: '🚫' },
-};
-
 /** Per-row status filter (different from header.status — this filters the
  *  *derived* overallStatus). Renders as a one-click pill row replacing the
  *  legacy dropdown. PL-2b §1.3. */
@@ -68,20 +55,39 @@ function SoOverviewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { search, status } = soOverviewListRoute.useSearch();
   const [overallFilter, setOverallFilter] = useState<OverallStatusFilter>('all');
-  const [drillSoId, setDrillSoId] = useState<string | null>(null);
+
+  // The box keeps what the user typed (a trailing space included); only the
+  // normalised term goes to the URL. Feeding the trimmed URL term back as the
+  // box value made SearchInput overwrite the draft and eat a typed space.
+  const urlRef = useRef({ search, status });
+  urlRef.current = { search, status };
+  const [searchInput, setSearchInput] = useState(search ?? '');
+  useEffect(() => {
+    // Adopt a URL term the box did not produce (Back, a pasted link).
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search ?? '') ? prev : (search ?? ''),
+    );
+  }, [search]);
+  useEffect(() => {
+    // Runs only when the box changes (not when the URL does), so a Back to
+    // another term is adopted above instead of being written over here.
+    const next = normalizeSearchTerm(searchInput) || undefined;
+    const cur = urlRef.current;
+    if (next === cur.search) return;
+    void navigate({
+      to: '/so-overview',
+      search: { ...(cur.status ? { status: cur.status } : {}), ...(next ? { search: next } : {}) },
+      replace: true,
+    });
+  }, [searchInput, navigate]);
   const { data, isLoading, isError, error } = useSoOverview({
     search,
     status,
   });
 
-  if (drillSoId) {
-    return (
-      <SoOverviewDrill
-        soId={drillSoId}
-        onBack={() => setDrillSoId(null)}
-      />
-    );
-  }
+  const openSoStatus = (soId: string): void => {
+    void navigate({ to: '/sales-orders/$id/status', params: { id: soId } });
+  };
 
   const filteredRows =
     overallFilter === 'all'
@@ -93,24 +99,16 @@ function SoOverviewPage(): React.JSX.Element {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="section-hdr m-0">SO Overview</div>
         <div className="flex items-center gap-2">
-          <input
-            className="innovic-input"
-            style={{ width: 280 }}
-            // Legacy placeholder promises "SO, client, equipment, item" search,
-            // but our server (so-overview/service.ts L100-104) only ILIKEs
-            // code / customerName / clientPoNo. Placeholder states what actually
-            // works rather than repeating legacy's wider claim.
-            placeholder="🔍 Search SO No. / customer / Client PO No.…"
-            value={search ?? ''}
-            onChange={(e) =>
-              void navigate({
-                to: '/so-overview',
-                search: {
-                  ...(status ? { status } : {}),
-                  search: e.target.value || undefined,
-                },
-              })
-            }
+          {/* Legacy placeholder promises "SO, client, equipment, item" search,
+              but our server (so-overview/service.ts L100-104) only ILIKEs
+              code / customerName / clientPoNo. Placeholder states what actually
+              works rather than repeating legacy's wider claim. */}
+          <SearchInput
+            width={280}
+            debounceMs={300}
+            placeholder="Search SO No., customer, Client PO No.…"
+            value={searchInput}
+            onChange={setSearchInput}
           />
           <select
             className="innovic-select"
@@ -160,14 +158,10 @@ function SoOverviewPage(): React.JSX.Element {
         </div>
       ) : data ? (
         <>
-          <OverallStatusPills
-            rows={data.rows}
-            value={overallFilter}
-            onChange={setOverallFilter}
-          />
+          <OverallStatusPills rows={data.rows} value={overallFilter} onChange={setOverallFilter} />
           <OverviewTable
             rows={filteredRows}
-            onRowClick={setDrillSoId}
+            onRowClick={openSoStatus}
             filtered={
               !!search || (status !== undefined && status !== 'all') || overallFilter !== 'all'
             }
@@ -207,10 +201,7 @@ function OverallStatusPills({
         alignItems: 'center',
       }}
     >
-      <span
-        className="text3"
-        style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em' }}
-      >
+      <span className="text3" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em' }}>
         Filter:
       </span>
       {OVERALL_STATUS_LABELS.map((opt) => {
@@ -258,12 +249,16 @@ function OverviewTable({
                 <th>Customer</th>
                 <th>SO Type</th>
                 <th>Equipment</th>
-                <th>Lines</th>
+                <th className="th-num">Lines</th>
                 <th>Progress Status</th>
                 <th>Progress</th>
-                <th>Order Qty</th>
-                <th style={{ color: 'var(--green2)' }}>Completed</th>
-                <th style={{ color: 'var(--red2)' }}>Pending</th>
+                <th className="th-num">Order Qty</th>
+                <th className="th-num" style={{ color: 'var(--green2)' }}>
+                  Completed
+                </th>
+                <th className="th-num" style={{ color: 'var(--red2)' }}>
+                  Pending
+                </th>
                 <th>Due Date</th>
                 <th>Alerts</th>
                 <th>SO Date</th>
@@ -325,10 +320,8 @@ function Row({
             ? 'With Material'
             : 'Component'}
       </td>
-      <td style={{ color: 'var(--purple)', fontSize: 12 }}>
-        {row.equipmentItemName ?? '—'}
-      </td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
+      <td style={{ color: 'var(--purple)', fontSize: 12 }}>{row.equipmentItemName ?? '—'}</td>
+      <td className="td-num mono fw-700" style={{ color: 'var(--purple)' }}>
         {row.lineCount}
       </td>
       <td>
@@ -337,17 +330,20 @@ function Row({
       <td style={{ width: 130 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <ProgBar pct={row.overallPct} status={row.overallStatus} />
-          <span className="mono fw-700" style={{ fontSize: 11, color: barColor(row.overallStatus) }}>
+          <span
+            className="mono fw-700"
+            style={{ fontSize: 11, color: barColor(row.overallStatus) }}
+          >
             {row.overallPct}%
           </span>
         </div>
       </td>
-      <td className="td-ctr mono fw-700">{row.totalRequiredQty}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
+      <td className="td-num mono fw-700">{row.totalRequiredQty}</td>
+      <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
         {row.totalDoneQty}
       </td>
       <td
-        className="td-ctr mono fw-700"
+        className="td-num mono fw-700"
         style={{ color: row.totalBalanceQty > 0 ? 'var(--red)' : 'var(--green)' }}
       >
         {row.totalBalanceQty}
@@ -355,7 +351,7 @@ function Row({
       <td style={{ fontSize: 11, fontWeight: 700, color: overdue ? 'var(--red)' : 'var(--text)' }}>
         {fmtDate(row.earliestDueDate)}
       </td>
-      <td className="td-ctr">
+      <td>
         <AlertFlags row={row} />
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
@@ -433,413 +429,6 @@ function ProgBar({ pct, status }: { pct: number; status: SoOverallStatus }): Rea
   return (
     <div className="prog-wrap" style={{ flex: 1 }}>
       <div className="prog-bar" style={{ width: `${pct}%`, background: barColor(status) }} />
-    </div>
-  );
-}
-
-// ─── PL-2b drill view (legacy _soOvShowSODetail L9146) ────────────────────
-
-function SoOverviewDrill({
-  soId,
-  onBack,
-}: {
-  soId: string;
-  onBack: () => void;
-}): React.JSX.Element {
-  const { data, isLoading, isError, error } = useSoOverviewDetail(soId);
-
-  return (
-    <div>
-      <div style={{ marginBottom: 14 }}>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
-          <ArrowLeft size={14} /> Back to SO Overview
-        </button>
-      </div>
-
-      {isLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <Loader2 className="inline animate-spin" size={14} /> Loading SO detail…
-          </div>
-        </div>
-      ) : isError || !data ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load SO detail. Try again.'}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <DrillBody data={data} />
-      )}
-    </div>
-  );
-}
-
-function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Element {
-  const { so, isEquipmentDrill, bomNo, bomRev, childRows } = data;
-  const today = todayIst();
-  const overdue =
-    so.earliestDueDate !== null &&
-    so.earliestDueDate < today &&
-    so.overallStatus !== 'completed';
-
-  // Stage chip counts.
-  const stageCounts: Record<SoOverviewItemStage, number> = {
-    not_released: 0,
-    in_production: 0,
-    outsourced: 0,
-    quality_check: 0,
-    finished: 0,
-    hold: 0,
-  };
-  for (const r of childRows) {
-    stageCounts[r.stage] += 1;
-  }
-
-  return (
-    <>
-      {/* Header card */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 18,
-          flexWrap: 'wrap',
-          marginBottom: 16,
-          padding: 14,
-          background: 'var(--bg3)',
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-        }}
-      >
-        <div>
-          <span className="text3" style={{ fontSize: 11 }}>
-            SO No.
-          </span>
-          <br />
-          <b style={{ color: 'var(--cyan)', fontSize: 18 }}>{so.code}</b>
-        </div>
-        <div>
-          <span className="text3" style={{ fontSize: 11 }}>
-            Customer
-          </span>
-          <br />
-          <b style={{ fontSize: 14 }}>{so.customerName ?? '—'}</b>
-          {so.clientPoNo ? (
-            <div className="text3" style={{ fontSize: 11 }}>
-              Client PO No. {so.clientPoNo}
-            </div>
-          ) : null}
-        </div>
-        <div>
-          <span className="text3" style={{ fontSize: 11 }}>
-            SO Type
-          </span>
-          <br />
-          <b>
-            {so.type === 'equipment'
-              ? 'Equipment'
-              : so.type === 'with_material'
-                ? 'With Material'
-                : 'Component'}
-          </b>
-        </div>
-        {so.type === 'equipment' && so.equipmentItemName ? (
-          <div>
-            <span className="text3" style={{ fontSize: 11 }}>
-              Equipment
-            </span>
-            <br />
-            <b style={{ color: 'var(--purple)' }}>{so.equipmentItemName}</b>
-          </div>
-        ) : null}
-        {bomNo ? (
-          <div>
-            <span className="text3" style={{ fontSize: 11 }}>
-              BOM
-            </span>
-            <br />
-            <b style={{ color: 'var(--green2)' }}>
-              {bomNo}
-              {bomRev !== null ? ` BOM Rev ${bomRev}` : ''}
-            </b>
-          </div>
-        ) : null}
-        <div>
-          <span className="text3" style={{ fontSize: 11 }}>
-            Due Date
-          </span>
-          <br />
-          <b style={{ color: overdue ? 'var(--red)' : 'var(--text)' }}>
-            {fmtDate(so.earliestDueDate)}
-          </b>
-        </div>
-        <div>
-          <span className="text3" style={{ fontSize: 11 }}>
-            Status
-          </span>
-          <br />
-          <span className={`badge ${STATUS_BADGE[so.overallStatus].cls}`}>
-            {STATUS_BADGE[so.overallStatus].label}
-          </span>
-        </div>
-      </div>
-
-      {/* Overall progress */}
-      <div
-        style={{
-          marginBottom: 16,
-          padding: '10px 14px',
-          background: 'var(--bg)',
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span className="text3" style={{ fontSize: 11 }}>
-            Overall Progress
-          </span>
-          <span className="mono fw-700" style={{ color: barColor(so.overallStatus) }}>
-            {so.overallPct}%
-          </span>
-        </div>
-        <div
-          style={{
-            height: 10,
-            background: 'var(--bg5)',
-            borderRadius: 5,
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              width: `${so.overallPct}%`,
-              height: '100%',
-              background: barColor(so.overallStatus),
-              borderRadius: 5,
-            }}
-          />
-        </div>
-        <div style={{ display: 'flex', gap: 24, marginTop: 8, fontSize: 12 }}>
-          <span>
-            Order Qty: <b>{so.totalRequiredQty}</b>
-          </span>
-          <span>
-            Completed:{' '}
-            <b style={{ color: 'var(--green2)' }}>{so.totalDoneQty}</b>
-          </span>
-          <span>
-            Pending:{' '}
-            <b style={{ color: so.totalBalanceQty > 0 ? 'var(--red)' : 'var(--green)' }}>
-              {so.totalBalanceQty}
-            </b>
-          </span>
-          <span>
-            Items: <b style={{ color: 'var(--purple)' }}>{childRows.length}</b>
-          </span>
-          {so.alerts.delayedLines > 0 ? (
-            <span style={{ color: 'var(--red2)' }}>
-              ⚠ {so.alerts.delayedLines} delayed
-            </span>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Stage chip strip */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 8,
-          marginBottom: 10,
-          alignItems: 'center',
-          padding: '8px 12px',
-          background: 'var(--bg4)',
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-        }}
-      >
-        <span className="text3" style={{ fontSize: 11, fontWeight: 700 }}>
-          Stage:
-        </span>
-        {(Object.keys(stageCounts) as SoOverviewItemStage[]).map((k) => {
-          const c = stageCounts[k];
-          if (c === 0) return null;
-          const meta = STAGE_BADGE[k];
-          return (
-            <span key={k} style={{ fontSize: 11 }}>
-              <span className={`badge ${meta.cls}`}>
-                {meta.icon} {meta.label}
-              </span>{' '}
-              <b>{c}</b>
-            </span>
-          );
-        })}
-      </div>
-
-      {/* Items table */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 8,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 700,
-            color: 'var(--cyan)',
-            fontFamily: 'var(--mono)',
-            letterSpacing: '.04em',
-          }}
-        >
-          {isEquipmentDrill
-            ? `BOM Items — ${bomNo ?? ''}`
-            : 'Line Items'}{' '}
-          ({childRows.length})
-        </div>
-      </div>
-      <DrillItemsTable isEquipment={isEquipmentDrill} rows={childRows} />
-    </>
-  );
-}
-
-function DrillItemsTable({
-  isEquipment,
-  rows,
-}: {
-  isEquipment: boolean;
-  rows: SoOverviewChildRow[];
-}): React.JSX.Element {
-  if (rows.length === 0) {
-    return (
-      <div className="panel">
-        <div className="panel-body">
-          <div className="empty-state">No items to display.</div>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div
-      className="tbl-wrap"
-      style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}
-    >
-      <table className="innovic-table">
-        <thead>
-          <tr>
-            {!isEquipment ? <th>Ln</th> : null}
-            {!isEquipment ? <th style={{ color: 'var(--purple)' }}>POL</th> : null}
-            <th>Item Code</th>
-            <th>Item Name</th>
-            <th>Stage</th>
-            <th>Status</th>
-            <th>Order Qty</th>
-            <th style={{ color: 'var(--amber2)' }}>Issued</th>
-            <th style={{ color: 'var(--cyan)' }}>In Production</th>
-            <th style={{ color: 'var(--amber2)' }}>QC Pending</th>
-            <th style={{ color: 'var(--purple)' }}>At Vendor</th>
-            <th style={{ color: 'var(--green2)' }}>Completed</th>
-            <th style={{ color: 'var(--red2)' }}>Pending</th>
-            <th>Current Op</th>
-            <th>Machine / Vendor</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const rowBg =
-              r.status === 'delayed'
-                ? 'rgba(239,68,68,0.04)'
-                : r.status === 'completed'
-                  ? 'rgba(34,197,94,0.04)'
-                  : undefined;
-            const stage = STAGE_BADGE[r.stage];
-            const status = STATUS_BADGE[r.status];
-            return (
-              <tr key={r.rowId} style={{ background: rowBg }}>
-                {!isEquipment ? (
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
-                    {r.lineNo ?? '—'}
-                  </td>
-                ) : null}
-                {!isEquipment ? (
-                  <td
-                    className="mono"
-                    style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}
-                  >
-                    {r.clientPoLineNo ?? '—'}
-                  </td>
-                ) : null}
-                <td className="td-code" style={{ color: 'var(--purple)' }}>
-                  {itemCodeWithRev(r.itemCode, r.itemRevision)}
-                </td>
-                <td style={{ fontSize: 12 }}>{r.itemName}</td>
-                <td>
-                  <span className={`badge ${stage.cls}`}>
-                    {stage.icon} {stage.label}
-                  </span>
-                </td>
-                <td>
-                  <span className={`badge ${status.cls}`}>{status.label}</span>
-                </td>
-                <td className="td-ctr mono fw-700">{r.requiredQty}</td>
-                <td className="td-ctr mono" style={{ color: 'var(--amber2)' }}>
-                  {r.issuedQty}
-                </td>
-                <td className="td-ctr mono" style={{ color: 'var(--cyan)' }}>
-                  {r.inProductionQty}
-                </td>
-                <td className="td-ctr mono" style={{ color: 'var(--amber2)' }}>
-                  {r.qcPendingQty}
-                </td>
-                <td className="td-ctr mono" style={{ color: 'var(--purple)' }}>
-                  {r.atVendorQty}
-                </td>
-                <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
-                  {r.completedQty}
-                </td>
-                <td
-                  className="td-ctr mono fw-700"
-                  style={{ color: r.balanceQty > 0 ? 'var(--red)' : 'var(--green)' }}
-                >
-                  {r.balanceQty}
-                </td>
-                <td style={{ fontSize: 11, color: 'var(--cyan)' }}>
-                  {r.currentOpName ?? '—'}
-                </td>
-                <td
-                  style={{
-                    fontSize: 11,
-                    maxWidth: 120,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {r.vendorName && (r.atVendorQty > 0 || r.stage === 'outsourced') ? (
-                    <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                      🏭 {r.vendorName}
-                    </span>
-                  ) : r.currentLocation === 'QC' ? (
-                    <span style={{ color: 'var(--green2)', fontWeight: 700 }}>🔬 QC</span>
-                  ) : r.machineName ? (
-                    <span style={{ color: 'var(--cyan)', fontWeight: 600 }}>
-                      ⚙ {r.machineName}
-                    </span>
-                  ) : r.vendorName ? (
-                    <span style={{ color: 'var(--purple)' }}>🏭 {r.vendorName}</span>
-                  ) : (
-                    <span className="text3">—</span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }

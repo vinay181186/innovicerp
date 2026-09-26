@@ -297,10 +297,13 @@ function toPurchaseRequest(
 
 /** Quantity of this PR that sits on a LIVE purchase order: the sum of the PO
  *  lines raised from it, ignoring deleted lines, deleted POs and CANCELLED POs.
- *  Excluding cancelled POs is what makes a cancelled PO give its quantity back. */
+ *  Excluding cancelled POs is what makes a cancelled PO give its quantity back.
+ *  ADR-189: a SHORT-CLOSED PO counts only what was received on the line, so
+ *  its un-received qty goes back to the PR's Pending too. */
 function liveOrderedQtySql(prIdRef: SQLWrapper): SQL<number> {
   return sql<number>`(
-    SELECT COALESCE(SUM(pol.qty), 0)::int
+    SELECT COALESCE(SUM(CASE WHEN p2.short_closed_at IS NOT NULL
+                             THEN COALESCE(pol.received_qty, 0) ELSE pol.qty END), 0)::int
     FROM public.purchase_order_lines pol
     JOIN public.purchase_orders p2 ON p2.id = pol.purchase_order_id
     WHERE pol.source_pr_id = ${prIdRef}
@@ -909,6 +912,8 @@ export async function getPurchaseRequest(
 export async function createPurchaseRequest(
   input: CreatePurchaseRequestInput,
   user: AuthContext,
+  /** Set only by server code raising an OSP PR for a JC op (never by a route). */
+  opts: { systemRaised?: boolean } = {},
 ): Promise<PurchaseRequest> {
   // Raising a PR is an entry right — L2 Data Entry and above.
   await requireFormAccess(user, 'pr_create', 'entry');
@@ -937,6 +942,14 @@ export async function createPurchaseRequest(
 
     if (input.vendorId) await assertVendorExists(tx, input.vendorId, companyId);
     if (input.itemId) await assertItemExists(tx, input.itemId, companyId);
+    // ADR-189 — an OSP PR (type 'jw_osp' / a JC-op link) is raised by the
+    // system when an outsource op needs a vendor, and skips PR approval; a
+    // hand-made PR may not claim to be one. The form never sends either.
+    if (!opts.systemRaised && (input.prType === 'jw_osp' || input.sourceJcOpId)) {
+      throw new ValidationError(
+        'A Job Work OSP request is raised by the system from its Job Card operation, not by hand.',
+      );
+    }
     if (input.sourceJcOpId) await assertJcOpExists(tx, input.sourceJcOpId, companyId);
     if (input.sourceSoLineId) await assertSoLineExists(tx, input.sourceSoLineId, companyId);
 
@@ -1108,7 +1121,14 @@ export async function updatePurchaseRequest(
       updates['estCost'] = estCostToString(input.estCost);
     }
     if (input.requiredDate !== undefined) updates['requiredDate'] = input.requiredDate ?? null;
-    if (input.sourceJcOpId !== undefined) updates['sourceJcOpId'] = input.sourceJcOpId ?? null;
+    // ADR-189 — the JC-op link is written only by the system when an outsource
+    // op raises its PR (such a PR skips PR approval), so it is never set by hand.
+    if (
+      input.sourceJcOpId !== undefined &&
+      (input.sourceJcOpId ?? null) !== (existing[0]!.sourceJcOpId ?? null)
+    ) {
+      throw new ValidationError('The Job Card operation link of a PR is set by the system only.');
+    }
     if (input.sourceSoLineId !== undefined)
       updates['sourceSoLineId'] = input.sourceSoLineId ?? null;
     if (input.operation !== undefined) updates['operation'] = input.operation ?? null;

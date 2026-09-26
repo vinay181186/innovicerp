@@ -26,7 +26,7 @@ export const al018NcPendingDisposition: RegisteredAlert = {
              COALESCE(nc.item_code_text, '') AS item,
              nc.rejected_qty, nc.reason_category
       FROM public.nc_register nc
-      JOIN public.job_cards jc ON jc.id = nc.job_card_id
+      LEFT JOIN public.job_cards jc ON jc.id = nc.job_card_id
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
         AND nc.status = 'pending'

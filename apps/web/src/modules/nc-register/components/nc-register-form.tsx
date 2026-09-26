@@ -515,7 +515,7 @@ function detailToFormValues(detail: NcRegister): FormValues {
   return {
     code: detail.code,
     ncDate: detail.ncDate,
-    jobCardId: detail.jobCardId,
+    jobCardId: detail.jobCardId ?? '',
     ...(detail.jcOpId ? { jcOpId: detail.jcOpId } : {}),
     ...(detail.opSeq != null ? { opSeq: detail.opSeq } : {}),
     ...(detail.operationText ? { operationText: detail.operationText } : {}),

@@ -18,6 +18,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
 import { todayIst } from '@/lib/date';
 import { useDispatchDetail } from '@/modules/customer-dispatches/api';
+import { DEFAULT_TERMS_DAYS, GST_OPTIONS } from '@/modules/invoices/constants';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
@@ -67,7 +68,7 @@ function InvoiceNewPage(): React.JSX.Element {
 
   const [soId, setSoId] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(todayStr());
-  const [termsDays, setTermsDays] = useState('45');
+  const [termsDays, setTermsDays] = useState(String(DEFAULT_TERMS_DAYS));
   const [gstPercent, setGstPercent] = useState('18');
   const [remarks, setRemarks] = useState('');
   const [cards, setCards] = useState<LineCard[]>([]);
@@ -76,6 +77,34 @@ function InvoiceNewPage(): React.JSX.Element {
   const prefilled = useRef(false);
 
   const { data: inv } = useInvoiceableSo(soId || undefined);
+
+  // ADR-188 — GST % starts from the SO, Payment Terms from the customer's
+  // Payment Days (45 when the customer has none). Both stay editable. A value
+  // the user typed after picking the SO is never overwritten; picking another
+  // SO clears that and fills both again. Refs, not state, so the reset below
+  // is seen by the fill effect in the same commit (effects run in order).
+  const termsTouched = useRef(false);
+  const gstTouched = useRef(false);
+  const filledFor = useRef<string | null>(null);
+  const [termsSource, setTermsSource] = useState<'customer' | 'default' | null>('default');
+  const [gstSource, setGstSource] = useState<'so' | null>(null);
+  useEffect(() => {
+    termsTouched.current = false;
+    gstTouched.current = false;
+    filledFor.current = null;
+  }, [soId]);
+  useEffect(() => {
+    if (!inv || inv.salesOrderId !== soId || filledFor.current === soId) return;
+    filledFor.current = soId;
+    if (!gstTouched.current) {
+      setGstPercent(String(inv.gstPercent));
+      setGstSource('so');
+    }
+    if (!termsTouched.current) {
+      setTermsDays(String(inv.paymentDays ?? DEFAULT_TERMS_DAYS));
+      setTermsSource(inv.paymentDays != null ? 'customer' : 'default');
+    }
+  }, [inv, soId]);
 
   // Invoicing a specific dispatch: preselect its SO + tag the remarks.
   const { data: fromDispatch } = useDispatchDetail(dispatchId);
@@ -305,28 +334,57 @@ function InvoiceNewPage(): React.JSX.Element {
           </FormField>
 
           {/* Row 2 — Payment Terms · GST % · Remarks (3 + 3 + 6). */}
-          <FormField label="Payment Terms (days)" size="sm" htmlFor="termsDays">
+          <FormField
+            label="Payment Terms (days)"
+            size="sm"
+            htmlFor="termsDays"
+            help={
+              termsSource === 'customer'
+                ? 'From customer'
+                : termsSource === 'default'
+                  ? `Default ${DEFAULT_TERMS_DAYS} days`
+                  : undefined
+            }
+          >
             <input
               id="termsDays"
               type="number"
               className="innovic-input"
               min={0}
+              style={{ textAlign: 'right' }}
               value={termsDays}
-              onChange={(e) => setTermsDays(e.target.value)}
+              onChange={(e) => {
+                termsTouched.current = true;
+                setTermsSource(null);
+                setTermsDays(e.target.value);
+              }}
             />
           </FormField>
-          <FormField label="GST %" size="sm" htmlFor="gstPercent">
+          <FormField
+            label="GST %"
+            size="sm"
+            htmlFor="gstPercent"
+            help={gstSource === 'so' ? 'From SO' : undefined}
+          >
             <select
               id="gstPercent"
               className="innovic-select"
               value={gstPercent}
-              onChange={(e) => setGstPercent(e.target.value)}
+              onChange={(e) => {
+                gstTouched.current = true;
+                setGstSource(null);
+                setGstPercent(e.target.value);
+              }}
             >
-              {['0', '5', '12', '18', '28'].map((g) => (
-                <option key={g} value={g}>
-                  {g}%
-                </option>
-              ))}
+              {/* The SO may carry a rate outside the usual slabs — keep it
+                  selectable rather than silently showing the first option. */}
+              {(GST_OPTIONS.includes(gstPercent) ? GST_OPTIONS : [...GST_OPTIONS, gstPercent]).map(
+                (g) => (
+                  <option key={g} value={g}>
+                    {g}%
+                  </option>
+                ),
+              )}
             </select>
           </FormField>
           <FormField label="Remarks" size="lg" htmlFor="invoiceRemarks">

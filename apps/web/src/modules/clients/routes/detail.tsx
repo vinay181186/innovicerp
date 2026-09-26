@@ -19,6 +19,7 @@
 //   Contact person lg · Email lg                        → 6 + 6  = 12
 //   Phone lg · GST number lg                            → 6 + 6  = 12
 //   City lg · State md · Pincode xs                     → 6+4+2  = 12
+//   Payment Days xs (ADR-188)                           → 2, row closes
 //   Address full                                        → 12
 //
 // The address row is deliberately identical to the vendor's. Phone and GST
@@ -178,6 +179,7 @@ function ClientFacts(props: { client: Client }): React.JSX.Element {
 
       <ReadField label="Phone" size="lg" mono value={client.phone} />
       <ReadField label="GSTIN" size="lg" mono value={client.gstNumber} />
+      <ReadField label="Payment Days" size="xs" mono value={client.paymentDays ?? null} />
     </ReadGrid>
   );
 }

@@ -1,9 +1,10 @@
 // Approval Configuration page — admin-only.
 //
 // Mirror of legacy renderApprovalConfig (HTML L21608):
-//   - PO manager limit + approvers picker (the PO Approval and Invoice
-//     Approval switches are hidden: no server code reads them; PR approval
-//     is always on, so it has no block)
+//   - PO Approval switch + manager limit + approvers picker, and the PR
+//     Approval switch — both read by the server since ADR-189 (on: a new PO
+//     starts as Draft; a PR must be approved before it becomes a PO). The
+//     Invoice Approval switch stays hidden: no server code reads it.
 //   - Op Entry date/time edit approval toggle
 //   - Recent Approval Activity (last 20 APPROVE / REJECT / PAYMENT rows)
 //
@@ -101,6 +102,7 @@ function ApprovalConfigPage(): React.JSX.Element {
   const dirty =
     cfg &&
     (cfg.poApproval !== draft.poApproval ||
+      cfg.prApproval !== draft.prApproval ||
       cfg.poManagerLimit !== draft.poManagerLimit ||
       cfg.invoiceApproval !== draft.invoiceApproval ||
       cfg.opEntryEditApproval !== draft.opEntryEditApproval ||
@@ -193,9 +195,15 @@ function ApprovalConfigPage(): React.JSX.Element {
           <div>
             <span style={{ fontSize: 14, fontWeight: 700 }}>Purchase Order Approval</span>
             <div className="text3" style={{ fontSize: 11 }}>
-              PO approval is off. New POs open straight away.
+              {draft.poApproval
+                ? 'New POs start as Draft and open once an approver approves them.'
+                : 'PO approval is off. New POs open straight away.'}
             </div>
           </div>
+          <OnOffSwitch
+            checked={draft.poApproval}
+            onChange={(v) => setDraft({ ...draft, poApproval: v })}
+          />
         </div>
 
         <div
@@ -302,9 +310,29 @@ function ApprovalConfigPage(): React.JSX.Element {
 
       </div>
 
-      {/* Op Entry date/time edit approval (ADR-130). Unlike the PO switch
-          above, this one is read by the server — it decides whether an
-          operator's correction applies on save or waits here. */}
+      {/* PR approval (ADR-189). Read by the server: while on, only an
+          approved PR can be turned into a PO. PRs raised from a job card
+          are exempt. */}
+      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Purchase Request Approval</span>
+            <div className="text3" style={{ fontSize: 11 }}>
+              {draft.prApproval
+                ? 'A PR must be approved before it can become a PO. PRs raised from a Job Card do not need it.'
+                : 'PR approval is off. Any open PR can become a PO.'}
+            </div>
+          </div>
+          <OnOffSwitch
+            checked={draft.prApproval}
+            onChange={(v) => setDraft({ ...draft, prApproval: v })}
+          />
+        </div>
+      </div>
+
+      {/* Op Entry date/time edit approval (ADR-130). Read by the server — it
+          decides whether an operator's correction applies on save or waits
+          here. */}
       <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -313,22 +341,10 @@ function ApprovalConfigPage(): React.JSX.Element {
               Manager approves date/time corrections on Op Entry.
             </div>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={draft.opEntryEditApproval}
-              onChange={(e) => setDraft({ ...draft, opEntryEditApproval: e.target.checked })}
-              style={{ width: 20, height: 20 }}
-            />
-            <span
-              style={{
-                fontWeight: 700,
-                color: draft.opEntryEditApproval ? 'var(--green)' : 'var(--text3)',
-              }}
-            >
-              {draft.opEntryEditApproval ? 'On' : 'Off'}
-            </span>
-          </label>
+          <OnOffSwitch
+            checked={draft.opEntryEditApproval}
+            onChange={(v) => setDraft({ ...draft, opEntryEditApproval: v })}
+          />
         </div>
       </div>
 
@@ -374,5 +390,25 @@ function ApprovalConfigPage(): React.JSX.Element {
       </div>
 
     </div>
+  );
+}
+
+/** The page's On/Off checkbox (same look for every switch). */
+function OnOffSwitch(props: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+      <input
+        type="checkbox"
+        checked={props.checked}
+        onChange={(e) => props.onChange(e.target.checked)}
+        style={{ width: 20, height: 20 }}
+      />
+      <span style={{ fontWeight: 700, color: props.checked ? 'var(--green)' : 'var(--text3)' }}>
+        {props.checked ? 'On' : 'Off'}
+      </span>
+    </label>
   );
 }

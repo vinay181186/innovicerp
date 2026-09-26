@@ -177,6 +177,7 @@ export async function outsourceOpBalance(
       sourceJcOpId: jcOpId,
     },
     user,
+    { systemRaised: true },
   );
 
   return { prId: pr.id, prCode: pr.code };

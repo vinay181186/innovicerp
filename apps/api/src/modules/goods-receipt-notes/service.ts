@@ -41,12 +41,7 @@ import {
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
-import {
-  recalcPoHeaderStatus,
-  recalcPoLineReceivedQty,
-  resolveGrnLineJobCardId,
-  writeStoreTxnOnQcAccept,
-} from './cascades';
+import { recalcPoHeaderStatus, recalcPoLineReceivedQty, resolveGrnLineJobCardId } from './cascades';
 import { type DocumentTraceability, poSendsMaterialOut, type RelatedDoc } from '@innovic/shared';
 import type {
   CreateGoodsReceiptNoteInput,
@@ -316,33 +311,6 @@ function assignLineNos(lines: GoodsReceiptNoteLineInput[], startFrom: number): n
     out.push(n);
   }
   return out;
-}
-
-// Who INSPECTED this line, as opposed to who typed the GRN (ADR-149).
-//
-// The GRN screen now asks: `qcInspectedByUserId` is the person picked from the
-// Access Control QC list, `qcInspectedByName` the name recorded on the day. A
-// payload that mentions NEITHER key never opened the QC fields, so it keeps the
-// pre-ADR-147 rule — stamp whoever saved the GRN on the completed transition —
-// rather than leaving the line credited to nobody.
-//
-// A payload that DOES mention one is answering the question, so the fallback
-// stops: a line naming someone in text must not also be linked to the typist,
-// which is the exact "links to the wrong person" this closes.
-function qcInspectorOnInsert(
-  l: GoodsReceiptNoteLineInput,
-  saverUserId: string,
-): { qcInspectedBy: string | null; qcInspectedByText: string | null } {
-  if (l.qcInspectedByUserId === undefined && l.qcInspectedByName === undefined) {
-    return {
-      qcInspectedBy: l.qcStatus === 'completed' ? saverUserId : null,
-      qcInspectedByText: null,
-    };
-  }
-  return {
-    qcInspectedBy: l.qcInspectedByUserId ?? null,
-    qcInspectedByText: l.qcInspectedByName ?? null,
-  };
 }
 
 function dateLike(v: unknown): string {
@@ -887,7 +855,6 @@ export async function createGoodsReceiptNote(
 
     const lineValues = input.lines.map((l, i) => {
       const refs = resolveLineItemRefs(l, resolved);
-      const inspector = qcInspectorOnInsert(l, user.id);
       return {
         companyId,
         goodsReceiptNoteId: header.id,
@@ -898,15 +865,19 @@ export async function createGoodsReceiptNote(
         itemName: l.itemName,
         receivedQty: l.receivedQty,
         dcRefNo: l.dcRefNo ?? null,
-        qcStatus: l.qcStatus,
-        qcAcceptedQty: l.qcAcceptedQty,
-        qcRejectedQty: l.qcRejectedQty,
-        qcDate: l.qcDate ?? null,
-        qcRemarks: l.qcRemarks ?? null,
-        qcInspectedBy: inspector.qcInspectedBy,
-        qcInspectedByText: inspector.qcInspectedByText,
-        qcReportPath: l.qcReportPath ?? null,
-        qcReportName: l.qcReportName ?? null,
+        // ADR-189 — a GRN RECEIVES; Incoming QC INSPECTS. Every new line starts
+        // pending and only Incoming QC moves it, so an inspection always leaves
+        // its record, NC and job-card cascade, and stock is credited in one
+        // place (creditGrnQcStock). QC fields in the payload are ignored.
+        qcStatus: 'pending' as const,
+        qcAcceptedQty: 0,
+        qcRejectedQty: 0,
+        qcDate: null,
+        qcRemarks: null,
+        qcInspectedBy: null,
+        qcInspectedByText: null,
+        qcReportPath: null,
+        qcReportName: null,
         remarks: l.remarks ?? null,
         createdBy: user.id,
         updatedBy: user.id,
@@ -1097,7 +1068,13 @@ export async function updateGoodsReceiptNote(
     await tx.update(goodsReceiptNotes).set(updates).where(eq(goodsReceiptNotes.id, id));
 
     if (input.lines !== undefined) {
-      await mergeLines(tx, id, companyId, input.lines, user);
+      // The PO the lines are received against after this save (a header PO
+      // change in the same payload wins over the stored one).
+      const headerPoId =
+        input.header.purchaseOrderId !== undefined
+          ? (input.header.purchaseOrderId ?? null)
+          : (existingHdrRows[0]!.purchaseOrderId ?? null);
+      await mergeLines(tx, id, companyId, input.lines, user, headerPoId);
     }
 
     const updatedHdrRows = await tx
@@ -1131,7 +1108,10 @@ async function mergeLines(
   companyId: string,
   inputLines: GoodsReceiptNoteLineInput[],
   user: AuthContext,
+  headerPoId: string | null,
 ): Promise<void> {
+  // ADR-189 review — lock this GRN's lines: Incoming QC locks the same rows,
+  // so an edit and an inspection can never both act on a stale read.
   const existing = await tx
     .select()
     .from(goodsReceiptNoteLines)
@@ -1140,7 +1120,9 @@ async function mergeLines(
         eq(goodsReceiptNoteLines.goodsReceiptNoteId, grnId),
         isNull(goodsReceiptNoteLines.deletedAt),
       ),
-    );
+    )
+    .orderBy(asc(goodsReceiptNoteLines.id))
+    .for('update');
   const existingById = new Map(existing.map((e) => [e.id, e]));
 
   const directIds = inputLines.flatMap((l) => (l.itemId ? [l.itemId] : []));
@@ -1171,6 +1153,27 @@ async function mergeLines(
     }
   }
 
+  // ADR-189 — once Incoming QC has inspected any of a line, what was received
+  // on it (qty, item, PO line) is a settled fact: the inspection and its
+  // stock credit were made against it. Such a line can no longer be changed
+  // or removed here; QC figures themselves are never taken from this form.
+  for (const u of toUpdate) {
+    const inspected = Number(u.prev.qcAcceptedQty) + Number(u.prev.qcRejectedQty) > 0;
+    // The item as it will be SAVED: the form may send a code rather than an id.
+    const itemTouched = u.data.itemId !== undefined || u.data.itemCodeText !== undefined;
+    const nextItemId = itemTouched ? resolveLineItemRefs(u.data, resolved).itemId : u.prev.itemId;
+    if (
+      inspected &&
+      ((u.data.receivedQty !== undefined && u.data.receivedQty !== u.prev.receivedQty) ||
+        (u.data.purchaseOrderLineId !== undefined &&
+          (u.data.purchaseOrderLineId ?? null) !== (u.prev.purchaseOrderLineId ?? null)) ||
+        (nextItemId ?? null) !== (u.prev.itemId ?? null))
+    ) {
+      throw new ConflictError(
+        `Row #${u.prev.lineNo}: Incoming QC has already inspected this line, so its qty, item and PO line cannot be changed.`,
+      );
+    }
+  }
   // Block QC field changes on already-completed lines.
   for (const u of toUpdate) {
     if (u.prev.qcStatus === 'completed') {
@@ -1191,11 +1194,32 @@ async function mergeLines(
   const absentIds = existing.map((e) => e.id).filter((eid) => !seenInputIds.has(eid));
   for (const aid of absentIds) {
     const prev = existingById.get(aid)!;
-    if (prev.qcStatus === 'completed') {
+    if (
+      prev.qcStatus === 'completed' ||
+      Number(prev.qcAcceptedQty) + Number(prev.qcRejectedQty) > 0
+    ) {
       throw new ConflictError(
-        `Row #${prev.lineNo}: QC is Completed, so this line cannot be removed.`,
+        `Row #${prev.lineNo}: Incoming QC has already inspected this line, so it cannot be removed.`,
       );
     }
+  }
+
+  // ADR-189 review — a line added, or moved to another PO line, on edit passes
+  // the same PO gates as create: PO approved and still open (not draft /
+  // closed / short-closed / cancelled), not a job-work PO, line on the header
+  // PO, qty within its Pending.
+  const gateLines: GoodsReceiptNoteLineInput[] = [
+    ...toInsert,
+    ...toUpdate
+      .filter(
+        (u) =>
+          u.data.purchaseOrderLineId !== undefined &&
+          (u.data.purchaseOrderLineId ?? null) !== (u.prev.purchaseOrderLineId ?? null),
+      )
+      .map((u) => u.data),
+  ];
+  if (gateLines.some((l) => l.purchaseOrderLineId)) {
+    await assertPoReceiptFits(tx, companyId, headerPoId, gateLines);
   }
 
   // Track every PO line that needs received_qty recompute and every PO header
@@ -1236,35 +1260,8 @@ async function mergeLines(
     if (u.data.itemName !== undefined) lineUpdate['itemName'] = u.data.itemName;
     if (u.data.receivedQty !== undefined) lineUpdate['receivedQty'] = u.data.receivedQty;
     if (u.data.dcRefNo !== undefined) lineUpdate['dcRefNo'] = u.data.dcRefNo ?? null;
-    if (u.data.qcStatus !== undefined) lineUpdate['qcStatus'] = u.data.qcStatus;
-    if (u.data.qcAcceptedQty !== undefined) lineUpdate['qcAcceptedQty'] = u.data.qcAcceptedQty;
-    if (u.data.qcRejectedQty !== undefined) lineUpdate['qcRejectedQty'] = u.data.qcRejectedQty;
-    if (u.data.qcDate !== undefined) lineUpdate['qcDate'] = u.data.qcDate ?? null;
-    if (u.data.qcRemarks !== undefined) lineUpdate['qcRemarks'] = u.data.qcRemarks ?? null;
-    if (u.data.qcReportPath !== undefined) lineUpdate['qcReportPath'] = u.data.qcReportPath ?? null;
-    if (u.data.qcReportName !== undefined) lineUpdate['qcReportName'] = u.data.qcReportName ?? null;
-    // Who INSPECTED this line (ADR-149). The picked QC user wins; the
-    // typed name is kept beside it, deliberately not derived from it, so a
-    // signed-off inspection reads the same after that person is renamed or
-    // removed. `undefined` (key absent) and `null` (key sent empty) are
-    // different answers — the ADR-143 distinction — so an omitted key never
-    // blanks a stored name.
-    //
-    // The user.id stamp survives only for payloads that mention neither key:
-    // a GRN saved by someone who never opened the QC fields must behave as it
-    // always did, crediting the saver rather than nobody.
-    const inspectorPicked = u.data.qcInspectedByUserId !== undefined;
-    const inspectorNamed = u.data.qcInspectedByName !== undefined;
-    if (inspectorPicked) lineUpdate['qcInspectedBy'] = u.data.qcInspectedByUserId ?? null;
-    if (inspectorNamed) lineUpdate['qcInspectedByText'] = u.data.qcInspectedByName ?? null;
-    if (
-      !inspectorPicked &&
-      !inspectorNamed &&
-      u.data.qcStatus === 'completed' &&
-      u.prev.qcStatus !== 'completed'
-    ) {
-      lineUpdate['qcInspectedBy'] = user.id;
-    }
+    // ADR-189 — QC status, accepted / rejected qty, QC date / remarks / report
+    // and the inspector are Incoming QC's to write; this form never sets them.
     if (u.data.remarks !== undefined) lineUpdate['remarks'] = u.data.remarks ?? null;
 
     await tx
@@ -1282,19 +1279,10 @@ async function mergeLines(
     const after = reread[0]!;
     cascadeQcUpdates.push(after);
 
-    if (u.data.qcStatus === 'completed' && u.prev.qcStatus !== 'completed' && after.itemId) {
-      await writeStoreTxnOnQcAccept({
-        tx,
-        companyId,
-        adminUserId: user.id,
-        grnId,
-        grnLineId: after.id,
-        itemId: after.itemId,
-        qcAcceptedQty: after.qcAcceptedQty,
-        prevQcStatus: u.prev.qcStatus,
-        nextQcStatus: 'completed',
-      });
-    }
+    // ADR-189 — no stock credit from an edit: stock is credited only by
+    // Incoming QC (creditGrnQcStock), once per accepted piece. Crediting the
+    // cumulative accepted qty here on a pending→completed flip double-credited
+    // what Incoming QC had already credited in deltas.
   }
 
   // Apply inserts.
@@ -1306,7 +1294,6 @@ async function mergeLines(
     const newLineNos = assignLineNos(toInsert, startFrom);
     const values = toInsert.map((l, i) => {
       const refs = resolveLineItemRefs(l, resolved);
-      const inspector = qcInspectorOnInsert(l, user.id);
       return {
         companyId,
         goodsReceiptNoteId: grnId,
@@ -1317,15 +1304,19 @@ async function mergeLines(
         itemName: l.itemName,
         receivedQty: l.receivedQty,
         dcRefNo: l.dcRefNo ?? null,
-        qcStatus: l.qcStatus,
-        qcAcceptedQty: l.qcAcceptedQty,
-        qcRejectedQty: l.qcRejectedQty,
-        qcDate: l.qcDate ?? null,
-        qcRemarks: l.qcRemarks ?? null,
-        qcInspectedBy: inspector.qcInspectedBy,
-        qcInspectedByText: inspector.qcInspectedByText,
-        qcReportPath: l.qcReportPath ?? null,
-        qcReportName: l.qcReportName ?? null,
+        // ADR-189 — a GRN RECEIVES; Incoming QC INSPECTS. Every new line starts
+        // pending and only Incoming QC moves it, so an inspection always leaves
+        // its record, NC and job-card cascade, and stock is credited in one
+        // place (creditGrnQcStock). QC fields in the payload are ignored.
+        qcStatus: 'pending' as const,
+        qcAcceptedQty: 0,
+        qcRejectedQty: 0,
+        qcDate: null,
+        qcRemarks: null,
+        qcInspectedBy: null,
+        qcInspectedByText: null,
+        qcReportPath: null,
+        qcReportName: null,
         remarks: l.remarks ?? null,
         createdBy: user.id,
         updatedBy: user.id,
@@ -1334,20 +1325,19 @@ async function mergeLines(
     const insertedLines = await tx.insert(goodsReceiptNoteLines).values(values).returning();
     for (const r of insertedLines) {
       if (r.purchaseOrderLineId) touchedPoLineIds.add(r.purchaseOrderLineId);
-      if (r.qcStatus === 'completed' && r.itemId && r.qcAcceptedQty > 0) {
-        await writeStoreTxnOnQcAccept({
-          tx,
-          companyId,
-          adminUserId: user.id,
-          grnId,
-          grnLineId: r.id,
-          itemId: r.itemId,
-          qcAcceptedQty: r.qcAcceptedQty,
-          prevQcStatus: undefined,
-          nextQcStatus: 'completed',
-        });
-      }
     }
+  }
+
+  // ADR-189 — the same PO cap as create, under a lock. Lock every touched PO
+  // line FIRST (a concurrent GRN edit / create waits here), then recompute
+  // received from the GRN lines and refuse anything above the PO qty.
+  if (touchedPoLineIds.size > 0) {
+    await tx
+      .select({ id: purchaseOrderLines.id })
+      .from(purchaseOrderLines)
+      .where(inArray(purchaseOrderLines.id, Array.from(touchedPoLineIds)))
+      .orderBy(asc(purchaseOrderLines.id))
+      .for('update');
   }
 
   // Recompute received_qty for every touched PO line, then header status for
@@ -1360,6 +1350,23 @@ async function mergeLines(
       .where(eq(purchaseOrderLines.id, polId))
       .limit(1);
     if (polRows[0]) touchedPoHeaderIds.add(polRows[0].purchaseOrderId);
+  }
+  if (touchedPoLineIds.size > 0) {
+    const over = await tx
+      .select({
+        lineNo: purchaseOrderLines.lineNo,
+        itemName: purchaseOrderLines.itemName,
+        qty: purchaseOrderLines.qty,
+        receivedQty: purchaseOrderLines.receivedQty,
+      })
+      .from(purchaseOrderLines)
+      .where(inArray(purchaseOrderLines.id, Array.from(touchedPoLineIds)));
+    const bad = over.find((r) => r.receivedQty > r.qty);
+    if (bad) {
+      throw new ConflictError(
+        `PO line ${bad.lineNo} (${bad.itemName}): received would be ${bad.receivedQty}, more than its Qty ${bad.qty}.`,
+      );
+    }
   }
   for (const poId of touchedPoHeaderIds) {
     await recalcPoHeaderStatus(tx, poId, user.id);
@@ -1377,20 +1384,9 @@ async function runCascades(
 ): Promise<void> {
   const touchedPoLineIds = new Set<string>();
   for (const r of insertedLines) {
+    // ADR-189 — new lines are always QC pending; stock is credited only by
+    // Incoming QC, so there is nothing to credit here.
     if (r.purchaseOrderLineId) touchedPoLineIds.add(r.purchaseOrderLineId);
-    if (r.qcStatus === 'completed' && r.itemId && r.qcAcceptedQty > 0) {
-      await writeStoreTxnOnQcAccept({
-        tx,
-        companyId,
-        adminUserId,
-        grnId: r.goodsReceiptNoteId,
-        grnLineId: r.id,
-        itemId: r.itemId,
-        qcAcceptedQty: r.qcAcceptedQty,
-        prevQcStatus: undefined,
-        nextQcStatus: 'completed',
-      });
-    }
   }
   const touchedPoHeaderIds = new Set<string>();
   for (const polId of touchedPoLineIds) {
@@ -1439,6 +1435,8 @@ export async function softDeleteGoodsReceiptNote(
       throw new NotFoundError('GRN not found. It may have been moved to Trash.');
     }
 
+    // Locked (ADR-189 review): an inspection cannot land between the guard
+    // below and the delete.
     const linesToDelete = await tx
       .select()
       .from(goodsReceiptNoteLines)
@@ -1447,11 +1445,19 @@ export async function softDeleteGoodsReceiptNote(
           eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
           isNull(goodsReceiptNoteLines.deletedAt),
         ),
-      );
-    const completed = linesToDelete.find((l) => l.qcStatus === 'completed');
+      )
+      .orderBy(asc(goodsReceiptNoteLines.id))
+      .for('update');
+    // ADR-189 — refused once Incoming QC has inspected ANY qty on a line, not
+    // only when a line is fully completed: a partly inspected line has already
+    // credited stock, and deleting the GRN would leave that credit with no
+    // document behind it.
+    const completed = linesToDelete.find(
+      (l) => l.qcStatus === 'completed' || Number(l.qcAcceptedQty) + Number(l.qcRejectedQty) > 0,
+    );
     if (completed) {
       throw new ConflictError(
-        `Cannot delete GRN ${hdr.code}: QC is Completed on row #${completed.lineNo}.`,
+        `Cannot delete GRN ${hdr.code}: Incoming QC has already inspected row #${completed.lineNo}.`,
       );
     }
 

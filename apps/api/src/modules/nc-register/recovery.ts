@@ -167,6 +167,13 @@ export async function createRecoveryJobCard(
   qty: number,
   user: AuthContext,
 ): Promise<{ id: string; code: string }> {
+  // ADR-189 — a bought-material NC has no job card and never reaches here (its
+  // dispose branch closes it first); refuse rather than build a card from none.
+  if (!nc.jobCardId) {
+    throw new ValidationError(
+      `NC ${nc.code} has no job card, so it cannot be reworked or repaired.`,
+    );
+  }
   const parentRows = await tx
     .select()
     .from(jobCards)
@@ -512,7 +519,10 @@ export async function climbRecoveryToAncestors(
         user,
       );
     }
-    jcId = nc.jobCardId; // climb to the JC this NC was raised on
+    // climb to the JC this NC was raised on; a bought-material NC (ADR-189)
+    // has none, so the climb ends there.
+    if (!nc.jobCardId) return;
+    jcId = nc.jobCardId;
   }
 }
 
@@ -982,7 +992,7 @@ export async function onNcReplacementQc(
   // climb the parent chain too — same rule as an in-house rework recovery, so a
   // return-to-vendor replacement updates every upstream JC to the original
   // parent. No-op when the NC is on the original (top) JC.
-  if (accepted > 0) {
+  if (accepted > 0 && nc.jobCardId) {
     await climbRecoveryToAncestors(
       tx,
       nc.jobCardId,

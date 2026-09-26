@@ -24,8 +24,9 @@ import type {
   UpdateDesignTrackerInput,
 } from '@innovic/shared';
 import {
-  designTimeLog,
+  designProjects,
   designTracker,
+  designWorkLog,
   salesOrders,
   salesOrderLines,
 } from '../../db/schema';
@@ -37,6 +38,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { insertDesignWorkLogRow, resolveEngineerText } from '../design-work-log/service';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -207,8 +209,10 @@ export async function listDesignTracker(
         LIMIT 1
       ) soline ON true
       LEFT JOIN LATERAL (
+        -- ADR-188: the one engineer time log is design_work_log; tracker
+        -- time is the rows logged against this tracker.
         SELECT SUM(hours)::numeric AS total_hours
-        FROM public.design_time_log
+        FROM public.design_work_log
         WHERE design_tracker_id = dt.id AND deleted_at IS NULL
       ) tl ON true
       WHERE dt.company_id = ${companyId}::uuid
@@ -286,8 +290,7 @@ function toListItem(r: Record<string, unknown>): DesignTrackerListItem {
     remarks: (r['remarks'] as string | null) ?? null,
     approvedAt: r['approvedAt'] != null ? tsLike(r['approvedAt']) : null,
     approvedByText: (r['approvedByText'] as string | null) ?? null,
-    reviewSubmittedAt:
-      r['reviewSubmittedAt'] != null ? tsLike(r['reviewSubmittedAt']) : null,
+    reviewSubmittedAt: r['reviewSubmittedAt'] != null ? tsLike(r['reviewSubmittedAt']) : null,
     revisionHistory,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
@@ -318,18 +321,33 @@ export async function getDesignTrackerDetail(
     const row = rows[0];
     if (!row) throw new NotFoundError('Design not found. Refresh the page.');
 
+    // ADR-188: tracker time lives in the one engineer time log
+    // (design_work_log), tagged with this tracker. Response shape unchanged.
     const logs = await tx
-      .select()
-      .from(designTimeLog)
-      .where(and(eq(designTimeLog.designTrackerId, id), isNull(designTimeLog.deletedAt)))
-      .orderBy(sql`${designTimeLog.logDate} DESC`);
+      .select({
+        id: designWorkLog.id,
+        logDate: designWorkLog.logDate,
+        hours: designWorkLog.hours,
+        engineerText: designWorkLog.engineerText,
+        description: designWorkLog.description,
+        createdAt: designWorkLog.createdAt,
+      })
+      .from(designWorkLog)
+      .where(
+        and(
+          eq(designWorkLog.designTrackerId, id),
+          eq(designWorkLog.companyId, companyId),
+          isNull(designWorkLog.deletedAt),
+        ),
+      )
+      .orderBy(sql`${designWorkLog.logDate} DESC`);
 
     const timeLog: DesignTimeLogEntry[] = logs.map((l) => ({
       id: l.id,
-      designTrackerId: l.designTrackerId,
+      designTrackerId: id,
       logDate: dateLike(l.logDate),
       hours: num(l.hours),
-      workerText: l.workerText,
+      workerText: l.engineerText,
       description: l.description,
       createdAt: tsLike(l.createdAt),
     }));
@@ -432,12 +450,7 @@ export async function createDesignTracker(
         partName: salesOrderLines.partName,
       })
       .from(salesOrderLines)
-      .where(
-        and(
-          eq(salesOrderLines.salesOrderId, so.id),
-          isNull(salesOrderLines.deletedAt),
-        ),
-      )
+      .where(and(eq(salesOrderLines.salesOrderId, so.id), isNull(salesOrderLines.deletedAt)))
       .orderBy(salesOrderLines.lineNo)
       .limit(1);
     const firstLine = lineRows[0];
@@ -522,10 +535,9 @@ export async function logDesignTime(
 ): Promise<DesignTimeLogEntry> {
   await requireFormAccess(user, 'design_create', 'entry');
   const companyId = requireCompany(user);
-  const userId = user.id;
   return withUserContext(user, async (tx) => {
     const rows = await tx
-      .select({ id: designTracker.id })
+      .select({ id: designTracker.id, salesOrderId: designTracker.salesOrderId })
       .from(designTracker)
       .where(
         and(
@@ -535,39 +547,60 @@ export async function logDesignTime(
         ),
       )
       .limit(1);
-    if (!rows[0]) throw new NotFoundError('Design not found. Refresh the page.');
+    const tracker = rows[0];
+    if (!tracker) throw new NotFoundError('Design not found. Refresh the page.');
 
-    const inserted = await tx
-      .insert(designTimeLog)
-      .values({
-        companyId,
-        designTrackerId,
+    // ADR-188: Design Project is the one per-SO design record. The time is
+    // filed under the SO's Design Project when exactly one live project
+    // exists for that SO; with none (or an ambiguous two) it stays unfiled
+    // and is still reachable through design_tracker_id. Same rule as the
+    // 0150 data move.
+    let designProjectId: string | null = null;
+    if (tracker.salesOrderId) {
+      const projects = await tx
+        .select({ id: designProjects.id })
+        .from(designProjects)
+        .where(
+          and(
+            eq(designProjects.companyId, companyId),
+            eq(designProjects.salesOrderId, tracker.salesOrderId),
+            isNull(designProjects.deletedAt),
+          ),
+        )
+        .limit(2);
+      if (projects.length === 1) designProjectId = projects[0]?.id ?? null;
+    }
+
+    // The one write path into design_work_log (CLAUDE.md §12). The typed
+    // worker name is resolved to the engineer's login email when it names
+    // exactly one user, so the Work Log's per-engineer views see it.
+    const entry = await insertDesignWorkLogRow(
+      tx,
+      {
         logDate: input.logDate,
-        hours: String(input.hours),
-        workerText: input.workerText,
+        engineerText: await resolveEngineerText(tx, companyId, input.workerText),
+        designProjectId,
+        designTrackerId,
+        taskText: null,
+        category: 'Design',
+        hours: input.hours,
         description: input.description ?? null,
-        createdBy: userId,
-        updatedBy: userId,
-      })
-      .returning();
-    const row = inserted[0];
-    if (!row) throw new ValidationError('Could not log time. Try again.');
+      },
+      user,
+    );
     return {
-      id: row.id,
-      designTrackerId: row.designTrackerId,
-      logDate: dateLike(row.logDate),
-      hours: num(row.hours),
-      workerText: row.workerText,
-      description: row.description,
-      createdAt: tsLike(row.createdAt),
+      id: entry.id,
+      designTrackerId,
+      logDate: entry.logDate,
+      hours: entry.hours,
+      workerText: entry.engineerText,
+      description: entry.description,
+      createdAt: entry.createdAt,
     };
   });
 }
 
-export async function submitDesignForReview(
-  id: string,
-  user: AuthContext,
-): Promise<DesignTracker> {
+export async function submitDesignForReview(id: string, user: AuthContext): Promise<DesignTracker> {
   await requireFormAccess(user, 'design_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;

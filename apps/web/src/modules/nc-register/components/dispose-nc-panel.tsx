@@ -89,14 +89,18 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   // the pieces back on it); make_fresh is always valid.
   const isVendorSourced = nc.sourceVendorId != null;
   const hasOp = nc.opSeq != null && nc.jcOpId != null;
+  // ADR-189 — a bought-material reject (no job card) can only be scrapped or
+  // returned to the vendor; the server refuses anything else.
+  const isMaterialNc = nc.jobCardId == null;
   const availableActions = useMemo<readonly NcDisposition[]>(
     () =>
       ACTION_ORDER.filter((a) => {
+        if (isMaterialNc && a !== 'scrap' && a !== 'return_to_vendor') return false;
         if (a === 'scrap' && !canApprove) return false;
         if (a === 'use_as_is' && !hasOp) return false;
         return isVendorSourced ? a !== 'rework' && a !== 'repair' : a !== 'return_to_vendor';
       }),
-    [isVendorSourced, canApprove, hasOp],
+    [isVendorSourced, canApprove, hasOp, isMaterialNc],
   );
 
   const reworkOps = useMemo<JcOpOption[]>(() => {

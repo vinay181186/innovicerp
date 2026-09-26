@@ -114,7 +114,11 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const totalReceived = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
   const totalAccepted = detail.lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
   const totalRejected = detail.lines.reduce((s, l) => s + l.qcRejectedQty, 0);
-  const anyCompleted = detail.lines.some((l) => l.qcStatus === 'completed');
+  // ADR-189: a GRN with ANY inspected qty (not only a fully cleared line)
+  // cannot be deleted — the server refuses it, so the menu says so up front.
+  const anyInspected = detail.lines.some(
+    (l) => l.qcStatus === 'completed' || l.qcAcceptedQty + l.qcRejectedQty > 0,
+  );
   // The next step for a GRN is Incoming QC. `?line=` deep-links straight to
   // the Inspect popup for that GRN line (incoming-qc/routes/index.tsx).
   const firstQcPending = detail.lines.find((l) => l.qcStatus !== 'completed');
@@ -221,9 +225,9 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                     setConfirmDelete(true);
                   },
                   hidden: !canDelete,
-                  disabled: anyCompleted,
-                  title: anyCompleted
-                    ? 'A line is already QC Cleared, so this GRN cannot be moved to Trash.'
+                  disabled: anyInspected,
+                  title: anyInspected
+                    ? 'Incoming QC has already inspected a line, so this GRN cannot be moved to Trash.'
                     : undefined,
                 },
               ]}

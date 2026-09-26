@@ -9987,3 +9987,106 @@ query before any ×60 correction; no data was changed.
    IGST n. NULL rows (raised before 0148) keep the single "GST @ n%" row. Totals are unchanged.
 3. PO, Tax Invoice, JW Invoice and JW DC prints show each line's real UOM (SO line / JWSO line /
    item master), "NOS" only when blank. The Tax Invoice print shows the customer's Client PO No.
+
+---
+
+## ADR-188: ERPNext gap round 2 — owner decisions
+
+**Date:** 2026-09-26
+**Status:** Accepted (owner decision; code on the layout-fix branch, migration 0150 not yet applied)
+
+### Context
+
+The second ERPNext comparison round found five places where the app either kept two records of
+one fact, offered two screens for one job, hard-coded a value that has a real upstream source,
+hard-deleted from inside the app, or computed a figure in the browser. The owner decided each one.
+
+### Decision
+
+1. **Design Project is THE per-SO design record; there is ONE engineer time log.** Design
+   Tracker's "Log Time" (`POST /design-tracker/:id/time`) now writes to `design_work_log`, not
+   `design_time_log`. `design_work_log.design_tracker_id` (migration 0150) records which tracker
+   the time was logged from; `design_project_id` is set to the SO's live Design Project when
+   exactly one exists (none or two → left empty, still reachable through the tracker). The
+   tracker's detail and list read their hours back from `design_work_log`; the response shape
+   (`DesignTimeLogEntry`, `totalHours`) is unchanged. Project Hours roll-ups and the design
+   reports therefore include tracker time. 0150 moves every live `design_time_log` row across
+   and soft-deletes it; the table is kept, no longer written.
+2. **SO Status and Planning are the SO-progress screens.** SO Overview is a summary that drills
+   into SO Status for one order; it is not a third progress screen.
+3. **Invoice defaults come from upstream, never a hard-coded 18 % / 45 days.** The GST % default
+   is the Sales Order's `gst_percent`; the Payment Terms default is the customer's new
+   `clients.payment_days` (Payment Days, nullable, 0..365). `GET /invoices/invoiceable/:soId`
+   returns both (`gstPercent`, `paymentDays`). The invoice-from-dispatch path loads the same
+   endpoint once the dispatch's SO is picked, so it gets the same values. Both stay editable on
+   the invoice; the invoice keeps its own `payment_terms_days`.
+4. **No permanent delete inside the app.** `POST /trash/perm-delete` and `POST /trash/empty` are
+   removed with their service code; Trash keeps list + restore. CLAUDE.md §6 rule 8 stands with
+   no exception: hard deletes only via documented admin scripts after a backup. This settles the
+   "ratify or revoke" question in ISSUES.md (Trash, rule 8 tension): revoked.
+5. **Report totals computed in the browser are accepted as display-only** — an explicit, bounded
+   exception to §6 rule 1. A total the browser adds up from rows the server already sent may be
+   shown; it is never submitted, stored, printed as a document figure, or used to gate an action.
+   Any total that is saved, printed on a document or drives a decision is computed server-side.
+
+### Consequences
+
+- 0150 must be applied to BOTH databases (test and production) before the new API is deployed
+  there: without it the Customer master reads (which select every `clients` column), the
+  invoiceable-SO load, Design Tracker Log Time and the Design Work Log list all fail on the
+  missing columns.
+- The web still needs: a Payment Days field on the Customer form, the invoice form prefilled from
+  `gstPercent` / `paymentDays`, the Trash "Delete permanently" / "Empty Trash" buttons and hooks
+  removed, and the Design Work Log marking rows that came from a Design Tracker.
+
+## ADR-189: Purchasing truth — Incoming QC is the only inspector, approval is real, an issued PO can be stopped
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Context
+
+The procure-to-stock audit ("Procure-to-Stock Audit (SO-PR-PO-GRN-Inventory) - Innovic vs ERPNext.pdf")
+found 24 code defects against ERPNext. The High ones: a GRN edit credited stock a second time for pieces
+Incoming QC had already credited; QC could be typed on the GRN form, bypassing Incoming QC, its NC and
+its job-card cascade; a GRN edit had no PO cap or lock; deleting a partly inspected GRN left its stock
+credit behind; every PO on TEST was issued without approval (manual POs were born 'open' while approval
+only ran on drafts) and PRs were converted unapproved; an issued PO could never be stopped; two
+inspectors could race on one GRN line; bought-material rejects left no record.
+
+### Decision
+
+1. **A GRN receives; Incoming QC inspects.** GRN create saves every line QC-pending and ignores QC
+   fields; GRN edit never writes QC fields and never credits stock. A line with any inspected qty is
+   frozen (qty, item, PO line) and cannot be removed; a GRN with any inspected line cannot be deleted.
+   GRN edit locks the touched PO lines and refuses received above PO qty. The GRN form shows QC read-only.
+2. **Approval is read, not bypassed.** `approval_config.po_approval` / `pr_approval` (column defaults ON
+   when a company has no row): new POs start 'draft' while PO approval is on and go through the
+   existing approve (amount ceiling, not self); a PR must be 'approved' to convert while PR approval is
+   on. A DC cannot be sent against a draft, closed or cancelled PO.
+3. **Short Close of an issued PO** (0151, `purchase_orders.short_closed_*`, all-or-none CHECK): nothing
+   received or sent → 'cancelled' and its PRs / outsourced ops released; otherwise 'closed' and every PR
+   it drew on counts only what was received (`liveOrderedQtySql`), so the rest is Pending on the PR
+   again. Refused while DC material is still at the vendor. The GRN status recompute leaves a stopped PO
+   alone.
+4. **Incoming QC locks the GRN line** it inspects, and a **bought-material reject raises an NC** with
+   no job card (0151: `nc_register.job_card_id` nullable, CHECK job card OR GRN line). Such an NC can
+   only be scrapped (closes it with who / when / cost) or returned to the vendor ('disposed'; the RTV DC
+   raised from it takes the qty off the PO line's received, so the vendor owes it again); every NC query
+   and alert now LEFT JOINs job cards so it is listed.
+5. **An approved PO that is edited commercially goes back to draft.** While PO approval is on, an edit
+   of an 'open' PO that changes lines, vendor or tax (a revision bump) clears the approval stamps and
+   sets 'draft' (logged APPROVAL_WITHDRAWN), so the amount ceiling cannot be bypassed by approving small
+   and editing big. Due date / remarks edits do not re-draft, nor does any edit once goods have moved.
+   Taking more from a PR on edit applies the same PR-approval rule as create. PRs the system raised from
+   a job-card op (`pr_type = 'jw_osp'` / `source_jc_op_id`) are exempt from PR approval — the PO made
+   from them is still approved — so the API refuses a hand-made PR that claims either field.
+
+### Consequences
+
+- On TEST all five existing POs were issued unapproved; new ones will wait for approval unless the
+  switch is turned off on the Approval Configuration screen.
+- Old rows are not rewritten: the two historical bought-material rejects (IN-GRN-00004 / 00005) keep no
+  NC.
+- A partly received PO that is short-closed keeps its outsourced-op links; the op's un-received
+  remainder is ordered on a new PO, which the multi-PO op links already allow.

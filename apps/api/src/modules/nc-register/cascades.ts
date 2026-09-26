@@ -344,6 +344,57 @@ export async function disposeNcCascade(
 
   const rejectedQtyInt = Math.round(Number(nc.rejectedQty));
 
+  // ADR-189 — a BOUGHT-MATERIAL reject: raised by Incoming QC on a GRN line
+  // that no job card stands behind (job_card_id NULL, grn_line_id set). The
+  // pieces never entered stock (Incoming QC credits only the accepted qty), so
+  // the only dispositions are to write them off or send them back to the
+  // vendor; either closes the NC with who / when / why. Everything below this
+  // branch is job-card work (rework, recovery, JC completion) and needs a card.
+  if (nc.jobCardId === null) {
+    if (input.action !== 'scrap' && input.action !== 'return_to_vendor') {
+      throw new ValidationError(
+        `NC ${nc.code} is a bought-material reject with no job card — it can only be Scrapped or Returned to Vendor.`,
+      );
+    }
+    if (input.action === 'scrap') {
+      // Written off: the pieces are gone for good.
+      await tx
+        .update(ncRegister)
+        .set({
+          status: 'closed',
+          disposition: 'scrap',
+          dispositionDate: today,
+          dispositionByText: ctx.userName,
+          dispositionRemarks: input.remarks ?? null,
+          failedQty: rejectedQtyInt.toFixed(2),
+          scrapCost: Math.max(0, input.scrapCost ?? 0).toFixed(2),
+          closedAt: new Date(),
+          closedBy: ctx.userId,
+          updatedBy: ctx.userId,
+        })
+        .where(eq(ncRegister.id, ncId));
+      result.status = 'closed';
+      return result;
+    }
+    // Return to vendor: 'disposed', exactly like an outsourced reject — the
+    // return challan is raised next (createNcDc), the PO line stops counting
+    // the pieces while they are out (recalcPoLineReceivedQty), and the vendor's
+    // replacement is received and inspected against this NC.
+    await tx
+      .update(ncRegister)
+      .set({
+        status: 'disposed',
+        disposition: 'return_to_vendor',
+        dispositionDate: today,
+        dispositionByText: ctx.userName,
+        dispositionRemarks: input.remarks ?? null,
+        updatedBy: ctx.userId,
+      })
+      .where(eq(ncRegister.id, ncId));
+    result.status = 'disposed';
+    return result;
+  }
+
   if (input.action === 'rework' || input.action === 'repair') {
     // `reworkOpSeq` in the input is the legacy in-route field; a new rework
     // raises a child card instead, so it is deliberately ignored here.
@@ -883,6 +934,104 @@ export interface AutoCreateNcContext {
 export interface AutoCreateNcResult {
   ncId: string;
   ncCode: string;
+}
+
+/**
+ * ADR-189 — the NC for a BOUGHT-MATERIAL reject at Incoming QC: a GRN line no
+ * job card stands behind (an ordinary purchase). job_card_id stays NULL and
+ * grn_line_id is the receipt end of the trail (0151 allows it). The pieces
+ * never entered stock — Incoming QC credits only the accepted qty — so this
+ * NC is the record of them until it is scrapped or returned to the vendor
+ * (disposeNcCascade's bought-material branch). Returns null when the GRN line
+ * has no master item (an NC needs one).
+ */
+export async function autoCreateMaterialNcFromIqcReject(
+  tx: DbTransaction,
+  ctx: {
+    companyId: string;
+    grnLineId: string;
+    grnCode: string;
+    lineNo: number;
+    rejectedQty: number;
+    ncDate: string;
+    reportedByText: string | null;
+    remarks: string | null;
+  },
+  user: AuthContext,
+): Promise<{ id: string; code: string } | null> {
+  const lineRows = await tx
+    .select({
+      itemId: goodsReceiptNoteLines.itemId,
+      itemCodeText: goodsReceiptNoteLines.itemCodeText,
+      itemName: goodsReceiptNoteLines.itemName,
+    })
+    .from(goodsReceiptNoteLines)
+    .where(eq(goodsReceiptNoteLines.id, ctx.grnLineId))
+    .limit(1);
+  const line = lineRows[0];
+  if (!line?.itemId) return null;
+  const itemRows = await tx
+    .select({ code: items.code })
+    .from(items)
+    .where(and(eq(items.id, line.itemId), eq(items.companyId, ctx.companyId)))
+    .limit(1);
+  const itemCode = itemRows[0]?.code ?? line.itemCodeText ?? '';
+
+  let code = await nextNcCode(tx, ctx.companyId);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const dup = await tx
+      .select({ id: ncRegister.id })
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.companyId, ctx.companyId),
+          eq(ncRegister.code, code),
+          isNull(ncRegister.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (dup.length === 0) break;
+    code = nextNcCodeFrom([code]);
+  }
+
+  const reason =
+    ctx.remarks && ctx.remarks.length > 0
+      ? `Auto-created from Incoming QC: ${ctx.remarks}`
+      : `Auto-created from Incoming QC on ${ctx.grnCode} Row #${ctx.lineNo}`;
+  const inserted = await tx
+    .insert(ncRegister)
+    .values({
+      companyId: ctx.companyId,
+      code,
+      ncDate: ctx.ncDate,
+      jobCardId: null,
+      itemId: line.itemId,
+      itemCodeText: itemCode,
+      itemNameText: line.itemName,
+      rejectedQty: ctx.rejectedQty.toFixed(2),
+      reason,
+      status: 'pending',
+      reportedByText: ctx.reportedByText,
+      grnLineId: ctx.grnLineId,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning({ id: ncRegister.id, code: ncRegister.code });
+  const nc = inserted[0];
+  if (!nc)
+    throw new ValidationError('Could not raise the NC for the rejected material. Try again.');
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'NonConformance',
+      detail: `${nc.code} — ${itemCode} qty=${ctx.rejectedQty.toFixed(2)} (bought material rejected at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo})`,
+      refId: nc.code,
+    },
+    ctx.companyId,
+    user,
+  );
+  return nc;
 }
 
 /** The next code in the company's `NC-#####` series (ADR-183). The number rule
