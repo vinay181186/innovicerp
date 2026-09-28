@@ -10329,3 +10329,15 @@ integer, so KGS / MTR material could not be issued as 12.5.
 - Verified on TEST: 11 scenario tests pass (incl. non-admin manager still opens Store / Inventory);
   541 + 927 cross-screen figures, 0 mismatches. PROD must run 0154 before test → main.
 
+### ADR-193 phase 2 — Stock Count (2026-09-28)
+- New document **Stock Count** `IN-SC-#####` (0155, ERPNext Stock Reconciliation) for opening stock and
+  periodic counts: Draft → Submitted → Posted | Cancelled. Many items per count or an Excel upload
+  (codes resolved by the server; unknown codes listed, never guessed).
+- Each line's In Stock is **snapshotted when the line is keyed** (kept while its counted qty is unchanged); **Approve** (a different user, `stockcount_create` approve)
+  posts counted − snapshot through the single stock writer (source `stock_count`), so issues made
+  after the count stay real. A count that would leave stock below what was issued since is refused
+  ("recount"); one that would leave less than is booked for SOs needs a confirmed reason.
+- A posted count is never edited or cancelled — a new count corrects it. Number under an advisory
+  lock (no duplicate IN-SC numbers).
+- Verified on TEST: 14 scenario tests (C1–C14) pass.
+

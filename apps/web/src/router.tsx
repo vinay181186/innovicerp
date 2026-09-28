@@ -126,6 +126,8 @@ import { soStatusDetailRoute } from './modules/so-status/routes/detail';
 import { soStatusIndexRoute } from './modules/so-status/routes/index';
 import { pendingSoValueRoute } from './modules/pending-so-value/routes/list';
 import { storeIssuesListRoute } from './modules/store-issues/routes/list';
+import { stockCountDetailRoute } from './modules/stock-counts/routes/detail';
+import { stockCountsListRoute } from './modules/stock-counts/routes/list';
 import { storeInventoryRoute } from './modules/store-inventory/routes/list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
@@ -200,6 +202,8 @@ const routeTree = rootRoute.addChildren([
     soStatusDetailRoute,
     pendingSoValueRoute,
     storeIssuesListRoute,
+    stockCountsListRoute,
+    stockCountDetailRoute,
     storeInventoryRoute,
     partyMaterialsListRoute,
     partyGrnListRoute,

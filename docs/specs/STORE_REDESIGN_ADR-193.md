@@ -256,7 +256,7 @@ tool {label 'Tool / Instrument', returnable}.
 
 ### Data
 
-`stock_counts` (SC-#####): count_date, purpose opening | periodic, status draft → submitted → posted | cancelled,
+`stock_counts` (IN-SC-#####): count_date, purpose opening | periodic, status draft → submitted → posted | cancelled,
 remarks, submitted_by/at, approved_by/at, cancelled_by/at/reason. `stock_count_lines`: item_id, counted_qty
 numeric(14,3), system_qty_at_count (set on submit), reason, store_transaction_id (set on post). Unique (count, item).
 
@@ -266,7 +266,7 @@ numeric(14,3), system_qty_at_count (set on submit), reason, store_transaction_id
 POST  /stock-counts                  { countDate, purpose, remarks?, lines:[{itemId, countedQty, reason?}] } → draft
 PUT   /stock-counts/:id/lines        { lines:[…] }                       (draft only; replaces the lines)
 POST  /stock-counts/:id/submit       → submitted; snapshots system_qty_at_count per line (under item locks)
-POST  /stock-counts/:id/approve      { confirm?: {reason} }  approver ≠ creator → posted: one ledger row per
+POST  /stock-counts/:id/approve      { confirmReason? }  approver ≠ creator → posted: one ledger row per
                                      line with difference ≠ 0 (source stock_count, guard none)
 POST  /stock-counts/:id/cancel       { reason }   draft / submitted only
 GET   /stock-counts, /stock-counts/:id  (lines show system now, system at count, counted, difference)
@@ -290,3 +290,65 @@ Excel: the web reads the sheet (Item Code, Counted Qty, Reason) and posts lines;
 | C10 | Cancel a posted count                                               | 409 "correct it with a new count" ✓                                    |
 | C11 | Excel with an unknown code                                          | row listed as error, rest go into the draft ✓                          |
 | C12 | Item deleted between submit and approve                             | 409 names the item ✓                                                   |
+
+## 11. Phase 3 — issue against the job, material view, booked parts, Complete only consumes
+
+### Data (0156)
+
+- `route_cards`, `plans`, `job_cards` += `raw_material_item_id` (→ items), `rm_qty_per_piece` numeric(14,4);
+  the JC copies them like grade / size today (Route Card → Plan → JC).
+- `store_issues` becomes the **header**: `issue_against` job*card | assembly_so | general, `job_card_id`,
+  `production_order_id`, `sales_order_id`, `issued_to_operator_id` → operators, `issued_to_text` (fallback),
+  `department`, purpose, remarks, reversed*\*. Old single-item columns kept nullable (rollback), no longer written;
+  existing rows (3 on TEST, 0 on PROD) copied into lines.
+- `store_issue_lines`: issue_id, line_no, item_id, qty numeric(14,3), store_transaction_id.
+- `store_issue_returns`: issue_line_id, qty, reason, store_transaction_id.
+- `assembly_unit_consumptions`: assembly_unit_id, sales_order_id, item_id, qty, variance_reason (no ledger row).
+- `so_stock_reservations` += `purpose` sales | assembly, `sales_order_id`; `so_line_id` nullable; CHECK
+  (sales ⇒ so_line_id) and (assembly ⇒ sales_order_id). Available view unchanged (all bookings).
+
+### Read model (derived, `lib/material-requirement.ts` — never stored)
+
+- JC: planned when the JC has an RM item → Required = rm_qty_per_piece × JC qty; Issued / Returned from issue
+  lines against the JC; Balance = Required − Issued + Returned.
+- Assembly SO: per BOM line Required = qty_per_set × units; Booked (assembly bookings), Issued, Returned,
+  Used (consumptions), Balance to issue, Issued-unused = Issued − Returned − Used; Free in store; Booked for
+  other SOs (with SO numbers); On PO.
+
+### API
+
+```
+GET  /material/job-cards/:id        GET /material/sales-orders/:id
+POST /store-issues   { issueDate, issueAgainst, jobCardId? | salesOrderId?, operatorId? | issuedToText?,
+                       department?, purpose, lines:[{itemId, qty}], confirmReason? }
+POST /store-issues/:id/returns  { lines:[{issueLineId, qty}], reason }
+POST /store-issues/:id/reverse  { reason }        (only if nothing returned / consumed)
+POST /material/sales-orders/:id/book   { lines:[{itemId, qty}] }       (plan_create entry)
+POST /material/sales-orders/:id/release { itemId, qty, reason }         (plan_create approve)
+POST /assemblies/:soId/units, PATCH /assemblies/units/:id/stop   { qty, confirmVarianceReason? }
+```
+
+Single writer gains guard `available_plus_own` (free stock + this SO's own assembly booking); after the
+issue the own booking is consumed first.
+
+### Paper tests
+
+| #   | Scenario                                                 | Result                                                               |
+| --- | -------------------------------------------------------- | -------------------------------------------------------------------- |
+| M1  | JC 50 pcs, RM 0.25 m/pc (12.5 m); issue 10               | Balance 2.5 ✓                                                        |
+| M2  | Issue 3 more (balance 2.5)                               | 409 needsConfirmation; approve-tier user with reason → posted ✓ (P6) |
+| M3  | Assembly SO issue of an item not in its BOM              | 400 "not a BOM part — issue as General" ✓                            |
+| M4  | Return more than issued-unused                           | 409 ✓                                                                |
+| M5  | Book parts beyond free stock                             | 409 names holders ✓ (T29)                                            |
+| M6  | Complete 2 with a part not issued                        | 409 lists each short part ✓ (T5)                                     |
+| M7  | Final Complete, cable issued 6 − returned 0.5 vs BOM 6   | 409 variance −0.5 → with reason consumes 5.5 ✓ (P3)                  |
+| M8  | Undo a unit whose machine is dispatched                  | 409 ✓ (P8)                                                           |
+| M9  | Undo a unit assembled before this phase (ledger-debited) | old ledger rows reversed ✓ (P7)                                      |
+| M10 | General issue without Department                         | 400 ✓                                                                |
+| M11 | Reverse a slip whose parts were consumed                 | 409 "use Return" ✓ (P9)                                              |
+| M12 | Issue of a part fully booked for other SOs               | 409 names IN-SO-00786 / IN-SO-00001 ✓ (T27)                          |
+| M13 | Book 6, issue 6                                          | own booking consumed; Available unchanged by the issue ✓ (T28)       |
+| M14 | Last unit completes with 2 booked-not-issued             | leftover assembly booking released ✓ (T30, B5)                       |
+| M15 | Two Completes on one SO at once                          | SO row locked; second re-checks ✓ (P10)                              |
+
+**Review fixes (phase 2):** snapshot taken when a line is KEYED (kept while its counted qty is unchanged), not at Submit; nobody who created, keyed or submitted a count may approve it; the below-booked confirmation only when the count lowers stock; Count Date not in the future.

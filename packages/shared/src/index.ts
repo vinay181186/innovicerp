@@ -83,6 +83,7 @@ export * from './schemas/so-status';
 export * from './schemas/so-timeline';
 export * from './schemas/pending-so-value';
 export * from './schemas/store-issue';
+export * from './schemas/stock-count';
 export * from './schemas/store-inventory';
 export * from './schemas/osp-wip';
 export * from './schemas/tool-issue';

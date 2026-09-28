@@ -3694,6 +3694,117 @@ export const toolIssueReturns = pgTable(
 // Write cascades into store_transactions (existing append-only ledger);
 // item.stockQty decrements via the same service helper used by GRN.
 
+// ADR-193 phase 2 (0155) — Stock Count: opening stock + periodic physical
+// counts (ERPNext Stock Reconciliation). Submit snapshots each line's system
+// qty; approve (another user) posts counted − snapshot via lib/stock-ledger.
+export const stockCounts = pgTable(
+  'stock_counts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    countDate: date('count_date').notNull(),
+    purpose: text('purpose').notNull(),
+    status: text('status').notNull().default('draft'),
+    remarks: text('remarks'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    submittedBy: uuid('submitted_by').references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvedBy: uuid('approved_by').references(() => users.id),
+    approvalReason: text('approval_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('stock_counts_purpose_check', sql`${t.purpose} IN ('opening', 'periodic')`),
+    check(
+      'stock_counts_status_check',
+      sql`${t.status} IN ('draft', 'submitted', 'posted', 'cancelled')`,
+    ),
+    check(
+      'stock_counts_posted_has_approver',
+      sql`${t.status} <> 'posted' OR (${t.approvedAt} IS NOT NULL AND ${t.approvedBy} IS NOT NULL)`,
+    ),
+    check(
+      'stock_counts_cancel_has_reason',
+      sql`${t.status} <> 'cancelled' OR (${t.cancelledAt} IS NOT NULL AND length(btrim(coalesce(${t.cancelReason}, ''))) > 0)`,
+    ),
+    uniqueIndex('stock_counts_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('stock_counts_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('stock_counts_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const stockCountLines = pgTable(
+  'stock_count_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    stockCountId: uuid('stock_count_id')
+      .notNull()
+      .references(() => stockCounts.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemCodeText: text('item_code_text').notNull(),
+    countedQty: stockQty('counted_qty').notNull(),
+    systemQtyAtCount: stockQty('system_qty_at_count'),
+    reason: text('reason'),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('stock_count_lines_counted_qty_check', sql`${t.countedQty} >= 0`),
+    uniqueIndex('stock_count_lines_count_item_uniq')
+      .on(t.stockCountId, t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('stock_count_lines_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('stock_count_lines_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 export const storeIssues = pgTable(
   'store_issues',
   {
