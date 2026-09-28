@@ -10276,3 +10276,41 @@ List pages mixed filter dropdowns with rows of clickable status tiles / capsules
 
 - Every list reads the same way; filters never wrap unevenly or clip dates.
 - Any page that re-adds status tiles as a filter breaks this ADR — use the dropdown with counts.
+
+## ADR-193: Store redesign — one stock writer, decimal stock, issue against the job
+
+**Date:** 2026-09-28
+**Status:** Accepted (phase 1a delivered; phases 1b–5 follow, see `docs/specs/STORE_REDESIGN_ADR-193.md`)
+
+### Context
+The Store Department audit (22 findings) and the owner's decisions (Q1–Q6, 2026-09-28): the store
+issues parts against the assembly SO and "Complete" only checks them (Q3); item type is chosen at
+item creation (Q2); instruments by serial number (Q4); reorder with one-click PR (Q5). Eleven modules
+each wrote ledger rows with their own lock / read / check code, and every stock quantity was an
+integer, so KGS / MTR material could not be issued as 12.5.
+
+### Decision (phase 1a)
+1. **One writer.** `lib/stock-ledger.ts postStockMove` is the only code that inserts
+   `store_transactions`: locks the item, reads In Stock / Booked / Available inside the lock, refuses a
+   fractional qty for NOS / SET, applies the caller's guard, inserts. Guards: `available` (store issue,
+   tool issue, JW DC out, adjust −), `on_hand` (dispatch, JW return — they consume their own booking),
+   `none` (credits and compensating reversals; legacy assembly until phase 3).
+2. **Decimal stock** (0153): ledger qty / before / after and `item_stock_balances.on_hand_qty` are
+   numeric(14,3); trigger and the two stock views recreated numeric. Drizzle custom type `stockQty`
+   maps numeric ↔ JS number, so no caller changes type. Stock read-outs cast `::float8`, not `::int`.
+3. **Ledger names its document**: source types store_issue, store_return, tool_issue, tool_return,
+   stock_count (item / tool issues no longer post as 'other').
+4. Tool issue, JW DC outward and manual adjust − now take **Available** stock (booked pieces refused).
+5. Dead ledger writers removed (`writeStoreTxnOnQcAccept`, `writeStoreTxnOnDcReceive`).
+
+### Alternatives considered
+- Upgrade drizzle for numeric `mode: 'number'` — rejected for now: a framework upgrade across the repo for one type.
+- Keep integer and store grams / millimetres — rejected: every screen would convert units.
+- Patch each writer in place — rejected: the drift between eleven copies is what the audit found.
+
+### Consequences
+- Verified on TEST: 11 scenario tests (NOS 2.5 refused, KGS 12.5 / 12.25 end to end, booked stock
+  refused for adjust / tool issue, new ledger source types, balances = Σ ledger) and 529 + 923
+  cross-screen figures, 0 mismatches.
+- PROD must run 0153 before test → main. Reservations stay whole numbers (finished goods).
+

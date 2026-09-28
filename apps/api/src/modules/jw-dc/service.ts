@@ -37,7 +37,6 @@ import {
   jwDcOutwardLines,
   purchaseOrderLines,
   purchaseOrders,
-  storeTransactions,
   vendors,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -47,6 +46,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { postStockMove } from '../../lib/stock-ledger';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 
 function requireCompany(user: AuthContext): string {
@@ -837,41 +837,31 @@ export async function createJwDcOutward(
       let storeTxnId: string | null = null;
 
       if (pol.itemId) {
-        await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${pol.itemId}::uuid FOR UPDATE`);
-        const balRows = (await tx.execute(sql`
-          SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-          FROM public.v_item_stock
-          WHERE company_id = ${companyId}::uuid AND item_id = ${pol.itemId}::uuid
-        `)) as unknown as Array<{ on_hand: number }>;
-        const stockBefore = Number(balRows[0]?.on_hand ?? 0);
-        // On-hand floor: don't send more material to the vendor than physically
-        // in stock (previously clamped stockAfter to 0 while the trigger drove
-        // the real balance negative).
-        if (ln.sentQty > stockBefore) {
-          throw new ValidationError(
-            `${pol.itemCodeText ?? pol.itemName}: Send Qty (${ln.sentQty}) cannot be more than ` +
-              `In Stock (${stockBefore}). Receive material into store first.`,
-          );
-        }
-        const stockAfter = stockBefore - ln.sentQty;
-        const stRows = await tx
-          .insert(storeTransactions)
-          .values({
+        // ADR-193: via the single stock writer; Available (not just In Stock),
+        // so material booked for a customer SO cannot be sent to a vendor.
+        let moved: Awaited<ReturnType<typeof postStockMove>>;
+        try {
+          moved = await postStockMove(tx, {
             companyId,
-            txnDate: input.dcDate,
             itemId: pol.itemId,
-            itemCodeText: pol.itemCodeText ?? null,
             txnType: 'out',
             qty: ln.sentQty,
             sourceType: 'jw_out',
             sourceRef: `${code} · ${pol.itemCodeText ?? pol.itemName}`,
-            stockBefore,
-            stockAfter,
             remarks: `JW DC Outward · to ${vendorNameText ?? po.vendorCodeText ?? ''} for ${pol.lineRemarks ?? ''}`.trim(),
-            createdBy: userId,
-          })
-          .returning({ id: storeTransactions.id });
-        storeTxnId = stRows[0]?.id ?? null;
+            txnDate: input.dcDate,
+            userId,
+            itemCodeText: pol.itemCodeText ?? null,
+            guard: 'available',
+            qtyLabel: 'Send Qty',
+          });
+        } catch (e) {
+          if (e instanceof ConflictError) {
+            throw new ValidationError(`${e.message} Receive material into store first.`);
+          }
+          throw e;
+        }
+        storeTxnId = moved.id;
       }
 
       await tx.insert(jwDcOutwardLines).values({
@@ -1109,31 +1099,20 @@ export async function createJwDcInward(
       let storeTxnId: string | null = null;
 
       if (ln.okQty > 0 && ol.itemId) {
-        const balRows = (await tx.execute(sql`
-          SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-          FROM public.v_item_stock
-          WHERE company_id = ${companyId}::uuid AND item_id = ${ol.itemId}::uuid
-        `)) as unknown as Array<{ on_hand: number }>;
-        const stockBefore = Number(balRows[0]?.on_hand ?? 0);
-        const stockAfter = stockBefore + ln.okQty;
-        const stRows = await tx
-          .insert(storeTransactions)
-          .values({
-            companyId,
-            txnDate: input.inwardDate,
-            itemId: ol.itemId,
-            itemCodeText: ol.itemCodeText,
-            txnType: 'in',
-            qty: ln.okQty,
-            sourceType: 'jw_in',
-            sourceRef: `${code} · ${ol.itemCodeText}`,
-            stockBefore,
-            stockAfter,
-            remarks: `JW DC Inward · returned from ${out.vendorNameText ?? out.vendorCodeText ?? ''} (${ol.processText ?? ''})`.trim(),
-            createdBy: userId,
-          })
-          .returning({ id: storeTransactions.id });
-        storeTxnId = stRows[0]?.id ?? null;
+        const moved = await postStockMove(tx, {
+          companyId,
+          itemId: ol.itemId,
+          txnType: 'in',
+          qty: ln.okQty,
+          sourceType: 'jw_in',
+          sourceRef: `${code} · ${ol.itemCodeText}`,
+          remarks: `JW DC Inward · returned from ${out.vendorNameText ?? out.vendorCodeText ?? ''} (${ol.processText ?? ''})`.trim(),
+          txnDate: input.inwardDate,
+          userId,
+          itemCodeText: ol.itemCodeText,
+          guard: 'none',
+        });
+        storeTxnId = moved.id;
       }
 
       await tx.insert(jwDcInwardLines).values({

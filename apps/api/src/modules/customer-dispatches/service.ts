@@ -21,7 +21,6 @@ import {
   items,
   salesOrderLines,
   salesOrders,
-  storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
@@ -32,6 +31,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { postStockMove } from '../../lib/stock-ledger';
 import {
   consumeForLine,
   readReservedByLine,
@@ -145,26 +145,12 @@ async function moveDispatchStock(
   component?: { code: string },
 ): Promise<void> {
   if (!itemId || qty <= 0) return;
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-  const bal = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const before = Number(bal[0]?.on_hand ?? 0);
   // On-hand floor: never dispatch more finished goods than physically in stock
   // (readiness math is decoupled from the ledger, so without this guard a
-  // dispatch could drive on_hand negative — SO-517 class of bug).
-  if (dir === 'out' && qty > before) {
-    throw new ConflictError(
-      `${component ? `${component.code}: ` : ''}Dispatch Qty (${qty}) cannot be more than ` +
-        `In Stock (${before}).`,
-    );
-  }
-  const after = dir === 'out' ? before - qty : before + qty;
-  await tx.insert(storeTransactions).values({
+  // dispatch could drive on_hand negative — SO-517 class of bug). On-hand, not
+  // Available: the dispatch consumes its OWN booking.
+  await postStockMove(tx, {
     companyId,
-    txnDate: date,
     itemId,
     txnType: dir,
     qty,
@@ -172,11 +158,13 @@ async function moveDispatchStock(
     sourceRef:
       `${code} / ln ${lineNo}` +
       `${component ? ` / ${component.code}` : ''}${dir === 'in' ? ' (cancel)' : ''}`,
-    stockBefore: before,
-    stockAfter: after,
     remarks:
       dir === 'out' ? `Customer dispatch · ${qty} pcs` : `Dispatch cancel reversal · ${qty} pcs`,
-    createdBy: userId,
+    txnDate: date,
+    userId,
+    itemCodeText: null,
+    guard: dir === 'out' ? 'on_hand' : 'none',
+    qtyLabel: 'Dispatch Qty',
   });
 }
 
@@ -653,7 +641,7 @@ export async function listDispatchRegister(
         sol.client_po_line_no, sol.uom::text AS uom,
         u.full_name AS dispatched_by,
         st.stock_before, st.stock_after,
-        vis.on_hand_qty::int AS current_stock,
+        vis.on_hand_qty::float8 AS current_stock,
         jcs.jc_codes AS jc_no
       FROM customer_dispatch_lines l
       JOIN customer_dispatches h ON h.id = l.customer_dispatch_id
@@ -712,8 +700,8 @@ export async function listDispatchRegister(
         customer: r.customer,
         dispatchedBy: r.dispatched_by,
         remarks: r.remarks,
-        stockBefore: r.stock_before === null ? null : Math.round(n(r.stock_before)),
-        stockAfter: r.stock_after === null ? null : Math.round(n(r.stock_after)),
+        stockBefore: r.stock_before === null ? null : n(r.stock_before),
+        stockAfter: r.stock_after === null ? null : n(r.stock_after),
         currentStock: r.current_stock === null ? null : Math.round(n(r.current_stock)),
       })),
     };

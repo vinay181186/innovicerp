@@ -89,14 +89,14 @@ export const itemTrackerReport: RegisteredReport = {
         -- one is the CUSTOMER's drawing revision off the sales order line.
         COALESCE(jc_open.revisions, '')             AS so_revision,
         i.name                                     AS item_name,
-        COALESCE(s.on_hand_qty, 0)::int            AS in_stock,
+        COALESCE(s.on_hand_qty, 0)::float8            AS in_stock,
         COALESCE(jc_open.qty, 0)::int              AS in_production,
         COALESCE(po_pending.qty, 0)::int           AS in_po_ordered,
         (
           COALESCE(s.on_hand_qty, 0) +
           COALESCE(jc_open.qty, 0) +
           COALESCE(po_pending.qty, 0)
-        )::int                                     AS total
+        )::float8                                     AS total
       FROM public.items i
       LEFT JOIN public.v_item_stock s
         ON s.item_id = i.id AND s.company_id = i.company_id

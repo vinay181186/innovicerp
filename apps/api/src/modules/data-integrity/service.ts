@@ -54,7 +54,7 @@ const CHECKS: readonly CheckSpec[] = [
     code: 'DI-003',
     label: 'Items with negative on-hand stock',
     buildQuery: (cid) => `
-      SELECT i.code || ' (' || isb.on_hand_qty || ')' AS sample
+      SELECT i.code || ' (' || isb.on_hand_qty::float8 || ')' AS sample
       FROM item_stock_balances isb
       JOIN items i ON i.id = isb.item_id
       WHERE isb.company_id = '${cid}'::uuid

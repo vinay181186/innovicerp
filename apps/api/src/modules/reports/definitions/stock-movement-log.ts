@@ -2,6 +2,7 @@
 // a date range, optional source-type filter. Pattern: list with date-range
 // + enum filter. Surfaces the append-only ledger that backs v_item_stock.
 
+import { STORE_TXN_SOURCE_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 
@@ -20,7 +21,7 @@ export const stockMovementLogReport: RegisteredReport = {
         key: 'sourceType',
         label: 'Source Type',
         kind: 'enum',
-        options: ['grn_qc', 'manual_adjust', 'dispatch', 'jw_in', 'jw_out', 'other'],
+        options: [...STORE_TXN_SOURCE_TYPES],
       },
       {
         key: 'txnType',
@@ -46,7 +47,7 @@ export const stockMovementLogReport: RegisteredReport = {
     const toDate = filters['toDate'];
     const sourceType = filters['sourceType'];
     const txnType = filters['txnType'];
-    const validSources = ['grn_qc', 'manual_adjust', 'dispatch', 'jw_in', 'jw_out', 'other'];
+    const validSources: readonly string[] = STORE_TXN_SOURCE_TYPES;
     const validTxnTypes = ['in', 'out', 'adjust'];
 
     const fromFrag = fromDate ? sql`AND st.txn_date >= ${fromDate}::date` : sql``;

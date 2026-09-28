@@ -29,19 +29,14 @@ import {
   salesOrderLines,
   salesOrders,
   soStockReservations,
-  storeTransactions,
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
-import {
-  AuthorizationError,
-  ConflictError,
-  NotFoundError,
-  ValidationError,
-} from '../../lib/errors';
+import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { readStockPosition, readStockPositions } from '../../lib/stock-reservation';
 import { onPoByItemSql } from '../../lib/po-pending';
+import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -126,7 +121,7 @@ export async function listStoreInventory(
         i.name                                     AS item_name,
         i.material                                 AS material,
         i.uom::text                                AS uom,
-        COALESCE(s.on_hand_qty, 0)::int            AS in_stock,
+        COALESCE(s.on_hand_qty, 0)::float8            AS in_stock,
         i.min_stock_qty                            AS min_qty,
         COALESCE(po_pending.qty, 0)::int           AS on_po_qty,
         COALESCE(at_vendor.qty, 0)::int            AS at_vendor_qty,
@@ -243,35 +238,20 @@ export async function adjustStock(
     if (!itm)
       throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
 
-    await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itm.id}::uuid FOR UPDATE`);
-
-    const balRows = (await tx.execute(sql`
-      SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-      FROM public.v_item_stock
-      WHERE company_id = ${companyId}::uuid AND item_id = ${itm.id}::uuid
-    `)) as unknown as Array<{ on_hand: number }>;
-    const stockBefore = Number(balRows[0]?.on_hand ?? 0);
-    const stockAfter =
-      input.direction === 'add' ? stockBefore + input.qty : stockBefore - input.qty;
-    if (stockAfter < 0) {
-      throw new ConflictError(
-        `Item ${itm.code}: Qty (${input.qty}) cannot be more than In Stock (${stockBefore}).`,
-      );
-    }
-
-    await tx.insert(storeTransactions).values({
+    // ADR-193: via the single stock writer. A '−' may take only Available
+    // stock — pieces booked for a customer SO must be released first.
+    const { stockBefore, stockAfter } = await postStockMove(tx, {
       companyId,
-      txnDate: new Date().toISOString().slice(0, 10),
       itemId: itm.id,
-      itemCodeText: itm.code,
       txnType: input.direction === 'add' ? 'in' : 'out',
       qty: input.qty,
       sourceType: 'manual_adjust',
       sourceRef: `ADJ · ${itm.code}`,
-      stockBefore,
-      stockAfter,
       remarks: `Manual adjust: ${input.remarks}`,
-      createdBy: user.id,
+      txnDate: new Date().toISOString().slice(0, 10),
+      userId: user.id,
+      itemCodeText: itm.code,
+      guard: 'available',
     });
 
     // ADR-189 — every manual stock change is on the activity log with its

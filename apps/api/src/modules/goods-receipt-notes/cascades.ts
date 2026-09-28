@@ -34,14 +34,10 @@
 //        — that JC is credited once, at PO close. See resolveGrnLineJobCardId.
 
 import { eq, sql } from 'drizzle-orm';
-import {
-  goodsReceiptNotes,
-  purchaseOrderLines,
-  purchaseOrders,
-  storeTransactions,
-} from '../../db/schema';
+import { goodsReceiptNotes, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { isProductionOrderLinkedJc } from '../../lib/production-order-link';
+import { postStockMove } from '../../lib/stock-ledger';
 
 export async function recalcPoLineReceivedQty(
   tx: DbTransaction,
@@ -198,46 +194,6 @@ export async function recalcPoHeaderStatus(
   }
 }
 
-interface QcAcceptCascadeArgs {
-  tx: DbTransaction;
-  companyId: string;
-  adminUserId: string;
-  grnId: string;
-  grnLineId: string;
-  itemId: string | null;
-  qcAcceptedQty: number;
-  prevQcStatus: 'pending' | 'in_progress' | 'completed' | undefined;
-  nextQcStatus: 'pending' | 'in_progress' | 'completed';
-}
-
-export async function writeStoreTxnOnQcAccept(args: QcAcceptCascadeArgs): Promise<void> {
-  const {
-    tx,
-    companyId,
-    adminUserId,
-    grnId,
-    grnLineId,
-    itemId,
-    qcAcceptedQty,
-    prevQcStatus,
-    nextQcStatus,
-  } = args;
-  // Whole-GRN QC merge path: credit only on the non-completed → completed
-  // transition, with the full accepted qty. (The Incoming QC Register credits
-  // incrementally per inspect via creditGrnQcStock directly.)
-  if (nextQcStatus !== 'completed') return;
-  if (prevQcStatus === 'completed') return;
-  await creditGrnQcStock({
-    tx,
-    companyId,
-    adminUserId,
-    grnId,
-    grnLineId,
-    itemId,
-    qty: qcAcceptedQty,
-  });
-}
-
 /**
  * The ONE place a GRN line is resolved to the jc_op(s) it returns pieces for.
  * Shared by isMidRouteOutsourceReturn and resolveGrnLineJobCardId so the two
@@ -368,18 +324,6 @@ export async function creditGrnQcStock(args: {
   const linkedJobCardId = await resolveGrnLineJobCardId(tx, grnLineId);
   if (linkedJobCardId && (await isProductionOrderLinkedJc(tx, linkedJobCardId))) return;
 
-  // Lock the items row to serialize concurrent QC accepts on the same item.
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-
-  // Read current on-hand from v_item_stock; default to 0 when no prior txns.
-  const balanceRows = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
-  const stockAfter = stockBefore + qty;
-
   // Look up the GRN code for the source_ref.
   const grnRows = await tx
     .select({ code: goodsReceiptNotes.code })
@@ -388,17 +332,17 @@ export async function creditGrnQcStock(args: {
     .limit(1);
   const grnCode = grnRows[0]?.code ?? grnId;
 
-  await tx.insert(storeTransactions).values({
+  await postStockMove(tx, {
     companyId,
-    txnDate: new Date().toISOString().slice(0, 10),
     itemId,
     txnType: 'in',
     qty,
     sourceType: 'grn_qc',
     sourceRef: `${grnCode} / ln ${grnLineId.slice(0, 8)}`,
-    stockBefore,
-    stockAfter,
     remarks: `GRN QC Accepted · ${qty} pcs`,
-    createdBy: adminUserId,
+    txnDate: new Date().toISOString().slice(0, 10),
+    userId: adminUserId,
+    itemCodeText: null,
+    guard: 'none',
   });
 }

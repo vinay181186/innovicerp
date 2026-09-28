@@ -26,8 +26,9 @@
 // goes negative and says so. Gating is a separate decision, taken once the
 // opening balances have been counted and corrected.
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { bomMasterLines, bomMasters, storeTransactions } from '../../db/schema';
+import { postStockMove } from '../../lib/stock-ledger';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 
 export interface AssemblyStockContext {
@@ -70,31 +71,13 @@ async function loadPerUnitComponents(
 /** The finished good this BOM builds (bom_masters.parent_item_id). Null when the
  *  BOM predates the column (six legacy BOMs) — then there is no item to credit
  *  and the output step is skipped. */
-async function loadParentItemId(
-  tx: DbTransaction,
-  bomMasterId: string,
-): Promise<string | null> {
+async function loadParentItemId(tx: DbTransaction, bomMasterId: string): Promise<string | null> {
   const rows = await tx
     .select({ parentItemId: bomMasters.parentItemId })
     .from(bomMasters)
     .where(and(eq(bomMasters.id, bomMasterId), isNull(bomMasters.deletedAt)))
     .limit(1);
   return rows[0]?.parentItemId ?? null;
-}
-
-/** Read on-hand for one item, locking its items row first. */
-async function lockAndRead(
-  tx: DbTransaction,
-  companyId: string,
-  itemId: string,
-): Promise<number> {
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-  const rows = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  return Number(rows[0]?.on_hand ?? 0);
 }
 
 /**
@@ -118,21 +101,20 @@ export async function applyAssemblyStockCascade(
   // Sorted by itemId so two concurrent assembles take the row locks in the same
   // order and cannot deadlock against each other.
   for (const c of [...components].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
-    const stockBefore = await lockAndRead(tx, ctx.companyId, c.itemId);
-    const stockAfter = stockBefore - c.qty;
-    await tx.insert(storeTransactions).values({
+    const moved = await postStockMove(tx, {
       companyId: ctx.companyId,
-      txnDate: ctx.txnDate,
       itemId: c.itemId,
       txnType: 'out',
       qty: c.qty,
       sourceType: 'assembly',
       sourceRef: `${ctx.soCode} unit #${ctx.unitNo}`,
-      stockBefore,
-      stockAfter,
       remarks: `Assembly consume · unit #${ctx.unitNo} · ${c.qty} pcs`,
-      createdBy: user.id,
+      txnDate: ctx.txnDate,
+      userId: user.id,
+      itemCodeText: null,
+      guard: 'none',
     });
+    const { stockBefore, stockAfter } = moved;
     written.push({ itemId: c.itemId, qty: c.qty, stockBefore, stockAfter });
   }
 
@@ -141,20 +123,18 @@ export async function applyAssemblyStockCascade(
   // find and undo just this credit. Skipped when the BOM has no parent item.
   const parentItemId = await loadParentItemId(tx, ctx.bomMasterId);
   if (parentItemId) {
-    const stockBefore = await lockAndRead(tx, ctx.companyId, parentItemId);
-    const stockAfter = stockBefore + batchQty;
-    await tx.insert(storeTransactions).values({
+    await postStockMove(tx, {
       companyId: ctx.companyId,
-      txnDate: ctx.txnDate,
       itemId: parentItemId,
       txnType: 'in',
       qty: batchQty,
       sourceType: 'assembly',
       sourceRef: `${ctx.soCode} unit #${ctx.unitNo} (output)`,
-      stockBefore,
-      stockAfter,
       remarks: `Assembly output · unit #${ctx.unitNo} · ${batchQty} pcs built`,
-      createdBy: user.id,
+      txnDate: ctx.txnDate,
+      userId: user.id,
+      itemCodeText: null,
+      guard: 'none',
     });
   }
 
@@ -201,21 +181,20 @@ export async function reverseAssemblyStockCascade(
   const written: AssemblyStockLine[] = [];
   for (const [itemId, qty] of [...netByItem].sort((a, b) => a[0].localeCompare(b[0]))) {
     if (qty <= 0) continue;
-    const stockBefore = await lockAndRead(tx, ctx.companyId, itemId);
-    const stockAfter = stockBefore + qty;
-    await tx.insert(storeTransactions).values({
+    const moved = await postStockMove(tx, {
       companyId: ctx.companyId,
-      txnDate: ctx.txnDate,
-      itemId,
+      itemId: itemId,
       txnType: 'in',
-      qty,
+      qty: qty,
       sourceType: 'assembly',
       sourceRef: `${sourceRef} (undo)`,
-      stockBefore,
-      stockAfter,
       remarks: `Assembly undo · unit #${ctx.unitNo} · ${qty} pcs returned`,
-      createdBy: user.id,
+      txnDate: ctx.txnDate,
+      userId: user.id,
+      itemCodeText: null,
+      guard: 'none',
     });
+    const { stockBefore, stockAfter } = moved;
     written.push({ itemId, qty, stockBefore, stockAfter });
   }
 
@@ -241,20 +220,18 @@ export async function reverseAssemblyStockCascade(
   }
   for (const [itemId, qty] of [...outNetByItem].sort((a, b) => a[0].localeCompare(b[0]))) {
     if (qty <= 0) continue;
-    const stockBefore = await lockAndRead(tx, ctx.companyId, itemId);
-    const stockAfter = stockBefore - qty;
-    await tx.insert(storeTransactions).values({
+    await postStockMove(tx, {
       companyId: ctx.companyId,
-      txnDate: ctx.txnDate,
-      itemId,
+      itemId: itemId,
       txnType: 'out',
-      qty,
+      qty: qty,
       sourceType: 'assembly',
       sourceRef: `${outputRef} undo`,
-      stockBefore,
-      stockAfter,
       remarks: `Assembly undo · unit #${ctx.unitNo} · ${qty} pcs finished good removed`,
-      createdBy: user.id,
+      txnDate: ctx.txnDate,
+      userId: user.id,
+      itemCodeText: null,
+      guard: 'none',
     });
   }
 

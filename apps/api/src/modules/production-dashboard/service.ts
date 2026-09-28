@@ -215,7 +215,7 @@ export async function getProductionDashboard(
     const lowItemRows = await tx.execute(sql`
       SELECT
         i.id AS "itemId", i.code,
-        COALESCE(s.on_hand_qty, 0)::int AS "inStock",
+        COALESCE(s.on_hand_qty, 0)::float8 AS "inStock",
         i.min_stock_qty AS "minQty"
       FROM public.items i
       LEFT JOIN public.v_item_stock s

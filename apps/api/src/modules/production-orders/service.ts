@@ -66,7 +66,6 @@ import {
   routeCards,
   salesOrderLines,
   salesOrders,
-  storeTransactions,
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -88,6 +87,7 @@ import {
   releaseReservationForClose,
 } from '../../lib/stock-reservation';
 import { closeBlockedReason } from '../../lib/production-order-close-guard';
+import { postStockMove } from '../../lib/stock-ledger';
 import { planCoverage, productionOrderCapError } from '../../lib/production-order-cap';
 import { readPlanOrderCoverage } from '../../lib/plan-order-coverage';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
@@ -987,31 +987,22 @@ async function writeCloseStockTxn(
     userId: string;
   },
 ): Promise<string> {
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${args.itemId}::uuid FOR UPDATE`);
-  const balanceRows = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${args.companyId}::uuid AND item_id = ${args.itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const before = Number(balanceRows[0]?.on_hand ?? 0);
-  const after = args.txnType === 'in' ? before + args.qty : before - args.qty;
-  const ins = await tx
-    .insert(storeTransactions)
-    .values({
-      companyId: args.companyId,
-      txnDate: todayIso(),
-      itemId: args.itemId,
-      txnType: args.txnType,
-      qty: args.qty,
-      sourceType: 'production_order_close',
-      sourceRef: args.sourceRef,
-      stockBefore: before,
-      stockAfter: after,
-      remarks: args.remarks,
-      createdBy: args.userId,
-    })
-    .returning({ id: storeTransactions.id });
-  return ins[0]!.id;
+  // Guard 'none': the close has already proved the pieces (finished − credited),
+  // and a reverse-close proved them on hand before calling this.
+  const moved = await postStockMove(tx, {
+    companyId: args.companyId,
+    itemId: args.itemId,
+    txnType: args.txnType,
+    qty: args.qty,
+    sourceType: 'production_order_close',
+    sourceRef: args.sourceRef,
+    remarks: args.remarks,
+    txnDate: todayIso(),
+    userId: args.userId,
+    itemCodeText: null,
+    guard: 'none',
+  });
+  return moved.id;
 }
 
 /**
@@ -1453,7 +1444,7 @@ export async function reverseProductionOrderClose(
     // stock negative means they were already dispatched.
     await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${po.itemId}::uuid FOR UPDATE`);
     const onHandRows = (await tx.execute(sql`
-      SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
+      SELECT COALESCE(on_hand_qty, 0)::float8 AS on_hand
       FROM public.v_item_stock
       WHERE company_id = ${companyId}::uuid AND item_id = ${po.itemId}::uuid
     `)) as unknown as Array<{ on_hand: number }>;

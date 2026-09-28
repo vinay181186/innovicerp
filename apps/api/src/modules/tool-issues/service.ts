@@ -25,7 +25,7 @@ import type {
   ToolIssue,
   ToolIssueListItem,
 } from '@innovic/shared';
-import { items, storeTransactions, toolIssues, toolIssueReturns } from '../../db/schema';
+import { items, toolIssues, toolIssueReturns } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import {
@@ -34,6 +34,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockItemForStock, postStockMove } from '../../lib/stock-ledger';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -240,41 +241,27 @@ export async function createToolIssue(
     if (!itm)
       throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
 
-    await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itm.id}::uuid FOR UPDATE`);
-
-    const balRows = (await tx.execute(sql`
-      SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-      FROM public.v_item_stock
-      WHERE company_id = ${companyId}::uuid AND item_id = ${itm.id}::uuid
-    `)) as unknown as Array<{ on_hand: number }>;
-    const stockBefore = Number(balRows[0]?.on_hand ?? 0);
-    if (input.qty > stockBefore) {
-      throw new ConflictError(
-        `Item ${itm.code}: Qty (${input.qty}) cannot be more than In Stock (${stockBefore}).`,
-      );
-    }
-    const stockAfter = stockBefore - input.qty;
-
+    // Lock the item first: the next number is MAX+1 and this lock is what
+    // keeps two issues of the same item from taking the same number.
+    await lockItemForStock(tx, companyId, itm.id);
     const code = await nextToolIssueCode(tx, companyId);
 
-    const stRows = await tx
-      .insert(storeTransactions)
-      .values({
-        companyId,
-        txnDate: input.issueDate,
-        itemId: itm.id,
-        itemCodeText: itm.code,
-        txnType: 'out',
-        qty: input.qty,
-        sourceType: 'other',
-        sourceRef: `${code} · ${itm.code}`,
-        stockBefore,
-        stockAfter,
-        remarks: `Tool Issue · to ${input.issuedTo} (Returnable)`,
-        createdBy: userId,
-      })
-      .returning({ id: storeTransactions.id });
-    const storeTxnId = stRows[0]?.id ?? null;
+    // ADR-193: via the single stock writer — Available, not just In Stock, so
+    // pieces booked for a customer SO cannot be handed out as tools.
+    const moved = await postStockMove(tx, {
+      companyId,
+      itemId: itm.id,
+      txnType: 'out',
+      qty: input.qty,
+      sourceType: 'tool_issue',
+      sourceRef: `${code} · ${itm.code}`,
+      remarks: `Tool Issue · to ${input.issuedTo} (Returnable)`,
+      txnDate: input.issueDate,
+      userId,
+      itemCodeText: itm.code,
+      guard: 'available',
+    });
+    const storeTxnId = moved.id;
 
     const inserted = await tx
       .insert(toolIssues)
@@ -353,31 +340,20 @@ export async function recordToolReturn(
     // 3) For Good qty, emit a store_transactions IN row that restores stock.
     let stockTxnId: string | null = null;
     if (input.goodQty > 0 && ti.itemId) {
-      const balRows = (await tx.execute(sql`
-        SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-        FROM public.v_item_stock
-        WHERE company_id = ${companyId}::uuid AND item_id = ${ti.itemId}::uuid
-      `)) as unknown as Array<{ on_hand: number }>;
-      const stockBefore = Number(balRows[0]?.on_hand ?? 0);
-      const stockAfter = stockBefore + input.goodQty;
-      const stRows = await tx
-        .insert(storeTransactions)
-        .values({
-          companyId,
-          txnDate: input.returnDate,
-          itemId: ti.itemId,
-          itemCodeText: ti.itemCodeText,
-          txnType: 'in',
-          qty: input.goodQty,
-          sourceType: 'other',
-          sourceRef: `${ti.code} · ${ti.itemCodeText ?? ''}`,
-          stockBefore,
-          stockAfter,
-          remarks: `Tool Return · ${input.goodQty} good${input.damagedQty > 0 ? ` · ${input.damagedQty} damaged` : ''}${input.consumedQty > 0 ? ` · ${input.consumedQty} consumed` : ''}`,
-          createdBy: userId,
-        })
-        .returning({ id: storeTransactions.id });
-      stockTxnId = stRows[0]?.id ?? null;
+      const moved = await postStockMove(tx, {
+        companyId,
+        itemId: ti.itemId,
+        txnType: 'in',
+        qty: input.goodQty,
+        sourceType: 'tool_return',
+        sourceRef: `${ti.code} · ${ti.itemCodeText ?? ''}`,
+        remarks: `Tool Return · ${input.goodQty} good${input.damagedQty > 0 ? ` · ${input.damagedQty} damaged` : ''}${input.consumedQty > 0 ? ` · ${input.consumedQty} consumed` : ''}`,
+        txnDate: input.returnDate,
+        userId,
+        itemCodeText: ti.itemCodeText,
+        guard: 'none',
+      });
+      stockTxnId = moved.id;
     }
 
     // 4) Insert the return event.

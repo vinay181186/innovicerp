@@ -24,10 +24,10 @@ import type {
 } from '@innovic/shared';
 import { STORE_ISSUE_REVERSE_REASON_MIN } from '@innovic/shared';
 import { emitActivityLog } from '../activity-log/service';
-import { items, storeIssues, storeTransactions } from '../../db/schema';
+import { items, storeIssues } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { readStockPositionLocked } from '../../lib/stock-reservation';
+import { lockItemForStock, postStockMove } from '../../lib/stock-ledger';
 import {
   AuthorizationError,
   ConflictError,
@@ -245,45 +245,31 @@ export async function createStoreIssue(
       productionOrderId = ref?.po_id ?? null;
     }
 
-    // 2) Lock the item row and read PHYSICAL / RESERVED / AVAILABLE inside
-    //    the lock (lib/stock-reservation), so two issues cannot double-spend.
-    // 3) ADR-189 — an issue may take only AVAILABLE stock: pieces booked for a
-    //    sales order line are on the shelf but already promised. The ledger
-    //    before / after figures stay PHYSICAL (what the shelf holds).
-    const pos = await readStockPositionLocked(tx, companyId, itm.id);
-    const stockBefore = pos.physicalQty;
-    if (input.qty > pos.availableQty) {
-      throw new ConflictError(
-        pos.reservedQty > 0
-          ? `Item ${itm.code}: Qty (${input.qty}) cannot be more than Available (${pos.availableQty}) — In Stock ${pos.physicalQty}, of which ${pos.reservedQty} is booked for sales orders.`
-          : `Item ${itm.code}: Qty (${input.qty}) cannot be more than In Stock (${stockBefore}).`,
-      );
-    }
-    const stockAfter = stockBefore - input.qty;
-
-    // 4) Allocate the next code.
+    // 2) Lock the item, then allocate the next code (MAX+1 relies on the lock). (Stock is checked against AVAILABLE —
+    //    ADR-189: pieces booked for an SO line are already promised — and moved
+    //    by the single stock writer below.)
+    await lockItemForStock(tx, companyId, itm.id);
     const code = await nextStoreIssueCode(tx, companyId);
 
-    // 5) Emit the store_transactions row first (so we can FK it back to
-    //    store_issues.store_transaction_id).
-    const stRows = await tx
-      .insert(storeTransactions)
-      .values({
-        companyId,
-        txnDate: input.issueDate,
-        itemId: itm.id,
-        itemCodeText: itm.code,
-        txnType: 'out',
-        qty: input.qty,
-        sourceType: 'other',
-        sourceRef: `${code} · ${itm.code}`,
-        stockBefore,
-        stockAfter,
-        remarks: `Item Issue · to ${input.issuedTo}${input.purpose ? ` · ${input.purpose}` : ''}`,
-        createdBy: userId,
-      })
-      .returning({ id: storeTransactions.id });
-    const storeTxnId = stRows[0]?.id ?? null;
+    // 3) Post the ledger line first (so we can FK it back to
+    //    store_issues.store_transaction_id) — via the single stock writer,
+    //    which locks the item and allows only Available stock.
+    const moved = await postStockMove(tx, {
+      companyId,
+      itemId: itm.id,
+      txnType: 'out',
+      qty: input.qty,
+      sourceType: 'store_issue',
+      sourceRef: `${code} · ${itm.code}`,
+      remarks: `Item Issue · to ${input.issuedTo}${input.purpose ? ` · ${input.purpose}` : ''}`,
+      txnDate: input.issueDate,
+      userId,
+      itemCodeText: itm.code,
+      guard: 'available',
+      qtyLabel: 'Qty',
+    });
+    const { stockBefore, stockAfter } = moved;
+    const storeTxnId = moved.id;
 
     // 6) Insert the store_issue.
     const inserted = await tx
@@ -400,27 +386,22 @@ export async function reverseStoreIssue(
       );
     }
 
-    const pos = await readStockPositionLocked(tx, companyId, iss.itemId);
-    const stockBefore = pos.physicalQty;
-    const stockAfter = stockBefore + iss.qty;
     const itemCode = iss.itemCodeText ?? '';
-    const st = await tx
-      .insert(storeTransactions)
-      .values({
-        companyId,
-        txnDate: new Date().toISOString().slice(0, 10),
-        itemId: iss.itemId,
-        itemCodeText: iss.itemCodeText,
-        txnType: 'in',
-        qty: iss.qty,
-        sourceType: 'other',
-        sourceRef: `${iss.code} reversal · ${itemCode}`,
-        stockBefore,
-        stockAfter,
-        remarks: `Item Issue reversed · ${reason}`,
-        createdBy: user.id,
-      })
-      .returning({ id: storeTransactions.id });
+    const moved = await postStockMove(tx, {
+      companyId,
+      itemId: iss.itemId,
+      txnType: 'in',
+      qty: iss.qty,
+      sourceType: 'store_return',
+      sourceRef: `${iss.code} reversal · ${itemCode}`,
+      remarks: `Item Issue reversed · ${reason}`,
+      txnDate: new Date().toISOString().slice(0, 10),
+      userId: user.id,
+      itemCodeText: iss.itemCodeText,
+      guard: 'none',
+    });
+    const { stockBefore, stockAfter } = moved;
+    const st = [{ id: moved.id }];
 
     const now = new Date();
     await tx

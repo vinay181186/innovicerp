@@ -37,6 +37,7 @@ import {
   type AnyPgColumn,
   boolean,
   check,
+  customType,
   date,
   index,
   integer,
@@ -52,6 +53,22 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+
+/** ADR-193 — a stock quantity: numeric(14,3) in Postgres (KGS / MTR can be
+ *  12.5), a plain JS number in code. drizzle 0.36 returns numeric as a string;
+ *  this type converts at the driver edge so every caller keeps `number`.
+ *  Whole-number units (NOS / SET) are enforced by lib/stock-ledger.ts. */
+const stockQty = customType<{ data: number; driverData: string | number }>({
+  dataType() {
+    return 'numeric(14, 3)';
+  },
+  fromDriver(v) {
+    return Number(v);
+  },
+  toDriver(v) {
+    return String(v);
+  },
+});
 
 export const userRoleEnum = pgEnum('user_role', USER_ROLES);
 export const uomEnum = pgEnum('uom', UOMS);
@@ -2296,11 +2313,11 @@ export const storeTransactions = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     txnType: storeTxnTypeEnum('txn_type').notNull(),
-    qty: integer('qty').notNull(),
+    qty: stockQty('qty').notNull(),
     sourceType: storeTxnSourceTypeEnum('source_type').notNull(),
     sourceRef: text('source_ref').notNull(),
-    stockBefore: integer('stock_before').notNull(),
-    stockAfter: integer('stock_after').notNull(),
+    stockBefore: stockQty('stock_before').notNull(),
+    stockAfter: stockQty('stock_after').notNull(),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -2433,7 +2450,7 @@ export const itemStockBalances = pgTable(
     itemId: uuid('item_id')
       .notNull()
       .references(() => items.id, { onDelete: 'cascade' }),
-    onHandQty: integer('on_hand_qty').notNull().default(0),
+    onHandQty: stockQty('on_hand_qty').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

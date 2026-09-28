@@ -71,7 +71,9 @@ export type ListStoreInventoryResponse = z.infer<typeof listStoreInventoryRespon
 export const adjustStockInputSchema = z.object({
   itemId: z.string().uuid(),
   direction: z.enum(['add', 'remove']),
-  qty: z.number().int().positive(),
+  // ADR-193: decimal for KGS / MTR items; whole-number units are enforced by
+  // the stock writer (lib/stock-ledger.ts) against the item's UOM.
+  qty: z.number().positive().multipleOf(0.001),
   remarks: z.string().trim().min(1).max(255),
 });
 export type AdjustStockInput = z.infer<typeof adjustStockInputSchema>;

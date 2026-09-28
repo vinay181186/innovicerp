@@ -33,7 +33,7 @@ export const itemsOnHandReport: RegisteredReport = {
         i.item_type,
         i.uom,
         i.material,
-        COALESCE(s.on_hand_qty, 0)::int AS on_hand_qty
+        COALESCE(s.on_hand_qty, 0)::float8 AS on_hand_qty
       FROM public.items i
       LEFT JOIN public.v_item_stock s
         ON s.item_id = i.id AND s.company_id = i.company_id

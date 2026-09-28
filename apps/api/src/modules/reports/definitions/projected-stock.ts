@@ -48,7 +48,7 @@ export const projectedStockReport: RegisteredReport = {
       SELECT
         x.item_code, x.item_name, x.physical_qty, x.reserved_qty, x.available_qty,
         x.on_po_qty, x.production_qty, x.projected_qty, x.min_stock_qty,
-        GREATEST(0, x.min_stock_qty - x.projected_qty)::int AS shortage_qty,
+        GREATEST(0, x.min_stock_qty - x.projected_qty)::float8 AS shortage_qty,
         CASE
           WHEN x.projected_qty < 0 OR x.available_qty < 0 THEN 'Negative'
           WHEN x.min_stock_qty > 0 AND x.projected_qty < x.min_stock_qty THEN 'Below Min'
@@ -58,13 +58,13 @@ export const projectedStockReport: RegisteredReport = {
         SELECT
           i.code                                    AS item_code,
           i.name                                    AS item_name,
-          COALESCE(a.physical_qty, 0)::int          AS physical_qty,
-          COALESCE(a.reserved_qty, 0)::int          AS reserved_qty,
-          COALESCE(a.available_qty, 0)::int         AS available_qty,
+          COALESCE(a.physical_qty, 0)::float8          AS physical_qty,
+          COALESCE(a.reserved_qty, 0)::float8          AS reserved_qty,
+          COALESCE(a.available_qty, 0)::float8         AS available_qty,
           COALESCE(p.on_po_qty, 0)::int             AS on_po_qty,
           COALESCE(m.production_qty, 0)::int        AS production_qty,
           (COALESCE(a.available_qty, 0) + COALESCE(p.on_po_qty, 0)
-            + COALESCE(m.production_qty, 0))::int   AS projected_qty,
+            + COALESCE(m.production_qty, 0))::float8   AS projected_qty,
           i.min_stock_qty                           AS min_stock_qty
         FROM public.items i
         LEFT JOIN public.v_item_stock_availability a

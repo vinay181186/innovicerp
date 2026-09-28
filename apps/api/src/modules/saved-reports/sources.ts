@@ -287,7 +287,7 @@ const itemsStockSource: RegisteredSource = {
       it.item_type::text AS item_type,
       it.material     AS material,
       it.uom::text    AS uom,
-      COALESCE(s.on_hand_qty, 0)::numeric(14, 2) AS on_hand,
+      COALESCE(s.on_hand_qty, 0)::numeric(14, 3) AS on_hand,
       it.drawing_no   AS drawing_no,
       it.revision     AS revision,
       it.hsn_code     AS hsn_code

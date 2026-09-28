@@ -20,11 +20,11 @@ import {
   jobWorkOrderLines,
   jobWorkOrders,
   jwReturnChallans,
-  storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -59,37 +59,32 @@ async function moveReturnStock(
   component?: { code: string },
 ): Promise<void> {
   if (!itemId || qty <= 0) return;
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-  const bal = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const before = Number(bal[0]?.on_hand ?? 0);
-  if (dir === 'out' && qty > before) {
-    throw new ConflictError(
-      `${component ? `${component.code}: ` : ''}Return Qty (${qty}) cannot be more than ` +
-        `In Stock (${before}). ` +
-        `Complete machining and final QC so the parts are booked in before returning them.`,
-    );
+  try {
+    await postStockMove(tx, {
+      companyId,
+      itemId,
+      txnType: dir,
+      qty,
+      sourceType: 'jw_return',
+      sourceRef: `${code}${component ? ` / ${component.code}` : ''}${dir === 'in' ? ' (cancel)' : ''}`,
+      remarks:
+        dir === 'out'
+          ? `JW return to customer · ${qty} pcs`
+          : `JW return cancel reversal · ${qty} pcs`,
+      txnDate: date,
+      userId,
+      itemCodeText: null,
+      guard: dir === 'out' ? 'on_hand' : 'none',
+      qtyLabel: 'Return Qty',
+    });
+  } catch (e) {
+    if (e instanceof ConflictError) {
+      throw new ConflictError(
+        `${e.message} Complete machining and final QC so the parts are booked in before returning them.`,
+      );
+    }
+    throw e;
   }
-  const after = dir === 'out' ? before - qty : before + qty;
-  await tx.insert(storeTransactions).values({
-    companyId,
-    txnDate: date,
-    itemId,
-    txnType: dir,
-    qty,
-    sourceType: 'jw_return',
-    sourceRef: `${code}${component ? ` / ${component.code}` : ''}${dir === 'in' ? ' (cancel)' : ''}`,
-    stockBefore: before,
-    stockAfter: after,
-    remarks:
-      dir === 'out'
-        ? `JW return to customer · ${qty} pcs`
-        : `JW return cancel reversal · ${qty} pcs`,
-    createdBy: userId,
-  });
 }
 
 function dateLike(v: unknown): string {

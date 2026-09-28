@@ -70,11 +70,11 @@ export const stockBalanceReport: RegisteredReport = {
         i.code                                          AS item_code,
         i.name                                          AS item_name,
         i.uom::text                                     AS uom,
-        mv.opening_qty::int                             AS opening_qty,
-        mv.in_qty::int                                  AS in_qty,
-        mv.out_qty::int                                 AS out_qty,
-        (mv.opening_qty + mv.in_qty - mv.out_qty)::int  AS closing_qty,
-        COALESCE(s.on_hand_qty, 0)::int                 AS on_hand_qty
+        mv.opening_qty::float8                             AS opening_qty,
+        mv.in_qty::float8                                  AS in_qty,
+        mv.out_qty::float8                                 AS out_qty,
+        (mv.opening_qty + mv.in_qty - mv.out_qty)::float8  AS closing_qty,
+        COALESCE(s.on_hand_qty, 0)::float8                 AS on_hand_qty
       FROM mv
       JOIN public.items i ON i.id = mv.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.v_item_stock s ON s.item_id = i.id AND s.company_id = i.company_id

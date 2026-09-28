@@ -20,5 +20,10 @@ export const STORE_TXN_SOURCE_LABELS: Record<StoreTxnSourceType, string> = {
   assembly: 'Assembly',
   reservation: 'Reservation',
   production_order_close: 'Production Order Close',
+  store_issue: 'Item Issue',
+  store_return: 'Item Return',
+  tool_issue: 'Tool Issue',
+  tool_return: 'Tool Return',
+  stock_count: 'Stock Count',
   other: 'Other',
 };
