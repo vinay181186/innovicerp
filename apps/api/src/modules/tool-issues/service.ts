@@ -16,7 +16,7 @@
 // Issued-qty totals never change after creation (so the constraint
 // total returned <= qty is enforced).
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreateToolIssueInput,
   ListToolIssuesQuery,
@@ -27,7 +27,7 @@ import type {
 } from '@innovic/shared';
 import { items, toolIssues, toolIssueReturns } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -84,6 +84,7 @@ export async function listToolIssues(
   input: ListToolIssuesQuery,
   user: AuthContext,
 ): Promise<ListToolIssuesResponse> {
+  await requireAnyFormAccess(user, STORE_VIEW_FORMS);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
@@ -150,12 +151,16 @@ export async function listToolIssues(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(toolIssues.companyId, companyId), isNull(toolIssues.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(toolIssues)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // The pager total counts under the SAME search / filter as the page.
+    const totalRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS total
+      FROM public.tool_issues ti
+      WHERE ti.company_id = ${companyId}::uuid
+        AND ti.deleted_at IS NULL
+        ${searchFrag}
+        ${filterFrag}
+    `)) as unknown as Array<{ total: number }>;
+    const total = Number(totalRows[0]?.total ?? 0);
 
     // Summary (4 tiles) over ALL non-deleted tool_issues for this company.
     const summaryRows = await tx.execute(sql`

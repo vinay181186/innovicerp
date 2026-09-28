@@ -9,6 +9,7 @@
 // increments issued and decrements stock). This service only reads/writes
 // the master record.
 
+import { emitActivityLog } from '../activity-log/service';
 import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePartyMaterialInput,
@@ -258,6 +259,17 @@ export async function createPartyMaterial(
       .returning();
     const row = inserted[0];
     if (!row) throw new ValidationError('Could not save Party Material. Try again.');
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'Party Material',
+        detail: `${row.code} — ${row.name}`,
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
     return rowToPartyMaterial(row);
   });
 }
@@ -346,6 +358,17 @@ export async function updatePartyMaterial(
       .returning();
     const row = updated[0];
     if (!row) throw new ValidationError('Could not save Party Material. Try again.');
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'Party Material',
+        detail: `${row.code} — ${row.name}`,
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
     return rowToPartyMaterial(row);
   });
 }
@@ -387,6 +410,12 @@ export async function softDeletePartyMaterial(id: string, user: AuthContext): Pr
       .update(partyMaterials)
       .set({ deletedAt: new Date(), updatedAt: new Date(), updatedBy: userId })
       .where(eq(partyMaterials.id, existing.id));
+    await emitActivityLog(
+      tx,
+      { action: 'DELETE', entity: 'Party Material', detail: existing.code, refId: existing.code },
+      companyId,
+      user,
+    );
   });
 }
 

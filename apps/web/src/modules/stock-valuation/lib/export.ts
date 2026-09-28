@@ -1,3 +1,4 @@
+import { itemTypeLabel } from '@innovic/shared';
 // Client-side Excel export for Stock Valuation (legacy _svExportExcel L21065).
 // Detail + category-summary sheets, items with stock only.
 
@@ -7,7 +8,8 @@ import { todayIst } from '@/lib/date';
 
 /** Screen word for a stored category code (`component` → `Component`). */
 export function categoryLabel(c: string): string {
-  return c ? c.charAt(0).toUpperCase() + c.slice(1).replace(/_/g, ' ') : '—';
+  // One name per item type (ADR-193 / NAMING.md): the shared map.
+  return c ? itemTypeLabel(c) : '—';
 }
 
 export function exportStockValuation(rows: StockValuationRow[]): void {

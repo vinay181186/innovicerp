@@ -30,7 +30,12 @@
 // Route Card table (L11799-11802) and Job Card History (L11803-11806) all need
 // route-card / job-card / running-op reads this page does not have.
 
-import { type Company, ITEM_PROCUREMENT_TYPE_LABEL, type Item } from '@innovic/shared';
+import {
+  type Company,
+  ITEM_PROCUREMENT_TYPE_LABEL,
+  type Item,
+  itemTypeLabel,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -197,11 +202,18 @@ function ItemDetailPage(): React.JSX.Element {
 }
 
 function OnHandBadge(props: { itemId: string }): React.JSX.Element {
-  const { data, isLoading } = useItemBalance(props.itemId);
+  const { data, isLoading, isError } = useItemBalance(props.itemId);
   if (isLoading) {
     return (
       <span className="badge b-grey" title="Loading stock…">
         <Loader2 size={11} className="animate-spin" style={{ marginRight: 4 }} /> stock…
+      </span>
+    );
+  }
+  if (isError) {
+    return (
+      <span className="badge b-grey" title="You do not have access to store stock">
+        <Package size={11} style={{ marginRight: 4 }} /> stock not shown
       </span>
     );
   }
@@ -326,7 +338,7 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
   const { item, company } = props;
   return (
     <div className="form-grid">
-      <Pair label="Item Type" value={ITEM_TYPE_LABEL[item.itemType]} />
+      <Pair label="Item Type" value={itemTypeLabel(item.itemType)} />
       <div className="form-grp">
         <span className="form-label">Make / Buy</span>
         <div>
@@ -348,12 +360,6 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
     </div>
   );
 }
-
-/** Screen words for the stored item-type codes (display only). */
-const ITEM_TYPE_LABEL: Record<Item['itemType'], string> = {
-  component: 'Component',
-  assembly: 'Assembly',
-};
 
 function Pair(props: { label: string; value: string }): React.JSX.Element {
   return (

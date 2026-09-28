@@ -249,3 +249,44 @@ tool {label 'Tool / Instrument', returnable}.
 | U7  | Stock Balance report filter "consumable"                | v1 hard-coded ['component','assembly']    | **P25** import ITEM_TYPES from shared                                                  |
 | U8  | Items list type counters                                | v1 two hard-coded counts                  | **P26** one count per type from the map                                                |
 | U9  | Stock Valuation "category" = item_type                  | shows raw code                            | label from the map                                                                     |
+
+**Owner decision 2026-09-28 (Q3a–Q3c):** as suggested — BOM parts can be booked to an assembly SO (Q3a); releasing another SO's booking needs plan_create approve + reason (Q3b); parts are booked by hand from the Material tab, not on SO save (Q3c). Built in phase 3.
+
+## 10. Phase 2 — Stock Count (opening stock + periodic counts)
+
+### Data
+
+`stock_counts` (SC-#####): count_date, purpose opening | periodic, status draft → submitted → posted | cancelled,
+remarks, submitted_by/at, approved_by/at, cancelled_by/at/reason. `stock_count_lines`: item_id, counted_qty
+numeric(14,3), system_qty_at_count (set on submit), reason, store_transaction_id (set on post). Unique (count, item).
+
+### API (new form key `stockcount_create`, dept store; entry = count, approve = post)
+
+```
+POST  /stock-counts                  { countDate, purpose, remarks?, lines:[{itemId, countedQty, reason?}] } → draft
+PUT   /stock-counts/:id/lines        { lines:[…] }                       (draft only; replaces the lines)
+POST  /stock-counts/:id/submit       → submitted; snapshots system_qty_at_count per line (under item locks)
+POST  /stock-counts/:id/approve      { confirm?: {reason} }  approver ≠ creator → posted: one ledger row per
+                                     line with difference ≠ 0 (source stock_count, guard none)
+POST  /stock-counts/:id/cancel       { reason }   draft / submitted only
+GET   /stock-counts, /stock-counts/:id  (lines show system now, system at count, counted, difference)
+```
+
+Excel: the web reads the sheet (Item Code, Counted Qty, Reason) and posts lines; unknown codes are listed, not sent.
+
+### Paper tests
+
+| #   | Scenario                                                            | Result (v2)                                                            |
+| --- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| C1  | Opening count 3 items, submit, approve by another user              | 3 ledger rows +20 / +2 / +10 ✓                                         |
+| C2  | Counted 09:00 (submit snapshots 20), 5 issued 11:00, approved 15:00 | posts counted − snapshot = 0; ledger ends 15 = shelf ✓ (P1)            |
+| C3  | Same item twice in one count                                        | 400 "item listed twice" ✓                                              |
+| C4  | NOS item counted 2.5                                                | 400 whole number (single writer rule, also checked on save) ✓          |
+| C5  | Counted −1                                                          | 400 ✓                                                                  |
+| C6  | Difference 0 on a line                                              | no ledger row ✓                                                        |
+| C7  | Creator approves own count                                          | 403 (P21) ✓                                                            |
+| C8  | Two approvers click at once                                         | header row locked FOR UPDATE; second gets 409 "already posted" ✓       |
+| C9  | New physical below stock booked for SOs                             | 409 needsConfirmation listing SO bookings; re-post with reason ✓ (P14) |
+| C10 | Cancel a posted count                                               | 409 "correct it with a new count" ✓                                    |
+| C11 | Excel with an unknown code                                          | row listed as error, rest go into the draft ✓                          |
+| C12 | Item deleted between submit and approve                             | 409 names the item ✓                                                   |

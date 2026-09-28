@@ -54,7 +54,8 @@ export const createItemInputSchema = z.object({
   revision: z.string().min(1).max(8).default('A'),
   material: z.string().max(64).optional(),
   uom: uomSchema.default('NOS'),
-  itemType: itemTypeSchema.default('component'),
+  // ADR-193 / owner decision Q2: chosen when the item is created — no default.
+  itemType: z.enum(ITEM_TYPES, { errorMap: () => ({ message: 'Choose the Item Type' }) }),
   procurementType: itemProcurementTypeSchema.default('make'),
   hsnCode: z.string().max(16).optional(),
   drawingFilePath: z.string().optional(),

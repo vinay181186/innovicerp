@@ -60,8 +60,8 @@ function StoreIssuesListPage(): React.JSX.Element {
   // L2 storekeeper whose job this is. This gate covers the Item Issues tab
   // only — the Tool Issues tab hits a different endpoint under a different key
   // (`toolissue_create`) and carries its own create control inside
-  // `tool-issues/components/tool-issue-register-view.tsx`, still on the old
-  // role check. The server-side `toolissue_create` guard is in place either way.
+  // `tool-issues/components/tool-issue-register-view.tsx`, gated the same way
+  // (tier on `toolissue_create`); the server enforces it too.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'issue_create');
 

@@ -10314,3 +10314,18 @@ integer, so KGS / MTR material could not be issued as 12.5.
   cross-screen figures, 0 mismatches.
 - PROD must run 0153 before test → main. Reservations stay whole numbers (finished goods).
 
+### ADR-193 phase 1b — item types + small gaps (2026-09-28)
+- **Item Type chosen at creation** (Q2, 0154): raw_material | component | assembly | consumable | tool.
+  No default — the form starts on "Choose Item Type…", the Excel import refuses a blank cell. One
+  capability map `ITEM_TYPE_RULES` (shared) holds label + behaviour flags; screens read it.
+- Type change to / from Tool / Instrument refused once stock has moved (instrument history differs);
+  other changes allowed and logged with before → after.
+- **Store reads need a view right**: Store / Inventory, ledger, item balance, Item and Tool Issue lists
+  accept any of item / issue / tool issue / GRN / plan / PR / PO / production order / job card /
+  dispatch view (wide on purpose so no planner or buyer is locked out).
+- JW DC outward / inward: `ospdc_create` entry + activity log (0 JW DC rows on either DB).
+- Activity log on Set Min Stock and Party Material create / edit / delete; Tool Issue pager total
+  follows the filter; Stock Balance report offers every item type.
+- Verified on TEST: 11 scenario tests pass (incl. non-admin manager still opens Store / Inventory);
+  541 + 927 cross-screen figures, 0 mismatches. PROD must run 0154 before test → main.
+

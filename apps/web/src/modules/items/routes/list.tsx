@@ -56,6 +56,7 @@ import {
   ITEM_PROCUREMENT_TYPES,
   ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPES,
+  ITEM_TYPE_RULES,
   type Item,
   type ItemProcurementType,
   type ItemType,
@@ -87,8 +88,10 @@ const LIST_LIMIT = 1000;
 // these are fetched once and served from cache, and the counts stay whole-master
 // totals — they don't shrink as you type in the search box.
 const COUNT_ALL: ListItemsQuery = { limit: 1, offset: 0 };
-const COUNT_COMPONENT: ListItemsQuery = { itemType: 'component', limit: 1, offset: 0 };
-const COUNT_ASSEMBLY: ListItemsQuery = { itemType: 'assembly', limit: 1, offset: 0 };
+// One count per item type (ADR-193), built from the shared type list.
+const COUNT_BY_TYPE: ReadonlyArray<readonly [ItemType, ListItemsQuery]> = ITEM_TYPES.map(
+  (t) => [t, { itemType: t, limit: 1, offset: 0 }] as const,
+);
 
 /** Outcome of an Excel import, bucketed so each group is shown on its own. */
 interface ImportResult {
@@ -164,8 +167,9 @@ function ItemsListPage(): React.JSX.Element {
 
   // Item-type counts — whole-master totals, independent of the search box.
   const allCount = useItemsList(COUNT_ALL).data?.total ?? 0;
-  const componentCount = useItemsList(COUNT_COMPONENT).data?.total ?? 0;
-  const assemblyCount = useItemsList(COUNT_ASSEMBLY).data?.total ?? 0;
+  // Fixed-length list (one per type, a module constant), so the hook order
+  // never changes between renders.
+  const typeCounts = COUNT_BY_TYPE.map(([t, q]) => [t, useItemsList(q).data?.total ?? 0] as const);
 
   const setTypeFilter = useCallback(
     (next: ItemType | undefined): void => {
@@ -387,8 +391,10 @@ function ItemsListPage(): React.JSX.Element {
               aria-label="Item type"
               options={[
                 { value: '', label: `All Items (${allCount})` },
-                { value: 'component', label: `Component (${componentCount})` },
-                { value: 'assembly', label: `Assembly (${assemblyCount})` },
+                ...typeCounts.map(([t, n]) => ({
+                  value: t,
+                  label: `${ITEM_TYPE_RULES[t].label} (${n})`,
+                })),
               ]}
             />
             <Select

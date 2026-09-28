@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder } from '../../job-work-orders/api';
@@ -117,8 +117,9 @@ function TabButton({
 // ─── Outward view ─────────────────────────────────────────────────────────
 
 function OutwardView({ forJwId }: { forJwId?: string | undefined }): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Same right the server checks (ADR-193): OSP Outward DC entry.
+  const { data: eff } = useMyAccess();
+  const canWrite = effectiveFormPerms(eff, 'ospdc_create').entry;
   const routeSearch = jwDcListRoute.useSearch();
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => routeSearch.search ?? '');
@@ -285,8 +286,9 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
 // ─── Inward view ──────────────────────────────────────────────────────────
 
 function InwardView(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Same right the server checks (ADR-193): OSP Outward DC entry.
+  const { data: eff } = useMyAccess();
+  const canWrite = effectiveFormPerms(eff, 'ospdc_create').entry;
   const routeSearch = jwDcListRoute.useSearch();
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => routeSearch.search ?? '');

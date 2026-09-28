@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import { itemTypeLabel } from '@innovic/shared';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -357,12 +358,31 @@ export async function updateItem(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: items.id })
+      .select({ id: items.id, code: items.code, itemType: items.itemType })
       .from(items)
       .where(and(eq(items.id, id), isNull(items.deletedAt)))
+      .for('update')
       .limit(1);
     if (existing.length === 0) {
       throw new NotFoundError('Item not found. It may have been moved to Trash.');
+    }
+    // ADR-193 (P23): a Tool / Instrument is handed out and returned, so its
+    // history is built differently. Once stock has moved, the type may not be
+    // switched to or from 'tool'; other type changes stay allowed (logged).
+    const cur = existing[0]!;
+    if (
+      input.itemType !== undefined &&
+      input.itemType !== cur.itemType &&
+      (input.itemType === 'tool' || cur.itemType === 'tool')
+    ) {
+      const moved = (await tx.execute(sql`
+        SELECT 1 FROM public.store_transactions WHERE item_id = ${id}::uuid LIMIT 1
+      `)) as unknown as unknown[];
+      if (moved.length > 0) {
+        throw new ConflictError(
+          `${cur.code}: Item Type cannot be changed to or from Tool / Instrument once stock has moved. Create a new item instead.`,
+        );
+      }
     }
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
@@ -384,7 +404,16 @@ export async function updateItem(
     const row = updated[0] as unknown as Item;
     await emitActivityLog(
       tx,
-      { action: 'EDIT', entity: 'Item', detail: `${row.code} — ${row.name}`, refId: row.code },
+      {
+        action: 'EDIT',
+        entity: 'Item',
+        detail:
+          `${row.code} — ${row.name}` +
+          (input.itemType !== undefined && input.itemType !== cur.itemType
+            ? ` · Item Type ${itemTypeLabel(cur.itemType)} → ${itemTypeLabel(input.itemType)}`
+            : ''),
+        refId: row.code,
+      },
       companyId,
       user,
     );

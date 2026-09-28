@@ -26,7 +26,7 @@ import { STORE_ISSUE_REVERSE_REASON_MIN } from '@innovic/shared';
 import { emitActivityLog } from '../activity-log/service';
 import { items, storeIssues } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { lockItemForStock, postStockMove } from '../../lib/stock-ledger';
 import {
   AuthorizationError,
@@ -86,6 +86,7 @@ export async function listStoreIssues(
   input: ListStoreIssuesQuery,
   user: AuthContext,
 ): Promise<ListStoreIssuesResponse> {
+  await requireAnyFormAccess(user, STORE_VIEW_FORMS);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;

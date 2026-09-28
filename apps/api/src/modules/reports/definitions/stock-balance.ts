@@ -3,11 +3,10 @@
 // the stock trigger (0020 apply_store_txn_to_balance): 'in' +qty, 'out' −qty,
 // 'adjust' +qty. Modelled on ERPNext's "Stock Balance" report.
 
+import { ITEM_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 import { enumFilter, isoDateFilter, likeFilter } from './report-helpers';
-
-const ITEM_TYPES = ['component', 'assembly'];
 
 export const stockBalanceReport: RegisteredReport = {
   definition: {
@@ -21,7 +20,7 @@ export const stockBalanceReport: RegisteredReport = {
       { key: 'fromDate', label: 'Txn Date From', kind: 'date' },
       { key: 'toDate', label: 'Txn Date To', kind: 'date' },
       { key: 'item', label: 'Item', kind: 'text', placeholder: 'Item code or name' },
-      { key: 'itemType', label: 'Item Type', kind: 'enum', options: ITEM_TYPES },
+      { key: 'itemType', label: 'Item Type', kind: 'enum', options: [...ITEM_TYPES] },
     ],
     columns: [
       { key: 'item_code', label: 'Item Code', type: 'text' },

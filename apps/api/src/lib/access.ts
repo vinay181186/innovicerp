@@ -126,6 +126,26 @@ export async function requireAnyFormAccess(
   await requireFormAccess(user, formKey, action);
 }
 
+/** ADR-193 — who may READ store stock screens (inventory, ledger, issue
+ *  registers): anyone whose work depends on what is in the store. Wide on
+ *  purpose (paper test P24): a planner or buyer must not be locked out. */
+export const STORE_VIEW_FORMS: ReadonlyArray<readonly [AccessFormKey, AccessAction]> = [
+  ['item_create', 'view'],
+  ['issue_create', 'view'],
+  ['toolissue_create', 'view'],
+  ['grn_create', 'view'],
+  ['plan_create', 'view'],
+  ['pr_create', 'view'],
+  ['po_create', 'view'],
+  ['prodorder_create', 'view'],
+  ['jc_create', 'view'],
+  ['dispatch_create', 'view'],
+  ['party_create', 'view'],
+  ['ospdc_create', 'view'],
+  ['qc_incoming', 'view'],
+  ['bom_create', 'view'],
+];
+
 /** The non-throwing twin of requireFormAccess, for READ paths that must list
  *  only what the caller could act on (the approvals inbox, ADR-190). Same
  *  rule: admins pass, everyone else by the effective matrix. */

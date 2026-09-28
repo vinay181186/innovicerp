@@ -5,7 +5,8 @@
 //
 // DELTA vs legacy: legacy's template carried a "Stock Qty" column — dropped
 // here because Item Master defines items only; stock lives in Store. UOM and
-// Item Type are validated against the shared enums (invalid → safe default).
+// Item Type are validated against the shared enums. UOM: invalid → NOS. Item
+// Type (ADR-193 Q2): blank or unknown → the row is refused, never guessed.
 //
 // No "Drawing No." / "Revision" columns (user decision 2026-09-21): both belong
 // to the SO / JWSO line, not the item. Older sheets that still carry those two
@@ -23,7 +24,7 @@ const COLUMNS = [
   'Description',
   'Material',
   'UOM',
-  'Item Type',
+  'Item Type*',
   'Source',
 ] as const;
 
@@ -82,8 +83,18 @@ export async function parseItemImportFile(file: File): Promise<ItemImportResult>
       transform: (s) => s.toUpperCase(),
     });
     if (uom.warning) errors.push(`Row ${rowNum}: ${uom.warning}`);
+    // Q2 (ADR-193): the Item Type is chosen per item — a blank cell is an
+    // error, never a silent 'component'.
+    const rawType = getCol(r, ['Item Type*', 'Item Type', 'ItemType', 'item_type', 'Type', 'type']);
+    if (!rawType || !rawType.trim()) {
+      errors.push(`Row ${rowNum}: Item Type is blank — choose ${ITEM_TYPES.join(' / ')}.`);
+      return;
+    }
     const itemType = coerceEnum(
-      getCol(r, ['Item Type', 'ItemType', 'item_type', 'Type', 'type']),
+      rawType
+        .trim()
+        .replace(/[\s/]+/g, '_')
+        .replace(/_instrument$/i, ''),
       ITEM_TYPES,
       {
         fallback: 'component',
@@ -91,7 +102,12 @@ export async function parseItemImportFile(file: File): Promise<ItemImportResult>
         transform: (s) => s.toLowerCase(),
       },
     );
-    if (itemType.warning) errors.push(`Row ${rowNum}: ${itemType.warning}`);
+    if (itemType.warning) {
+      errors.push(
+        `Row ${rowNum}: Item Type "${rawType.trim()}" is not one of ${ITEM_TYPES.join(' / ')} — row not imported.`,
+      );
+      return;
+    }
     // ADR-171 — Source (make / buy); blank or unknown → make, the default.
     const source = coerceEnum(
       getCol(r, ['Source', 'source', 'Procurement Type', 'procurement_type']),

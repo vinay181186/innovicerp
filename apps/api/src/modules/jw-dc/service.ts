@@ -12,6 +12,8 @@
 //     store_transactions(txn_type='in', source_type='jw_in').
 //   Rejected qty stored on the row; downstream NC integration deferred.
 
+import { emitActivityLog } from '../activity-log/service';
+import { requireFormAccess } from '../../lib/access';
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   CreateJwDcInwardInput,
@@ -725,6 +727,9 @@ export async function createJwDcOutward(
   input: CreateJwDcOutwardInput,
   user: AuthContext,
 ): Promise<JwDcOutward> {
+  // ADR-193: JW DC moves stock, so it needs the same right as the OSP
+  // Outward DC (it had no check at all — any logged-in user could post it).
+  await requireFormAccess(user, 'ospdc_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   if (input.lines.length === 0) {
@@ -881,6 +886,17 @@ export async function createJwDcOutward(
       });
     }
 
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'JW DC Outward',
+        detail: `${code} · ${input.lines.length} line(s) to ${vendorNameText ?? po.vendorCodeText ?? ''}`,
+        refId: code,
+      },
+      companyId,
+      user,
+    );
     return rowToOutward(header);
   });
 }
@@ -1000,6 +1016,9 @@ export async function createJwDcInward(
   input: CreateJwDcInwardInput,
   user: AuthContext,
 ): Promise<JwDcInward> {
+  // ADR-193: JW DC moves stock, so it needs the same right as the OSP
+  // Outward DC (it had no check at all — any logged-in user could post it).
+  await requireFormAccess(user, 'ospdc_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   if (input.lines.length === 0) {
@@ -1134,6 +1153,17 @@ export async function createJwDcInward(
       });
     }
 
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'JW DC Inward',
+        detail: `${code} · ${input.lines.length} line(s) back from ${out.vendorNameText ?? out.vendorCodeText ?? ''}`,
+        refId: code,
+      },
+      companyId,
+      user,
+    );
     return {
       id: header.id,
       companyId: header.companyId,

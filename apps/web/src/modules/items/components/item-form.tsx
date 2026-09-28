@@ -44,6 +44,7 @@ import {
   ITEM_PROCUREMENT_TYPES,
   ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPES,
+  ITEM_TYPE_RULES,
   type Item,
   type UpdateItemInput,
   UOMS,
@@ -100,11 +101,13 @@ const CREATE_DEFAULTS: Partial<CreateItemInput> = {
   description: undefined,
   material: undefined,
   uom: 'NOS',
-  itemType: 'component',
+  // Q2 (ADR-193): no default — the user chooses the Item Type.
   procurementType: 'make',
   hsnCode: undefined,
   imagePath: null,
 };
+
+const ITEM_TYPE_OPTIONS = ITEM_TYPES.map((t) => ({ value: t, label: ITEM_TYPE_RULES[t].label }));
 
 const PROCUREMENT_OPTIONS = ITEM_PROCUREMENT_TYPES.map((t) => ({
   value: t,
@@ -279,7 +282,12 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             htmlFor="itemType"
             error={errors.itemType?.message}
           >
-            <Select id="itemType" options={ITEM_TYPES} {...register('itemType')} />
+            <Select
+              id="itemType"
+              options={ITEM_TYPE_OPTIONS}
+              placeholder="Choose Item Type…"
+              {...register('itemType')}
+            />
           </FormField>
 
           <FormField
@@ -401,7 +409,12 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             htmlFor="itemType"
             error={errors.itemType?.message}
           >
-            <Select id="itemType" options={ITEM_TYPES} {...register('itemType')} />
+            <Select
+              id="itemType"
+              options={ITEM_TYPE_OPTIONS}
+              placeholder="Choose Item Type…"
+              {...register('itemType')}
+            />
           </FormField>
 
           <FormField

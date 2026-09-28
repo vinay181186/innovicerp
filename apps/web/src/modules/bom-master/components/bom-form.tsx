@@ -670,7 +670,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // Item Name is REQUIRED by the Item Master importer, so it is pre-filled with
       // the code — the sheet imports as-is, and the names can be corrected in
       // the sheet before importing or in Item Master afterwards.
-      ...missingCodes.map((code) => [code, code, '', '', 'NOS', 'component']),
+      // Item Type left blank on purpose (ADR-193 Q2): the importer refuses a
+      // blank type, so each part's type is chosen before it is imported.
+      ...missingCodes.map((code) => [code, code, '', '', 'NOS', '']),
     ];
     const sheet = xlsxUtils.aoa_to_sheet(aoa);
     sheet['!cols'] = [22, 22, 28, 18, 8, 12].map((wch) => ({ wch }));

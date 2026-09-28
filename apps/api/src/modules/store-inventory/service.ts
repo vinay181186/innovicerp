@@ -32,7 +32,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { readStockPosition, readStockPositions } from '../../lib/stock-reservation';
 import { onPoByItemSql } from '../../lib/po-pending';
@@ -59,6 +59,7 @@ export async function listStoreInventory(
   input: ListStoreInventoryQuery,
   user: AuthContext,
 ): Promise<ListStoreInventoryResponse> {
+  await requireAnyFormAccess(user, STORE_VIEW_FORMS);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // Every text column the Store Inventory row shows: Item Code, Name,
@@ -283,14 +284,30 @@ export async function setMinStock(
   await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    const before = await tx
+      .select({ minStockQty: items.minStockQty })
+      .from(items)
+      .where(and(eq(items.id, input.itemId), eq(items.companyId, companyId)))
+      .limit(1);
     const result = await tx
       .update(items)
       .set({ minStockQty: input.minQty, updatedAt: new Date(), updatedBy: user.id })
       .where(
         and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
       )
-      .returning({ minStockQty: items.minStockQty });
+      .returning({ minStockQty: items.minStockQty, code: items.code });
     if (result.length === 0) throw new NotFoundError('Item not found. Refresh the page.');
+    await emitActivityLog(
+      tx,
+      {
+        action: 'SET_MIN_STOCK',
+        entity: 'Store Inventory',
+        detail: `${result[0]!.code}: min stock ${before[0]?.minStockQty ?? 0} → ${input.minQty}`,
+        refId: result[0]!.code,
+      },
+      companyId,
+      user,
+    );
     return { ok: true as const, minQty: result[0]!.minStockQty };
   });
 }

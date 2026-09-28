@@ -27,11 +27,12 @@ export const storeTransactionSchema = z.object({
   itemId: z.string().uuid().nullable(),
   itemCodeText: z.string().nullable(),
   txnType: storeTxnTypeSchema,
-  qty: z.number().int().nonnegative(),
+  // ADR-193: decimal (numeric 14,3) — KGS / MTR items can move 12.5.
+  qty: z.number().nonnegative(),
   sourceType: storeTxnSourceTypeSchema,
   sourceRef: z.string(),
-  stockBefore: z.number().int(),
-  stockAfter: z.number().int(),
+  stockBefore: z.number(),
+  stockAfter: z.number(),
   remarks: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -77,9 +78,9 @@ export type ListStoreTransactionsQuery = z.infer<typeof listStoreTransactionsQue
  *  sourceType, date range). */
 export const stockLedgerSummarySchema = z.object({
   txnCount: z.number().int().nonnegative(),
-  totalIn: z.number().int().nonnegative(),
-  totalOut: z.number().int().nonnegative(),
-  net: z.number().int(),
+  totalIn: z.number().nonnegative(),
+  totalOut: z.number().nonnegative(),
+  net: z.number(),
   itemCount: z.number().int().nonnegative(),
 });
 export type StockLedgerSummary = z.infer<typeof stockLedgerSummarySchema>;

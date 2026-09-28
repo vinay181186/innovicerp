@@ -7,6 +7,7 @@
 
 import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import type {
   ItemBalance,
@@ -68,6 +69,7 @@ export async function listStoreTransactions(
   input: ListStoreTransactionsQuery,
   user: AuthContext,
 ): Promise<ListStoreTransactionsResponse> {
+  await requireAnyFormAccess(user, STORE_VIEW_FORMS);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // Single filter set shared by rows, count, and KPI summary so page count
@@ -159,6 +161,7 @@ function toListItem(r: Record<string, unknown>): StoreTransactionListItem {
 /** Returns the per-item current on-hand from v_item_stock. Returns 0 when
  *  the item has no ledger rows yet (the view filters them out). */
 export async function getItemBalance(itemId: string, user: AuthContext): Promise<ItemBalance> {
+  await requireAnyFormAccess(user, STORE_VIEW_FORMS);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = (await tx.execute(sql`
