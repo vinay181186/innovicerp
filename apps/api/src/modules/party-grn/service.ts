@@ -405,7 +405,7 @@ export async function createPartyGrn(
     // R2 (ADR-194): cumulative ACCEPTED per JW line — only accepted qty may
     // enter the party store, and Σ accepted across all GRNs for a line must not
     // exceed that line's order qty. Keyed by the real jw_line_id backfilled by
-    // migration 0159 (and now written on every new line).
+    // migration 0173 (and now written on every new line).
     const acceptedRows = (await tx.execute(sql`
       SELECT pgl.jw_line_id AS "jwLineId",
              COALESCE(SUM(pgl.accepted_qty), 0)::int AS "accepted"

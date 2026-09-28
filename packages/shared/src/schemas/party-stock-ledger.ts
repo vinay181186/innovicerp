@@ -1,4 +1,4 @@
-// Party Stock Ledger shared schemas (migration 0159, ADR-194).
+// Party Stock Ledger shared schemas (migration 0173, ADR-194).
 //
 // Q6 decision: customer-supplied (party) material is kept in a SEPARATE store at
 // ZERO value. It is never company stock (ADR-189) and never touches

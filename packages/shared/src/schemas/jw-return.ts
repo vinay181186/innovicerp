@@ -21,7 +21,7 @@ export const jwReturnChallanSchema = z.object({
   transport: z.string().nullable(),
   vehicleNo: z.string().nullable(),
   remarks: z.string().nullable(),
-  // R10 (ADR-194): cancel audit trail (migration 0160).
+  // R10 (ADR-194): cancel audit trail (migration 0174).
   cancelledAt: z.string().nullable().default(null),
   cancelledBy: z.string().uuid().nullable().default(null),
   cancelReason: z.string().nullable().default(null),

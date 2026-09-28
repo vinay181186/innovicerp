@@ -10353,7 +10353,7 @@ integer, so KGS / MTR material could not be issued as 12.5.
 ## ADR-194: Customer job-work (JWSO) chain — QC-gated receipt, a zero-value party store, and closable paperwork
 
 **Date:** 2026-09-28
-**Status:** Accepted (schema 0159 on TEST; services + UI live on TEST on the `jwso-material` branch. Migrations renumbered to 0159 + 0160 after a collision with the store-redesign 0157/0158 on `test`.)
+**Status:** Accepted (schema 0173 on TEST; services + UI live on TEST on the `jwso-material` branch. Migrations renumbered to 0173 + 0174 after a collision with the store-redesign 0157/0158 on `test`.)
 
 ### Context
 The JWSO audit (Innovic vs ERPNext, `Job Work (JWSO) Audit - Innovic vs ERPNext.pdf`) found the
@@ -10396,9 +10396,9 @@ Party GRN is COMPULSORY**; everything else "as suggested".
 - A new per-line "needed" table for R1 — rejected: the ADR-193 route-card RM already carries qty/piece.
 
 ### Consequences
-- All changes are additive (new columns + one table in 0159; jw_return cancel columns in 0160); safe to
+- All changes are additive (new columns + one table in 0173; jw_return cancel columns in 0174); safe to
   run as one batch, applied to TEST.
-- PROD must run 0159 then 0160 (after the store-redesign 0157/0158) before test → main.
+- PROD must run 0173 then 0174 (after the store-redesign 0157/0158) before test → main.
 - The frozen contract now requires services to populate the new read fields (QC split, party balance,
   invoice/line status).
 

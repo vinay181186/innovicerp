@@ -4348,7 +4348,7 @@ export const partyGrnLines = pgTable(
   ],
 ).enableRLS();
 
-// ─── Party Store (migration 0159, ADR-194) — separate zero-value ledger ────
+// ─── Party Store (migration 0173, ADR-194) — separate zero-value ledger ────
 // Q6 decision: customer-supplied (party) material is kept in a SEPARATE store
 // at ZERO value — it is never company stock (ADR-189) and never touches
 // store_transactions. Every movement is one append-only row here:
@@ -4502,7 +4502,7 @@ export const jwReturnChallans = pgTable(
     transport: text('transport'),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
-    // R10 (ADR-194, migration 0160): cancel audit trail, symmetric with jw_invoices.
+    // R10 (ADR-194, migration 0174): cancel audit trail, symmetric with jw_invoices.
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     cancelledBy: uuid('cancelled_by').references(() => users.id),
     cancelReason: text('cancel_reason'),
