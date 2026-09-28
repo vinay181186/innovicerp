@@ -84,9 +84,9 @@ async function assertJobCardExists(
   tx: DbTransaction,
   jobCardId: string,
   companyId: string,
-): Promise<void> {
+): Promise<{ itemId: string }> {
   const rows = await tx
-    .select({ id: jobCards.id })
+    .select({ id: jobCards.id, itemId: jobCards.itemId })
     .from(jobCards)
     .where(
       and(
@@ -99,17 +99,27 @@ async function assertJobCardExists(
   if (rows.length === 0) {
     throw new ValidationError('Job Card not found. Pick it again.');
   }
+  return { itemId: rows[0]!.itemId };
 }
 
 async function assertJcOpExists(
   tx: DbTransaction,
   jcOpId: string,
   companyId: string,
+  jobCardId: string,
 ): Promise<void> {
+  // The operation must belong to THIS JC — not just to the company.
   const rows = await tx
     .select({ id: jcOps.id })
     .from(jcOps)
-    .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
+    .where(
+      and(
+        eq(jcOps.id, jcOpId),
+        eq(jcOps.jobCardId, jobCardId),
+        eq(jcOps.companyId, companyId),
+        isNull(jcOps.deletedAt),
+      ),
+    )
     .limit(1);
   if (rows.length === 0) {
     throw new ValidationError('Operation not found on this JC. Pick it again.');
@@ -1229,12 +1239,19 @@ export async function createNcRegister(
       code = await nextNcCode(tx, companyId);
     }
 
-    await assertJobCardExists(tx, input.jobCardId, companyId);
+    const jc = await assertJobCardExists(tx, input.jobCardId, companyId);
+    // The NC's part IS the JC's part — an NC saying JC-A with part B would
+    // mis-book the rejection. The form locks Item to the JC; enforce it here.
+    if (input.itemId !== jc.itemId) {
+      throw new ValidationError(
+        'Item Code must be the Job Card’s item. Pick the JC again — the item fills from it.',
+      );
+    }
     // ADR-182 — no new non-conformance may be raised on a short-closed
     // Production Order's Job Card; the work it would describe cannot happen.
     await assertProductionOrderNotShortClosed(tx, input.jobCardId);
     await assertItemExists(tx, input.itemId, companyId);
-    if (input.jcOpId) await assertJcOpExists(tx, input.jcOpId, companyId);
+    if (input.jcOpId) await assertJcOpExists(tx, input.jcOpId, companyId, input.jobCardId);
 
     // Snapshot itemCodeText from the items row so the durable text matches the
     // master at creation time. Same pattern as legacy auto-NC capture.

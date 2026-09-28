@@ -1458,7 +1458,9 @@ function UploadModal({
   const [category, setCategory] = useState<QcDocCategory>('qc-docs');
   const [docType, setDocType] = useState<string>(QC_DOC_TYPES[0]);
   // JC / SO are picked from their masters (a hand-typed code broke the link on
-  // every typo). What is SAVED is unchanged: the picked code as text.
+  // every typo). The picked id is SAVED with the code — the SO matrix and the
+  // line detail find a JC's files by job_card_id, so code text alone never
+  // showed the MIR as done there.
   const [jcId, setJcId] = useState<string | null>(null);
   const [jcCode, setJcCode] = useState('');
   const [jcSearch, setJcSearch] = useState('');
@@ -1486,7 +1488,9 @@ function UploadModal({
         docType,
         fileName: file.name,
         storagePath,
+        ...(jcId ? { jobCardId: jcId } : {}),
         ...(jcCode.trim() ? { jcCodeText: jcCode.trim() } : {}),
+        ...(soId ? { salesOrderId: soId } : {}),
         ...(soCode.trim() ? { soCodeText: soCode.trim() } : {}),
       };
       await create.mutateAsync(input);

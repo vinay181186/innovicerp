@@ -21,7 +21,6 @@ import { useForm } from 'react-hook-form';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
-import { useItemsList } from '@/modules/items/api';
 import { useJobCard, useJobCardsList } from '@/modules/job-cards/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
@@ -115,9 +114,6 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     name: `${itemCodeWithRev(jc.itemCode, jc.itemRevision, '')} ${jc.itemName}`.trim(),
   }));
 
-  const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
-  const items = itemsData?.items ?? [];
-
   // SO No. is a code-text snapshot (string), not an id — so the picker stores the
   // chosen SO's code, not its id (keeps the saved value type identical).
   const [soSearch, setSoSearch] = useState('');
@@ -127,21 +123,6 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     code: s.code,
     name: s.customerName ?? '',
   }));
-
-  const itemsByCode = useMemo(() => {
-    const m = new Map<string, (typeof items)[number]>();
-    for (const it of items) m.set(it.code.toUpperCase(), it);
-    return m;
-  }, [items]);
-
-  // Typed item picker: resolve the typed code to a master item id + name so the
-  // payload keeps `itemId`. Keeps both text + id so partial typing is visible.
-  const onItemCodeChange = (code: string): void => {
-    setValue('itemCodeText', code, { shouldDirty: true });
-    const match = itemsByCode.get(code.trim().toUpperCase());
-    setValue('itemId', match?.id ?? '', { shouldDirty: true, shouldValidate: true });
-    setValue('itemNameText', match?.name ?? undefined, { shouldDirty: true });
-  };
 
   const selectedJcId = watch('jobCardId');
 
@@ -187,7 +168,15 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
       setValue('opSeq', undefined, { shouldDirty: false });
       setValue('operationText', undefined, { shouldDirty: false });
     }
-    if (!selectedJcId) return;
+    if (!selectedJcId) {
+      // No JC → no item: Item Code is locked to the JC's part.
+      if (jcChanged) {
+        setValue('itemId', '', { shouldDirty: true });
+        setValue('itemCodeText', undefined, { shouldDirty: true });
+        setValue('itemNameText', undefined, { shouldDirty: true });
+      }
+      return;
+    }
     const jc = resolveJc(selectedJcId);
     if (!jc) return;
     if (jc.itemId) {
@@ -349,29 +338,32 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                   <label className="form-label" htmlFor="itemCodeText">
                     Item Code<span className="req">★</span>
                   </label>
+                  {/* Locked to the picked JC's part (CODE/REV — name): an NC
+                      saying JC-A with part B mis-books the rejection. The
+                      server enforces the same rule. */}
                   <input
                     id="itemCodeText"
                     className="innovic-input"
-                    list="dlNcItems"
-                    autoComplete="off"
-                    placeholder="Fills from JC, or type code…"
-                    value={watch('itemCodeText') ?? ''}
-                    onChange={(e) => onItemCodeChange(e.target.value)}
+                    readOnly
+                    tabIndex={-1}
+                    placeholder="Fills from JC"
+                    style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--text)' }}
+                    value={(() => {
+                      const jc = selectedJcId ? resolveJc(selectedJcId) : undefined;
+                      const code = itemCodeWithRev(
+                        jc?.itemCode ?? watch('itemCodeText'),
+                        jc?.itemRevision,
+                        '',
+                      );
+                      const name = jc?.itemName ?? watch('itemNameText') ?? '';
+                      return code ? (name ? `${code} — ${name}` : code) : '';
+                    })()}
                   />
                   {/* itemId is the submitted value; hidden so RHF can validate it. */}
                   <input
                     type="hidden"
                     {...register('itemId', { required: 'Item Code is required.' })}
                   />
-                  {watch('itemId') ? (
-                    <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                      ✓ {watch('itemNameText') ?? ''}
-                    </div>
-                  ) : watch('itemCodeText')?.trim() ? (
-                    <div style={{ color: 'var(--red2)', fontSize: 11, marginTop: 2 }}>
-                      ⚠ Item not found.
-                    </div>
-                  ) : null}
                   {errors.itemId?.message ? (
                     <div className="form-error">{errors.itemId.message}</div>
                   ) : null}
@@ -528,14 +520,6 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
               ) : null}
             </div>
           </div>
-
-          <datalist id="dlNcItems">
-            {items.map((it) => (
-              <option key={it.id} value={it.code}>
-                {it.name}
-              </option>
-            ))}
-          </datalist>
         </div>
       </div>
     </form>

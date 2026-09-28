@@ -25,6 +25,12 @@ const requireCompany = (user: AuthContext): string => {
 
 const n = (s: string | number | null): number => Number(s ?? 0) || 0;
 
+// A daily report is the user's own "what I did today". Only an admin or a
+// manager reads everyone's; everybody else reads only their own — enforced
+// here on list AND detail, not just hidden on the screen.
+const canSeeAllReports = (user: AuthContext): boolean =>
+  user.role === 'admin' || user.role === 'manager';
+
 async function loadUserNames(tx: DbTransaction, companyId: string): Promise<Map<string, string>> {
   const rows = await tx
     .select({ id: users.id, name: users.fullName })
@@ -45,11 +51,13 @@ export async function listDailyReports(
 ): Promise<ListDailyTaskReportsResponse> {
   const companyId = requireCompany(user);
   const isAdmin = user.role === 'admin';
+  const canSeeAll = canSeeAllReports(user);
   return withUserContext(user, async (tx) => {
     const names = await loadUserNames(tx, companyId);
 
     const conds = [eq(dailyReports.companyId, companyId), isNull(dailyReports.deletedAt)];
-    if (filters.userId) conds.push(eq(dailyReports.userId, filters.userId));
+    if (!canSeeAll) conds.push(eq(dailyReports.userId, user.id));
+    else if (filters.userId) conds.push(eq(dailyReports.userId, filters.userId));
     if (filters.dateFrom) conds.push(gte(dailyReports.reportDate, filters.dateFrom));
     if (filters.dateTo) conds.push(lte(dailyReports.reportDate, filters.dateTo));
 
@@ -89,8 +97,8 @@ export async function listDailyReports(
       };
     });
 
-    const userOptions = [...names.entries()].map(([id, name]) => ({ id, name }));
-    return { reports, isAdmin, userOptions };
+    const userOptions = canSeeAll ? [...names.entries()].map(([id, name]) => ({ id, name })) : [];
+    return { reports, isAdmin, canSeeAll, userOptions };
   });
 }
 
@@ -105,11 +113,18 @@ async function getReportInternal(
     .select()
     .from(dailyReports)
     .where(
-      and(eq(dailyReports.id, id), eq(dailyReports.companyId, companyId), isNull(dailyReports.deletedAt)),
+      and(
+        eq(dailyReports.id, id),
+        eq(dailyReports.companyId, companyId),
+        isNull(dailyReports.deletedAt),
+      ),
     )
     .limit(1);
   const h = rows[0];
-  if (!h) throw new NotFoundError(`Daily report ${id} not found`);
+  // Someone else's report reads as not found unless admin / manager.
+  if (!h || (!canSeeAllReports(user) && h.userId !== user.id)) {
+    throw new NotFoundError(`Daily report ${id} not found`);
+  }
 
   const lineRows = await tx
     .select()
@@ -225,7 +240,11 @@ export async function updateDailyReport(
       .select()
       .from(dailyReports)
       .where(
-        and(eq(dailyReports.id, id), eq(dailyReports.companyId, companyId), isNull(dailyReports.deletedAt)),
+        and(
+          eq(dailyReports.id, id),
+          eq(dailyReports.companyId, companyId),
+          isNull(dailyReports.deletedAt),
+        ),
       )
       .limit(1);
     const h = rows[0];
@@ -238,7 +257,12 @@ export async function updateDailyReport(
 
     await tx
       .update(dailyReports)
-      .set({ reportDate: input.reportDate, shift: input.shift, updatedBy: user.id, updatedAt: new Date() })
+      .set({
+        reportDate: input.reportDate,
+        shift: input.shift,
+        updatedBy: user.id,
+        updatedAt: new Date(),
+      })
       .where(eq(dailyReports.id, id));
 
     // Replace lines: soft-delete existing, insert the new set. The partial

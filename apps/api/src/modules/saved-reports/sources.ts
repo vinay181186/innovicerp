@@ -12,7 +12,7 @@
 
 import { sql, type SQL } from 'drizzle-orm';
 import { poLinePendingRaw } from '../../lib/po-pending';
-import type { SourceDescriptor } from '@innovic/shared';
+import type { AccessFormKey, SourceDescriptor } from '@innovic/shared';
 
 export interface SourceQueryContext {
   companyId: string;
@@ -20,6 +20,10 @@ export interface SourceQueryContext {
 
 export interface RegisteredSource {
   descriptor: SourceDescriptor;
+  /** The page whose View right a user needs to see, preview, save or run a
+   *  report on this source. A report must never show SO rates or PO prices
+   *  to someone Access Control keeps off those pages. */
+  viewForm: AccessFormKey;
   /** Returns a parameterised SELECT that returns rows shaped exactly by
    *  descriptor.fields[]. Company isolation is applied here so the runner
    *  doesn't have to know table layouts. */
@@ -29,6 +33,7 @@ export interface RegisteredSource {
 // ─── Sales orders (lines flattened with header + item + client joins) ────
 
 const salesOrdersSource: RegisteredSource = {
+  viewForm: 'so_create',
   descriptor: {
     sourceKey: 'sales-orders',
     label: 'Sales Orders',
@@ -104,6 +109,7 @@ const salesOrdersSource: RegisteredSource = {
 // ─── Purchase orders (lines flattened with header + vendor + item) ───────
 
 const purchaseOrdersSource: RegisteredSource = {
+  viewForm: 'po_create',
   descriptor: {
     sourceKey: 'purchase-orders',
     label: 'Purchase Orders',
@@ -179,8 +185,9 @@ const purchaseOrdersSource: RegisteredSource = {
       pol.qty                                       AS qty,
       pol.rate                                      AS rate,
       pol.received_qty                              AS received_qty,
-      -- ADR-189 — the one Pending rule (lib/po-pending.ts).
-      ${sql.raw(poLinePendingRaw('pol', 'po'))}::numeric(14, 2) AS pending_qty,
+      -- ADR-189 — the one Pending rule (lib/po-pending.ts). 3 places, like the
+      -- PO line qty itself (0172, KGS / MTR) — (14, 2) rounded 12.125 to 12.13.
+      ${sql.raw(poLinePendingRaw('pol', 'po'))}::numeric(14, 3) AS pending_qty,
       pol.due_date                                  AS due_date
     FROM public.purchase_order_lines pol
     JOIN public.purchase_orders po ON po.id = pol.purchase_order_id
@@ -198,6 +205,7 @@ const purchaseOrdersSource: RegisteredSource = {
 // ─── Job cards (with item + computed status from v_jc_status) ────────────
 
 const jobCardsSource: RegisteredSource = {
+  viewForm: 'jc_create',
   descriptor: {
     sourceKey: 'job-cards',
     label: 'Job Cards',
@@ -263,6 +271,7 @@ const jobCardsSource: RegisteredSource = {
 // ─── Items + on-hand stock (joins v_item_stock) ──────────────────────────
 
 const itemsStockSource: RegisteredSource = {
+  viewForm: 'item_create',
   descriptor: {
     sourceKey: 'items-stock',
     label: 'Items + On-Hand Stock',
@@ -301,6 +310,7 @@ const itemsStockSource: RegisteredSource = {
 // ─── NC register (with JC + item joins) ──────────────────────────────────
 
 const ncRegisterSource: RegisteredSource = {
+  viewForm: 'nc_dispose',
   descriptor: {
     sourceKey: 'nc-register',
     label: 'NC Register',

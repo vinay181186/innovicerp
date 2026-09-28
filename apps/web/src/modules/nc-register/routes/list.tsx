@@ -40,6 +40,9 @@ const listSearchSchema = z.object({
   // own server filter and must not be touched by a CAPA landing.
   tab: z.enum(['nc', 'capa']).optional(),
   capa: z.string().optional(),
+  // `capaEdit=1` — open that CAPA in its 5-step edit (set by NC Detail's
+  // "Create CAPA", so the user lands on the root-cause/actions work).
+  capaEdit: z.coerce.boolean().optional(),
 });
 
 export const ncRegisterListRoute = createRoute({
@@ -187,7 +190,11 @@ function NcRegisterListPage(): React.JSX.Element {
       {tab === 'capa' ? (
         // key: a new ?capa landing while already on this page remounts the
         // view so it re-seeds; nothing else changes the key.
-        <CapaView key={search.capa ?? ''} initialSearch={search.capa} />
+        <CapaView
+          key={search.capa ?? ''}
+          initialSearch={search.capa}
+          openForEdit={search.capaEdit}
+        />
       ) : (
         <>
           <ListHeader

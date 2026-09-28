@@ -17,6 +17,7 @@ import {
   type TpiPendingRow,
   opSrNo,
 } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
@@ -28,8 +29,9 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
+import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { useTpiMastersList } from '@/modules/tpi-masters/api';
-import { useTpi } from '../api';
+import { tpiKeys, useTpi } from '../api';
 
 // Excel export of completed TPI records (legacy _tpiExport L21572 / "⬇ Excel"
 // button). Client-side from the loaded `completed` rows — columns mirror the
@@ -369,6 +371,7 @@ function PendingTpi(props: {
 }): React.JSX.Element {
   const { o, open, onToggle, onDone } = props;
   const submit = useSubmitQcLog();
+  const queryClient = useQueryClient();
   const companyId = useSession().data?.companyId ?? null;
   // TPI posts through op-entry's submitQcLog, which now enforces BOTH qc_submit
   // `entry` (ordinary QC accept/reject) AND tpi_submit `entry` (the TPI-specific
@@ -448,6 +451,21 @@ function PendingTpi(props: {
     };
     try {
       await submit.mutateAsync(input);
+      // useSubmitQcLog only refreshes the op-entry views. Refresh the TPI list
+      // and the QC register too (as the QC popup does) so this card drops its
+      // old QC Pending at once — otherwise the inspector thinks it failed and
+      // submits again.
+      void queryClient.invalidateQueries({ queryKey: tpiKeys.all });
+      void queryClient.invalidateQueries({ queryKey: qcHistoryKeys.all });
+      // Clear what was just booked so re-opening the card after a partial TPI
+      // does not show the last qty / cert no. again (easy to double-book).
+      // Inspector, organisation, date and shift stay — usually the same visit.
+      setAccept('');
+      setReject('0');
+      setCertNo('');
+      setRemarks('');
+      setQcReportPath(null);
+      setQcReportName(null);
       onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save TPI Inspection. Try again.');

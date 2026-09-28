@@ -51,11 +51,11 @@ import {
   type AccessTierKey,
 } from '@innovic/shared';
 import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useUpdateUser, useUser } from '@/modules/users/api';
 import { useSaveUserAccess, useUserAccess, useUserAccessList } from '../api';
 import { roleLabel } from '@/lib/role-label';
-import { Banner } from '@/ui/feedback';
+import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
 
 interface Props {
   userId: string;
@@ -208,6 +208,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const [copyFromId, setCopyFromId] = useState<string | null>(null);
   const copySource = useUserAccess(copyFromId);
   const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
+  // "Discard changes?" — asked when the box is closed by ESC / the dim
+  // background / × after anything was touched. An admin who set five
+  // department tiers must not lose them to one mis-click.
+  const [askDiscard, setAskDiscard] = useState(false);
 
   // Only the approval limit comes from the user record now — the role is
   // derived on save, never read back into an input.
@@ -537,27 +541,43 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     ' · ',
   );
 
+  // Dirty = the form differs from what was loaded. Compared as JSON of the
+  // same fields the seed effects fill, so opening and closing untouched never
+  // asks.
+  const loadedSnapshot = useMemo(
+    () =>
+      data
+        ? JSON.stringify({
+            mainDept: data.mainDept ?? '',
+            approvalLimit: userDetail?.approvalLimit ?? '',
+            fullAccess: data.fullAccess,
+            auditor: data.auditor,
+            drawingDownload: data.drawingDownload,
+            departments: loadDeptTiers(data.departments),
+            forms: fillForms(data.forms),
+          })
+        : null,
+    [data, userDetail],
+  );
+  const dirty =
+    loadedSnapshot !== null &&
+    JSON.stringify({
+      mainDept,
+      approvalLimit,
+      fullAccess,
+      auditor,
+      drawingDownload,
+      departments,
+      forms,
+    }) !== loadedSnapshot;
+  function requestClose(): void {
+    if (dirty) setAskDiscard(true);
+    else onClose();
+  }
+
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.45)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '4vh 16px',
-        zIndex: 60,
-      }}
-    >
-      <div
-        className="panel"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(1100px, 96vw)', maxHeight: '92vh', overflow: 'auto', marginBottom: 0 }}
-      >
+    <Modal title="Access Control" onClose={requestClose} bodyStyle={{ padding: 0 }}>
+      <div>
         {/* ── Header strip: user · role · home dept · PO limit · JSON clone ── */}
         <div
           style={{
@@ -574,9 +594,6 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="fw-700" style={{ fontSize: 14 }}>
-              Access Control
-            </span>
             <span className="fw-700" style={{ fontSize: 13 }}>
               {userName}
             </span>
@@ -1279,7 +1296,20 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           </div>
         )}
       </div>
-    </div>
+      {askDiscard ? (
+        <ConfirmDialog
+          title="Discard changes?"
+          message={`The access changes made for ${userName} are not saved yet.`}
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          onConfirm={() => {
+            setAskDiscard(false);
+            onClose();
+          }}
+          onCancel={() => setAskDiscard(false)}
+        />
+      ) : null}
+    </Modal>
   );
 }
 
