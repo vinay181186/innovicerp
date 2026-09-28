@@ -8,6 +8,7 @@
 
 import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
 import type {
+  CancelJwInvoiceInput,
   CreateJwInvoiceInput,
   JwInvoice,
   ListJwInvoicesQuery,
@@ -15,7 +16,7 @@ import type {
 } from '@innovic/shared';
 import { clients, items, jobWorkOrderLines, jobWorkOrders, jwInvoices } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
@@ -65,6 +66,13 @@ function rowToInvoice(row: typeof jwInvoices.$inferSelect): JwInvoice {
     // GST row instead of guessing a split.
     taxType: row.taxType === 'sgst_cgst' || row.taxType === 'igst' ? row.taxType : null,
     remarks: row.remarks,
+    // R5 (ADR-194): a cancelled invoice reverses its billed qty and never prints
+    // as a live tax document. The text column is CHECK-free here, so any value
+    // other than 'cancelled' reads as the default 'issued'.
+    status: row.status === 'cancelled' ? 'cancelled' : 'issued',
+    cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
+    cancelledBy: row.cancelledBy,
+    cancelReason: row.cancelReason,
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt.toISOString(),
@@ -173,6 +181,88 @@ export async function createJwInvoice(
         entity: 'JwInvoice',
         detail: `${code} — billed ${input.qty} x ${money(rate)} + GST = ${money(total)} (${jw.code})`,
         refId: row.id,
+      },
+      companyId,
+      user,
+    );
+
+    return rowToInvoice(row);
+  });
+}
+
+// R5 (ADR-194) — cancel an issued JW invoice.
+//
+// A JW invoice bumped job_work_order_lines.invoiced_qty; cancelling gives that
+// billed qty back so the line can be re-billed, and flags the row so it never
+// prints as a live tax document. Refused when already cancelled (double-cancel
+// would credit the line twice). Cancelling reverses a billed quantity, so — like
+// the other job-work cancels — it takes the edit AND approve pair only L5
+// Department Admin and above hold.
+export async function cancelJwInvoice(
+  id: string,
+  input: CancelJwInvoiceInput,
+  user: AuthContext,
+): Promise<JwInvoice> {
+  await requireFormAccess(user, 'jw_create', 'edit');
+  await requireFormAccess(user, 'jw_create', 'approve');
+  const companyId = requireCompany(user);
+  const userId = user.id;
+  const reason = input.reason.trim();
+  if (!reason) throw new ValidationError('Reason is required to cancel a JW Invoice.');
+
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(jwInvoices)
+      .where(
+        and(
+          eq(jwInvoices.id, id),
+          eq(jwInvoices.companyId, companyId),
+          isNull(jwInvoices.deletedAt),
+        ),
+      )
+      .limit(1);
+    const inv = rows[0];
+    if (!inv) throw new NotFoundError('JW Invoice not found. Refresh the page.');
+    if (inv.status === 'cancelled') {
+      throw new ConflictError(`JW Invoice ${inv.code} is already Cancelled.`);
+    }
+
+    // Lock the JW line, then give the billed qty back (clamp at 0).
+    await tx.execute(
+      sql`SELECT 1 FROM public.job_work_order_lines WHERE id = ${inv.jobWorkOrderLineId}::uuid FOR UPDATE`,
+    );
+    await tx
+      .update(jobWorkOrderLines)
+      .set({
+        invoicedQty: sql`GREATEST(${jobWorkOrderLines.invoicedQty} - ${inv.qty}, 0)`,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
+      .where(eq(jobWorkOrderLines.id, inv.jobWorkOrderLineId));
+
+    const updated = await tx
+      .update(jwInvoices)
+      .set({
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        cancelledBy: userId,
+        cancelReason: reason,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
+      .where(eq(jwInvoices.id, inv.id))
+      .returning();
+    const row = updated[0];
+    if (!row) throw new ConflictError(`Could not cancel JW Invoice ${inv.code}. Try again.`);
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CANCEL',
+        entity: 'JwInvoice',
+        detail: `${inv.code} cancelled: ${reason} — reversed ${inv.qty} billed on ${inv.jwCodeText ?? ''}`,
+        refId: inv.id,
       },
       companyId,
       user,

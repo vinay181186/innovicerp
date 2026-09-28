@@ -14,8 +14,8 @@ import { useSession } from '@/lib/session';
 import { statusText } from '@/lib/status-text';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { ConfirmDialog } from '@/ui/feedback';
-import { useCancelJwReturn, useCreateJwReturnChallan, useJwReturnsList } from '../api';
+import { useCreateJwReturnChallan, useJwReturnsList } from '../api';
+import { CancelJwReturnModal } from './cancel-jw-return-modal';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
 // exactly the cap this list already ran under, so nothing that was visible
@@ -58,15 +58,10 @@ export function JwDispatchView({
 
   const { data, isLoading, isFetching, isError, error } = useJwReturnsList(query);
   const rows = data?.items ?? [];
-  const cancelMut = useCancelJwReturn();
 
-  // The return the Cancel dialog is asking about, or null when closed.
+  // The return the Cancel dialog is asking about, or null when closed. The
+  // dialog now captures a reason (R10, ADR-194) and runs the mutation itself.
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
-  const onCancel = async (): Promise<void> => {
-    if (!cancelTarget) return;
-    await cancelMut.mutateAsync(cancelTarget.id);
-    setCancelTarget(null);
-  };
 
   return (
     <div>
@@ -183,16 +178,9 @@ export function JwDispatchView({
                             type="button"
                             className="btn btn-ghost"
                             style={{ color: 'var(--red2)' }}
-                            disabled={cancelMut.isPending}
                             onClick={() => setCancelTarget({ id: r.id, code: r.code })}
                           >
-                            {cancelMut.isPending && cancelMut.variables === r.id ? (
-                              <>
-                                <Loader2 size={12} className="inline animate-spin" /> Cancelling…
-                              </>
-                            ) : (
-                              'Cancel'
-                            )}
+                            Cancel
                           </button>
                         )}
                       </td>
@@ -207,14 +195,10 @@ export function JwDispatchView({
       <ListFooter total={data?.total ?? rows.length} noun="JW return" limit={LIST_LIMIT} />
 
       {cancelTarget ? (
-        <ConfirmDialog
-          title={`Cancel JW Return ${cancelTarget.code}?`}
-          message="The returned qty goes back to Pending."
-          confirmLabel="Cancel Return"
-          cancelLabel="Keep it"
-          pendingLabel="Cancelling…"
-          onConfirm={onCancel}
-          onCancel={() => setCancelTarget(null)}
+        <CancelJwReturnModal
+          id={cancelTarget.id}
+          code={cancelTarget.code}
+          onClose={() => setCancelTarget(null)}
         />
       ) : null}
       {showModal ? <NewJwReturnModal onClose={() => setShowModal(false)} /> : null}

@@ -16,8 +16,10 @@
 // codes that ARE links — a blue code that does nothing on click reads as broken.
 
 import type { PartyGrnListItem } from '@innovic/shared';
-import { XCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, XCircle } from 'lucide-react';
+import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { usePartyGrnDetail } from '../api';
 
 /** One cell of the card's metric strip — big number over a small caps label,
  *  identical to the SO/WO, JWSO, Dispatch, DC and PR cards. */
@@ -69,6 +71,12 @@ export function PartyGrnCard({
   canWrite: boolean;
   onCancel: () => void;
 }): React.JSX.Element {
+  // The lines (QC split + linked JWSO line) load lazily on expand — the list
+  // itself carries only the header aggregates, and there is no detail route.
+  const [open, setOpen] = useState(false);
+  const detailQ = usePartyGrnDetail(open ? g.id : undefined);
+  const lines = detailQ.data?.lines ?? [];
+
   return (
     <div
       className="panel"
@@ -89,6 +97,16 @@ export function PartyGrnCard({
             padding: '10px 14px',
           }}
         >
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm btn-icon"
+            onClick={() => setOpen((v) => !v)}
+            aria-label={open ? 'Hide lines' : 'Show lines'}
+            aria-expanded={open}
+            title={open ? 'Hide lines' : 'Show lines'}
+          >
+            {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
           <span className="td-code" style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}>
             {g.code}
           </span>
@@ -175,6 +193,92 @@ export function PartyGrnCard({
             </span>
           </div>
         </div>
+
+        {/* ── Band 3 (expand): per-line QC split + the linked JWSO line ── */}
+        {open ? (
+          <div style={{ borderTop: '1px solid var(--border)', padding: '8px 14px 12px' }}>
+            {detailQ.isLoading ? (
+              <div className="text3" style={{ fontSize: 12 }}>
+                <Loader2 size={13} className="inline animate-spin" /> Loading lines…
+              </div>
+            ) : detailQ.isError ? (
+              <div className="empty-state" style={{ color: 'var(--red2)', padding: 8 }}>
+                Could not load lines. Try again.
+              </div>
+            ) : (
+              <div className="tbl-wrap">
+                <table className="innovic-table tbl-ctr">
+                  <thead>
+                    <tr>
+                      <th>Ln</th>
+                      <th>Material</th>
+                      <th>Material Name</th>
+                      <th>JWSO Line</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Received
+                      </th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Accepted
+                      </th>
+                      <th className="th-num" style={{ color: 'var(--red2)' }}>
+                        Rejected
+                      </th>
+                      <th>Reject Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="empty-state">
+                          No lines.
+                        </td>
+                      </tr>
+                    ) : (
+                      lines.map((l) => (
+                        <tr key={l.id}>
+                          <td className="mono">{l.lineNo}</td>
+                          <td>
+                            <span className="td-code" style={{ color: 'var(--purple)' }}>
+                              {l.partyMaterialCodeText}
+                            </span>
+                          </td>
+                          <td
+                            className="text2"
+                            style={{
+                              maxWidth: 220,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title={l.partyMaterialName ?? ''}
+                          >
+                            {l.partyMaterialName ?? '—'}
+                          </td>
+                          <td className="mono" style={{ color: 'var(--purple)' }}>
+                            {l.jwLineNoText ? `L${l.jwLineNoText}` : '—'}
+                          </td>
+                          <td className="mono td-num">{l.receivedQty}</td>
+                          <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
+                            {l.acceptedQty}
+                          </td>
+                          <td
+                            className="mono td-num"
+                            style={{ color: l.rejectedQty > 0 ? 'var(--red2)' : 'var(--text3)' }}
+                          >
+                            {l.rejectedQty > 0 ? l.rejectedQty : '—'}
+                          </td>
+                          <td className="text3" style={{ fontSize: 11 }}>
+                            {l.rejectReason ?? '—'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

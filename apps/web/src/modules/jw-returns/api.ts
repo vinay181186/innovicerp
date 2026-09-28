@@ -50,11 +50,14 @@ export function useCreateJwReturnChallan() {
   });
 }
 
+/** R10 (ADR-194): cancel an issued JW Return Challan with a reason. Reverses
+ *  returned_qty so the goods can be returned again; blocked while an uncancelled
+ *  JW invoice still covers the returned qty. Reuses jw_create. */
 export function useCancelJwReturn() {
   const qc = useQueryClient();
-  return useMutation<JwReturnChallan, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<JwReturnChallan>(`/jw-returns/${id}/cancel`, { method: 'POST' }),
+  return useMutation<JwReturnChallan, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<JwReturnChallan>(`/jw-returns/${id}/cancel`, { method: 'POST', json: { reason } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwReturnsKeys.all });
       // Reversing the returned-qty cascade may revert the JWSO status.

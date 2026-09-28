@@ -8,6 +8,7 @@ export {
   jobWorkOrderListItemSchema,
   jobWorkOrderSchema,
   listJobWorkOrdersQuerySchema,
+  shortCloseJobWorkOrderLineInputSchema,
   updateJobWorkOrderInputSchema,
 } from '@innovic/shared';
 export type {
@@ -19,5 +20,6 @@ export type {
   JobWorkOrderListItem,
   ListJobWorkOrdersQuery,
   ListJobWorkOrdersResponse,
+  ShortCloseJobWorkOrderLineInput,
   UpdateJobWorkOrderInput,
 } from '@innovic/shared';

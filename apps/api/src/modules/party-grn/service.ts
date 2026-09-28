@@ -24,6 +24,7 @@ import {
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -264,6 +265,13 @@ function rowToLine(row: typeof partyGrnLines.$inferSelect): PartyGrnLine {
     partyMaterialName: row.partyMaterialName,
     receivedQty: row.receivedQty,
     jwLineNoText: row.jwLineNoText,
+    // R2 + R4 (ADR-194): real FK to the JWSO line + incoming-QC split.
+    jwLineId: row.jwLineId,
+    acceptedQty: row.acceptedQty,
+    rejectedQty: row.rejectedQty,
+    rejectReason: row.rejectReason,
+    qcBy: row.qcBy,
+    qcAt: row.qcAt != null ? tsLike(row.qcAt) : null,
     remarks: row.remarks,
     createdAt: tsLike(row.createdAt),
     createdBy: row.createdBy,
@@ -366,6 +374,7 @@ export async function createPartyGrn(
     // number are not attributable to a part, so they are not capped here.
     const jwLines = await tx
       .select({
+        id: jobWorkOrderLines.id,
         lineNo: jobWorkOrderLines.lineNo,
         orderQty: jobWorkOrderLines.orderQty,
         partName: jobWorkOrderLines.partName,
@@ -378,6 +387,7 @@ export async function createPartyGrn(
       jwLines.map((l) => [
         String(l.lineNo),
         {
+          id: l.id,
           orderQty: Number(l.orderQty),
           partName: l.partName,
           itemId: l.itemId,
@@ -385,6 +395,8 @@ export async function createPartyGrn(
         },
       ]),
     );
+    // Cumulative RECEIVED per JW line (the ADR-102 over-receipt guard), keyed by
+    // the typed line-no text so it matches how a line is picked on the form.
     const existingRows = (await tx.execute(sql`
       SELECT pgl.jw_line_no_text AS "lineNoText",
              COALESCE(SUM(pgl.received_qty), 0)::int AS "received"
@@ -397,6 +409,23 @@ export async function createPartyGrn(
     for (const r of existingRows) {
       if (r.lineNoText != null)
         receivedByLineNo.set(String(r.lineNoText).trim(), Number(r.received));
+    }
+    // R2 (ADR-194): cumulative ACCEPTED per JW line — only accepted qty may
+    // enter the party store, and Σ accepted across all GRNs for a line must not
+    // exceed that line's order qty. Keyed by the real jw_line_id backfilled by
+    // migration 0157 (and now written on every new line).
+    const acceptedRows = (await tx.execute(sql`
+      SELECT pgl.jw_line_id AS "jwLineId",
+             COALESCE(SUM(pgl.accepted_qty), 0)::int AS "accepted"
+      FROM public.party_grn pg
+      JOIN public.party_grn_lines pgl ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
+      WHERE pg.job_work_order_id = ${jw.id}::uuid AND pg.deleted_at IS NULL
+        AND pgl.jw_line_id IS NOT NULL
+      GROUP BY pgl.jw_line_id
+    `)) as unknown as Array<{ jwLineId: string | null; accepted: number }>;
+    const acceptedByLineId = new Map<string, number>();
+    for (const r of acceptedRows) {
+      if (r.jwLineId != null) acceptedByLineId.set(String(r.jwLineId), Number(r.accepted));
     }
 
     // 5) Insert lines + update per-material totals
@@ -467,6 +496,25 @@ export async function createPartyGrn(
         receivedByLineNo.set(lnKey, already + ln.receivedQty);
       }
 
+      // R2 (ADR-194): the ACCEPTED qty is what actually enters the party store,
+      // so it — not the received qty — is capped against the line's order qty.
+      const jwLineId = jwLine.id;
+      {
+        const alreadyAccepted = acceptedByLineId.get(jwLineId) ?? 0;
+        const acceptRemaining = Math.max(0, orderQty - alreadyAccepted);
+        if (ln.acceptedQty > acceptRemaining) {
+          const part = partName ? `${partName} (Ln ${lnKey})` : `Ln ${lnKey}`;
+          const note =
+            alreadyAccepted > 0
+              ? ` — Order Qty ${orderQty}, already Accepted ${alreadyAccepted}.`
+              : ` — Order Qty ${orderQty}.`;
+          throw new ValidationError(
+            `${part}: Accepted (${ln.acceptedQty}) cannot be more than Pending (${acceptRemaining})${note} Please reduce the Accepted Qty.`,
+          );
+        }
+        acceptedByLineId.set(jwLineId, alreadyAccepted + ln.acceptedQty);
+      }
+
       await tx.insert(partyGrnLines).values({
         companyId,
         partyGrnId: header.id,
@@ -476,23 +524,45 @@ export async function createPartyGrn(
         partyMaterialName: pm.name,
         receivedQty: ln.receivedQty,
         jwLineNoText: ln.jwLineNoText ?? null,
+        // R4 (ADR-194): the resolved FK to the JWSO line.
+        jwLineId,
+        // R2 (ADR-194): compulsory incoming QC — split + who/when.
+        acceptedQty: ln.acceptedQty,
+        rejectedQty: ln.rejectedQty,
+        rejectReason: ln.rejectReason ?? null,
+        qcBy: userId,
+        qcAt: new Date(),
         remarks: ln.remarks ?? null,
         createdBy: userId,
         updatedBy: userId,
       });
 
-      await tx
-        .update(partyMaterials)
-        .set({
-          stockQty: pm.stockQty + ln.receivedQty,
-          receivedQty: pm.receivedQty + ln.receivedQty,
-          updatedAt: new Date(),
-          updatedBy: userId,
-        })
-        .where(eq(partyMaterials.id, pm.id));
-      // Update local cache so subsequent same-id lines accumulate
-      pm.stockQty += ln.receivedQty;
-      pm.receivedQty += ln.receivedQty;
+      // R2 + R3 (ADR-194): only the ACCEPTED qty becomes party stock. The ledger
+      // writer owns stock_qty (the running balance); this service bumps the
+      // received_qty lifetime counter by the accepted qty alongside it.
+      if (ln.acceptedQty > 0) {
+        await postPartyStockMove(tx, {
+          companyId,
+          partyMaterialId: pm.id,
+          jwLineId,
+          movement: 'receive',
+          direction: 'in',
+          qty: ln.acceptedQty,
+          sourceDocType: 'party_grn',
+          sourceDocId: header.id,
+          remarks: `${header.code} · ${pm.code} accepted at incoming QC`,
+          userId,
+          qtyLabel: 'Accepted Qty',
+        });
+        await tx
+          .update(partyMaterials)
+          .set({
+            receivedQty: sql`${partyMaterials.receivedQty} + ${ln.acceptedQty}`,
+            updatedAt: new Date(),
+            updatedBy: userId,
+          })
+          .where(eq(partyMaterials.id, pm.id));
+      }
     }
 
     // ADR-189 — a customer-material receipt is on the activity log like every
@@ -557,20 +627,24 @@ export async function cancelPartyGrn(
         partyMaterialId: partyGrnLines.partyMaterialId,
         partyMaterialCodeText: partyGrnLines.partyMaterialCodeText,
         receivedQty: partyGrnLines.receivedQty,
+        // R2 (ADR-194): only the ACCEPTED qty ever entered the party store, so
+        // that — not the received qty — is what a cancel takes back out.
+        acceptedQty: partyGrnLines.acceptedQty,
       })
       .from(partyGrnLines)
       .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)));
 
     // Net qty to reverse per material (a receipt may repeat the same code).
+    // Reversal works off ACCEPTED qty — the rejected portion never became stock.
     const byMaterial = new Map<string, { code: string; qty: number }>();
     let reversedQty = 0;
     for (const l of lines) {
-      reversedQty += l.receivedQty;
+      reversedQty += l.acceptedQty;
       if (l.partyMaterialId == null) continue; // master row deleted — nothing to credit back
       const prev = byMaterial.get(l.partyMaterialId);
       byMaterial.set(l.partyMaterialId, {
         code: l.partyMaterialCodeText,
-        qty: (prev?.qty ?? 0) + l.receivedQty,
+        qty: (prev?.qty ?? 0) + l.acceptedQty,
       });
     }
 
@@ -599,10 +673,26 @@ export async function cancelPartyGrn(
 
     const now = new Date();
     for (const [materialId, { qty }] of byMaterial) {
+      if (qty > 0) {
+        // R3 (ADR-194): the ledger writer takes the accepted qty back out of the
+        // party store (a compensating 'reversal' row) and lowers the balance.
+        await postPartyStockMove(tx, {
+          companyId,
+          partyMaterialId: materialId,
+          movement: 'reversal',
+          direction: 'out',
+          qty,
+          sourceDocType: 'party_grn',
+          sourceDocId: id,
+          remarks: `${head.code} cancelled: ${trimmed}`,
+          userId: user.id,
+          qtyLabel: 'Reversal Qty',
+        });
+      }
+      // Lower the received_qty lifetime counter alongside the balance.
       await tx
         .update(partyMaterials)
         .set({
-          stockQty: sql`${partyMaterials.stockQty} - ${qty}`,
           receivedQty: sql`GREATEST(${partyMaterials.receivedQty} - ${qty}, 0)`,
           updatedAt: now,
           updatedBy: user.id,

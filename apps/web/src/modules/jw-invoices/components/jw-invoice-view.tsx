@@ -15,6 +15,7 @@ import { useSession } from '@/lib/session';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoicesList } from '../api';
+import { CancelJwInvoiceModal } from './cancel-jw-invoice-modal';
 import { PrintJwInvoiceButton } from './print-jw-invoice-button';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
@@ -66,6 +67,9 @@ export function JwInvoiceView({
 
   const { data, isLoading, isFetching, isError, error } = useJwInvoicesList(query);
   const items = data?.items ?? [];
+
+  // The invoice the Cancel dialog is asking about, or null when closed.
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
 
   // Money hidden for L1 Viewers: the API nulls the amounts, so the Rate /
   // Taxable / GST% / GST Amt / Total columns are dropped for them.
@@ -129,18 +133,25 @@ export function JwInvoiceView({
                       </th>
                     </>
                   )}
+                  {/* R5 (ADR-194): issued | cancelled. A cancelled invoice
+                      reads visibly cancelled and offers no Cancel again. */}
+                  <th>Status</th>
                   {/* Print. No new permission gate: anyone who can see the row
                       can print it, exactly as on the DC detail page. What a
                       viewer without price rights may not see is already gone
                       from the row AND from the printed sheet — the invoice
                       prints with the money suppressed, not blocked. */}
                   <th>Print</th>
+                  {canWrite ? <th className="td-ctr">Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={priceHidden ? 8 : 13} className="empty-state">
+                    <td
+                      colSpan={priceHidden ? (canWrite ? 10 : 9) : canWrite ? 15 : 14}
+                      className="empty-state"
+                    >
                       {term ? 'No JW Invoices match.' : 'No JW Invoices yet.'}
                     </td>
                   </tr>
@@ -186,8 +197,48 @@ export function JwInvoiceView({
                       </>
                     )}
                     <td>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          color: r.status === 'cancelled' ? 'var(--red2)' : 'var(--green2)',
+                          background:
+                            r.status === 'cancelled'
+                              ? 'rgba(239,68,68,0.10)'
+                              : 'rgba(34,197,94,0.10)',
+                        }}
+                        title={
+                          r.status === 'cancelled' && r.cancelReason
+                            ? `Cancelled: ${r.cancelReason}`
+                            : undefined
+                        }
+                      >
+                        {r.status === 'cancelled' ? 'Cancelled' : 'Issued'}
+                      </span>
+                    </td>
+                    <td>
                       <PrintJwInvoiceButton invoice={r} priceVisible={!priceHidden} />
                     </td>
+                    {canWrite ? (
+                      <td className="td-ctr">
+                        {r.status === 'cancelled' ? (
+                          <span className="text3" style={{ fontSize: 11 }}>
+                            —
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ color: 'var(--red2)' }}
+                            onClick={() => setCancelTarget({ id: r.id, code: r.code })}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -199,6 +250,13 @@ export function JwInvoiceView({
 
       {showModal && canWrite ? (
         <NewJwInvoiceModal initialJwId={initialJwId} onClose={() => setShowModal(false)} />
+      ) : null}
+      {cancelTarget && canWrite ? (
+        <CancelJwInvoiceModal
+          id={cancelTarget.id}
+          code={cancelTarget.code}
+          onClose={() => setCancelTarget(null)}
+        />
       ) : null}
     </div>
   );

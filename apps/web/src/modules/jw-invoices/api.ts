@@ -1,4 +1,5 @@
 import type {
+  CancelJwInvoiceInput,
   CreateJwInvoiceInput,
   JwInvoice,
   ListJwInvoicesQuery,
@@ -44,6 +45,20 @@ export function useCreateJwInvoice() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwInvoicesKeys.all });
       // Invoicing bumps job_work_order_lines.invoiced_qty → JW lists change.
+      void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
+    },
+  });
+}
+
+/** R5 (ADR-194): cancel an issued JW invoice with a reason. Reverses the billed
+ *  qty (drops invoiced_qty) so the line can be re-billed. Reuses jw_create. */
+export function useCancelJwInvoice() {
+  const qc = useQueryClient();
+  return useMutation<JwInvoice, Error, { id: string } & CancelJwInvoiceInput>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<JwInvoice>(`/jw-invoices/${id}/cancel`, { method: 'POST', json: { reason } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: jwInvoicesKeys.all });
       void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
     },
   });

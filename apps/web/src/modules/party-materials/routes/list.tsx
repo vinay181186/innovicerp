@@ -31,6 +31,7 @@ import {
   usePartyMaterialsList,
   useUpdatePartyMaterial,
 } from '../api';
+import { ReturnPartyMaterialModal } from '../components/return-party-material-modal';
 
 const PAGE_SIZE = 50;
 
@@ -55,10 +56,15 @@ function PartyMaterialsListPage(): React.JSX.Element {
   const canAdd = perms.entry;
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
+  // R7 (ADR-194): returning spare customer material reuses the jw_create key
+  // (the same gate the JWSO create / invoice / return actions use), not
+  // party_create — the server enforces jw_create on this endpoint.
+  const canReturn = effectiveFormPerms(eff, 'jw_create').entry;
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [editRow, setEditRow] = useState<PartyMaterialListItem | null>(null);
+  const [returnRow, setReturnRow] = useState<PartyMaterialListItem | null>(null);
 
   const { data, isLoading, isError, error } = usePartyMaterialsList({
     search: search.trim() || undefined,
@@ -149,13 +155,16 @@ function PartyMaterialsListPage(): React.JSX.Element {
                   <th className="th-num" style={{ color: 'var(--cyan)' }}>
                     Total Received
                   </th>
+                  <th className="th-num" style={{ color: 'var(--purple)' }}>
+                    Returned
+                  </th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="empty-state">
+                    <td colSpan={11} className="empty-state">
                       {search.trim() ? 'No Party Materials match.' : 'No Party Materials yet.'}
                     </td>
                   </tr>
@@ -196,8 +205,33 @@ function PartyMaterialsListPage(): React.JSX.Element {
                     <td className="mono td-num" style={{ fontSize: 12, color: 'var(--cyan)' }}>
                       {pm.receivedQty}
                     </td>
+                    <td
+                      className="mono td-num"
+                      style={{
+                        fontSize: 12,
+                        color: pm.returnedQty > 0 ? 'var(--purple)' : 'var(--text3)',
+                      }}
+                    >
+                      {pm.returnedQty}
+                    </td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
+                        {canReturn ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: 11, color: 'var(--purple)' }}
+                            disabled={pm.stockQty <= 0}
+                            title={
+                              pm.stockQty <= 0
+                                ? 'Nothing in the party store to return'
+                                : 'Return spare customer material'
+                            }
+                            onClick={() => setReturnRow(pm)}
+                          >
+                            Return
+                          </button>
+                        ) : null}
                         {canEdit ? (
                           <button
                             type="button"
@@ -246,6 +280,9 @@ function PartyMaterialsListPage(): React.JSX.Element {
 
       {showAdd ? <AddPartyMaterialModal onClose={() => setShowAdd(false)} /> : null}
       {editRow ? <EditPartyMaterialModal row={editRow} onClose={() => setEditRow(null)} /> : null}
+      {returnRow ? (
+        <ReturnPartyMaterialModal row={returnRow} onClose={() => setReturnRow(null)} />
+      ) : null}
       {deleteRow ? (
         <ConfirmDialog
           title={`Delete Party Material ${deleteRow.code}?`}

@@ -197,7 +197,9 @@ describe('party-grn service — ADR-102 guards', () => {
         {
           grnDate: '2026-08-04',
           jobWorkOrderId: jwId,
-          lines: [{ partyMaterialId: pmAId, receivedQty: 1, jwLineNoText: '99' }],
+          lines: [
+            { partyMaterialId: pmAId, receivedQty: 1, acceptedQty: 1, rejectedQty: 0, jwLineNoText: '99' },
+          ],
         },
         admin,
       ),
@@ -212,7 +214,9 @@ describe('party-grn service — ADR-102 guards', () => {
         {
           grnDate: '2026-08-04',
           jobWorkOrderId: jwId,
-          lines: [{ partyMaterialId: pmBId, receivedQty: 1, jwLineNoText: '1' }],
+          lines: [
+            { partyMaterialId: pmBId, receivedQty: 1, acceptedQty: 1, rejectedQty: 0, jwLineNoText: '1' },
+          ],
         },
         admin,
       ),
@@ -225,7 +229,15 @@ describe('party-grn service — ADR-102 guards', () => {
         {
           grnDate: '2026-08-04',
           jobWorkOrderId: jwId,
-          lines: [{ partyMaterialId: pmAId, receivedQty: ORDER_QTY + 1, jwLineNoText: '1' }],
+          lines: [
+            {
+              partyMaterialId: pmAId,
+              receivedQty: ORDER_QTY + 1,
+              acceptedQty: ORDER_QTY + 1,
+              rejectedQty: 0,
+              jwLineNoText: '1',
+            },
+          ],
         },
         admin,
       ),
@@ -238,7 +250,9 @@ describe('party-grn service — ADR-102 guards', () => {
       {
         grnDate: '2026-08-04',
         jobWorkOrderId: jwId,
-        lines: [{ partyMaterialId: pmAId, receivedQty: 60, jwLineNoText: '1' }],
+        lines: [
+          { partyMaterialId: pmAId, receivedQty: 60, acceptedQty: 60, rejectedQty: 0, jwLineNoText: '1' },
+        ],
       },
       admin,
     );
@@ -255,7 +269,15 @@ describe('party-grn service — ADR-102 guards', () => {
         {
           grnDate: '2026-08-04',
           jobWorkOrderId: jwId,
-          lines: [{ partyMaterialId: pmAId, receivedQty: ORDER_QTY, jwLineNoText: '1' }],
+          lines: [
+            {
+              partyMaterialId: pmAId,
+              receivedQty: ORDER_QTY,
+              acceptedQty: ORDER_QTY,
+              rejectedQty: 0,
+              jwLineNoText: '1',
+            },
+          ],
         },
         admin,
       ),
@@ -267,7 +289,15 @@ describe('party-grn service — ADR-102 guards', () => {
       {
         grnDate: '2026-08-04',
         jobWorkOrderId: jwId,
-        lines: [{ partyMaterialId: pmBId, receivedQty: ORDER_QTY, jwLineNoText: '2' }],
+        lines: [
+          {
+            partyMaterialId: pmBId,
+            receivedQty: ORDER_QTY,
+            acceptedQty: ORDER_QTY,
+            rejectedQty: 0,
+            jwLineNoText: '2',
+          },
+        ],
       },
       admin,
     );
@@ -281,7 +311,9 @@ describe('party-grn service — cancel (ADR-102)', () => {
       {
         grnDate: '2026-08-04',
         jobWorkOrderId: jwId,
-        lines: [{ partyMaterialId: pmAId, receivedQty: 10, jwLineNoText: '1' }],
+        lines: [
+          { partyMaterialId: pmAId, receivedQty: 10, acceptedQty: 10, rejectedQty: 0, jwLineNoText: '1' },
+        ],
       },
       admin,
     );
@@ -311,7 +343,9 @@ describe('party-grn service — cancel (ADR-102)', () => {
       {
         grnDate: '2026-08-04',
         jobWorkOrderId: jwId,
-        lines: [{ partyMaterialId: pmAId, receivedQty: 1, jwLineNoText: '1' }],
+        lines: [
+          { partyMaterialId: pmAId, receivedQty: 1, acceptedQty: 1, rejectedQty: 0, jwLineNoText: '1' },
+        ],
       },
       admin,
     );
@@ -326,7 +360,9 @@ describe('party-grn service — cancel (ADR-102)', () => {
       {
         grnDate: '2026-08-04',
         jobWorkOrderId: jwId,
-        lines: [{ partyMaterialId: pmAId, receivedQty: 5, jwLineNoText: '1' }],
+        lines: [
+          { partyMaterialId: pmAId, receivedQty: 5, acceptedQty: 5, rejectedQty: 0, jwLineNoText: '1' },
+        ],
       },
       admin,
     );

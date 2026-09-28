@@ -17,9 +17,10 @@ import type {
   ListPartyMaterialsResponse,
   PartyMaterial,
   PartyMaterialListItem,
+  ReturnPartyMaterialInput,
   UpdatePartyMaterialInput,
 } from '@innovic/shared';
-import { clients, items, partyMaterials } from '../../db/schema';
+import { clients, items, jobWorkOrderLines, partyMaterials } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import {
@@ -28,6 +29,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { postPartyStockMove } from '../../lib/party-stock-ledger';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -97,6 +99,7 @@ export async function listPartyMaterials(
         pm.stock_qty AS "stockQty",
         pm.issued_qty AS "issuedQty",
         pm.received_qty AS "receivedQty",
+        pm.returned_qty AS "returnedQty",
         pm.created_at AS "createdAt", pm.created_by AS "createdBy",
         pm.updated_at AS "updatedAt", pm.updated_by AS "updatedBy",
         pm.deleted_at AS "deletedAt",
@@ -142,6 +145,7 @@ function toListItem(r: Record<string, unknown>): PartyMaterialListItem {
     stockQty: Number(r['stockQty'] ?? 0),
     issuedQty: Number(r['issuedQty'] ?? 0),
     receivedQty: Number(r['receivedQty'] ?? 0),
+    returnedQty: Number(r['returnedQty'] ?? 0),
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
     updatedAt: tsLike(r['updatedAt']),
@@ -419,6 +423,99 @@ export async function softDeletePartyMaterial(id: string, user: AuthContext): Pr
   });
 }
 
+/** R7 (ADR-194): return spare customer material to the customer.
+ *
+ * Spare client material — over-supplied, or left over after a short-close — is
+ * handed back. This takes the qty OUT of the separate party store (a
+ * 'return'/'out' ledger row, capped at the current balance by the writer) and
+ * bumps the returned_qty lifetime counter. Reuses the jw_create permission — it
+ * is a customer-facing job-work movement, not a store-master edit. */
+export async function returnPartyMaterial(
+  id: string,
+  input: ReturnPartyMaterialInput,
+  user: AuthContext,
+): Promise<PartyMaterial> {
+  await requireFormAccess(user, 'jw_create', 'entry');
+  const companyId = requireCompany(user);
+  const userId = user.id;
+
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select({ id: partyMaterials.id, code: partyMaterials.code })
+      .from(partyMaterials)
+      .where(
+        and(
+          eq(partyMaterials.id, id),
+          eq(partyMaterials.companyId, companyId),
+          isNull(partyMaterials.deletedAt),
+        ),
+      )
+      .limit(1);
+    const existing = rows[0];
+    if (!existing)
+      throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
+
+    // Validate the optional JWSO line belongs to this company before it is
+    // stamped on the ledger row (it feeds the JC customer-material roll-up).
+    if (input.jwLineId) {
+      const lineRows = await tx
+        .select({ id: jobWorkOrderLines.id })
+        .from(jobWorkOrderLines)
+        .where(
+          and(
+            eq(jobWorkOrderLines.id, input.jwLineId),
+            eq(jobWorkOrderLines.companyId, companyId),
+            isNull(jobWorkOrderLines.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!lineRows[0])
+        throw new NotFoundError('Selected JWSO line was not found. Please pick it again.');
+    }
+
+    // The writer locks the row, caps the return at the current balance and
+    // lowers stock_qty; this service bumps the returned_qty lifetime counter.
+    await postPartyStockMove(tx, {
+      companyId,
+      partyMaterialId: existing.id,
+      jwLineId: input.jwLineId ?? null,
+      movement: 'return',
+      direction: 'out',
+      qty: input.qty,
+      sourceDocType: 'party_material_return',
+      sourceDocId: existing.id,
+      remarks: `Returned to customer: ${input.reason}`,
+      userId,
+      qtyLabel: 'Return Qty',
+    });
+
+    const updated = await tx
+      .update(partyMaterials)
+      .set({
+        returnedQty: sql`${partyMaterials.returnedQty} + ${input.qty}`,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
+      .where(eq(partyMaterials.id, existing.id))
+      .returning();
+    const row = updated[0];
+    if (!row) throw new ValidationError('Could not record the return. Try again.');
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'RETURN',
+        entity: 'Party Material',
+        detail: `${row.code} — returned ${input.qty} to customer: ${input.reason}`,
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return rowToPartyMaterial(row);
+  });
+}
+
 function rowToPartyMaterial(
   row: typeof partyMaterials.$inferSelect,
   joined: { itemCode: string | null; itemName: string | null } = {
@@ -443,6 +540,7 @@ function rowToPartyMaterial(
     stockQty: row.stockQty,
     issuedQty: row.issuedQty,
     receivedQty: row.receivedQty,
+    returnedQty: row.returnedQty,
     createdAt: tsLike(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: tsLike(row.updatedAt),

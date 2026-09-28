@@ -247,7 +247,9 @@ function rowToReturn(row: typeof jwReturnChallans.$inferSelect): JwReturnChallan
     id: row.id,
     companyId: row.companyId,
     code: row.code,
-    status: row.status,
+    // R10 (ADR-194): the column is free-text; map anything but 'cancelled' to the
+    // default 'issued' so the read shape matches the real enum.
+    status: row.status === 'cancelled' ? 'cancelled' : 'issued',
     returnDate: dateLike(row.returnDate),
     jobWorkOrderId: row.jobWorkOrderId,
     jobWorkOrderLineId: row.jobWorkOrderLineId,
@@ -481,6 +483,7 @@ export async function cancelJwReturnChallan(
       .select({
         id: jobWorkOrderLines.id,
         returnedQty: jobWorkOrderLines.returnedQty,
+        invoicedQty: jobWorkOrderLines.invoicedQty,
         jwId: jobWorkOrderLines.jobWorkOrderId,
         itemId: jobWorkOrderLines.itemId,
       })
@@ -495,6 +498,19 @@ export async function cancelJwReturnChallan(
       .limit(1);
     const line = lineRows[0];
     if (!line) throw new NotFoundError('JWSO line not found. Refresh the page.');
+
+    // R10 (ADR-194): a JW invoice bills only what has been RETURNED. Cancelling
+    // this return would drop returned_qty below what is still invoiced, leaving
+    // a live invoice for goods the books say were never returned. Block it — the
+    // JW Invoice must be cancelled first.
+    const returnedAfter = Math.max(0, line.returnedQty - ret.qty);
+    if (line.invoicedQty > returnedAfter) {
+      throw new ConflictError(
+        `Cannot cancel ${ret.code}: ${line.invoicedQty} piece(s) on this line are still ` +
+          `invoiced, but cancelling would leave only ${returnedAfter} returned. ` +
+          `Cancel the JW Invoice for this line first, then cancel the return.`,
+      );
+    }
 
     // 0) ADR-106 — the goods never left, so put them back in own stock. Written
     // as a compensating 'in' row rather than deleting the 'out', so the ledger

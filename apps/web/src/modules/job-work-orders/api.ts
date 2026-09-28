@@ -3,6 +3,7 @@ import type {
   JobWorkOrderDetail,
   ListJobWorkOrdersQuery,
   ListJobWorkOrdersResponse,
+  ShortCloseJobWorkOrderLineInput,
   UpdateJobWorkOrderInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -68,6 +69,28 @@ export function useUpdateJobWorkOrder(id: string) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
       qc.setQueryData(jobWorkOrdersKeys.detail(id), updated);
+    },
+  });
+}
+
+/** R6 (ADR-194): short-close ONE JWSO line — close it with the balance left
+ *  unmet. Sets status='closed' and stamps shortClosedAt/By + reason on the line.
+ *  Reuses jw_create. The line is addressed under its JWSO for context. */
+export function useShortCloseJobWorkOrderLine(jwId: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    JobWorkOrderDetail,
+    Error,
+    { lineId: string } & ShortCloseJobWorkOrderLineInput
+  >({
+    mutationFn: ({ lineId, reason }) =>
+      apiFetch<JobWorkOrderDetail>(
+        `/job-work-order-lines/${lineId}/short-close`,
+        { method: 'POST', json: { reason } },
+      ),
+    onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
+      qc.setQueryData(jobWorkOrdersKeys.detail(jwId), updated);
     },
   });
 }

@@ -174,11 +174,27 @@ export function NewPartyGrnModal({
         );
         return;
       }
+      // R2 (ADR-194): compulsory incoming QC split. Accepted + Rejected must
+      // equal Received, and a reason is required when anything is rejected —
+      // the same refine the shared schema enforces, shown before Save.
+      const accepted = Number(l.acceptedQty);
+      const rejected = Number(l.rejectedQty) || 0;
+      if (!Number.isFinite(accepted) || accepted < 0 || accepted + rejected !== q) {
+        setErr(`Line ${i + 1}: Accepted + Rejected must equal Received (${q}).`);
+        return;
+      }
+      if (rejected > 0 && !l.rejectReason.trim()) {
+        setErr(`Line ${i + 1}: give a reject reason — ${rejected} rejected.`);
+        return;
+      }
       const ln: CreatePartyGrnLineInput = {
         partyMaterialId: pmId,
         receivedQty: q,
         jwLineNoText: lnNo,
+        acceptedQty: accepted,
+        rejectedQty: rejected,
       };
+      if (rejected > 0) ln.rejectReason = l.rejectReason.trim();
       if (l.remarks.trim()) ln.remarks = l.remarks.trim();
       validLines.push(ln);
     }
@@ -387,32 +403,40 @@ export function NewPartyGrnModal({
         <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
           <table
             className="innovic-table"
-            style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}
+            style={{ width: '100%', tableLayout: 'fixed', minWidth: 1150 }}
           >
             <thead>
               <tr>
-                <th style={{ width: '4%' }}>Ln</th>
-                <th style={{ width: '20%' }}>
+                <th style={{ width: '3%' }}>Ln</th>
+                <th style={{ width: '15%' }}>
                   JWSO Line<span className="req">★</span>
                 </th>
-                <th style={{ width: '17%' }}>
+                <th style={{ width: '12%' }}>
                   Material<span className="req">★</span>
                 </th>
-                <th style={{ width: '22%' }}>Material Name</th>
-                <th style={{ width: '10%', color: 'var(--green2)' }} className="th-num">
+                <th style={{ width: '16%' }}>Material Name</th>
+                <th style={{ width: '8%', color: 'var(--green2)' }} className="th-num">
                   Received<span className="req">★</span>
                 </th>
-                <th style={{ width: '7%' }} className="td-ctr">
+                {/* R2 (ADR-194): compulsory incoming QC split. */}
+                <th style={{ width: '8%', color: 'var(--green2)' }} className="th-num">
+                  Accepted<span className="req">★</span>
+                </th>
+                <th style={{ width: '8%', color: 'var(--red2)' }} className="th-num">
+                  Rejected
+                </th>
+                <th style={{ width: '13%' }}>Reject Reason</th>
+                <th style={{ width: '5%' }} className="td-ctr">
                   UOM
                 </th>
-                <th style={{ width: '16%' }}>Remarks</th>
-                <th style={{ width: '4%' }} />
+                <th style={{ width: '9%' }}>Remarks</th>
+                <th style={{ width: '3%' }} />
               </tr>
             </thead>
             <tbody>
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
                     No line items — click <strong>+ Add Line</strong>.
                   </td>
                 </tr>

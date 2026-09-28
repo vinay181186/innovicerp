@@ -201,6 +201,27 @@ export async function listJobCards(
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
         jwl.part_name AS "jwPartName",
+        -- R1 (ADR-194): customer-material roll-up for a JW-sourced JC, summed off
+        -- the separate party-store ledger for THIS JWSO line. Reversals are NETTED
+        -- so the roll-up matches party-store reality after a cancel: a GRN cancel
+        -- posts reversal/out (undoes a receive), an issue cancel posts reversal/in
+        -- (undoes an issue). balance = received − issued − returned is computed in
+        -- the mapper. All 0 on a non-JW card (jwl.id NULL).
+        COALESCE((SELECT SUM(CASE
+            WHEN psl.movement = 'receive' THEN psl.qty
+            WHEN psl.movement = 'reversal' AND psl.direction = 'out' THEN -psl.qty
+            ELSE 0 END)
+          FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmReceived",
+        COALESCE((SELECT SUM(CASE
+            WHEN psl.movement = 'issue' THEN psl.qty
+            WHEN psl.movement = 'reversal' AND psl.direction = 'in' THEN -psl.qty
+            ELSE 0 END)
+          FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmIssued",
+        COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
+            AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
@@ -408,6 +429,27 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
         jwl.part_name AS "jwPartName",
+        -- R1 (ADR-194): customer-material roll-up for a JW-sourced JC, summed off
+        -- the separate party-store ledger for THIS JWSO line. Reversals are NETTED
+        -- so the roll-up matches party-store reality after a cancel: a GRN cancel
+        -- posts reversal/out (undoes a receive), an issue cancel posts reversal/in
+        -- (undoes an issue). balance = received − issued − returned is computed in
+        -- the mapper. All 0 on a non-JW card (jwl.id NULL).
+        COALESCE((SELECT SUM(CASE
+            WHEN psl.movement = 'receive' THEN psl.qty
+            WHEN psl.movement = 'reversal' AND psl.direction = 'out' THEN -psl.qty
+            ELSE 0 END)
+          FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmReceived",
+        COALESCE((SELECT SUM(CASE
+            WHEN psl.movement = 'issue' THEN psl.qty
+            WHEN psl.movement = 'reversal' AND psl.direction = 'in' THEN -psl.qty
+            ELSE 0 END)
+          FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmIssued",
+        COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
+            AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
@@ -563,6 +605,29 @@ function toChildJobCards(v: unknown): JobCardListItem['childJobCards'] {
 }
 
 function toListItem(r: Record<string, unknown>): JobCardListItem {
+  // R1 (ADR-194): customer-material roll-up. Only a JW-sourced card has customer
+  // material; an own-material (SO-sourced or standalone) card reports null. When
+  // the card IS JW-sourced, Needed = rmQtyPerPiece × orderQty (route-card RM,
+  // null when not planned), and Received/Issued/Returned come off the party-store
+  // ledger for this JWSO line; Balance = received − issued − returned.
+  const jwLineId = (r['jwLineId'] as string | null) ?? null;
+  const rmQtyPerPiece = r['rmQtyPerPiece'] == null ? null : Number(r['rmQtyPerPiece']);
+  const orderQty = Number(r['orderQty']);
+  // Netted totals (reversals already subtracted in SQL). Balance uses the TRUE
+  // net so it always equals party-store reality; the three display categories
+  // are clamped at ≥0 in case a reversal edge case drives one slightly negative.
+  const cmReceived = Number(r['cmReceived'] ?? 0);
+  const cmIssued = Number(r['cmIssued'] ?? 0);
+  const cmReturned = Number(r['cmReturned'] ?? 0);
+  const customerMaterial: JobCardListItem['customerMaterial'] = jwLineId
+    ? {
+        needed: rmQtyPerPiece == null ? null : Math.round(rmQtyPerPiece * orderQty),
+        received: Math.max(0, cmReceived),
+        issued: Math.max(0, cmIssued),
+        returned: Math.max(0, cmReturned),
+        balance: cmReceived - cmIssued - cmReturned,
+      }
+    : null;
   return {
     id: r['id'] as string,
     companyId: r['companyId'] as string,
@@ -611,7 +676,8 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     rawMaterialSizeText: (r['rawMaterialSizeText'] as string | null) ?? null,
     rawMaterialItemId: (r['rawMaterialItemId'] as string | null) ?? null,
     rawMaterialItemCode: (r['rawMaterialItemCode'] as string | null) ?? null,
-    rmQtyPerPiece: r['rmQtyPerPiece'] == null ? null : Number(r['rmQtyPerPiece']),
+    rmQtyPerPiece,
+    customerMaterial,
     lastOpCompletedQty: Number(r['lastOpCompletedQty'] ?? 0),
     runningCount: Number(r['runningCount'] ?? 0),
     createdAt: tsLike(r['createdAt']),

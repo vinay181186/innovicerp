@@ -23,6 +23,7 @@ import { ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { useJobWorkOrder, useSoftDeleteJobWorkOrder } from '../api';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
+import { ShortCloseJwLineModal } from '../components/short-close-jw-line-modal';
 
 export const jobWorkOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -39,6 +40,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'jw_create');
   const softDelete = useSoftDeleteJobWorkOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // R6 (ADR-194): the line the Short-close dialog is asking about, or null.
+  const [shortCloseLine, setShortCloseLine] = useState<JobWorkOrderLine | null>(null);
   // The line drawing the user asked to look at, or null when nothing is open.
   // The click only records WHICH file; FilePreviewModal fetches and shows it
   // inside the app, so a look never becomes a silent download (the same slot the
@@ -197,6 +200,14 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         />
       ) : null}
 
+      {shortCloseLine ? (
+        <ShortCloseJwLineModal
+          jwId={detail.id}
+          line={shortCloseLine}
+          onClose={() => setShortCloseLine(null)}
+        />
+      ) : null}
+
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title" style={{ color: 'var(--blue)' }}>
@@ -246,12 +257,16 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 )}
                 <th>Due Date</th>
                 <th>JWSO Status</th>
+                {canEdit ? <th className="td-ctr">Actions</th> : null}
               </tr>
             </thead>
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={priceHidden ? 8 : 10} className="empty-state">
+                  <td
+                    colSpan={priceHidden ? (canEdit ? 9 : 8) : canEdit ? 11 : 10}
+                    className="empty-state"
+                  >
                     No lines yet.
                   </td>
                 </tr>
@@ -262,6 +277,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                     line={l}
                     priceHidden={priceHidden}
                     onPreview={setLinePreview}
+                    canShortClose={canEdit}
+                    onShortClose={() => setShortCloseLine(l)}
                   />
                 ))
               )}
@@ -432,9 +449,20 @@ function LineRow(props: {
   line: JobWorkOrderLine;
   priceHidden: boolean;
   onPreview: (storagePath: string) => void;
+  canShortClose: boolean;
+  onShortClose: () => void;
 }): React.JSX.Element {
-  const { line: l, priceHidden, onPreview } = props;
+  const { line: l, priceHidden, onPreview, canShortClose, onShortClose } = props;
   const drawingFilePath = l.drawingFilePath ?? null;
+  // R6 (ADR-194): an OPEN line with an unmet balance can be short-closed; a line
+  // already short-closed shows the badge and offers no action.
+  const shortClosed = Boolean(l.shortClosedAt);
+  const canOfferShortClose =
+    canShortClose &&
+    !shortClosed &&
+    l.status !== 'closed' &&
+    l.status !== 'cancelled' &&
+    l.returnedQty < l.orderQty;
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>
@@ -492,8 +520,44 @@ function LineRow(props: {
         {fmtDate(l.dueDate)}
       </td>
       <td>
-        <SoStatusBadge status={l.status} />
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center' }}>
+          <SoStatusBadge status={l.status} />
+          {shortClosed ? (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: '2px 6px',
+                borderRadius: 4,
+                color: 'var(--amber2)',
+                background: 'rgba(245,158,11,0.12)',
+              }}
+              title={l.shortCloseReason ? `Short-closed: ${l.shortCloseReason}` : 'Short-closed'}
+            >
+              Short-closed
+            </span>
+          ) : null}
+        </div>
       </td>
+      {canShortClose ? (
+        <td className="td-ctr">
+          {canOfferShortClose ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--amber2)', fontSize: 11 }}
+              onClick={onShortClose}
+              title="Close this line with its balance left unmet"
+            >
+              Short Close
+            </button>
+          ) : (
+            <span className="text3" style={{ fontSize: 11 }}>
+              —
+            </span>
+          )}
+        </td>
+      ) : null}
     </tr>
   );
 }

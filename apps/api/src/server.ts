@@ -88,6 +88,7 @@ import { productionDashboardRoutes } from './modules/production-dashboard/routes
 import { toolIssuesRoutes } from './modules/tool-issues/routes';
 import { partyMaterialsRoutes } from './modules/party-materials/routes';
 import { partyGrnRoutes } from './modules/party-grn/routes';
+import { partyStockLedgerRoutes } from './modules/party-stock-ledger/routes';
 import { partyMaterialIssuesRoutes } from './modules/party-material-issues/routes';
 import { jwReturnsRoutes } from './modules/jw-returns/routes';
 import { jwInvoicesRoutes } from './modules/jw-invoices/routes';
@@ -194,6 +195,7 @@ await app.register(ospWipRoutes);
 await app.register(toolIssuesRoutes);
 await app.register(partyMaterialsRoutes);
 await app.register(partyGrnRoutes);
+await app.register(partyStockLedgerRoutes);
 await app.register(partyMaterialIssuesRoutes);
 await app.register(jwReturnsRoutes);
 await app.register(jwInvoicesRoutes);
