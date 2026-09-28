@@ -397,19 +397,11 @@ export async function createPartyGrn(
     );
     // Cumulative RECEIVED per JW line (the ADR-102 over-receipt guard), keyed by
     // the typed line-no text so it matches how a line is picked on the form.
-    const existingRows = (await tx.execute(sql`
-      SELECT pgl.jw_line_no_text AS "lineNoText",
-             COALESCE(SUM(pgl.received_qty), 0)::int AS "received"
-      FROM public.party_grn pg
-      JOIN public.party_grn_lines pgl ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
-      WHERE pg.job_work_order_id = ${jw.id}::uuid AND pg.deleted_at IS NULL
-      GROUP BY pgl.jw_line_no_text
-    `)) as unknown as Array<{ lineNoText: string | null; received: number }>;
-    const receivedByLineNo = new Map<string, number>();
-    for (const r of existingRows) {
-      if (r.lineNoText != null)
-        receivedByLineNo.set(String(r.lineNoText).trim(), Number(r.received));
-    }
+    // R3 (ADR-194): received qty is NOT capped against order qty any more.
+    // Once incoming QC can reject, a customer legitimately re-sends replacements
+    // for rejected pieces, so cumulative RECEIVED may exceed order qty. Only the
+    // ACCEPTED qty — what actually becomes party stock — is capped below.
+    //
     // R2 (ADR-194): cumulative ACCEPTED per JW line — only accepted qty may
     // enter the party store, and Σ accepted across all GRNs for a line must not
     // exceed that line's order qty. Keyed by the real jw_line_id backfilled by
@@ -476,24 +468,6 @@ export async function createPartyGrn(
           `Row #${idx + 1}: ${pm.code} belongs to another Customer than ${jw.code}. ` +
             `Party Material can only be received against its own Customer's order.`,
         );
-      }
-
-      // Block receiving more than the line's order qty (cumulative across all
-      // GRNs for this JW, including earlier lines in this same receipt).
-      {
-        const already = receivedByLineNo.get(lnKey) ?? 0;
-        const remaining = Math.max(0, orderQty - already);
-        if (ln.receivedQty > remaining) {
-          const part = partName ? `${partName} (Ln ${lnKey})` : `Ln ${lnKey}`;
-          const note =
-            already > 0
-              ? ` — Order Qty ${orderQty}, already Received ${already}.`
-              : ` — Order Qty ${orderQty}.`;
-          throw new ValidationError(
-            `${part}: Qty (${ln.receivedQty}) cannot be more than Pending (${remaining})${note} Please reduce the Qty.`,
-          );
-        }
-        receivedByLineNo.set(lnKey, already + ln.receivedQty);
       }
 
       // R2 (ADR-194): the ACCEPTED qty is what actually enters the party store,

@@ -1,4 +1,5 @@
 import {
+  cancelJwReturnChallanInputSchema,
   createJwReturnChallanInputSchema,
   listJwReturnChallansQuerySchema,
 } from '@innovic/shared';
@@ -24,6 +25,7 @@ export async function jwReturnsRoutes(app: FastifyInstance): Promise<void> {
   app.post('/jw-returns/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = req.params as { id: string };
-    return service.cancelJwReturnChallan(id, req.user);
+    const { reason } = cancelJwReturnChallanInputSchema.parse(req.body);
+    return service.cancelJwReturnChallan(id, reason, req.user);
   });
 }

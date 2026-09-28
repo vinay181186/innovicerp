@@ -243,7 +243,10 @@ export async function createPartyMaterialIssue(
     const balRows = (await tx.execute(sql`
       SELECT
         COALESCE((
-          SELECT SUM(pgl.received_qty)
+          -- R2 (ADR-194): only ACCEPTED qty enters the party store, so issue
+          -- availability is Σ accepted (not received — rejected pieces never
+          -- became stock and must not show as pending to issue).
+          SELECT SUM(pgl.accepted_qty)
           FROM public.party_grn pg
           JOIN public.party_grn_lines pgl
             ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
@@ -265,7 +268,7 @@ export async function createPartyMaterialIssue(
     if (input.qty > remainingForLine) {
       throw new ValidationError(
         `Qty (${input.qty}) for "${jc.linePartName}" (${jw.code} Ln ${lineNo ?? '?'}) cannot be more than ` +
-          `Pending to Issue (${remainingForLine}) — Received ${receivedForLine}, already Issued ${issuedForLine}. ` +
+          `Pending to Issue (${remainingForLine}) — Accepted ${receivedForLine}, already Issued ${issuedForLine}. ` +
           `Record a Party GRN for the rest first.`,
       );
     }

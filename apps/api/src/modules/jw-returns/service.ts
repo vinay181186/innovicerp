@@ -260,6 +260,9 @@ function rowToReturn(row: typeof jwReturnChallans.$inferSelect): JwReturnChallan
     transport: row.transport,
     vehicleNo: row.vehicleNo,
     remarks: row.remarks,
+    cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
+    cancelledBy: row.cancelledBy,
+    cancelReason: row.cancelReason,
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt.toISOString(),
@@ -447,6 +450,7 @@ export async function createJwReturnChallan(
 
 export async function cancelJwReturnChallan(
   id: string,
+  reason: string,
   user: AuthContext,
 ): Promise<JwReturnChallan> {
   // Reverses a JW Return Challan (mirrors delivery-challans.cancelDeliveryChallan).
@@ -548,7 +552,14 @@ export async function cancelJwReturnChallan(
     // 1) Mark the return cancelled
     const updated = await tx
       .update(jwReturnChallans)
-      .set({ status: 'cancelled', updatedAt: new Date(), updatedBy: userId })
+      .set({
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        cancelledBy: userId,
+        cancelReason: reason,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
       .where(eq(jwReturnChallans.id, ret.id))
       .returning();
     const row = updated[0];

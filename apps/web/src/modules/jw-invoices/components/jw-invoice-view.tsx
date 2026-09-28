@@ -11,6 +11,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
@@ -42,6 +43,12 @@ export function JwInvoiceView({
 }): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // ADR-194 #4: cancel hits requireFormAccess(jw_create,'approve') on the server,
+  // so gate it on jw_create edit+approve — not the looser create guard — so a
+  // user without approve never sees a Cancel button that would 403.
+  const { data: eff } = useMyAccess();
+  const jwPerms = effectiveFormPerms(eff, 'jw_create');
+  const canCancel = jwPerms.edit && jwPerms.approve;
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(() => Boolean(initialJwId));
@@ -142,14 +149,14 @@ export function JwInvoiceView({
                       from the row AND from the printed sheet — the invoice
                       prints with the money suppressed, not blocked. */}
                   <th>Print</th>
-                  {canWrite ? <th className="td-ctr">Actions</th> : null}
+                  {canCancel ? <th className="td-ctr">Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={priceHidden ? (canWrite ? 10 : 9) : canWrite ? 15 : 14}
+                      colSpan={priceHidden ? (canCancel ? 10 : 9) : canCancel ? 15 : 14}
                       className="empty-state"
                     >
                       {term ? 'No JW Invoices match.' : 'No JW Invoices yet.'}
@@ -221,7 +228,7 @@ export function JwInvoiceView({
                     <td>
                       <PrintJwInvoiceButton invoice={r} priceVisible={!priceHidden} />
                     </td>
-                    {canWrite ? (
+                    {canCancel ? (
                       <td className="td-ctr">
                         {r.status === 'cancelled' ? (
                           <span className="text3" style={{ fontSize: 11 }}>
@@ -251,7 +258,7 @@ export function JwInvoiceView({
       {showModal && canWrite ? (
         <NewJwInvoiceModal initialJwId={initialJwId} onClose={() => setShowModal(false)} />
       ) : null}
-      {cancelTarget && canWrite ? (
+      {cancelTarget && canCancel ? (
         <CancelJwInvoiceModal
           id={cancelTarget.id}
           code={cancelTarget.code}

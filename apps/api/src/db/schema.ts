@@ -4278,6 +4278,10 @@ export const jwReturnChallans = pgTable(
     transport: text('transport'),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
+    // R10 (ADR-194, migration 0158): cancel audit trail, symmetric with jw_invoices.
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

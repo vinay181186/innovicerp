@@ -88,6 +88,10 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // Access matrix (jw_create) replaces the old admin/manager role flags.
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
+  // R6 (ADR-194) #4: short-close hits requireFormAccess(...,'approve') on the
+  // server, so the UI must require edit AND approve — same pair as delete —
+  // otherwise an edit-only user sees the button and gets a 403.
+  const canShortCloseAction = perms.edit && perms.approve;
 
   // Next steps — each opens the downstream create screen with this JWSO
   // already picked (`?jw=<jwsoId>`). Gates mirror the target screens: Party
@@ -257,14 +261,22 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 )}
                 <th>Due Date</th>
                 <th>JWSO Status</th>
-                {canEdit ? <th className="td-ctr">Actions</th> : null}
+                {canShortCloseAction ? <th className="td-ctr">Actions</th> : null}
               </tr>
             </thead>
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={priceHidden ? (canEdit ? 9 : 8) : canEdit ? 11 : 10}
+                    colSpan={
+                      priceHidden
+                        ? canShortCloseAction
+                          ? 9
+                          : 8
+                        : canShortCloseAction
+                          ? 11
+                          : 10
+                    }
                     className="empty-state"
                   >
                     No lines yet.
@@ -277,7 +289,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                     line={l}
                     priceHidden={priceHidden}
                     onPreview={setLinePreview}
-                    canShortClose={canEdit}
+                    canShortClose={canShortCloseAction}
                     onShortClose={() => setShortCloseLine(l)}
                   />
                 ))
