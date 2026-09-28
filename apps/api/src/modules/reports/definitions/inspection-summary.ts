@@ -96,9 +96,9 @@ export const inspectionSummaryReport: RegisteredReport = {
         s.stage,
         s.item_code,
         MAX(s.item_name)                              AS item_name,
-        SUM(s.accepted + s.rejected)::int             AS inspected_qty,
-        SUM(s.accepted)::int                          AS accepted_qty,
-        SUM(s.rejected)::int                          AS rejected_qty,
+        SUM(s.accepted + s.rejected)::numeric         AS inspected_qty,
+        SUM(s.accepted)::numeric                      AS accepted_qty,
+        SUM(s.rejected)::numeric                      AS rejected_qty,
         CASE WHEN SUM(s.accepted + s.rejected) > 0
              THEN ROUND(100.0 * SUM(s.rejected) / SUM(s.accepted + s.rejected), 1) END AS reject_pct
       FROM s

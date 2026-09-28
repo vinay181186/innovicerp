@@ -91,7 +91,7 @@ export const itemTrackerReport: RegisteredReport = {
         i.name                                     AS item_name,
         COALESCE(s.on_hand_qty, 0)::float8            AS in_stock,
         COALESCE(jc_open.qty, 0)::int              AS in_production,
-        COALESCE(po_pending.qty, 0)::int           AS in_po_ordered,
+        COALESCE(po_pending.qty, 0)::numeric       AS in_po_ordered,
         (
           COALESCE(s.on_hand_qty, 0) +
           COALESCE(jc_open.qty, 0) +

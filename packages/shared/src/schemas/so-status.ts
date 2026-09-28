@@ -102,8 +102,9 @@ export const soStatusLineStatusEnum = z.enum([
 export type SoStatusLineStatus = z.infer<typeof soStatusLineStatusEnum>;
 
 export const soStatusChipSchema = z.object({
-  qty: z.number().int().nonnegative(),
-  total: z.number().int().nonnegative(),
+  // PO / GRN / QC chips carry purchase qty — decimal on KGS / MTR since 0172.
+  qty: z.number().nonnegative(),
+  total: z.number().nonnegative(),
 });
 export type SoStatusChip = z.infer<typeof soStatusChipSchema>;
 

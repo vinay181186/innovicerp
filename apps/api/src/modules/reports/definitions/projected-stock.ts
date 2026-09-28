@@ -61,7 +61,7 @@ export const projectedStockReport: RegisteredReport = {
           COALESCE(a.physical_qty, 0)::float8          AS physical_qty,
           COALESCE(a.reserved_qty, 0)::float8          AS reserved_qty,
           COALESCE(a.available_qty, 0)::float8         AS available_qty,
-          COALESCE(p.on_po_qty, 0)::int             AS on_po_qty,
+          COALESCE(p.on_po_qty, 0)::numeric         AS on_po_qty,
           COALESCE(m.production_qty, 0)::int        AS production_qty,
           (COALESCE(a.available_qty, 0) + COALESCE(p.on_po_qty, 0)
             + COALESCE(m.production_qty, 0))::float8   AS projected_qty,

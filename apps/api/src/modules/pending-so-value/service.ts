@@ -14,7 +14,7 @@
 //   pendingValue     = orderValue - dispatchedValue
 //   invoicedValue    = SUM(inv.grand_total) for non-deleted invoices on this SO
 //   receivedValue    = SUM(inv.total_paid)
-//   outstandingValue = invoicedValue - receivedValue
+//   outstandingValue = invoicedValue - receivedValue - SUM(inv.total_tds)  (0171)
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
@@ -104,7 +104,10 @@ export async function getPendingSoValue(
         SELECT
           sales_order_id AS so_id,
           COALESCE(SUM(grand_total), 0)::numeric(14, 2) AS invoiced_value,
-          COALESCE(SUM(total_paid), 0)::numeric(14, 2)  AS received_value
+          COALESCE(SUM(total_paid), 0)::numeric(14, 2)  AS received_value,
+          -- TDS / short amount the customer deducted (0171) settles the invoice
+          -- too: outstanding = grand − paid − TDS, as the invoices service.
+          COALESCE(SUM(total_tds), 0)::numeric(14, 2)   AS tds_value
         FROM public.invoices
         WHERE company_id = ${companyId}::uuid
           AND deleted_at IS NULL
@@ -122,7 +125,8 @@ export async function getPendingSoValue(
         (COALESCE(sov.order_value, 0) - COALESCE(sd.dispatched_value, 0))::text AS pending_value,
         COALESCE(si.invoiced_value, 0)::text AS invoiced_value,
         COALESCE(si.received_value, 0)::text AS received_value,
-        (COALESCE(si.invoiced_value, 0) - COALESCE(si.received_value, 0))::text AS outstanding_value
+        (COALESCE(si.invoiced_value, 0) - COALESCE(si.received_value, 0)
+          - COALESCE(si.tds_value, 0))::text AS outstanding_value
       FROM public.sales_orders so
       LEFT JOIN so_order_value sov ON sov.so_id = so.id
       LEFT JOIN so_dispatched   sd  ON sd.so_id  = so.id

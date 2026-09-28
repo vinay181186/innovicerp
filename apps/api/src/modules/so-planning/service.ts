@@ -221,7 +221,7 @@ async function loadPrsByLine(
       code: purchaseRequests.code,
       qty: purchaseRequests.qty,
       // ADR-189 — what the PR still covers (ordered only, once balance-closed).
-      coverQty: sql<number>`${sql.raw(prCoverQtyRaw('purchase_requests'))}::int`,
+      coverQty: sql<number>`${sql.raw(prCoverQtyRaw('purchase_requests'))}::numeric`,
       status: purchaseRequests.status,
       soLineId: purchaseRequests.sourceSoLineId,
       poCode: purchaseOrders.code,
@@ -270,11 +270,11 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         // the % uses covered (+ direct cards) capped at the line qty, so one
         // over-covered line cannot hide another's gap.
         plannedQty:
-          sql<number>`coalesce(sum(${sql.raw(soLinePlannedRaw('"sales_order_lines"'))}), 0)::int`.as(
+          sql<number>`coalesce(sum(${sql.raw(soLinePlannedRaw('"sales_order_lines"'))}), 0)::numeric`.as(
             'planned_qty',
           ),
         coveredQty:
-          sql<number>`coalesce(sum(LEAST(${sql.raw(soLineCoveredRaw('"sales_order_lines"'))}, ${salesOrderLines.orderQty})), 0)::int`.as(
+          sql<number>`coalesce(sum(LEAST(${sql.raw(soLineCoveredRaw('"sales_order_lines"'))}, ${salesOrderLines.orderQty})), 0)::numeric`.as(
             'covered_qty',
           ),
         maxDueDate: sql<string | null>`max(${salesOrderLines.dueDate})::text`.as('max_due'),
@@ -1389,7 +1389,7 @@ export async function raisePlanningPr(
       //    shared rule (lib/so-line-coverage.ts), the same figure the Planning
       //    line and the Needs Planning table state, never rebuilt by hand here.
       const leftRows = (await tx.execute(sql`
-        SELECT GREATEST(sol.order_qty - ${sql.raw(soLineCoveredRaw('sol'))}, 0)::int AS to_plan
+        SELECT GREATEST(sol.order_qty - ${sql.raw(soLineCoveredRaw('sol'))}, 0)::numeric AS to_plan
         FROM public.sales_order_lines sol
         WHERE sol.id = ${soLineId}::uuid
       `)) as unknown as Array<{ to_plan: number }>;

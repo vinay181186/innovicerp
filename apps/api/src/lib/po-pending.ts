@@ -41,7 +41,7 @@ export function poLinePendingSql(pol: string, po: string): SQL {
 /** CTE body: item_id, qty = the item's On PO for one company. */
 export function onPoByItemSql(companyId: string): SQL {
   return sql`
-    SELECT pol.item_id, SUM(GREATEST(0, pol.qty - COALESCE(pol.received_qty, 0)))::int AS qty
+    SELECT pol.item_id, SUM(GREATEST(0, pol.qty - COALESCE(pol.received_qty, 0)))::numeric AS qty
     FROM public.purchase_order_lines pol
     JOIN public.purchase_orders po ON po.id = pol.purchase_order_id
     WHERE po.company_id = ${companyId}::uuid

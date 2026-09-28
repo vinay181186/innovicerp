@@ -91,13 +91,13 @@ export const poLineAnalysisReport: RegisteredReport = {
           COALESCE(it.name, pol.item_name)                 AS item_name,
           pol.qty                                          AS qty,
           pol.received_qty                                 AS received_qty,
-          COALESCE(g.accepted, 0)::int                     AS qc_accepted_qty,
-          COALESCE(g.rejected, 0)::int                     AS qc_rejected_qty,
+          COALESCE(g.accepted, 0)::numeric                 AS qc_accepted_qty,
+          COALESCE(g.rejected, 0)::numeric                 AS qc_rejected_qty,
           -- ADR-189: a closed / cancelled / short-closed PO owes nothing more.
           CASE
             WHEN po.short_closed_at IS NOT NULL OR po.status IN ('closed', 'cancelled') THEN 0
             ELSE GREATEST(0, pol.qty - pol.received_qty)
-          END::int                                         AS pending_qty,
+          END::numeric                                     AS pending_qty,
           pol.rate::numeric                                AS rate,
           COALESCE(pol.due_date, po.due_date)              AS due_date,
           g.last_grn_date                                  AS last_grn_date

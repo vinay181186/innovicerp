@@ -29,7 +29,8 @@ export const planningSoListItemSchema = z.object({
   dueDate: z.string().nullable(),
   totalLines: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
-  totalPlannedQty: z.number().int().nonnegative(),
+  // Includes a Buy line's PR qty — decimal on KGS / MTR since 0172.
+  totalPlannedQty: z.number().nonnegative(),
   /** 0–100. Math: round(totalPlannedQty / totalQty × 100). */
   planningPct: z.number().int().min(0).max(100),
   /** 'fully_planned' (>= 100%), 'partial' (0 < pct < 100), 'unplanned' (0%). */
@@ -108,13 +109,14 @@ export const planningLineSchema = z.object({
    *  against this line and `prQty` (their live qty, cancelled excluded) counts
    *  towards `totalPlanned` / `remaining`. Defaults keep older API builds valid. */
   itemProcurementType: itemProcurementTypeSchema.default('make'),
-  prQty: z.number().int().nonnegative().default(0),
+  // PR qty is decimal on KGS / MTR since 0172 (max 3 places).
+  prQty: z.number().nonnegative().default(0),
   prs: z
     .array(
       z.object({
         id: z.string().uuid(),
         code: z.string(),
-        qty: z.number().int().nonnegative(),
+        qty: z.number().nonnegative(),
         status: z.enum(PR_STATUSES),
         /** PO raised from this PR, when any (code only — for the chip). */
         poCode: z.string().nullable().default(null),
@@ -123,7 +125,7 @@ export const planningLineSchema = z.object({
     .default([]),
   plans: z.array(planningPlanSummarySchema),
   /** Sum of all non-cancelled plan_qty for this SO line. */
-  totalPlanned: z.number().int().nonnegative(),
+  totalPlanned: z.number().nonnegative(),
   /**
    * Qty covered by Job Cards created directly against this SO line WITHOUT a
    * plan (sourceSoLineId set, not referenced by any plan.jcId). These are real
@@ -134,7 +136,7 @@ export const planningLineSchema = z.object({
   /** Codes of those plan-less Job Cards, for the "In Production (no plan)" indicator. */
   directJcCodes: z.array(z.string()),
   /** max(0, orderQty - totalPlanned - directJcQty). */
-  remaining: z.number().int().nonnegative(),
+  remaining: z.number().nonnegative(),
   /** AVAILABLE stock for this line's item = physical − total active reserved
    *  (ADR-180). Kept under its old name because its MEANING is unchanged — it
    *  has always answered "how much may I still use" — only the arithmetic

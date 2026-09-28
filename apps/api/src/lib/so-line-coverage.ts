@@ -21,6 +21,10 @@
 // it can be spliced into drizzle `sql` templates and hand-written queries.
 // Callers that need more than one of these per row should compute covered
 // ONCE (in a sub-select / LATERAL) and derive to-plan from it.
+//
+// planned / covered are ::numeric, not ::int: a Buy line's PR qty is decimal
+// since 0172 (KGS / MTR), and ::int would ROUND 9.5 to 10. The direct Job Card
+// part stays whole — JC piece counts are always integers. Read with Number().
 
 /**
  * ADR-189 — how much of an SO line one PR covers: its qty, or — once its
@@ -58,7 +62,7 @@ export function soLinePlannedRaw(sol: string): string {
                                 AND pr_c.id IN (pp_c.dp_pr_id, pp_c.fo_pr_id,
                                                 pp_c.fo_mat_pr_id, pp_c.material_pr_id))), 0)
            ELSE 0 END
-  )::int`;
+  )::numeric`;
 }
 
 export function soLineDirectJcRaw(sol: string): string {
@@ -72,5 +76,5 @@ export function soLineDirectJcRaw(sol: string): string {
 }
 
 export function soLineCoveredRaw(sol: string): string {
-  return `(${soLinePlannedRaw(sol)} + ${soLineDirectJcRaw(sol)})::int`;
+  return `(${soLinePlannedRaw(sol)} + ${soLineDirectJcRaw(sol)})::numeric`;
 }
