@@ -55,6 +55,10 @@ export interface BuildJcWriteInputArgs {
   rawMaterialGradeText?: string | null;
   rawMaterialSizeId?: string | null;
   rawMaterialSizeText?: string | null;
+  /** ADR-193 phase 3a — the RM item pair, sent only on a hand-raised CREATE
+   *  (from the item's Route Card). Left out on edit: the server then keeps the
+   *  stored pair and never writes it back to the Route Card. */
+  rmItem?: { rawMaterialItemId: string | null; rmQtyPerPiece: number | null } | undefined;
   ops: BuildJcOpValues[];
   docs: BuildJcDocValues[];
   /** Rework/repair child (`recovery_kind` set on the JC). The server appends
@@ -129,6 +133,7 @@ export function buildJcWriteInput(args: BuildJcWriteInputArgs): BuildJcWriteInpu
     rawMaterialGradeText,
     rawMaterialSizeId,
     rawMaterialSizeText,
+    rmItem,
     ops,
     docs,
     recoveryKind,
@@ -182,6 +187,7 @@ export function buildJcWriteInput(args: BuildJcWriteInputArgs): BuildJcWriteInpu
     rawMaterialGradeText: rawMaterialGradeText || null,
     rawMaterialSizeId: rawMaterialSizeId ?? null,
     rawMaterialSizeText: rawMaterialSizeText || null,
+    ...(rmItem ? rmItem : {}),
     ops: userOps.map(
       (o): JcOpInput => ({
         id: o.id,

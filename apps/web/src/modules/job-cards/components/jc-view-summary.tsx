@@ -283,6 +283,24 @@ export function JcViewSummary({
                   {jc.rawMaterialSizeText || '—'}
                 </span>
               </div>
+              {/* ADR-193 phase 3a — the RM ITEM the store issues, and how much
+                  this card needs (qty per piece × card qty). */}
+              {jc.rawMaterialItemId ? (
+                <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+                  <span style={{ color: 'var(--text3)', flexShrink: 0 }}>RM Item:</span>
+                  <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                    {jc.rawMaterialItemCode ?? '—'}
+                  </span>
+                  {jc.rmQtyPerPiece != null ? (
+                    <span style={{ color: 'var(--text3)' }}>
+                      {jc.rmQtyPerPiece} per piece · Required{' '}
+                      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                        {Math.round(jc.rmQtyPerPiece * jc.orderQty * 10000) / 10000}
+                      </span>
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               {/* ADR-182 — what was ACTUALLY cut, beside the planned size
                   above. Only shown when the Production Order recorded one. */}
               {actualSize ? (

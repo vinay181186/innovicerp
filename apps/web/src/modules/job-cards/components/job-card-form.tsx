@@ -311,6 +311,15 @@ export function JobCardForm({
       setRmSizeText(d.rawMaterialSizeText);
     }
   }, [isEdit, itemRouteDefaults, rmGradeId, rmGradeText, rmSizeId, rmSizeText]);
+  // ADR-193 phase 3a — the RM ITEM pair travels with a hand-raised JC too, so
+  // the store sees its Required. Create only; never sent on edit.
+  const rmItemFromRoute =
+    !isEdit && itemRouteDefaults?.rawMaterialItemId && itemRouteDefaults.rmQtyPerPiece != null
+      ? {
+          rawMaterialItemId: itemRouteDefaults.rawMaterialItemId,
+          rmQtyPerPiece: itemRouteDefaults.rmQtyPerPiece,
+        }
+      : undefined;
   const [drawingName, setDrawingName] = useState<string>(model?.drawingFilePath ? 'Attached' : '');
 
   const [ops, setOps] = useState<FormOp[]>(
@@ -732,6 +741,7 @@ export function JobCardForm({
       rawMaterialGradeText: rmGradeText,
       rawMaterialSizeId: rmSizeId,
       rawMaterialSizeText: rmSizeText,
+      rmItem: rmItemFromRoute,
       ops,
       docs,
       allowedPairs,

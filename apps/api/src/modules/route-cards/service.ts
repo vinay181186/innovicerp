@@ -62,6 +62,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
+import { resolveRmItem } from '../../lib/rm-item';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import {
@@ -201,6 +202,10 @@ export interface ResolvedRawMaterial {
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  // ADR-193 phase 3a: the raw-material Item Master item + qty per piece.
+  // Validated as a pair by lib/rm-item.ts resolveRmItem.
+  rawMaterialItemId: string | null;
+  rmQtyPerPiece: number | null;
 }
 
 // Resolve the grade/size the caller sent against THIS company's live masters.
@@ -216,6 +221,11 @@ async function resolveRcRawMaterial(
   tx: DbTransaction,
   companyId: string,
   input: CreateRouteCardInput | UpdateRouteCardInput,
+  /** ADR-193 phase 3a — the card's stored RM item pair, on edit. Unlike grade /
+   *  size, a field the payload leaves out (undefined) KEEPS its stored value
+   *  and only an explicit null clears it, so a form that does not carry the
+   *  pair yet cannot wipe it. On create there is nothing stored. */
+  storedRmItem?: { rawMaterialItemId: string | null; rmQtyPerPiece: number | null },
 ): Promise<ResolvedRawMaterial> {
   const gradeId = input.rawMaterialGradeId ?? null;
   const sizeId = input.rawMaterialSizeId ?? null;
@@ -254,11 +264,23 @@ async function resolveRcRawMaterial(
     sizeText = rows[0].name;
   }
 
+  const rmItem = await resolveRmItem(tx, companyId, {
+    rawMaterialItemId:
+      input.rawMaterialItemId !== undefined
+        ? input.rawMaterialItemId
+        : (storedRmItem?.rawMaterialItemId ?? null),
+    rmQtyPerPiece:
+      input.rmQtyPerPiece !== undefined
+        ? input.rmQtyPerPiece
+        : (storedRmItem?.rmQtyPerPiece ?? null),
+  });
+
   return {
     rawMaterialGradeId: gradeId,
     rawMaterialGradeText: gradeText,
     rawMaterialSizeId: sizeId,
     rawMaterialSizeText: sizeText,
+    ...rmItem,
   };
 }
 
@@ -313,6 +335,9 @@ export async function listRouteCards(
         rc.raw_material_grade_text AS "rawMaterialGradeText",
         rc.raw_material_size_id AS "rawMaterialSizeId",
         rc.raw_material_size_text AS "rawMaterialSizeText",
+        rc.raw_material_item_id AS "rawMaterialItemId",
+        rmi.code AS "rawMaterialItemCode",
+        rc.rm_qty_per_piece AS "rmQtyPerPiece",
         rc.notes,
         rc.plan_type AS "planType",
         rc.created_at AS "createdAt", rc.created_by AS "createdBy",
@@ -322,6 +347,7 @@ export async function listRouteCards(
         COALESCE(op_agg.op_count, 0)::int AS "opCount"
       FROM public.route_cards rc
       LEFT JOIN public.items i ON i.id = rc.item_id AND i.deleted_at IS NULL
+      LEFT JOIN public.items rmi ON rmi.id = rc.raw_material_item_id AND rmi.company_id = rc.company_id
       LEFT JOIN LATERAL (
         SELECT COUNT(*) AS op_count
         FROM public.route_card_ops o
@@ -359,6 +385,9 @@ function toListItem(r: Record<string, unknown>): RouteCardListItem {
     rawMaterialGradeText: (r['rawMaterialGradeText'] as string | null) ?? null,
     rawMaterialSizeId: (r['rawMaterialSizeId'] as string | null) ?? null,
     rawMaterialSizeText: (r['rawMaterialSizeText'] as string | null) ?? null,
+    rawMaterialItemId: (r['rawMaterialItemId'] as string | null) ?? null,
+    rawMaterialItemCode: (r['rawMaterialItemCode'] as string | null) ?? null,
+    rmQtyPerPiece: r['rmQtyPerPiece'] == null ? null : Number(r['rmQtyPerPiece']),
     notes: (r['notes'] as string | null) ?? null,
     planType: (r['planType'] as RouteCard['planType'] | null) ?? 'manufacture',
     createdAt: tsLike(r['createdAt']),
@@ -394,6 +423,18 @@ async function loadRouteCardDetail(
     .where(and(eq(items.id, header.itemId), isNull(items.deletedAt)))
     .limit(1);
   const item = itemRows[0] ?? null;
+
+  // ADR-193 phase 3a: the raw-material item's code, for display. No
+  // deleted_at filter — a card must keep naming the item it was set with.
+  const rmItemCode = header.rawMaterialItemId
+    ? ((
+        await tx
+          .select({ code: items.code })
+          .from(items)
+          .where(and(eq(items.id, header.rawMaterialItemId), eq(items.companyId, companyId)))
+          .limit(1)
+      )[0]?.code ?? null)
+    : null;
 
   // Ops with joined machine + machine group + vendor display.
   const opRows = await tx
@@ -441,6 +482,9 @@ async function loadRouteCardDetail(
     rawMaterialGradeText: header.rawMaterialGradeText,
     rawMaterialSizeId: header.rawMaterialSizeId,
     rawMaterialSizeText: header.rawMaterialSizeText,
+    rawMaterialItemId: header.rawMaterialItemId,
+    rawMaterialItemCode: rmItemCode,
+    rmQtyPerPiece: header.rmQtyPerPiece,
     notes: header.notes,
     planType: header.planType,
     createdAt: tsLike(header.createdAt),
@@ -786,7 +830,10 @@ export async function updateRouteCard(
     const machinesLookup = await assertMachineIdsExist(tx, machineIds, companyId);
     const vendorsLookup = await assertVendorIdsExist(tx, vendorIds, companyId);
 
-    const rawMaterial = await resolveRcRawMaterial(tx, companyId, input);
+    const rawMaterial = await resolveRcRawMaterial(tx, companyId, input, {
+      rawMaterialItemId: header.rawMaterialItemId,
+      rmQtyPerPiece: header.rmQtyPerPiece,
+    });
 
     // What changed ABOVE the operation table — computed here, while `header`
     // still holds the pre-save values. These edits bump the revision like any
@@ -815,6 +862,18 @@ export async function updateRouteCard(
     if ((rawMaterial.rawMaterialSizeText ?? null) !== (header.rawMaterialSizeText ?? null)) {
       headerChanges.push(
         `Size ${noteVal(header.rawMaterialSizeText)} → ${noteVal(rawMaterial.rawMaterialSizeText)}`,
+      );
+    }
+    if (
+      (rawMaterial.rawMaterialItemId ?? null) !== (header.rawMaterialItemId ?? null) ||
+      (rawMaterial.rmQtyPerPiece ?? null) !== (header.rmQtyPerPiece ?? null)
+    ) {
+      const codes = await rmItemCodes(tx, companyId, [
+        header.rawMaterialItemId,
+        rawMaterial.rawMaterialItemId,
+      ]);
+      headerChanges.push(
+        `RM item ${rmItemNote(codes, header.rawMaterialItemId, header.rmQtyPerPiece)} → ${rmItemNote(codes, rawMaterial.rawMaterialItemId, rawMaterial.rmQtyPerPiece)}`,
       );
     }
     // The plan type is a header fact like grade and size: a change to it is a
@@ -937,6 +996,9 @@ export async function softDeleteRouteCard(id: string, user: AuthContext): Promis
       rawMaterialGradeText: header.rawMaterialGradeText,
       rawMaterialSizeId: header.rawMaterialSizeId,
       rawMaterialSizeText: header.rawMaterialSizeText,
+      rawMaterialItemId: header.rawMaterialItemId,
+      rawMaterialItemCode: null,
+      rmQtyPerPiece: header.rmQtyPerPiece,
       notes: header.notes,
       planType: header.planType,
       createdAt: tsLike(header.createdAt),
@@ -949,6 +1011,27 @@ export async function softDeleteRouteCard(id: string, user: AuthContext): Promis
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+
+/** Item codes for the revision note's "RM item A → B" (ADR-193 phase 3a). No
+ *  deleted_at filter: the OLD item may since have been deleted. */
+async function rmItemCodes(
+  tx: DbTransaction,
+  companyId: string,
+  ids: Array<string | null>,
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(ids.filter((x): x is string => Boolean(x))));
+  if (unique.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: items.id, code: items.code })
+    .from(items)
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique)));
+  return new Map(rows.map((r) => [r.id, r.code]));
+}
+
+function rmItemNote(codes: Map<string, string>, id: string | null, qty: number | null): string {
+  if (!id) return '—';
+  return `${codes.get(id) ?? '?'} × ${qty ?? '—'} per piece`;
+}
 
 function assignOpValues(
   ops: CreateRouteCardOpInput[],
@@ -1290,6 +1373,8 @@ export async function saveRouteCardForItem(
       currentRevision: routeCards.currentRevision,
       rawMaterialGradeText: routeCards.rawMaterialGradeText,
       rawMaterialSizeText: routeCards.rawMaterialSizeText,
+      rawMaterialItemId: routeCards.rawMaterialItemId,
+      rmQtyPerPiece: routeCards.rmQtyPerPiece,
     })
     .from(routeCards)
     .where(
@@ -1328,6 +1413,24 @@ export async function saveRouteCardForItem(
       );
       rmPatch.rawMaterialSizeId = rawMaterial.rawMaterialSizeId;
       rmPatch.rawMaterialSizeText = rawMaterial.rawMaterialSizeText;
+    }
+    // ADR-193 phase 3a: the RM item + qty per piece move forwards the same
+    // way, as a pair (resolveRmItem guarantees both or neither).
+    if (
+      rawMaterial.rawMaterialItemId &&
+      rawMaterial.rmQtyPerPiece != null &&
+      (rawMaterial.rawMaterialItemId !== card.rawMaterialItemId ||
+        rawMaterial.rmQtyPerPiece !== card.rmQtyPerPiece)
+    ) {
+      const codes = await rmItemCodes(tx, companyId, [
+        card.rawMaterialItemId,
+        rawMaterial.rawMaterialItemId,
+      ]);
+      rmChanges.push(
+        `RM item ${rmItemNote(codes, card.rawMaterialItemId, card.rmQtyPerPiece)} → ${rmItemNote(codes, rawMaterial.rawMaterialItemId, rawMaterial.rmQtyPerPiece)}`,
+      );
+      rmPatch.rawMaterialItemId = rawMaterial.rawMaterialItemId;
+      rmPatch.rmQtyPerPiece = rawMaterial.rmQtyPerPiece;
     }
     if (rmChanges.length > 0) {
       await tx

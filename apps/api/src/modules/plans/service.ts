@@ -58,6 +58,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
+import { resolveRmItem } from '../../lib/rm-item';
 import {
   AuthorizationError,
   ConflictError,
@@ -196,6 +197,14 @@ const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
 
 const DERIVED_STATUS_SQL = planDerivedStatusSql(HAS_ROUTE_CARD_SQL);
 
+/** ADR-193 phase 3a — the plan's raw-material item code, for display. A scalar
+ *  so it cannot multiply the plan row; no deleted_at filter, so a plan keeps
+ *  naming the item it was planned with. */
+const PLAN_RM_ITEM_CODE_SQL = sql<string | null>`(
+  SELECT rmi.code FROM public.items rmi
+  WHERE rmi.id = ${plans.rawMaterialItemId} AND rmi.company_id = ${plans.companyId}
+)`;
+
 // ADR-185 — the status a plan's ROW shows (PLAN_EFFECTIVE_STATUSES): the
 // derived status for a live route-card plan (production_complete spelled
 // 'complete', like the stored word the tile uses), the stored status
@@ -262,6 +271,7 @@ export async function listPlans(
         // Close only when the card is actually finished.
         jcStatus: sql<string | null>`jcs.computed_status`,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
+        rmItemCode: PLAN_RM_ITEM_CODE_SQL,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -307,7 +317,7 @@ export async function listPlans(
       items: rows.map((r) => {
         const hasRouteCard = Boolean(r.hasRouteCard);
         return {
-          ...toPlan(r.plan),
+          ...toPlan(r.plan, r.rmItemCode),
           itemCode: r.itemCode ?? null,
           // Null passed through, not coerced to a blank string: the UI has to be
           // able to tell "this plan has no SO line" from "the revision is empty".
@@ -375,6 +385,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
         openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
+        rmItemCode: PLAN_RM_ITEM_CODE_SQL,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -400,7 +411,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       .orderBy(asc(planOps.opSeq));
 
     const detail: PlanDetail = {
-      ...toPlan(row.plan),
+      ...toPlan(row.plan, row.rmItemCode),
       itemCode: row.itemCode ?? null,
       // Null passed through, not coerced to a blank string: the UI has to be
       // able to tell "this plan has no SO line" from "the revision is empty".
@@ -675,6 +686,56 @@ export async function createPlan(input: CreatePlanInput, user: AuthContext): Pro
       bomChildCode: input.bomChildCode ?? null,
     });
 
+    // ADR-193 phase 3a — RM item + qty per piece, validated as a pair. When the
+    // caller does not send the item at all (undefined — the SO Planning
+    // "+ Plan" box), it defaults from the item's active Route Card, the source
+    // of truth, exactly as getDefaultRouteOpsForItem serves it. An explicit
+    // null means the user cleared it and stays null.
+    let rmInput: {
+      rawMaterialItemId?: string | null | undefined;
+      rmQtyPerPiece?: number | null | undefined;
+    } = input;
+    if (input.rawMaterialItemId === undefined && input.itemId) {
+      const rcRm = await tx
+        .select({
+          rawMaterialItemId: routeCards.rawMaterialItemId,
+          rmQtyPerPiece: routeCards.rmQtyPerPiece,
+        })
+        .from(routeCards)
+        .innerJoin(
+          items,
+          and(
+            eq(items.id, routeCards.rawMaterialItemId),
+            eq(items.companyId, routeCards.companyId),
+            isNull(items.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(routeCards.companyId, companyId),
+            eq(routeCards.itemId, input.itemId),
+            isNull(routeCards.deletedAt),
+          ),
+        )
+        .limit(1);
+      const rc = rcRm[0];
+      if (rc) {
+        rmInput = {
+          rawMaterialItemId: rc.rawMaterialItemId,
+          rmQtyPerPiece: input.rmQtyPerPiece ?? rc.rmQtyPerPiece,
+        };
+      }
+    }
+    // Review M3: a Route Card default the user never typed must not block
+    // "+ Plan" — if it no longer passes the rule (item retyped), drop it.
+    const defaulted = input.rawMaterialItemId === undefined && rmInput !== input;
+    const rmItem = defaulted
+      ? await resolveRmItem(tx, companyId, rmInput).catch(() => ({
+          rawMaterialItemId: null,
+          rmQtyPerPiece: null,
+        }))
+      : await resolveRmItem(tx, companyId, rmInput);
+
     const inserted = await tx
       .insert(plans)
       .values({
@@ -704,6 +765,7 @@ export async function createPlan(input: CreatePlanInput, user: AuthContext): Pro
         rawMaterialGradeText: input.rawMaterialGradeText ?? null,
         rawMaterialSizeId: input.rawMaterialSizeId ?? null,
         rawMaterialSizeText: input.rawMaterialSizeText ?? null,
+        ...rmItem,
         bomMasterId: input.bomMasterId ?? null,
         bomParentCode: input.bomParentCode ?? null,
         bomChildCode: input.bomChildCode ?? null,
@@ -795,7 +857,9 @@ export async function updatePlan(
         changed(input.rawMaterialGradeId, row.rawMaterialGradeId) ||
         changed(input.rawMaterialGradeText, row.rawMaterialGradeText) ||
         changed(input.rawMaterialSizeId, row.rawMaterialSizeId) ||
-        changed(input.rawMaterialSizeText, row.rawMaterialSizeText);
+        changed(input.rawMaterialSizeText, row.rawMaterialSizeText) ||
+        changed(input.rawMaterialItemId, row.rawMaterialItemId) ||
+        changed(input.rmQtyPerPiece, row.rmQtyPerPiece);
       // ADR-184 review — only an order STILL BEING MADE has a card that copied
       // the raw material and would disagree with the plan. A stopped order's
       // credited pieces count toward Covered (above) but no longer lock the
@@ -870,6 +934,18 @@ export async function updatePlan(
       updates['rawMaterialSizeId'] = input.rawMaterialSizeId;
     if (input.rawMaterialSizeText !== undefined)
       updates['rawMaterialSizeText'] = input.rawMaterialSizeText;
+    // ADR-193 phase 3a — RM item + qty per piece. Same "only when sent" rule,
+    // but validated as a PAIR: a field left out keeps its stored value, and
+    // the resulting pair must still be both-set or both-null.
+    if (input.rawMaterialItemId !== undefined || input.rmQtyPerPiece !== undefined) {
+      const rmItem = await resolveRmItem(tx, companyId, {
+        rawMaterialItemId:
+          input.rawMaterialItemId !== undefined ? input.rawMaterialItemId : row.rawMaterialItemId,
+        rmQtyPerPiece: input.rmQtyPerPiece !== undefined ? input.rmQtyPerPiece : row.rmQtyPerPiece,
+      });
+      updates['rawMaterialItemId'] = rmItem.rawMaterialItemId;
+      updates['rmQtyPerPiece'] = rmItem.rmQtyPerPiece;
+    }
     if (input.dpVendorId !== undefined) updates['dpVendorId'] = input.dpVendorId;
     if (input.dpVendorCodeText !== undefined) updates['dpVendorCodeText'] = input.dpVendorCodeText;
     if (input.dpCost !== undefined) updates['dpCost'] = numericToString(input.dpCost);
@@ -1123,6 +1199,12 @@ export async function getDefaultRouteOpsForItem(
         rawMaterialGradeText: routeCards.rawMaterialGradeText,
         rawMaterialSizeId: routeCards.rawMaterialSizeId,
         rawMaterialSizeText: routeCards.rawMaterialSizeText,
+        rawMaterialItemId: routeCards.rawMaterialItemId,
+        rmQtyPerPiece: routeCards.rmQtyPerPiece,
+        rawMaterialItemCode: sql<string | null>`(
+          SELECT rmi.code FROM public.items rmi
+          WHERE rmi.id = ${routeCards.rawMaterialItemId} AND rmi.company_id = ${routeCards.companyId}
+        )`,
       })
       .from(routeCards)
       .where(
@@ -1143,6 +1225,9 @@ export async function getDefaultRouteOpsForItem(
         rawMaterialGradeText: null,
         rawMaterialSizeId: null,
         rawMaterialSizeText: null,
+        rawMaterialItemId: null,
+        rawMaterialItemCode: null,
+        rmQtyPerPiece: null,
       };
 
     const ops = await tx
@@ -1175,6 +1260,9 @@ export async function getDefaultRouteOpsForItem(
       rawMaterialGradeText: rc.rawMaterialGradeText,
       rawMaterialSizeId: rc.rawMaterialSizeId,
       rawMaterialSizeText: rc.rawMaterialSizeText,
+      rawMaterialItemId: rc.rawMaterialItemId,
+      rawMaterialItemCode: rc.rawMaterialItemCode ?? null,
+      rmQtyPerPiece: rc.rmQtyPerPiece,
     };
   });
 }
@@ -1281,6 +1369,9 @@ export interface JcBuildPlan {
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  // ADR-193 phase 3a — RM item + qty per piece, copied onto the JC like grade/size.
+  rawMaterialItemId: string | null;
+  rmQtyPerPiece: number | null;
 }
 
 export interface JcBuildResult {
@@ -1374,6 +1465,9 @@ export async function buildJobCardFromOps(
       rawMaterialGradeText: plan.rawMaterialGradeText,
       rawMaterialSizeId: plan.rawMaterialSizeId,
       rawMaterialSizeText: plan.rawMaterialSizeText,
+      // ADR-193 phase 3a — RM item + qty per piece, from the plan's snapshot.
+      rawMaterialItemId: plan.rawMaterialItemId,
+      rmQtyPerPiece: plan.rmQtyPerPiece,
       // ADR-182 — what was really cut, beside the master-picked size above.
       actualSize: opts.actualSize ?? null,
       createdBy: user.id,
@@ -1583,6 +1677,8 @@ async function executeManufacture(
           rawMaterialGradeText: plan.rawMaterialGradeText,
           rawMaterialSizeId: plan.rawMaterialSizeId,
           rawMaterialSizeText: plan.rawMaterialSizeText,
+          rawMaterialItemId: plan.rawMaterialItemId,
+          rmQtyPerPiece: plan.rmQtyPerPiece,
         },
       );
     },
@@ -1719,6 +1815,8 @@ async function executeFullOutsource(
         rawMaterialGradeText: plan.rawMaterialGradeText,
         rawMaterialSizeId: plan.rawMaterialSizeId,
         rawMaterialSizeText: plan.rawMaterialSizeText,
+        rawMaterialItemId: plan.rawMaterialItemId,
+        rmQtyPerPiece: plan.rmQtyPerPiece,
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -1849,6 +1947,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
           itemName: items.name,
           itemRevision: SO_LINE_REVISION,
           clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
+          rmItemCode: PLAN_RM_ITEM_CODE_SQL,
         })
         .from(plans)
         .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -1913,7 +2012,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         complete: byStatus.get('complete') ?? 0,
       },
       recentPlans: recentRows.map((r) => ({
-        ...toPlan(r.plan),
+        ...toPlan(r.plan, r.rmItemCode),
         itemCode: r.itemCode ?? null,
         // Null passed through, not coerced to a blank string: the UI has to be
         // able to tell "this plan has no SO line" from "the revision is empty".
@@ -2076,6 +2175,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
       openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
       hasRouteCard: HAS_ROUTE_CARD_SQL,
+      rmItemCode: PLAN_RM_ITEM_CODE_SQL,
     })
     .from(plans)
     .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -2099,7 +2199,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)))
     .orderBy(asc(planOps.opSeq));
   return {
-    ...toPlan(row.plan),
+    ...toPlan(row.plan, row.rmItemCode),
     itemCode: row.itemCode ?? null,
     // Null passed through, not coerced to a blank string: the UI has to be able
     // to tell "this plan has no SO line" from "the revision is empty".
@@ -2124,7 +2224,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
   };
 }
 
-function toPlan(row: typeof plans.$inferSelect): Plan {
+function toPlan(row: typeof plans.$inferSelect, rmItemCode: string | null): Plan {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -2151,6 +2251,9 @@ function toPlan(row: typeof plans.$inferSelect): Plan {
     rawMaterialGradeText: row.rawMaterialGradeText,
     rawMaterialSizeId: row.rawMaterialSizeId,
     rawMaterialSizeText: row.rawMaterialSizeText,
+    rawMaterialItemId: row.rawMaterialItemId,
+    rawMaterialItemCode: rmItemCode ?? null,
+    rmQtyPerPiece: row.rmQtyPerPiece,
     bomMasterId: row.bomMasterId,
     bomParentCode: row.bomParentCode,
     bomChildCode: row.bomChildCode,

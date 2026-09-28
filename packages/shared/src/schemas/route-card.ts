@@ -54,6 +54,11 @@ export const routeCardSchema = z.object({
   rawMaterialGradeText: z.string().nullable(),
   rawMaterialSizeId: z.string().uuid().nullable(),
   rawMaterialSizeText: z.string().nullable(),
+  // ADR-193 phase 3a: the raw-material ITEM (from Item Master) and how much of
+  // it one piece takes — Required = rmQtyPerPiece × JC qty. Null = not planned.
+  rawMaterialItemId: z.string().uuid().nullable().default(null),
+  rawMaterialItemCode: z.string().nullable().default(null),
+  rmQtyPerPiece: z.number().nullable().default(null),
   notes: z.string().nullable(),
   /** How this item is normally made — Manufacture / Full Outsource / Direct
    *  Purchase, the same choice SO Planning asks per plan. Defaults to
@@ -230,6 +235,8 @@ export const createRouteCardInputSchema = z.object({
   rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
   rawMaterialSizeId: z.string().uuid().nullable().optional(),
   rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+  rawMaterialItemId: z.string().uuid().nullable().optional(),
+  rmQtyPerPiece: z.number().min(0.0001).max(100000).multipleOf(0.0001).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   planType: routeCardPlanTypeSchema.optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),
@@ -248,6 +255,8 @@ export const updateRouteCardInputSchema = z.object({
   rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
   rawMaterialSizeId: z.string().uuid().nullable().optional(),
   rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+  rawMaterialItemId: z.string().uuid().nullable().optional(),
+  rmQtyPerPiece: z.number().min(0.0001).max(100000).multipleOf(0.0001).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   planType: routeCardPlanTypeSchema.optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),

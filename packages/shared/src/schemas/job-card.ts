@@ -153,6 +153,11 @@ export const jobCardListItemSchema = z.object({
    *  Null when no raw material was recorded. */
   rawMaterialGradeText: z.string().nullable(),
   rawMaterialSizeText: z.string().nullable(),
+  // ADR-193 phase 3a: the raw-material ITEM (from Item Master) and how much of
+  // it one piece takes — Required = rmQtyPerPiece × JC qty. Null = not planned.
+  rawMaterialItemId: z.string().uuid().nullable().default(null),
+  rawMaterialItemCode: z.string().nullable().default(null),
+  rmQtyPerPiece: z.number().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -261,6 +266,8 @@ export const jobCardWriteInputSchema = z
     rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
     rawMaterialSizeId: z.string().uuid().nullable().optional(),
     rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+    rawMaterialItemId: z.string().uuid().nullable().optional(),
+    rmQtyPerPiece: z.number().min(0.0001).max(100000).multipleOf(0.0001).nullable().optional(),
     ops: z.array(jcOpInputSchema).default([]),
     qcDocs: z.array(jcDocInputSchema).default([]),
   })
@@ -390,6 +397,11 @@ export const jobCardEditModelSchema = z.object({
   rawMaterialGradeText: z.string().nullable(),
   rawMaterialSizeId: z.string().uuid().nullable(),
   rawMaterialSizeText: z.string().nullable(),
+  // ADR-193 phase 3a: the raw-material ITEM (from Item Master) and how much of
+  // it one piece takes — Required = rmQtyPerPiece × JC qty. Null = not planned.
+  rawMaterialItemId: z.string().uuid().nullable().default(null),
+  rawMaterialItemCode: z.string().nullable().default(null),
+  rmQtyPerPiece: z.number().nullable().default(null),
   ops: z.array(jobCardOpEditSchema),
   qcDocs: z.array(jobCardDocSchema),
   /** ISSUE-170 parity: the JC's currently-linked SO/JW source line resolved as

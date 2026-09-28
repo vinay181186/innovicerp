@@ -93,6 +93,11 @@ export const planSchema = z.object({
   rawMaterialGradeText: z.string().nullable(),
   rawMaterialSizeId: z.string().uuid().nullable(),
   rawMaterialSizeText: z.string().nullable(),
+  // ADR-193 phase 3a: the raw-material ITEM (from Item Master) and how much of
+  // it one piece takes — Required = rmQtyPerPiece × JC qty. Null = not planned.
+  rawMaterialItemId: z.string().uuid().nullable().default(null),
+  rawMaterialItemCode: z.string().nullable().default(null),
+  rmQtyPerPiece: z.number().nullable().default(null),
 
   bomMasterId: z.string().uuid().nullable(),
   bomParentCode: z.string().nullable(),
@@ -300,6 +305,8 @@ export const createPlanInputSchema = z
     rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
     rawMaterialSizeId: z.string().uuid().nullable().optional(),
     rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+    rawMaterialItemId: z.string().uuid().nullable().optional(),
+    rmQtyPerPiece: z.number().min(0.0001).max(100000).multipleOf(0.0001).nullable().optional(),
 
     bomMasterId: z.string().uuid().nullable().optional(),
     bomParentCode: z.string().trim().max(80).nullable().optional(),
@@ -414,6 +421,8 @@ export const updatePlanInputSchema = z.object({
   rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
   rawMaterialSizeId: z.string().uuid().nullable().optional(),
   rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+  rawMaterialItemId: z.string().uuid().nullable().optional(),
+  rmQtyPerPiece: z.number().min(0.0001).max(100000).multipleOf(0.0001).nullable().optional(),
 
   dpVendorId: z.string().uuid().nullable().optional(),
   dpVendorCodeText: z.string().trim().max(80).nullable().optional(),
@@ -560,5 +569,10 @@ export const defaultRouteOpsResponseSchema = z.object({
   rawMaterialGradeText: z.string().nullable(),
   rawMaterialSizeId: z.string().uuid().nullable(),
   rawMaterialSizeText: z.string().nullable(),
+  // ADR-193 phase 3a: the raw-material ITEM (from Item Master) and how much of
+  // it one piece takes — Required = rmQtyPerPiece × JC qty. Null = not planned.
+  rawMaterialItemId: z.string().uuid().nullable().default(null),
+  rawMaterialItemCode: z.string().nullable().default(null),
+  rmQtyPerPiece: z.number().nullable().default(null),
 });
 export type DefaultRouteOpsResponse = z.infer<typeof defaultRouteOpsResponseSchema>;

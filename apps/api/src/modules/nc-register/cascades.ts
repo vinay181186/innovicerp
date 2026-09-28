@@ -723,6 +723,9 @@ export async function disposeNcCascade(
       rawMaterialGradeText: origin.rawMaterialGradeText,
       rawMaterialSizeId: origin.rawMaterialSizeId,
       rawMaterialSizeText: origin.rawMaterialSizeText,
+      // ADR-193 phase 3a — RM item + qty per piece, copied like grade / size.
+      rawMaterialItemId: origin.rawMaterialItemId,
+      rmQtyPerPiece: origin.rmQtyPerPiece,
       sourceLegacyRef: `supp-of:${nc.code}`,
       parentNcId: ncId,
       createdBy: ctx.userId,

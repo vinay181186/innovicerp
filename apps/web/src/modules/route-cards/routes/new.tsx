@@ -82,6 +82,9 @@ function RouteCardNewPage(): React.JSX.Element {
           rawMaterialGradeText: null,
           rawMaterialSizeId: null,
           rawMaterialSizeText: null,
+          rawMaterialItemId: null,
+          rawMaterialItemCode: null,
+          rmQtyPerPiece: '',
           notes: '',
           planType: 'manufacture',
         }}

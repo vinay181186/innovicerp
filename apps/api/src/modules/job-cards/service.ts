@@ -41,6 +41,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { resolveRmItem } from '../../lib/rm-item';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import {
   assertNoQcDirectlyAfterOutsource,
@@ -208,6 +209,11 @@ export async function listJobCards(
         -- size the JC was raised with after a master row is renamed or removed.
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_text  AS "rawMaterialSizeText",
+        -- ADR-193 phase 3a: RM item + qty per piece (code joined live).
+        jc.raw_material_item_id AS "rawMaterialItemId",
+        (SELECT rmi.code FROM public.items rmi
+          WHERE rmi.id = jc.raw_material_item_id) AS "rawMaterialItemCode",
+        jc.rm_qty_per_piece AS "rmQtyPerPiece",
         -- Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4). The parent
         -- card's and the NC's codes are joined live: neither is ever renamed,
         -- and the FK is the link the banner and the related-docs card follow.
@@ -410,6 +416,11 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         -- size the JC was raised with after a master row is renamed or removed.
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_text  AS "rawMaterialSizeText",
+        -- ADR-193 phase 3a: RM item + qty per piece (code joined live).
+        jc.raw_material_item_id AS "rawMaterialItemId",
+        (SELECT rmi.code FROM public.items rmi
+          WHERE rmi.id = jc.raw_material_item_id) AS "rawMaterialItemCode",
+        jc.rm_qty_per_piece AS "rmQtyPerPiece",
         -- Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4). The parent
         -- card's and the NC's codes are joined live: neither is ever renamed,
         -- and the FK is the link the banner and the related-docs card follow.
@@ -598,6 +609,9 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     routeCardRevision: r['routeCardRevision'] != null ? Number(r['routeCardRevision']) : null,
     rawMaterialGradeText: (r['rawMaterialGradeText'] as string | null) ?? null,
     rawMaterialSizeText: (r['rawMaterialSizeText'] as string | null) ?? null,
+    rawMaterialItemId: (r['rawMaterialItemId'] as string | null) ?? null,
+    rawMaterialItemCode: (r['rawMaterialItemCode'] as string | null) ?? null,
+    rmQtyPerPiece: r['rmQtyPerPiece'] == null ? null : Number(r['rmQtyPerPiece']),
     lastOpCompletedQty: Number(r['lastOpCompletedQty'] ?? 0),
     runningCount: Number(r['runningCount'] ?? 0),
     createdAt: tsLike(r['createdAt']),
@@ -741,6 +755,11 @@ export async function getJobCardEditModel(
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_id AS "rawMaterialSizeId",
         jc.raw_material_size_text AS "rawMaterialSizeText",
+        -- ADR-193 phase 3a: RM item + qty per piece (code joined live).
+        jc.raw_material_item_id AS "rawMaterialItemId",
+        (SELECT rmi.code FROM public.items rmi
+          WHERE rmi.id = jc.raw_material_item_id) AS "rawMaterialItemCode",
+        jc.rm_qty_per_piece AS "rmQtyPerPiece",
         -- THE ORDER'S drawing, resolved LIVE from the line this card was raised
         -- from — never copied onto the card. A copy would freeze whatever file
         -- was current the day the card was raised, so the shop floor would go on
@@ -865,6 +884,9 @@ export async function getJobCardEditModel(
       rawMaterialGradeText: (h['rawMaterialGradeText'] as string | null) ?? null,
       rawMaterialSizeId: (h['rawMaterialSizeId'] as string | null) ?? null,
       rawMaterialSizeText: (h['rawMaterialSizeText'] as string | null) ?? null,
+      rawMaterialItemId: (h['rawMaterialItemId'] as string | null) ?? null,
+      rawMaterialItemCode: (h['rawMaterialItemCode'] as string | null) ?? null,
+      rmQtyPerPiece: h['rmQtyPerPiece'] == null ? null : Number(h['rmQtyPerPiece']),
       ops: opRows.map((o) => ({
         id: o['id'] as string,
         opSeq: Number(o['opSeq'] ?? 0),
@@ -1370,11 +1392,20 @@ async function resolveJcRawMaterial(
   tx: DbTransaction,
   companyId: string,
   input: JobCardWriteInput,
+  /** ADR-193 phase 3a — the card's stored RM item pair, on edit. A field the
+   *  payload leaves out (undefined) keeps its stored value; null clears it. On
+   *  create there is nothing stored, so left out means not set. */
+  storedRmItem?: { rawMaterialItemId: string | null; rmQtyPerPiece: number | null },
 ): Promise<{
   rawMaterialGradeId: string | null;
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  rawMaterialItemId: string | null;
+  rmQtyPerPiece: number | null;
+  /** True only when the payload itself carried the pair (the web JC form does
+   *  not) — only then is it re-validated and allowed onto the Route Card. */
+  rmSent: boolean;
 }> {
   const gradeId = input.rawMaterialGradeId ?? null;
   const sizeId = input.rawMaterialSizeId ?? null;
@@ -1413,11 +1444,34 @@ async function resolveJcRawMaterial(
     sizeText = rows[0].name;
   }
 
+  // ADR-193 phase 3a — RM item + qty per piece. Validated only when the
+  // payload sends it; an omitted pair keeps the stored one untouched, even if
+  // that item was later deleted or retyped (review M2 — the JC form has no
+  // field to fix it, so re-validating would block every edit of the card).
+  const rmSent = input.rawMaterialItemId !== undefined || input.rmQtyPerPiece !== undefined;
+  const rmItem = rmSent
+    ? await resolveRmItem(tx, companyId, {
+        rawMaterialItemId:
+          input.rawMaterialItemId !== undefined
+            ? input.rawMaterialItemId
+            : (storedRmItem?.rawMaterialItemId ?? null),
+        rmQtyPerPiece:
+          input.rmQtyPerPiece !== undefined
+            ? input.rmQtyPerPiece
+            : (storedRmItem?.rmQtyPerPiece ?? null),
+      })
+    : {
+        rawMaterialItemId: storedRmItem?.rawMaterialItemId ?? null,
+        rmQtyPerPiece: storedRmItem?.rmQtyPerPiece ?? null,
+      };
+
   return {
     rawMaterialGradeId: gradeId,
     rawMaterialGradeText: gradeText,
     rawMaterialSizeId: sizeId,
     rawMaterialSizeText: sizeText,
+    ...rmItem,
+    rmSent,
   };
 }
 
@@ -1971,6 +2025,9 @@ export async function updateJobCard(
         itemId: jobCards.itemId,
         orderQty: jobCards.orderQty,
         productionOrderId: jobCards.productionOrderId,
+        // ADR-193 phase 3a — kept when the edit payload leaves them out.
+        rawMaterialItemId: jobCards.rawMaterialItemId,
+        rmQtyPerPiece: jobCards.rmQtyPerPiece,
       })
       .from(jobCards)
       .where(
@@ -2339,7 +2396,10 @@ export async function updateJobCard(
     // Resolved once, up here: the header write below AND the route-card
     // auto-save at step 6 both need it, and resolving it twice would run the
     // master lookups twice for the same answer.
-    const rawMaterial = await resolveJcRawMaterial(tx, companyId, input);
+    const rawMaterial = await resolveJcRawMaterial(tx, companyId, input, {
+      rawMaterialItemId: head.rawMaterialItemId,
+      rmQtyPerPiece: head.rmQtyPerPiece,
+    });
     await tx
       .update(jobCards)
       .set({
@@ -2397,7 +2457,11 @@ export async function updateJobCard(
         toRouteCardOps(userOps, types.slice(0, userOps.length), machineMap, vendorMap),
         user,
         head.code,
-        rawMaterial,
+        // Review M1: an RM pair the form did not send (stored fallback) must
+        // never overwrite the Route Card — only what the user sent may.
+        rawMaterial.rmSent
+          ? rawMaterial
+          : { ...rawMaterial, rawMaterialItemId: null, rmQtyPerPiece: null },
       );
     }
 

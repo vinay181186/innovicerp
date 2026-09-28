@@ -23,6 +23,7 @@ import { Link } from '@tanstack/react-router';
 import { Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
+import { RmItemFields, rmItemToInput } from '@/components/shared/rm-item-fields';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
@@ -77,6 +78,10 @@ export interface RouteCardFormHeaderDraft {
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  // ADR-193 phase 3a: the RM ITEM + qty per piece (Required on the JC).
+  rawMaterialItemId: string | null;
+  rawMaterialItemCode: string | null;
+  rmQtyPerPiece: string;
   notes: string;
   // How this item is normally made — the same three-way choice SO Planning
   // asks per plan, recorded once on the card as the default.
@@ -335,7 +340,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     !header.rawMaterialGradeId &&
     !header.rawMaterialGradeText &&
     !header.rawMaterialSizeId &&
-    !header.rawMaterialSizeText;
+    !header.rawMaterialSizeText &&
+    !header.rawMaterialItemId;
   const { data: plansForItem } = usePlansList(
     { search: header.itemCodeText, limit: 50, offset: 0 },
     { enabled: mode === 'create' && rmBlank && Boolean(header.itemId && header.itemCodeText) },
@@ -351,7 +357,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         (pl.rawMaterialGradeId ||
           pl.rawMaterialGradeText ||
           pl.rawMaterialSizeId ||
-          pl.rawMaterialSizeText),
+          pl.rawMaterialSizeText ||
+          pl.rawMaterialItemId),
     );
     if (!source) return;
     setHeader((prev) => ({
@@ -360,6 +367,9 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       rawMaterialGradeText: source.rawMaterialGradeText,
       rawMaterialSizeId: source.rawMaterialSizeId,
       rawMaterialSizeText: source.rawMaterialSizeText,
+      rawMaterialItemId: source.rawMaterialItemId,
+      rawMaterialItemCode: source.rawMaterialItemCode,
+      rmQtyPerPiece: source.rmQtyPerPiece != null ? String(source.rmQtyPerPiece) : '',
     }));
     setRmPrefillFrom(source.code);
   }, [plansForItem, header.itemId, rmBlank, mode]);
@@ -733,6 +743,14 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                   }
                 />
               </div>
+              <RmItemFields
+                value={{
+                  rawMaterialItemId: header.rawMaterialItemId,
+                  rawMaterialItemCode: header.rawMaterialItemCode,
+                  rmQtyPerPiece: header.rmQtyPerPiece,
+                }}
+                onChange={(v) => setHeader((prev) => ({ ...prev, ...v }))}
+              />
               {rmPrefillFrom ? (
                 <div className="text3" style={{ gridColumn: '1 / -1', fontSize: 11, marginTop: 2 }}>
                   Prefilled from plan{' '}
@@ -1155,12 +1173,15 @@ export function rawMaterialToInput(header: RouteCardFormHeaderDraft): {
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  rawMaterialItemId: string | null;
+  rmQtyPerPiece: number | null;
 } {
   return {
     rawMaterialGradeId: header.rawMaterialGradeId,
     rawMaterialGradeText: header.rawMaterialGradeText,
     rawMaterialSizeId: header.rawMaterialSizeId,
     rawMaterialSizeText: header.rawMaterialSizeText,
+    ...rmItemToInput(header),
   };
 }
 

@@ -58,6 +58,19 @@ import {
  *  12.5), a plain JS number in code. drizzle 0.36 returns numeric as a string;
  *  this type converts at the driver edge so every caller keeps `number`.
  *  Whole-number units (NOS / SET) are enforced by lib/stock-ledger.ts. */
+/** ADR-193 phase 3a — raw material per piece: numeric(14,4) ↔ JS number. */
+const rmPerPiece = customType<{ data: number; driverData: string | number }>({
+  dataType() {
+    return 'numeric(14, 4)';
+  },
+  fromDriver(v) {
+    return Number(v);
+  },
+  toDriver(v) {
+    return String(v);
+  },
+});
+
 const stockQty = customType<{ data: number; driverData: string | number }>({
   dataType() {
     return 'numeric(14, 3)';
@@ -840,6 +853,12 @@ export const routeCards = pgTable(
       onDelete: 'set null',
     }),
     rawMaterialSizeText: text('raw_material_size_text'),
+    // ADR-193 phase 3a (0156): raw-material ITEM + qty per piece (Route Card is
+    // the source; Plan / Job Card keep a snapshot).
+    rawMaterialItemId: uuid('raw_material_item_id').references((): AnyPgColumn => items.id, {
+      onDelete: 'set null',
+    }),
+    rmQtyPerPiece: rmPerPiece('rm_qty_per_piece'),
     notes: text('notes'),
     // How this item is normally made — the same three-way choice SO Planning
     // asks per plan (migration 0123). The card is the natural home for the
@@ -856,6 +875,10 @@ export const routeCards = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'route_cards_rm_qty_per_piece_check',
+      sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,
+    ),
     uniqueIndex('route_cards_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -1045,6 +1068,12 @@ export const jobCards = pgTable(
       onDelete: 'set null',
     }),
     rawMaterialSizeText: text('raw_material_size_text'),
+    // ADR-193 phase 3a (0156): raw-material ITEM + qty per piece (Route Card is
+    // the source; Plan / Job Card keep a snapshot).
+    rawMaterialItemId: uuid('raw_material_item_id').references((): AnyPgColumn => items.id, {
+      onDelete: 'set null',
+    }),
+    rmQtyPerPiece: rmPerPiece('rm_qty_per_piece'),
     // ADR-182 (migration 0143). The size the store really had / really cut,
     // typed on the Production Order that built this card and copied down here
     // so the traveller prints what was cut, not only what was planned. Free
@@ -1061,6 +1090,13 @@ export const jobCards = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'job_cards_rm_qty_per_piece_check',
+      sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,
+    ),
+    index('job_cards_rm_item_idx')
+      .on(t.rawMaterialItemId)
+      .where(sql`${t.deletedAt} is null and ${t.rawMaterialItemId} is not null`),
     uniqueIndex('job_cards_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -3296,6 +3332,12 @@ export const plans = pgTable(
       onDelete: 'set null',
     }),
     rawMaterialSizeText: text('raw_material_size_text'),
+    // ADR-193 phase 3a (0156): raw-material ITEM + qty per piece (Route Card is
+    // the source; Plan / Job Card keep a snapshot).
+    rawMaterialItemId: uuid('raw_material_item_id').references((): AnyPgColumn => items.id, {
+      onDelete: 'set null',
+    }),
+    rmQtyPerPiece: rmPerPiece('rm_qty_per_piece'),
 
     bomMasterId: uuid('bom_master_id').references((): AnyPgColumn => bomMasters.id, {
       onDelete: 'set null',
@@ -3345,6 +3387,10 @@ export const plans = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'plans_rm_qty_per_piece_check',
+      sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,
+    ),
     uniqueIndex('plans_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),

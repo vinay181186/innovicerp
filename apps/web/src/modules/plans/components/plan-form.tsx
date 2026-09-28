@@ -13,6 +13,7 @@ import { Link, useParams } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
+import { RmItemFields, rmItemToInput } from '@/components/shared/rm-item-fields';
 import { useItemsList } from '@/modules/items/api';
 import {
   MaterialGradePicker,
@@ -42,6 +43,10 @@ export interface PlanFormValues {
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  // ADR-193 phase 3a: RM item + qty per piece (prefilled from the Route Card).
+  rawMaterialItemId: string | null;
+  rawMaterialItemCode: string | null;
+  rmQtyPerPiece: string;
   bomMasterId: string | null;
   bomParentCode: string;
   bomChildCode: string;
@@ -129,6 +134,9 @@ export function emptyValues(): PlanFormValues {
     rawMaterialGradeText: null,
     rawMaterialSizeId: null,
     rawMaterialSizeText: null,
+    rawMaterialItemId: null,
+    rawMaterialItemCode: null,
+    rmQtyPerPiece: '',
     bomMasterId: null,
     bomParentCode: '',
     bomChildCode: '',
@@ -168,6 +176,7 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
     rawMaterialGradeText: v.rawMaterialGradeText || null,
     rawMaterialSizeId: v.rawMaterialSizeId ?? null,
     rawMaterialSizeText: v.rawMaterialSizeText || null,
+    ...rmItemToInput(v),
     bomMasterId: v.bomMasterId ?? null,
     bomParentCode: v.bomParentCode || null,
     bomChildCode: v.bomChildCode || null,
@@ -280,9 +289,18 @@ export function PlanForm({
     setValues((v) => {
       const gradeBlank = !v.rawMaterialGradeId && !v.rawMaterialGradeText;
       const sizeBlank = !v.rawMaterialSizeId && !v.rawMaterialSizeText;
-      if (!gradeBlank && !sizeBlank) return v;
+      const rmItemBlank = !v.rawMaterialItemId;
+      if (!gradeBlank && !sizeBlank && !rmItemBlank) return v;
       return {
         ...v,
+        ...(rmItemBlank && defaultOps.rawMaterialItemId
+          ? {
+              rawMaterialItemId: defaultOps.rawMaterialItemId,
+              rawMaterialItemCode: defaultOps.rawMaterialItemCode,
+              rmQtyPerPiece:
+                defaultOps.rmQtyPerPiece != null ? String(defaultOps.rmQtyPerPiece) : '',
+            }
+          : {}),
         ...(gradeBlank
           ? {
               rawMaterialGradeId: defaultOps.rawMaterialGradeId,
@@ -607,6 +625,14 @@ export function PlanForm({
                   }}
                 />
               </Field>
+              <RmItemFields
+                value={{
+                  rawMaterialItemId: values.rawMaterialItemId,
+                  rawMaterialItemCode: values.rawMaterialItemCode,
+                  rmQtyPerPiece: values.rmQtyPerPiece,
+                }}
+                onChange={(rm) => setValues((v) => ({ ...v, ...rm }))}
+              />
             </RawMaterialGroup>
           </div>
         </div>

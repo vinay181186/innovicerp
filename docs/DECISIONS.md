@@ -10341,3 +10341,12 @@ integer, so KGS / MTR material could not be issued as 12.5.
   lock (no duplicate IN-SC numbers).
 - Verified on TEST: 14 scenario tests (C1–C14) pass.
 
+### ADR-193 phase 3a — raw-material item + qty per piece (2026-09-28)
+- Route Card (source of truth) → Plan → Production Order / Execute → Job Card carry `raw_material_item_id`
+  + `rm_qty_per_piece` (0156) beside grade / size. Required on a JC = qty per piece × JC qty.
+- One check `lib/rm-item.ts resolveRmItem`: both or neither; the item must be Raw Material or Component
+  (ITEM_TYPE_RULES.jobMaterial). On update an omitted field keeps the saved value; only null clears.
+- SO Planning "+ Plan" (sends nothing) defaults the pair from the item's Route Card. Supplementary JC
+  copies it; rework / repair cards carry none (nothing new is cut). BOM child JCs: none.
+- Verified on TEST: 5 scenarios pass; 642 + 967 cross-screen figures, 0 mismatches.
+

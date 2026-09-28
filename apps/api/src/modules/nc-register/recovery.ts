@@ -214,6 +214,11 @@ export async function createRecoveryJobCard(
       rawMaterialGradeText: parent.rawMaterialGradeText,
       rawMaterialSizeId: parent.rawMaterialSizeId,
       rawMaterialSizeText: parent.rawMaterialSizeText,
+      // ADR-193 phase 3a — RM item + qty per piece, copied like grade / size.
+      // ADR-193: nothing new is cut for a rework / repair card, so it carries
+      // no raw-material requirement (the store issues nothing against it).
+      rawMaterialItemId: null,
+      rmQtyPerPiece: null,
       // The pieces already exist — nothing is cut for a recovery card, so the
       // party-material gate (ADR-103) must not hold its first op.
       clientMaterialGate: false,

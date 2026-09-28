@@ -108,6 +108,9 @@ function RouteCardEditPage(): React.JSX.Element {
           rawMaterialGradeText: detail.rawMaterialGradeText,
           rawMaterialSizeId: detail.rawMaterialSizeId,
           rawMaterialSizeText: detail.rawMaterialSizeText,
+          rawMaterialItemId: detail.rawMaterialItemId,
+          rawMaterialItemCode: detail.rawMaterialItemCode,
+          rmQtyPerPiece: detail.rmQtyPerPiece != null ? String(detail.rmQtyPerPiece) : '',
           notes: detail.notes ?? '',
           planType:
             detail.planType === 'full_outsource' || detail.planType === 'direct_purchase'
