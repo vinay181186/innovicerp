@@ -3,6 +3,8 @@
 
 import {
   type CreateDesignTrackerInput,
+  DESIGN_DAY_HOURS_WARN,
+  DESIGN_HOURS_MAX_PER_ENTRY,
   type DesignTrackerListItem,
   type LogDesignTimeInput,
 } from '@innovic/shared';
@@ -16,10 +18,10 @@ import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
-import { useSalesOrdersList } from '../../sales-orders/api';
+import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
 import { soTypeLabel } from '../../sales-orders/lib/so-status-label';
 import {
   useApproveDesign,
@@ -386,6 +388,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
   const [date] = useState(todayIst());
   const [soSearch, setSoSearch] = useState('');
   const [soId, setSoId] = useState<string | null>(null);
+  const [soLineId, setSoLineId] = useState('');
   const [designer, setDesigner] = useState('');
   const [estHours, setEstHours] = useState('');
   const [startDate, setStartDate] = useState(date);
@@ -407,10 +410,29 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
   const mut = useCreateDesignTracker();
   const { data: next } = useNextDesignTrackerCode();
 
+  // The SO's lines — the design is for ONE line (POL + CODE/REV), and that
+  // line's item is what the design shows.
+  const { data: soDetail } = useSalesOrder(soId ?? undefined);
+  const soLines = soId && soDetail?.id === soId ? soDetail.lines : [];
+  const lineLabel = (l: (typeof soLines)[number]): string =>
+    [
+      `POL ${l.clientPoLineNo ?? '—'}`,
+      itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision),
+      l.partName,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  // A one-line SO needs no choice.
+  const pickedLineId = soLineId || (soLines.length === 1 ? (soLines[0]?.id ?? '') : '');
+
   const onSave = (): void => {
     setErr(null);
     if (!soId) {
       setErr('SO No. is required.');
+      return;
+    }
+    if (!pickedLineId) {
+      setErr('SO Line is required — pick the line (POL + CODE/REV) this design is for.');
       return;
     }
     if (!designer.trim()) {
@@ -423,6 +445,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
     }
     const input: CreateDesignTrackerInput = {
       salesOrderId: soId,
+      salesOrderLineId: pickedLineId,
       designer: designer.trim(),
       startDate,
       targetDate,
@@ -464,8 +487,26 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
             }))}
             onSearch={setSoSearch}
             placeholder="Type SO No. or customer…"
-            onChange={setSoId}
+            onChange={(id) => {
+              setSoId(id);
+              setSoLineId('');
+            }}
           />
+        </Field>
+        <Field label="SO Line (POL · CODE/REV)" req full>
+          <select
+            className="innovic-select"
+            value={pickedLineId}
+            disabled={!soId}
+            onChange={(e) => setSoLineId(e.target.value)}
+          >
+            <option value="">{soId ? '— Select line —' : 'Pick the SO first'}</option>
+            {soLines.map((l) => (
+              <option key={l.id} value={l.id}>
+                {lineLabel(l)}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Design Engineer" req>
           <input
@@ -656,6 +697,8 @@ function LogTimeModal({
   const [worker, setWorker] = useState(row.designer);
   const [description, setDescription] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  // Set after a save that took the person's day above the warning line.
+  const [dayWarn, setDayWarn] = useState<string | null>(null);
   const mut = useLogDesignTime();
 
   const { data: detail } = useDesignTrackerDetail(row.id);
@@ -666,6 +709,10 @@ function LogTimeModal({
     const h = Number(hours);
     if (!Number.isFinite(h) || h <= 0) {
       setErr('Hours Worked is required.');
+      return;
+    }
+    if (h > DESIGN_HOURS_MAX_PER_ENTRY) {
+      setErr(`Hours Worked cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`);
       return;
     }
     if (!worker.trim()) {
@@ -681,7 +728,19 @@ function LogTimeModal({
     mut.mutate(
       { id: row.id, input },
       {
-        onSuccess: () => onClose(),
+        onSuccess: (saved) => {
+          const day = saved.dayTotalHours ?? 0;
+          if (day > DESIGN_DAY_HOURS_WARN) {
+            // Saved, but flag it: keep the box open so the warning is seen.
+            setHours('');
+            setDescription('');
+            setDayWarn(
+              `Saved. ${saved.workerText} now has ${day}h booked on ${fmtDate(saved.logDate)} — more than ${DESIGN_DAY_HOURS_WARN}h in one day. Check the hours are right.`,
+            );
+            return;
+          }
+          onClose();
+        },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not log time. Try again.'),
       },
     );
@@ -723,6 +782,7 @@ function LogTimeModal({
             type="number"
             min={0.5}
             step={0.5}
+            max={DESIGN_HOURS_MAX_PER_ENTRY}
             className="innovic-input"
             value={hours}
             onChange={(e) => setHours(e.target.value)}
@@ -780,6 +840,13 @@ function LogTimeModal({
         </>
       ) : null}
 
+      {dayWarn ? (
+        <div style={{ marginTop: 12 }}>
+          <Banner tone="warn" flush>
+            {dayWarn}
+          </Banner>
+        </div>
+      ) : null}
       {err ? <ErrorBox message={err} /> : null}
       <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Log Time" />
     </ModalShell>

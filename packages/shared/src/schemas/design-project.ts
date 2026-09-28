@@ -54,6 +54,13 @@ export const DESIGN_WORK_CATEGORIES = [
 export type DesignWorkCategory = (typeof DESIGN_WORK_CATEGORIES)[number];
 export const designWorkCategorySchema = z.enum(DESIGN_WORK_CATEGORIES);
 
+/** Design hours — ONE rule for both places time is booked (Design Work Log
+ *  entry and Design Tracker "Log Time"): one entry may not exceed 24 hours
+ *  (server-enforced), and a person's total for one day above 12 hours is
+ *  flagged as a warning after save (not refused). */
+export const DESIGN_HOURS_MAX_PER_ENTRY = 24;
+export const DESIGN_DAY_HOURS_WARN = 12;
+
 export const DESIGN_DCR_CHANGE_TYPES = [
   'Client Request',
   'Manufacturing Issue',
@@ -185,6 +192,10 @@ export const designWorkLogEntrySchema = z.object({
   hours: z.number(),
   description: z.string().nullable(),
   createdAt: z.string(),
+  /** Only on the create response: the engineer's total booked hours for that
+   *  log date including this entry, so the form can warn above
+   *  DESIGN_DAY_HOURS_WARN. Absent on list reads. */
+  dayTotalHours: z.number().optional(),
 });
 export type DesignWorkLogEntry = z.infer<typeof designWorkLogEntrySchema>;
 
@@ -323,7 +334,10 @@ export const createDesignWorkLogInputSchema = z.object({
   designProjectId: z.string().uuid(),
   taskText: z.string().trim().max(200).optional(),
   category: designWorkCategorySchema.default('Design'),
-  hours: z.coerce.number().positive().max(24),
+  hours: z.coerce
+    .number()
+    .positive()
+    .max(DESIGN_HOURS_MAX_PER_ENTRY, `Hours cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`),
   description: z.string().trim().max(1000).optional(),
 });
 export type CreateDesignWorkLogInput = z.infer<typeof createDesignWorkLogInputSchema>;

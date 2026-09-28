@@ -10,6 +10,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatStrip } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useSalesOrdersList } from '../../sales-orders/api';
@@ -308,8 +309,27 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const mut = useCreateDesignProject();
   const { data: next } = useNextDesignProjectCode();
 
+  // One Design Project per SO (ADR-188): look up a project already on the
+  // picked SO so the user is sent to it before typing the rest. The server
+  // refuses a second one either way.
+  const { data: soProjects } = useDesignProjectsList({
+    search: selectedSo?.code,
+    filter: 'all',
+    limit: 20,
+    offset: 0,
+  });
+  const existingForSo = soId
+    ? ((soProjects?.items ?? []).find((p) => p.salesOrderId === soId) ?? null)
+    : null;
+
   const onSave = (): void => {
     setErr(null);
+    if (existingForSo) {
+      setErr(
+        `${existingForSo.soCodeText ?? 'This SO'} already has Design Project ${existingForSo.code}. Open it instead.`,
+      );
+      return;
+    }
     if (!name.trim()) {
       setErr('Project Name is required.');
       return;
@@ -385,6 +405,20 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
             }}
           />
         </div>
+        {existingForSo ? (
+          <div className="form-grp form-full">
+            <Banner
+              tone="warn"
+              flush
+              title={`${existingForSo.soCodeText ?? 'This SO'} already has a Design Project`}
+            >
+              <Link to="/design-projects/$id" params={{ id: existingForSo.id }} className="fw-700">
+                Open {existingForSo.code} — {existingForSo.projectName}
+              </Link>{' '}
+              ({existingForSo.status}). An SO has one Design Project; add tasks and log hours there.
+            </Banner>
+          </div>
+        ) : null}
         <div className="form-grp">
           <label className="form-label">Customer</label>
           <input

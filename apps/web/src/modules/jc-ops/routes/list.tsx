@@ -2,7 +2,7 @@
 
 import {
   type ChangeJcOpMachineInput,
-  type CreatePurchaseRequestInput,
+  type GenerateOspPrResult,
   type JcOpsBoardRow,
   type OutsourceOpBalanceInput,
 } from '@innovic/shared';
@@ -12,12 +12,11 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
-import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useDebounce } from '@/lib/use-debounce';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-// Reuse the existing PR create hook — do not build a parallel one.
-import { useCreatePurchaseRequest } from '@/modules/purchase-requests/api';
+// The system OSP PR path Op Entry uses — do not build a parallel one.
+import { useGenerateOspPr } from '@/modules/op-entry/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Select } from '@/ui/forms';
@@ -720,12 +719,15 @@ function ChangeMachineModal({
   );
 }
 
-// Raise a Purchase Request from a pending outsource op (legacy createPR modal,
-// HTML L6180-6213). Collects the same fields the legacy modal did — Qty, Est.
-// Cost/pc, Required By Date, Remarks — plus a PR No. (legacy auto-generated it
-// via _nextPRNo(); this app assigns PR codes manually, consistent with the
-// standalone New PR form). Submitting POSTs to /purchase-requests with
-// sourceJcOpId; the server-side cascade stamps the op as pr_raised.
+// Raise the Purchase Request for a pending outsource op. Routed through the
+// SYSTEM OSP PR path (POST /op-entry/osp-pr → generateOspPr), the same one Op
+// Entry uses (2026-09-28 form audit). The old hand form POSTed to
+// /purchase-requests with sourceJcOpId, which the server refuses for every
+// hand-raised request ("a Job Work OSP request is raised by the system"), so
+// the op never got its PR from this board. The system path numbers the PR
+// itself (IN-JWPR-#####), takes the vendor from System Settings → OSP
+// Processes and the qty from the Job Card, and stamps the op pr_raised — so
+// there is nothing to type: this is a confirm box that shows the number after.
 function CreatePrModal({
   row,
   onClose,
@@ -734,53 +736,23 @@ function CreatePrModal({
   onClose: () => void;
 }): React.JSX.Element {
   const qc = useQueryClient();
-  const create = useCreatePurchaseRequest();
-  const [code, setCode] = useState('');
-  const [qty, setQty] = useState<number>(row.available > 0 ? row.available : row.jcOrderQty);
-  const [cost, setCost] = useState<string>('');
-  const [reqDate, setReqDate] = useState<string>('');
-  const [remarks, setRemarks] = useState<string>('');
+  const generate = useGenerateOspPr();
   const [err, setErr] = useState<string | null>(null);
-
-  const vendorText = row.outsourceVendorCode ?? row.outsourceVendorName ?? '';
-  const itemText = row.jcItemCode ?? '';
+  const [result, setResult] = useState<GenerateOspPrResult | null>(null);
 
   const onSave = (): void => {
     setErr(null);
-    if (!code.trim()) {
-      setErr('PR No. is required.');
-      return;
-    }
-    if (qty <= 0) {
-      setErr('Qty must be more than 0.'); // legacy L6194
-      return;
-    }
-    if (!vendorText.trim()) {
-      setErr('Set an outsource vendor on this operation first.');
-      return;
-    }
-    const input: CreatePurchaseRequestInput = {
-      code: code.trim(),
-      prDate: todayLocal(), // legacy today()
-      status: 'open',
-      qty,
-      estCost: cost ? Number(cost) : 0,
-      vendorCodeText: vendorText,
-      itemCodeText: itemText || undefined,
-      itemName: row.jcItemName ?? undefined,
-      operation: row.operation,
-      requiredDate: reqDate || undefined,
-      remarks: remarks || undefined,
-      sourceJcOpId: row.jcOpId,
-    };
-    create.mutate(input, {
-      onSuccess: () => {
-        // Reflect the op's new pr_raised state on the board immediately.
-        void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
-        onClose();
+    generate.mutate(
+      { jcOpId: row.jcOpId },
+      {
+        onSuccess: (res) => {
+          // Reflect the op's new pr_raised state on the board immediately.
+          void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
+          setResult(res);
+        },
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not raise PR. Try again.'),
       },
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not raise PR. Try again.'),
-    });
+    );
   };
 
   return (
@@ -823,7 +795,6 @@ function CreatePrModal({
             <b className="mono">{row.machineCode ?? '—'}</b>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            Vendor: {row.outsourceVendorName ?? row.outsourceVendorCode ?? '—'} ·{' '}
             {/* POL — the CUSTOMER's own PO line number, ahead of the item code.
                 Omitted when there is no sales order behind this job card. */}
             {row.clientPoLineNo ? (
@@ -840,91 +811,53 @@ function CreatePrModal({
                 value someone checks before acting in this modal. */}
             <span className="mono fw-700" style={{ color: 'var(--text)' }}>
               {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
-            </span>
+            </span>{' '}
+            · PR Qty <b style={{ color: 'var(--text)' }}>{row.jcOrderQty}</b> (the Job Card&apos;s
+            Order Qty)
           </div>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-            PR No. <span className="req">★</span>
+        {result ? (
+          <div
+            role="status"
+            style={{
+              padding: '10px 12px',
+              background: 'var(--green3)',
+              border: '1px solid var(--green)',
+              color: 'var(--green2)',
+              borderRadius: 6,
+              fontSize: 12,
+            }}
+          >
+            PR <b className="mono">{result.prCode}</b> raised
+            {result.vendorName ? (
+              <>
+                {' '}
+                for <b>{result.vendorName}</b>
+              </>
+            ) : null}
+            {result.autoPoCreated && result.poCode ? (
+              <>
+                {' '}
+                · draft PO <b className="mono">{result.poCode}</b> created
+              </>
+            ) : null}
+            . It now waits for approval on the Purchase Request list.
           </div>
-          <input
-            className="innovic-select"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="e.g. PR-00001"
-            style={{ width: '100%', fontSize: 12 }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 140px' }}>
-            <div
-              className="text3"
-              style={{
-                fontSize: 11,
-                marginBottom: 4,
-                color: 'var(--amber2)',
-              }}
-            >
-              Qty Required <span className="req">★</span>
-            </div>
-            <input
-              type="number"
-              min={1}
-              className="innovic-select"
-              value={qty}
-              onChange={(e) => setQty(Number(e.target.value))}
-              style={{ width: '100%', fontSize: 12 }}
-            />
+        ) : (
+          <div className="text3" style={{ fontSize: 12 }}>
+            The system numbers this request (IN-JWPR-#####), takes the vendor from System Settings →
+            OSP Processes for &ldquo;{row.operation}&rdquo;, and shows the number here once saved.
           </div>
-          <div style={{ flex: '1 1 140px' }}>
-            <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-              Est. Cost / pc (₹)
-            </div>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              className="innovic-select"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-              style={{ width: '100%', fontSize: 12 }}
-            />
-          </div>
-          <div style={{ flex: '1 1 140px' }}>
-            <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-              Required By Date
-            </div>
-            <input
-              type="date"
-              className="innovic-select"
-              value={reqDate}
-              onChange={(e) => setReqDate(e.target.value)}
-              style={{ width: '100%', fontSize: 12 }}
-            />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-            Remarks
-          </div>
-          <input
-            className="innovic-select"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Any special instructions"
-            style={{ width: '100%', fontSize: 12 }}
-          />
-        </div>
+        )}
 
         {err ? (
           <div
+            role="alert"
             style={{
               marginTop: 12,
               padding: 8,
-              background: 'rgba(239,68,68,0.08)',
+              background: 'var(--red3)',
               color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
@@ -935,22 +868,24 @@ function CreatePrModal({
         ) : null}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
+            {result ? 'Close' : 'Cancel'}
           </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onSave}
-            disabled={create.isPending}
-          >
-            {create.isPending ? (
-              <>
-                <Loader2 size={14} className="inline animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save PR'
-            )}
-          </button>
+          {result ? null : (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={onSave}
+              disabled={generate.isPending}
+            >
+              {generate.isPending ? (
+                <>
+                  <Loader2 size={14} className="inline animate-spin" /> Raising…
+                </>
+              ) : (
+                'Raise PR'
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

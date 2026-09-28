@@ -52,7 +52,13 @@ import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { saveRouteCardForItem } from '../route-cards/service';
 import { opSrNo, stripStaleGeneratedTerminalQc } from '@innovic/shared';
-import type { CreateRouteCardOpInput, DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import type {
+  CreateRouteCardOpInput,
+  DocumentTraceability,
+  JcRouteCardWriteBack,
+  JobCardSaveResult,
+  RelatedDoc,
+} from '@innovic/shared';
 import type {
   JcOpInput,
   JcOpPoLinkView,
@@ -1839,7 +1845,7 @@ async function autoRaiseOspPrs(
 export async function createJobCard(
   input: JobCardWriteInput,
   user: AuthContext,
-): Promise<JobCardListItem> {
+): Promise<JobCardSaveResult> {
   // Tier gate (was requireWriteRole, which only knew admin/manager). L2 Data
   // Entry and up in Production can raise a Job Card; L1 Viewer cannot.
   await requireFormAccess(user, 'jc_create', 'entry');
@@ -1855,8 +1861,10 @@ export async function createJobCard(
     );
   }
 
+  let routeCardWriteBack: JcRouteCardWriteBack | null = null;
   const newId = await withUserContext(user, async (tx) => {
     const item = await resolveItem(tx, input.itemCode, companyId);
+    await assertItemIsJwLineItem(tx, companyId, input.sourceJwLineId!, item);
     await assertLineBalance(tx, input, companyId, null, item.id);
 
     // Routing rule: a QC op may not sit directly after an OSP op. Checked on
@@ -1930,8 +1938,9 @@ export async function createJobCard(
       // ADR-051 write half: remember this item's routing so the next plan for
       // the same item can load it back. Same transaction as the JC — a failure
       // here rolls the Job Card back too. Deliberately fed `input.ops` (what
-      // the user entered), never the appended terminal QC op.
-      await saveRouteCardForItem(
+      // the user entered), never the appended terminal QC op. What it wrote is
+      // handed back so the screen says so (no silent write-back).
+      routeCardWriteBack = await saveRouteCardForItem(
         tx,
         companyId,
         item.id,
@@ -1959,7 +1968,37 @@ export async function createJobCard(
     return jobCardId;
   });
 
-  return getJobCard(newId, user);
+  return { ...(await getJobCard(newId, user)), routeCardWriteBack };
+}
+
+/** A hand-raised JWSO Job Card makes the JWSO line's item — never another one
+ *  typed over it (2026-09-28 form audit). A line with no master item (legacy
+ *  text-only line) leaves the pick to the user. */
+async function assertItemIsJwLineItem(
+  tx: DbTransaction,
+  companyId: string,
+  jwLineId: string,
+  item: { id: string; code: string },
+): Promise<void> {
+  const line = (
+    await tx
+      .select({ itemId: jobWorkOrderLines.itemId, lineCode: items.code })
+      .from(jobWorkOrderLines)
+      .leftJoin(items, eq(items.id, jobWorkOrderLines.itemId))
+      .where(
+        and(
+          eq(jobWorkOrderLines.id, jwLineId),
+          eq(jobWorkOrderLines.companyId, companyId),
+          isNull(jobWorkOrderLines.deletedAt),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (line?.itemId && line.itemId !== item.id) {
+    throw new ValidationError(
+      `This JWSO line is for item ${line.lineCode ?? 'another item'}; a Job Card on it must make that item, not ${item.code}.`,
+    );
+  }
 }
 
 /** ids of this JC's active ops that have started (any op_log row OR a running
@@ -2000,7 +2039,7 @@ export async function updateJobCard(
   id: string,
   input: JobCardWriteInput,
   user: AuthContext,
-): Promise<JobCardListItem> {
+): Promise<JobCardSaveResult> {
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
   await requireFormAccess(user, 'jc_create', 'edit');
   const companyId = requireCompany(user);
@@ -2009,6 +2048,7 @@ export async function updateJobCard(
   // stored value instead of letting it zero a cost they were never shown.
   const showMoney = await canSeeFormPrice(user, 'jc_create');
 
+  let routeCardWriteBack: JcRouteCardWriteBack | null = null;
   await withUserContext(user, async (tx) => {
     const headRows = await tx
       .select({
@@ -2272,9 +2312,7 @@ export async function updateJobCard(
         inPayload.opType === 'process' &&
         (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
       ) {
-        throw new ValidationError(
-          'Stop Operation first, then change the machine.',
-        );
+        throw new ValidationError('Stop Operation first, then change the machine.');
       }
       if (
         inPayload &&
@@ -2450,7 +2488,7 @@ export async function updateJobCard(
     //    itself changed, and only from the ops the user submitted (the appended
     //    terminal QC op is filtered out inside saveRouteCardForItem).
     if (opsChanged && userOps.length > 0) {
-      await saveRouteCardForItem(
+      routeCardWriteBack = await saveRouteCardForItem(
         tx,
         companyId,
         item.id,
@@ -2480,7 +2518,7 @@ export async function updateJobCard(
     );
   });
 
-  return getJobCard(id, user);
+  return { ...(await getJobCard(id, user)), routeCardWriteBack };
 }
 
 export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok: true }> {

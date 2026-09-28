@@ -165,6 +165,23 @@ export const jobCardListItemSchema = z.object({
 });
 export type JobCardListItem = z.infer<typeof jobCardListItemSchema>;
 
+/** What a Job Card save wrote back to the item's Route Card (ADR-051 write
+ *  half), so the screen can SAY so instead of changing the routing silently
+ *  (2026-09-28 form audit). null on the save result = Route Card untouched. */
+export const jcRouteCardWriteBackSchema = z.object({
+  routeCardId: z.string().uuid(),
+  routeCardCode: z.string(),
+  /** The card's Route Card Rev after this save. */
+  routeCardRevision: z.number().int(),
+  /** true = this save created the item's first Route Card. */
+  created: z.boolean(),
+});
+export type JcRouteCardWriteBack = z.infer<typeof jcRouteCardWriteBackSchema>;
+/** POST / PATCH /job-cards response: the saved card + the write-back note. */
+export type JobCardSaveResult = JobCardListItem & {
+  routeCardWriteBack: JcRouteCardWriteBack | null;
+};
+
 // ─── Query filters ────────────────────────────────────────────────────────
 
 export const listJobCardsQuerySchema = z.object({

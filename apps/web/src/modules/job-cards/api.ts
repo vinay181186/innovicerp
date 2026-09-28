@@ -1,18 +1,14 @@
 import type {
   JobCardEditModel,
   JobCardListItem,
+  JobCardSaveResult,
   JobCardSourceOption,
   JobCardStatusExtras,
   JobCardWriteInput,
   ListJobCardsQuery,
   ListJobCardsResponse,
 } from '@innovic/shared';
-import {
-  type UseQueryOptions,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const jobCardsKeys = {
@@ -68,7 +64,9 @@ export function useJobCard(id: string | undefined) {
 /** Full write-shaped JC (header + ops + qc docs) to repopulate the edit form. */
 export function useJobCardEditModel(id: string | undefined) {
   return useQuery<JobCardEditModel>({
-    queryKey: id ? ([...jobCardsKeys.detail(id), 'edit'] as const) : (['job-cards', 'edit', '__missing__'] as const),
+    queryKey: id
+      ? ([...jobCardsKeys.detail(id), 'edit'] as const)
+      : (['job-cards', 'edit', '__missing__'] as const),
     queryFn: () => apiFetch<JobCardEditModel>(`/job-cards/${id}/edit`),
     enabled: Boolean(id),
   });
@@ -98,8 +96,9 @@ export function useJobCardSourceOptions(enabled = true) {
 
 export function useCreateJobCard() {
   const qc = useQueryClient();
-  return useMutation<JobCardListItem, Error, JobCardWriteInput>({
-    mutationFn: (input) => apiFetch<JobCardListItem>('/job-cards', { method: 'POST', json: input }),
+  return useMutation<JobCardSaveResult, Error, JobCardWriteInput>({
+    mutationFn: (input) =>
+      apiFetch<JobCardSaveResult>('/job-cards', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jobCardsKeys.lists() });
     },
@@ -108,9 +107,9 @@ export function useCreateJobCard() {
 
 export function useUpdateJobCard(id: string) {
   const qc = useQueryClient();
-  return useMutation<JobCardListItem, Error, JobCardWriteInput>({
+  return useMutation<JobCardSaveResult, Error, JobCardWriteInput>({
     mutationFn: (input) =>
-      apiFetch<JobCardListItem>(`/job-cards/${id}`, { method: 'PATCH', json: input }),
+      apiFetch<JobCardSaveResult>(`/job-cards/${id}`, { method: 'PATCH', json: input }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: jobCardsKeys.lists() });
       qc.setQueryData(jobCardsKeys.detail(id), updated);

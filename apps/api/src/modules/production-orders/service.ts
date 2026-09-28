@@ -1258,7 +1258,8 @@ export async function closeProductionOrder(
           creditedQty: newCredited,
           ...(input.finish ? { lostQty } : {}),
           ...(finalStatus === 'closed' ? { closedAt: now, closedBy: user.id } : {}),
-          ...(input.remarks !== undefined ? { remarks: input.remarks } : {}),
+          // Close remarks live ONLY on the close ledger row (productionOrderCloses
+          // above) — never overwrite the order's own planner Remarks.
           updatedAt: now,
           updatedBy: user.id,
         })
