@@ -300,7 +300,9 @@ export async function readBomParts(
   return out;
 }
 
-/** Active SALES bookings on these items held by other SOs (remaining > 0). */
+/** Reservations on these items still held by OTHER SOs (remaining > 0), per
+ *  SO code: sales reservations (so_stock_reservations) AND assembly part
+ *  reservations (assembly_part_reservations, ADR-193 3c), summed per SO. */
 export async function readBookedForOthers(
   tx: DbTransaction,
   companyId: string,
@@ -309,21 +311,32 @@ export async function readBookedForOthers(
 ): Promise<Map<string, Array<{ soCode: string; qty: number }>>> {
   const out = new Map<string, Array<{ soCode: string; qty: number }>>();
   if (itemIds.length === 0) return out;
+  const ids = sql.param(itemIds as string[]);
   const rows = (await tx.execute(sql`
-    SELECT r.item_id, r.so_code_text,
-           SUM(r.qty - r.consumed_qty - r.released_qty) AS held
-    FROM public.so_stock_reservations r
-    WHERE r.company_id = ${companyId}::uuid
-      AND r.deleted_at IS NULL
-      AND r.status IN ('active', 'partially_consumed')
-      AND r.item_id = ANY(${sql.param(itemIds as string[])}::uuid[])
-      AND r.so_line_id NOT IN (
-        SELECT sl.id FROM public.sales_order_lines sl
-        WHERE sl.sales_order_id = ${exceptSalesOrderId}::uuid
-      )
-    GROUP BY r.item_id, r.so_code_text
-    HAVING SUM(r.qty - r.consumed_qty - r.released_qty) > 0
-    ORDER BY r.so_code_text
+    SELECT x.item_id, x.so_code_text, SUM(x.held) AS held
+    FROM (
+      SELECT r.item_id, r.so_code_text, (r.qty - r.consumed_qty - r.released_qty)::numeric AS held
+      FROM public.so_stock_reservations r
+      WHERE r.company_id = ${companyId}::uuid
+        AND r.deleted_at IS NULL
+        AND r.status IN ('active', 'partially_consumed')
+        AND r.item_id = ANY(${ids}::uuid[])
+        AND r.so_line_id NOT IN (
+          SELECT sl.id FROM public.sales_order_lines sl
+          WHERE sl.sales_order_id = ${exceptSalesOrderId}::uuid
+        )
+      UNION ALL
+      SELECT a.item_id, a.so_code_text, (a.qty - a.consumed_qty - a.released_qty)::numeric AS held
+      FROM public.assembly_part_reservations a
+      WHERE a.company_id = ${companyId}::uuid
+        AND a.deleted_at IS NULL
+        AND a.status IN ('active', 'partially_consumed')
+        AND a.item_id = ANY(${ids}::uuid[])
+        AND a.sales_order_id <> ${exceptSalesOrderId}::uuid
+    ) x
+    GROUP BY x.item_id, x.so_code_text
+    HAVING SUM(x.held) > 0
+    ORDER BY x.so_code_text
   `)) as unknown as Array<{ item_id: string; so_code_text: string; held: unknown }>;
   for (const r of rows) {
     const list = out.get(r.item_id) ?? [];

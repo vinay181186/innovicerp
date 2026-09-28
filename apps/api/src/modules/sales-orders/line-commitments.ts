@@ -10,7 +10,7 @@
 // raised in parallel against the same line waits for this save to finish
 // instead of slipping in between the check and the write.
 
-import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   customerDispatchLines,
   customerDispatches,
@@ -356,6 +356,30 @@ export async function describeSoBlockingDocuments(
   add('invoice', 'invoices', invoiceCodes);
   if (dispatchCodes.length === 0 && dispatchedWithoutDoc > 0) {
     parts.push(`${dispatchedWithoutDoc} pcs already dispatched`);
+  }
+  // ADR-193 3c — an assembly SO's live Item Issues and reserved parts hold
+  // stock for it; cancelling / deleting would strand them (review F2).
+  const issueRows = (await tx.execute(sql`
+    SELECT code FROM public.store_issues
+    WHERE company_id = ${companyId}::uuid AND sales_order_id = ${salesOrderId}::uuid
+      AND deleted_at IS NULL AND reversed_at IS NULL
+    ORDER BY code
+  `)) as unknown as Array<{ code: string }>;
+  add(
+    'item issue',
+    'item issues',
+    issueRows.map((r) => r.code),
+  );
+  const held = (await tx.execute(sql`
+    SELECT COUNT(DISTINCT item_id)::int AS n FROM public.assembly_part_reservations
+    WHERE company_id = ${companyId}::uuid AND sales_order_id = ${salesOrderId}::uuid
+      AND deleted_at IS NULL AND status IN ('active', 'partially_consumed')
+  `)) as unknown as Array<{ n: number }>;
+  const heldItems = Number(held[0]?.n ?? 0);
+  if (heldItems > 0) {
+    parts.push(
+      `reserved parts (${heldItems} item${heldItems > 1 ? 's' : ''} — release them first)`,
+    );
   }
   return parts.join('; ');
 }

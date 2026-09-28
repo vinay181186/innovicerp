@@ -244,3 +244,38 @@ export interface SoMaterial {
     reversedAt: string | null;
   }>;
 }
+
+// ─── Assembly part reservations (ADR-193 phase 3c) ─────────────────────────
+// Reserve holds free stock for an assembly SO's BOM parts (never beyond To
+// Issue − already Reserved). Release gives this SO's own reservation back.
+
+export const reserveAssemblyPartsInputSchema = z.object({
+  lines: z
+    .array(z.object({ itemId: z.string().uuid(), qty }))
+    .min(1, 'Add at least one part')
+    .max(200)
+    .refine((ls) => new Set(ls.map((l) => l.itemId)).size === ls.length, {
+      message: 'A part is listed twice — keep one line per part',
+    }),
+});
+export type ReserveAssemblyPartsInput = z.infer<typeof reserveAssemblyPartsInputSchema>;
+
+export const releaseAssemblyPartsInputSchema = z.object({
+  itemId: z.string().uuid(),
+  qty,
+  reason,
+});
+export type ReleaseAssemblyPartsInput = z.infer<typeof releaseAssemblyPartsInputSchema>;
+
+/** 409 details when Complete finds a part not issued enough (not the last units). */
+export interface AssemblyShortPart {
+  itemCode: string;
+  needQty: number;
+  stillOutQty: number;
+}
+/** 409 details (needsConfirmation) on the last units when Still Out ≠ need. */
+export interface AssemblyVariancePart {
+  itemCode: string;
+  needQty: number;
+  stillOutQty: number;
+}

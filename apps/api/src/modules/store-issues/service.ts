@@ -12,6 +12,9 @@
 //            was returned from it (ADR-189: an opposite ledger entry, never an
 //            edit of the 'out')
 //
+// ADR-193 3c — against an assembly SO a line may also use the SO's own
+// reservation, and Return / Reverse are capped by its Still Out (assembly.ts).
+//
 // Numbering: ISS-NNNNN by MAX+1 inside the tx, AFTER the items are locked.
 // Reads (list / one slip) live in read.ts.
 
@@ -26,66 +29,27 @@ import {
 } from '@innovic/shared';
 import { eq, sql } from 'drizzle-orm';
 import { storeIssueLines, storeIssueReturns, storeIssues } from '../../db/schema';
-import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import {
+  assertReturnWithinStillOut,
+  assertReverseWithinStillOut,
+  checkAssemblyAllowance,
+  giveBackLineReservations,
+  useOwnReservation,
+} from './assembly';
 import { enforceOverToIssue, resolveTargetAndCap } from './guard';
-import { lockSlip, readSlipLines } from './slip';
+import { lockSlip, nextStoreIssueCode, readSlipLines, resolveIssuedTo, today } from './slip';
 import { readStoreIssueDetail, requireCompany } from './read';
 
 export { getStoreIssue, listStoreIssues } from './read';
 
-const CODE_PREFIX = 'ISS-';
-const CODE_PAD = 5;
-
-/** Today in IST (a Return at 01:00 IST belongs to today, not yesterday). */
-function today(): string {
-  return new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
-}
-
-async function nextStoreIssueCode(tx: DbTransaction, companyId: string): Promise<string> {
-  // MAX of the trailing digits for this company, inside the same tx as the
-  // insert (the unique index on (company_id, code) is the backstop).
-  const rows = (await tx.execute(sql`
-    SELECT COALESCE(
-      MAX(NULLIF(regexp_replace(code, '^${sql.raw(CODE_PREFIX)}', ''), '')::int),
-      0
-    ) + 1 AS next_num
-    FROM public.store_issues
-    WHERE company_id = ${companyId}::uuid
-      AND code LIKE ${`${CODE_PREFIX}%`}
-      AND code ~ ${`^${CODE_PREFIX}\\d+$`}
-  `)) as unknown as Array<{ next_num: number }>;
-  const next = Number(rows[0]?.next_num ?? 1);
-  return `${CODE_PREFIX}${String(next).padStart(CODE_PAD, '0')}`;
-}
-
 export async function getNextStoreIssueCode(user: AuthContext): Promise<{ code: string }> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => ({ code: await nextStoreIssueCode(tx, companyId) }));
-}
-
-/** Who received it: the Operator's name, else the typed name. */
-async function resolveIssuedTo(
-  tx: DbTransaction,
-  companyId: string,
-  input: CreateStoreIssueInput,
-): Promise<{ operatorId: string | null; issuedTo: string }> {
-  if (input.operatorId) {
-    const rows = (await tx.execute(sql`
-      SELECT id, name FROM public.operators
-      WHERE id = ${input.operatorId}::uuid AND company_id = ${companyId}::uuid
-        AND is_active = true AND deleted_at IS NULL
-    `)) as unknown as Array<{ id: string; name: string }>;
-    const op = rows[0];
-    if (!op) throw new ValidationError('Pick an active Operator (the one chosen was not found).');
-    return { operatorId: op.id, issuedTo: op.name };
-  }
-  const typed = input.issuedToText?.trim() ?? '';
-  if (!typed) throw new ValidationError('Pick who received it (Operator) or type a name');
-  return { operatorId: null, issuedTo: typed };
 }
 
 export async function createStoreIssue(
@@ -123,6 +87,12 @@ export async function createStoreIssue(
     const { target, over } = await resolveTargetAndCap(tx, companyId, input, itemCodes);
     const confirmed = await enforceOverToIssue(user, over, input.confirmReason);
     const { operatorId, issuedTo } = await resolveIssuedTo(tx, companyId, input);
+    // ADR-193 3c — an assembly-SO line may also take this SO's own reservation
+    // (M12: over that, 409 names who holds the rest). Checked before posting.
+    const soId = input.issueAgainst === 'assembly_so' ? target.salesOrderId : null;
+    const own = soId
+      ? await checkAssemblyAllowance(tx, companyId, soId, input.lines, itemCodes)
+      : null;
 
     // One ISS- number at a time per company (same pattern as stock counts).
     await tx.execute(
@@ -170,19 +140,30 @@ export async function createStoreIssue(
         userId,
         itemCodeText: itemCode,
         guard: 'available',
+        allowance: own?.get(l.itemId) ?? 0,
         qtyLabel: 'Issue Qty',
       });
-      await tx.insert(storeIssueLines).values({
-        companyId,
-        issueId,
-        lineNo: idx + 1,
-        itemId: l.itemId,
-        itemCodeText: itemCode,
-        qty: roundQty(l.qty),
-        storeTransactionId: mv.id,
-        createdBy: userId,
-        updatedBy: userId,
-      });
+      const lineRows = await tx
+        .insert(storeIssueLines)
+        .values({
+          companyId,
+          issueId,
+          lineNo: idx + 1,
+          itemId: l.itemId,
+          itemCodeText: itemCode,
+          qty: roundQty(l.qty),
+          storeTransactionId: mv.id,
+          createdBy: userId,
+          updatedBy: userId,
+        })
+        .returning({ id: storeIssueLines.id });
+      if (soId && own?.get(l.itemId)) {
+        await useOwnReservation(
+          tx,
+          { companyId, soId, itemId: l.itemId, qty: roundQty(l.qty), userId },
+          lineRows[0]!.id,
+        );
+      }
       moved.push(`${itemCode} × ${roundQty(l.qty)} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
     }
 
@@ -239,6 +220,19 @@ export async function returnStoreIssue(
           { itemCode: line.itemCodeText, qty, outstanding: out },
         );
       }
+    }
+
+    // P34 — fitted parts cannot come back (SO-level Still Out cap).
+    if (iss.issueAgainst === 'assembly_so' && iss.salesOrderId) {
+      await assertReturnWithinStillOut(
+        tx,
+        companyId,
+        iss.salesOrderId,
+        [...want].map(([lineId, qty]) => {
+          const line = byId.get(lineId)!;
+          return { itemId: line.itemId, itemCode: line.itemCodeText, qty };
+        }),
+      );
     }
 
     const date = today();
@@ -321,6 +315,11 @@ export async function reverseStoreIssue(
     if (lines.length === 0) {
       throw new ConflictError(`${iss.code} has no items on it, so there is no stock to put back.`);
     }
+    const assemblySoId =
+      iss.issueAgainst === 'assembly_so' && iss.salesOrderId ? iss.salesOrderId : null;
+    if (assemblySoId) {
+      await assertReverseWithinStillOut(tx, companyId, assemblySoId, iss.code, lines);
+    }
 
     const date = today();
     const done: string[] = [];
@@ -343,6 +342,10 @@ export async function reverseStoreIssue(
       done.push(`${line.itemCodeText} × ${line.qty} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
     }
     const firstTxnId = byLine.get(lines[0]!.id) ?? null;
+    // ADR-193 3c — what the slip used of the SO's reservation is held again.
+    if (assemblySoId) {
+      await giveBackLineReservations(tx, { companyId, soId: assemblySoId, userId: user.id }, lines);
+    }
 
     const now = new Date();
     await tx

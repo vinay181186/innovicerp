@@ -19,6 +19,7 @@ import type {
   AssemblyRollup,
   AssemblyTrackerResponse,
   AssemblyUnitRow,
+  AssemblyVariancePart,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Play, RotateCcw, Truck } from 'lucide-react';
@@ -28,6 +29,7 @@ import { fmtDate, todayIst } from '@/lib/date';
 import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
+import { VarianceConfirm } from '../components/variance-confirm';
 
 export const assemblyDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -605,6 +607,13 @@ function UnitsPanel({
   // Per in-progress row: how many of the batch to complete now (default = all
   // that's left in the batch).
   const [stopQty, setStopQty] = useState<Record<string, string>>({});
+  // ADR-193 3c — last units whose parts out differ from the BOM wait here
+  // for a reason (409 needsConfirmation from Complete).
+  const [variance, setVariance] = useState<{
+    unit: AssemblyUnitRow;
+    completedQty: number;
+    parts: AssemblyVariancePart[];
+  } | null>(null);
 
   if (units.length === 0) {
     return (
@@ -624,12 +633,35 @@ function UnitsPanel({
       setError(`Batch No. ${u.unitNo} has only ${u.qty} left to complete.`);
       return;
     }
+    complete(u, completedQty);
+  };
+
+  const complete = (u: AssemblyUnitRow, completedQty: number, reason?: string): void => {
+    setError(null);
     stop.mutate(
-      { unitId: u.id, input: { completedQty } },
       {
-        onSuccess: () => setStopQty((s) => ({ ...s, [u.id]: '' })),
-        onError: (e) =>
-          setError(e instanceof Error ? e.message : 'Could not complete the batch. Try again.'),
+        unitId: u.id,
+        input: { completedQty, ...(reason ? { confirmVarianceReason: reason } : {}) },
+      },
+      {
+        onSuccess: () => {
+          setStopQty((s) => ({ ...s, [u.id]: '' }));
+          setVariance(null);
+        },
+        onError: (e) => {
+          const d = (
+            e as {
+              details?: { needsConfirmation?: boolean; variance?: AssemblyVariancePart[] };
+            }
+          ).details;
+          if (d?.needsConfirmation && d.variance) {
+            setVariance({ unit: u, completedQty, parts: d.variance });
+            return;
+          }
+          // A short part (409 details.short) — the message already lists each
+          // part and says to issue it from the store first.
+          setError(e instanceof Error ? e.message : 'Could not complete the batch. Try again.');
+        },
       },
     );
   };
@@ -647,6 +679,15 @@ function UnitsPanel({
       </div>
       {error ? (
         <div style={{ color: 'var(--red2)', padding: '6px 10px', fontSize: 12 }}>{error}</div>
+      ) : null}
+      {variance ? (
+        <VarianceConfirm
+          batchNo={variance.unit.unitNo}
+          parts={variance.parts}
+          busy={stop.isPending}
+          onCancel={() => setVariance(null)}
+          onConfirm={(reason) => complete(variance.unit, variance.completedQty, reason)}
+        />
       ) : null}
       <div className="tbl-wrap">
         <table className="innovic-table">

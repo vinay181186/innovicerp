@@ -3,6 +3,8 @@
 //   GET /material/job-cards/:id       → JcMaterial
 //   GET /material/sales-orders/:id    → SoMaterial
 //
+// Reserve / Release of assembly parts (phase 3c) live in reserve.ts; Reserved /
+// Fitted / Still Out come from lib/assembly-parts.ts.
 // Derived on every read from lib/material-requirement.ts — the same numbers
 // the Item Issue guard caps against. Reversed slips never count.
 
@@ -22,6 +24,7 @@ import {
   readSlipsFor,
   readSoHead,
 } from '../../lib/material-requirement';
+import { readOwnAssemblyReserved, readPartsOut } from '../../lib/assembly-parts';
 import { roundQty } from '../../lib/stock-ledger';
 import { readStockPositions } from '../../lib/stock-reservation';
 
@@ -100,7 +103,13 @@ export async function getSoMaterial(salesOrderId: string, user: AuthContext): Pr
       ? await readBomParts(tx, companyId, so.bomId!, so.units)
       : new Map<string, BomPart>();
     const got = await readIssuedReturned(tx, companyId, { salesOrderId: so.id });
-    const notInBom = [...got.keys()].filter((id) => !parts.has(id));
+    const partsOut = await readPartsOut(tx, companyId, so.id);
+    const ownReserved = await readOwnAssemblyReserved(tx, companyId, so.id);
+    // Parts out or still reserved but no longer in the BOM stay listed, so the
+    // store can take them back and the planner can release them.
+    const notInBom = [...new Set([...got.keys(), ...ownReserved.keys()])].filter(
+      (id) => !parts.has(id),
+    );
     const itemIds = [...parts.keys(), ...notInBom];
     const info = await readItemInfo(tx, companyId, itemIds);
     const pos = await readStockPositions(tx, companyId, itemIds);
@@ -111,10 +120,10 @@ export async function getSoMaterial(salesOrderId: string, user: AuthContext): Pr
       const it = info.get(itemId);
       const issued = g?.issued ?? 0;
       const returned = g?.returned ?? 0;
-      // Consumption (assembly Complete) and assembly bookings arrive in
-      // phase 3c; until then both are 0 and Still Out = Issued − Returned.
-      const fitted = 0;
-      const reserved = 0;
+      // ADR-193 3c — Fitted by assembly Complete; Reserved = this SO's own
+      // assembly reservation still held.
+      const fitted = partsOut.get(itemId)?.fitted ?? 0;
+      const reserved = ownReserved.get(itemId) ?? 0;
       return {
         itemId,
         itemCode: it?.code ?? '',

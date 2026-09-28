@@ -3970,6 +3970,9 @@ export const storeIssueLines = pgTable(
       (): AnyPgColumn => storeTransactions.id,
       { onDelete: 'set null' },
     ),
+    // ADR-193 3c (0158): this SO's own assembly reservation used by the line;
+    // given back to the reservation when the slip is Reversed.
+    reservedUsedQty: stockQty('reserved_used_qty').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -3982,6 +3985,7 @@ export const storeIssueLines = pgTable(
   },
   (t) => [
     check('store_issue_lines_qty_check', sql`${t.qty} > 0`),
+    check('store_issue_lines_reserved_used_check', sql`${t.reservedUsedQty} >= 0`),
     index('store_issue_lines_issue_idx')
       .on(t.issueId)
       .where(sql`${t.deletedAt} is null`),
@@ -4033,6 +4037,114 @@ export const storeIssueReturns = pgTable(
       .on(t.issueLineId)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('store_issue_returns_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ADR-193 phase 3c (migration 0158) — free stock held for an assembly
+// (Equipment) SO's BOM parts. Separate from so_stock_reservations (integer,
+// per SO line, read by dispatch / PRO close — P27). v_item_stock_availability
+// counts both kinds as Reserved.
+export const assemblyPartReservations = pgTable(
+  'assembly_part_reservations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id),
+    soCodeText: text('so_code_text').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    qty: stockQty('qty').notNull(),
+    consumedQty: stockQty('consumed_qty').notNull().default(0),
+    releasedQty: stockQty('released_qty').notNull().default(0),
+    status: text('status').notNull().default('active'),
+    releaseReason: text('release_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('assembly_part_reservations_qty_check', sql`${t.qty} > 0`),
+    check('assembly_part_reservations_consumed_qty_check', sql`${t.consumedQty} >= 0`),
+    check('assembly_part_reservations_released_qty_check', sql`${t.releasedQty} >= 0`),
+    check(
+      'assembly_part_reservations_settled_check',
+      sql`${t.consumedQty} + ${t.releasedQty} <= ${t.qty}`,
+    ),
+    check(
+      'assembly_part_reservations_status_check',
+      sql`${t.status} IN ('active', 'partially_consumed', 'consumed', 'released')`,
+    ),
+    index('assembly_part_reservations_so_idx')
+      .on(t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('assembly_part_reservations_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('assembly_part_reservations_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ADR-193 phase 3c (migration 0158) — parts FITTED into an assembled unit by
+// Complete. No ledger row: the parts left the store when they were issued.
+// Undo of the unit soft-deletes its rows (the parts are Still Out again).
+export const assemblyUnitConsumptions = pgTable(
+  'assembly_unit_consumptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    assemblyUnitId: uuid('assembly_unit_id')
+      .notNull()
+      .references(() => assemblyUnits.id),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    qty: stockQty('qty').notNull(),
+    varianceReason: text('variance_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('assembly_unit_consumptions_qty_check', sql`${t.qty} > 0`),
+    index('assembly_unit_consumptions_unit_idx')
+      .on(t.assemblyUnitId)
+      .where(sql`${t.deletedAt} is null`),
+    index('assembly_unit_consumptions_so_item_idx')
+      .on(t.salesOrderId, t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('assembly_unit_consumptions_company_all', {
       for: 'all',
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,

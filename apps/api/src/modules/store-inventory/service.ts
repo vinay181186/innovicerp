@@ -36,6 +36,7 @@ import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../..
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { readStockPosition, readStockPositions } from '../../lib/stock-reservation';
 import { onPoByItemSql } from '../../lib/po-pending';
+import { readAssemblyReservationRows } from './assembly-reservations';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -443,6 +444,10 @@ export async function listReservations(
         remarks: r.remarks,
       };
     });
+
+    // ADR-193 3c — parts held for an assembly SO live in their own table; list
+    // them too so this drill-down totals the same Reserved as every Store screen.
+    if (!query.soLineId) detail.push(...(await readAssemblyReservationRows(tx, companyId, query)));
 
     const totalReserved = detail.reduce(
       (s, d) =>

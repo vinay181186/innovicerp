@@ -111,6 +111,9 @@
 | Issued parts built into assembled units (ADR-193, 3c)              | `Fitted`                                                                          | `fittedQty`                                            | computed (phase 3c)                                                                           | `Consumed` (that is reserved qty used)                                                                |
 | Qty put back to the store from an Item Issue line (ADR-193)        | `Return Qty` / `Returned`                                                         | `qty` / `returnedQty`                                  | `store_issue_returns.qty`                                                                     | `Reversed` (that undoes a whole slip)                                                                 |
 | BOM qty for one assembled unit                                     | `Qty per Set`                                                                     | `qtyPerSet`                                            | `bom_master_lines.qty_per_set`                                                                | `Qty/Set`, `Per Unit`                                                                                 |
+| Qty of free stock to hold for an assembly SO part (ADR-193) | `Reserve Qty` | `qty` | `assembly_part_reservations.qty` | `Book Qty`, `Allocate` |
+| Qty of an SO's reservation given back to free stock (ADR-193) | `Release Qty` | `qty` | `assembly_part_reservations.released_qty` | `Unbook`, `Unreserve` |
+| Parts one Complete needs by the BOM (ADR-193) | `BOM Need` | `needQty` | computed — Qty per Set × units completed | `Required` (that is the whole SO) |
 
 **Snapshot rule.** `xxxText` means "the value as it was, when the live row may be gone".
 It is only ever a fallback: read `xxx ?? xxxText`, never the snapshot alone. A `xxxText`

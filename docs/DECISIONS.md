@@ -10371,3 +10371,24 @@ integer, so KGS / MTR material could not be issued as 12.5.
   M12–M15. A closed / cancelled Assembly SO takes no more issues; a Job Card's status is not checked yet.
 - Verified on TEST: 25 scenarios pass; 695 + 1009 cross-screen figures, 0 mismatches.
 
+### ADR-193 phase 3c — reserve parts for an assembly SO; Complete only checks and fits (2026-09-28)
+- Owner decision (Q3): the store issues parts against the assembly SO; Complete only checks the parts are
+  out and adds the finished machine. Complete no longer takes component stock (0 assembly units existed on
+  TEST and PROD, so no old unit needed converting).
+- Reserve Parts (Planning entry): holds free stock for an SO's BOM parts in `assembly_part_reservations`
+  (0158) — never beyond To Issue − Reserved, never beyond Available (409 names who holds the rest). Release
+  (Planning entry + reason). "Reserved" everywhere = sales + assembly reservations (the view sums both).
+- An issue against the SO may use Available + its own reservation (`postStockMove` `allowance`); the own
+  reservation is used first and recorded on the line; a Reverse gives it back (never into a released row
+  or a closed / cancelled SO).
+- Complete: SO row locked (`FOR NO KEY UPDATE` — `FOR UPDATE` would deadlock with inserts whose foreign key
+  points at the SO). Parts short → 409 "issue from the store first"; last units with Still Out ≠ BOM need →
+  reason required; fitted rows in `assembly_unit_consumptions`; last unit releases leftover reservations.
+  Undo soft-deletes the fitted rows (parts are Still Out again) and reverses the machine credit.
+- Fitted parts cannot be Returned or the slip Reversed. An SO holding item issues or reserved parts cannot
+  be cancelled or deleted. No new reservations once every unit is assembled.
+- Tracker "can assemble" counts Still Out ÷ Qty per Set, not store stock.
+- Verified on TEST: 27 scenarios pass (+ phase 3b 25 / 25 again); 881 + 1223 cross-screen figures, 0 mismatches.
+- Not done: modules/assembly/service.test.ts + routes.test.ts still expect the old stock debit (they run on
+  PROD, so not run); a rare lock-order case when the finished item is itself issued in the same moment.
+

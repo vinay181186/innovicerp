@@ -73,6 +73,8 @@ export function useStopAssembly() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: assemblyKeys.all });
+      // ADR-193 3c — Complete / Undo change Fitted and Still Out.
+      void qc.invalidateQueries({ queryKey: ['material'] });
     },
   });
 }
@@ -100,6 +102,8 @@ export function useUndoLastUnit(soId: string) {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: assemblyKeys.all });
+      // ADR-193 3c — Complete / Undo change Fitted and Still Out.
+      void qc.invalidateQueries({ queryKey: ['material'] });
     },
   });
 }

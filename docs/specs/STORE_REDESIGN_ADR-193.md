@@ -376,3 +376,69 @@ clears on any line edit; "Issue Anyway" needs Approve · F6 closed / cancelled A
 parts out · F10 a 403 on Material shows a plain message.
 Open (not fixed): a Job Card's status is not checked on issue; M12 (naming the SOs that hold a part) waits
 for 3c reservations.
+
+## 13. Phase 3c — reserve parts for an assembly SO; Complete only checks and fits
+
+Live check 2026-09-28: `assembly_units` = 0 rows on TEST and on PROD, so no unit was ever stock-debited by
+the old cascade. M9 (undo a ledger-debited unit) is N/A; the old OUT path is simply retired.
+
+### Data (0158)
+
+- `assembly_part_reservations` (NEW, not `so_stock_reservations` — see P27): sales_order_id → sales_orders,
+  so_code_text, item_id → items, `qty numeric(14,3) > 0`, `consumed_qty`, `released_qty` numeric(14,3)
+  default 0, CHECK consumed + released ≤ qty, status active | partially_consumed | consumed | released,
+  release_reason; audit columns; RLS.
+- `v_item_stock_availability.reserved_qty` = sales reservations remaining + assembly reservations remaining.
+- `assembly_unit_consumptions` (NEW): assembly_unit_id → assembly_units, sales_order_id, item_id,
+  `qty numeric(14,3) > 0`, variance_reason; audit; RLS. No ledger row — the parts left the store at issue.
+- `store_issue_lines` += `reserved_used_qty numeric(14,3) default 0` (own reservation used by this line).
+
+### Rules
+
+- Reserve (`POST /material/sales-orders/:id/reserve {lines:[{itemId, qty}]}`, Planning entry): BOM parts
+  only; qty ≤ To Issue − already Reserved (never reserve beyond need); qty ≤ Available else 409 naming who
+  holds it. Items locked in id order.
+- Release own (`POST /material/sales-orders/:id/release {itemId, qty, reason}`, Planning entry): newest first.
+- Issue against an assembly SO: the line may use Available + this SO's own reservation (one writer:
+  `postStockMove` gains `allowance`); own reservation consumed first (`reserved_used_qty`). Over that →
+  409 naming the SOs holding the rest (M12).
+- Complete (Stop and Mark Assembled): lock the SO row first (M15). Per BOM part need = Qty per Set × qty.
+  Not the last units: Still Out < need → 409 `{ short[] }` "issue from the store first" (M6).
+  Last units: Fitted = all Still Out; any part where Still Out ≠ need → 409 `{ needsConfirmation,
+  variance[] }` unless `confirmVarianceReason` (M7); a part with Still Out 0 is always short (P28).
+  Writes consumption rows + the finished-machine IN (unchanged); NO component OUT. Last units also release
+  the SO's leftover reservations (M14).
+- Undo last unit: dispatched → 409 (M8); soft-deletes its consumptions (parts are Still Out again, on the
+  floor — Return them if not reused) and reverses the finished-machine IN. Released reservations stay released.
+- Return / Reverse of an assembly-SO slip: capped by the SO's Still Out for the item (P34) — fitted parts
+  cannot go back to the store; Reverse also gives back the line's `reserved_used_qty` to the reservation.
+- Tracker "can assemble": min over parts ⌊Still Out ÷ Qty per Set⌋ (P30), not stock.
+
+### Paper-test fixes
+
+| #   | Problem found on paper                                                                 | Fix                                                         |
+| --- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| P27 | `so_stock_reservations` is integer and keyed to an SO line; dispatch / PRO close read it | separate `assembly_part_reservations`; the view sums both   |
+| P28 | Last-unit variance would let a unit "complete" with a part never issued                | Still Out 0 on a part is always short, reason or not        |
+| P29 | Undo put parts back in the store though they are on the bench                          | Undo makes them Still Out again; the store Returns them     |
+| P30 | Tracker "can assemble" still counted store stock                                       | counts Still Out                                            |
+| P34 | Return / Reverse could send back parts already fitted                                  | capped by the SO's Still Out for that item                  |
+
+### Phase 3c — as built
+
+Scenario test on TEST (`verify-3c.ts`): 27 / 27 — reserve 4 of 6 (Available 8→4) · reserve beyond need 409 ·
+M5 second SO over free 409 names the holder · part not in BOM 400 · M6 Complete before issue → short 409 ·
+M12 issue over free + own 409 names the other SO · M13 issue uses own reservation, Available unchanged ·
+general issue of another SO's reserved stock refused · Complete 2 → Fitted, store stock unchanged, machine +2 ·
+P34 return / reverse of fitted parts 409 · release, over-release 409 · M7 last unit variance → reason →
+fits 1.5 m, M14 leftover reservation released · Undo → Still Out again, machine −1 · M8 dispatched undo 409 ·
+tracker · store drill-down lists assembly rows · balances = Σ ledger, 0 component OUT rows · view Reserved =
+sales + assembly · SO with issues / reserved parts blocked from cancel · no reservations after full assembly.
+
+Review fixes (3c): SO lock `FOR NO KEY UPDATE` (deadlock with FK checks) · cancel / delete blocked while the
+SO holds item issues or reserved parts · no reserve after full assembly · Reverse never revives a released
+reservation · "can assemble" rounding for decimal Qty per Set · unclamped Available so holders are named ·
+stock-writer message says "reserved for orders (sales and assembly)" · Store drill-down includes assembly
+reservations (shared read contract widened: soLineId / lineNo nullable, decimals, source Assembly).
+M9: N/A (no ledger-debited units ever existed). M15: SO row lock in Complete / Undo / Return / Reverse.
+

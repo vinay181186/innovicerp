@@ -2,7 +2,11 @@
 // Per docs/PARITY/so-planning.md.
 
 import { z } from 'zod';
-import { RESERVATION_SOURCES, RESERVATION_STATUSES } from '../enums/reservation';
+import {
+  RESERVATION_DETAIL_SOURCES,
+  RESERVATION_SOURCES,
+  RESERVATION_STATUSES,
+} from '../enums/reservation';
 import {
   planDerivedStatusSchema,
   planOpsSourceSchema,
@@ -292,9 +296,10 @@ export const reservationDetailSchema = z.object({
   id: z.string().uuid(),
   itemId: z.string().uuid(),
   itemCode: z.string().nullable(),
-  soLineId: z.string().uuid(),
+  /** Null for an assembly reservation (held for the whole SO, not a line). */
+  soLineId: z.string().uuid().nullable(),
   soCodeText: z.string(),
-  lineNo: z.number().int(),
+  lineNo: z.number().int().nullable(),
   customerName: z.string().nullable(),
   itemRevision: z.string().nullable(),
   /** The customer's PO line number (`POL`) for the SO line this row traces back
@@ -302,11 +307,12 @@ export const reservationDetailSchema = z.object({
    *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
    *  Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
-  qty: z.number().int().nonnegative(),
-  consumedQty: z.number().int().nonnegative(),
-  releasedQty: z.number().int().nonnegative(),
-  remainingQty: z.number().int().nonnegative(),
-  source: z.enum(RESERVATION_SOURCES),
+  // Assembly reservations may hold decimals (a cable in MTR).
+  qty: z.number().nonnegative(),
+  consumedQty: z.number().nonnegative(),
+  releasedQty: z.number().nonnegative(),
+  remainingQty: z.number().nonnegative(),
+  source: z.enum(RESERVATION_DETAIL_SOURCES),
   status: z.enum(RESERVATION_STATUSES),
   productionOrderId: z.string().uuid().nullable(),
   productionOrderCode: z.string().nullable(),
@@ -336,7 +342,7 @@ export type ListReservationsQuery = z.infer<typeof listReservationsQuerySchema>;
 
 export const listReservationsResponseSchema = z.object({
   rows: z.array(reservationDetailSchema),
-  totalReserved: z.number().int().nonnegative(),
+  totalReserved: z.number().nonnegative(),
 });
 export type ListReservationsResponse = z.infer<typeof listReservationsResponseSchema>;
 

@@ -1,10 +1,17 @@
 // Parts of one assembly (Equipment) SO from its BOM: Required = Qty per Set ×
 // Units; Reserved, Issued, Returned, Fitted, To Issue, Still Out.
-import type { SoMaterial } from '@innovic/shared';
+import type { SoMaterial, SoMaterialLine } from '@innovic/shared';
 
 const n = (v: number): string => String(Math.round(v * 1000) / 1000);
 
-export function SoMaterialTable({ data }: { data: SoMaterial }): React.JSX.Element {
+export function SoMaterialTable({
+  data,
+  onRelease,
+}: {
+  data: SoMaterial;
+  /** Planning only: a Release button on rows with Reserved > 0. */
+  onRelease?: ((line: SoMaterialLine) => void) | undefined;
+}): React.JSX.Element {
   if (!data.hasBom && data.lines.length === 0) {
     return (
       <div className="empty-state">
@@ -51,7 +58,21 @@ export function SoMaterialTable({ data }: { data: SoMaterial }): React.JSX.Eleme
               <td>{l.itemName || '—'}</td>
               <td className="mono td-num">{n(l.qtyPerSet)}</td>
               <td className="mono td-num">{n(l.requiredQty)}</td>
-              <td className="mono td-num">{n(l.reservedQty)}</td>
+              <td className="mono td-num">
+                {n(l.reservedQty)}
+                {onRelease && l.reservedQty > 0 ? (
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0 4px', fontSize: 10 }}
+                      onClick={() => onRelease(l)}
+                    >
+                      Release
+                    </button>
+                  </div>
+                ) : null}
+              </td>
               <td className="mono td-num">{n(l.issuedQty)}</td>
               <td className="mono td-num">{n(l.returnedQty)}</td>
               <td className="mono td-num">{n(l.fittedQty)}</td>
