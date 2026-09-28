@@ -30,8 +30,7 @@ function useOspProcesses() {
 function useCreateOsp() {
   const qc = useQueryClient();
   return useMutation<OspProcess, Error, OspProcessInput>({
-    mutationFn: (input) =>
-      apiFetch<OspProcess>('/osp-processes', { method: 'POST', json: input }),
+    mutationFn: (input) => apiFetch<OspProcess>('/osp-processes', { method: 'POST', json: input }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ospKey }),
   });
 }
@@ -90,6 +89,9 @@ export function OspProcessesPanel(): React.JSX.Element {
   const [modal, setModal] = useState<EditState | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<OspProcess | null>(null);
+  // Names that overlap the one being saved ("Plating" vs "Zinc Plating") —
+  // asked about once before saving; see save().
+  const [overlaps, setOverlaps] = useState<string[] | null>(null);
 
   function openCreate(): void {
     setSubmitError(null);
@@ -115,6 +117,27 @@ export function OspProcessesPanel(): React.JSX.Element {
       setSubmitError('Process Name is required.');
       return;
     }
+    // An operation picks the process whose name is exactly its name, else the
+    // LONGEST process name it contains. Overlapping names are allowed but
+    // easy to get wrong, so warn before saving.
+    const name = modal.processName.trim().toLowerCase();
+    const clash = (data?.items ?? [])
+      .filter((p) => p.id !== modal.id)
+      .map((p) => p.processName)
+      .filter((other) => {
+        const o = other.trim().toLowerCase();
+        return o !== name && (o.includes(name) || name.includes(o));
+      });
+    if (clash.length > 0) {
+      setOverlaps(clash);
+      return;
+    }
+    await saveNow();
+  }
+
+  async function saveNow(): Promise<void> {
+    if (!modal) return;
+    setSubmitError(null);
     const input: OspProcessInput = {
       processName: modal.processName.trim(),
       vendorId: modal.vendorId ? modal.vendorId : null,
@@ -180,7 +203,9 @@ export function OspProcessesPanel(): React.JSX.Element {
               <tbody>
                 {items.map((p) => (
                   <tr key={p.id}>
-                    <td className="fw-700" style={{ color: 'var(--purple)' }}>{p.processName}</td>
+                    <td className="fw-700" style={{ color: 'var(--purple)' }}>
+                      {p.processName}
+                    </td>
                     <td style={{ fontSize: 11 }}>
                       {p.vendorName ? (
                         <>
@@ -198,7 +223,9 @@ export function OspProcessesPanel(): React.JSX.Element {
                         <span className="text3">—</span>
                       )}
                     </td>
-                    <td className="text3" style={{ fontSize: 11 }}>{p.leadDays} days</td>
+                    <td className="text3" style={{ fontSize: 11 }}>
+                      {p.leadDays} days
+                    </td>
                     <td>
                       {canWrite ? (
                         <div style={{ display: 'flex', gap: 4 }}>
@@ -270,9 +297,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                 borderBottom: '1px solid var(--border)',
               }}
             >
-              <div className="fw-700">
-                {modal.id ? 'Edit OSP Process' : 'Add OSP Process'}
-              </div>
+              <div className="fw-700">{modal.id ? 'Edit OSP Process' : 'Add OSP Process'}</div>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setModal(null)}>
                 <X size={14} />
               </button>
@@ -324,9 +349,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                     min={1}
                     max={365}
                     value={modal.leadDays}
-                    onChange={(e) =>
-                      setModal({ ...modal, leadDays: Number(e.target.value) || 5 })
-                    }
+                    onChange={(e) => setModal({ ...modal, leadDays: Number(e.target.value) || 5 })}
                   />
                 </div>
                 <div className="form-grp">
@@ -334,9 +357,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                   <select
                     className="innovic-select"
                     value={modal.autoPo ? '1' : '0'}
-                    onChange={(e) =>
-                      setModal({ ...modal, autoPo: e.target.value === '1' })
-                    }
+                    onChange={(e) => setModal({ ...modal, autoPo: e.target.value === '1' })}
                     disabled={!modal.vendorId}
                   >
                     <option value="1">Yes (if vendor set)</option>
@@ -367,8 +388,10 @@ export function OspProcessesPanel(): React.JSX.Element {
                     <>
                       <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
                     </>
+                  ) : modal.id ? (
+                    'Save Changes'
                   ) : (
-                    modal.id ? 'Save Changes' : 'Save OSP Process'
+                    'Save OSP Process'
                   )}
                 </button>
               </div>
@@ -377,6 +400,26 @@ export function OspProcessesPanel(): React.JSX.Element {
         </div>
       ) : null}
 
+      {overlaps && modal ? (
+        <ConfirmDialog
+          tone="primary"
+          title="Process names overlap"
+          message={
+            <>
+              “{modal.processName.trim()}” overlaps {overlaps.map((o) => `“${o}”`).join(', ')}. An
+              operation uses the process whose name matches it exactly, otherwise the longest
+              process name it contains — check each operation will reach the right vendor.
+            </>
+          }
+          confirmLabel="Save anyway"
+          cancelLabel="Go back"
+          onConfirm={async () => {
+            setOverlaps(null);
+            await saveNow();
+          }}
+          onCancel={() => setOverlaps(null)}
+        />
+      ) : null}
       {removing ? (
         <ConfirmDialog
           title={`Delete OSP process ${removing.processName}?`}

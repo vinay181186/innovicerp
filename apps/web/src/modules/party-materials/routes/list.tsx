@@ -21,6 +21,7 @@ import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useClientsList } from '../../clients/api';
 import { useItem } from '../../items/api';
+import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
 import { usePlanningSoDetail } from '../../so-planning/api';
@@ -448,6 +449,12 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
     setDescription('');
   };
 
+  // ESC / a click outside asks before throwing away what was picked.
+  const guard = useDiscardGuard(
+    Boolean(clientId || orderId || lineId || description.trim()) || uom !== 'NOS',
+    onClose,
+  );
+
   const onSave = (): void => {
     setErr(null);
     const c = code.trim();
@@ -458,6 +465,10 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
     }
     if (!clientId) {
       setErr('Customer is required.');
+      return;
+    }
+    if (!orderId) {
+      setErr('SO / JWSO No. is required — the Item Code is picked from its lines.');
       return;
     }
     if (!nm) {
@@ -476,7 +487,8 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
   };
 
   return (
-    <ModalShell onClose={onClose} title="Add Party Material">
+    <ModalShell onClose={guard.requestClose} title="Add Party Material">
+      {guard.dialog}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {/* 1. Material Code (auto, read-only) + UOM */}
         <Field label="Code">
@@ -513,7 +525,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 3. SO / JWSO — filtered to the picked client */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="SO / JWSO No.">
+          <Field label="SO / JWSO No." required>
             <SearchableSelect
               id="pmOrder"
               value={orderId}
@@ -530,7 +542,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 4. Item Code — from the picked order's line items */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Item Code">
+          <Field label="Item Code" required>
             <SearchableSelect
               id="pmItem"
               value={lineId}

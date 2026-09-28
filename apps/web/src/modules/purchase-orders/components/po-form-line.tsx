@@ -352,13 +352,22 @@ export function PoFormLine({
           />
         </td>
         <td className="td-num" style={{ width: 92 }}>
+          {/* Decimal for KGS / MTR (3 places); a NOS / SET item stays whole —
+              the server refuses a fraction for it (0172). The item's unit is
+              shown under the box. */}
           <input
             type="number"
             min={0}
+            step="any"
             className="innovic-input mono"
             aria-label={`Qty, line ${idx + 1}`}
             {...register(`lines.${idx}.qty` as const, { valueAsNumber: true })}
           />
+          {matched?.uom ? (
+            <div className="mono" style={{ fontSize: 11, color: 'var(--text2)' }}>
+              {matched.uom}
+            </div>
+          ) : null}
         </td>
         <td className="td-num" style={{ width: 108 }}>
           <input

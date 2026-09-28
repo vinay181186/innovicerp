@@ -174,12 +174,23 @@ export async function resolveStockCountItems(
         and(inArray(items.code, codes), eq(items.companyId, companyId), isNull(items.deletedAt)),
       );
     const byCode = new Map(rows.map((r) => [r.code, r]));
+    const pos = await readStockPositions(
+      tx,
+      companyId,
+      rows.map((r) => r.id),
+    );
     return {
       found: codes
         .filter((c) => byCode.has(c))
         .map((c) => {
           const r = byCode.get(c)!;
-          return { code: r.code, itemId: r.id, name: r.name, uom: String(r.uom) };
+          return {
+            code: r.code,
+            itemId: r.id,
+            name: r.name,
+            uom: String(r.uom),
+            inStock: roundQty(pos.get(r.id)?.physicalQty ?? 0),
+          };
         }),
       missing: codes.filter((c) => !byCode.has(c)),
     };

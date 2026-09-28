@@ -124,11 +124,11 @@ export const vendorPerformanceReport: RegisteredReport = {
           COUNT(*) FILTER (WHERE days_late IS NOT NULL)::int                 AS lines_judged,
           COUNT(*) FILTER (WHERE days_late <= 0)::int                        AS on_time_lines,
           AVG(days_late) FILTER (WHERE days_late > 0)                        AS avg_days_late,
-          SUM(accepted + rejected) FILTER (WHERE NOT is_osp)::int            AS inspected_qty,
-          SUM(rejected) FILTER (WHERE NOT is_osp)::int                       AS rejected_qty,
-          SUM(received) FILTER (WHERE is_osp)::int                           AS osp_returned_qty,
-          SUM(rejected) FILTER (WHERE is_osp)::int                           AS osp_rejected_qty,
-          SUM(accepted + rejected) FILTER (WHERE is_osp)::int                AS osp_inspected_qty
+          SUM(accepted + rejected) FILTER (WHERE NOT is_osp)::numeric        AS inspected_qty,
+          SUM(rejected) FILTER (WHERE NOT is_osp)::numeric                   AS rejected_qty,
+          SUM(received) FILTER (WHERE is_osp)::numeric                       AS osp_returned_qty,
+          SUM(rejected) FILTER (WHERE is_osp)::numeric                       AS osp_rejected_qty,
+          SUM(accepted + rejected) FILTER (WHERE is_osp)::numeric            AS osp_inspected_qty
         FROM judged
         GROUP BY vendor_key, vendor_name
       )

@@ -45,7 +45,7 @@
 //    always rewritten from the master name. Header-only — it is not
 //    pushed down to plans or job cards.
 
-import { opSrNo } from '@innovic/shared';
+import { type JcRouteCardWriteBack, opSrNo } from '@innovic/shared';
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   items,
@@ -1351,9 +1351,12 @@ export async function saveRouteCardForItem(
    *  optional: there are only three callers and each one has this to hand, and
    *  an optional argument is exactly how it went missing in the first place. */
   rawMaterial: ResolvedRawMaterial,
-): Promise<void> {
+): Promise<JcRouteCardWriteBack | null> {
+  // Returns what was written (null = the card was not touched) so the saving
+  // screen can tell the user "Route Card IN-RC-… updated to Rev n" instead of
+  // changing the item's standard routing silently (2026-09-28 form audit).
   const cleanOps = stripAutoTerminalQcOp(ops);
-  if (cleanOps.length === 0) return;
+  if (cleanOps.length === 0) return null;
 
   const machinesLookup = await loadMachinesByIds(
     tx,
@@ -1439,7 +1442,7 @@ export async function saveRouteCardForItem(
         .where(and(eq(routeCards.id, card.id), eq(routeCards.companyId, companyId)));
     }
 
-    await replaceRouteCardOps(
+    const replaced = await replaceRouteCardOps(
       tx,
       {
         routeCardId: card.id,
@@ -1457,7 +1460,14 @@ export async function saveRouteCardForItem(
       },
       user,
     );
-    return;
+    return replaced.changed
+      ? {
+          routeCardId: card.id,
+          routeCardCode: card.code,
+          routeCardRevision: replaced.newRevision,
+          created: false,
+        }
+      : null;
   }
 
   const code = await nextRouteCardCode(tx, companyId);
@@ -1486,4 +1496,5 @@ export async function saveRouteCardForItem(
     opsSnapshot: buildOpsSnapshot(cleanOps, machinesLookup, vendorsLookup),
     createdBy: user.id,
   });
+  return { routeCardId: header.id, routeCardCode: code, routeCardRevision: 0, created: true };
 }

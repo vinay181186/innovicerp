@@ -19,7 +19,7 @@ export const receivableAgeingReport: RegisteredReport = {
     slug: 'receivable-ageing',
     title: 'Receivable ageing',
     description:
-      'Sales invoices dated on or before the As On date (today when blank) with an Outstanding Amount (Grand Total minus payments received up to that date). Days Overdue counts from the Due Date (Invoice Date + Payment Terms when no Due Date); the Outstanding Amount sits in exactly one ageing column. JW Invoices are not included — they carry no payment record.',
+      'Sales invoices dated on or before the As On date (today when blank) with an Outstanding Amount (Grand Total minus payments received and TDS deducted up to that date). Days Overdue counts from the Due Date (Invoice Date + Payment Terms when no Due Date); the Outstanding Amount sits in exactly one ageing column. JW Invoices are not included — they carry no payment record.',
     group: 'Finance',
     dept: 'finance',
     showsMoney: true,
@@ -34,6 +34,7 @@ export const receivableAgeingReport: RegisteredReport = {
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'grand_total', label: 'Grand Total', type: 'number' },
       { key: 'paid', label: 'Paid', type: 'number' },
+      { key: 'tds', label: 'TDS', type: 'number' },
       { key: 'outstanding', label: 'Outstanding Amount', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },
       { key: 'days_overdue', label: 'Days Overdue', type: 'number' },
@@ -67,6 +68,15 @@ export const receivableAgeingReport: RegisteredReport = {
               AND ip.deleted_at IS NULL
               AND ip.payment_date <= ${asOn}
           ), 0)                                               AS paid,
+          -- TDS / short amount the customer deducted (0171) settles the invoice
+          -- too: outstanding = grand − paid − TDS, as the invoices service.
+          COALESCE((
+            SELECT SUM(ip.tds_amount)
+            FROM public.invoice_payments ip
+            WHERE ip.invoice_id = inv.id
+              AND ip.deleted_at IS NULL
+              AND ip.payment_date <= ${asOn}
+          ), 0)                                               AS tds,
           COALESCE(inv.due_date, inv.invoice_date + inv.payment_terms_days) AS due_date,
           (${asOn} - COALESCE(inv.due_date, inv.invoice_date + inv.payment_terms_days)) AS days_overdue
         FROM public.invoices inv
@@ -86,16 +96,17 @@ export const receivableAgeingReport: RegisteredReport = {
         so_code,
         grand_total::float                                   AS grand_total,
         paid::float                                          AS paid,
-        (grand_total - paid)::float                          AS outstanding,
+        tds::float                                           AS tds,
+        (grand_total - paid - tds)::float                    AS outstanding,
         due_date::text                                       AS due_date,
         GREATEST(days_overdue, 0)                            AS days_overdue,
-        CASE WHEN days_overdue <= 0 THEN (grand_total - paid) ELSE 0 END::float AS not_due,
-        CASE WHEN days_overdue BETWEEN 1 AND 30 THEN (grand_total - paid) ELSE 0 END::float AS age_0_30,
-        CASE WHEN days_overdue BETWEEN 31 AND 60 THEN (grand_total - paid) ELSE 0 END::float AS age_31_60,
-        CASE WHEN days_overdue BETWEEN 61 AND 90 THEN (grand_total - paid) ELSE 0 END::float AS age_61_90,
-        CASE WHEN days_overdue > 90 THEN (grand_total - paid) ELSE 0 END::float AS age_90_plus
+        CASE WHEN days_overdue <= 0 THEN (grand_total - paid - tds) ELSE 0 END::float AS not_due,
+        CASE WHEN days_overdue BETWEEN 1 AND 30 THEN (grand_total - paid - tds) ELSE 0 END::float AS age_0_30,
+        CASE WHEN days_overdue BETWEEN 31 AND 60 THEN (grand_total - paid - tds) ELSE 0 END::float AS age_31_60,
+        CASE WHEN days_overdue BETWEEN 61 AND 90 THEN (grand_total - paid - tds) ELSE 0 END::float AS age_61_90,
+        CASE WHEN days_overdue > 90 THEN (grand_total - paid - tds) ELSE 0 END::float AS age_90_plus
       FROM base
-      WHERE grand_total - paid > 0.005
+      WHERE grand_total - paid - tds > 0.005
       ORDER BY days_overdue DESC, invoice_code
       LIMIT 2000
     `);
@@ -107,6 +118,7 @@ export const receivableAgeingReport: RegisteredReport = {
       so_code: textCell(r['so_code']),
       grand_total: numCell(r['grand_total']),
       paid: numCell(r['paid']),
+      tds: numCell(r['tds']),
       outstanding: numCell(r['outstanding']),
       due_date: dateCell(r['due_date']),
       days_overdue: numCell(r['days_overdue']),

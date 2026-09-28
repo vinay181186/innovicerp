@@ -173,7 +173,7 @@ export async function getSoTimeline(
           pr.pr_date    AS pr_date,
           pr.status     AS status,
           pr.item_code_text AS item_code,
-          pr.qty        AS qty
+          trim_scale(pr.qty)::float8 AS qty
         FROM public.purchase_requests pr
         WHERE pr.company_id = ${companyId}::uuid
           AND pr.deleted_at IS NULL

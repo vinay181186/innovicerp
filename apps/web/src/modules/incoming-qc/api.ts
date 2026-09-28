@@ -20,20 +20,25 @@ export function useIncomingQc() {
 export function useSubmitIncomingQc() {
   const qc = useQueryClient();
   return useMutation<
-    { ok: true; grnId: string },
+    { ok: true; grnId: string; raisedNc: { id: string; code: string } | null },
     Error,
     { grnLineId: string; input: SubmitIncomingQcInput }
   >({
     mutationFn: ({ grnLineId, input }) =>
-      apiFetch<{ ok: true; grnId: string }>(`/incoming-qc/${grnLineId}/inspect`, {
-        method: 'POST',
-        json: input,
-      }),
+      apiFetch<{ ok: true; grnId: string; raisedNc: { id: string; code: string } | null }>(
+        `/incoming-qc/${grnLineId}/inspect`,
+        {
+          method: 'POST',
+          json: input,
+        },
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: incomingQcKeys.all });
       void qc.invalidateQueries({ queryKey: ['goods-receipt-notes'] });
       void qc.invalidateQueries({ queryKey: ['store-transactions'] });
       void qc.invalidateQueries({ queryKey: ['store-inventory'] });
+      // A reject raises an NC — the NC Register must show it.
+      void qc.invalidateQueries({ queryKey: ['nc-register'] });
     },
   });
 }

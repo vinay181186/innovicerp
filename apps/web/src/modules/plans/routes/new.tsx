@@ -1,10 +1,9 @@
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePlan } from '../api';
-import { PlanForm, emptyValues, toCreateInput } from '../components/plan-form';
+import { PlanCreateForm } from '../components/plan-create-form';
 
 export const planNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -12,13 +11,16 @@ export const planNewRoute = createRoute({
   component: PlanNewPage,
 });
 
+// New Plan — the SAME Route-Card plan SO Planning "+ Plan" makes: pick the
+// SO / JWSO and its line; operations come from the item's Route Card when the
+// Production Order is raised (ADR-170). See plan-create-form.tsx.
 function PlanNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreatePlan();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
-  // No Cancel button on this screen, so ESC → Exit falls back to history.
-  const exit = useExitConfirm();
+  const goBack = (): void => void navigate({ to: '/plans' });
+  const exit = useExitConfirm({ onExit: goBack });
 
   if (eff && !perms.entry) {
     return (
@@ -31,21 +33,14 @@ function PlanNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back
-      </Link>
-      <div className="section-hdr" style={{ marginBottom: 10 }}>
-        New Plan
-      </div>
-
-      <PlanForm
-        initialValues={emptyValues()}
+      <PlanCreateForm
         isSubmitting={create.isPending}
-        submitLabel="Save Plan"
         submitError={create.error instanceof Error ? create.error.message : null}
-        onSubmit={(v) => {
-          create.mutate(toCreateInput(v), {
+        onCancel={() => exit.leave(goBack)}
+        onSave={(input) => {
+          create.mutate(input, {
             onSuccess: (plan) => {
+              // The plan detail offers "Create Production Order →" next.
               exit.leave(() => void navigate({ to: '/plans/$id', params: { id: plan.id } }));
             },
           });

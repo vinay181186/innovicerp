@@ -133,7 +133,7 @@ export function ReservationDrilldown({
                           <PlainRef code={row.soCodeText} />
                         )}
                       </td>
-                      <td className="mono text3">{row.lineNo}</td>
+                      <td className="mono text3">{row.lineNo ?? '—'}</td>
                       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                         {row.clientPoLineNo ?? '—'}
                       </td>

@@ -10353,7 +10353,7 @@ integer, so KGS / MTR material could not be issued as 12.5.
 ## ADR-194: Customer job-work (JWSO) chain — QC-gated receipt, a zero-value party store, and closable paperwork
 
 **Date:** 2026-09-28
-**Status:** Accepted (schema 0157 on TEST; services + UI roll out in phases A–D on the `jwso-material` branch)
+**Status:** Accepted (schema 0159 on TEST; services + UI live on TEST on the `jwso-material` branch. Migrations renumbered to 0159 + 0160 after a collision with the store-redesign 0157/0158 on `test`.)
 
 ### Context
 The JWSO audit (Innovic vs ERPNext, `Job Work (JWSO) Audit - Innovic vs ERPNext.pdf`) found the
@@ -10396,8 +10396,51 @@ Party GRN is COMPULSORY**; everything else "as suggested".
 - A new per-line "needed" table for R1 — rejected: the ADR-193 route-card RM already carries qty/piece.
 
 ### Consequences
-- All 0157 changes are additive (new columns + one table); safe to run as one batch, applied to TEST.
-- PROD must run 0157 before test → main.
+- All changes are additive (new columns + one table in 0159; jw_return cancel columns in 0160); safe to
+  run as one batch, applied to TEST.
+- PROD must run 0159 then 0160 (after the store-redesign 0157/0158) before test → main.
 - The frozen contract now requires services to populate the new read fields (QC split, party balance,
-  invoice/line status) — that is the phase A–D work.
+  invoice/line status).
+
+### ADR-193 phase 3b — Item Issue slip with lines; issue against the job (2026-09-28)
+- An Item Issue is a slip (store_issues) with lines (store_issue_lines, 0157), issued against ONE of: a Job
+  Card, an Assembly (Equipment) SO, or General / Consumable (Department required). Issued To = an Operator
+  (preferred) or a typed name.
+- Required / Issued / Returned / To Issue are DERIVED (`lib/material-requirement.ts`), never stored. Reversed
+  slips never count. Job Card: Required = RM Qty per piece × Order Qty (only the RM item is capped).
+  Assembly SO: Required = Qty per Set × Units (Σ order qty of live lines); only BOM parts may be issued.
+- More than To Issue → 409 `{ needsConfirmation, over[{ itemCode, toIssueQty, qty }] }`; posting it needs a
+  reason AND Approve on Item Issue (403 otherwise). The reason goes to the activity log.
+- Return: leftovers back, any qty up to Still Out, per line; the slip stays. Reverse: whole slip, only while
+  nothing was returned from it (else 409 "use Return"). Both lock the slip, then the items.
+- Create locks every line's item in id order, then reads To Issue under the lock; the ISS- number is
+  allocated under a per-company advisory lock (review F1 — item locks do not serialise the MAX+1).
+- Read-only Material view: `GET /material/job-cards/:id`, `GET /material/sales-orders/:id`; shown as the Job
+  Card's "Material" tab and a Material panel on the Assembly Tracker, each with "Issue from Store".
+- Names follow docs/NAMING.md: `To Issue` (not Balance — reserved/banned), `Still Out`, `Reserved`
+  (register name for booked qty), `Fitted` (register's `Consumed` means reserved qty used — different fact).
+- Deferred to 3c (by design): assembly reservations, Complete consuming issued parts (`Fitted`), M5–M9,
+  M12–M15. A closed / cancelled Assembly SO takes no more issues; a Job Card's status is not checked yet.
+- Verified on TEST: 25 scenarios pass; 695 + 1009 cross-screen figures, 0 mismatches.
+
+### ADR-193 phase 3c — reserve parts for an assembly SO; Complete only checks and fits (2026-09-28)
+- Owner decision (Q3): the store issues parts against the assembly SO; Complete only checks the parts are
+  out and adds the finished machine. Complete no longer takes component stock (0 assembly units existed on
+  TEST and PROD, so no old unit needed converting).
+- Reserve Parts (Planning entry): holds free stock for an SO's BOM parts in `assembly_part_reservations`
+  (0158) — never beyond To Issue − Reserved, never beyond Available (409 names who holds the rest). Release
+  (Planning entry + reason). "Reserved" everywhere = sales + assembly reservations (the view sums both).
+- An issue against the SO may use Available + its own reservation (`postStockMove` `allowance`); the own
+  reservation is used first and recorded on the line; a Reverse gives it back (never into a released row
+  or a closed / cancelled SO).
+- Complete: SO row locked (`FOR NO KEY UPDATE` — `FOR UPDATE` would deadlock with inserts whose foreign key
+  points at the SO). Parts short → 409 "issue from the store first"; last units with Still Out ≠ BOM need →
+  reason required; fitted rows in `assembly_unit_consumptions`; last unit releases leftover reservations.
+  Undo soft-deletes the fitted rows (parts are Still Out again) and reverses the machine credit.
+- Fitted parts cannot be Returned or the slip Reversed. An SO holding item issues or reserved parts cannot
+  be cancelled or deleted. No new reservations once every unit is assembled.
+- Tracker "can assemble" counts Still Out ÷ Qty per Set, not store stock.
+- Verified on TEST: 27 scenarios pass (+ phase 3b 25 / 25 again); 881 + 1223 cross-screen figures, 0 mismatches.
+- Not done: modules/assembly/service.test.ts + routes.test.ts still expect the old stock debit (they run on
+  PROD, so not run); a rare lock-order case when the finished item is itself issued in the same moment.
 

@@ -33,7 +33,12 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
-import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import type {
   ListTrashQuery,
@@ -242,6 +247,30 @@ export async function restoreFromTrash(
   return withUserContext(user, async (tx) => {
     const entity = ENTITIES.find((e) => e.type === input.type);
     if (!entity) throw new ValidationError('This record type cannot be restored from Trash.');
+
+    // One customer per name (the clients service rule): a deleted customer may
+    // not come back while a LIVE customer carries the same name, compared
+    // trimmed and case-insensitively — else its SOs / invoices split over two.
+    if (entity.type === 'Client') {
+      const dup = (await tx.execute(sql`
+        SELECT live.code, live.name
+        FROM public.clients gone
+        JOIN public.clients live
+          ON live.company_id = gone.company_id
+         AND live.deleted_at IS NULL
+         AND live.id <> gone.id
+         AND lower(trim(live.name)) = lower(trim(gone.name))
+        WHERE gone.id = ${input.id}::uuid
+          AND gone.company_id = ${companyId}::uuid
+        LIMIT 1
+      `)) as unknown as Array<{ code: string; name: string }>;
+      if (dup[0]) {
+        throw new ConflictError(
+          `Cannot restore: a customer named "${dup[0].name}" already exists (${dup[0].code}). ` +
+            'Rename or delete that customer first, or keep using it.',
+        );
+      }
+    }
 
     const result = await tx.execute(
       sql.raw(

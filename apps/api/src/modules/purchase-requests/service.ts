@@ -30,6 +30,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
@@ -303,7 +304,7 @@ function toPurchaseRequest(
 function liveOrderedQtySql(prIdRef: SQLWrapper): SQL<number> {
   return sql<number>`(
     SELECT COALESCE(SUM(CASE WHEN p2.short_closed_at IS NOT NULL
-                             THEN COALESCE(pol.received_qty, 0) ELSE pol.qty END), 0)::int
+                             THEN COALESCE(pol.received_qty, 0) ELSE pol.qty END), 0)::numeric
     FROM public.purchase_order_lines pol
     JOIN public.purchase_orders p2 ON p2.id = pol.purchase_order_id
     WHERE pol.source_pr_id = ${prIdRef}
@@ -375,7 +376,8 @@ export function deriveBalanceQty(input: {
   balanceClosed: boolean;
 }): number {
   if (input.balanceClosed) return 0;
-  return input.qty - input.orderedQty;
+  // 3 places: quantities are decimal (KGS / MTR, 0172) — no float drift.
+  return Math.round((input.qty - input.orderedQty) * 1000) / 1000;
 }
 
 /**
@@ -960,6 +962,13 @@ export async function createPurchaseRequest(
     const resolvedItemId =
       input.itemId ??
       (input.itemCodeText ? await resolveItemIdByCode(tx, input.itemCodeText, companyId) : null);
+    // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+    await assertLineQtysFitUom(
+      tx,
+      companyId,
+      [{ itemId: resolvedItemId, qty: input.qty }],
+      'PR Qty',
+    );
 
     // When the caller links an item but sends no name (a PR raised from a rework
     // child job card carries the id + code but a blank name snapshot), stamp the
@@ -1115,6 +1124,18 @@ export async function updatePurchaseRequest(
     if (input.itemCodeText !== undefined) updates['itemCodeText'] = input.itemCodeText ?? null;
     if (input.itemName !== undefined) updates['itemName'] = input.itemName ?? null;
     if (input.qty !== undefined) updates['qty'] = input.qty;
+    // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+    await assertLineQtysFitUom(
+      tx,
+      companyId,
+      [
+        {
+          itemId: 'itemId' in updates ? (updates['itemId'] as string | null) : existing[0]!.itemId,
+          qty: input.qty ?? existing[0]!.qty,
+        },
+      ],
+      'PR Qty',
+    );
     // Money in, same rule as money out: a caller who cannot SEE the estimated
     // cost cannot SET it either — their payload's estCost is ignored and the
     // stored figure stands. `priceOff` makes "can do the job but must not see

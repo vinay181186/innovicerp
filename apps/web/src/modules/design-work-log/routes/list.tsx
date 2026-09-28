@@ -3,6 +3,8 @@
 
 import {
   type CreateDesignWorkLogInput,
+  DESIGN_DAY_HOURS_WARN,
+  DESIGN_HOURS_MAX_PER_ENTRY,
   DESIGN_WORK_CATEGORIES,
   type DesignWorkCategory,
   type DesignWorkLogEntry,
@@ -15,7 +17,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ListHeader } from '@/ui/layout';
 import { useDesignProjectDetail, useDesignProjectsList } from '../../design-projects/api';
 import { useCreateDesignWorkLog, useDeleteDesignWorkLog, useDesignWorkLogList } from '../api';
@@ -131,6 +133,8 @@ function EntryTab(): React.JSX.Element {
   const [hours, setHours] = useState('');
   const [description, setDescription] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  // Set after a save that took the day's total above the warning line.
+  const [dayWarn, setDayWarn] = useState<string | null>(null);
 
   // Legacy L7954 offers every project that is not Released — that is
   // Design Active + In Review + On Hold. The `active` server filter is
@@ -163,6 +167,7 @@ function EntryTab(): React.JSX.Element {
 
   const onSave = (): void => {
     setErr(null);
+    setDayWarn(null);
     if (!projectId) {
       setErr('Project is required.');
       return;
@@ -170,6 +175,10 @@ function EntryTab(): React.JSX.Element {
     const h = Number(hours);
     if (!Number.isFinite(h) || h <= 0) {
       setErr('Hours is required.');
+      return;
+    }
+    if (h > DESIGN_HOURS_MAX_PER_ENTRY) {
+      setErr(`Hours cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`);
       return;
     }
     const input: CreateDesignWorkLogInput = {
@@ -181,10 +190,16 @@ function EntryTab(): React.JSX.Element {
     if (task.trim()) input.taskText = task.trim();
     if (description.trim()) input.description = description.trim();
     createMut.mutate(input, {
-      onSuccess: () => {
+      onSuccess: (saved) => {
         setHours('');
         setTask('');
         setDescription('');
+        const day = saved.dayTotalHours ?? 0;
+        if (day > DESIGN_DAY_HOURS_WARN) {
+          setDayWarn(
+            `Saved. You now have ${day}h booked on ${fmtDate(saved.logDate)} — more than ${DESIGN_DAY_HOURS_WARN}h in one day. Check the hours are right.`,
+          );
+        }
       },
       onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save Entry. Try again.'),
     });
@@ -279,7 +294,7 @@ function EntryTab(): React.JSX.Element {
                 type="number"
                 min={0.5}
                 step={0.5}
-                max={12}
+                max={DESIGN_HOURS_MAX_PER_ENTRY}
                 className="innovic-input"
                 style={{ width: 80 }}
                 value={hours}
@@ -296,6 +311,13 @@ function EntryTab(): React.JSX.Element {
               />
             </div>
           </div>
+          {dayWarn ? (
+            <div style={{ marginTop: 12 }}>
+              <Banner tone="warn" flush onDismiss={() => setDayWarn(null)}>
+                {dayWarn}
+              </Banner>
+            </div>
+          ) : null}
           {err ? (
             <div
               style={{

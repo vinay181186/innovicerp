@@ -8,7 +8,8 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
@@ -16,23 +17,35 @@ import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useDeleteJwDocument, useJwDocuments } from '@/modules/jwso-documents/api';
+import {
+  uploadJwDocFile,
+  useCreateJwDocument,
+  useDeleteJwDocument,
+  useJwDocuments,
+} from '@/modules/jwso-documents/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { useJobWorkOrder, useSoftDeleteJobWorkOrder } from '../api';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
 import { ShortCloseJwLineModal } from '../components/short-close-jw-line-modal';
 
+/** `uploadFailed` — set by New / Edit JWSO when the JWSO saved but a picked
+ *  Client PO / Email Reference file did not upload; names the file(s) for the
+ *  red banner. */
+const detailSearchSchema = z.object({ uploadFailed: z.string().optional() });
+
 export const jobWorkOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'job-work-orders/$id',
+  validateSearch: detailSearchSchema,
   component: JobWorkOrderDetailPage,
 });
 
 function JobWorkOrderDetailPage(): React.JSX.Element {
   const { id } = jobWorkOrderDetailRoute.useParams();
+  const { uploadFailed } = jobWorkOrderDetailRoute.useSearch();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useJobWorkOrder(id);
   const { data: me } = useSession();
@@ -193,6 +206,25 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         <DetailGrid detail={detail} />
       </DetailHeader>
 
+      {uploadFailed ? (
+        <Banner
+          tone="error"
+          role="alert"
+          title="PO document not attached — retry"
+          onDismiss={() =>
+            void navigate({
+              to: '/job-work-orders/$id',
+              params: { id: detail.id },
+              search: {},
+              replace: true,
+            })
+          }
+        >
+          JWSO {detail.code} was saved, but the {uploadFailed} did not upload. Upload it again with
+          the Upload button in the Documents panel below.
+        </Banner>
+      ) : null}
+
       {confirmDelete ? (
         <ConfirmDialog
           title={`Move JWSO ${detail.code} to Trash?`}
@@ -299,7 +331,13 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <JwDocumentsPanel jwId={detail.id} canDelete={me?.role !== 'viewer'} />
+      <JwDocumentsPanel
+        jwId={detail.id}
+        jwCode={detail.code}
+        companyId={me?.companyId ?? null}
+        canUpload={me?.role !== 'viewer' && (perms.entry || perms.edit)}
+        canDelete={me?.role !== 'viewer'}
+      />
 
       <RelatedDocsTabs module="job-work-orders" id={detail.id} />
 
@@ -317,11 +355,51 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 }
 
 /** Client PO / other documents attached to the JWSO (#8). Reflects the upload
- *  made from the JWSO form; clicking a file PREVIEWS it inside the app. */
-function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JSX.Element {
+ *  made from the JWSO form; clicking a file PREVIEWS it inside the app. Upload
+ *  here attaches (or re-attaches, after a failed upload on save) a Client PO or
+ *  Email Reference without opening the edit form. */
+function JwDocumentsPanel(props: {
+  jwId: string;
+  jwCode: string;
+  companyId: string | null;
+  canUpload: boolean;
+  canDelete: boolean;
+}): React.JSX.Element {
   const { data, isLoading } = useJwDocuments(props.jwId);
   const del = useDeleteJwDocument();
+  const createDoc = useCreateJwDocument();
   const files = data?.files ?? [];
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploadKind, setUploadKind] = useState<'po-docs' | 'email_reference'>('po-docs');
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+
+  async function onPick(file: File): Promise<void> {
+    if (!props.companyId) {
+      setUploadErr('Could not upload file. Sign in again and retry.');
+      return;
+    }
+    setUploading(true);
+    setUploadErr(null);
+    try {
+      const storagePath = await uploadJwDocFile(file, props.companyId);
+      await createDoc.mutateAsync({
+        jobWorkOrderId: props.jwId,
+        jwCodeText: props.jwCode,
+        category: uploadKind,
+        docType: uploadKind === 'po-docs' ? 'Client PO' : 'Email Reference',
+        fileName: file.name,
+        storagePath,
+        fileSize: file.size,
+        fileType: file.type || undefined,
+      });
+    } catch (e) {
+      setUploadErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
 
   // The file currently being previewed. Was `window.open(signedUrl)`, which let
   // the browser decide — and Chrome's "Download PDFs instead of automatically
@@ -350,7 +428,44 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
     <div className="panel">
       <div className="panel-hdr">
         <div className="panel-title">Documents ({files.length})</div>
+        {props.canUpload ? (
+          <div style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
+            <select
+              className="innovic-select"
+              aria-label="Document type to upload"
+              value={uploadKind}
+              onChange={(e) => setUploadKind(e.target.value as 'po-docs' | 'email_reference')}
+              disabled={uploading}
+            >
+              <option value="po-docs">Client PO</option>
+              <option value="email_reference">Email Reference</option>
+            </select>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? <Loader2 className="inline h-3 w-3 animate-spin" /> : null}
+              {uploading ? 'Uploading…' : 'Upload'}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onPick(f);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
+      {uploadErr ? (
+        <Banner tone="error" role="alert" onDismiss={() => setUploadErr(null)}>
+          {uploadErr}
+        </Banner>
+      ) : null}
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
@@ -372,7 +487,7 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
             ) : files.length === 0 ? (
               <tr>
                 <td colSpan={5} className="empty-state">
-                  No documents yet. Upload a Client PO from the JWSO form.
+                  No documents yet. Upload a Client PO with the Upload button above.
                 </td>
               </tr>
             ) : (

@@ -43,8 +43,16 @@ export function isSummable(col: ReportColumn, rows: ReportRow[]): boolean {
   });
 }
 
-export function formatNumber(num: number): string {
-  return num % 1 === 0 ? String(num) : num.toFixed(2);
+/** A quantity column (key names a qty). Purchase / stock quantities carry up
+ *  to 3 decimals since 0172 (KGS / MTR), so they must not be cut to 2 places. */
+export function isQtyColumn(col: ReportColumn): boolean {
+  return /qty/i.test(col.key);
+}
+
+export function formatNumber(num: number, qty = false): string {
+  if (num % 1 === 0) return String(num);
+  // Qty: up to 3 places, no trailing zeros (12.5, 12.125). Else 2dp as before.
+  return qty ? String(Math.round(num * 1000) / 1000) : num.toFixed(2);
 }
 
 export function isBlank(raw: unknown): boolean {
@@ -58,7 +66,7 @@ export function formatCell(col: ReportColumn, raw: unknown): string {
   if (col.type === 'number') {
     const num = Number(raw);
     if (!Number.isFinite(num)) return String(raw);
-    return formatNumber(num);
+    return formatNumber(num, isQtyColumn(col));
   }
   if (typeof raw === 'string' && col.type === 'date') return fmtDate(raw);
   if (typeof raw === 'string' && col.type === 'datetime') return fmtDateTime(raw);

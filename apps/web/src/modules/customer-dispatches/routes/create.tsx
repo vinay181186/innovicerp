@@ -201,7 +201,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     if (payloadLines.length === 0) return setErr('Enter a Dispatch Qty on at least one line.');
 
     try {
-      await create.mutateAsync({
+      const saved = await create.mutateAsync({
         salesOrderId: soId,
         dispatchDate,
         transport: transport || undefined,
@@ -209,7 +209,9 @@ function CustomerDispatchNewPage(): React.JSX.Element {
         remarks: remarks || undefined,
         lines: payloadLines,
       });
-      exit.leave(goBack);
+      // Land on the new dispatch — Print DC and Create Invoice are right there,
+      // instead of hunting for the new DSP on the list.
+      exit.leave(() => void navigate({ to: '/customer-dispatches/$id', params: { id: saved.id } }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save Dispatch. Try again.');
     }

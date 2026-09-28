@@ -64,12 +64,20 @@ export interface IncomingQcInspectState {
   doSubmit: () => Promise<void>;
 }
 
+/** The NC a reject raised (job-card NC or material NC) — same shape as the
+ *  process-QC popup's RaisedNc, so the register shows one banner for both. */
+export interface IncomingRaisedNc {
+  id: string;
+  code: string;
+}
+
 /** State + submit for one GRN line. Call it where the state should LIVE (the
  *  register row keeps it across collapse; the popup keeps it for its lifetime). */
 export function useIncomingQcInspect(props: {
   o: IncomingQcPendingRow;
-  /** After a successful submit, once the form has reset itself. */
-  onDone: () => void;
+  /** After a successful submit, once the form has reset itself — with the NC
+   *  a reject raised, if any. */
+  onDone: (raisedNc?: IncomingRaisedNc) => void;
 }): IncomingQcInspectState {
   const { o, onDone } = props;
   const submit = useSubmitIncomingQc();
@@ -135,18 +143,20 @@ export function useIncomingQcInspect(props: {
     setErr(null);
     const acc = Number(accept || '0');
     const rej = Number(reject || '0');
-    if (!Number.isInteger(acc) || acc < 0 || !Number.isInteger(rej) || rej < 0) {
-      setErr('Accepted and Rejected must be whole numbers, 0 or more.');
+    // KGS / MTR receipts carry decimals (0172): up to 3 places, like the GRN line.
+    const max3dp = (n: number): boolean =>
+      Number.isFinite(n) && Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-6;
+    if (!max3dp(acc) || acc < 0 || !max3dp(rej) || rej < 0) {
+      setErr('Accepted and Rejected must be 0 or more, with at most 3 decimals.');
       return;
     }
-    if (acc + rej <= 0) {
+    const total = Math.round((acc + rej) * 1000) / 1000;
+    if (total <= 0) {
       setErr('Enter the Accepted and/or Rejected qty.');
       return;
     }
-    if (acc + rej > o.pendingQty) {
-      setErr(
-        `Accepted + Rejected (${acc + rej}) cannot be more than QC Pending (${o.pendingQty}).`,
-      );
+    if (total > o.pendingQty) {
+      setErr(`Accepted + Rejected (${total}) cannot be more than QC Pending (${o.pendingQty}).`);
       return;
     }
     if (!qcBy.trim()) {
@@ -154,7 +164,7 @@ export function useIncomingQcInspect(props: {
       return;
     }
     try {
-      await submit.mutateAsync({
+      const res = await submit.mutateAsync({
         grnLineId: o.grnLineId,
         input: {
           acceptedQty: acc,
@@ -175,7 +185,7 @@ export function useIncomingQcInspect(props: {
       setRemarks('');
       setQcReportPath(null);
       setQcReportName(null);
-      onDone();
+      onDone(res.raisedNc ?? undefined);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save QC Inspection. Try again.');
     }
@@ -214,7 +224,7 @@ export function IncomingQcInspectForm(props: {
   /** The form's own Cancel button. */
   onCancel: () => void;
   /** After a successful submit, once the form has reset itself. */
-  onDone: () => void;
+  onDone: (raisedNc?: IncomingRaisedNc) => void;
   /** Optional — only the popup listens. */
   onDirtyChange?: (dirty: boolean) => void;
 }): React.JSX.Element | null {
@@ -297,6 +307,7 @@ export function IncomingQcInspectFormView(props: {
             type="number"
             className="innovic-input"
             min={0}
+            step="any"
             max={o.pendingQty}
             value={form.accept}
             onChange={(e) => form.setAccept(e.target.value)}
@@ -318,6 +329,7 @@ export function IncomingQcInspectFormView(props: {
             type="number"
             className="innovic-input"
             min={0}
+            step="any"
             max={o.pendingQty}
             value={form.reject}
             onChange={(e) => form.setReject(e.target.value)}

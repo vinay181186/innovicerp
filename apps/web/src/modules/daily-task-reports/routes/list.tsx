@@ -1,6 +1,6 @@
 // Daily Task Reports — mirror of legacy renderDailyReports (HTML L14141).
-// User-submitted "what I did today" reports. Admin sees all + a user filter;
-// non-admins see their own (and may file/edit their own).
+// User-submitted "what I did today" reports. Admin / manager see all + a user filter;
+// everyone else sees only their own (server-filtered) and may file/edit their own.
 
 import { SHIFT_LABELS } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
@@ -71,7 +71,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
         updating={isFetching}
         filters={
           <>
-            {data.isAdmin ? (
+            {data.canSeeAll ? (
               <select
                 className="innovic-select"
                 aria-label="User"

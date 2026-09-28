@@ -32,10 +32,12 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { assertQtyFitsUom, roundQty } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import {
   creditGrnQcStock,
+  isJwDcReceiptGrn,
   recalcPoHeaderStatus,
   recalcPoLineReceivedQty,
   resolveGrnLineJobCardId,
@@ -464,8 +466,8 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
     // ── Today's completed totals ──
     const todayRows = await tx.execute(sql`
       SELECT
-        COALESCE(SUM(l.qc_accepted_qty), 0)::int AS "todayAcceptedQty",
-        COALESCE(SUM(l.qc_rejected_qty), 0)::int AS "todayRejectedQty",
+        COALESCE(SUM(l.qc_accepted_qty), 0)::numeric AS "todayAcceptedQty",
+        COALESCE(SUM(l.qc_rejected_qty), 0)::numeric AS "todayRejectedQty",
         COUNT(DISTINCT l.goods_receipt_note_id)::int AS "todayAcceptedGrns"
       FROM public.goods_receipt_note_lines l
       WHERE l.company_id = ${companyId}::uuid
@@ -477,7 +479,8 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
 
     // ── Pipeline metrics derived from the pending set ──
     const grnSet = new Set(pending.map((p) => p.grnId));
-    const pendingQty = pending.reduce((s, p) => s + p.pendingQty, 0);
+    // Decimal on KGS / MTR receipts (0172): sum, then trim float noise to 3 places.
+    const pendingQty = Math.round(pending.reduce((s, p) => s + p.pendingQty, 0) * 1000) / 1000;
     const avgWaitDays =
       pending.length > 0
         ? Math.round((pending.reduce((s, p) => s + p.waitDays, 0) / pending.length) * 10) / 10
@@ -514,7 +517,7 @@ export async function submitIncomingQc(
   grnLineId: string,
   input: SubmitIncomingQcInput,
   user: AuthContext,
-): Promise<{ ok: true; grnId: string }> {
+): Promise<{ ok: true; grnId: string; raisedNc: { id: string; code: string } | null }> {
   requireWriteRole(user);
   // ADR-035: enforce the per-department QC tier, not just the role — a user
   // with Incoming QC view-only (L1) must not accept/reject received goods even
@@ -560,27 +563,55 @@ export async function submitIncomingQc(
     // ADR-182 — an OSP return belonging to a short-closed Production Order's
     // Job Card cannot be inspected. A plain purchase GRN resolves to no jc_op
     // and is never touched by this.
-    const guardJcId = await resolveGrnLineJobCardId(tx, grnLineId);
+    // A JW DC receipt (0172) is a store loop, not Job Card work: it credits
+    // stock on accept and never runs the OSP op cascade (isJwDcReceiptGrn).
+    const jwDcReceipt = await isJwDcReceiptGrn(tx, line.grnId);
+    const guardJcId = jwDcReceipt ? null : await resolveGrnLineJobCardId(tx, grnLineId);
     if (guardJcId) await assertProductionOrderNotShortClosed(tx, guardJcId);
 
+    // Decimal on KGS / MTR receipts (0172) — every figure rounded to the
+    // ledger's 3 places so 0.1 + 0.2 float drift cannot fake an over-inspection.
     const priorAccepted = line.acceptedQty ?? 0;
     const priorRejected = line.rejectedQty ?? 0;
-    const remaining = line.receivedQty - priorAccepted - priorRejected;
+    const remaining = roundQty(line.receivedQty - priorAccepted - priorRejected);
     if (remaining <= 0) {
       throw new ConflictError(
         'QC is already Completed for this GRN line. It can no longer be changed.',
       );
     }
-    const thisTotal = input.acceptedQty + input.rejectedQty;
+    const thisTotal = roundQty(input.acceptedQty + input.rejectedQty);
     if (thisTotal > remaining) {
       throw new ValidationError(
         `Accepted + Rejected (${thisTotal}) cannot be more than QC Pending (${remaining}).`,
       );
     }
+    // A fraction is only right for a KGS / MTR item. Job Card pieces coming back
+    // from an OSP vendor, and NOS / SET items, are counted whole.
+    if (!Number.isInteger(input.acceptedQty) || !Number.isInteger(input.rejectedQty)) {
+      const kind = (await tx.execute(sql`
+        SELECT COALESCE(i.code, l.item_code_text, 'Item') AS code,
+               COALESCE(i.uom::text, 'NOS') AS uom,
+               (pol.source_jc_op_id IS NOT NULL) AS is_osp
+        FROM public.goods_receipt_note_lines l
+        LEFT JOIN public.items i ON i.id = l.item_id
+        LEFT JOIN public.purchase_order_lines pol ON pol.id = l.purchase_order_line_id
+        WHERE l.id = ${grnLineId}::uuid
+      `)) as unknown as Array<{ code: string; uom: string; is_osp: boolean }>;
+      const k = kind[0];
+      if (k?.is_osp) {
+        throw new ValidationError(
+          `${k.code}: Accepted and Rejected must be whole pieces — this is Job Card work back from the vendor.`,
+        );
+      }
+      if (k) {
+        if (input.acceptedQty > 0) assertQtyFitsUom(k.code, k.uom, input.acceptedQty, 'Accepted');
+        if (input.rejectedQty > 0) assertQtyFitsUom(k.code, k.uom, input.rejectedQty, 'Rejected');
+      }
+    }
 
-    const newAccepted = priorAccepted + input.acceptedQty;
-    const newRejected = priorRejected + input.rejectedQty;
-    const fullyDone = line.receivedQty - newAccepted - newRejected <= 0;
+    const newAccepted = roundQty(priorAccepted + input.acceptedQty);
+    const newRejected = roundQty(priorRejected + input.rejectedQty);
+    const fullyDone = roundQty(line.receivedQty - newAccepted - newRejected) <= 0;
     // One inspection date for the line stamp, the NC and the replacement
     // cascade, so the three can never disagree about when this happened.
     const qcDate = input.qcDate ?? istToday();
@@ -632,6 +663,9 @@ export async function submitIncomingQc(
         .limit(1);
       if (poRows[0]) {
         await recalcPoHeaderStatus(tx, poRows[0].poId, user.id);
+      }
+      // No Job Card op behind a JW DC receipt: skip the outsource-op cascade.
+      if (poRows[0] && !jwDcReceipt) {
         // Step 6: record the accepted qty on the source outsource op so partial
         // returns become visible to the JC (and dispatchable — see Change 2).
         //
@@ -699,26 +733,33 @@ export async function submitIncomingQc(
     // its PO line to a jc_op with a job card. Raw-material rejects (no source
     // jc_op / no job card) currently raise no NC — a job-card-less NC needs a
     // schema change (planned as a separate phase).
+    // The NC a reject raised goes back to the popup, so it can say "NC … raised
+    // — Dispose now →" like process QC does (incoming-qc-inspect#1).
+    let raisedNc: { id: string; code: string } | null = null;
     if (input.rejectedQty > 0 && line.poLineId) {
-      const jcOpRows = await tx
-        .select({
-          jcOpId: jcOps.id,
-          jobCardId: jcOps.jobCardId,
-          opSeq: jcOps.opSeq,
-          operation: jcOps.operation,
-          jcCode: jobCards.code,
-        })
-        .from(purchaseOrderLines)
-        .innerJoin(
-          jcOps,
-          and(eq(jcOps.id, purchaseOrderLines.sourceJcOpId), isNull(jcOps.deletedAt)),
-        )
-        .innerJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
-        .where(eq(purchaseOrderLines.id, line.poLineId))
-        .limit(1);
+      // A JW DC receipt's reject is a material reject (no op) — it falls
+      // through to the job-card-less NC below.
+      const jcOpRows = jwDcReceipt
+        ? []
+        : await tx
+            .select({
+              jcOpId: jcOps.id,
+              jobCardId: jcOps.jobCardId,
+              opSeq: jcOps.opSeq,
+              operation: jcOps.operation,
+              jcCode: jobCards.code,
+            })
+            .from(purchaseOrderLines)
+            .innerJoin(
+              jcOps,
+              and(eq(jcOps.id, purchaseOrderLines.sourceJcOpId), isNull(jcOps.deletedAt)),
+            )
+            .innerJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
+            .where(eq(purchaseOrderLines.id, line.poLineId))
+            .limit(1);
       const src = jcOpRows[0];
       if (src) {
-        await autoCreateNcFromQcReject(
+        const nc = await autoCreateNcFromQcReject(
           tx,
           {
             companyId,
@@ -741,11 +782,12 @@ export async function submitIncomingQc(
           },
           user,
         );
+        raisedNc = { id: nc.ncId, code: nc.ncCode };
       } else {
         // ADR-189 — a bought-material reject (no job card behind the PO line):
         // raise an NC with no job card so the rejected pieces are on record
         // until they are scrapped or returned to the vendor.
-        await autoCreateMaterialNcFromIqcReject(
+        raisedNc = await autoCreateMaterialNcFromIqcReject(
           tx,
           {
             companyId,
@@ -781,8 +823,8 @@ export async function submitIncomingQc(
     // line. Same idempotent cascade op-entry runs after a QC log: it fires
     // only when v_jc_status reads complete/closed, and never re-flips a line
     // that is already terminal. Runs after the auto-NC block so the status
-    // view sees this inspection's reject too.
-    if (line.poLineId) {
+    // view sees this inspection's reject too. Not for a JW DC receipt (no op).
+    if (line.poLineId && !jwDcReceipt) {
       const srcOpRows = await tx
         .select({ jobCardId: jcOps.jobCardId })
         .from(purchaseOrderLines)
@@ -803,6 +845,6 @@ export async function submitIncomingQc(
     // detail) with the same link and an editable title, so nothing tells an
     // inspection task from a follow-up; inspecting must not close a chase.
 
-    return { ok: true as const, grnId: line.grnId };
+    return { ok: true as const, grnId: line.grnId, raisedNc };
   });
 }

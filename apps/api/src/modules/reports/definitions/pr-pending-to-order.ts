@@ -61,7 +61,7 @@ export const prPendingToOrderReport: RegisteredReport = {
       SELECT
         x.pr_code, x.pr_date, x.pr_type, x.item_code, x.item_name, x.pr_qty,
         x.ordered_qty, x.due_date, x.days_pending, x.approved, x.so_code, x.jc_code,
-        (x.pr_qty - x.ordered_qty)::int AS pending_qty
+        (x.pr_qty - x.ordered_qty)::numeric AS pending_qty
       FROM (
         SELECT
           pr.code                                        AS pr_code,
@@ -85,7 +85,7 @@ export const prPendingToOrderReport: RegisteredReport = {
                 AND p2.deleted_at IS NULL
                 AND p2.status <> 'cancelled'
             )
-          END)::int                                      AS ordered_qty,
+          END)::numeric                                  AS ordered_qty,
           pr.required_date                               AS due_date,
           (CURRENT_DATE - pr.pr_date)::int               AS days_pending,
           CASE WHEN pr.approved_at IS NOT NULL THEN 'Yes' ELSE 'No' END AS approved,

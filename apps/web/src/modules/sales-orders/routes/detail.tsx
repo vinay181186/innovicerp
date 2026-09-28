@@ -19,6 +19,7 @@ import type { DrawingSource, SalesOrderDetail, SalesOrderLine } from '@innovic/s
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
+import { z } from 'zod';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { ItemBadge } from '@/components/shared/item-badge';
@@ -67,14 +68,20 @@ type PreviewFile = {
   refCode?: string;
 };
 
+/** `uploadFailed` — set by New SO when the SO saved but a picked Client PO /
+ *  Email Reference file did not upload; names the file(s) for the red banner. */
+const detailSearchSchema = z.object({ uploadFailed: z.string().optional() });
+
 export const salesOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'sales-orders/$id',
+  validateSearch: detailSearchSchema,
   component: SalesOrderDetailPage,
 });
 
 function SalesOrderDetailPage(): React.JSX.Element {
   const { id } = salesOrderDetailRoute.useParams();
+  const { uploadFailed } = salesOrderDetailRoute.useSearch();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useSalesOrder(id);
   const { data: me } = useSession();
@@ -209,6 +216,26 @@ function SalesOrderDetailPage(): React.JSX.Element {
           />
         ) : null}
       </DetailHeader>
+
+      {uploadFailed ? (
+        <Banner
+          tone="error"
+          role="alert"
+          title="PO document not attached"
+          onDismiss={() =>
+            void navigate({
+              to: '/sales-orders/$id',
+              params: { id: detail.id },
+              search: {},
+              replace: true,
+            })
+          }
+        >
+          SO {detail.code} was saved, but the {uploadFailed} did not upload. Upload it again here —
+          Client PO with the Upload button just below, Email Reference with Upload Document under SO
+          Documents.
+        </Banner>
+      ) : null}
 
       <SoFilesPanel
         detail={detail}

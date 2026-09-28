@@ -190,7 +190,7 @@ async function computeWidget(
       break;
     }
     case 'grn_pending': {
-      const rows = await q(tx, `SELECT DISTINCT g.code, COALESCE(SUM(gl.received_qty),0)::int AS qty FROM goods_receipt_notes g
+      const rows = await q(tx, `SELECT DISTINCT g.code, COALESCE(SUM(gl.received_qty),0)::numeric AS qty FROM goods_receipt_notes g
           JOIN goods_receipt_note_lines gl ON gl.goods_receipt_note_id=g.id AND gl.qc_status='pending' AND gl.deleted_at IS NULL
           WHERE g.company_id='${cid}'::uuid AND g.deleted_at IS NULL GROUP BY g.id, g.code LIMIT 5`);
       w.rows = rows.map((r) => ({ left: String(r['code'] ?? ''), mid: '', right: String(num(r['qty'])) }));

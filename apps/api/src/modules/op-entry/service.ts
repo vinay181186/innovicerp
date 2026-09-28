@@ -35,7 +35,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { requireOpEntryRole, requireQcRole, requireWriteRole } from '../../lib/auth';
+import { isWriteRole, requireOpEntryRole, requireQcRole, requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -2367,16 +2367,17 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
   });
 }
 
-// OSP auto-PR generation (ADR-039). Manager/admin only (PR/PO writes are
-// gated at RLS to admin/manager — a deliberate DELTA from legacy, where
-// operators trigger it on op-start). Delegates to generateOspPrForOp inside a
-// single transaction so the PR, optional PO, op link, and audit rows all
-// commit or roll back together.
+// OSP auto-PR generation (ADR-039). Allowed to admin / manager, and to anyone
+// whose Access Control grants Purchase Requests ENTRY (pr_create entry) — the
+// same right that lets them raise a PR from the PR form; JC Operations "Raise
+// PR" now calls this path. Server-enforced here, not just a hidden button.
+// Delegates to generateOspPrForOp inside a single transaction so the PR,
+// optional PO, op link, and audit rows all commit or roll back together.
 export async function generateOspPr(
   input: GenerateOspPrInput,
   user: AuthContext,
 ): Promise<GenerateOspPrResult> {
-  requireWriteRole(user);
+  if (!isWriteRole(user)) await requireFormAccess(user, 'pr_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // ADR-182 — this route commits MONEY to an outside vendor (a jw_osp

@@ -392,6 +392,13 @@ export const createPlanInputSchema = z
   });
 export type CreatePlanInput = z.infer<typeof createPlanInputSchema>;
 
+/** BOM Planning "Save N Plans" — every child plan (and the assembly plan) in
+ *  ONE call, saved in ONE transaction: all land or none do. */
+export const createPlansBatchInputSchema = z.object({
+  plans: z.array(createPlanInputSchema).min(1).max(200),
+});
+export type CreatePlansBatchInput = z.infer<typeof createPlansBatchInputSchema>;
+
 export const updatePlanInputSchema = z.object({
   planDate: z
     .string()
@@ -520,8 +527,9 @@ export const unplannedOrderRowSchema = z.object({
   customerName: z.string().nullable(),
   dueDate: z.string().nullable(),
   orderQty: z.number().int().nonnegative(),
-  plannedQty: z.number().int().nonnegative(),
-  remainingQty: z.number().int().nonnegative(),
+  // Covered includes a Buy line's PR qty — decimal on KGS / MTR since 0172.
+  plannedQty: z.number().nonnegative(),
+  remainingQty: z.number().nonnegative(),
 });
 export type UnplannedOrderRow = z.infer<typeof unplannedOrderRowSchema>;
 

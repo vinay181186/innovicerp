@@ -13,9 +13,11 @@ import { useCreateJobWorkOrder, useJobWorkOrder, useUpdateJobWorkOrder } from '.
 import { JobWorkOrderForm } from '../components/job-work-order-form';
 
 /** Upload a picked file to Storage + register it against the JWSO under a given
- *  category. Best-effort: the JWSO is already saved, so a failed upload never
- *  blocks. Used for both the Client PO doc (`po-docs`) and the Email Ref
- *  (`email_reference`). */
+ *  category. The JWSO is already saved, so a failed upload never blocks — but it
+ *  is no longer swallowed: returns a label naming the file that did not attach
+ *  (null when nothing was picked or it attached), and the caller opens the JWSO
+ *  with a red banner so the user re-uploads from the Documents panel. Used for
+ *  both the Client PO doc (`po-docs`) and the Email Ref (`email_reference`). */
 async function registerJwDoc(
   file: File | null,
   companyId: string | null | undefined,
@@ -24,9 +26,10 @@ async function registerJwDoc(
   createDoc: ReturnType<typeof useCreateJwDocument>,
   category: 'po-docs' | 'email_reference',
   docType: string,
-): Promise<void> {
-  if (!file || !companyId) return;
+): Promise<string | null> {
+  if (!file) return null;
   try {
+    if (!companyId) throw new Error('no company');
     const storagePath = await uploadJwDocFile(file, companyId);
     await createDoc.mutateAsync({
       jobWorkOrderId: jwId,
@@ -38,8 +41,9 @@ async function registerJwDoc(
       fileSize: file.size,
       fileType: file.type || undefined,
     });
+    return null;
   } catch {
-    // Non-fatal: the JWSO is saved; the doc can be re-attached on the detail page.
+    return `${docType} file (${file.name})`;
   }
 }
 
@@ -73,28 +77,35 @@ function JobWorkOrderNewPage(): React.JSX.Element {
     try {
       const created = await create.mutateAsync(values);
       // Upload the chosen Client PO document + Email Ref against the new JWSO
-      // (best-effort — the JWSO is already saved).
-      await registerJwDoc(
-        poFileRef.current,
-        me?.companyId,
-        created.id,
-        created.code,
-        createDoc,
-        'po-docs',
-        'Client PO',
-      );
-      await registerJwDoc(
-        emailFileRef.current,
-        me?.companyId,
-        created.id,
-        created.code,
-        createDoc,
-        'email_reference',
-        'Email Reference',
-      );
+      // (the JWSO is already saved; a failed upload is reported on the JWSO).
+      const failed = [
+        await registerJwDoc(
+          poFileRef.current,
+          me?.companyId,
+          created.id,
+          created.code,
+          createDoc,
+          'po-docs',
+          'Client PO',
+        ),
+        await registerJwDoc(
+          emailFileRef.current,
+          me?.companyId,
+          created.id,
+          created.code,
+          createDoc,
+          'email_reference',
+          'Email Reference',
+        ),
+      ].filter((f): f is string => f !== null);
       exit.leave(
         () =>
-          void navigate({ to: '/job-work-orders/$id', params: { id: created.id }, replace: true }),
+          void navigate({
+            to: '/job-work-orders/$id',
+            params: { id: created.id },
+            search: failed.length > 0 ? { uploadFailed: failed.join(', ') } : {},
+            replace: true,
+          }),
       );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save JWSO. Try again.');
@@ -155,27 +166,35 @@ function JobWorkOrderEditPage(): React.JSX.Element {
     try {
       const saved = await update.mutateAsync(values);
       // Upload a newly-picked Client PO document + Email Ref against this JWSO
-      // (best-effort).
-      await registerJwDoc(
-        poFileRef.current,
-        me?.companyId,
-        id,
-        saved.code,
-        createDoc,
-        'po-docs',
-        'Client PO',
-      );
-      await registerJwDoc(
-        emailFileRef.current,
-        me?.companyId,
-        id,
-        saved.code,
-        createDoc,
-        'email_reference',
-        'Email Reference',
-      );
+      // (a failed upload is reported on the JWSO, never swallowed).
+      const failed = [
+        await registerJwDoc(
+          poFileRef.current,
+          me?.companyId,
+          id,
+          saved.code,
+          createDoc,
+          'po-docs',
+          'Client PO',
+        ),
+        await registerJwDoc(
+          emailFileRef.current,
+          me?.companyId,
+          id,
+          saved.code,
+          createDoc,
+          'email_reference',
+          'Email Reference',
+        ),
+      ].filter((f): f is string => f !== null);
       exit.leave(
-        () => void navigate({ to: '/job-work-orders/$id', params: { id }, replace: true }),
+        () =>
+          void navigate({
+            to: '/job-work-orders/$id',
+            params: { id },
+            search: failed.length > 0 ? { uploadFailed: failed.join(', ') } : {},
+            replace: true,
+          }),
       );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');

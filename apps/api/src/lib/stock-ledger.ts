@@ -50,6 +50,9 @@ export interface StockMoveInput {
   /** Snapshot of the item code for the ledger line; read from the item when omitted. */
   itemCodeText?: string | null;
   guard?: StockGuard;
+  /** ADR-193 3c — with guard 'available' only: extra qty the caller may take on
+   *  top of Available (this SO's own assembly reservation). Default 0. */
+  allowance?: number;
   /** Wording for the refusal, e.g. "Issue Qty"; default "Qty". */
   qtyLabel?: string;
 }
@@ -106,10 +109,11 @@ export async function postStockMove(
   const guard = input.guard ?? 'available';
 
   if (input.txnType === 'out') {
-    if (guard === 'available' && qty > roundQty(position.availableQty)) {
+    const allowance = roundQty(Math.max(0, input.allowance ?? 0));
+    if (guard === 'available' && qty > roundQty(position.availableQty + allowance)) {
       throw new ConflictError(
         position.reservedQty > 0
-          ? `Item ${item.code}: ${label} (${qty}) cannot be more than Available (${roundQty(position.availableQty)}) — In Stock ${before}, of which ${roundQty(position.reservedQty)} is booked for sales orders.`
+          ? `Item ${item.code}: ${label} (${qty}) cannot be more than Available (${roundQty(position.availableQty)}) — In Stock ${before}, of which ${roundQty(position.reservedQty)} is reserved for orders (sales and assembly).`
           : `Item ${item.code}: ${label} (${qty}) cannot be more than In Stock (${before}).`,
       );
     }

@@ -47,7 +47,7 @@ export async function mergeStockCountSheet(
       itemCode: f.code,
       itemName: f.name,
       uom: f.uom,
-      inStock: null,
+      inStock: f.inStock,
       // Round computed cells (12.299999999) to the ledger's 3 decimals.
       countedQty:
         r.qty && Number.isFinite(Number(r.qty))

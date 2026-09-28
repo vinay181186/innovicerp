@@ -21,6 +21,7 @@ import type {
   StockAvailability,
   StoreInventoryRow,
 } from '@innovic/shared';
+import { MANUAL_RECEIPT_SOURCE_LABEL } from '@innovic/shared';
 import {
   clients,
   items,
@@ -36,6 +37,7 @@ import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../..
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { readStockPosition, readStockPositions } from '../../lib/stock-reservation';
 import { onPoByItemSql } from '../../lib/po-pending';
+import { readAssemblyReservationRows } from './assembly-reservations';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -110,7 +112,7 @@ export async function listStoreInventory(
       -- in the stock ledger (ADR-067), so it must be surfaced as its own
       -- column or the row silently understates where the material is.
       at_vendor AS (
-        SELECT w.item_id, SUM(w.at_vendor_qty)::int AS qty
+        SELECT w.item_id, SUM(w.at_vendor_qty)::numeric AS qty
         FROM public.v_osp_wip w
         WHERE w.company_id = ${companyId}::uuid
           AND w.item_id IS NOT NULL
@@ -124,8 +126,8 @@ export async function listStoreInventory(
         i.uom::text                                AS uom,
         COALESCE(s.on_hand_qty, 0)::float8            AS in_stock,
         i.min_stock_qty                            AS min_qty,
-        COALESCE(po_pending.qty, 0)::int           AS on_po_qty,
-        COALESCE(at_vendor.qty, 0)::int            AS at_vendor_qty,
+        COALESCE(po_pending.qty, 0)::numeric       AS on_po_qty,
+        COALESCE(at_vendor.qty, 0)::numeric        AS at_vendor_qty,
         COALESCE(jc_open.qty, 0)::int              AS mfg_pending_qty
       FROM public.items i
       LEFT JOIN public.v_item_stock s
@@ -227,6 +229,17 @@ export async function adjustStock(
   // an existing saved figure, so L2 Data Entry is correctly refused.
   await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
+  // Bought material enters stock through a GRN (PO link + incoming QC), never
+  // as a Manual Receipt with Source = Purchase (store-manual-receipt#2).
+  if (input.source === 'purchase') {
+    throw new ValidationError(
+      'Bought material is received through a GRN against its PO, not by Manual Receipt.',
+    );
+  }
+  if (input.source && input.direction !== 'add') {
+    throw new ValidationError('A Source is given only when stock is received (+ Add).');
+  }
+  const sourceNote = input.source ? `Source: ${MANUAL_RECEIPT_SOURCE_LABEL[input.source]} · ` : '';
   return withUserContext(user, async (tx) => {
     const itemRows = await tx
       .select({ id: items.id, code: items.code })
@@ -248,7 +261,7 @@ export async function adjustStock(
       qty: input.qty,
       sourceType: 'manual_adjust',
       sourceRef: `ADJ · ${itm.code}`,
-      remarks: `Manual adjust: ${input.remarks}`,
+      remarks: `Manual adjust: ${sourceNote}${input.remarks}`,
       txnDate: new Date().toISOString().slice(0, 10),
       userId: user.id,
       itemCodeText: itm.code,
@@ -263,7 +276,7 @@ export async function adjustStock(
       {
         action: 'STOCK_ADJUST',
         entity: 'Store Inventory',
-        detail: `${itm.code} ${input.direction === 'add' ? '+' : '−'}${input.qty} (stock ${stockBefore} → ${stockAfter}). Reason: ${input.remarks}`,
+        detail: `${itm.code} ${input.direction === 'add' ? '+' : '−'}${input.qty} (stock ${stockBefore} → ${stockAfter}). ${sourceNote}Reason: ${input.remarks}`,
         refId: itm.code,
       },
       companyId,
@@ -443,6 +456,10 @@ export async function listReservations(
         remarks: r.remarks,
       };
     });
+
+    // ADR-193 3c — parts held for an assembly SO live in their own table; list
+    // them too so this drill-down totals the same Reserved as every Store screen.
+    if (!query.soLineId) detail.push(...(await readAssemblyReservationRows(tx, companyId, query)));
 
     const totalReserved = detail.reduce(
       (s, d) =>

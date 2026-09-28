@@ -1,9 +1,10 @@
 -- ============================================================
--- 0158_jw_return_cancel_reason.sql  (ADR-194, R10)
+-- 0160_jw_return_cancel_reason.sql  (ADR-194, R10)
+-- (renumbered from 0158 — the store-redesign branch already owns 0157/0158 on `test`)
 --
 -- The JW Return Challan cancel now asks the user for a reason (like the JW
 -- Invoice cancel does). Give the challan somewhere to record it, symmetric with
--- the jw_invoices cancel columns added in 0157. All ADDITIVE.
+-- the jw_invoices cancel columns added in 0159. All ADDITIVE.
 -- Apply to BOTH the test and the production database.
 -- ============================================================
 

@@ -11,9 +11,11 @@
 import type {
   AdjustStockInput,
   ListStoreInventoryResponse,
+  ManualReceiptSource,
   SetMinStockInput,
   StoreInventoryRow,
 } from '@innovic/shared';
+import { MANUAL_RECEIPT_SOURCE_LABEL } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -22,6 +24,9 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListHeader } from '@/ui/layout';
 import { useAdjustStock, useSetMinStock, useStoreInventory } from '../api';
+import { useItemsList } from '@/modules/items/api';
+import { SearchableSelect } from '@/ui/forms';
+import { useDiscardGuard } from '../components/discard-guard';
 import { ModalShell } from '../components/modal-shell';
 import { ReservationDrilldown } from '../components/reservation-drilldown';
 import { StockLedger } from '@/modules/store-transactions/components/stock-ledger';
@@ -398,10 +403,7 @@ function StoreInventoryPage(): React.JSX.Element {
           {adjustRow ? <AdjustModal row={adjustRow} onClose={() => setAdjustRow(null)} /> : null}
           {minRow ? <SetMinModal row={minRow} onClose={() => setMinRow(null)} /> : null}
           {showManualReceipt ? (
-            <ManualReceiveModal
-              onClose={() => setShowManualReceipt(false)}
-              rows={data?.rows ?? []}
-            />
+            <ManualReceiveModal onClose={() => setShowManualReceipt(false)} />
           ) : null}
           {reservedRow ? (
             <ReservationDrilldown
@@ -662,37 +664,52 @@ function SetMinModal({
 
 // Legacy storeReceiveManual (HTML L24981) — manual stock IN entry. Today the
 // underlying ledger writes `source_type='manual_adjust'` via the existing
-// AdjustStock service; the "Source" dropdown + Ref No fields shown in the
-// legacy modal are stored only on the local input here and folded into the
-// remarks string (a DELTA to track separately — adding source/ref to
-// store_transactions requires a backend schema bump).
-function ManualReceiveModal({
-  onClose,
-  rows,
-}: {
-  onClose: () => void;
-  rows: StoreInventoryRow[];
-}): React.JSX.Element {
+// AdjustStock service; the "Source" dropdown is sent as its own `source` field
+// (the server refuses 'purchase'), and the Ref No + remarks stay free text.
+//
+// The Item is picked from the whole Item Master (shared type-to-search), not
+// from the rows on the inventory page — with "Low Stock" on, most items used
+// to be unreachable. 'Purchase' is NOT a source here: bought material comes in
+// through a GRN (PO link + incoming QC); the server refuses it too.
+/** Sources a Manual Receipt may pick — every one but Purchase (GRN only). */
+const RECEIPT_SOURCES: ReadonlyArray<Exclude<ManualReceiptSource, 'purchase'>> = [
+  'production',
+  'return',
+  'other',
+];
+
+function ManualReceiveModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [itemId, setItemId] = useState<string | null>(null);
   const [itemSearch, setItemSearch] = useState('');
   const [qty, setQty] = useState('');
-  const [source, setSource] = useState('Production');
+  const [source, setSource] = useState<Exclude<ManualReceiptSource, 'purchase'>>('production');
   const [refNo, setRefNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const mut = useAdjustStock();
 
-  const selected = useMemo(() => rows.find((r) => r.itemId === itemId) ?? null, [rows, itemId]);
-  const filtered = useMemo(() => {
-    const q = itemSearch.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (r) =>
-        r.itemCode.toLowerCase().includes(q) ||
-        r.itemName.toLowerCase().includes(q) ||
-        (r.material ?? '').toLowerCase().includes(q),
-    );
-  }, [rows, itemSearch]);
+  const { data: itemsData, isFetching: itemsFetching } = useItemsList({
+    search: itemSearch.trim() || undefined,
+    limit: 50,
+    offset: 0,
+  });
+  // Remember the picked item so its code / UOM stay shown after the search changes.
+  const [picked, setPicked] = useState<{ code: string; name: string; uom: string | null } | null>(
+    null,
+  );
+  const itemOptions = useMemo(
+    () => (itemsData?.items ?? []).map((it) => ({ id: it.id, code: it.code, name: it.name })),
+    [itemsData],
+  );
+  // Current stock of the picked item, whatever the inventory page's filter is.
+  const { data: stockData } = useStoreInventory(
+    { search: picked?.code ?? '', filter: 'all' },
+    Boolean(picked),
+  );
+  const stockRow = picked ? (stockData?.rows ?? []).find((r) => r.itemId === itemId) : undefined;
+
+  const dirty = Boolean(itemId || qty.trim() || refNo.trim() || remarks.trim());
+  const guard = useDiscardGuard(dirty, onClose);
 
   const onSave = (): void => {
     setErr(null);
@@ -710,7 +727,7 @@ function ManualReceiveModal({
       return;
     }
     const composedRemarks = [
-      `Manual receipt · source=${source}`,
+      'Manual receipt',
       refNo.trim() ? `ref=${refNo.trim()}` : null,
       remarks.trim() || null,
     ]
@@ -722,6 +739,7 @@ function ManualReceiveModal({
       direction: 'add',
       qty: q,
       remarks: composedRemarks,
+      source,
     };
     mut.mutate(input, {
       onSuccess: () => onClose(),
@@ -730,70 +748,47 @@ function ManualReceiveModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title="Manual Receipt">
+    <ModalShell onClose={guard.requestClose} title="Manual Receipt">
+      {guard.dialog}
       <div className="form-grid">
         <div className="form-grp">
-          <label className="form-label">
+          <label className="form-label" htmlFor="mr-item">
             Item <span className="req">★</span>
           </label>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search item..."
-            style={{ fontSize: 12 }}
-            value={selected ? `${selected.itemCode} — ${selected.itemName}` : itemSearch}
-            onChange={(e) => {
-              setItemId(null);
-              setItemSearch(e.target.value);
+          <SearchableSelect
+            id="mr-item"
+            value={itemId}
+            onChange={(id) => {
+              setItemId(id);
+              const it = itemsData?.items.find((x) => x.id === id);
+              setPicked(it ? { code: it.code, name: it.name, uom: it.uom ?? null } : null);
             }}
+            options={itemOptions}
+            valueLabel={picked ? `${picked.code} — ${picked.name}` : undefined}
+            onSearch={setItemSearch}
+            loading={itemsFetching}
+            placeholder="Type item code or name…"
+            emptyText="No matching item"
           />
-          {!itemId && itemSearch.trim() ? (
-            <div
-              style={{
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                background: 'var(--bg2)',
-                marginTop: 4,
-                maxHeight: 180,
-                overflowY: 'auto',
-              }}
-            >
-              {filtered.slice(0, 20).map((r) => (
-                <div
-                  key={r.itemId}
-                  onClick={() => {
-                    setItemId(r.itemId);
-                    setItemSearch('');
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    borderBottom: '1px solid var(--border)',
-                  }}
-                >
-                  <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
-                    {r.itemCode}
-                  </span>{' '}
-                  — {r.itemName}
-                  <span className="text3" style={{ marginLeft: 6 }}>
-                    · stock {r.inStock} {r.uom}
-                  </span>
-                </div>
-              ))}
+          {picked ? (
+            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+              In stock now: {stockRow ? stockRow.inStock : '—'} {picked.uom ?? ''}
             </div>
           ) : null}
         </div>
         <div className="form-grp">
           <label className="form-label">
             Quantity <span className="req">★</span>
+            {picked?.uom ? <span className="text3"> ({picked.uom})</span> : null}
           </label>
           <input
             type="number"
-            min={1}
+            min={0}
+            step="any"
             className="innovic-input"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
+            onWheel={(e) => e.currentTarget.blur()}
             placeholder="0"
             style={{ fontSize: 16, fontWeight: 700 }}
           />
@@ -803,13 +798,17 @@ function ManualReceiveModal({
           <select
             className="innovic-select"
             value={source}
-            onChange={(e) => setSource(e.target.value)}
+            onChange={(e) => setSource(e.target.value as Exclude<ManualReceiptSource, 'purchase'>)}
           >
-            <option>Production</option>
-            <option>Purchase</option>
-            <option>Return</option>
-            <option>Other</option>
+            {RECEIPT_SOURCES.map((s) => (
+              <option key={s} value={s}>
+                {MANUAL_RECEIPT_SOURCE_LABEL[s]}
+              </option>
+            ))}
           </select>
+          <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+            Bought material is received through a GRN (against its PO, with incoming QC) — not here.
+          </div>
         </div>
         <div className="form-grp">
           <label className="form-label">Ref No.</label>
@@ -818,7 +817,7 @@ function ManualReceiveModal({
             className="innovic-input"
             value={refNo}
             onChange={(e) => setRefNo(e.target.value)}
-            placeholder="JC / PO / GRN number"
+            placeholder="JC / return slip number"
           />
         </div>
         <div className="form-grp form-full">

@@ -16,6 +16,7 @@
 
 import type {
   DefaultRouteOpsResponse,
+  JcRouteCardWriteBack,
   JobCardEditModel,
   JobCardSourceOption,
   ListVendorsQuery,
@@ -41,7 +42,7 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, Modal } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode, useUpdateJobCard } from '../api';
@@ -185,7 +186,6 @@ export function JobCardForm({
   const companyId = me?.companyId ?? '';
 
   const { data: sourceOptions = [] } = useJobCardSourceOptions();
-  const { data: itemsData } = useItemsList({ limit: 500, offset: 0 });
   // machines & vendors list-query schemas cap `limit` at 200 — 500 makes the
   // route 400, leaving the machine picker empty ("No matches"). Stay ≤ 200.
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
@@ -202,7 +202,6 @@ export function JobCardForm({
   // Machine groups exist only to label and narrow the machine picker; the id →
   // code map lets a row show 'VMC' for the group its machine belongs to.
   const { data: machineGroupsData } = useMachineGroupsList({ limit: 200, offset: 0 });
-  const items = itemsData?.items ?? [];
   const machines = machinesData?.machines ?? [];
   // Every vendor row this form has seen (first page + each search page), by
   // code. A picked vendor keeps its "CODE — Name" label in the op card even
@@ -274,6 +273,29 @@ export function JobCardForm({
   // linked option resolves, and stops once the user edits the field.
   const [sourceTextSynced, setSourceTextSynced] = useState(false);
   const [itemCode, setItemCode] = useState(model?.itemCode ?? '');
+  // Master id of the picked item (null until picked / resolved from the code).
+  const [itemId, setItemId] = useState<string | null>(null);
+  // Item is LOCKED to the JWSO line's item on create (2026-09-28 form audit):
+  // a Job Card on a JWSO line makes that line's item, never another one typed
+  // over it. Locked only when the line carries a MASTER item (itemId set) — a
+  // legacy text-only line keeps the picker editable, the same rule the server
+  // applies (createJobCard -> assertItemIsJwLineItem checks only line.item_id).
+  const lineSource = !isEdit ? allSources.find((o) => o.lineId === sourceLineId) : undefined;
+  const lineItemCode = lineSource?.itemId ? (lineSource.itemCode ?? null) : null;
+  const itemLocked = Boolean(lineItemCode);
+  // The shared master-only item picker, searching the SERVER (the old datalist
+  // held only the first 500 items, so item 501+ could not be picked). While
+  // locked, the page is fetched for the line's code so its id resolves.
+  const [itemSearch, setItemSearch] = useState('');
+  const itemQuerySearch = itemLocked ? (lineItemCode ?? '') : itemSearch.trim();
+  const { data: itemsData, isFetching: itemsFetching } = useItemsList({
+    ...(itemQuerySearch ? { search: itemQuerySearch } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const items = itemsData?.items ?? [];
+  const itemIdByCode =
+    items.find((i) => i.code.toUpperCase() === itemCode.trim().toUpperCase())?.id ?? null;
   const [orderQty, setOrderQty] = useState<string>(model ? String(model.orderQty) : '');
   const [priority, setPriority] = useState<'normal' | 'high'>(model?.priority ?? 'normal');
   const [dueDate, setDueDate] = useState(model?.dueDate ?? '');
@@ -295,9 +317,7 @@ export function JobCardForm({
   // route card is the source of truth for what the part is cut from. Create
   // mode only, and only while a field is still blank, so a manual pick or a
   // plan-carried value is never overwritten.
-  const pickedItemId = isEdit
-    ? null
-    : (items.find((i) => i.code.toUpperCase() === itemCode.trim().toUpperCase())?.id ?? null);
+  const pickedItemId = isEdit ? null : (itemId ?? itemIdByCode);
   const { data: itemRouteDefaults } = useDefaultRouteOps(pickedItemId);
   useEffect(() => {
     if (isEdit || !itemRouteDefaults) return;
@@ -362,6 +382,11 @@ export function JobCardForm({
   // success note shown after a balance is sent out.
   const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
   const [balanceNote, setBalanceNote] = useState<string | null>(null);
+  // Shown after a save that also wrote the item's Route Card.
+  const [savedNote, setSavedNote] = useState<{
+    jcCode: string;
+    rc: JcRouteCardWriteBack;
+  } | null>(null);
 
   // Machine picker: the op card uses the shared SearchableSelect (same control
   // the JC edit screen already uses), replacing this form's <datalist>, which
@@ -507,8 +532,12 @@ export function JobCardForm({
     }
     setSourceLineId(opt.lineId);
     setSourceType(opt.type);
-    // Cascade auto-fill (legacy _jcCascadeFromOrder): only fill empties.
-    if (opt.itemCode && !itemCode) setItemCode(opt.itemCode);
+    // Cascade auto-fill (legacy _jcCascadeFromOrder): only fill empties -
+    // except the item, which IS the line's item (locked), so it always follows.
+    if (opt.itemCode) {
+      setItemCode(opt.itemCode);
+      setItemId(null);
+    }
     if (opt.remaining > 0 && !orderQty) setOrderQty(String(opt.remaining));
     if (opt.dueDate && !dueDate) setDueDate(opt.dueDate);
   };
@@ -523,19 +552,14 @@ export function JobCardForm({
     setSourceText(sourceLabel(opt));
     setSourceLineId(opt.lineId);
     setSourceType(opt.type);
-    if (opt.itemCode && !itemCode) setItemCode(opt.itemCode);
+    if (opt.itemCode) {
+      setItemCode(opt.itemCode);
+      setItemId(null);
+    }
     if (opt.remaining > 0 && !orderQty) setOrderQty(String(opt.remaining));
     if (opt.dueDate && !dueDate) setDueDate(opt.dueDate);
     setAppliedInitialSource(true);
-  }, [
-    isEdit,
-    appliedInitialSource,
-    initialSourceLineId,
-    sourceOptions,
-    itemCode,
-    orderQty,
-    dueDate,
-  ]);
+  }, [isEdit, appliedInitialSource, initialSourceLineId, sourceOptions, orderQty, dueDate]);
 
   const setOp = (i: number, patch: Partial<FormOp>): void => {
     setOps((prev) => prev.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
@@ -752,8 +776,16 @@ export function JobCardForm({
       return;
     }
     try {
-      if (isEdit && model) await update.mutateAsync(result.payload);
-      else await create.mutateAsync(result.payload);
+      const saved =
+        isEdit && model
+          ? await update.mutateAsync(result.payload)
+          : await create.mutateAsync(result.payload);
+      // No silent write-back (2026-09-28 form audit): when the save also wrote
+      // these operations to the item's Route Card, say so before leaving.
+      if (saved.routeCardWriteBack) {
+        setSavedNote({ jcCode: saved.code, rc: saved.routeCardWriteBack });
+        return;
+      }
       exit.leave(goBack);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');
@@ -799,13 +831,51 @@ export function JobCardForm({
           {error}
         </Banner>
       ) : null}
-      <datalist id="dlJcItem">
-        {items.map((i) => (
-          <option key={i.id} value={i.code}>
-            {i.code} — {i.name}
-          </option>
-        ))}
-      </datalist>
+      {savedNote ? (
+        <Modal
+          title={`Job Card ${savedNote.jcCode} saved`}
+          size="sm"
+          onClose={() => exit.leave(goBack)}
+          closeOnOverlayClick={false}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() =>
+                  exit.leave(
+                    () =>
+                      void navigate({
+                        to: '/route-cards/$id',
+                        params: { id: savedNote.rc.routeCardId },
+                      }),
+                  )
+                }
+              >
+                Open {savedNote.rc.routeCardCode}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => exit.leave(goBack)}>
+                Back to Job Cards
+              </button>
+            </>
+          }
+        >
+          <Banner tone="info" flush>
+            {savedNote.rc.created ? (
+              <>
+                Route Card <span className="mono fw-700">{savedNote.rc.routeCardCode}</span> created
+                (Rev {savedNote.rc.routeCardRevision}) from this Job Card&apos;s operations.
+              </>
+            ) : (
+              <>
+                Route Card <span className="mono fw-700">{savedNote.rc.routeCardCode}</span> updated
+                to Rev {savedNote.rc.routeCardRevision} — this Job Card&apos;s operations are now
+                the item&apos;s standard routing.
+              </>
+            )}
+          </Banner>
+        </Modal>
+      ) : null}
 
       {/* ── JC DETAILS ── 12-column grid: source order first, then JC No. /
           date, then item / qty / due / priority, then raw material + remarks. */}
@@ -901,13 +971,27 @@ export function JobCardForm({
             />
           </FormField>
           <FormField label="Item Code" required size="md">
-            <input
-              className="innovic-input"
-              list="dlJcItem"
-              value={itemCode}
+            <SearchableSelect
+              id="jc-item"
+              value={itemId ?? itemIdByCode}
+              onChange={(id) => {
+                const it = items.find((i) => i.id === id);
+                setItemId(it?.id ?? null);
+                setItemCode(it?.code ?? '');
+              }}
+              onSearch={setItemSearch}
+              loading={itemsFetching}
+              options={items.map((i) => ({ id: i.id, code: i.code, name: i.name }))}
+              valueLabel={itemCode || undefined}
+              selectedLabel={(o) => o.code ?? o.name}
+              disabled={itemLocked}
               placeholder="🔍 Search item code or name…"
-              onChange={(e) => setItemCode(e.target.value)}
             />
+            {itemLocked ? (
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 2 }}>
+                The JWSO line&apos;s item — fixed.
+              </div>
+            ) : null}
           </FormField>
           <FormField label="Order Qty" required size="sm">
             <input
@@ -1063,6 +1147,15 @@ export function JobCardForm({
                 Operations from Route Card{' '}
                 <span className="mono fw-700">{seededNote.code ?? '—'}</span>
                 {seededNote.revision != null ? ` Rev ${seededNote.revision}` : ''}
+              </span>
+            ) : null}
+            {!isEdit && ops.length > 0 ? (
+              <span
+                className="text3"
+                style={{ fontSize: 11 }}
+                title="The Job Card's operations become the item's Route Card routing (a new revision)"
+              >
+                Save also updates the item&apos;s Route Card ·
               </span>
             ) : null}
             <span className="text3" style={{ fontSize: 11 }}>

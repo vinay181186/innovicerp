@@ -173,7 +173,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       tx
         .select({
           lineId: purchaseOrderLines.sourceSoLineId,
-          qty: sql<number>`COALESCE(SUM(${purchaseOrderLines.qty}), 0)::int`,
+          qty: sql<number>`COALESCE(SUM(${purchaseOrderLines.qty}), 0)::numeric`,
         })
         .from(purchaseOrderLines)
         .where(
@@ -187,8 +187,8 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       tx
         .select({
           lineId: purchaseOrderLines.sourceSoLineId,
-          recvQty: sql<number>`COALESCE(SUM(${goodsReceiptNoteLines.receivedQty}), 0)::int`,
-          qcAccQty: sql<number>`COALESCE(SUM(${goodsReceiptNoteLines.qcAcceptedQty}), 0)::int`,
+          recvQty: sql<number>`COALESCE(SUM(${goodsReceiptNoteLines.receivedQty}), 0)::numeric`,
+          qcAccQty: sql<number>`COALESCE(SUM(${goodsReceiptNoteLines.qcAcceptedQty}), 0)::numeric`,
         })
         .from(goodsReceiptNoteLines)
         .innerJoin(

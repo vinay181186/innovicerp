@@ -22,7 +22,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -30,6 +30,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { assertProductionOrderNotShortClosedForPoLine } from '../../lib/production-order-stop';
+import { lockPoLinesForSend, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
@@ -870,20 +871,25 @@ async function assertSalesOrderLineExists(
   }
 }
 
+/** Checks every item exists and returns each one's unit (items.uom), so a
+ *  challan line carries the item's real unit — KGS / MTR, not a blanket NOS. */
 async function assertItemIdsExist(
   tx: DbTransaction,
   itemIds: string[],
   companyId: string,
-): Promise<void> {
+): Promise<Map<string, (typeof items.$inferSelect)['uom']>> {
+  const out = new Map<string, (typeof items.$inferSelect)['uom']>();
   const unique = Array.from(new Set(itemIds));
-  if (unique.length === 0) return;
+  if (unique.length === 0) return out;
   const rows = await tx
-    .select({ id: items.id })
+    .select({ id: items.id, uom: items.uom })
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
     throw new ValidationError('Item not found. Please select the Item Code again.');
   }
+  for (const r of rows) out.set(r.id, r.uom);
+  return out;
 }
 
 interface PoLineRef {
@@ -940,7 +946,8 @@ async function loadPoLineMap(
 }
 
 /**
- * Qty already sent out against each PO line on ORDINARY outward challans.
+ * Qty already sent out against each PO line on ORDINARY outward challans
+ * (OSP DCs) plus JW DC Outwards.
  *
  * Return-to-vendor challans (no PO, `nc_id` set) are excluded (OSP chain gap
  * G6, 2026-09-16): their line carries the op's PO line so the challan print
@@ -955,31 +962,9 @@ async function sumSentQtyByPoLine(
   poLineIds: string[],
   companyId: string,
 ): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  const unique = Array.from(new Set(poLineIds));
-  if (unique.length === 0) return out;
-  const rows = await tx
-    .select({
-      poLineId: deliveryChallanLines.purchaseOrderLineId,
-      sent: sql<string>`COALESCE(SUM(${deliveryChallanLines.qty}), 0)::numeric`,
-    })
-    .from(deliveryChallanLines)
-    .innerJoin(deliveryChallans, eq(deliveryChallans.id, deliveryChallanLines.deliveryChallanId))
-    .where(
-      and(
-        inArray(deliveryChallanLines.purchaseOrderLineId, unique),
-        eq(deliveryChallanLines.companyId, companyId),
-        isNull(deliveryChallanLines.deletedAt),
-        isNull(deliveryChallans.deletedAt),
-        isNull(deliveryChallans.ncId),
-        sql`${deliveryChallans.status} != 'cancelled'`,
-      ),
-    )
-    .groupBy(deliveryChallanLines.purchaseOrderLineId);
-  for (const r of rows) {
-    if (r.poLineId) out.set(r.poLineId, Number(r.sent));
-  }
-  return out;
+  // ONE sent figure per PO line: OSP DCs AND JW DC Outwards together, so a
+  // line cannot go out in full on each screen (lib/po-line-sent.ts).
+  return sumSentOnPoLines(tx, poLineIds, companyId);
 }
 
 function assignLineNos(
@@ -1089,7 +1074,7 @@ export async function createDeliveryChallan(
     }
 
     const itemIds = input.lines.map((l) => l.itemId).filter((id): id is string => Boolean(id));
-    await assertItemIdsExist(tx, itemIds, companyId);
+    const itemUoms = await assertItemIdsExist(tx, itemIds, companyId);
 
     const poLineIds = input.lines
       .map((l) => l.purchaseOrderLineId)
@@ -1101,6 +1086,9 @@ export async function createDeliveryChallan(
       await assertProductionOrderNotShortClosedForPoLine(tx, poLineId);
     }
     const poLines = await loadPoLineMap(tx, poLineIds, companyId);
+    // Lock the PO lines first, so a concurrent OSP DC / JW DC Outward on the
+    // same line waits here and then reads this challan's qty (no over-send).
+    await lockPoLinesForSend(tx, poLineIds, companyId);
     const alreadySent = await sumSentQtyByPoLine(tx, poLineIds, companyId);
 
     // Pre-write validation: each PO line's cumulative-sent + this DC's qty
@@ -1160,7 +1148,9 @@ export async function createDeliveryChallan(
       itemCodeText: l.itemCodeText,
       itemNameText: l.itemNameText ?? null,
       qty: String(l.qty),
-      uom: l.uom,
+      // The item master's unit wins over whatever the form sent: the line is
+      // what the print and the vendor go by (dc-create-po#1).
+      uom: (l.itemId ? itemUoms.get(l.itemId) : undefined) ?? l.uom,
       materialText: l.materialText ?? null,
       dcRemarks: l.dcRemarks ?? null,
       purchaseOrderLineId: l.purchaseOrderLineId ?? null,
@@ -1384,8 +1374,14 @@ export async function receiveAgainstDeliveryChallan(
   user: AuthContext,
 ): Promise<ReceiveDeliveryChallanResponse> {
   // Booking material back from the vendor creates a receipt, so it is `entry` —
-  // the same right that raised the DC. Was requireWriteRole.
-  await requireFormAccess(user, 'ospdc_create', 'entry');
+  // the same right that raised the DC. Was requireWriteRole. The GRN screen's
+  // "Against JW PO / DC" and "Against NC" types save through here too, and they
+  // open on GRN entry rights — so a GRN storekeeper (grn_create entry) may book
+  // the receipt as well; it lands on an auto-GRN as QC pending either way.
+  await requireAnyFormAccess(user, [
+    ['ospdc_create', 'entry'],
+    ['grn_create', 'entry'],
+  ]);
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

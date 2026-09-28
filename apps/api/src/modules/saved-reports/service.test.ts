@@ -61,8 +61,8 @@ afterAll(async () => {
 });
 
 describe('saved-reports service', () => {
-  it('listSources returns the 5 registered source descriptors', () => {
-    const result = service.listSources();
+  it('listSources returns the 5 registered source descriptors', async () => {
+    const result = await service.listSources(admin);
     const keys = result.sources.map((s) => s.sourceKey).sort();
     expect(keys).toEqual([
       'items-stock',

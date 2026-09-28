@@ -14,9 +14,11 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayLocal } from '@/lib/date';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Select } from '@/ui/forms';
+import { useSaveShortcut } from '@/ui/layout';
 import {
   useCreateStockCount,
   useReplaceStockCountLines,
@@ -82,12 +84,25 @@ function StockCountPage(): React.JSX.Element {
     approve.isPending ||
     cancel.isPending;
 
+  // Keyed-in lines must not be lost to a stray sidebar / Back click
+  // (stock-count-create#2); Ctrl+S = Save Draft.
+  const canEdit = editable && perms.entry;
+  const exit = useExitConfirm({
+    onExit: () => void navigate({ to: '/stock-counts' }),
+    enabled: canEdit,
+  });
+  useSaveShortcut(() => void save(), canEdit && !busy);
+
+  // The add bar hands a line over after reading its stock (async), so check
+  // duplicates against the latest lines, not the ones from that render.
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
   const addLine = (line: DraftLine): void => {
-    if (lines.some((l) => l.itemId === line.itemId)) {
+    if (linesRef.current.some((l) => l.itemId === line.itemId)) {
       setMsg({ ok: false, text: `${line.itemCode} is already on this count.` });
       return;
     }
-    setLines((ls) => [...ls, line]);
+    setLines((ls) => (ls.some((l) => l.itemId === line.itemId) ? ls : [...ls, line]));
   };
 
   const payloadLines = ():
@@ -122,7 +137,9 @@ function StockCountPage(): React.JSX.Element {
           ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
           lines: ls,
         });
-        await navigate({ to: '/stock-counts/$id', params: { id: c.id }, replace: true });
+        exit.leave(
+          () => void navigate({ to: '/stock-counts/$id', params: { id: c.id }, replace: true }),
+        );
         return c.id;
       }
       await replace.mutateAsync({ id, remarks: remarks.trim(), lines: ls });
@@ -210,6 +227,7 @@ function StockCountPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <Link to="/stock-counts" className="btn btn-ghost btn-sm">
           <ArrowLeft size={14} /> Stock Count

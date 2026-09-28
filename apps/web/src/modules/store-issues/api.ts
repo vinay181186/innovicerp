@@ -1,10 +1,12 @@
+// Item Issue (ADR-193 phase 3b) — TanStack Query hooks. A slip has lines; it is
+// issued against a Job Card, an Assembly SO or for general use.
 import type {
   CreateStoreIssueInput,
   ListStoreIssuesQuery,
   ListStoreIssuesResponse,
+  ReturnStoreIssueInput,
   ReverseStoreIssueInput,
-  StoreIssue,
-  StoreIssueListItem,
+  StoreIssueDetail,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -12,19 +14,32 @@ import { apiFetch } from '@/lib/api';
 export const storeIssuesKeys = {
   all: ['store-issues'] as const,
   list: (q: ListStoreIssuesQuery) =>
-    [...storeIssuesKeys.all, 'list', q.search ?? null, q.itemId ?? null, q.fromDate ?? null, q.toDate ?? null, q.limit, q.offset] as const,
-  nextCode: () => [...storeIssuesKeys.all, 'next-code'] as const,
+    [
+      ...storeIssuesKeys.all,
+      'list',
+      q.search ?? null,
+      q.itemId ?? null,
+      q.jobCardId ?? null,
+      q.salesOrderId ?? null,
+      q.fromDate ?? null,
+      q.toDate ?? null,
+      q.limit,
+      q.offset,
+    ] as const,
+  detail: (id: string) => [...storeIssuesKeys.all, 'detail', id] as const,
 };
 
 function buildSearch(q: ListStoreIssuesQuery): string {
-  const params = new URLSearchParams();
-  if (q.search) params.set('search', q.search);
-  if (q.itemId) params.set('itemId', q.itemId);
-  if (q.fromDate) params.set('fromDate', q.fromDate);
-  if (q.toDate) params.set('toDate', q.toDate);
-  params.set('limit', String(q.limit));
-  params.set('offset', String(q.offset));
-  return params.toString();
+  const p = new URLSearchParams();
+  if (q.search) p.set('search', q.search);
+  if (q.itemId) p.set('itemId', q.itemId);
+  if (q.jobCardId) p.set('jobCardId', q.jobCardId);
+  if (q.salesOrderId) p.set('salesOrderId', q.salesOrderId);
+  if (q.fromDate) p.set('fromDate', q.fromDate);
+  if (q.toDate) p.set('toDate', q.toDate);
+  p.set('limit', String(q.limit));
+  p.set('offset', String(q.offset));
+  return p.toString();
 }
 
 export function useStoreIssuesList(query: ListStoreIssuesQuery) {
@@ -32,48 +47,53 @@ export function useStoreIssuesList(query: ListStoreIssuesQuery) {
     queryKey: storeIssuesKeys.list(query),
     queryFn: () => apiFetch<ListStoreIssuesResponse>(`/store-issues?${buildSearch(query)}`),
     refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
   });
 }
 
-export function useNextStoreIssueCode() {
-  return useQuery<{ code: string }>({
-    queryKey: storeIssuesKeys.nextCode(),
-    queryFn: () => apiFetch<{ code: string }>('/store-issues/next-code'),
-    staleTime: 0,
+export function useStoreIssue(id: string | null) {
+  return useQuery<StoreIssueDetail>({
+    queryKey: storeIssuesKeys.detail(id ?? ''),
+    queryFn: () => apiFetch<StoreIssueDetail>(`/store-issues/${id}`),
+    enabled: Boolean(id),
   });
+}
+
+/** Stock moved → issue lists, material views and stock screens re-read. */
+function invalidate(qc: ReturnType<typeof useQueryClient>): void {
+  void qc.invalidateQueries({ queryKey: storeIssuesKeys.all });
+  void qc.invalidateQueries({ queryKey: ['material'] });
+  void qc.invalidateQueries({ queryKey: ['store-inventory'] });
+  void qc.invalidateQueries({ queryKey: ['store-transactions'] });
+  void qc.invalidateQueries({ queryKey: ['items'] });
 }
 
 export function useCreateStoreIssue() {
   const qc = useQueryClient();
-  return useMutation<StoreIssue, Error, CreateStoreIssueInput>({
+  return useMutation<StoreIssueDetail, Error, CreateStoreIssueInput>({
     mutationFn: (input) =>
-      apiFetch<StoreIssue>('/store-issues', { method: 'POST', json: input }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: storeIssuesKeys.all });
-      // Item stock changed — invalidate store-inventory + items + store-transactions
-      void qc.invalidateQueries({ queryKey: ['store-inventory'] });
-      void qc.invalidateQueries({ queryKey: ['store-transactions'] });
-      void qc.invalidateQueries({ queryKey: ['items'] });
-    },
+      apiFetch<StoreIssueDetail>('/store-issues', { method: 'POST', json: input }),
+    onSuccess: () => invalidate(qc),
   });
 }
 
-/** ADR-189 — undo an issue with an opposite ledger entry (reason required). */
+export function useReturnStoreIssue() {
+  const qc = useQueryClient();
+  return useMutation<StoreIssueDetail, Error, { id: string } & ReturnStoreIssueInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<StoreIssueDetail>(`/store-issues/${id}/returns`, { method: 'POST', json: body }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
 export function useReverseStoreIssue() {
   const qc = useQueryClient();
-  return useMutation<StoreIssueListItem, Error, { id: string } & ReverseStoreIssueInput>({
+  return useMutation<StoreIssueDetail, Error, { id: string } & ReverseStoreIssueInput>({
     mutationFn: ({ id, reason }) =>
-      apiFetch<StoreIssueListItem>(`/store-issues/${id}/reverse`, {
+      apiFetch<StoreIssueDetail>(`/store-issues/${id}/reverse`, {
         method: 'POST',
         json: { reason },
       }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: storeIssuesKeys.all });
-      void qc.invalidateQueries({ queryKey: ['store-inventory'] });
-      void qc.invalidateQueries({ queryKey: ['store-transactions'] });
-      void qc.invalidateQueries({ queryKey: ['items'] });
-    },
+    onSuccess: () => invalidate(qc),
   });
 }

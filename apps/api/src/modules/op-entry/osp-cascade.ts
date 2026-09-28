@@ -16,7 +16,7 @@
 
 import { poCodePrefix, withDocRevision } from '@innovic/shared';
 import type { GenerateOspPrResult } from '@innovic/shared';
-import { and, eq, isNull, like } from 'drizzle-orm';
+import { and, asc, eq, isNull, like } from 'drizzle-orm';
 import {
   items,
   jcOps,
@@ -44,16 +44,33 @@ interface OspProcessMatch {
   autoPo: boolean;
 }
 
-/** Legacy _isOspOperation (L13295): first configured process whose name is a
- *  substring (case-insensitive) of the operation name. Pure + exported for
- *  unit testing without a DB. */
+/** Which configured OSP process an operation belongs to (legacy
+ *  _isOspOperation L13295, made deterministic). Case-insensitive:
+ *   1. a process whose name IS the operation name wins;
+ *   2. otherwise the LONGEST process name contained in the operation name —
+ *      so with "Plating" and "Zinc Plating" both set, op "Zinc Plating Blue"
+ *      picks "Zinc Plating" (and its vendor), never plain "Plating";
+ *   3. a tie on length keeps the earlier one in the list.
+ *  Pure + exported for unit testing without a DB. */
 export function matchOspProcess<T extends { processName: string }>(
   opName: string | null | undefined,
   processes: readonly T[],
 ): T | null {
   if (!opName) return null;
-  const lower = opName.toLowerCase();
-  return processes.find((p) => lower.includes(p.processName.toLowerCase())) ?? null;
+  const lower = opName.trim().toLowerCase();
+  if (!lower) return null;
+  const exact = processes.find((p) => p.processName.trim().toLowerCase() === lower);
+  if (exact) return exact;
+  let best: T | null = null;
+  let bestLen = 0;
+  for (const p of processes) {
+    const name = p.processName.trim().toLowerCase();
+    if (name && name.length > bestLen && lower.includes(name)) {
+      best = p;
+      bestLen = name.length;
+    }
+  }
+  return best;
 }
 
 /** Next IN-JWPR-NNNNN / IN-JWPO-NNNNN per company. Highest numeric suffix + 1,
@@ -139,7 +156,9 @@ export async function generateOspPrForOp(
       autoPo: ospProcesses.autoPo,
     })
     .from(ospProcesses)
-    .where(and(eq(ospProcesses.companyId, companyId), isNull(ospProcesses.deletedAt)));
+    .where(and(eq(ospProcesses.companyId, companyId), isNull(ospProcesses.deletedAt)))
+    // Fixed order so a length tie always resolves the same way.
+    .orderBy(asc(ospProcesses.processName));
   const matched: OspProcessMatch | null = matchOspProcess(op.operation, cfgRows);
   if (!matched) {
     throw new ValidationError(

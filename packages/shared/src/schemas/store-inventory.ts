@@ -67,6 +67,18 @@ export type ListStoreInventoryResponse = z.infer<typeof listStoreInventoryRespon
 
 // ─── Write inputs ─────────────────────────────────────────────────────────
 
+/** Where a Manual Receipt's stock came from. 'purchase' is listed only so the
+ *  server can refuse it with a clear message — bought material is received
+ *  through a GRN against its PO (store-manual-receipt#2), never here. */
+export const manualReceiptSourceSchema = z.enum(['production', 'return', 'other', 'purchase']);
+export type ManualReceiptSource = z.infer<typeof manualReceiptSourceSchema>;
+export const MANUAL_RECEIPT_SOURCE_LABEL: Record<ManualReceiptSource, string> = {
+  production: 'Production',
+  return: 'Return',
+  other: 'Other',
+  purchase: 'Purchase',
+};
+
 /** Manual stock adjustment (+ Add / − Remove). Writes a store_transactions row. */
 export const adjustStockInputSchema = z.object({
   itemId: z.string().uuid(),
@@ -75,6 +87,8 @@ export const adjustStockInputSchema = z.object({
   // the stock writer (lib/stock-ledger.ts) against the item's UOM.
   qty: z.number().positive().multipleOf(0.001),
   remarks: z.string().trim().min(1).max(255),
+  /** Manual Receipt only: where the stock came from. Remarks stay free text. */
+  source: manualReceiptSourceSchema.optional(),
 });
 export type AdjustStockInput = z.infer<typeof adjustStockInputSchema>;
 

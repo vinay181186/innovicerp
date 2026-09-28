@@ -170,24 +170,3 @@ export function useShortClosePurchaseOrder() {
     },
   });
 }
-
-import type { CreatePurchaseOrderFromPrBatchInput } from '@innovic/shared';
-
-export function useCreatePurchaseOrderFromPrBatch() {
-  const qc = useQueryClient();
-  return useMutation<PurchaseOrderDetail, Error, CreatePurchaseOrderFromPrBatchInput>({
-    mutationFn: (input) =>
-      apiFetch<PurchaseOrderDetail>('/purchase-orders/from-pr-batch', {
-        method: 'POST',
-        json: input,
-      }),
-    onSuccess: (created, vars) => {
-      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
-      qc.setQueryData(purchaseOrdersKeys.detail(created.id), created);
-      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
-      for (const prId of vars.prIds) {
-        void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(prId) });
-      }
-    },
-  });
-}

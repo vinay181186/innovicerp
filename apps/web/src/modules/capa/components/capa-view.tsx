@@ -50,6 +50,9 @@ type ModalState =
 export function CapaView(props: {
   title?: string;
   initialSearch?: string | undefined;
+  /** Open the CAPA named by initialSearch in its 5-step edit (not read-only) —
+   *  used right after "Create CAPA" on an NC so the user lands on the work. */
+  openForEdit?: boolean | undefined;
 }): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useCapaList();
   const { data: eff } = useMyAccess();
@@ -72,11 +75,14 @@ export function CapaView(props: {
   const autoOpened = useRef(false);
   useEffect(() => {
     if (autoOpened.current || !props.initialSearch || items.length === 0) return;
-    autoOpened.current = true;
     const want = props.initialSearch.trim().toLowerCase();
     const hit = items.find((c) => c.code.toLowerCase() === want);
-    if (hit) setModal({ kind: 'edit', capa: hit, readOnly: true });
-  }, [items, props.initialSearch]);
+    // A just-created CAPA may not be in the cached list yet — wait for the
+    // refetch before giving up.
+    if (!hit && isFetching) return;
+    autoOpened.current = true;
+    if (hit) setModal({ kind: 'edit', capa: hit, readOnly: !props.openForEdit });
+  }, [items, isFetching, props.initialSearch, props.openForEdit]);
   const overdue = items.filter((c) => c.overdue);
 
   const filtered = useMemo(() => {
@@ -301,7 +307,13 @@ export function CapaView(props: {
       )}
 
       {modal.kind === 'new' ? (
-        <NewCapaModal capas={items} onClose={() => setModal({ kind: 'none' })} />
+        <NewCapaModal
+          capas={items}
+          onClose={() => setModal({ kind: 'none' })}
+          // The CAPA's real work (root cause, actions…) is in the 5-step edit —
+          // open it straight after save instead of dropping the user on the list.
+          onCreated={(capa) => setModal({ kind: 'edit', capa, readOnly: false })}
+        />
       ) : null}
       {modal.kind === 'edit' ? (
         <EditCapaModal
@@ -354,9 +366,11 @@ function Overlay(props: {
 function NewCapaModal({
   capas,
   onClose,
+  onCreated,
 }: {
   capas: CapaRecord[];
   onClose: () => void;
+  onCreated: (capa: CapaRecord) => void;
 }): React.JSX.Element {
   const create = useCreateCapa();
   const nextCode = useNextCapaCode();
@@ -414,8 +428,8 @@ function NewCapaModal({
       ...(operation.trim() ? { operation: operation.trim() } : {}),
     };
     try {
-      await create.mutateAsync(input);
-      onClose();
+      const created = await create.mutateAsync(input);
+      onCreated(created);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save CAPA. Try again.');
     }

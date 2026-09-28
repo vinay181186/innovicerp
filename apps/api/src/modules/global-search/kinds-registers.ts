@@ -133,16 +133,34 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
     status: sql`t.status::text`,
   },
   {
+    // ADR-193 phase 3b (0157) — a slip with lines; the old single-item header
+    // columns are no longer written (pre-0157 slips were copied into a line).
     kind: 'store-issue',
-    from: sql`public.store_issues t`,
+    from: sql`public.store_issues t
+      LEFT JOIN public.job_cards jc ON jc.id = t.job_card_id
+      LEFT JOIN public.sales_orders so ON so.id = t.sales_order_id`,
     docNo: sql`t.code`,
     date: sql`t.issue_date::date`,
     party: sql`t.issued_to`,
-    text: [sql`t.purpose`, sql`t.remarks`],
-    shown: [sql`t.item_code_text`, sql`t.item_name`],
-    refs: [ref(sql`NULLIF(t.ref_type, '')`, sql`t.ref_no`)],
-    flatLines: [pair(sql`t.item_code_text`, sql`t.item_name`)],
-    qty: sql`t.qty`,
+    text: [sql`t.purpose`, sql`t.remarks`, sql`t.department`],
+    refs: [
+      ref('JC', sql`jc.code`),
+      soRef(sql`so.code`),
+      // Pre-0157 typed reference, shown only when no real JC / SO link exists.
+      ref(
+        sql`NULLIF(t.ref_type, '')`,
+        sql`CASE WHEN t.job_card_id IS NULL AND t.sales_order_id IS NULL THEN t.ref_no END`,
+      ),
+    ],
+    lines: {
+      from: sql`public.store_issue_lines l LEFT JOIN public.items li ON li.id = l.item_id`,
+      fk: sql`l.issue_id`,
+      display: pair(sql`COALESCE(li.code, l.item_code_text)`, sql`li.name`),
+      match: [sql`l.item_code_text`, sql`li.code`, sql`li.name`],
+      order: sql`l.line_no`,
+      qty: sql`l.qty`,
+    },
+    qty: null,
     status: null,
   },
   {

@@ -44,6 +44,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
 import { ListHeader, PageState } from '@/ui/layout';
 import { useExecutePlan, usePlan } from '@/modules/plans/api';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
@@ -566,6 +567,21 @@ function OrderDetail({
     reservedQty: number;
     availableQty: number;
   } | null>(null);
+  // The plan just saved by "+ Plan" and its next step. A route-card plan's
+  // only way on is a Production Order, so the page offers it right here
+  // instead of the box just closing (the planner used to go to Production
+  // Orders → New and find the plan again).
+  const [savedPlan, setSavedPlan] = useState<{
+    id: string;
+    code: string;
+    where: string;
+    derivedStatus: PlanDerivedStatus | null;
+    itemId: string | null;
+    itemCode: string;
+    itemName: string;
+  } | null>(null);
+  const { data: eff } = useMyAccess();
+  const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
 
   const backBtn = (
     <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
@@ -712,6 +728,55 @@ function OrderDetail({
             Dismiss
           </button>
         </div>
+      ) : null}
+
+      {savedPlan ? (
+        <Banner
+          tone="success"
+          title={
+            <>
+              ✓ Plan <span className="mono">{savedPlan.code}</span> saved for {savedPlan.where}
+            </>
+          }
+          onDismiss={() => setSavedPlan(null)}
+        >
+          {savedPlan.derivedStatus === 'route_card_pending' ? (
+            <>
+              Next: this item has no Route Card yet — make the Route Card, then raise the Production
+              Order for this plan.{' '}
+              <Link
+                to="/route-cards/new"
+                search={
+                  savedPlan.itemId
+                    ? {
+                        itemId: savedPlan.itemId,
+                        itemCode: savedPlan.itemCode,
+                        itemName: savedPlan.itemName,
+                      }
+                    : {}
+                }
+                className="fw-700"
+                style={{ color: 'var(--blue)' }}
+              >
+                New Route Card →
+              </Link>
+            </>
+          ) : canProductionOrder ? (
+            <>
+              Next: raise the Production Order for this plan.{' '}
+              <Link
+                to="/production-orders/new"
+                search={{ planId: savedPlan.id, planCode: savedPlan.code }}
+                className="btn btn-primary btn-sm"
+                style={{ marginLeft: 6 }}
+              >
+                Create Production Order →
+              </Link>
+            </>
+          ) : (
+            'Next: a Production Order for this plan (you do not have access to raise one).'
+          )}
+        </Banner>
       ) : null}
 
       {/* ── Every line, one table ── */}
@@ -1018,9 +1083,19 @@ function OrderDetail({
               so={so}
               line={targetLine}
               onClose={() => setModal({ kind: 'none' })}
-              onCreated={() => {
+              onCreated={(plan) => {
                 // The plan is complete as saved (route-card flow) — no edit
-                // modal to chain into. Close and refresh the lines.
+                // modal to chain into. Close, refresh the lines and offer the
+                // next step (Create Production Order →) in a banner.
+                setSavedPlan({
+                  id: plan.id,
+                  code: plan.code,
+                  where: `${so.soCode} Ln ${targetLine.lineNo}`,
+                  derivedStatus: plan.derivedStatus ?? null,
+                  itemId: plan.itemId ?? null,
+                  itemCode: plan.itemCodeText ?? '',
+                  itemName: plan.itemNameText ?? '',
+                });
                 setModal({ kind: 'none' });
                 refresh();
               }}

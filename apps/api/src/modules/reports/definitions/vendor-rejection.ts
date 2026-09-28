@@ -53,9 +53,9 @@ export const vendorRejectionReport: RegisteredReport = {
         COALESCE(it.code, grl.item_code_text, '—')                   AS item_code,
         MAX(COALESCE(it.name, grl.item_name))                        AS item_name,
         CASE WHEN po.po_type IN ('job_work', 'service') THEN 'OSP' ELSE 'Material' END AS source,
-        SUM(grl.received_qty)::int                                   AS received_qty,
-        SUM(grl.qc_accepted_qty + grl.qc_rejected_qty)::int          AS inspected_qty,
-        SUM(grl.qc_rejected_qty)::int                                AS rejected_qty,
+        SUM(grl.received_qty)::numeric                               AS received_qty,
+        SUM(grl.qc_accepted_qty + grl.qc_rejected_qty)::numeric      AS inspected_qty,
+        SUM(grl.qc_rejected_qty)::numeric                            AS rejected_qty,
         CASE WHEN SUM(grl.qc_accepted_qty + grl.qc_rejected_qty) > 0
              THEN ROUND(100.0 * SUM(grl.qc_rejected_qty)
                         / SUM(grl.qc_accepted_qty + grl.qc_rejected_qty), 1) END AS reject_pct,

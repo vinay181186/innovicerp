@@ -27,7 +27,7 @@ export async function getItemRelated(id: string, user: AuthContext): Promise<Doc
 
     const prRaw = await tx.execute(sql`
       SELECT pr.id, pr.code, pr.status::text AS status, pr.pr_date AS date,
-             'PR Qty ' || pr.qty AS label, count(*) OVER () AS total
+             'PR Qty ' || trim_scale(pr.qty) AS label, count(*) OVER () AS total
       FROM public.purchase_requests pr
       WHERE pr.company_id = ${companyId}::uuid AND pr.deleted_at IS NULL
         AND pr.item_id = ${id}::uuid

@@ -27,7 +27,7 @@ export async function loadOspAcceptedByOp(
   if (jobCardIds.length === 0) return out;
   const rows = await tx.execute(sql`
     SELECT l.jc_op_id AS "jcOpId",
-           COALESCE(SUM(grl.qc_accepted_qty), 0)::int AS "acceptedQty"
+           COALESCE(SUM(grl.qc_accepted_qty), 0)::numeric AS "acceptedQty"
     FROM (
       SELECT o.id AS jc_op_id, o.outsource_po_line_id AS po_line_id
       FROM public.jc_ops o

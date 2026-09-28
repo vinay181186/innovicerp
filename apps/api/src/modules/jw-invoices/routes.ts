@@ -17,6 +17,13 @@ export async function jwInvoicesRoutes(app: FastifyInstance): Promise<void> {
     return service.listJwInvoices(query, req.user);
   });
 
+  // Line options for the New JW Invoice form: To Invoice per JWSO line.
+  app.get('/jw-invoices/invoiceable-lines/:jobWorkOrderId', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { jobWorkOrderId } = z.object({ jobWorkOrderId: z.string().uuid() }).parse(req.params);
+    return service.listJwInvoiceableLines(jobWorkOrderId, req.user);
+  });
+
   app.post('/jw-invoices', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const input = createJwInvoiceInputSchema.parse(req.body);

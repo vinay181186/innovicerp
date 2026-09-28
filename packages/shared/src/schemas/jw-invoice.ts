@@ -85,6 +85,26 @@ export const cancelJwInvoiceInputSchema = z.object({
 });
 export type CancelJwInvoiceInput = z.infer<typeof cancelJwInvoiceInputSchema>;
 
+/** One JWSO line as the New JW Invoice form offers it: what may still be
+ *  billed. `toInvoiceQty` = Returned − Invoiced, the very limit the server
+ *  checks on save (never below 0). */
+export const jwInvoiceableLineSchema = z.object({
+  jobWorkOrderLineId: z.string().uuid(),
+  lineNo: z.number().int(),
+  itemCode: z.string().nullable(),
+  itemRevision: z.string().nullable(),
+  partName: z.string().nullable(),
+  returnedQty: z.number().int().nonnegative(),
+  invoicedQty: z.number().int().nonnegative(),
+  toInvoiceQty: z.number().int().nonnegative(),
+});
+export type JwInvoiceableLine = z.infer<typeof jwInvoiceableLineSchema>;
+
+export const jwInvoiceableLinesResponseSchema = z.object({
+  lines: z.array(jwInvoiceableLineSchema),
+});
+export type JwInvoiceableLinesResponse = z.infer<typeof jwInvoiceableLinesResponseSchema>;
+
 export const listJwInvoicesResponseSchema = z.object({
   items: z.array(jwInvoiceListItemSchema),
   total: z.number().int().nonnegative(),

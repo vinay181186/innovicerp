@@ -1,5 +1,6 @@
 -- ============================================================
--- 0157_jwso_customer_material.sql  (ADR-194)
+-- 0159_jwso_customer_material.sql  (ADR-194)
+-- (renumbered from 0157 — the store-redesign branch already owns 0157/0158 on `test`)
 --
 -- Hardens the customer job-work (JWSO) chain on the CUSTOMER-MATERIAL side,
 -- per the JWSO audit (Innovic vs ERPNext). All changes are ADDITIVE (new

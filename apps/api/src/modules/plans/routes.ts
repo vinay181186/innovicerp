@@ -1,5 +1,6 @@
 import {
   createPlanInputSchema,
+  createPlansBatchInputSchema,
   defaultRouteOpsQuerySchema,
   listPlansQuerySchema,
   releaseReservationInputSchema,
@@ -41,6 +42,15 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const input = createPlanInputSchema.parse(req.body);
     const result = await service.createPlan(input, req.user);
+    reply.code(201);
+    return result;
+  });
+
+  // BOM Planning "Save N Plans" — all child plans in one transaction.
+  app.post('/plans/batch', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const input = createPlansBatchInputSchema.parse(req.body);
+    const result = await service.createPlansBatch(input, req.user);
     reply.code(201);
     return result;
   });
