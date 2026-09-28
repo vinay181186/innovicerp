@@ -43,6 +43,7 @@ import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
 import { invoiceSheetHtml, printInvoice } from '../lib/print';
+import { splitGst } from '../lib/gst-split';
 
 /** Invoice status → the words the user reads; the stored codes are unchanged. */
 const INVOICE_STATUS_LABEL: Record<string, string> = {
@@ -172,13 +173,13 @@ function InvoiceDetailPage(): React.JSX.Element {
             ? [
                 {
                   label: `SGST ${(inv.gstPercent ?? 0) / 2}%`,
-                  value: inr((inv.gstAmount ?? 0) / 2),
+                  value: inr(splitGst(inv.gstAmount ?? 0).sgst),
                   size: 16,
                   color: 'var(--amber2)',
                 },
                 {
                   label: `CGST ${(inv.gstPercent ?? 0) / 2}%`,
-                  value: inr((inv.gstAmount ?? 0) / 2),
+                  value: inr(splitGst(inv.gstAmount ?? 0).cgst),
                   size: 16,
                   color: 'var(--amber2)',
                 },

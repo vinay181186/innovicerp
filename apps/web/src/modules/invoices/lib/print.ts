@@ -17,6 +17,7 @@ import type { Company, InvoiceDetail } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
 import { inrFormat } from '@/lib/print/doc-print';
+import { splitGst } from './gst-split';
 import {
   type SheetField,
   type SheetPrintModel,
@@ -113,8 +114,8 @@ function invoiceSheetModel(
   const taxRows = isIGST
     ? [{ label: `IGST @ ${gstPct}%`, value: money(gstAmount) }]
     : [
-        { label: `SGST @ ${gstPct / 2}%`, value: money(gstAmount / 2) },
-        { label: `CGST @ ${gstPct / 2}%`, value: money(gstAmount / 2) },
+        { label: `SGST @ ${gstPct / 2}%`, value: money(splitGst(gstAmount).sgst) },
+        { label: `CGST @ ${gstPct / 2}%`, value: money(splitGst(gstAmount).cgst) },
       ];
 
   const uoms = new Set(inv.lines.map((l) => l.uom?.trim() || FALLBACK_UOM));

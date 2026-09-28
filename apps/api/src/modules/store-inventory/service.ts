@@ -21,6 +21,7 @@ import type {
   StockAvailability,
   StoreInventoryRow,
 } from '@innovic/shared';
+import { MANUAL_RECEIPT_SOURCE_LABEL } from '@innovic/shared';
 import {
   clients,
   items,
@@ -230,11 +231,15 @@ export async function adjustStock(
   const companyId = requireCompany(user);
   // Bought material enters stock through a GRN (PO link + incoming QC), never
   // as a Manual Receipt with Source = Purchase (store-manual-receipt#2).
-  if (input.direction === 'add' && /source=purchase/i.test(input.remarks)) {
+  if (input.source === 'purchase') {
     throw new ValidationError(
       'Bought material is received through a GRN against its PO, not by Manual Receipt.',
     );
   }
+  if (input.source && input.direction !== 'add') {
+    throw new ValidationError('A Source is given only when stock is received (+ Add).');
+  }
+  const sourceNote = input.source ? `Source: ${MANUAL_RECEIPT_SOURCE_LABEL[input.source]} · ` : '';
   return withUserContext(user, async (tx) => {
     const itemRows = await tx
       .select({ id: items.id, code: items.code })
@@ -256,7 +261,7 @@ export async function adjustStock(
       qty: input.qty,
       sourceType: 'manual_adjust',
       sourceRef: `ADJ · ${itm.code}`,
-      remarks: `Manual adjust: ${input.remarks}`,
+      remarks: `Manual adjust: ${sourceNote}${input.remarks}`,
       txnDate: new Date().toISOString().slice(0, 10),
       userId: user.id,
       itemCodeText: itm.code,
@@ -271,7 +276,7 @@ export async function adjustStock(
       {
         action: 'STOCK_ADJUST',
         entity: 'Store Inventory',
-        detail: `${itm.code} ${input.direction === 'add' ? '+' : '−'}${input.qty} (stock ${stockBefore} → ${stockAfter}). Reason: ${input.remarks}`,
+        detail: `${itm.code} ${input.direction === 'add' ? '+' : '−'}${input.qty} (stock ${stockBefore} → ${stockAfter}). ${sourceNote}Reason: ${input.remarks}`,
         refId: itm.code,
       },
       companyId,

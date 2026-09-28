@@ -642,6 +642,7 @@ function toSourceOption(r: Record<string, unknown>): JobCardSourceOption {
     lineNo: Number(r['lineNo'] ?? 0),
     partName: (r['partName'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
+    itemId: (r['itemId'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
     orderQty,
     dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
@@ -666,6 +667,7 @@ async function resolveLinkedSource(
           SELECT 'so' AS type, so.id AS "orderId", sol.id AS "lineId", so.code,
             sol.line_no AS "lineNo", sol.part_name AS "partName",
             COALESCE(i.code, sol.item_code_text) AS "itemCode",
+            sol.item_id AS "itemId",
             COALESCE(so.customer_name, cli.name) AS "customerName",
             sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
             sol.client_po_line_no AS "clientPoLineNo",
@@ -686,6 +688,7 @@ async function resolveLinkedSource(
           SELECT 'jw' AS type, jw.id AS "orderId", jwl.id AS "lineId", jw.code,
             jwl.line_no AS "lineNo", jwl.part_name AS "partName",
             COALESCE(i.code, jwl.item_code_text) AS "itemCode",
+            jwl.item_id AS "itemId",
             COALESCE(jw.customer_name, cli.name) AS "customerName",
             jwl.order_qty AS "orderQty", jwl.due_date AS "dueDate",
             NULL AS "clientPoLineNo",
@@ -715,7 +718,8 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE((SELECT SUM(${jcEffectiveQtySql('jc')}) FROM public.job_cards jc
           WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
-            AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
+            AND jc.recovery_kind IS NULL), 0)::int AS "inJc",
+        sol.item_id AS "itemId"
       FROM public.sales_order_lines sol
       JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = sol.item_id
@@ -728,7 +732,8 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         jwl.order_qty, jwl.due_date, NULL,
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
           WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
-            AND jc.recovery_kind IS NULL), 0)::int
+            AND jc.recovery_kind IS NULL), 0)::int,
+        jwl.item_id
       FROM public.job_work_order_lines jwl
       JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.items i2 ON i2.id = jwl.item_id

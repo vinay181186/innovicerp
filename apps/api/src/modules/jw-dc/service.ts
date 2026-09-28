@@ -8,9 +8,11 @@
 // Stock cascades:
 //   Outward line: items.stock_qty -= sentQty; emit
 //     store_transactions(txn_type='out', source_type='jw_out').
-//   Inward line: if okQty>0, items.stock_qty += okQty; emit
-//     store_transactions(txn_type='in', source_type='jw_in').
-//   Rejected qty stored on the row; downstream NC integration deferred.
+//   Inward (0172): raises a QC-pending GRN (jw_dc_inward.goods_receipt_note_id);
+//     Incoming QC credits the accepted qty to stock (grn_qc) — always, as a
+//     JW DC receipt is never Job Card WIP (isJwDcReceiptGrn) — and a reject
+//     raises a material NC. Receipts before 0172 wrote 'jw_in' on OK qty.
+//   Job Card work (PO line tied to a jc_op) is refused — it goes on the OSP DC.
 
 import { emitActivityLog } from '../activity-log/service';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
@@ -49,7 +51,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import { poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
+import { lockPoLinesForSend, poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 
@@ -770,9 +772,43 @@ export async function createJwDcOutward(
       }
     }
 
+    // 2b) Job Card work goes out on the OSP Delivery Challan, never here. The
+    //     JW DC is a store loop (stock out now, stock back in at Incoming QC)
+    //     and stamps no op's sent qty, so a line tied to a Job Card op — by the
+    //     same links Incoming QC resolves a receipt through (0118 op↔PO-line
+    //     table, jc_ops.outsource_po_line_id, the line's source op, or the
+    //     PO's PR source op) — would leave the op's sent / returned counts
+    //     wrong. Refuse it and point to the OSP DC.
+    const jcLinked = (await tx.execute(sql`
+      SELECT pol.id, pol.line_no AS "lineNo",
+             COALESCE(pol.item_code_text, pol.item_name) AS "item"
+      FROM public.purchase_order_lines pol
+      JOIN public.purchase_orders po ON po.id = pol.purchase_order_id
+      LEFT JOIN public.purchase_requests pr ON pr.id = po.pr_id
+      WHERE pol.id = ANY(${poLineIds}::uuid[])
+        AND (
+          pol.source_jc_op_id IS NOT NULL
+          OR pr.source_jc_op_id IS NOT NULL
+          OR EXISTS (SELECT 1 FROM public.jc_ops o
+                     WHERE o.outsource_po_line_id = pol.id AND o.deleted_at IS NULL)
+          OR EXISTS (SELECT 1 FROM public.jc_op_po_lines l
+                     WHERE l.purchase_order_line_id = pol.id AND l.deleted_at IS NULL)
+        )
+      ORDER BY pol.line_no
+      LIMIT 1
+    `)) as unknown as Array<{ id: string; lineNo: number; item: string | null }>;
+    if (jcLinked[0]) {
+      throw new ValidationError(
+        `PO ${po.code} line ${jcLinked[0].lineNo} (${jcLinked[0].item ?? ''}) is Job Card work — send it on an OSP Delivery Challan, not a JW DC.`,
+      );
+    }
+
     // 3) Validate available qty (poQty - alreadySent) >= sentQty per line.
     //    alreadySent is the ONE figure — OSP DCs + JW DC Outwards together —
     //    so a line cannot go out in full on each screen (jw-dc-outward#1).
+    //    The PO lines are locked first, so a concurrent OSP DC / JW DC Outward
+    //    on the same line waits and then reads this challan's qty.
+    await lockPoLinesForSend(tx, poLineIds, companyId);
     const sentMap = await sumSentOnPoLines(tx, poLineIds, companyId);
     const incoming = new Map<string, number>();
     for (const ln of input.lines) {

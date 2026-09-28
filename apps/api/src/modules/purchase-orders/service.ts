@@ -40,7 +40,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
-import { poLineSentRaw } from '../../lib/po-line-sent';
+import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import {
   AuthorizationError,
@@ -628,10 +628,13 @@ export async function listPurchaseOrders(
       -- figure (OSP DCs + JW DC Outwards, lib/po-line-sent.ts) the per-line
       -- sendable check uses — so the +New DC picker can drop a PO whose lines
       -- are all fully sent without asking the sendable route per PO.
+      -- One GROUP BY over the two challan line tables, joined once (not a
+      -- correlated sum per PO line).
       LEFT JOIN (
-        SELECT pl.purchase_order_id, SUM(${sql.raw(poLineSentRaw('pl.id'))}) AS sent_qty
-        FROM public.purchase_order_lines pl
-        WHERE pl.deleted_at IS NULL
+        SELECT pl.purchase_order_id, SUM(ls.sent) AS sent_qty
+        FROM ${poLineSentGroupedSql(companyId)} ls
+        JOIN public.purchase_order_lines pl
+          ON pl.id = ls.purchase_order_line_id AND pl.deleted_at IS NULL
         GROUP BY pl.purchase_order_id
       ) dc_agg ON dc_agg.purchase_order_id = po.id
       WHERE po.company_id = ${companyId}::uuid
@@ -3024,17 +3027,14 @@ export async function shortClosePurchaseOrder(
     // Per PO line: ordered, received, and material sent OUT — the ONE sent
     // figure, OSP DCs + JW DC Outwards (lib/po-line-sent.ts; a return-to-vendor
     // NC challan is not "sent on the PO" — its pieces are accounted by their
-    // NC) — less what came back on ordinary GRNs. Decimal: no ::int, so 0.4 KGS
-    // still at the vendor is not rounded away.
+    // NC) — less what came BACK (lib/po-line-sent.ts: ordinary GRNs, plus JW DC
+    // Inwards made before 0172, which raised no GRN). Decimal: no ::int, so
+    // 0.4 KGS still at the vendor is not rounded away.
     const lines = (await tx.execute(sql`
       SELECT pol.line_no, pol.qty,
         COALESCE(pol.received_qty, 0)::float8 AS received,
         GREATEST(
-          ${sql.raw(poLineSentRaw('pol.id'))}
-          - COALESCE((SELECT SUM(gl.received_qty) FROM public.goods_receipt_note_lines gl
-                      JOIN public.goods_receipt_notes g ON g.id = gl.goods_receipt_note_id
-                      WHERE gl.purchase_order_line_id = pol.id AND gl.deleted_at IS NULL
-                        AND g.deleted_at IS NULL AND g.nc_id IS NULL), 0),
+          ${sql.raw(poLineSentRaw('pol.id'))} - ${sql.raw(poLineBackRaw('pol.id'))},
           0)::float8 AS at_vendor,
         ${sql.raw(poLineSentRaw('pol.id'))}::float8 AS sent
       FROM public.purchase_order_lines pol

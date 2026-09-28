@@ -61,12 +61,20 @@ function gstStateCode(gstin: string | null | undefined): string | null {
   return m ? m[1]! : null;
 }
 
-/** Default Tax Type for a new invoice: IGST when the customer's GSTIN state
- *  differs from the company's, else SGST + CGST (also when either is unknown). */
+/** Our home GST state (Gujarat) — the rule used before the company GSTIN was
+ *  read, and the one the invoice print falls back to for an invoice with no
+ *  Tax Type. Used only when the company GSTIN is blank. */
+const HOME_GST_STATE_CODE = '24';
+
+/** Default Tax Type for a new invoice — the ONE rule for the create form's
+ *  default and the saved invoice: IGST when the customer's GSTIN state differs
+ *  from ours, else SGST + CGST. "Ours" is the company GSTIN's state, or the
+ *  home state ('24') when the company GSTIN is blank. A customer with no
+ *  GSTIN defaults to SGST + CGST. */
 function defaultTaxType(clientGst: string | null, companyGst: string | null): InvoiceTaxType {
   const c = gstStateCode(clientGst);
-  const own = gstStateCode(companyGst);
-  return c && own && c !== own ? 'igst' : 'sgst_cgst';
+  const own = gstStateCode(companyGst) ?? HOME_GST_STATE_CODE;
+  return c && c !== own ? 'igst' : 'sgst_cgst';
 }
 
 async function companyGstNumber(tx: DbTransaction, companyId: string): Promise<string | null> {

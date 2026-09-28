@@ -131,8 +131,20 @@ async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<str
  * on a job-work order outright (assertBomUsableForJobWork).
  */
 async function producedForLine(tx: DbTransaction, lineId: string): Promise<number> {
+  return (await producedForLines(tx, [lineId])).get(lineId) ?? 0;
+}
+
+/** producedForLine for many JW lines in ONE query (one row per line id). */
+async function producedForLines(
+  tx: DbTransaction,
+  lineIds: readonly string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const unique = Array.from(new Set(lineIds));
+  if (unique.length === 0) return out;
   const rows = (await tx.execute(sql`
     SELECT
+      l.id AS line_id,
       CASE
         WHEN l.source_bom_master_id IS NOT NULL THEN COALESCE(bom.produced, 0)
         ELSE COALESCE(own.produced, 0)
@@ -182,9 +194,10 @@ async function producedForLine(tx: DbTransaction, lineId: string): Promise<numbe
         AND bml.deleted_at IS NULL
         AND bml.qty_per_set > 0
     ) bom ON TRUE
-    WHERE l.id = ${lineId}::uuid
-  `)) as unknown as Array<{ produced: number | string }>;
-  return Number(rows[0]?.produced ?? 0);
+    WHERE l.id = ANY(${unique}::uuid[])
+  `)) as unknown as Array<{ line_id: string; produced: number | string | null }>;
+  for (const r of rows) out.set(r.line_id, Number(r.produced ?? 0));
+  return out;
 }
 
 interface JwBomComponent {
@@ -766,9 +779,13 @@ export async function getReturnableForJobWorkOrder(
           isNull(jobWorkOrderLines.deletedAt),
         ),
       );
+    const produced = await producedForLines(
+      tx,
+      lines.map((l) => l.id),
+    );
     const out: JwReturnableResponse['lines'] = [];
     for (const l of lines) {
-      const ready = Math.max(0, Math.floor(await producedForLine(tx, l.id)));
+      const ready = Math.max(0, Math.floor(produced.get(l.id) ?? 0));
       const returned = Math.max(0, l.returnedQty);
       const pending = Math.max(0, l.orderQty - returned);
       out.push({

@@ -23,6 +23,7 @@ import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { splitGst } from '../lib/gst-split';
 import {
   useCreateInvoice,
   useFinanceSoOptions,
@@ -186,7 +187,7 @@ function InvoiceNewPage(): React.JSX.Element {
   const gstAmt = Math.round(((subtotal * Number(gstPercent || 0)) / 100) * 100) / 100;
   const grand = subtotal + gstAmt;
   // The split shown under the totals — the same rows the print carries.
-  const halfGst = Math.round((gstAmt / 2) * 100) / 100;
+  const gstSplit = splitGst(gstAmt);
   const gstPctNum = Number(gstPercent || 0);
 
   async function submit(): Promise<void> {
@@ -656,9 +657,9 @@ function InvoiceNewPage(): React.JSX.Element {
             ) : (
               <>
                 <span className="text3">SGST @ {gstPctNum / 2}%</span>
-                <b className="mono fw-700 amber">₹{inrFormat(halfGst)}</b>
+                <b className="mono fw-700 amber">₹{inrFormat(gstSplit.sgst)}</b>
                 <span className="text3">CGST @ {gstPctNum / 2}%</span>
-                <b className="mono fw-700 amber">₹{inrFormat(gstAmt - halfGst)}</b>
+                <b className="mono fw-700 amber">₹{inrFormat(gstSplit.cgst)}</b>
               </>
             )}
             <span className="text3">Total</span>

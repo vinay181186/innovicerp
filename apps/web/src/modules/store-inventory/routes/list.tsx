@@ -11,9 +11,11 @@
 import type {
   AdjustStockInput,
   ListStoreInventoryResponse,
+  ManualReceiptSource,
   SetMinStockInput,
   StoreInventoryRow,
 } from '@innovic/shared';
+import { MANUAL_RECEIPT_SOURCE_LABEL } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -662,18 +664,25 @@ function SetMinModal({
 
 // Legacy storeReceiveManual (HTML L24981) — manual stock IN entry. Today the
 // underlying ledger writes `source_type='manual_adjust'` via the existing
-// AdjustStock service; the "Source" dropdown + Ref No fields shown in the
-// legacy modal are folded into the remarks string.
+// AdjustStock service; the "Source" dropdown is sent as its own `source` field
+// (the server refuses 'purchase'), and the Ref No + remarks stay free text.
 //
 // The Item is picked from the whole Item Master (shared type-to-search), not
 // from the rows on the inventory page — with "Low Stock" on, most items used
 // to be unreachable. 'Purchase' is NOT a source here: bought material comes in
 // through a GRN (PO link + incoming QC); the server refuses it too.
+/** Sources a Manual Receipt may pick — every one but Purchase (GRN only). */
+const RECEIPT_SOURCES: ReadonlyArray<Exclude<ManualReceiptSource, 'purchase'>> = [
+  'production',
+  'return',
+  'other',
+];
+
 function ManualReceiveModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [itemId, setItemId] = useState<string | null>(null);
   const [itemSearch, setItemSearch] = useState('');
   const [qty, setQty] = useState('');
-  const [source, setSource] = useState('Production');
+  const [source, setSource] = useState<Exclude<ManualReceiptSource, 'purchase'>>('production');
   const [refNo, setRefNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -718,7 +727,7 @@ function ManualReceiveModal({ onClose }: { onClose: () => void }): React.JSX.Ele
       return;
     }
     const composedRemarks = [
-      `Manual receipt · source=${source}`,
+      'Manual receipt',
       refNo.trim() ? `ref=${refNo.trim()}` : null,
       remarks.trim() || null,
     ]
@@ -730,6 +739,7 @@ function ManualReceiveModal({ onClose }: { onClose: () => void }): React.JSX.Ele
       direction: 'add',
       qty: q,
       remarks: composedRemarks,
+      source,
     };
     mut.mutate(input, {
       onSuccess: () => onClose(),
@@ -788,11 +798,13 @@ function ManualReceiveModal({ onClose }: { onClose: () => void }): React.JSX.Ele
           <select
             className="innovic-select"
             value={source}
-            onChange={(e) => setSource(e.target.value)}
+            onChange={(e) => setSource(e.target.value as Exclude<ManualReceiptSource, 'purchase'>)}
           >
-            <option>Production</option>
-            <option>Return</option>
-            <option>Other</option>
+            {RECEIPT_SOURCES.map((s) => (
+              <option key={s} value={s}>
+                {MANUAL_RECEIPT_SOURCE_LABEL[s]}
+              </option>
+            ))}
           </select>
           <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
             Bought material is received through a GRN (against its PO, with incoming QC) — not here.

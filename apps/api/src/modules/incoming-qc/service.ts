@@ -37,6 +37,7 @@ import { emitActivityLog } from '../activity-log/service';
 import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import {
   creditGrnQcStock,
+  isJwDcReceiptGrn,
   recalcPoHeaderStatus,
   recalcPoLineReceivedQty,
   resolveGrnLineJobCardId,
@@ -562,7 +563,10 @@ export async function submitIncomingQc(
     // ADR-182 — an OSP return belonging to a short-closed Production Order's
     // Job Card cannot be inspected. A plain purchase GRN resolves to no jc_op
     // and is never touched by this.
-    const guardJcId = await resolveGrnLineJobCardId(tx, grnLineId);
+    // A JW DC receipt (0172) is a store loop, not Job Card work: it credits
+    // stock on accept and never runs the OSP op cascade (isJwDcReceiptGrn).
+    const jwDcReceipt = await isJwDcReceiptGrn(tx, line.grnId);
+    const guardJcId = jwDcReceipt ? null : await resolveGrnLineJobCardId(tx, grnLineId);
     if (guardJcId) await assertProductionOrderNotShortClosed(tx, guardJcId);
 
     // Decimal on KGS / MTR receipts (0172) — every figure rounded to the
@@ -659,6 +663,9 @@ export async function submitIncomingQc(
         .limit(1);
       if (poRows[0]) {
         await recalcPoHeaderStatus(tx, poRows[0].poId, user.id);
+      }
+      // No Job Card op behind a JW DC receipt: skip the outsource-op cascade.
+      if (poRows[0] && !jwDcReceipt) {
         // Step 6: record the accepted qty on the source outsource op so partial
         // returns become visible to the JC (and dispatchable — see Change 2).
         //
@@ -730,22 +737,26 @@ export async function submitIncomingQc(
     // — Dispose now →" like process QC does (incoming-qc-inspect#1).
     let raisedNc: { id: string; code: string } | null = null;
     if (input.rejectedQty > 0 && line.poLineId) {
-      const jcOpRows = await tx
-        .select({
-          jcOpId: jcOps.id,
-          jobCardId: jcOps.jobCardId,
-          opSeq: jcOps.opSeq,
-          operation: jcOps.operation,
-          jcCode: jobCards.code,
-        })
-        .from(purchaseOrderLines)
-        .innerJoin(
-          jcOps,
-          and(eq(jcOps.id, purchaseOrderLines.sourceJcOpId), isNull(jcOps.deletedAt)),
-        )
-        .innerJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
-        .where(eq(purchaseOrderLines.id, line.poLineId))
-        .limit(1);
+      // A JW DC receipt's reject is a material reject (no op) — it falls
+      // through to the job-card-less NC below.
+      const jcOpRows = jwDcReceipt
+        ? []
+        : await tx
+            .select({
+              jcOpId: jcOps.id,
+              jobCardId: jcOps.jobCardId,
+              opSeq: jcOps.opSeq,
+              operation: jcOps.operation,
+              jcCode: jobCards.code,
+            })
+            .from(purchaseOrderLines)
+            .innerJoin(
+              jcOps,
+              and(eq(jcOps.id, purchaseOrderLines.sourceJcOpId), isNull(jcOps.deletedAt)),
+            )
+            .innerJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
+            .where(eq(purchaseOrderLines.id, line.poLineId))
+            .limit(1);
       const src = jcOpRows[0];
       if (src) {
         const nc = await autoCreateNcFromQcReject(
@@ -812,8 +823,8 @@ export async function submitIncomingQc(
     // line. Same idempotent cascade op-entry runs after a QC log: it fires
     // only when v_jc_status reads complete/closed, and never re-flips a line
     // that is already terminal. Runs after the auto-NC block so the status
-    // view sees this inspection's reject too.
-    if (line.poLineId) {
+    // view sees this inspection's reject too. Not for a JW DC receipt (no op).
+    if (line.poLineId && !jwDcReceipt) {
       const srcOpRows = await tx
         .select({ jobCardId: jcOps.jobCardId })
         .from(purchaseOrderLines)

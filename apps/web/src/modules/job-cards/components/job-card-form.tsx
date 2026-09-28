@@ -277,11 +277,11 @@ export function JobCardForm({
   const [itemId, setItemId] = useState<string | null>(null);
   // Item is LOCKED to the JWSO line's item on create (2026-09-28 form audit):
   // a Job Card on a JWSO line makes that line's item, never another one typed
-  // over it. Editable only when the line carries no item. The server refuses
-  // a mismatch too (createJobCard -> assertItemIsJwLineItem).
-  const lineItemCode = !isEdit
-    ? (allSources.find((o) => o.lineId === sourceLineId)?.itemCode ?? null)
-    : null;
+  // over it. Locked only when the line carries a MASTER item (itemId set) — a
+  // legacy text-only line keeps the picker editable, the same rule the server
+  // applies (createJobCard -> assertItemIsJwLineItem checks only line.item_id).
+  const lineSource = !isEdit ? allSources.find((o) => o.lineId === sourceLineId) : undefined;
+  const lineItemCode = lineSource?.itemId ? (lineSource.itemCode ?? null) : null;
   const itemLocked = Boolean(lineItemCode);
   // The shared master-only item picker, searching the SERVER (the old datalist
   // held only the first 500 items, so item 501+ could not be picked). While

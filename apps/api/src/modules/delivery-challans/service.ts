@@ -30,7 +30,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { assertProductionOrderNotShortClosedForPoLine } from '../../lib/production-order-stop';
-import { sumSentOnPoLines } from '../../lib/po-line-sent';
+import { lockPoLinesForSend, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
@@ -1086,6 +1086,9 @@ export async function createDeliveryChallan(
       await assertProductionOrderNotShortClosedForPoLine(tx, poLineId);
     }
     const poLines = await loadPoLineMap(tx, poLineIds, companyId);
+    // Lock the PO lines first, so a concurrent OSP DC / JW DC Outward on the
+    // same line waits here and then reads this challan's qty (no over-send).
+    await lockPoLinesForSend(tx, poLineIds, companyId);
     const alreadySent = await sumSentQtyByPoLine(tx, poLineIds, companyId);
 
     // Pre-write validation: each PO line's cumulative-sent + this DC's qty

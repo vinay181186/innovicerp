@@ -291,6 +291,24 @@ export async function resolveGrnLineJobCardId(
 }
 
 /**
+ * True when this GRN was raised by a JW DC Inward (0172: jw_dc_inward.
+ * goods_receipt_note_id). A JW DC is a plain store loop — the JW DC Outward
+ * took the material OUT of stock ('jw_out') and touched no Job Card op — so its
+ * receipt is a stock-in on QC accept, whatever PO line / op the GRN line would
+ * otherwise resolve to, and it never feeds the OSP op cascade (outsource
+ * returned qty, next-QC mirror, op NC). Job Card work goes out on the OSP DC.
+ */
+export async function isJwDcReceiptGrn(tx: DbTransaction, grnId: string): Promise<boolean> {
+  const rows = (await tx.execute(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM public.jw_dc_inward jdi
+      WHERE jdi.goods_receipt_note_id = ${grnId}::uuid AND jdi.deleted_at IS NULL
+    ) AS is_jw
+  `)) as unknown as Array<{ is_jw: boolean }>;
+  return rows[0]?.is_jw === true;
+}
+
+/**
  * Credit `qty` accepted pcs to stock via the grn_qc ledger — the single source
  * of truth for QC-accept stock movement. Locks the item row, reads current
  * on-hand, inserts one 'in' store_transaction. No-op when qty ≤ 0 (rejecting
@@ -313,17 +331,22 @@ export async function creditGrnQcStock(args: {
   const { tx, companyId, adminUserId, grnId, grnLineId, itemId, qty } = args;
   if (qty <= 0) return;
   if (!itemId) return;
-  // ADR-092: mid-route OSP returns are WIP, not finished goods. Store is
-  // credited once, by the JC's final QC op — not here.
-  if (await isMidRouteOutsourceReturn(tx, grnLineId)) return;
-  // ADR-170: an OSP return for a Job Card built by a Production Order (or a
-  // rework/repair child of one) is credited ONCE, when that Production Order
-  // is closed — not here, even when the OSP op is the JC's last op. A line
-  // that resolves to no jc_op (a plain purchase GRN) has no JC to be linked
-  // to, so it credits exactly as before; purchase_orders.po_type is never
-  // consulted.
-  const linkedJobCardId = await resolveGrnLineJobCardId(tx, grnLineId);
-  if (linkedJobCardId && (await isProductionOrderLinkedJc(tx, linkedJobCardId))) return;
+  // A JW DC receipt puts back what its JW DC Outward took out of stock — it is
+  // never Job Card WIP, so the two op-based skips below do not apply to it
+  // (see isJwDcReceiptGrn). Same stock-in the old 'jw_in' path wrote.
+  if (!(await isJwDcReceiptGrn(tx, grnId))) {
+    // ADR-092: mid-route OSP returns are WIP, not finished goods. Store is
+    // credited once, by the JC's final QC op — not here.
+    if (await isMidRouteOutsourceReturn(tx, grnLineId)) return;
+    // ADR-170: an OSP return for a Job Card built by a Production Order (or a
+    // rework/repair child of one) is credited ONCE, when that Production Order
+    // is closed — not here, even when the OSP op is the JC's last op. A line
+    // that resolves to no jc_op (a plain purchase GRN) has no JC to be linked
+    // to, so it credits exactly as before; purchase_orders.po_type is never
+    // consulted.
+    const linkedJobCardId = await resolveGrnLineJobCardId(tx, grnLineId);
+    if (linkedJobCardId && (await isProductionOrderLinkedJc(tx, linkedJobCardId))) return;
+  }
 
   // Look up the GRN code for the source_ref.
   const grnRows = await tx
