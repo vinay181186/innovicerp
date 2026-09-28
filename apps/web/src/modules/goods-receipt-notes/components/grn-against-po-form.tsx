@@ -39,6 +39,8 @@ interface LineDraft {
   /** The CUSTOMER's PO line number off the SO line behind this PO line. */
   clientPoLineNo: string | null;
   itemName: string;
+  /** The item's unit (items.uom, off the PO detail), shown beside the qty. */
+  uom: string | null;
   poQty: number;
   receivedSoFar: number;
   balance: number;
@@ -60,7 +62,10 @@ function lineQtyError(raw: string, balance: number): string | null {
   const t = raw.trim();
   if (t === '') return null; // blank = 0 = skipped on submit
   const n = Number(t);
-  if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Whole number only.';
+  // Decimal for KGS / MTR, up to 3 places (0172); the server still refuses a
+  // fraction for a NOS / SET item, naming the item and its unit.
+  if (!Number.isFinite(n)) return 'Enter a number.';
+  if (Math.abs(Math.round(n * 1000) - n * 1000) > 1e-6) return 'Up to 3 decimal places only.';
   if (n < 0) return 'Receive Now cannot be less than 0.';
   if (n > balance) return `Receive Now cannot be more than Pending (${balance}).`;
   return null;
@@ -140,7 +145,7 @@ export function GrnAgainstPoForm({
     setLines(
       po.lines
         .map((l): LineDraft | null => {
-          const balance = l.qty - l.receivedQty;
+          const balance = Math.round((l.qty - l.receivedQty) * 1000) / 1000;
           if (balance <= 0) return null;
           return {
             purchaseOrderLineId: l.id,
@@ -151,6 +156,7 @@ export function GrnAgainstPoForm({
             itemRevision: l.itemRevision,
             clientPoLineNo: l.clientPoLineNo,
             itemName: l.itemName,
+            uom: l.uom,
             poQty: l.qty,
             receivedSoFar: l.receivedQty,
             balance,
@@ -357,6 +363,7 @@ export function GrnAgainstPoForm({
             itemCode: l.itemCodeDisplay,
             itemRevision: l.itemRevision,
             itemName: l.itemName,
+            uom: l.uom,
             qty: l.poQty,
             receivedSoFar: l.receivedSoFar,
             balance: l.balance,
@@ -364,6 +371,7 @@ export function GrnAgainstPoForm({
             remarks: l.remarks,
             error: l.error,
           }))}
+          decimal
           qtyLabel="Qty"
           emptyText={
             !poId

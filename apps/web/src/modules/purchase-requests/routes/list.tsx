@@ -15,7 +15,9 @@
 //  - No SO filter: the list API has no SO/JC filter param.
 //  - 2026-09-26 (round-2): each orderable PR card carries a tick box; ticked
 //    PRs of ONE vendor go to /purchase-orders/from-pr?prIds=… as one PO with a
-//    line per PR (the club-PO flow for purchase PRs; OSP keeps from-pr-batch).
+//    line per PR (the club-PO flow). The Outsource Jobs tab's "Create PO from
+//    Selected" goes to the same form the same way (2026-09-28; its old popup
+//    and from-pr-batch call are retired).
 //  - Approve / Reject buttons (L4 Approver and above, open PRs) call the dedicated
 //    /approve + /reject endpoints, which stamp approvedBy/approvedAt (approve)
 //    or record a reason + cancel (reject). A raw PATCH can no longer change
@@ -42,6 +44,7 @@ import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
 import { PrCard } from '../components/pr-card';
 import { prOrderBalance } from '../lib/pr-balance';
 import { PR_STATUS_LABELS } from '../lib/pr-labels';
+import { prVendorKey } from '../lib/pr-vendor-key';
 
 const PAGE_SIZE = 25;
 
@@ -60,22 +63,6 @@ interface SelectedPr {
   /** null = vendor still TBD: fits any vendor. */
   vendorKey: string | null;
   vendorLabel: string;
-}
-
-/** Vendor text that means "not chosen yet" (Planning / BOM cascade / OSP). */
-const VENDOR_TBD = new Set(['', 'TBD', '(VENDOR TBD)']);
-
-/** Which vendor a PR belongs to, for the one-vendor-per-PO tick rule — ONE key,
- *  the vendor code: the master's code (vendorCode, resolved by the server from
- *  vendorId or a matching code text) first, the typed code text second
- *  (ADR-015 pair). A linked PR and a text-only PR for the same vendor so get
- *  the same key. Null when the vendor is still TBD. */
-function prVendorKey(pr: PurchaseRequestListItem): string | null {
-  const t = (pr.vendorCode ?? pr.vendorCodeText ?? '').trim().toUpperCase();
-  if (!VENDOR_TBD.has(t)) return t;
-  // Linked to a master row whose code did not resolve (deleted vendor): the
-  // id is still one vendor.
-  return pr.vendorId ? `id:${pr.vendorId}` : null;
 }
 
 /** Same gate as the card's own "Create PO" button: not cancelled and still has

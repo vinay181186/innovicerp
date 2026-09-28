@@ -20,7 +20,7 @@ import { type PrKeepValues, PurchaseRequestForm } from '../components/purchase-r
 // filled. Both stay editable. A qty of 0 (nothing short) keeps the form default.
 const newPrSearchSchema = z.object({
   itemId: z.string().uuid().optional(),
-  qty: z.coerce.number().int().nonnegative().optional().catch(undefined),
+  qty: z.coerce.number().nonnegative().optional().catch(undefined),
 });
 
 export const purchaseRequestNewRoute = createRoute({

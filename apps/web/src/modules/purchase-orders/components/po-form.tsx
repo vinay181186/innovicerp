@@ -283,7 +283,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const isSplit = taxType === 'sgst_cgst';
   const isIgst = taxType === 'igst';
   const subtotal = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0);
-  const totalQty = lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+  // 3 places: line qtys may be decimal (KGS / MTR, 0172) — no 0.1 + 0.2 drift.
+  const totalQty = Math.round(lines.reduce((s, l) => s + (Number(l.qty) || 0), 0) * 1000) / 1000;
   const taxPct = isSplit
     ? (Number(watch('header.cgstPct')) || 0) + (Number(watch('header.sgstPct')) || 0)
     : isIgst

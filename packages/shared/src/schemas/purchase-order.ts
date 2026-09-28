@@ -74,11 +74,12 @@ export const purchaseOrderLineSchema = z.object({
    *  hand-typed line with no item, and the print then shows NOS. */
   uom: z.string().nullable().default(null),
   itemName: z.string(),
-  qty: z.number().int().positive(),
+  /** Decimal (KGS / MTR, 3 places) — 0172. */
+  qty: z.number().positive(),
   // numeric stored as string; NULL when the viewer's access hides prices
   // (L1 Viewer without "see price") — see canSeeFormPrice on the API.
   rate: z.string().nullable(),
-  receivedQty: z.number().int().nonnegative(),
+  receivedQty: z.number().nonnegative(),
   dueDate: z.string().nullable(),
   sourceSoLineId: z.string().uuid().nullable(),
   sourceJcOpId: z.string().uuid().nullable(),
@@ -187,16 +188,16 @@ export type PurchaseOrderDetail = z.infer<typeof purchaseOrderDetailSchema>;
 export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
   vendorName: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
-  totalQty: z.number().int().nonnegative(),
-  receivedQty: z.number().int().nonnegative(),
+  totalQty: z.number().nonnegative(),
+  receivedQty: z.number().nonnegative(),
   /** ADR-189 — Σ per line max(0, qty − received); 0 once the PO is closed,
    *  short-closed or cancelled. The one Pending every PO screen shows. */
-  pendingQty: z.number().int().nonnegative().default(0),
+  pendingQty: z.number().nonnegative().default(0),
   /** Pieces already sent OUT against this PO's lines on delivery challans that
    *  are not cancelled — the same rule the DC sendable check applies per line.
    *  `dcSentQty >= totalQty` means the PO is fully sent and has nothing left
    *  to put on a new challan. 0 on a buying PO that never ships anything. */
-  dcSentQty: z.number().int().nonnegative().default(0),
+  dcSentQty: z.number().nonnegative().default(0),
 });
 export type PurchaseOrderListItem = z.infer<typeof purchaseOrderListItemSchema>;
 
@@ -209,9 +210,10 @@ export const purchaseOrderLineInputSchema = z
     itemId: z.string().uuid().optional(),
     itemCodeText: z.string().min(1).max(64).optional(),
     itemName: z.string().min(1).max(255),
-    qty: z.number().int().positive(),
+    /** Decimal for KGS / MTR (3 places); NOS / SET stay whole (API rule, 0172). */
+    qty: z.number().positive().multipleOf(0.001),
     rate: z.coerce.number().nonnegative().default(0),
-    receivedQty: z.number().int().nonnegative().optional(),
+    receivedQty: z.number().nonnegative().optional(),
     dueDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')

@@ -40,6 +40,8 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { poLineSentRaw } from '../../lib/po-line-sent';
+import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import {
   AuthorizationError,
   ConflictError,
@@ -144,7 +146,8 @@ function assertPrQtyWithinBalance(
   askedQty: number,
   lineCount: number,
 ): void {
-  if (askedQty > balanceQty) {
+  // 3 places — decimal quantities (0172) must not trip on 0.1 + 0.2 drift.
+  if (Math.round(askedQty * 1000) / 1000 > balanceQty) {
     const onLines = lineCount > 1 ? ` (across ${lineCount} lines)` : '';
     throw new ValidationError(
       `Qty (${askedQty})${onLines} cannot be more than Pending Qty (${balanceQty}) on PR ${pr.code}.`,
@@ -601,13 +604,13 @@ export async function listPurchaseOrders(
         v.name AS "vendorName",
         cu.full_name AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
-        COALESCE(line_agg.total_qty, 0)::int   AS "totalQty",
-        COALESCE(line_agg.received_qty, 0)::int AS "receivedQty",
+        COALESCE(line_agg.total_qty, 0)::float8   AS "totalQty",
+        COALESCE(line_agg.received_qty, 0)::float8 AS "receivedQty",
         -- ADR-189 — the one Pending rule (lib/po-pending.ts): per line, clamped,
         -- and nothing once the PO is closed / short-closed / cancelled.
         (CASE WHEN po.status IN ('draft', 'open', 'partial', 'qc_pending')
-              THEN COALESCE(line_agg.pending_qty, 0) ELSE 0 END)::int AS "pendingQty",
-        COALESCE(dc_agg.sent_qty, 0)::int      AS "dcSentQty"
+              THEN COALESCE(line_agg.pending_qty, 0) ELSE 0 END)::float8 AS "pendingQty",
+        COALESCE(dc_agg.sent_qty, 0)::float8      AS "dcSentQty"
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.users cu ON cu.id = po.created_by
@@ -621,19 +624,14 @@ export async function listPurchaseOrders(
         WHERE deleted_at IS NULL
         GROUP BY purchase_order_id
       ) line_agg ON line_agg.purchase_order_id = po.id
-      -- What has already gone OUT on challans against this PO's lines — every
-      -- non-cancelled DC, the same population sumSentQtyByPoLine counts for the
-      -- per-line sendable check — so the +New DC picker can drop a PO whose
-      -- lines are all fully sent without asking the sendable route per PO.
+      -- What has already gone OUT against this PO's lines — the ONE sent
+      -- figure (OSP DCs + JW DC Outwards, lib/po-line-sent.ts) the per-line
+      -- sendable check uses — so the +New DC picker can drop a PO whose lines
+      -- are all fully sent without asking the sendable route per PO.
       LEFT JOIN (
-        SELECT pl.purchase_order_id, SUM(dl.qty) AS sent_qty
-        FROM public.delivery_challan_lines dl
-        JOIN public.delivery_challans dc ON dc.id = dl.delivery_challan_id
-        JOIN public.purchase_order_lines pl ON pl.id = dl.purchase_order_line_id
-        WHERE dl.deleted_at IS NULL
-          AND dc.deleted_at IS NULL
-          AND dc.status != 'cancelled'
-          AND pl.deleted_at IS NULL
+        SELECT pl.purchase_order_id, SUM(${sql.raw(poLineSentRaw('pl.id'))}) AS sent_qty
+        FROM public.purchase_order_lines pl
+        WHERE pl.deleted_at IS NULL
         GROUP BY pl.purchase_order_id
       ) dc_agg ON dc_agg.purchase_order_id = po.id
       WHERE po.company_id = ${companyId}::uuid
@@ -1220,6 +1218,8 @@ export async function createPurchaseOrder(
         updatedBy: user.id,
       };
     });
+    // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+    await assertLineQtysFitUom(tx, companyId, lineValues);
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineValues).returning();
 
     // Advance every linked outsource op, exactly as the from-PR path does at
@@ -1860,6 +1860,7 @@ async function mergeLines(
     .select({
       id: purchaseOrderLines.id,
       lineNo: purchaseOrderLines.lineNo,
+      itemId: purchaseOrderLines.itemId,
       sourcePrId: purchaseOrderLines.sourcePrId,
       sourceJcOpId: purchaseOrderLines.sourceJcOpId,
     })
@@ -1919,7 +1920,15 @@ async function mergeLines(
       lineUpdate['itemCodeText'] = refs.itemCodeText;
     }
     if (u.data.itemName !== undefined) lineUpdate['itemName'] = u.data.itemName;
-    if (u.data.qty !== undefined) lineUpdate['qty'] = u.data.qty;
+    if (u.data.qty !== undefined) {
+      // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+      const itemIdNow =
+        'itemId' in lineUpdate
+          ? (lineUpdate['itemId'] as string | null)
+          : (existingById.get(u.id)?.itemId ?? null);
+      await assertLineQtysFitUom(tx, companyId, [{ itemId: itemIdNow, qty: u.data.qty }]);
+      lineUpdate['qty'] = u.data.qty;
+    }
     if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = rateToString(u.data);
     // received_qty is mutated by the GRN cascade only (T-036c). The form
     // never re-writes it; ignore even if the caller sends one.
@@ -1992,6 +2001,8 @@ async function mergeLines(
         updatedBy: user.id,
       };
     });
+    // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+    await assertLineQtysFitUom(tx, companyId, values);
     const insertedLines = await tx.insert(purchaseOrderLines).values(values).returning();
     for (const line of insertedLines) {
       if (!line.sourceJcOpId) continue;
@@ -3010,26 +3021,22 @@ export async function shortClosePurchaseOrder(
       throw new ConflictError(`PO ${po.code} is already ${poStatusLabel(po.status)}.`);
     }
 
-    // Per PO line: ordered, received, and pieces sent OUT on an ordinary
-    // outward DC (a return-to-vendor NC challan is not "sent on the PO" — its
-    // pieces are accounted by their NC) less what came back on ordinary GRNs.
+    // Per PO line: ordered, received, and material sent OUT — the ONE sent
+    // figure, OSP DCs + JW DC Outwards (lib/po-line-sent.ts; a return-to-vendor
+    // NC challan is not "sent on the PO" — its pieces are accounted by their
+    // NC) — less what came back on ordinary GRNs. Decimal: no ::int, so 0.4 KGS
+    // still at the vendor is not rounded away.
     const lines = (await tx.execute(sql`
       SELECT pol.line_no, pol.qty,
-        COALESCE(pol.received_qty, 0)::int AS received,
+        COALESCE(pol.received_qty, 0)::float8 AS received,
         GREATEST(
-          COALESCE((SELECT SUM(dl.qty) FROM public.delivery_challan_lines dl
-                    JOIN public.delivery_challans dc ON dc.id = dl.delivery_challan_id
-                    WHERE dl.purchase_order_line_id = pol.id AND dl.deleted_at IS NULL
-                      AND dc.deleted_at IS NULL AND dc.status <> 'cancelled' AND dc.nc_id IS NULL), 0)
+          ${sql.raw(poLineSentRaw('pol.id'))}
           - COALESCE((SELECT SUM(gl.received_qty) FROM public.goods_receipt_note_lines gl
                       JOIN public.goods_receipt_notes g ON g.id = gl.goods_receipt_note_id
                       WHERE gl.purchase_order_line_id = pol.id AND gl.deleted_at IS NULL
                         AND g.deleted_at IS NULL AND g.nc_id IS NULL), 0),
-          0)::int AS at_vendor,
-        COALESCE((SELECT SUM(dl.qty) FROM public.delivery_challan_lines dl
-                  JOIN public.delivery_challans dc ON dc.id = dl.delivery_challan_id
-                  WHERE dl.purchase_order_line_id = pol.id AND dl.deleted_at IS NULL
-                    AND dc.deleted_at IS NULL AND dc.status <> 'cancelled' AND dc.nc_id IS NULL), 0)::int AS sent
+          0)::float8 AS at_vendor,
+        ${sql.raw(poLineSentRaw('pol.id'))}::float8 AS sent
       FROM public.purchase_order_lines pol
       WHERE pol.purchase_order_id = ${id}::uuid AND pol.deleted_at IS NULL
       ORDER BY pol.line_no
@@ -3043,7 +3050,7 @@ export async function shortClosePurchaseOrder(
     const atVendor = lines.find((l) => Number(l.at_vendor) > 0);
     if (atVendor) {
       throw new ConflictError(
-        `PO ${po.code} line ${atVendor.line_no}: ${atVendor.at_vendor} piece(s) sent on a DC are still at the vendor. Receive them back (or record the loss) before closing the PO.`,
+        `PO ${po.code} line ${atVendor.line_no}: ${atVendor.at_vendor} sent on a DC are still at the vendor. Receive them back (or record the loss) before closing the PO.`,
       );
     }
     const ordered = lines.reduce((a, l) => a + Number(l.qty), 0);

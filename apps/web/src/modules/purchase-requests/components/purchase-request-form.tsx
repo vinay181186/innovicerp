@@ -237,6 +237,8 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   ].filter((m): m is string => typeof m === 'string' && m !== '');
 
   const itemLocked = Boolean(watch('itemId'));
+  // The item's unit, shown beside PR Qty (KGS / MTR may be decimal).
+  const qtyUom = itemsByCode.get((watch('itemCodeText') ?? '').trim().toUpperCase())?.uom ?? null;
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
@@ -366,7 +368,13 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           </FormField>
 
           {/* ── Row 2: Item Code · Item Name · PR Qty */}
-          <FormField label="Item Code" required={!isEdit} size="sm" htmlFor="itemCodeText">
+          <FormField
+            label="Item Code"
+            required={!isEdit}
+            size="sm"
+            htmlFor="itemCodeText"
+            error={errors.itemCodeText?.message}
+          >
             {/* Stays a free-text box over a <datalist>, not a picker: a picker can
                 only return a master row's id, and an off-master item is legitimate
                 on a PR (ADR-124). */}
@@ -376,7 +384,11 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
               list={PR_ITEM_DATALIST_ID}
               autoComplete="off"
               placeholder="🔍 ITM-001"
-              {...register('itemCodeText')}
+              {...register('itemCodeText', {
+                // The ★ is enforced here, in plain words, instead of letting the
+                // server answer with "itemId or itemCodeText is required".
+                validate: (v) => isEdit || Boolean(v?.trim()) || 'Item Code is required.',
+              })}
             />
           </FormField>
 
@@ -393,15 +405,33 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             />
           </FormField>
 
-          <FormField label="PR Qty" required size="sm" htmlFor="qty" error={errors.qty?.message}>
+          <FormField
+            label={
+              <>
+                PR Qty
+                {qtyUom ? (
+                  <span className="mono" style={{ color: 'var(--text2)', marginLeft: 4 }}>
+                    ({qtyUom})
+                  </span>
+                ) : null}
+              </>
+            }
+            required
+            size="sm"
+            htmlFor="qty"
+            error={errors.qty?.message}
+          >
+            {/* Decimal for KGS / MTR (3 places); a NOS / SET item stays whole —
+                the server refuses a fraction for it (0172). */}
             <input
               id="qty"
               type="number"
-              min={1}
+              min={0}
+              step="any"
               className="innovic-input"
               {...register('qty', {
                 valueAsNumber: true,
-                min: { value: 1, message: 'PR Qty must be at least 1.' },
+                validate: (v) => (Number.isFinite(v) && v > 0) || 'PR Qty must be more than 0.',
               })}
             />
           </FormField>

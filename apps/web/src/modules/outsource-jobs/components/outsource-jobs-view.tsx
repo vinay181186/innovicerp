@@ -8,12 +8,13 @@
 //
 // Pulls every PR with pr_type='jw_osp', shows status cards + search +
 // JC-source filter + a checkbox-selectable table. "Create PO from Selected"
-// opens a modal to choose vendor + per-line rate; POST batches them into a
-// single JW PO via /purchase-orders/from-pr-batch (service.ts L1148 — traced
-// against legacy `_ospCreatePO` L27166-27207: PO insert, per-PR line insert
-// with rate override, PR stamp to po_created + poId + vendor, activity log.
-// Ours is a superset — it adds a code-uniqueness check and blocks already-
-// converted/cancelled PRs. Legacy's handler does NOT touch jc_ops here.
+// opens the full PO form at /purchase-orders/from-pr?prIds=… — exactly what
+// the Purchase Requests tab's own "Create PO from Selected" does, with the
+// same one-vendor-per-PO tick rule and the same po_create entry gate
+// (2026-09-28). The old popup posted to /purchase-orders/from-pr-batch with
+// 0% tax, no due date and no remarks, and closed without ever telling the
+// buyer the PO number; the full form carries every header field and lands
+// on the new PO's detail page after save.
 //
 // 2026-09-08 (ADR-152 phase 2): the two clickable bands — Open PR / PO Created
 // — used to test `status === 'po_created'`. That status now only means buying
@@ -28,9 +29,8 @@
 // a second purchase order against a job-work request — so a request for 100
 // with a PO for 10 lost its checkbox and the other 90 could never be bought.
 // That guard is gone (jc_op_po_lines lets one outsourced operation sit on
-// several PO lines), so a PART-ordered request is selectable again and the
-// batch modal quotes what is LEFT, which is the quantity the server writes.
-// Same cards, same search, same JC-source filter, same batch-PO write path.
+// several PO lines), so a PART-ordered request is selectable again.
+// Same cards, same search, same JC-source filter.
 //
 // Legacy's "SO" and "Plan" columns are not portable: PurchaseRequestListItem
 // exposes sourceJcCode/sourceJcOpSeq (used here), a bare sourceSoLineId uuid
@@ -41,15 +41,13 @@ import {
   type PurchaseRequestListItem,
   opSrNo,
 } from '@innovic/shared';
-import { useIsFetching, useQueryClient } from '@tanstack/react-query';
-import { Loader2, X } from 'lucide-react';
-import { useDocNumber } from '@/lib/use-doc-number';
-import { useEffect, useMemo, useState } from 'react';
+import { Link } from '@tanstack/react-router';
+import { Loader2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
-import { fmtDate, todayIst } from '@/lib/date';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { useSession } from '@/lib/session';
-import { useCreatePurchaseOrderFromPrBatch } from '@/modules/purchase-orders/api';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 import {
   prBalanceClosedText,
@@ -59,14 +57,10 @@ import {
   prOrderBalance,
 } from '@/modules/purchase-requests/lib/pr-balance';
 import { PR_STATUS_LABELS } from '@/modules/purchase-requests/lib/pr-labels';
-import { VendorPicker } from '@/components/shared/vendor-picker';
+import { prVendorKey } from '@/modules/purchase-requests/lib/pr-vendor-key';
 import { ListFooter, ListHeader } from '@/ui/layout';
 
 const PAGE_SIZE = 100;
-
-function inr(n: number): string {
-  return Math.round(n).toLocaleString('en-IN');
-}
 
 function statusColor(s: string): string {
   if (s === 'po_created') return 'var(--green)';
@@ -85,16 +79,6 @@ function ospCanOrder(pr: PurchaseRequestListItem): boolean {
   return prHasBalanceToOrder(prOrderBalance(pr));
 }
 
-/** How much a new purchase order takes from this request: what is LEFT, never
- *  the original qty. The batch endpoint has no qty field — it recomputes the
- *  remaining balance itself for the line it writes — so quoting `qty` in the
- *  modal would show the buyer a PO the server refuses ("PR X has N left to
- *  order; this line asks for M"). Floored at 0 so an over-ordered row prints a
- *  number instead of a minus. */
-function ospOrderQty(pr: PurchaseRequestListItem): number {
-  return Math.max(0, prOrderBalance(pr).balance);
-}
-
 /** Which band a request belongs in — the QUANTITY question, not the status one.
  *  "Open PR" = there is still something to buy, which is now exactly the set of
  *  rows that carry a checkbox. "PO Created" = the buying is finished, either
@@ -110,8 +94,12 @@ export function OutsourceJobsView(): React.JSX.Element {
   // Legacy URL filters, now local (this view is embedded as a PR tab).
   const [soNo, setSoNo] = useState<string | undefined>(undefined);
   const [statusBand, setStatusBand] = useState<'open' | 'po_created' | undefined>(undefined);
-  const { data: me } = useSession();
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
+  // Ticking a row raises a PURCHASE ORDER, so it follows po_create entry — the
+  // same key the Purchase Requests tab gates its tick boxes on, and the key
+  // /purchase-orders/from-pr itself guards on. (It used to be admin/manager
+  // role, which could show the button to someone the PO form then refuses.)
+  const { data: eff } = useMyAccess();
+  const canEdit = effectiveFormPerms(eff, 'po_create').entry;
 
   const query: ListPurchaseRequestsQuery = useMemo(
     () => ({
@@ -123,38 +111,8 @@ export function OutsourceJobsView(): React.JSX.Element {
   );
 
   const { data, isLoading, isError, error } = usePurchaseRequestsList(query);
-  const createBatchMut = useCreatePurchaseOrderFromPrBatch();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [modalOpen, setModalOpen] = useState(false);
-  const [vendorId, setVendorId] = useState('');
-  // Label for the picker's first paint, so the vendor suggested from the first
-  // selected PR reads "CODE — Name" before the picker's search page loads.
-  const [vendorLabel, setVendorLabel] = useState('');
-  // IST "today" (todayLocal read the browser clock's own zone).
-  const [poDate, setPoDate] = useState<string>(() => todayIst());
-  const [poCode, setPoCode] = useState('');
-  // Every PO this screen raises is a JOB WORK po, so the number comes from the
-  // IN-JWPO- series (2026-09-11). The box used to be blank with the series only
-  // hinted in grey placeholder text, which left the buyer to type the whole
-  // number — and nothing stopped them typing one from another series.
-  const jwpoNumber = useDocNumber('purchase_order', poCode, 'job_work');
-  // The next IN-JWPO- code is prefilled into the empty box; the buyer may edit
-  // it (the batch endpoint needs a code). The suggestion is re-fetched when the
-  // popup opens and after each save, and the box is cleared after a save, so
-  // the next PO picks up a fresh number — never one already used.
-  const queryClient = useQueryClient();
-  const nextPoKey = ['doc-number', 'purchase_order', 'job_work', '__next__'];
-  const nextPoFetching = useIsFetching({ queryKey: nextPoKey }) > 0;
-  const refreshNextPoNo = (): void => {
-    void queryClient.invalidateQueries({ queryKey: ['doc-number', 'purchase_order'] });
-  };
-  const suggested = jwpoNumber.nextCode;
-  useEffect(() => {
-    if (modalOpen && suggested && !nextPoFetching && poCode === '') setPoCode(suggested);
-  }, [modalOpen, suggested, nextPoFetching, poCode]);
-  const [rateOverrides, setRateOverrides] = useState<Record<string, number>>({});
-  const [submitError, setSubmitError] = useState<string | null>(null);
   // Legacy `searchBox('ospSearch','ospTable',…)` (L27104) filters the rendered
   // rows client-side on their text content (searchFilter L1513). Mirrored here
   // over the fields this table actually renders.
@@ -224,14 +182,42 @@ export function OutsourceJobsView(): React.JSX.Element {
   const poCreated = allPrs.filter((pr) => ospBand(pr) === 'po_created').length;
 
   // A checkbox now means "this request still has quantity to buy", not "its
-  // status is open/approved". `canEdit` gates it on top, exactly as before.
+  // status is open/approved". `canEdit` (po_create entry) gates it on top.
   const selectablePrs = filtered.filter(ospCanOrder);
+
+  // One vendor per PO — the Purchase Requests tab's rule, same key
+  // (prVendorKey) and same wording. Once a request with a vendor is ticked, a
+  // request of a different vendor cannot be; a request whose vendor is still
+  // TBD fits any vendor, and the PO form treats it the same way.
+  const lockedVendor = useMemo(() => {
+    const hit = allPrs.find((pr) => selectedIds.has(pr.id) && prVendorKey(pr) !== null);
+    const key = hit ? prVendorKey(hit) : null;
+    return hit && key !== null ? { key, label: hit.vendorName ?? hit.vendorCodeText ?? '—' } : null;
+  }, [allPrs, selectedIds]);
+  function vendorClash(pr: PurchaseRequestListItem): string | null {
+    const key = prVendorKey(pr);
+    return lockedVendor && key !== null && key !== lockedVendor.key && !selectedIds.has(pr.id)
+      ? lockedVendor.label
+      : null;
+  }
+
+  // The header box ticks every row that fits ONE vendor: the one already
+  // ticked, else the first vendor on the list. A mixed page never produces a
+  // selection the PO form would have to refuse.
+  const headerLockKey =
+    lockedVendor?.key ??
+    selectablePrs.map(prVendorKey).find((k): k is string => k !== null) ??
+    null;
+  const headerTickable = selectablePrs.filter((pr) => {
+    const key = prVendorKey(pr);
+    return key === null || headerLockKey === null || key === headerLockKey;
+  });
   const allSelectedOnPage =
-    selectablePrs.length > 0 && selectablePrs.every((pr) => selectedIds.has(pr.id));
+    headerTickable.length > 0 && headerTickable.every((pr) => selectedIds.has(pr.id));
 
   function toggleAll(checked: boolean): void {
     if (checked) {
-      setSelectedIds(new Set(selectablePrs.map((pr) => pr.id)));
+      setSelectedIds(new Set(headerTickable.map((pr) => pr.id)));
     } else {
       setSelectedIds(new Set());
     }
@@ -245,68 +231,6 @@ export function OutsourceJobsView(): React.JSX.Element {
       return next;
     });
   }
-
-  function openModal(): void {
-    setSubmitError(null);
-    const selected = selectablePrs.filter((pr) => selectedIds.has(pr.id));
-    // Suggest vendor from first selected PR
-    setVendorId(selected[0]?.vendorId ?? '');
-    setVendorLabel(
-      selected[0]?.vendorId
-        ? (selected[0].vendorCodeText ?? '') +
-            (selected[0].vendorName ? ` — ${selected[0].vendorName}` : '')
-        : '',
-    );
-    // Seed rate overrides with each PR's estCost
-    const overrides: Record<string, number> = {};
-    for (const pr of selected) overrides[pr.id] = Number(pr.estCost) || 0;
-    setRateOverrides(overrides);
-    setPoCode('');
-    refreshNextPoNo();
-    setModalOpen(true);
-  }
-
-  async function submitBatch(): Promise<void> {
-    setSubmitError(null);
-    if (!vendorId) {
-      setSubmitError('Vendor is required.');
-      return;
-    }
-    if (!poCode.trim()) {
-      setSubmitError('PO No. is required.');
-      return;
-    }
-    try {
-      await createBatchMut.mutateAsync({
-        prIds: Array.from(selectedIds),
-        vendorId,
-        header: {
-          code: poCode.trim(),
-          poDate,
-          poType: 'job_work',
-          sgstPct: 0,
-          cgstPct: 0,
-          igstPct: 0,
-        },
-        rateOverrides,
-      });
-      setModalOpen(false);
-      setSelectedIds(new Set());
-      setPoCode('');
-      refreshNextPoNo();
-    } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Could not save PO. Try again.');
-    }
-  }
-
-  // Both totals are the quantity that will actually be ORDERED (each request's
-  // remaining balance), not the quantity that was once requested.
-  const selectedList = filtered.filter((pr) => selectedIds.has(pr.id));
-  const totalSelectedQty = selectedList.reduce((s, pr) => s + ospOrderQty(pr), 0);
-  const totalSelectedValue = selectedList.reduce(
-    (s, pr) => s + ospOrderQty(pr) * (rateOverrides[pr.id] ?? (Number(pr.estCost) || 0)),
-    0,
-  );
 
   return (
     <div>
@@ -372,14 +296,13 @@ export function OutsourceJobsView(): React.JSX.Element {
         filtersActive={statusBand !== undefined || soNo !== undefined || searchText !== ''}
         primary={
           canEdit && selectedIds.size > 0 ? (
-            <button
-              type="button"
+            <Link
+              to="/purchase-orders/from-pr"
+              search={{ prIds: Array.from(selectedIds).join(',') }}
               className="btn btn-primary"
-              onClick={openModal}
-              disabled={createBatchMut.isPending}
             >
-              🛒 Create PO from Selected
-            </button>
+              🛒 Create PO from Selected ({selectedIds.size})
+            </Link>
           ) : null
         }
       />
@@ -435,15 +358,23 @@ export function OutsourceJobsView(): React.JSX.Element {
                   </td>
                 </tr>
               ) : (
-                filtered.map((pr) => (
-                  <OspRow
-                    key={pr.id}
-                    pr={pr}
-                    canSelect={canEdit && ospCanOrder(pr)}
-                    selected={selectedIds.has(pr.id)}
-                    onToggle={(c) => togglePr(pr.id, c)}
-                  />
-                ))
+                filtered.map((pr) => {
+                  const clashWith = vendorClash(pr);
+                  return (
+                    <OspRow
+                      key={pr.id}
+                      pr={pr}
+                      canSelect={canEdit && ospCanOrder(pr)}
+                      selected={selectedIds.has(pr.id)}
+                      disabledReason={
+                        clashWith !== null
+                          ? `Only one vendor per PO — ${clashWith} is already selected`
+                          : undefined
+                      }
+                      onToggle={(c) => togglePr(pr.id, c)}
+                    />
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -457,230 +388,6 @@ export function OutsourceJobsView(): React.JSX.Element {
         noun="OSP request"
         hint="Tick PRs → Create PO from Selected."
       />
-
-      {/* Batch-create modal */}
-      {modalOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setModalOpen(false)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,.45)',
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: '4vh 16px',
-            zIndex: 60,
-          }}
-        >
-          <div
-            className="panel"
-            onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(1100px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 16px',
-                borderBottom: '1px solid var(--border)',
-              }}
-            >
-              <div className="fw-700" style={{ color: 'var(--purple)' }}>
-                Create JW PO
-              </div>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setModalOpen(false)}
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-              <div
-                style={{
-                  padding: '10px 14px',
-                  background: 'var(--bg3)',
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
-                  fontSize: 12,
-                  color: 'var(--text3)',
-                }}
-              >
-                Creating PO for{' '}
-                <b>
-                  {selectedIds.size} line{selectedIds.size === 1 ? '' : 's'}
-                </b>{' '}
-                · Qty to Order:
-                <b>{totalSelectedQty}</b> · Est. value:{' '}
-                <b style={{ color: 'var(--green2)' }}>₹{inr(totalSelectedValue)}</b>
-              </div>
-              <div className="form-grid-3">
-                <div className="form-grp">
-                  <label className="form-label" htmlFor="osp-po-code">
-                    PO No.<span className="req">★</span>
-                  </label>
-                  <input
-                    id="osp-po-code"
-                    className="innovic-input"
-                    autoComplete="off"
-                    value={poCode}
-                    onChange={(e) => setPoCode(e.target.value)}
-                    placeholder={
-                      jwpoNumber.defaultLoading || nextPoFetching ? 'Loading…' : 'IN-JWPO-00001/R1'
-                    }
-                  />
-                  {jwpoNumber.error ? <div className="form-error">{jwpoNumber.error}</div> : null}
-                </div>
-                <VendorPicker
-                  id="osp-po-vendor"
-                  value={vendorId || null}
-                  initialLabel={vendorLabel}
-                  onChange={(id) => setVendorId(id ?? '')}
-                />
-                <div className="form-grp">
-                  <label className="form-label">
-                    PO Date <span className="req">★</span>
-                  </label>
-                  <input
-                    type="date"
-                    className="innovic-input"
-                    value={poDate}
-                    onChange={(e) => setPoDate(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)' }}>PO Lines</div>
-              <div
-                style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}
-              >
-                <table className="innovic-table">
-                  <thead>
-                    <tr style={{ background: 'var(--bg4)' }}>
-                      <th>PR No.</th>
-                      <th>JC No.</th>
-                      <th>Item Code</th>
-                      <th>Process</th>
-                      <th>Qty to Order</th>
-                      <th style={{ color: 'var(--green2)' }}>Rate (₹)</th>
-                      <th>Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedList.map((pr) => {
-                      const rate = rateOverrides[pr.id] ?? (Number(pr.estCost) || 0);
-                      const orderQty = ospOrderQty(pr);
-                      return (
-                        <tr key={pr.id}>
-                          <td className="mono" style={{ color: 'var(--purple)', fontSize: 11 }}>
-                            {pr.code}
-                          </td>
-                          <td className="mono" style={{ color: 'var(--cyan)', fontSize: 11 }}>
-                            {pr.sourceJcCode ?? '—'}
-                          </td>
-                          <td style={{ fontSize: 11 }}>
-                            {/* CODE/REV — the drawing revision off the SO line
-                                behind this request; blank-free bare code when
-                                the request has no SO behind it. */}
-                            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                              {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)}
-                            </span>{' '}
-                            — {pr.itemName ?? '—'}
-                          </td>
-                          <td style={{ fontSize: 11, color: 'var(--purple)' }}>
-                            {pr.operation ?? '—'}
-                          </td>
-                          <td className="mono fw-700">
-                            {orderQty}
-                            {orderQty !== pr.qty ? (
-                              <div
-                                className="text3"
-                                style={{ fontSize: 11, fontWeight: 400 }}
-                                title={`${pr.qty - orderQty} of ${pr.qty} is already on a purchase order`}
-                              >
-                                of {pr.qty} requested
-                              </div>
-                            ) : null}
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              className="innovic-input"
-                              value={rate}
-                              min={0}
-                              step={0.01}
-                              placeholder="₹0"
-                              onChange={(e) =>
-                                setRateOverrides((prev) => ({
-                                  ...prev,
-                                  [pr.id]: Number(e.target.value) || 0,
-                                }))
-                              }
-                              style={{
-                                width: 80,
-                                fontSize: 12,
-                                fontWeight: 700,
-                                color: 'var(--green2)',
-                              }}
-                            />
-                          </td>
-                          <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
-                            ₹{inr(rate * orderQty)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {submitError ? (
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    background: 'rgba(239,68,68,0.06)',
-                    border: '1px solid rgba(239,68,68,0.3)',
-                    borderRadius: 6,
-                    color: 'var(--red2)',
-                    fontSize: 12,
-                  }}
-                >
-                  {submitError}
-                </div>
-              ) : null}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setModalOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={createBatchMut.isPending || !poCode.trim()}
-                  onClick={() => void submitBatch()}
-                >
-                  {createBatchMut.isPending ? (
-                    <>
-                      <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
-                    </>
-                  ) : (
-                    'Save PO'
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -689,11 +396,14 @@ function OspRow({
   pr,
   canSelect,
   selected,
+  disabledReason,
   onToggle,
 }: {
   pr: PurchaseRequestListItem;
   canSelect: boolean;
   selected: boolean;
+  /** Set when the box cannot be ticked (another vendor is already selected). */
+  disabledReason?: string | undefined;
   onToggle: (checked: boolean) => void;
 }): React.JSX.Element {
   const bal = prOrderBalance(pr);
@@ -704,6 +414,8 @@ function OspRow({
           <input
             type="checkbox"
             checked={selected}
+            disabled={disabledReason !== undefined}
+            title={disabledReason ?? 'Tick to add this PR to one PO'}
             onChange={(e) => onToggle(e.target.checked)}
             style={{ width: 16, height: 16, accentColor: 'var(--purple)' }}
           />
@@ -718,7 +430,8 @@ function OspRow({
           : '—'}
       </td>
       <td style={{ fontSize: 11 }}>
-        {/* CODE/REV — same rule as the review table above. */}
+        {/* CODE/REV — the drawing revision off the SO line behind this
+            request; the bare code when the request has no SO behind it. */}
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
           {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)}
         </span>{' '}

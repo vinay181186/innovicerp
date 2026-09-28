@@ -27,6 +27,8 @@ export interface GrnLineRow {
   error: string | null;
   /** Against PO only — the line's own Vendor Challan No. */
   dcRefNo?: string;
+  /** The item's unit (items.uom), shown beside the quantities. */
+  uom?: string | null;
 }
 
 export interface GrnLinesTableProps {
@@ -42,6 +44,9 @@ export interface GrnLinesTableProps {
   challan?: { headerValue: string; onChange: (idx: number, value: string) => void };
   /** Against PO only: take a line off this GRN (the PO is untouched). */
   onRemove?: (idx: number) => void;
+  /** Receive Now may be decimal (KGS / MTR, 3 places — 0172). Against PO only:
+   *  the challan types receive whole Job Card pieces. */
+  decimal?: boolean;
 }
 
 function num(raw: string): number {
@@ -57,6 +62,7 @@ export function GrnLinesTable({
   onRemarks,
   challan,
   onRemove,
+  decimal = false,
 }: GrnLinesTableProps): React.JSX.Element {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const toggle = (key: string): void =>
@@ -69,7 +75,7 @@ export function GrnLinesTable({
 
   // 8 data columns + the ▸ More toggle (+ Delete on Against PO).
   const colCount = 9 + (onRemove ? 1 : 0);
-  const totals = rows.reduce(
+  const sums = rows.reduce(
     (t, r) => ({
       qty: t.qty + r.qty,
       received: t.received + r.receivedSoFar,
@@ -78,6 +84,14 @@ export function GrnLinesTable({
     }),
     { qty: 0, received: 0, balance: 0, now: 0 },
   );
+  // 3 places: decimal lines must not show 0.1 + 0.2 drift.
+  const r3 = (n: number): number => Math.round(n * 1000) / 1000;
+  const totals = {
+    qty: r3(sums.qty),
+    received: r3(sums.received),
+    balance: r3(sums.balance),
+    now: r3(sums.now),
+  };
 
   return (
     <div className="tbl-wrap">
@@ -138,16 +152,23 @@ export function GrnLinesTable({
                     >
                       {l.itemName || '—'}
                     </td>
-                    <td className="mono td-num">{l.qty}</td>
+                    <td className="mono td-num">
+                      {l.qty}
+                      {l.uom ? (
+                        <span style={{ color: 'var(--text2)', marginLeft: 4, fontSize: 11 }}>
+                          {l.uom}
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="mono td-num">{l.receivedSoFar}</td>
                     <td className="mono td-num fw-700">{l.balance}</td>
                     <td className="td-num">
                       <input
                         type="number"
-                        inputMode="numeric"
+                        inputMode={decimal ? 'decimal' : 'numeric'}
                         min={0}
                         max={l.balance}
-                        step={1}
+                        step={decimal ? 'any' : 1}
                         className="innovic-input fw-700"
                         style={{ color: 'var(--cyan)', minWidth: 90 }}
                         value={l.receiveNow}

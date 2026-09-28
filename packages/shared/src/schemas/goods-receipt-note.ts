@@ -48,11 +48,12 @@ export const goodsReceiptNoteLineSchema = z.object({
   itemId: z.string().uuid().nullable(),
   itemCodeText: z.string().nullable(),
   itemName: z.string(),
-  receivedQty: z.number().int().nonnegative(),
+  /** Decimal (KGS / MTR, 3 places) — 0172. */
+  receivedQty: z.number().nonnegative(),
   dcRefNo: z.string().nullable(),
   qcStatus: grnQcStatusSchema,
-  qcAcceptedQty: z.number().int().nonnegative(),
-  qcRejectedQty: z.number().int().nonnegative(),
+  qcAcceptedQty: z.number().nonnegative(),
+  qcRejectedQty: z.number().nonnegative(),
   qcDate: z.string().nullable(),
   qcRemarks: z.string().nullable(),
   /** The QC user this line's inspection is credited to. Until ADR-149 the GRN
@@ -146,11 +147,11 @@ export const goodsReceiptNoteListItemSchema = goodsReceiptNoteSchema.extend({
   vendorName: z.string().nullable(),
   poCode: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
-  totalReceivedQty: z.number().int().nonnegative(),
+  totalReceivedQty: z.number().nonnegative(),
   /** Σ qcAcceptedQty across lines. Legacy renderGRN L26468 column. */
-  totalQcAcceptedQty: z.number().int().nonnegative(),
+  totalQcAcceptedQty: z.number().nonnegative(),
   /** Σ qcRejectedQty across lines. Legacy renderGRN L26469 column. */
-  totalQcRejectedQty: z.number().int().nonnegative(),
+  totalQcRejectedQty: z.number().nonnegative(),
   qcPendingCount: z.number().int().nonnegative(),
   /** 'close' once every line is fully QC-inspected; 'pending' while any line
    *  still has QC qty remaining (incl. a partially-approved line). */
@@ -168,11 +169,12 @@ export const goodsReceiptNoteLineInputSchema = z
     itemId: z.string().uuid().optional(),
     itemCodeText: z.string().min(1).max(64).optional(),
     itemName: z.string().min(1).max(255),
-    receivedQty: z.number().int().nonnegative(),
+    /** Decimal for KGS / MTR (3 places); NOS / SET stay whole (API rule, 0172). */
+    receivedQty: z.number().nonnegative().multipleOf(0.001),
     dcRefNo: z.string().max(64).optional(),
     qcStatus: grnQcStatusSchema.default('pending'),
-    qcAcceptedQty: z.number().int().nonnegative().default(0),
-    qcRejectedQty: z.number().int().nonnegative().default(0),
+    qcAcceptedQty: z.number().nonnegative().multipleOf(0.001).default(0),
+    qcRejectedQty: z.number().nonnegative().multipleOf(0.001).default(0),
     qcDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'qcDate must be YYYY-MM-DD')

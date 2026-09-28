@@ -32,7 +32,7 @@
 // poId only.
 
 import type { CreateDeliveryChallanInput, DcSendableLine, Uom } from '@innovic/shared';
-import { poSendsMaterialOut } from '@innovic/shared';
+import { poSendsMaterialOut, UOMS } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Truck } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -223,6 +223,11 @@ interface LineDraft {
 
 /** The most this line may go out on, all rules considered. The PO quantity is
  *  a ceiling the server also enforces; the sendable preview is usually lower. */
+/** A PO line's item unit as a challan unit; NOS when unknown (as on the print). */
+function toUom(u: string | null | undefined): Uom {
+  return (UOMS as readonly string[]).includes(u ?? '') ? (u as Uom) : 'NOS';
+}
+
 function maxSendNow(cap: DcSendableLine | undefined, poLineQty: number): number {
   return cap ? Math.min(cap.maxSendNow, poLineQty) : poLineQty;
 }
@@ -463,7 +468,10 @@ function PoDcFormBody({
         itemRevision: l.itemRevision,
         clientPoLineNo: l.clientPoLineNo,
         itemNameText: l.itemName ?? null,
-        uom: 'NOS',
+        // The PO line's item unit (items.uom, read on the PO detail), so a 25 KGS
+        // bar lot is challaned as KGS — not NOS. A line with no item (or an
+        // unknown unit) falls back to NOS, as the print already does.
+        uom: toUom(l.uom),
         poLineQty: Number(l.qty ?? 0),
         shipQty: '',
         materialText: '',
@@ -728,11 +736,12 @@ function PoDcFormBody({
               <th className="th-num" style={{ width: '8%' }}>
                 PO Qty
               </th>
+              <th style={{ width: '6%' }}>UOM</th>
               <th className="th-num" style={{ width: '12%', color: 'var(--green2)' }}>
                 Send Now<span className="req">★</span>
               </th>
               <th style={{ width: '16%' }}>Material</th>
-              <th style={{ width: '20%' }}>Remarks</th>
+              <th style={{ width: '14%' }}>Remarks</th>
             </tr>
           </thead>
           <tbody>
@@ -769,6 +778,8 @@ function PoDcFormBody({
                     </td>
                     <td>{l.itemNameText}</td>
                     <td className="mono td-num">{l.poLineQty}</td>
+                    {/* Read-only: the unit comes from the PO line's item. */}
+                    <td className="mono">{l.uom}</td>
                     <td className="td-num">
                       <input
                         type="number"
@@ -859,7 +870,7 @@ function PoDcFormBody({
                   user staring at a zero with no explanation. */}
                   {issue || blocked ? (
                     <tr>
-                      <td colSpan={8} style={{ padding: '0 8px 8px' }}>
+                      <td colSpan={9} style={{ padding: '0 8px 8px' }}>
                         <div
                           style={{
                             color: issue ? 'var(--red)' : done ? 'var(--text2)' : 'var(--amber)',
@@ -1070,6 +1081,22 @@ function NcDcFormBody({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // The goods go back to the vendor they came from, so the NC's source vendor
+  // (the GRN's supplier, or the outsource PO's vendor) is filled in once the NC
+  // loads. It stays editable — the user may pick another vendor.
+  const sourceVendorId = nc?.sourceVendorId ?? null;
+  const sourceVendorCode = nc?.sourceVendorCode ?? '';
+  const seededVendorRef = useRef(false);
+  useEffect(() => {
+    if (seededVendorRef.current || !sourceVendorId || !sourceVendorCode) return;
+    seededVendorRef.current = true;
+    setVendorId(sourceVendorId);
+    setVendorCodeText(sourceVendorCode);
+  }, [sourceVendorId, sourceVendorCode]);
+  const sourceVendorLabel = sourceVendorId
+    ? [nc?.sourceVendorCode, nc?.sourceVendorName].filter(Boolean).join(' — ')
+    : '';
+
   // Guard against reaching this form for an NC that is not (or no longer)
   // eligible — the server enforces the same predicate, but saying it here avoids
   // a confusing rejection after the vendor has been picked. Computed before the
@@ -1078,7 +1105,12 @@ function NcDcFormBody({
   const isEligible =
     nc?.disposition === 'return_to_vendor' && nc.status === 'disposed' && !alreadyHasChallan;
   const canSubmit = isEligible && dcDate !== '' && vendorId != null && vendorCodeText !== '';
-  const dirty = vendorId !== null || transport !== '' || vehicleNo !== '' || remarks !== '';
+  // The pre-filled source vendor is not the user's typing — only a change is.
+  const dirty =
+    vendorId !== (sourceVendorCode ? sourceVendorId : null) ||
+    transport !== '' ||
+    vehicleNo !== '' ||
+    remarks !== '';
   useReportSave(saveCtl, { canSave: canCreateDc && canSubmit, saving: submitting, dirty });
 
   if (!canCreateDc) {
@@ -1242,6 +1274,7 @@ function NcDcFormBody({
           id="ncdc-vendor"
           className="form-grp f-md"
           value={vendorId}
+          initialLabel={sourceVendorLabel}
           onChange={(id, label) => {
             setVendorId(id);
             setVendorCodeText(id ? (label.split(' — ')[0] ?? label) : '');

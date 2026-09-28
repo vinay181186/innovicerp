@@ -13,6 +13,7 @@
 //   Rejected qty stored on the row; downstream NC integration deferred.
 
 import { emitActivityLog } from '../activity-log/service';
+import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import { requireFormAccess } from '../../lib/access';
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
@@ -48,7 +49,8 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import { postStockMove } from '../../lib/stock-ledger';
+import { poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
+import { postStockMove, roundQty } from '../../lib/stock-ledger';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 
 function requireCompany(user: AuthContext): string {
@@ -140,9 +142,7 @@ export async function listJwDcOutward(
           OR jdo.vendor_code_text ILIKE ${term}
         )`
       : sql``;
-    const vendorFrag = input.vendorId
-      ? sql`AND jdo.vendor_id = ${input.vendorId}::uuid`
-      : sql``;
+    const vendorFrag = input.vendorId ? sql`AND jdo.vendor_id = ${input.vendorId}::uuid` : sql``;
     const poFrag = input.purchaseOrderId
       ? sql`AND jdo.purchase_order_id = ${input.purchaseOrderId}::uuid`
       : sql``;
@@ -160,12 +160,12 @@ export async function listJwDcOutward(
       WITH return_stats AS (
         SELECT
           jdol.jw_dc_outward_id AS dc_id,
-          SUM(jdol.sent_qty)::int AS total_sent,
+          SUM(jdol.sent_qty)::float8 AS total_sent,
           COUNT(*)::int AS lines_count,
-          COALESCE(SUM(rl.returned_qty)::int, 0) AS total_returned
+          COALESCE(SUM(rl.returned_qty)::float8, 0) AS total_returned
         FROM public.jw_dc_outward_lines jdol
         LEFT JOIN LATERAL (
-          SELECT SUM(jdil.received_qty)::int AS returned_qty
+          SELECT SUM(jdil.received_qty)::float8 AS returned_qty
           FROM public.jw_dc_inward_lines jdil
           WHERE jdil.jw_dc_outward_line_id = jdol.id
             AND jdil.deleted_at IS NULL
@@ -187,9 +187,9 @@ export async function listJwDcOutward(
         jdo.updated_at AS "updatedAt", jdo.updated_by AS "updatedBy",
         jdo.deleted_at AS "deletedAt",
         COALESCE(rs.lines_count, 0)::int AS "linesCount",
-        COALESCE(rs.total_sent, 0)::int AS "totalSentQty",
-        COALESCE(rs.total_returned, 0)::int AS "totalReturnedQty",
-        GREATEST(0, COALESCE(rs.total_sent, 0) - COALESCE(rs.total_returned, 0))::int AS "pendingQty",
+        COALESCE(rs.total_sent, 0)::float8 AS "totalSentQty",
+        COALESCE(rs.total_returned, 0)::float8 AS "totalReturnedQty",
+        GREATEST(0, COALESCE(rs.total_sent, 0) - COALESCE(rs.total_returned, 0))::float8 AS "pendingQty",
         CASE
           WHEN COALESCE(rs.total_sent, 0) > 0
             AND COALESCE(rs.total_returned, 0) >= COALESCE(rs.total_sent, 0) THEN 'fully_returned'
@@ -229,9 +229,7 @@ export async function listJwDcOutward(
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
-    const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(
-      toOutwardListItem,
-    );
+    const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toOutwardListItem);
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };
   });
 }
@@ -313,7 +311,7 @@ export async function getJwDcOutwardDetail(
         jdol.created_at AS "createdAt", jdol.created_by AS "createdBy",
         jdol.updated_at AS "updatedAt", jdol.updated_by AS "updatedBy",
         jdol.deleted_at AS "deletedAt",
-        COALESCE(ret.returned, 0)::int AS "alreadyReturned"
+        COALESCE(ret.returned, 0)::float8 AS "alreadyReturned"
       FROM public.jw_dc_outward_lines jdol
       LEFT JOIN public.items i ON i.id = jdol.item_id AND i.deleted_at IS NULL
       -- Two single-row FK hops, so neither can multiply the line count.
@@ -322,7 +320,7 @@ export async function getJwDcOutwardDetail(
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN LATERAL (
-        SELECT SUM(received_qty)::int AS returned
+        SELECT SUM(received_qty)::float8 AS returned
         FROM public.jw_dc_inward_lines jdil
         WHERE jdil.jw_dc_outward_line_id = jdol.id
           AND jdil.deleted_at IS NULL
@@ -436,10 +434,7 @@ export async function getJwDcOutwardDetail(
  *   - jw_dc_inward.jw_dc_outward_id = :id → inward returns against this DC.
  *     Inward DCs have no standalone detail route → shown reference-only.
  */
-export async function getJwDcRelated(
-  id: string,
-  user: AuthContext,
-): Promise<DocumentTraceability> {
+export async function getJwDcRelated(id: string, user: AuthContext): Promise<DocumentTraceability> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // Confirm the outward DC exists / is visible; grab the FK ids for upstream links.
@@ -467,12 +462,7 @@ export async function getJwDcRelated(
     const lineRows = await tx
       .select({ itemId: jwDcOutwardLines.itemId })
       .from(jwDcOutwardLines)
-      .where(
-        and(
-          eq(jwDcOutwardLines.jwDcOutwardId, id),
-          isNull(jwDcOutwardLines.deletedAt),
-        ),
-      );
+      .where(and(eq(jwDcOutwardLines.jwDcOutwardId, id), isNull(jwDcOutwardLines.deletedAt)));
     const itemIds = Array.from(
       new Set(lineRows.map((r) => r.itemId).filter((v): v is string => Boolean(v))),
     );
@@ -676,19 +666,14 @@ export async function getJwDcPoLines(
         sol.client_po_line_no AS "clientPoLineNo",
         pol.item_name AS "itemName",
         pol.line_remarks AS "processText",
+        i.uom::text AS "uom",
         pol.qty AS "poQty",
-        COALESCE(sent.total_sent, 0)::int AS "alreadySent"
+        -- ONE sent figure: OSP DCs + JW DC Outwards (lib/po-line-sent.ts).
+        ${sql.raw(poLineSentRaw('pol.id'))}::float8 AS "alreadySent"
       FROM public.purchase_order_lines pol
       LEFT JOIN public.items i ON i.id = pol.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN LATERAL (
-        SELECT SUM(jdol.sent_qty)::int AS total_sent
-        FROM public.jw_dc_outward_lines jdol
-        JOIN public.jw_dc_outward jdo ON jdo.id = jdol.jw_dc_outward_id AND jdo.deleted_at IS NULL
-        WHERE jdol.purchase_order_line_id = pol.id
-          AND jdol.deleted_at IS NULL
-      ) sent ON true
       WHERE pol.purchase_order_id = ${purchaseOrderId}::uuid
         AND pol.deleted_at IS NULL
       ORDER BY pol.line_no
@@ -705,9 +690,10 @@ export async function getJwDcPoLines(
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: String(r['itemName'] ?? ''),
         processText: (r['processText'] as string | null) ?? null,
+        uom: (r['uom'] as string | null) ?? null,
         poQty,
         alreadySent: sent,
-        available: Math.max(0, poQty - sent),
+        available: Math.max(0, roundQty(poQty - sent)),
       };
     });
 
@@ -756,6 +742,18 @@ export async function createJwDcOutward(
         `PO ${po.code} has PO Type ${PO_TYPE_LABEL[po.poType] ?? po.poType}. Only Job Work and Service POs can send material out.`,
       );
     }
+    // Material leaves only against an approved, live PO — the same rule the
+    // OSP DC applies (delivery-challans assertPurchaseOrderExists, ADR-189).
+    if (po.status === 'draft') {
+      throw new ConflictError(
+        `Cannot send material against PO ${po.code}: it is not approved yet.`,
+      );
+    }
+    if (po.status === 'cancelled' || po.status === 'closed') {
+      throw new ConflictError(
+        `PO ${po.code} is ${po.status === 'closed' ? 'Closed' : 'Cancelled'}. Nothing more can be sent against it.`,
+      );
+    }
 
     // 2) Load PO lines we'll dispatch against
     const poLineIds = input.lines.map((l) => l.purchaseOrderLineId);
@@ -763,10 +761,7 @@ export async function createJwDcOutward(
       .select()
       .from(purchaseOrderLines)
       .where(
-        and(
-          eq(purchaseOrderLines.purchaseOrderId, po.id),
-          isNull(purchaseOrderLines.deletedAt),
-        ),
+        and(eq(purchaseOrderLines.purchaseOrderId, po.id), isNull(purchaseOrderLines.deletedAt)),
       );
     const polById = new Map(poLineRows.map((p) => [p.id, p]));
     for (const id of poLineIds) {
@@ -775,22 +770,21 @@ export async function createJwDcOutward(
       }
     }
 
-    // 3) Validate available qty (poQty - alreadySent) >= sentQty per line
-    const sentSoFar = (await tx.execute(sql`
-      SELECT
-        jdol.purchase_order_line_id AS pol_id,
-        SUM(jdol.sent_qty)::int AS total_sent
-      FROM public.jw_dc_outward_lines jdol
-      JOIN public.jw_dc_outward jdo ON jdo.id = jdol.jw_dc_outward_id AND jdo.deleted_at IS NULL
-      WHERE jdol.deleted_at IS NULL
-        AND jdol.purchase_order_line_id = ANY(${poLineIds}::uuid[])
-      GROUP BY jdol.purchase_order_line_id
-    `)) as unknown as Array<{ pol_id: string; total_sent: number }>;
-    const sentMap = new Map(sentSoFar.map((r) => [r.pol_id, Number(r.total_sent)]));
+    // 3) Validate available qty (poQty - alreadySent) >= sentQty per line.
+    //    alreadySent is the ONE figure — OSP DCs + JW DC Outwards together —
+    //    so a line cannot go out in full on each screen (jw-dc-outward#1).
+    const sentMap = await sumSentOnPoLines(tx, poLineIds, companyId);
+    const incoming = new Map<string, number>();
+    for (const ln of input.lines) {
+      incoming.set(
+        ln.purchaseOrderLineId,
+        roundQty((incoming.get(ln.purchaseOrderLineId) ?? 0) + ln.sentQty),
+      );
+    }
     for (const ln of input.lines) {
       const pol = polById.get(ln.purchaseOrderLineId)!;
-      const available = Math.max(0, pol.qty - (sentMap.get(pol.id) ?? 0));
-      if (ln.sentQty > available) {
+      const available = Math.max(0, roundQty(pol.qty - (sentMap.get(pol.id) ?? 0)));
+      if ((incoming.get(pol.id) ?? 0) > available) {
         throw new ConflictError(
           `${pol.itemCodeText ?? pol.itemName}: Send Qty (${ln.sentQty}) cannot be more than Pending (${available}).`,
         );
@@ -799,7 +793,11 @@ export async function createJwDcOutward(
 
     // 4) Lock item rows for stock update
     const itemIds = Array.from(
-      new Set(input.lines.map((l) => polById.get(l.purchaseOrderLineId)!.itemId).filter(Boolean) as string[]),
+      new Set(
+        input.lines
+          .map((l) => polById.get(l.purchaseOrderLineId)!.itemId)
+          .filter(Boolean) as string[],
+      ),
     );
     for (const id of itemIds) {
       await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${id}::uuid FOR UPDATE`);
@@ -853,7 +851,8 @@ export async function createJwDcOutward(
             qty: ln.sentQty,
             sourceType: 'jw_out',
             sourceRef: `${code} · ${pol.itemCodeText ?? pol.itemName}`,
-            remarks: `JW DC Outward · to ${vendorNameText ?? po.vendorCodeText ?? ''} for ${pol.lineRemarks ?? ''}`.trim(),
+            remarks:
+              `JW DC Outward · to ${vendorNameText ?? po.vendorCodeText ?? ''} for ${pol.lineRemarks ?? ''}`.trim(),
             txnDate: input.dcDate,
             userId,
             itemCodeText: pol.itemCodeText ?? null,
@@ -956,16 +955,29 @@ export async function listJwDcInward(
         jdi.updated_at AS "updatedAt", jdi.updated_by AS "updatedBy",
         jdi.deleted_at AS "deletedAt",
         jdo.vendor_name_text AS "vendorNameText",
-        COALESCE(agg.total_received, 0)::int AS "totalReceivedQty",
-        COALESCE(agg.total_ok, 0)::int AS "totalOkQty",
-        COALESCE(agg.total_rej, 0)::int AS "totalRejectedQty"
+        jdi.goods_receipt_note_id AS "goodsReceiptNoteId",
+        g.code AS "grnCode",
+        COALESCE(agg.total_received, 0)::float8 AS "totalReceivedQty",
+        -- From 0172 the receipt is inspected at Incoming QC on its GRN, so OK /
+        -- Rejected are that GRN's QC figures; older receipts keep their own.
+        (CASE WHEN jdi.goods_receipt_note_id IS NULL THEN COALESCE(agg.total_ok, 0)
+              ELSE COALESCE(gq.accepted, 0) END)::float8 AS "totalOkQty",
+        (CASE WHEN jdi.goods_receipt_note_id IS NULL THEN COALESCE(agg.total_rej, 0)
+              ELSE COALESCE(gq.rejected, 0) END)::float8 AS "totalRejectedQty"
       FROM public.jw_dc_inward jdi
       LEFT JOIN public.jw_dc_outward jdo ON jdo.id = jdi.jw_dc_outward_id AND jdo.deleted_at IS NULL
+      LEFT JOIN public.goods_receipt_notes g
+        ON g.id = jdi.goods_receipt_note_id AND g.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT SUM(gl.qc_accepted_qty) AS accepted, SUM(gl.qc_rejected_qty) AS rejected
+        FROM public.goods_receipt_note_lines gl
+        WHERE gl.goods_receipt_note_id = jdi.goods_receipt_note_id AND gl.deleted_at IS NULL
+      ) gq ON true
       LEFT JOIN LATERAL (
         SELECT
-          SUM(received_qty)::int AS total_received,
-          SUM(ok_qty)::int AS total_ok,
-          SUM(rejected_qty)::int AS total_rej
+          SUM(received_qty)::float8 AS total_received,
+          SUM(ok_qty)::float8 AS total_ok,
+          SUM(rejected_qty)::float8 AS total_rej
         FROM public.jw_dc_inward_lines jdil
         WHERE jdil.jw_dc_inward_id = jdi.id AND jdil.deleted_at IS NULL
       ) agg ON true
@@ -1001,6 +1013,8 @@ export async function listJwDcInward(
         updatedBy: r['updatedBy'] as string,
         deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
         vendorNameText: (r['vendorNameText'] as string | null) ?? null,
+        goodsReceiptNoteId: (r['goodsReceiptNoteId'] as string | null) ?? null,
+        grnCode: (r['grnCode'] as string | null) ?? null,
         totalReceivedQty: Number(r['totalReceivedQty'] ?? 0),
         totalOkQty: Number(r['totalOkQty'] ?? 0),
         totalRejectedQty: Number(r['totalRejectedQty'] ?? 0),
@@ -1046,12 +1060,7 @@ export async function createJwDcInward(
     const outLineRows = await tx
       .select()
       .from(jwDcOutwardLines)
-      .where(
-        and(
-          eq(jwDcOutwardLines.jwDcOutwardId, out.id),
-          isNull(jwDcOutwardLines.deletedAt),
-        ),
-      );
+      .where(and(eq(jwDcOutwardLines.jwDcOutwardId, out.id), isNull(jwDcOutwardLines.deletedAt)));
     const olById = new Map(outLineRows.map((p) => [p.id, p]));
     for (const id of outLineIds) {
       if (!olById.has(id)) {
@@ -1065,7 +1074,7 @@ export async function createJwDcInward(
     const returnedSoFar = (await tx.execute(sql`
       SELECT
         jdil.jw_dc_outward_line_id AS line_id,
-        SUM(jdil.received_qty)::int AS total_returned
+        SUM(jdil.received_qty)::float8 AS total_returned
       FROM public.jw_dc_inward_lines jdil
       WHERE jdil.deleted_at IS NULL
         AND jdil.jw_dc_outward_line_id = ANY(${outLineIds}::uuid[])
@@ -1076,7 +1085,7 @@ export async function createJwDcInward(
     for (const ln of input.lines) {
       const ol = olById.get(ln.jwDcOutwardLineId)!;
       const alreadyReturned = returnedMap.get(ol.id) ?? 0;
-      const pending = Math.max(0, ol.sentQty - alreadyReturned);
+      const pending = Math.max(0, roundQty(ol.sentQty - alreadyReturned));
       if (ln.receivedQty > pending) {
         throw new ConflictError(
           `${ol.itemCodeText}: Received Qty (${ln.receivedQty}) cannot be more than Pending (${pending}).`,
@@ -1084,16 +1093,36 @@ export async function createJwDcInward(
       }
     }
 
-    // 4) Lock relevant item rows
-    const itemIds = Array.from(
-      new Set(outLineRows.map((o) => o.itemId).filter(Boolean) as string[]),
-    );
-    for (const id of itemIds) {
-      await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${id}::uuid FOR UPDATE`);
-    }
+    // 4) The receipt goes to Incoming QC (ADR-189 — Incoming QC is the only
+    //    inspector), exactly like DC Receive: a QC-pending GRN is raised for the
+    //    received qty against the PO line each piece went out on. Nothing enters
+    //    stock here; Incoming QC credits the accepted qty and raises the NC for
+    //    any reject. The store only says how much came back.
+    const code = await nextInwardCode(tx, companyId);
+    const grn = await insertGrnForOspReceipt(tx, companyId, user, {
+      grnDate: input.inwardDate,
+      purchaseOrderId: out.purchaseOrderId ?? null,
+      poCodeText: out.jwpoCodeText ?? null,
+      vendorId: out.vendorId ?? null,
+      vendorCodeText: out.vendorCodeText ?? null,
+      // Our challan the goods went out on; the vendor's own challan number
+      // rides as the invoice / delivery-note reference, as on DC Receive.
+      dcNo: out.code,
+      invoiceNo: input.vendorChallanNo ?? null,
+      remarks: `JW DC receipt ${code}${input.remarks ? ` · ${input.remarks}` : ''}`,
+      lines: input.lines.map((ln) => {
+        const ol = olById.get(ln.jwDcOutwardLineId)!;
+        return {
+          purchaseOrderLineId: ol.purchaseOrderLineId ?? null,
+          itemId: ol.itemId ?? null,
+          itemCodeText: ol.itemCodeText,
+          itemName: ol.itemNameText ?? ol.itemCodeText,
+          receivedQty: ln.receivedQty,
+        };
+      }),
+    });
 
     // 5) Insert header
-    const code = await nextInwardCode(tx, companyId);
     const inserted = await tx
       .insert(jwDcInward)
       .values({
@@ -1105,6 +1134,7 @@ export async function createJwDcInward(
         vendorChallanNo: input.vendorChallanNo ?? null,
         vehicleNo: input.vehicleNo ?? null,
         remarks: input.remarks ?? null,
+        goodsReceiptNoteId: grn.id,
         createdBy: userId,
         updatedBy: userId,
       })
@@ -1112,28 +1142,9 @@ export async function createJwDcInward(
     const header = inserted[0];
     if (!header) throw new ValidationError('Could not save JW DC receipt. Try again.');
 
-    // 6) Insert lines + restore stock for OK qty
+    // 6) Insert lines. OK / Rejected stay 0 — Incoming QC decides on the GRN.
     for (const ln of input.lines) {
       const ol = olById.get(ln.jwDcOutwardLineId)!;
-      let storeTxnId: string | null = null;
-
-      if (ln.okQty > 0 && ol.itemId) {
-        const moved = await postStockMove(tx, {
-          companyId,
-          itemId: ol.itemId,
-          txnType: 'in',
-          qty: ln.okQty,
-          sourceType: 'jw_in',
-          sourceRef: `${code} · ${ol.itemCodeText}`,
-          remarks: `JW DC Inward · returned from ${out.vendorNameText ?? out.vendorCodeText ?? ''} (${ol.processText ?? ''})`.trim(),
-          txnDate: input.inwardDate,
-          userId,
-          itemCodeText: ol.itemCodeText,
-          guard: 'none',
-        });
-        storeTxnId = moved.id;
-      }
-
       await tx.insert(jwDcInwardLines).values({
         companyId,
         jwDcInwardId: header.id,
@@ -1144,10 +1155,10 @@ export async function createJwDcInward(
         processText: ol.processText,
         sentQty: ol.sentQty,
         receivedQty: ln.receivedQty,
-        okQty: ln.okQty,
-        rejectedQty: ln.rejectedQty,
+        okQty: 0,
+        rejectedQty: 0,
         remarks: ln.remarks ?? null,
-        storeTransactionId: storeTxnId,
+        storeTransactionId: null,
         createdBy: userId,
         updatedBy: userId,
       });
@@ -1158,7 +1169,7 @@ export async function createJwDcInward(
       {
         action: 'CREATE',
         entity: 'JW DC Inward',
-        detail: `${code} · ${input.lines.length} line(s) back from ${out.vendorNameText ?? out.vendorCodeText ?? ''}`,
+        detail: `${code} · ${input.lines.length} line(s) back from ${out.vendorNameText ?? out.vendorCodeText ?? ''} → Incoming QC on ${grn.code}`,
         refId: code,
       },
       companyId,
@@ -1174,6 +1185,8 @@ export async function createJwDcInward(
       vendorChallanNo: header.vendorChallanNo,
       vehicleNo: header.vehicleNo,
       remarks: header.remarks,
+      goodsReceiptNoteId: grn.id,
+      grnCode: grn.code,
       createdAt: tsLike(header.createdAt),
       createdBy: header.createdBy,
       updatedAt: tsLike(header.updatedAt),

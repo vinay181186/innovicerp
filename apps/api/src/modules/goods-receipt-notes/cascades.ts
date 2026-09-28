@@ -37,7 +37,7 @@ import { eq, sql } from 'drizzle-orm';
 import { goodsReceiptNotes, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { isProductionOrderLinkedJc } from '../../lib/production-order-link';
-import { postStockMove } from '../../lib/stock-ledger';
+import { postStockMove, roundQty } from '../../lib/stock-ledger';
 
 export async function recalcPoLineReceivedQty(
   tx: DbTransaction,
@@ -108,7 +108,8 @@ export async function recalcPoLineReceivedQty(
       ), 0) AS total
   `);
   const row = (result as unknown as Array<{ total: unknown }>)[0];
-  const total = Math.max(0, Math.round(Number(row?.total ?? 0)));
+  // 3 places, not a whole number: a PO line may be in KGS / MTR (0172).
+  const total = Math.max(0, roundQty(Number(row?.total ?? 0)));
   await tx
     .update(purchaseOrderLines)
     .set({ receivedQty: total, updatedBy: adminUserId })
