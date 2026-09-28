@@ -1,40 +1,34 @@
-// Item Issue Register (PL-II-1) — daily-use consumable register.
-// Mirrors legacy renderIssueRegister (HTML L23874) + addIssue (L23914).
+// Item Issue Register (PL-II-1) — ADR-193 phase 3b: a slip has lines and is
+// issued against a Job Card, an Assembly SO or for General use. Click a row to
+// see its lines and Return leftovers or Reverse it.
 
-import {
-  type CreateStoreIssueInput,
-  STORE_ISSUE_REF_TYPES,
-  STORE_ISSUE_REVERSE_REASON_MIN,
-  type StoreIssueListItem,
-  type StoreIssueRefType,
-} from '@innovic/shared';
+import { ISSUE_AGAINST, ISSUE_AGAINST_LABELS } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { z } from 'zod';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
-import { fmtDate, todayIst } from '@/lib/date';
+import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useItemBalance } from '@/modules/store-transactions/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { SearchableSelect } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
-import { useItemsList } from '../../items/api';
-import {
-  useCreateStoreIssue,
-  useNextStoreIssueCode,
-  useReverseStoreIssue,
-  useStoreIssuesList,
-} from '../api';
+import { useStoreIssuesList } from '../api';
+import { IssueViewModal } from '../components/issue-view-modal';
+import { NewIssueModal, type NewIssueSeed } from '../components/new-issue-modal';
 
 const PAGE_SIZE = 25;
 
 // Deep-link seed for Global Search (no detail page here): `?tab=tools&search=
 // TIS-00003` opens the Tool Issues tab with its box pre-filled. Read ONCE into
 // the local state below — tab clicks and typing stay local, never navigate.
+// `?new=job_card&jobCardId=…` (JC Material tab "Issue from Store") or
+// `?new=assembly_so&salesOrderId=…` (assembly page) opens New Issue seeded.
 const searchSchema = z.object({
   tab: z.enum(['items', 'tools']).optional(),
   search: z.string().optional(),
+  new: z.enum(ISSUE_AGAINST).optional(),
+  jobCardId: z.string().uuid().optional(),
+  salesOrderId: z.string().uuid().optional(),
 });
 
 export const storeIssuesListRoute = createRoute({
@@ -53,8 +47,16 @@ function StoreIssuesListPage(): React.JSX.Element {
     (routeSearch.tab ?? 'items') === 'items' ? (routeSearch.search ?? '') : '',
   );
   const [page, setPage] = useState(1);
-  const [showModal, setShowModal] = useState(false);
-  const [reversing, setReversing] = useState<StoreIssueListItem | null>(null);
+  const [newSeed, setNewSeed] = useState<NewIssueSeed | null>(() =>
+    routeSearch.new
+      ? {
+          issueAgainst: routeSearch.new,
+          jobCardId: routeSearch.jobCardId,
+          salesOrderId: routeSearch.salesOrderId,
+        }
+      : null,
+  );
+  const [viewId, setViewId] = useState<string | null>(null);
   // Tier-driven, per department (Store). Was `role === admin || manager`, which
   // let any manager in any department post a stock issue and locked out the
   // L2 storekeeper whose job this is. This gate covers the Item Issues tab
@@ -135,13 +137,13 @@ function StoreIssuesListPage(): React.JSX.Element {
               setSearch(v);
               setPage(1);
             }}
-            searchPlaceholder="Search issue, item, JC…"
+            searchPlaceholder="Search issue, item, JC, SO, name…"
             primary={
               perms.entry ? (
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() => setShowModal(true)}
+                  onClick={() => setNewSeed({ issueAgainst: 'job_card' })}
                 >
                   <Plus size={14} /> New Issue
                 </button>
@@ -169,20 +171,22 @@ function StoreIssuesListPage(): React.JSX.Element {
                     <tr>
                       <th>Issue No.</th>
                       <th>Issue Date</th>
-                      <th>Item Code</th>
-                      <th>Item Name</th>
-                      <th className="th-num">Issue Qty</th>
-                      <th>Issued To</th>
+                      <th>Issue Against</th>
                       <th>Reference</th>
+                      <th>Items</th>
+                      <th>Issued To</th>
                       <th>Purpose</th>
-                      <th>Remarks</th>
                       <th>Issued By</th>
-                      {perms.edit ? <th></th> : null}
                     </tr>
                   </thead>
                   <tbody>
                     {data.items.map((iss) => (
-                      <tr key={iss.id}>
+                      <tr
+                        key={iss.id}
+                        onClick={() => setViewId(iss.id)}
+                        style={{ cursor: 'pointer' }}
+                        title="Open — see lines, Return or Reverse"
+                      >
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <span className="td-code" style={{ color: 'var(--cyan)' }}>
                             {iss.code}
@@ -199,53 +203,36 @@ function StoreIssuesListPage(): React.JSX.Element {
                         <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                           {fmtDate(iss.issueDate)}
                         </td>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
-                            {iss.itemCode ?? iss.itemCodeText ?? '—'}
-                          </span>
-                        </td>
-                        <td>{iss.itemName || '—'}</td>
-                        <td
-                          className="mono fw-700 td-num"
-                          style={{
-                            fontSize: 14,
-                            textDecoration: iss.reversedAt ? 'line-through' : undefined,
-                          }}
-                        >
-                          {iss.qty}
-                        </td>
-                        <td>{iss.issuedTo || '—'}</td>
+                        <td style={{ fontSize: 11 }}>{ISSUE_AGAINST_LABELS[iss.issueAgainst]}</td>
                         <td
                           className="mono"
                           style={{ fontSize: 11, color: 'var(--purple)', whiteSpace: 'nowrap' }}
                         >
-                          {iss.refNo ? `${iss.refType ?? ''} ${iss.refNo}` : '—'}
+                          {iss.issueAgainst === 'job_card'
+                            ? (iss.jobCardCode ?? '—')
+                            : iss.issueAgainst === 'assembly_so'
+                              ? (iss.salesOrderCode ?? '—')
+                              : (iss.department ?? iss.legacyReference ?? '—')}
                         </td>
-                        <td className="text3" style={{ fontSize: 11 }}>
+                        <td
+                          className="mono fw-700"
+                          style={{
+                            color: 'var(--text)',
+                            textDecoration: iss.reversedAt ? 'line-through' : undefined,
+                          }}
+                        >
+                          {iss.itemsSummary || '—'}
+                        </td>
+                        <td>{iss.issuedTo || '—'}</td>
+                        <td className="text3" style={{ fontSize: 11 }} title={iss.remarks ?? ''}>
                           {iss.purpose || '—'}
                         </td>
-                        <td className="text3" style={{ fontSize: 11 }} title={iss.remarks ?? ''}>
-                          {iss.remarks || '—'}
-                        </td>
                         <td>{iss.issuedByName || '—'}</td>
-                        {perms.edit ? (
-                          <td>
-                            {iss.reversedAt ? null : (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => setReversing(iss)}
-                              >
-                                Reverse
-                              </button>
-                            )}
-                          </td>
-                        ) : null}
                       </tr>
                     ))}
                     {data.items.length === 0 ? (
                       <tr>
-                        <td colSpan={perms.edit ? 11 : 10} className="empty-state">
+                        <td colSpan={8} className="empty-state">
                           {search.trim() ? 'No issues match.' : 'No issues yet.'}
                         </td>
                       </tr>
@@ -266,383 +253,19 @@ function StoreIssuesListPage(): React.JSX.Element {
             />
           ) : null}
 
-          {showModal && perms.entry ? <NewIssueModal onClose={() => setShowModal(false)} /> : null}
-          {reversing && perms.edit ? (
-            <ReverseIssueModal issue={reversing} onClose={() => setReversing(null)} />
+          {newSeed && perms.entry ? (
+            <NewIssueModal seed={newSeed} onClose={() => setNewSeed(null)} />
+          ) : null}
+          {viewId ? (
+            <IssueViewModal
+              issueId={viewId}
+              canReturn={perms.entry}
+              canReverse={perms.edit}
+              onClose={() => setViewId(null)}
+            />
           ) : null}
         </>
       )}
-    </div>
-  );
-}
-
-function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date, setDate] = useState(todayIst());
-  const [itemId, setItemId] = useState<string | null>(null);
-  const [qty, setQty] = useState('');
-  const [issuedTo, setIssuedTo] = useState('');
-  const [refType, setRefType] = useState<StoreIssueRefType>('Job Card');
-  const [refNo, setRefNo] = useState('');
-  const [purpose, setPurpose] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [itemSearch, setItemSearch] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  // "Save & New": the code of the issue just saved, shown as a note
-  // while the next one is keyed in. Bumping `pickerKey` remounts the item
-  // picker so its typed text clears with the value.
-  const [lastSaved, setLastSaved] = useState<string | null>(null);
-  const [pickerKey, setPickerKey] = useState(0);
-
-  const createMut = useCreateStoreIssue();
-  const { data: next } = useNextStoreIssueCode();
-  const { data: itemsData, isFetching: itemsFetching } = useItemsList({
-    search: itemSearch.trim() || undefined,
-    limit: 50,
-    offset: 0,
-  });
-  const itemOptions = useMemo(
-    () => (itemsData?.items ?? []).map((it) => ({ id: it.id, code: it.code, name: it.name })),
-    [itemsData],
-  );
-  // Physical stock of the picked item — the same per-item balance the Item
-  // Master detail page shows as "Physical".
-  const balanceQ = useItemBalance(itemId ?? undefined);
-
-  const save = (andAnother: boolean): void => {
-    setErr(null);
-    if (!date) {
-      setErr('Issue Date is required.');
-      return;
-    }
-    if (!itemId) {
-      setErr('Item is required.');
-      return;
-    }
-    const q = Number(qty);
-    if (!Number.isFinite(q) || q <= 0) {
-      setErr('Qty to Issue must be more than 0.');
-      return;
-    }
-    if (!issuedTo.trim()) {
-      setErr('Issued To is required.');
-      return;
-    }
-    if (purpose.trim().length < 3) {
-      setErr('Enter the Purpose — what the material is for');
-      return;
-    }
-    const input: CreateStoreIssueInput = {
-      issueDate: date,
-      itemId,
-      qty: q,
-      issuedTo: issuedTo.trim(),
-      refType,
-      purpose: purpose.trim(),
-    };
-    if (refNo.trim()) input.refNo = refNo.trim();
-    if (remarks.trim()) input.remarks = remarks.trim();
-    createMut.mutate(input, {
-      onSuccess: (created) => {
-        if (!andAnother) {
-          onClose();
-          return;
-        }
-        // Keep Issue Date, Issued To and the Reference; clear the rest.
-        setLastSaved(created.code);
-        setItemId(null);
-        setItemSearch('');
-        setQty('');
-        setPurpose('');
-        setRemarks('');
-        setPickerKey((k) => k + 1);
-      },
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save issue. Try again.'),
-    });
-  };
-
-  return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal">
-        <div className="modal-hdr">
-          <span className="modal-title">New Item Issue</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-
-        <div className="modal-body">
-          <div className="form-grid">
-            <div className="form-grp">
-              <label className="form-label">Issue No.</label>
-              <input
-                type="text"
-                className="innovic-input"
-                value={next?.code ?? '(auto on save)'}
-                readOnly
-              />
-            </div>
-
-            <div className="form-grp">
-              <label className="form-label">
-                Issue Date <span className="req">★</span>
-              </label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
-            </div>
-
-            <div className="form-grp form-full">
-              <label className="form-label" htmlFor="si-item">
-                Item <span className="req">★</span>
-              </label>
-              {/* Keyboard-friendly type-to-search picker (↑/↓ + Enter), over
-                  the same item search this modal always used. */}
-              <SearchableSelect
-                key={pickerKey}
-                id="si-item"
-                value={itemId}
-                onChange={setItemId}
-                options={itemOptions}
-                onSearch={setItemSearch}
-                loading={itemsFetching}
-                placeholder="🔍 Type item code or name…"
-                emptyText="No matching item"
-              />
-              {itemId ? (
-                <div className="text3" style={{ fontSize: 12, marginTop: 4 }}>
-                  In stock:{' '}
-                  <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                    {balanceQ.isLoading ? '…' : (balanceQ.data?.onHand ?? 0)}
-                  </span>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="form-grp">
-              <label className="form-label">
-                Qty to Issue <span className="req">★</span>
-              </label>
-              <input
-                type="number"
-                min={1}
-                className="innovic-input"
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                placeholder="0"
-                style={{ fontSize: 16, fontWeight: 700 }}
-              />
-            </div>
-
-            <div className="form-grp">
-              <label className="form-label">
-                Issued To <span className="req">★</span>
-              </label>
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="Person / Dept / Machine"
-                value={issuedTo}
-                onChange={(e) => setIssuedTo(e.target.value)}
-              />
-            </div>
-
-            <div className="form-grp">
-              <label className="form-label">Reference Type</label>
-              <select
-                className="innovic-select"
-                value={refType}
-                onChange={(e) => setRefType(e.target.value as StoreIssueRefType)}
-              >
-                {STORE_ISSUE_REF_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-grp">
-              <label className="form-label">Reference No.</label>
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="e.g. IN-JC-26-00001, IN-SO-00417"
-                value={refNo}
-                onChange={(e) => setRefNo(e.target.value)}
-              />
-            </div>
-
-            <div className="form-grp">
-              <label className="form-label">Purpose ★</label>
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="Manufacturing / Testing / Repair"
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-              />
-            </div>
-
-            <div className="form-grp form-full">
-              <label className="form-label">Remarks</label>
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="Additional notes"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {lastSaved && !err ? (
-            <div className="text2" style={{ marginTop: 12, fontSize: 12 }}>
-              ✓ Saved <span className="td-code">{lastSaved}</span> — enter the next issue.
-            </div>
-          ) : null}
-          {err ? (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 8,
-                background: 'var(--red3)',
-                color: 'var(--red2)',
-                borderRadius: 4,
-                fontSize: 12,
-              }}
-            >
-              {err}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            {lastSaved ? 'Close' : 'Cancel'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={createMut.isPending}
-            onClick={() => save(true)}
-            title="Save, then start the next issue with the same Issued To and Reference"
-          >
-            Save &amp; New
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={createMut.isPending}
-            onClick={() => save(false)}
-          >
-            {createMut.isPending ? (
-              <>
-                <Loader2 size={14} className="inline animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save Issue'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** ADR-189 — put an issue's pieces back with an opposite ledger entry. */
-function ReverseIssueModal({
-  issue,
-  onClose,
-}: {
-  issue: StoreIssueListItem;
-  onClose: () => void;
-}): React.JSX.Element {
-  const [reason, setReason] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const reverseMut = useReverseStoreIssue();
-  const onSave = (): void => {
-    setErr(null);
-    if (reason.trim().length < STORE_ISSUE_REVERSE_REASON_MIN) {
-      setErr(`Give a reason (at least ${STORE_ISSUE_REVERSE_REASON_MIN} characters)`);
-      return;
-    }
-    reverseMut.mutate(
-      { id: issue.id, reason: reason.trim() },
-      {
-        onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not reverse. Try again.'),
-      },
-    );
-  };
-  return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal">
-        <div className="modal-hdr">
-          <span className="modal-title">Reverse {issue.code}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">
-          <div className="text2" style={{ fontSize: 12, marginBottom: 10 }}>
-            Puts{' '}
-            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {issue.qty}
-            </span>{' '}
-            of{' '}
-            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {issue.itemCode ?? issue.itemCodeText ?? '—'}
-            </span>{' '}
-            back into stock with an opposite entry. The issue stays on the register, marked
-            Reversed. This cannot be undone.
-          </div>
-          <div className="form-grp form-full">
-            <label className="form-label">Reason ★</label>
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="e.g. issued against the wrong job card"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
-          {err ? (
-            <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
-          ) : null}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={reverseMut.isPending}
-            onClick={onSave}
-          >
-            {reverseMut.isPending ? (
-              <>
-                <Loader2 size={14} className="inline animate-spin" /> Saving…
-              </>
-            ) : (
-              'Reverse'
-            )}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

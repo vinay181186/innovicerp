@@ -25,6 +25,7 @@ import { ArrowLeft, CheckCircle2, Loader2, Play, RotateCcw, Truck } from 'lucide
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { fmtDate, todayIst } from '@/lib/date';
+import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
 
@@ -136,6 +137,19 @@ function AssemblyDetailPage(): React.JSX.Element {
         assembledQty={data.rollup.assembledQty}
         inProgressQty={data.rollup.inProgressQty}
       />
+
+      {/* ADR-193 3b — parts the store issued against this SO (read-only). */}
+      <div className="panel" style={{ marginBottom: 12 }}>
+        <div className="panel-hdr">
+          <div className="panel-title">Material</div>
+          <span className="text3" style={{ fontSize: 11 }}>
+            Parts come from the store by Item Issue against this SO.
+          </span>
+        </div>
+        <div className="panel-body">
+          <SoMaterialPanel salesOrderId={soId} />
+        </div>
+      </div>
 
       <div className="panel">
         <div className="panel-hdr">

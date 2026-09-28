@@ -3862,8 +3862,11 @@ export const storeIssues = pgTable(
     issueDate: date('issue_date').notNull(),
     itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
     itemCodeText: text('item_code_text'),
-    itemName: text('item_name').notNull(),
-    qty: integer('qty').notNull(),
+    // ADR-193 phase 3b (0157): item_name / qty (and item_id, item_code_text,
+    // store_transaction_id) are the pre-slip single-item columns — nullable,
+    // no longer written; the items now live in store_issue_lines.
+    itemName: text('item_name'),
+    qty: integer('qty'),
     issuedTo: text('issued_to').notNull(),
     refType: text('ref_type'),
     refNo: text('ref_no'),
@@ -3883,6 +3886,15 @@ export const storeIssues = pgTable(
       (): AnyPgColumn => productionOrders.id,
       { onDelete: 'set null' },
     ),
+    // ADR-193 phase 3b (0157) — what the slip was issued against, and to whom.
+    issueAgainst: text('issue_against').notNull().default('general'),
+    salesOrderId: uuid('sales_order_id').references((): AnyPgColumn => salesOrders.id, {
+      onDelete: 'set null',
+    }),
+    issuedToOperatorId: uuid('issued_to_operator_id').references((): AnyPgColumn => operators.id, {
+      onDelete: 'set null',
+    }),
+    department: text('department'),
     // ADR-189 (migration 0152) — reversal by an opposite 'in' ledger entry;
     // all-or-none CHECK on who / when / why.
     reversedAt: timestamp('reversed_at', { withTimezone: true }),
@@ -3903,6 +3915,10 @@ export const storeIssues = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'store_issues_issue_against_check',
+      sql`${t.issueAgainst} IN ('job_card', 'assembly_so', 'general')`,
+    ),
     check(
       'store_issues_reversal_all_or_none',
       sql`(${t.reversedAt} is null and ${t.reversedBy} is null and ${t.reversalReason} is null)
@@ -3928,6 +3944,99 @@ export const storeIssues = pgTable(
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ADR-193 phase 3b (migration 0157) — the items of an Item Issue slip, one row
+// per item, each linked to the ledger line it posted.
+export const storeIssueLines = pgTable(
+  'store_issue_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    issueId: uuid('issue_id')
+      .notNull()
+      .references(() => storeIssues.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemCodeText: text('item_code_text').notNull(),
+    qty: stockQty('qty').notNull(),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('store_issue_lines_qty_check', sql`${t.qty} > 0`),
+    index('store_issue_lines_issue_idx')
+      .on(t.issueId)
+      .where(sql`${t.deletedAt} is null`),
+    index('store_issue_lines_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('store_issue_lines_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ADR-193 phase 3b (migration 0157) — leftovers put back against an issue line
+// (any qty up to what is still unused), each with its 'in' ledger line.
+export const storeIssueReturns = pgTable(
+  'store_issue_returns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    issueLineId: uuid('issue_line_id')
+      .notNull()
+      .references(() => storeIssueLines.id, { onDelete: 'cascade' }),
+    returnDate: date('return_date').notNull(),
+    qty: stockQty('qty').notNull(),
+    reason: text('reason').notNull(),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('store_issue_returns_qty_check', sql`${t.qty} > 0`),
+    check('store_issue_returns_reason_check', sql`length(btrim(${t.reason})) > 0`),
+    index('store_issue_returns_line_idx')
+      .on(t.issueLineId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('store_issue_returns_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
     }),
   ],
 ).enableRLS();

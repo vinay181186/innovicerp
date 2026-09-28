@@ -352,3 +352,27 @@ issue the own booking is consumed first.
 | M15 | Two Completes on one SO at once                          | SO row locked; second re-checks ✓ (P10)                              |
 
 **Review fixes (phase 2):** snapshot taken when a line is KEYED (kept while its counted qty is unchanged), not at Submit; nobody who created, keyed or submitted a count may approve it; the below-booked confirmation only when the count lowers stock; Count Date not in the future.
+
+## 12. Phase 3b — as built (issue slip, issue against the job, material view)
+
+Built: M1–M4, M10, M11 (+ return/reverse, register, backfill). M5–M9 and M12–M15 need reservations and
+Complete-consumes, which are phase 3c. Names changed to the register (docs/NAMING.md): the paper tests'
+"Balance" is **To Issue**, "issued-unused" is **Still Out**, "booked" is **Reserved**, the assembly's
+"consumed" is **Fitted**.
+
+Scenario test on TEST (real services, `verify-3b.ts`): 25 / 25 pass —
+M1 To Issue 2.5 · M2 409 needsConfirmation, 403 without the right, posted with reason by an approver ·
+other items on a JC uncapped · M3 not-a-BOM-part 400 · two-line SO slip, To Issue 2 / 0 · SO over To Issue
+409 · M4 over-return 409, return 1 → Returned 1, To Issue 3, stock +1 · M10 no Department refused, general
+issue −5 · M11 reverse after a return → "use Return" · reverse general → stock +5 · return on a reversed slip
+409 · over Available refused by the stock writer · duplicate item refused · register search / detail ·
+backfill one line per old slip · balances = Σ ledger · every line has its ledger row · reversed slips flagged
+in the material slip list · closed SO refused · SO with its BOM removed still lists parts out.
+
+Review fixes (3b): F1 ISS- number under a per-company advisory lock · F2 reversed slips flagged on the
+Material slip list · F3 deep-linked Job Card / SO shows its code in the picker · F4 the more-than-To-Issue box
+clears on any line edit; "Issue Anyway" needs Approve · F6 closed / cancelled Assembly SO refused · F7 Return
+/ Reverse dated in IST · F8 pre-0157 slips show their typed reference · F9 an SO whose BOM is gone still lists
+parts out · F10 a 403 on Material shows a plain message.
+Open (not fixed): a Job Card's status is not checked on issue; M12 (naming the SOs that hold a part) waits
+for 3c reservations.

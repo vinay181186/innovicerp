@@ -28,6 +28,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { JcMaterialPanel } from '@/modules/material/components/jc-material-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { drawingViewUrl } from '@/lib/drawing-url';
 import { fmtJcDate } from '../lib/fmt-jc-date';
@@ -494,10 +495,12 @@ function DocumentsTab({
 
 // ─── The tab bar ─────────────────────────────────────────────────────────────
 
-type Tab = 'docs' | 'related' | 'history';
+type Tab = 'docs' | 'material' | 'related' | 'history';
 
 const TABS: ReadonlyArray<{ key: Tab; label: string }> = [
   { key: 'docs', label: 'Documents & Quality' },
+  // ADR-193 3b — Required / Issued / Returned / Balance of the card's material.
+  { key: 'material', label: 'Material' },
   { key: 'related', label: 'Related Records' },
   { key: 'history', label: 'History' },
 ];
@@ -560,6 +563,8 @@ export function JcViewTabs({
       <div className="panel-body">
         {tab === 'docs' ? (
           <DocumentsTab jc={jc} ops={ops} extras={extras} stopped={stopped} />
+        ) : tab === 'material' ? (
+          <JcMaterialPanel jobCardId={jc.id} stopped={stopped} />
         ) : tab === 'related' ? (
           <RelatedDocsPanel module="job-cards" id={jc.id} />
         ) : (
