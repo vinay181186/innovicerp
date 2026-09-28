@@ -24,14 +24,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { IncomingQcInspectForm } from './incoming-qc-inspect-form';
+import { IncomingQcInspectForm, type IncomingRaisedNc } from './incoming-qc-inspect-form';
 
 export function IncomingQcInspectModal({
   o,
   onClose,
+  onNcRaised,
 }: {
   o: IncomingQcPendingRow;
   onClose: () => void;
+  /** A reject raised an NC — the host shows "NC … raised — Dispose now →". */
+  onNcRaised?: ((nc: IncomingRaisedNc) => void) | undefined;
 }): React.JSX.Element {
   // Whether anything has been typed or attached — reported up by the form.
   // Decides if closing asks first.
@@ -182,7 +185,10 @@ export function IncomingQcInspectModal({
             onCancel={requestClose}
             // Close once the entry has actually landed. The form has already
             // reset itself and the queue refetches behind the box.
-            onDone={onClose}
+            onDone={(nc) => {
+              if (nc) onNcRaised?.(nc);
+              onClose();
+            }}
             onDirtyChange={setDirty}
           />
         ) : eff ? (

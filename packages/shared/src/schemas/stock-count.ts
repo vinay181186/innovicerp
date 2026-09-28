@@ -82,7 +82,8 @@ export const resolveStockCountItemsInputSchema = z.object({
 });
 export type ResolveStockCountItemsInput = z.infer<typeof resolveStockCountItemsInputSchema>;
 export interface ResolveStockCountItemsResponse {
-  found: Array<{ code: string; itemId: string; name: string; uom: string }>;
+  /** inStock = physical stock right now (so a new line shows In Stock / Difference at once). */
+  found: Array<{ code: string; itemId: string; name: string; uom: string; inStock: number }>;
   missing: string[];
 }
 

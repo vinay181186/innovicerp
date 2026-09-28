@@ -16,6 +16,7 @@
 // Issued-qty totals never change after creation (so the constraint
 // total returned <= qty is enforced).
 
+import { ITEM_TYPE_RULES, type ItemType, itemTypeLabel } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreateToolIssueInput,
@@ -236,7 +237,7 @@ export async function createToolIssue(
 
   return withUserContext(user, async (tx) => {
     const itemRows = await tx
-      .select({ id: items.id, code: items.code, name: items.name })
+      .select({ id: items.id, code: items.code, name: items.name, itemType: items.itemType })
       .from(items)
       .where(
         and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
@@ -245,6 +246,13 @@ export async function createToolIssue(
     const itm = itemRows[0];
     if (!itm)
       throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
+    // Only returnable items (Tool / Instrument) are lent out here — a bar-stock
+    // or component item is issued by Item Issue, not "lent" (tool-issue#1).
+    if (!ITEM_TYPE_RULES[itm.itemType as ItemType]?.returnable) {
+      throw new ValidationError(
+        `${itm.code} is a ${itemTypeLabel(itm.itemType)} item — only Tool / Instrument items can be issued here. Use Item Issue, or change its Item Type in the Item Master if it really is a tool.`,
+      );
+    }
 
     // Lock the item first: the next number is MAX+1 and this lock is what
     // keeps two issues of the same item from taking the same number.

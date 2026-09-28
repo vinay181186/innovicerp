@@ -20,8 +20,9 @@ function buildSearch(q: ListStoreInventoryQuery): string {
   return params.toString();
 }
 
-export function useStoreInventory(query: ListStoreInventoryQuery) {
+export function useStoreInventory(query: ListStoreInventoryQuery, enabled = true) {
   return useQuery<ListStoreInventoryResponse>({
+    enabled,
     queryKey: storeInventoryKeys.list(query),
     queryFn: () => apiFetch<ListStoreInventoryResponse>(`/store-inventory?${buildSearch(query)}`),
     refetchInterval: 60_000,

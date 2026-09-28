@@ -18,6 +18,9 @@ import { useMemo, useState } from 'react';
 import { fmtDate, todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useItemsList } from '../../items/api';
+import { useStoreInventory } from '../../store-inventory/api';
+import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
+import { SearchableSelect } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   useCreateToolIssue,
@@ -318,15 +321,34 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
 
   const createMut = useCreateToolIssue();
   const { data: next } = useNextToolIssueCode();
-  const { data: itemsData } = useItemsList({
+  // Tool / Instrument items only — a bar-stock or component item is issued by
+  // Item Issue, not lent out here (the server refuses it too).
+  const { data: itemsData, isFetching: itemsFetching } = useItemsList({
     search: itemSearch.trim() || undefined,
+    itemType: 'tool',
     limit: 50,
     offset: 0,
   });
-  const selectedItem = useMemo(
-    () => itemsData?.items.find((i) => i.id === itemId) ?? null,
-    [itemsData, itemId],
+  const [selectedItem, setSelectedItem] = useState<{
+    code: string;
+    name: string;
+    uom: string | null;
+  } | null>(null);
+  const toolOptions = useMemo(
+    () => (itemsData?.items ?? []).map((it) => ({ id: it.id, code: it.code, name: it.name })),
+    [itemsData],
   );
+  // In stock of the picked tool — the same figure the Store Inventory shows.
+  const { data: stockData } = useStoreInventory(
+    { search: selectedItem?.code ?? '', filter: 'all' },
+    Boolean(selectedItem),
+  );
+  const stockRow = (stockData?.rows ?? []).find((r) => r.itemId === itemId);
+
+  const dirty = Boolean(
+    itemId || qty.trim() || issuedTo.trim() || refNo.trim() || purpose.trim() || remarks.trim(),
+  );
+  const guard = useDiscardGuard(dirty, onClose);
 
   const onSave = (): void => {
     setErr(null);
@@ -371,7 +393,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
   return (
     <ModalShell
       title="Issue Tool"
-      onClose={onClose}
+      onClose={guard.requestClose}
       footer={
         <ModalFooter
           onClose={onClose}
@@ -381,6 +403,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
         />
       }
     >
+      {guard.dialog}
       <div className="form-grid">
         <Field label="Issue No.">
           <input
@@ -399,58 +422,33 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
           />
         </Field>
         <Field label="Tool" required full>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Type item code or name..."
-            value={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : itemSearch}
-            onChange={(e) => {
-              setItemId(null);
-              setItemSearch(e.target.value);
+          <SearchableSelect
+            id="ti-tool"
+            value={itemId}
+            onChange={(id) => {
+              setItemId(id);
+              const it = itemsData?.items.find((x) => x.id === id);
+              setSelectedItem(it ? { code: it.code, name: it.name, uom: it.uom ?? null } : null);
             }}
-            style={{ width: '100%', fontSize: 13, fontWeight: 600 }}
+            options={toolOptions}
+            valueLabel={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : undefined}
+            onSearch={setItemSearch}
+            loading={itemsFetching}
+            placeholder="Type tool code or name…"
+            emptyText="No Tool / Instrument item matches"
           />
-          {!itemId && itemSearch && itemsData ? (
-            <div
-              style={{
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                background: 'var(--bg2)',
-                marginTop: 4,
-                maxHeight: 180,
-                overflowY: 'auto',
-              }}
-            >
-              {itemsData.items.slice(0, 20).map((it) => (
-                <div
-                  key={it.id}
-                  onClick={() => {
-                    setItemId(it.id);
-                    setItemSearch('');
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    borderBottom: '1px solid var(--border)',
-                  }}
-                >
-                  <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
-                    {it.code}
-                  </span>{' '}
-                  — {it.name}
-                </div>
-              ))}
-            </div>
-          ) : null}
           {selectedItem ? (
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-              <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
-                {selectedItem.code}
-              </span>{' '}
-              — {selectedItem.name} | {selectedItem.uom}
+              In stock: {stockRow ? stockRow.inStock : '—'} {selectedItem.uom ?? ''}
+              {stockRow && stockRow.availableQty !== stockRow.inStock
+                ? ` · Available ${stockRow.availableQty}`
+                : ''}
             </div>
-          ) : null}
+          ) : (
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+              Only items with Item Type “Tool / Instrument” are listed.
+            </div>
+          )}
         </Field>
         <Field label="Qty to Issue" required>
           <input

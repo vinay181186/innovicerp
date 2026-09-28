@@ -111,7 +111,7 @@ export async function listStoreInventory(
       -- in the stock ledger (ADR-067), so it must be surfaced as its own
       -- column or the row silently understates where the material is.
       at_vendor AS (
-        SELECT w.item_id, SUM(w.at_vendor_qty)::int AS qty
+        SELECT w.item_id, SUM(w.at_vendor_qty)::numeric AS qty
         FROM public.v_osp_wip w
         WHERE w.company_id = ${companyId}::uuid
           AND w.item_id IS NOT NULL
@@ -125,8 +125,8 @@ export async function listStoreInventory(
         i.uom::text                                AS uom,
         COALESCE(s.on_hand_qty, 0)::float8            AS in_stock,
         i.min_stock_qty                            AS min_qty,
-        COALESCE(po_pending.qty, 0)::int           AS on_po_qty,
-        COALESCE(at_vendor.qty, 0)::int            AS at_vendor_qty,
+        COALESCE(po_pending.qty, 0)::numeric       AS on_po_qty,
+        COALESCE(at_vendor.qty, 0)::numeric        AS at_vendor_qty,
         COALESCE(jc_open.qty, 0)::int              AS mfg_pending_qty
       FROM public.items i
       LEFT JOIN public.v_item_stock s
@@ -228,6 +228,13 @@ export async function adjustStock(
   // an existing saved figure, so L2 Data Entry is correctly refused.
   await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
+  // Bought material enters stock through a GRN (PO link + incoming QC), never
+  // as a Manual Receipt with Source = Purchase (store-manual-receipt#2).
+  if (input.direction === 'add' && /source=purchase/i.test(input.remarks)) {
+    throw new ValidationError(
+      'Bought material is received through a GRN against its PO, not by Manual Receipt.',
+    );
+  }
   return withUserContext(user, async (tx) => {
     const itemRows = await tx
       .select({ id: items.id, code: items.code })

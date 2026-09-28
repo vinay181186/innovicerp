@@ -17,6 +17,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { usePartyMaterialsList } from '../../party-materials/api';
+import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { useCreatePartyGrn, useNextPartyGrnCode } from '../api';
 import { LineRow, MATERIAL_DATALIST_ID, makeEmptyLine, type UiLine } from './party-grn-line-row';
 
@@ -80,6 +81,19 @@ export function NewPartyGrnModal({
   const pmAll = pmData?.items ?? [];
 
   const createMut = useCreatePartyGrn();
+
+  // A stray click outside / ESC used to throw away every typed line; now it
+  // asks first when anything was typed (party-grn-create#1).
+  const dirty =
+    jwId !== (initialJwId ?? null) ||
+    Boolean(dcNo.trim() || remarks.trim()) ||
+    lines.some(
+      (l) =>
+        Boolean(l.partyMaterialId) ||
+        Boolean(l.materialSearch.trim() || l.receivedQty.trim() || l.remarks.trim()) ||
+        Boolean(l.jwLineNoText),
+    );
+  const guard = useDiscardGuard(dirty, onClose);
 
   const setLine = (idx: number, patch: Partial<UiLine>): void => {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -214,8 +228,12 @@ export function NewPartyGrnModal({
         justifyContent: 'center',
         zIndex: 200,
       }}
-      onClick={onClose}
+      onClick={(e) => {
+        // Only the dim backdrop itself — not the exit question rendered inside it.
+        if (e.target === e.currentTarget) guard.requestClose();
+      }}
     >
+      {guard.dialog}
       <div
         style={{
           background: 'var(--bg)',

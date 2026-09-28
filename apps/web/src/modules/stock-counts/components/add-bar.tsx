@@ -4,6 +4,7 @@ import { Download, Upload } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { useItemsList } from '@/modules/items/api';
 import { SearchableSelect } from '@/ui/forms';
+import { resolveStockCountItems } from '../api';
 import type { DraftLine } from '../lib/draft-line';
 import { downloadStockCountTemplate } from '../lib/excel';
 
@@ -27,15 +28,22 @@ export function StockCountAddBar(props: {
   const pick = (itemId: string | null): void => {
     const it = itemsData?.items.find((x) => x.id === itemId);
     if (it) {
-      onAdd({
-        itemId: it.id,
-        itemCode: it.code,
-        itemName: it.name,
-        uom: it.uom,
-        inStock: null,
-        countedQty: '',
-        reason: '',
-      });
+      // Read the item's stock now, so In Stock / Difference show while
+      // counting — not only after Save Draft (stock-count-create#1).
+      void resolveStockCountItems([it.code])
+        .then((r) => r.found.find((f) => f.itemId === it.id)?.inStock ?? null)
+        .catch(() => null)
+        .then((inStock) =>
+          onAdd({
+            itemId: it.id,
+            itemCode: it.code,
+            itemName: it.name,
+            uom: it.uom,
+            inStock,
+            countedQty: '',
+            reason: '',
+          }),
+        );
     }
     // Remount the picker so the next item can be keyed straight in.
     setPickerKey((k) => k + 1);
