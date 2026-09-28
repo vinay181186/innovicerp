@@ -4,6 +4,13 @@
 
 import { z } from 'zod';
 import { INVOICE_STATUSES } from '../enums/invoice-status';
+import { servicePoTaxTypeSchema } from './service-po';
+
+/** How an invoice's GST splits: 'sgst_cgst' (same state — half SGST, half
+ *  CGST) or 'igst' (inter-state). The same two codes the JW invoice, the PO and
+ *  the service PO store (migration 0171). Totals do not depend on it. */
+export const invoiceTaxTypeSchema = servicePoTaxTypeSchema;
+export type InvoiceTaxType = z.infer<typeof invoiceTaxTypeSchema>;
 
 // An invoiceable SO line for a chosen SO (the create form).
 export const invoiceableLineSchema = z.object({
@@ -43,6 +50,9 @@ export const invoiceableSoResponseSchema = z.object({
   /** The customer's Payment Days (clients.payment_days) — the new invoice's
    *  default Payment Terms. Null when the customer has none set (ADR-188). */
   paymentDays: z.number().int().nonnegative().nullable(),
+  /** The new invoice's default Tax Type, decided by the server: IGST when the
+   *  customer's GSTIN state code differs from the company's, else SGST + CGST. */
+  taxType: invoiceTaxTypeSchema,
   lines: z.array(invoiceableLineSchema),
 });
 export type InvoiceableSoResponse = z.infer<typeof invoiceableSoResponseSchema>;
@@ -54,6 +64,8 @@ export const createInvoiceInputSchema = z.object({
   // the SO's GST %.
   paymentTermsDays: z.coerce.number().int().nonnegative().optional(),
   gstPercent: z.coerce.number().nonnegative().max(100).optional(),
+  /** Omitted → the server decides from the customer's GSTIN vs the company's. */
+  taxType: invoiceTaxTypeSchema.optional(),
   remarks: z.string().max(1000).optional(),
   lines: z
     .array(
@@ -75,7 +87,11 @@ export type PaymentMode = (typeof PAYMENT_MODES)[number];
 
 export const addPaymentInputSchema = z.object({
   paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  amount: z.coerce.number().positive(),
+  /** Money received. May be 0 when the row only records a TDS / short amount. */
+  amount: z.coerce.number().nonnegative(),
+  /** TDS / short amount the customer deducted (migration 0171). Counts toward
+   *  settling the invoice. The server refuses a row where both are 0. */
+  tdsAmount: z.coerce.number().nonnegative().default(0),
   mode: z.enum(PAYMENT_MODES).default('NEFT'),
   refNo: z.string().max(128).optional(),
   notes: z.string().max(500).optional(),
@@ -120,6 +136,8 @@ export const invoicePaymentRowSchema = z.object({
   id: z.string().uuid(),
   paymentDate: z.string(),
   amount: z.number().nonnegative().nullable(), // NULL when prices hidden
+  /** TDS / short amount deducted on this payment. NULL when prices hidden. */
+  tdsAmount: z.number().nonnegative().nullable().default(0),
   mode: z.string(),
   refNo: z.string().nullable(),
   notes: z.string().nullable(),
@@ -139,6 +157,9 @@ export const invoiceRowSchema = z.object({
   gstAmount: z.number().nonnegative().nullable(),
   grandTotal: z.number().nonnegative().nullable(),
   totalPaid: z.number().nonnegative().nullable(),
+  /** Σ TDS / short amount on the payments (migration 0171). */
+  totalTds: z.number().nonnegative().nullable().default(0),
+  /** Outstanding Amount = grandTotal − totalPaid − totalTds. */
   balance: z.number().nullable(),
   status: z.enum(INVOICE_STATUSES),
   dueDate: z.string().nullable(),
@@ -158,6 +179,9 @@ export const invoiceDetailSchema = invoiceRowSchema.extend({
   clientCode: z.string().nullable(),
   clientGst: z.string().nullable(),
   paymentTermsDays: z.number().int().nonnegative(),
+  /** Null on invoices raised before migration 0171 — those print the split the
+   *  old way (from the customer's GSTIN). */
+  taxType: invoiceTaxTypeSchema.nullable().default(null),
   remarks: z.string().nullable(),
   /** The customer's PO number (`Client PO No.`), read live off the sales order
    *  this invoice bills (sales_orders.client_po_no). Null when not captured. */

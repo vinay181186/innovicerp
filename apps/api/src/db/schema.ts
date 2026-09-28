@@ -1875,7 +1875,8 @@ export const purchaseRequests = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name'),
-    qty: integer('qty').notNull(),
+    // Decimal (KGS / MTR) — 0172; NOS / SET stay whole by the API rule.
+    qty: stockQty('qty').notNull(),
     estCost: numeric('est_cost', { precision: 12, scale: 2 }).notNull().default('0'),
     requiredDate: date('required_date'),
     sourceJcOpId: uuid('source_jc_op_id').references((): AnyPgColumn => jcOps.id, {
@@ -2057,9 +2058,10 @@ export const purchaseOrderLines = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name').notNull(),
-    qty: integer('qty').notNull(),
+    // Decimal (KGS / MTR) — 0172; NOS / SET stay whole by the API rule.
+    qty: stockQty('qty').notNull(),
     rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
-    receivedQty: integer('received_qty').notNull().default(0),
+    receivedQty: stockQty('received_qty').notNull().default(0),
     dueDate: date('due_date'),
     sourceSoLineId: uuid('source_so_line_id').references(() => salesOrderLines.id, {
       onDelete: 'set null',
@@ -2106,7 +2108,7 @@ export const purchaseOrderLines = pgTable(
     check(
       'purchase_order_lines_received_qty_check',
       // Allow up to 10% over-receipt (legitimate vendor over-shipments).
-      sql`${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty} + (${t.qty} * 0.1)::int`,
+      sql`${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty} * 1.1`,
     ),
     pgPolicy('purchase_order_lines_company_read', {
       for: 'select',
@@ -2268,11 +2270,12 @@ export const goodsReceiptNoteLines = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name').notNull(),
-    receivedQty: integer('received_qty').notNull(),
+    // Decimal (KGS / MTR) — 0172.
+    receivedQty: stockQty('received_qty').notNull(),
     dcRefNo: text('dc_ref_no'),
     qcStatus: grnQcStatusEnum('qc_status').notNull().default('pending'),
-    qcAcceptedQty: integer('qc_accepted_qty').notNull().default(0),
-    qcRejectedQty: integer('qc_rejected_qty').notNull().default(0),
+    qcAcceptedQty: stockQty('qc_accepted_qty').notNull().default(0),
+    qcRejectedQty: stockQty('qc_rejected_qty').notNull().default(0),
     qcDate: date('qc_date'),
     qcRemarks: text('qc_remarks'),
     qcInspectedBy: uuid('qc_inspected_by').references(() => users.id),
@@ -4586,8 +4589,9 @@ export const jwDcOutwardLines = pgTable(
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
     processText: text('process_text'),
-    poQty: integer('po_qty').notNull().default(0),
-    sentQty: integer('sent_qty').notNull(),
+    // Decimal (KGS / MTR) — 0172.
+    poQty: stockQty('po_qty').notNull().default(0),
+    sentQty: stockQty('sent_qty').notNull(),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
       { onDelete: 'set null' },
@@ -4639,6 +4643,12 @@ export const jwDcInward = pgTable(
     vendorChallanNo: text('vendor_challan_no'),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
+    // The QC-pending GRN raised for this receipt (0172, ADR-189 — Incoming QC is
+    // the only inspector). NULL on receipts made before 0172.
+    goodsReceiptNoteId: uuid('goods_receipt_note_id').references(
+      (): AnyPgColumn => goodsReceiptNotes.id,
+      { onDelete: 'set null' },
+    ),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4690,10 +4700,12 @@ export const jwDcInwardLines = pgTable(
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
     processText: text('process_text'),
-    sentQty: integer('sent_qty').notNull().default(0),
-    receivedQty: integer('received_qty').notNull(),
-    okQty: integer('ok_qty').notNull().default(0),
-    rejectedQty: integer('rejected_qty').notNull().default(0),
+    // Decimal (KGS / MTR) — 0172. From 0172 a receipt goes to Incoming QC on a
+    // GRN, so new rows carry ok / rejected 0 / 0 (CHECK ok + rejected <= received).
+    sentQty: stockQty('sent_qty').notNull().default(0),
+    receivedQty: stockQty('received_qty').notNull(),
+    okQty: stockQty('ok_qty').notNull().default(0),
+    rejectedQty: stockQty('rejected_qty').notNull().default(0),
     remarks: text('remarks'),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
@@ -5193,6 +5205,12 @@ export const invoices = pgTable(
     gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     grandTotal: numeric('grand_total', { precision: 14, scale: 2 }).notNull().default('0'),
     totalPaid: numeric('total_paid', { precision: 14, scale: 2 }).notNull().default('0'),
+    // Σ invoice_payments.tds_amount (migration 0171) — TDS / short amount the
+    // customer deducted; counts toward settling. Outstanding = grand − paid − tds.
+    totalTds: numeric('total_tds', { precision: 14, scale: 2 }).notNull().default('0'),
+    // 'sgst_cgst' | 'igst' (same codes as jw_invoices.tax_type), migration
+    // 0171. NULL on invoices raised before it: those print as they always did.
+    taxType: text('tax_type'),
     paymentTermsDays: integer('payment_terms_days').notNull().default(45),
     dueDate: date('due_date'),
     status: invoiceStatusEnum('status').notNull().default('unpaid'),
@@ -5300,6 +5318,9 @@ export const invoicePayments = pgTable(
       .references(() => invoices.id, { onDelete: 'cascade' }),
     paymentDate: date('payment_date').notNull(),
     amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    // TDS / short amount the customer deducted on this payment (migration
+    // 0171). Counts toward settling the invoice; never part of `amount`.
+    tdsAmount: numeric('tds_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     mode: text('mode').notNull().default('NEFT'),
     refNo: text('ref_no'),
     notes: text('notes'),

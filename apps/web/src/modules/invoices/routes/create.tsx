@@ -5,7 +5,7 @@
 // `?dispatchId=` (Create Invoice button on the Dispatch Register) preselects the
 // dispatch's SO and prefills the lines from that dispatch.
 
-import type { InvoiceableLine } from '@innovic/shared';
+import type { InvoiceTaxType, InvoiceableLine } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -70,6 +70,9 @@ function InvoiceNewPage(): React.JSX.Element {
   const [invoiceDate, setInvoiceDate] = useState(todayStr());
   const [termsDays, setTermsDays] = useState(String(DEFAULT_TERMS_DAYS));
   const [gstPercent, setGstPercent] = useState('18');
+  // Tax Type: how the GST splits on the invoice. The server sends the default
+  // (IGST when the customer's GSTIN state is not the company's).
+  const [taxType, setTaxType] = useState<InvoiceTaxType>('sgst_cgst');
   const [remarks, setRemarks] = useState('');
   const [cards, setCards] = useState<LineCard[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -85,12 +88,15 @@ function InvoiceNewPage(): React.JSX.Element {
   // is seen by the fill effect in the same commit (effects run in order).
   const termsTouched = useRef(false);
   const gstTouched = useRef(false);
+  const taxTypeTouched = useRef(false);
   const filledFor = useRef<string | null>(null);
   const [termsSource, setTermsSource] = useState<'customer' | 'default' | null>('default');
   const [gstSource, setGstSource] = useState<'so' | null>(null);
+  const [taxTypeSource, setTaxTypeSource] = useState<'gstin' | null>(null);
   useEffect(() => {
     termsTouched.current = false;
     gstTouched.current = false;
+    taxTypeTouched.current = false;
     filledFor.current = null;
   }, [soId]);
   useEffect(() => {
@@ -99,6 +105,10 @@ function InvoiceNewPage(): React.JSX.Element {
     if (!gstTouched.current) {
       setGstPercent(String(inv.gstPercent));
       setGstSource('so');
+    }
+    if (!taxTypeTouched.current) {
+      setTaxType(inv.taxType);
+      setTaxTypeSource('gstin');
     }
     if (!termsTouched.current) {
       setTermsDays(String(inv.paymentDays ?? DEFAULT_TERMS_DAYS));
@@ -175,6 +185,9 @@ function InvoiceNewPage(): React.JSX.Element {
   }, 0);
   const gstAmt = Math.round(((subtotal * Number(gstPercent || 0)) / 100) * 100) / 100;
   const grand = subtotal + gstAmt;
+  // The split shown under the totals — the same rows the print carries.
+  const halfGst = Math.round((gstAmt / 2) * 100) / 100;
+  const gstPctNum = Number(gstPercent || 0);
 
   async function submit(): Promise<void> {
     setErr(null);
@@ -200,6 +213,7 @@ function InvoiceNewPage(): React.JSX.Element {
         invoiceDate,
         paymentTermsDays: Number(termsDays) || 0,
         gstPercent: Number(gstPercent) || 0,
+        taxType,
         remarks: remarks || undefined,
         lines: payloadLines,
       });
@@ -333,7 +347,7 @@ function InvoiceNewPage(): React.JSX.Element {
             />
           </FormField>
 
-          {/* Row 2 — Payment Terms · GST % · Remarks (3 + 3 + 6). */}
+          {/* Row 2 — Payment Terms · GST % · Tax Type (3 + 3 + 3); Remarks (6) wraps. */}
           <FormField
             label="Payment Terms (days)"
             size="sm"
@@ -385,6 +399,26 @@ function InvoiceNewPage(): React.JSX.Element {
                   </option>
                 ),
               )}
+            </select>
+          </FormField>
+          <FormField
+            label="Tax Type"
+            size="sm"
+            htmlFor="invoiceTaxType"
+            help={taxTypeSource === 'gstin' ? 'From customer GSTIN' : undefined}
+          >
+            <select
+              id="invoiceTaxType"
+              className="innovic-select"
+              value={taxType}
+              onChange={(e) => {
+                taxTypeTouched.current = true;
+                setTaxTypeSource(null);
+                setTaxType(e.target.value === 'igst' ? 'igst' : 'sgst_cgst');
+              }}
+            >
+              <option value="sgst_cgst">SGST + CGST</option>
+              <option value="igst">IGST</option>
             </select>
           </FormField>
           <FormField label="Remarks" size="lg" htmlFor="invoiceRemarks">
@@ -614,8 +648,19 @@ function InvoiceNewPage(): React.JSX.Element {
           >
             <span className="text3">Subtotal</span>
             <b className="mono fw-700 text2">₹{inrFormat(subtotal)}</b>
-            <span className="text3">GST</span>
-            <b className="mono fw-700 amber">₹{inrFormat(gstAmt)}</b>
+            {taxType === 'igst' ? (
+              <>
+                <span className="text3">IGST @ {gstPctNum}%</span>
+                <b className="mono fw-700 amber">₹{inrFormat(gstAmt)}</b>
+              </>
+            ) : (
+              <>
+                <span className="text3">SGST @ {gstPctNum / 2}%</span>
+                <b className="mono fw-700 amber">₹{inrFormat(halfGst)}</b>
+                <span className="text3">CGST @ {gstPctNum / 2}%</span>
+                <b className="mono fw-700 amber">₹{inrFormat(gstAmt - halfGst)}</b>
+              </>
+            )}
             <span className="text3">Total</span>
             <b className="mono fw-700 green">₹{inrFormat(grand)}</b>
           </div>

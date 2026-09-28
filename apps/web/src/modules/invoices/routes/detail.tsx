@@ -85,6 +85,8 @@ function InvoiceDetailPage(): React.JSX.Element {
   const [payOpen, setPayOpen] = useState(false);
   const [payDate, setPayDate] = useState(todayStr());
   const [payAmt, setPayAmt] = useState('');
+  // TDS / short amount the customer deducted — counts toward settling.
+  const [payTds, setPayTds] = useState('');
   const [payMode, setPayMode] = useState<PaymentMode>('NEFT');
   const [payRef, setPayRef] = useState('');
   const [payNotes, setPayNotes] = useState('');
@@ -117,18 +119,24 @@ function InvoiceDetailPage(): React.JSX.Element {
 
   async function submitPayment(): Promise<void> {
     setPayErr(null);
-    const amount = Number(payAmt);
-    if (!amount || amount <= 0) return setPayErr('Amount is required.');
+    const amount = Number(payAmt) || 0;
+    const tdsAmount = Number(payTds) || 0;
+    if (amount < 0 || tdsAmount < 0) return setPayErr('Amounts cannot be less than 0.');
+    if (amount <= 0 && tdsAmount <= 0) {
+      return setPayErr('Enter an Amount or a TDS / Short Amount.');
+    }
     try {
       await addPayment.mutateAsync({
         paymentDate: payDate,
         amount,
+        tdsAmount,
         mode: payMode,
         refNo: payRef || undefined,
         notes: payNotes || undefined,
       });
       setPayOpen(false);
       setPayAmt('');
+      setPayTds('');
       setPayRef('');
       setPayNotes('');
     } catch (e) {
@@ -149,14 +157,52 @@ function InvoiceDetailPage(): React.JSX.Element {
     ? []
     : [
         { label: 'Subtotal', value: inr(inv.subtotal ?? 0), size: 16 },
-        {
-          label: `GST ${inv.gstPercent}%`,
-          value: inr(inv.gstAmount ?? 0),
-          size: 16,
-          color: 'var(--amber2)',
-        },
+        // The split follows the invoice's Tax Type; an invoice raised before it
+        // was recorded shows the single GST figure, as it always did.
+        ...(inv.taxType === 'igst'
+          ? [
+              {
+                label: `IGST ${inv.gstPercent}%`,
+                value: inr(inv.gstAmount ?? 0),
+                size: 16,
+                color: 'var(--amber2)',
+              },
+            ]
+          : inv.taxType === 'sgst_cgst'
+            ? [
+                {
+                  label: `SGST ${(inv.gstPercent ?? 0) / 2}%`,
+                  value: inr((inv.gstAmount ?? 0) / 2),
+                  size: 16,
+                  color: 'var(--amber2)',
+                },
+                {
+                  label: `CGST ${(inv.gstPercent ?? 0) / 2}%`,
+                  value: inr((inv.gstAmount ?? 0) / 2),
+                  size: 16,
+                  color: 'var(--amber2)',
+                },
+              ]
+            : [
+                {
+                  label: `GST ${inv.gstPercent}%`,
+                  value: inr(inv.gstAmount ?? 0),
+                  size: 16,
+                  color: 'var(--amber2)',
+                },
+              ]),
         { label: 'Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green2)' },
         { label: 'Paid', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
+        ...((inv.totalTds ?? 0) > 0
+          ? [
+              {
+                label: 'TDS / Short',
+                value: inr(inv.totalTds ?? 0),
+                size: 18,
+                color: 'var(--purple)',
+              },
+            ]
+          : []),
         {
           label: 'Outstanding',
           value: inr(inv.balance ?? 0),
@@ -249,9 +295,8 @@ function InvoiceDetailPage(): React.JSX.Element {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label">
-                  Amount<span className="req">★</span>
-                </label>
+                {/* Amount or TDS / Short Amount — at least one (the server checks). */}
+                <label className="form-label">Amount</label>
                 <input
                   type="number"
                   className="innovic-input"
@@ -260,6 +305,19 @@ function InvoiceDetailPage(): React.JSX.Element {
                   value={payAmt}
                   placeholder={String(Math.round(inv.balance ?? 0))}
                   onChange={(e) => setPayAmt(e.target.value)}
+                />
+              </div>
+              <div className="form-grp">
+                <label className="form-label">TDS / Short Amount</label>
+                <input
+                  type="number"
+                  className="innovic-input"
+                  min="0"
+                  step="0.01"
+                  value={payTds}
+                  placeholder="0"
+                  title="Amount the customer deducted (TDS) or paid short. It counts toward settling the invoice."
+                  onChange={(e) => setPayTds(e.target.value)}
                 />
               </div>
               <div className="form-grp">
@@ -348,6 +406,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                 <tr>
                   <th>Payment Date</th>
                   <th>Amount</th>
+                  <th>TDS / Short</th>
                   <th>Mode</th>
                   <th>Reference No.</th>
                   <th>Notes</th>
@@ -359,6 +418,9 @@ function InvoiceDetailPage(): React.JSX.Element {
                     <td style={{ fontSize: 11 }}>{fmtDate(p.paymentDate)}</td>
                     <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                       {inr(p.amount ?? 0)}
+                    </td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {(p.tdsAmount ?? 0) > 0 ? inr(p.tdsAmount ?? 0) : '—'}
                     </td>
                     <td style={{ fontSize: 11 }}>{p.mode}</td>
                     <td style={{ fontSize: 11, color: 'var(--purple)' }}>{p.refNo ?? ''}</td>

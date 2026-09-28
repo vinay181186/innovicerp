@@ -41,47 +41,58 @@ function SalesOrderNewPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      // Upload the chosen client-PO document against the new SO (legacy
-      // addSO L12459 uploads after save). Best-effort — the SO is already saved.
-      const poFile = poFileRef.current;
-      if (poFile && me?.companyId) {
+      // Upload the chosen client-PO document + email reference against the new
+      // SO (legacy addSO L12459 uploads after save). The SO is already saved, so
+      // a failed upload never undoes it — but it is no longer swallowed: the SO
+      // opens with a red banner naming the file that did not attach, and the
+      // Client PO bar on that page has the Upload button to retry.
+      const failed: string[] = [];
+      const uploads: {
+        file: File | null;
+        category: 'client_po' | 'email_reference';
+        docType: string;
+        label: string;
+      }[] = [
+        {
+          file: poFileRef.current,
+          category: 'client_po',
+          docType: 'Client PO',
+          label: 'Client PO file',
+        },
+        {
+          file: emailFileRef.current,
+          category: 'email_reference',
+          docType: 'Email Reference',
+          label: 'Email Reference file',
+        },
+      ];
+      for (const u of uploads) {
+        if (!u.file) continue;
         try {
-          const storagePath = await uploadSoDocFile(poFile, me.companyId);
+          if (!me?.companyId) throw new Error('no company');
+          const storagePath = await uploadSoDocFile(u.file, me.companyId);
           await createDoc.mutateAsync({
             salesOrderId: created.id,
             soCodeText: created.code,
-            category: 'client_po',
-            docType: 'Client PO',
-            fileName: poFile.name,
+            category: u.category,
+            docType: u.docType,
+            fileName: u.file.name,
             storagePath,
-            fileSize: poFile.size,
-            fileType: poFile.type || undefined,
+            fileSize: u.file.size,
+            fileType: u.file.type || undefined,
           });
         } catch {
-          // Non-fatal: SO is saved; the PO doc can be attached on the detail page.
-        }
-      }
-      // Upload the attached email reference the same way (best-effort).
-      const emailFile = emailFileRef.current;
-      if (emailFile && me?.companyId) {
-        try {
-          const storagePath = await uploadSoDocFile(emailFile, me.companyId);
-          await createDoc.mutateAsync({
-            salesOrderId: created.id,
-            soCodeText: created.code,
-            category: 'email_reference',
-            docType: 'Email Reference',
-            fileName: emailFile.name,
-            storagePath,
-            fileSize: emailFile.size,
-            fileType: emailFile.type || undefined,
-          });
-        } catch {
-          // Non-fatal: SO is saved; the email ref can be attached on the detail page.
+          failed.push(`${u.label} (${u.file.name})`);
         }
       }
       exit.leave(
-        () => void navigate({ to: '/sales-orders/$id', params: { id: created.id }, replace: true }),
+        () =>
+          void navigate({
+            to: '/sales-orders/$id',
+            params: { id: created.id },
+            search: failed.length > 0 ? { uploadFailed: failed.join(', ') } : {},
+            replace: true,
+          }),
       );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save SO. Try again.');

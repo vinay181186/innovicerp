@@ -6,18 +6,24 @@
 // RETURNED to the customer minus already invoiced. Bumps
 // job_work_order_lines.invoiced_qty.
 
-import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
 import type {
   CreateJwInvoiceInput,
   JwInvoice,
+  JwInvoiceableLinesResponse,
   ListJwInvoicesQuery,
   ListJwInvoicesResponse,
 } from '@innovic/shared';
 import { clients, items, jobWorkOrderLines, jobWorkOrders, jwInvoices } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
-import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -78,6 +84,9 @@ export async function createJwInvoice(
   user: AuthContext,
 ): Promise<JwInvoice> {
   requireWriteRole(user);
+  // Raising a JW invoice is Finance invoice entry — the same form key the SO
+  // invoice checks, so Access Control governs both from one switch.
+  await requireFormAccess(user, 'invoice_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -182,6 +191,53 @@ export async function createJwInvoice(
   });
 }
 
+/**
+ * The New JW Invoice form's line options for one JWSO: each line's Returned,
+ * Invoiced and To Invoice (Returned − Invoiced) — the same figures and the same
+ * limit createJwInvoice checks, so the form can show the limit and prefill it
+ * instead of the user learning it from an error. Qty only, no money.
+ */
+export async function listJwInvoiceableLines(
+  jobWorkOrderId: string,
+  user: AuthContext,
+): Promise<JwInvoiceableLinesResponse> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select({
+        id: jobWorkOrderLines.id,
+        lineNo: jobWorkOrderLines.lineNo,
+        itemCode: sql<string | null>`COALESCE(${items.code}, ${jobWorkOrderLines.itemCodeText})`,
+        itemRevision: sql<string | null>`${jobWorkOrderLines.revision}::text`,
+        partName: jobWorkOrderLines.partName,
+        returnedQty: jobWorkOrderLines.returnedQty,
+        invoicedQty: jobWorkOrderLines.invoicedQty,
+      })
+      .from(jobWorkOrderLines)
+      .leftJoin(items, eq(items.id, jobWorkOrderLines.itemId))
+      .where(
+        and(
+          eq(jobWorkOrderLines.jobWorkOrderId, jobWorkOrderId),
+          eq(jobWorkOrderLines.companyId, companyId),
+          isNull(jobWorkOrderLines.deletedAt),
+        ),
+      )
+      .orderBy(asc(jobWorkOrderLines.lineNo));
+    return {
+      lines: rows.map((r) => ({
+        jobWorkOrderLineId: r.id,
+        lineNo: r.lineNo,
+        itemCode: r.itemCode ?? null,
+        itemRevision: r.itemRevision ?? null,
+        partName: r.partName ?? null,
+        returnedQty: r.returnedQty,
+        invoicedQty: r.invoicedQty,
+        toInvoiceQty: Math.max(0, r.returnedQty - r.invoicedQty),
+      })),
+    };
+  });
+}
+
 // Money-hiding for L1 Viewers ("Can See Price"). JW invoices ride the JW
 // department's price permission (jw_create).
 function hideJwInvoiceMoney<
@@ -193,7 +249,14 @@ function hideJwInvoiceMoney<
     totalAmount: number | null;
   },
 >(r: T): T {
-  return { ...r, rate: null, taxableAmount: null, gstPercent: null, gstAmount: null, totalAmount: null };
+  return {
+    ...r,
+    rate: null,
+    taxableAmount: null,
+    gstPercent: null,
+    gstAmount: null,
+    totalAmount: null,
+  };
 }
 
 /** Escape the ILIKE metacharacters in a user's search term. Without this a user

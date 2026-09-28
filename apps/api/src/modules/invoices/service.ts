@@ -10,6 +10,7 @@ import type {
   InvoiceLineRow,
   InvoicePaymentRow,
   InvoiceRow,
+  InvoiceTaxType,
   InvoiceableLine,
   InvoiceableSoResponse,
   ListInvoicesResponse,
@@ -17,6 +18,7 @@ import type {
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
   clients,
+  companies,
   invoiceLines,
   invoicePayments,
   invoices,
@@ -53,9 +55,33 @@ function isOverdue(status: string, dueDate: string | null): boolean {
   return status !== 'paid' && !!dueDate && dueDate < todayStr();
 }
 
+/** The GST state code is the first two digits of a GSTIN. Null when blank. */
+function gstStateCode(gstin: string | null | undefined): string | null {
+  const m = (gstin ?? '').trim().match(/^(\d{2})/);
+  return m ? m[1]! : null;
+}
+
+/** Default Tax Type for a new invoice: IGST when the customer's GSTIN state
+ *  differs from the company's, else SGST + CGST (also when either is unknown). */
+function defaultTaxType(clientGst: string | null, companyGst: string | null): InvoiceTaxType {
+  const c = gstStateCode(clientGst);
+  const own = gstStateCode(companyGst);
+  return c && own && c !== own ? 'igst' : 'sgst_cgst';
+}
+
+async function companyGstNumber(tx: DbTransaction, companyId: string): Promise<string | null> {
+  const rows = await tx
+    .select({ gstNumber: companies.gstNumber })
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .limit(1);
+  return rows[0]?.gstNumber ?? null;
+}
+
 function rowToInvoice(r: typeof invoices.$inferSelect): InvoiceRow {
   const grandTotal = n(r.grandTotal);
   const totalPaid = n(r.totalPaid);
+  const totalTds = n(r.totalTds);
   return {
     id: r.id,
     code: r.code,
@@ -68,7 +94,9 @@ function rowToInvoice(r: typeof invoices.$inferSelect): InvoiceRow {
     gstAmount: n(r.gstAmount),
     grandTotal,
     totalPaid,
-    balance: grandTotal - totalPaid,
+    totalTds,
+    // Outstanding Amount — TDS / short amounts count toward settling.
+    balance: grandTotal - totalPaid - totalTds,
     status: r.status,
     dueDate: r.dueDate,
     overdue: isOverdue(r.status, r.dueDate),
@@ -85,6 +113,7 @@ function hideInvoiceRowMoney<
     gstAmount: number | null;
     grandTotal: number | null;
     totalPaid: number | null;
+    totalTds: number | null;
     balance: number | null;
   },
 >(r: T): T {
@@ -95,6 +124,7 @@ function hideInvoiceRowMoney<
     gstAmount: null,
     grandTotal: null,
     totalPaid: null,
+    totalTds: null,
     balance: null,
   };
 }
@@ -105,7 +135,7 @@ function hideInvoiceDetailMoney(d: InvoiceDetail): InvoiceDetail {
     // Also STATE it: the reader must not have to infer 'hidden' from the null.
     priceVisible: false,
     lines: d.lines.map((l) => ({ ...l, rate: null, lineAmount: null })),
-    payments: d.payments.map((p) => ({ ...p, amount: null })),
+    payments: d.payments.map((p) => ({ ...p, amount: null, tdsAmount: null })),
   };
 }
 
@@ -130,9 +160,13 @@ export async function listInvoices(user: AuthContext): Promise<ListInvoicesRespo
       partialCount: 0,
       paidCount: 0,
     };
+    // TDS / short amounts settle invoices without being money received, so
+    // they come off Outstanding Amount but are not added to Total Received.
+    let settledTds = 0;
     for (const inv of list) {
       summary.totalInvoiced += inv.grandTotal ?? 0;
       summary.totalReceived += inv.totalPaid ?? 0;
+      settledTds += inv.totalTds ?? 0;
       if (inv.overdue) {
         summary.overdueAmount += inv.balance ?? 0;
         summary.overdueCount += 1;
@@ -141,7 +175,7 @@ export async function listInvoices(user: AuthContext): Promise<ListInvoicesRespo
       else if (inv.status === 'partial') summary.partialCount += 1;
       else if (inv.status === 'paid') summary.paidCount += 1;
     }
-    summary.outstanding = summary.totalInvoiced - summary.totalReceived;
+    summary.outstanding = summary.totalInvoiced - summary.totalReceived - settledTds;
 
     if (!showMoney) {
       return {
@@ -236,6 +270,7 @@ async function getInvoiceInternal(
     id: p.id,
     paymentDate: p.paymentDate,
     amount: n(p.amount),
+    tdsAmount: n(p.tdsAmount),
     mode: p.mode,
     refNo: p.refNo,
     notes: p.notes,
@@ -253,6 +288,7 @@ async function getInvoiceInternal(
     clientCode: inv.clientCodeText,
     clientGst: inv.clientGstText,
     paymentTermsDays: inv.paymentTermsDays,
+    taxType: inv.taxType === 'sgst_cgst' || inv.taxType === 'igst' ? inv.taxType : null,
     remarks: inv.remarks,
     clientPoNo: soRows[0]?.clientPoNo ?? null,
     lines,
@@ -487,6 +523,7 @@ export async function getInvoiceableSo(
     const so = soRows[0];
     if (!so) throw new NotFoundError('SO not found. Refresh the page.');
     const lines = await loadInvoiceableLines(tx, companyId, soId);
+    const ownGst = await companyGstNumber(tx, companyId);
     return {
       salesOrderId: so.id,
       soCode: so.code,
@@ -496,6 +533,7 @@ export async function getInvoiceableSo(
       // the SO, Payment Terms from the customer's Payment Days.
       gstPercent: n(so.gstPercent),
       paymentDays: so.paymentDays ?? null,
+      taxType: defaultTaxType(so.clientGst ?? null, ownGst),
       lines,
     };
   });
@@ -613,6 +651,9 @@ export async function createInvoice(
     const gstPercent = input.gstPercent ?? n(so.soGstPercent);
     const paymentTermsDays =
       input.paymentTermsDays ?? so.clientPaymentDays ?? DEFAULT_PAYMENT_TERMS_DAYS;
+    // Tax Type: as chosen, else IGST / SGST + CGST from the GSTIN states.
+    const taxType =
+      input.taxType ?? defaultTaxType(so.clientGst ?? null, await companyGstNumber(tx, companyId));
 
     const lineAmounts = input.lines.map((l) => l.qty * l.rate);
     const subtotal = lineAmounts.reduce((s, v) => s + v, 0);
@@ -641,6 +682,7 @@ export async function createInvoice(
         gstAmount: String(gstAmount),
         grandTotal: String(grand),
         totalPaid: '0',
+        taxType,
         paymentTermsDays,
         dueDate,
         status: 'unpaid',
@@ -718,10 +760,18 @@ export async function addPayment(
 
     const grand = n(inv.grandTotal);
     const paid = n(inv.totalPaid);
-    const balance = grand - paid;
-    if (input.amount > balance + 0.01) {
+    const tds = n(inv.totalTds);
+    const balance = grand - paid - tds;
+    const tdsAmount = input.tdsAmount ?? 0;
+    if (input.amount <= 0 && tdsAmount <= 0) {
+      throw new ValidationError('Enter an Amount or a TDS / Short Amount.');
+    }
+    const settles = input.amount + tdsAmount;
+    if (settles > balance + 0.01) {
       throw new ConflictError(
-        `Amount (₹${input.amount}) cannot be more than Outstanding Amount (₹${balance.toFixed(2)}).`,
+        tdsAmount > 0
+          ? `Amount (₹${input.amount}) + TDS / Short Amount (₹${tdsAmount}) cannot be more than Outstanding Amount (₹${balance.toFixed(2)}).`
+          : `Amount (₹${input.amount}) cannot be more than Outstanding Amount (₹${balance.toFixed(2)}).`,
       );
     }
 
@@ -730,6 +780,7 @@ export async function addPayment(
       invoiceId,
       paymentDate: input.paymentDate,
       amount: String(input.amount),
+      tdsAmount: String(tdsAmount),
       mode: input.mode,
       refNo: input.refNo ?? null,
       notes: input.notes ?? null,
@@ -738,11 +789,15 @@ export async function addPayment(
     });
 
     const newPaid = paid + input.amount;
-    const newStatus = newPaid >= grand - 0.01 ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+    const newTds = tds + tdsAmount;
+    // Paid once money received + TDS / short amount cover the invoice.
+    const settled = newPaid + newTds;
+    const newStatus = settled >= grand - 0.01 ? 'paid' : settled > 0 ? 'partial' : 'unpaid';
     await tx
       .update(invoices)
       .set({
         totalPaid: String(newPaid),
+        totalTds: String(newTds),
         status: newStatus,
         updatedBy: user.id,
         updatedAt: new Date(),
@@ -754,7 +809,9 @@ export async function addPayment(
       {
         action: 'PAYMENT',
         entity: 'Invoice',
-        detail: `${inv.code} — ₹${input.amount.toFixed(0)} via ${input.mode}`,
+        detail:
+          `${inv.code} — ₹${input.amount.toFixed(0)} via ${input.mode}` +
+          (tdsAmount > 0 ? ` + TDS / short ₹${tdsAmount.toFixed(0)}` : ''),
         refId: inv.code,
       },
       companyId,

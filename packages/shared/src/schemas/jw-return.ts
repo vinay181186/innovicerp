@@ -32,6 +32,13 @@ export type JwReturnChallan = z.infer<typeof jwReturnChallanSchema>;
 export const jwReturnChallanListItemSchema = jwReturnChallanSchema.extend({
   clientName: z.string().nullable(),
   partName: z.string().nullable(),
+  /** For the printed return challan: the JWSO line's item code (live join,
+   *  snapshot fallback), the customer's drawing revision, unit, and the
+   *  JWSO's Client PO No. */
+  itemCode: z.string().nullable().default(null),
+  itemRevision: z.string().nullable().default(null),
+  uom: z.string().nullable().default(null),
+  clientPoNo: z.string().nullable().default(null),
 });
 export type JwReturnChallanListItem = z.infer<typeof jwReturnChallanListItemSchema>;
 
@@ -72,3 +79,21 @@ export const listJwReturnChallansQuerySchema = z.object({
   offset: z.coerce.number().int().nonnegative().default(0),
 });
 export type ListJwReturnChallansQuery = z.infer<typeof listJwReturnChallansQuerySchema>;
+
+/** Per JWSO line: how much can go back to the customer right now — the SAME
+ *  limit createJwReturnChallan enforces. Ready = final-QC-accepted qty on the
+ *  line's Job Card(s) (assembly lines: complete sets); Returnable =
+ *  min(Ready − Returned, Order Qty − Returned), never below 0. */
+export const jwReturnableLineSchema = z.object({
+  jobWorkOrderLineId: z.string().uuid(),
+  readyQty: z.number().int().nonnegative(),
+  returnedQty: z.number().int().nonnegative(),
+  pendingQty: z.number().int().nonnegative(),
+  returnableQty: z.number().int().nonnegative(),
+});
+export type JwReturnableLine = z.infer<typeof jwReturnableLineSchema>;
+
+export const jwReturnableResponseSchema = z.object({
+  lines: z.array(jwReturnableLineSchema),
+});
+export type JwReturnableResponse = z.infer<typeof jwReturnableResponseSchema>;
