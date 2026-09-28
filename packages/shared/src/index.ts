@@ -89,6 +89,7 @@ export * from './schemas/osp-wip';
 export * from './schemas/tool-issue';
 export * from './schemas/party-material';
 export * from './schemas/party-grn';
+export * from './schemas/party-stock-ledger';
 export * from './schemas/party-material-issue';
 export * from './schemas/jw-return';
 export * from './schemas/jw-invoice';

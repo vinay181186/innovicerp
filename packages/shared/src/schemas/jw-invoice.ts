@@ -34,6 +34,13 @@ export const jwInvoiceSchema = z.object({
    *  "GST @ n%" row, as they always did. */
   taxType: jwInvoiceTaxTypeSchema.nullable().default(null),
   remarks: z.string().nullable(),
+  /** R5 (ADR-194): 'issued' | 'cancelled'. A cancelled invoice reverses the
+   *  billed qty (drops job_work_order_lines.invoiced_qty) so the line can be
+   *  re-billed, and never prints as a live tax document. */
+  status: z.enum(['issued', 'cancelled']).default('issued'),
+  cancelledAt: z.string().nullable().default(null),
+  cancelledBy: z.string().uuid().nullable().default(null),
+  cancelReason: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -71,6 +78,12 @@ export const createJwInvoiceInputSchema = z.object({
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreateJwInvoiceInput = z.infer<typeof createJwInvoiceInputSchema>;
+
+/** R5 (ADR-194): cancel an issued JW invoice. Reuses the jw_create permission. */
+export const cancelJwInvoiceInputSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+export type CancelJwInvoiceInput = z.infer<typeof cancelJwInvoiceInputSchema>;
 
 export const listJwInvoicesResponseSchema = z.object({
   items: z.array(jwInvoiceListItemSchema),

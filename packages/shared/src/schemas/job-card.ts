@@ -158,6 +158,20 @@ export const jobCardListItemSchema = z.object({
   rawMaterialItemId: z.string().uuid().nullable().default(null),
   rawMaterialItemCode: z.string().nullable().default(null),
   rmQtyPerPiece: z.number().nullable().default(null),
+  // R1 (ADR-194): customer-material roll-up for a JW-sourced JC. Null on a
+  // regular (own-material) JC. Needed = rmQtyPerPiece × orderQty (from the
+  // ADR-193 route-card RM); Received/Issued/Returned come from the party store
+  // ledger for this JWSO line; Balance = received − issued − returned.
+  customerMaterial: z
+    .object({
+      needed: z.number().int().nonnegative().nullable(),
+      received: z.number().int().nonnegative(),
+      issued: z.number().int().nonnegative(),
+      returned: z.number().int().nonnegative(),
+      balance: z.number().int(),
+    })
+    .nullable()
+    .default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),

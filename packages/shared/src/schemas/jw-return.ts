@@ -10,7 +10,7 @@ export const jwReturnChallanSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
   code: z.string(),
-  status: z.string(), // 'issued' | 'cancelled'
+  status: z.enum(['issued', 'cancelled']), // R10 (ADR-194): fixed to a real enum
   returnDate: z.string(),
   jobWorkOrderId: z.string().uuid(),
   jobWorkOrderLineId: z.string().uuid(),
@@ -46,6 +46,14 @@ export const createJwReturnChallanInputSchema = z.object({
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreateJwReturnChallanInput = z.infer<typeof createJwReturnChallanInputSchema>;
+
+/** R10 (ADR-194): cancel an issued JW Return Challan — reverses returned_qty on
+ *  the line so the goods can be returned again, and is blocked while an
+ *  uncancelled JW invoice still covers the returned qty. Reuses jw_create. */
+export const cancelJwReturnChallanInputSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+export type CancelJwReturnChallanInput = z.infer<typeof cancelJwReturnChallanInputSchema>;
 
 export const listJwReturnChallansResponseSchema = z.object({
   items: z.array(jwReturnChallanListItemSchema),
