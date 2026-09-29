@@ -250,7 +250,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const { data: bomData } = useBomMastersList({ status: 'active', limit: 200, offset: 0 });
   const jwUsableBoms = bomData?.items ?? [];
 
-  const { data: itemsData } = useItemsList({ limit: 200, offset: 0 });
+  // excludePartyOwned (ADR-195): the line auto-fill map feeds NORMAL produced
+  // line items — a customer's own -rm material is never a line we make, so it is
+  // kept out of the code→item map and the on-master detection below.
+  const { data: itemsData } = useItemsList({ excludePartyOwned: true, limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
   // Code → master item, for auto-filling the line from the item master (bug 2.1).
   const itemsByCode = new Map(items.map((it) => [it.code.trim().toUpperCase(), it]));
@@ -273,6 +276,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const [lineItemSearch, setLineItemSearch] = useState('');
   const { data: lineItemsData, isFetching: lineItemsFetching } = useItemsList({
     ...(lineItemSearch.trim() ? { search: lineItemSearch.trim() } : {}),
+    // excludePartyOwned (ADR-195): a JWSO line is the part we MAKE, so a
+    // customer's own -rm material must not be pickable here (it belongs only in
+    // the Customer Material picker above).
+    excludePartyOwned: true,
     limit: 50,
     offset: 0,
   });
@@ -296,16 +303,51 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
   const gstPercent = Number(watch('header.gstPercent')) || 0;
 
-  // Resolve the picked Customer Material CODE against the party-supplied item
-  // page to confirm the pick inline (green ✅). The picker writes the item's CODE
-  // to header.clientMaterial (kept — the backend bridge reads the code).
+  // The picker writes the picked item's CODE to header.clientMaterial (kept — the
+  // backend bridge reads the code). Confirm the pick inline (green ✅) and show it
+  // selected.
   const clientMaterialCode = watch('header.clientMaterial') ?? '';
-  const selectedPartyMat = clientMaterialCode.trim()
-    ? partyMatItems.find(
-        (it) => it.code.trim().toUpperCase() === clientMaterialCode.trim().toUpperCase(),
+  const clientMaterialKey = clientMaterialCode.trim().toUpperCase();
+  const partyMatInPage = clientMaterialKey
+    ? partyMatItems.find((it) => it.code.trim().toUpperCase() === clientMaterialKey)
+    : undefined;
+
+  // ISSUE-5: on edit, the stored Customer Material code can sit beyond the first
+  // 50 party-supplied items, so it is absent from the page above and the picker
+  // would render blank with no ✅. Resolve it with a targeted exact-code search
+  // (only while it is not already in the page) and seed it as a known option —
+  // mirrors the Job Card form's `linkedSourceOption`.
+  const needPartyMatLookup = Boolean(clientMaterialKey) && !partyMatInPage;
+  const { data: partyMatLookupData } = useItemsList(
+    {
+      itemType: 'party_supplied_material',
+      search: clientMaterialCode.trim(),
+      limit: 50,
+      offset: 0,
+    },
+    { enabled: needPartyMatLookup },
+  );
+  const partyMatLookupItem = needPartyMatLookup
+    ? (partyMatLookupData?.items ?? []).find(
+        (it) => it.code.trim().toUpperCase() === clientMaterialKey,
       )
     : undefined;
+
+  const selectedPartyMat = partyMatInPage ?? partyMatLookupItem;
   const matchedRmItem = selectedPartyMat;
+
+  // What the picker offers: the current page, plus the seeded stored item when it
+  // is not in that page, so the selected value is a real, re-selectable option.
+  const partyMatOptions = (() => {
+    const base = partyMatItems.map((it) => ({ id: it.id, code: it.code, name: it.name }));
+    if (partyMatLookupItem && !base.some((o) => o.id === partyMatLookupItem.id)) {
+      return [
+        { id: partyMatLookupItem.id, code: partyMatLookupItem.code, name: partyMatLookupItem.name },
+        ...base,
+      ];
+    }
+    return base;
+  })();
 
   // A new party-supplied item created in the +New pop-up: select its code into
   // the picker and close. The half-filled JWSO is untouched — the modal never
@@ -938,12 +980,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   id="clientMaterial"
                   value={selectedPartyMat?.id ?? null}
                   onChange={(id) => {
-                    const it = id ? partyMatItems.find((x) => x.id === id) : undefined;
+                    const it = id ? partyMatOptions.find((x) => x.id === id) : undefined;
                     setValue('header.clientMaterial', it?.code ?? undefined, { shouldDirty: true });
                   }}
                   onSearch={setPartyMatSearch}
                   loading={partyMatFetching}
-                  options={partyMatItems.map((it) => ({ id: it.id, code: it.code, name: it.name }))}
+                  options={partyMatOptions}
                   placeholder="🔍 Search customer material (Item -rm)…"
                   valueLabel={
                     selectedPartyMat

@@ -177,7 +177,13 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   }, [isEdit, docNo.nextCode, poType, getValues, setValue]);
 
   // ── Item Master, for the per-line code suggestions + name courtesy fill.
-  const { data: itemsData, isSuccess: itemsLoaded } = useItemsList({ limit: 1000, offset: 0 });
+  // excludePartyOwned (ADR-195): a customer's own -rm material is never purchased,
+  // so it must not appear in the PO line picker.
+  const { data: itemsData, isSuccess: itemsLoaded } = useItemsList({
+    excludePartyOwned: true,
+    limit: 1000,
+    offset: 0,
+  });
   const items = useMemo(() => itemsData?.items ?? [], [itemsData]);
   const itemsByCode = useMemo(() => {
     const m = new Map<string, PoItemMasterRow>();

@@ -87,7 +87,8 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
 
   // Item master drives the per-line code autosuggest + name auto-fill. PO still
   // accepts off-master free text, so a non-matching code is left untouched.
-  const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
+  // excludePartyOwned (ADR-195): a customer's own -rm material is never purchased.
+  const { data: itemsData } = useItemsList({ excludePartyOwned: true, limit: 1000, offset: 0 });
   const items = itemsData?.items ?? [];
   // Until this has actually arrived, every code looks off-master — so the line
   // cascade stays inert rather than resetting names against a master it can't see.

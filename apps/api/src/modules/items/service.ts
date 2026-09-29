@@ -1,5 +1,17 @@
-import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
-import { itemTypeLabel, withPartyMaterialSuffix } from '@innovic/shared';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  isNull,
+  notInArray,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
+import { ITEM_TYPE_RULES, type ItemType, itemTypeLabel, withPartyMaterialSuffix } from '@innovic/shared';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -21,6 +33,13 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+/** Item types that are the customer's property (ADR-195) — derived from the
+ *  shared rule map so a future party-owned type is covered without editing this
+ *  list. Currently just `party_supplied_material`. */
+const PARTY_OWNED_ITEM_TYPES = (Object.keys(ITEM_TYPE_RULES) as ItemType[]).filter(
+  (t) => ITEM_TYPE_RULES[t].partyOwned,
+);
 
 /** Escape the ILIKE metacharacters in a user's search term. Without this a user
  *  typing "%" in the Item Master search box gets a wildcard pattern instead of
@@ -74,6 +93,12 @@ export async function listItems(
     if (input.itemType) {
       conditions.push(eq(items.itemType, input.itemType));
     }
+    // ADR-195: general item pickers (e.g. PO / PR / BOM line items) pass this flag
+    // to hide the customer's party-supplied material, which they must never pick.
+    // The Item Master list leaves it unset and still shows every type.
+    if (input.excludePartyOwned && PARTY_OWNED_ITEM_TYPES.length > 0) {
+      conditions.push(notInArray(items.itemType, PARTY_OWNED_ITEM_TYPES));
+    }
     // ADR-171: Source filter (Make / Buy).
     if (input.procurementType) {
       conditions.push(eq(items.procurementType, input.procurementType));
@@ -125,23 +150,24 @@ export async function getItem(id: string, user: AuthContext): Promise<Item> {
  *
  *  ADR-195: `ITM-####` and `ITM-####-rm` (party-supplied material) share ONE
  *  counter. An optional `-rm` suffix is stripped before the number is read, so
- *  the plain and the -rm forms can never land on the same integer. The whole
- *  series is scanned for the max (like the bulk-import path below) rather than
- *  ordering-then-parsing a single row, because with mixed suffixes a string
- *  sort no longer puts the highest NUMBER first (`ITM-0009-rm` sorts after
- *  `ITM-0010`). */
+ *  the plain and the -rm forms can never land on the same integer. */
 async function nextItemCode(tx: DbTransaction, companyId: string): Promise<string> {
-  const rows = await tx
-    .select({ code: items.code })
-    .from(items)
-    .where(and(eq(items.companyId, companyId), like(items.code, 'ITM-%')));
-  let max = 0;
-  for (const r of rows) {
-    const base = r.code.trim().replace(/-rm$/i, '');
-    const m = /^ITM-(\d+)$/i.exec(base);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `ITM-${String(max + 1).padStart(4, '0')}`;
+  // Single indexed read, not a JS scan of the whole column: strip an optional
+  // -rm suffix and the ITM- prefix in SQL, cast the remainder to int and take the
+  // MAX. The `~*` regexp WHERE keeps only well-formed ITM-####[-rm] codes, so the
+  // cast never sees a non-numeric value (a hand-typed code like ITM-SPL is
+  // ignored — the series is only ever the auto-numbered ones).
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(
+      MAX(CAST(regexp_replace(regexp_replace(lower(code), '-rm$', ''), '^itm-', '') AS integer)),
+      0
+    ) + 1 AS next_num
+    FROM public.items
+    WHERE company_id = ${companyId}::uuid
+      AND code ~* '^itm-[0-9]+(-rm)?$'
+  `)) as unknown as Array<{ next_num: number }>;
+  const next = Number(rows[0]?.next_num ?? 1);
+  return `ITM-${String(next).padStart(4, '0')}`;
 }
 
 /** Preview the next ITM-#### for the create form (prefilled, editable). Reuses
@@ -398,6 +424,21 @@ export async function updateItem(
           `${cur.code}: Item Type cannot be changed to or from Tool / Instrument once stock has moved. Create a new item instead.`,
         );
       }
+    }
+    // ADR-195: the item CODE is permanent, and a Party Supplied Material item bakes
+    // the -rm suffix into its code at creation. So the type may never be switched
+    // INTO or OUT OF party-supplied on edit — doing so would leave the code and the
+    // type inconsistent (a -rm code on a non-party item, or a party item without
+    // one). Create a new item instead.
+    if (
+      input.itemType !== undefined &&
+      input.itemType !== cur.itemType &&
+      (input.itemType === 'party_supplied_material' ||
+        cur.itemType === 'party_supplied_material')
+    ) {
+      throw new ConflictError(
+        `${cur.code}: Item Type cannot be changed to or from Party Supplied Material — the item code (with its -rm suffix) is permanent. Create a new item instead.`,
+      );
     }
 
     const updates: Record<string, unknown> = { updatedBy: user.id };

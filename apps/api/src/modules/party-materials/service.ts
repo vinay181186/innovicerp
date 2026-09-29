@@ -114,6 +114,17 @@ export async function ensurePartyMaterialForClientItem(
   if (!item) return null;
   if (!ITEM_TYPE_RULES[item.itemType as ItemType]?.partyOwned) return null;
 
+  // Concurrency guard: there is NO DB unique on (company, item, client), so two
+  // concurrent JWSO saves for the same trio could both pass the existence SELECT
+  // below and both INSERT, leaving duplicate PM- rows. A transaction-scoped
+  // advisory lock keyed on a stable hash of (company, client, item) serialises
+  // the bridge for that trio — the second caller blocks here, then sees the first
+  // caller's row in the existence check and reuses it. The lock releases
+  // automatically when the (JWSO) transaction commits or rolls back.
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${companyId}:${clientId}:${item.id}`}, 0))`,
+  );
+
   // Already bridged for this (company, item, client)? Reuse it.
   const existing = await tx
     .select({ id: partyMaterials.id })

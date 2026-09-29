@@ -2628,6 +2628,9 @@ export async function createPurchaseOrderFromPr(
             pr.itemCodeText.trim(),
           ) ?? null)
         : null);
+    // ADR-195: a customer's party-supplied material must never reach a PO — not
+    // even via a PR→PO convert.
+    await assertNoPartyMaterialLines(tx, [prItemId], companyId);
     const insertedLines = await tx
       .insert(purchaseOrderLines)
       .values({
@@ -3309,6 +3312,13 @@ export async function createPurchaseOrderFromPrBatch(
         updatedBy: user.id,
       };
     });
+    // ADR-195: a customer's party-supplied material must never reach a PO — not
+    // even via the batch PR→PO convert.
+    await assertNoPartyMaterialLines(
+      tx,
+      lineRows.map((l) => l.itemId),
+      companyId,
+    );
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineRows).returning();
 
     // Stamp every PR + advance its linked outsource jc_op. lineRows/insertedLines
