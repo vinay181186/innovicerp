@@ -12,6 +12,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useDebounce } from '@/lib/use-debounce';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -905,9 +906,30 @@ function OutsourceBalanceModal({
   onClose: () => void;
 }): React.JSX.Element {
   const outsource = useOutsourceOpBalance();
-  const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
   const [qty, setQty] = useState<number>(row.available);
   const [vendorCode, setVendorCode] = useState<string>(row.outsourceVendorCode ?? '');
+  // "CODE — Name" of the picked vendor, kept so the label survives the search
+  // page moving on. Seeded with the op's current vendor code.
+  const [vendorLabel, setVendorLabel] = useState<string>(row.outsourceVendorCode ?? '');
+  // The vendor box searches the SERVER (?search=) — a fixed first page of 200
+  // left every vendor after it unpickable. The saved value is still the CODE.
+  const [vendorSearch, setVendorSearch] = useState('');
+  const { data: vendorsData, isFetching: vendorsFetching } = useVendorsList({
+    ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const vendorOptions = (vendorsData?.vendors ?? []).map((v) => ({
+    id: v.id,
+    code: v.code,
+    name: v.name,
+  }));
+  const pickedVendor = vendorCode ? vendorOptions.find((v) => v.code === vendorCode) : undefined;
+  const pickedLabel = pickedVendor
+    ? `${pickedVendor.code} — ${pickedVendor.name}`
+    : vendorCode
+      ? vendorLabel || vendorCode
+      : undefined;
   const [err, setErr] = useState<string | null>(null);
 
   const onSave = (): void => {
@@ -1018,21 +1040,21 @@ function OutsourceBalanceModal({
             <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
               Vendor <span className="req">★</span>
             </div>
-            <input
-              className="innovic-select"
-              list="outsource-balance-vendors"
-              value={vendorCode}
-              onChange={(e) => setVendorCode(e.target.value)}
-              placeholder="Vendor code"
-              style={{ width: '100%', fontSize: 12 }}
+            <SearchableSelect
+              id="outsource-balance-vendor"
+              value={pickedVendor?.id ?? null}
+              onChange={(id) => {
+                const v = id ? vendorOptions.find((x) => x.id === id) : undefined;
+                setVendorCode(v?.code ?? '');
+                setVendorLabel(v ? `${v.code} — ${v.name}` : '');
+              }}
+              onSearch={setVendorSearch}
+              loading={vendorsFetching}
+              options={vendorOptions}
+              placeholder="🔍 Vendor code or name"
+              valueLabel={pickedLabel}
+              selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
             />
-            <datalist id="outsource-balance-vendors">
-              {(vendorsData?.vendors ?? []).map((v) => (
-                <option key={v.id} value={v.code}>
-                  {v.code} — {v.name}
-                </option>
-              ))}
-            </datalist>
           </div>
         </div>
 

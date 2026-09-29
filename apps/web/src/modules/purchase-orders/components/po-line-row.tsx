@@ -8,7 +8,7 @@
 // are removed and the indexes shift.
 
 import type { ListItemsResponse } from '@innovic/shared';
-import { Fragment } from 'react';
+import { Fragment, useId } from 'react';
 import type { Path, PathValue, UseFormReturn } from 'react-hook-form';
 import { inrFormat } from '@/lib/print/doc-print';
 import {
@@ -17,7 +17,8 @@ import {
   cascadeField,
   useFieldCascade,
 } from '@/lib/use-field-cascade';
-import { PO_ITEM_DATALIST_ID, type PoFormValues, type PoLineFormValue } from './po-form-values';
+import { useItemCodeResolver, useItemCodeSearch } from '@/modules/items/use-item-code-search';
+import type { PoFormValues, PoLineFormValue } from './po-form-values';
 
 export type PoItemMaster = ListItemsResponse['items'][number];
 
@@ -39,10 +40,6 @@ export interface PoLineRowProps {
   line: PoLineFormValue | undefined;
   isEdit: boolean;
   receivedQty: number | undefined;
-  /** Item Master indexed by UPPERCASE code — the module's existing items list. */
-  itemsByCode: Map<string, PoItemMaster>;
-  /** False until that list has actually arrived. */
-  itemsLoaded: boolean;
   /** Columns the remarks row spans, so it lines up under the detail row. */
   remarksSpan: number;
   rowBg: string;
@@ -55,15 +52,20 @@ export function PoLineRow({
   line,
   isEdit,
   receivedQty,
-  itemsByCode,
-  itemsLoaded,
   remarksSpan,
   rowBg,
   onRemove,
 }: PoLineRowProps): React.JSX.Element {
   const { register, formState } = form;
   const codeText = line?.itemCodeText ?? '';
-  const matchedItem = itemsByCode.get(codeText.trim().toUpperCase());
+  // The Item Master is searched on the SERVER with the typed code (it used to be
+  // one preloaded page, so later items could not be suggested or auto-filled).
+  // excludePartyOwned (ADR-195): a customer's own -rm material is never purchased.
+  const { items: codeSuggestions, match: matchedItem } = useItemCodeSearch(codeText, {
+    excludePartyOwned: true,
+  });
+  const resolveItemCode = useItemCodeResolver({ excludePartyOwned: true });
+  const itemDatalistId = useId();
   const lineAmt = (Number(line?.qty) || 0) * (Number(line?.rate) || 0);
   const nameError = formState.errors.lines?.[idx]?.itemName?.message;
 
@@ -80,8 +82,7 @@ export function PoLineRow({
   useFieldCascade<PoFormValues, PoItemMaster>({
     form,
     value: codeText,
-    enabled: itemsLoaded,
-    resolve: (code) => itemsByCode.get(code.toUpperCase()) ?? null,
+    resolve: resolveItemCode,
     fields: [
       poField(`lines.${idx}.itemId`, (it) => it.id, undefined),
       poField(`lines.${idx}.itemName`, (it) => it.name, '', { userEditable: true }),
@@ -104,11 +105,19 @@ export function PoLineRow({
         <td style={{ minWidth: 140 }}>
           <input
             className="innovic-input"
-            list={PO_ITEM_DATALIST_ID}
+            list={itemDatalistId}
             autoComplete="off"
             placeholder="🔍 Item code…"
             {...register(`lines.${idx}.itemCodeText` as const)}
           />
+          <datalist id={itemDatalistId}>
+            {codeSuggestions.map((it) => (
+              <option key={it.id} value={it.code}>
+                {it.code} — {it.name}
+                {it.material ? ` [${it.material}]` : ''}
+              </option>
+            ))}
+          </datalist>
         </td>
         {/* Rule: item code is the unique key. When the code is on
             the Item Master the name is derived + read-only; PO still
@@ -162,7 +171,11 @@ export function PoLineRow({
           </span>
         </td>
         <td style={{ width: 85 }}>
-          <input type="date" className="innovic-input" {...register(`lines.${idx}.dueDate` as const)} />
+          <input
+            type="date"
+            className="innovic-input"
+            {...register(`lines.${idx}.dueDate` as const)}
+          />
         </td>
         {isEdit ? (
           <td style={{ width: 80 }}>

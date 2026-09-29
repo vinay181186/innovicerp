@@ -23,7 +23,7 @@ import {
   type UpdatePurchaseRequestInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useRef } from 'react';
+import { useRef } from 'react';
 import { type Path, type PathValue, useForm } from 'react-hook-form';
 import {
   type CascadeField,
@@ -31,7 +31,7 @@ import {
   cascadeField,
   useFieldCascade,
 } from '@/lib/use-field-cascade';
-import { useItemsList } from '@/modules/items/api';
+import { useItemCodeResolver, useItemCodeSearch } from '@/modules/items/use-item-code-search';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
@@ -130,17 +130,13 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   // off-master free text, so a non-matching code is left as-is.
   // excludePartyOwned (ADR-195): a customer's own -rm material is never purchased,
   // so it must not appear in the PR line picker.
-  const { data: itemsData } = useItemsList({ excludePartyOwned: true, limit: 1000, offset: 0 });
-  const items = itemsData?.items ?? [];
-  // Until this has actually arrived, every code looks off-master — so the
-  // cascade stays inert rather than resetting the name against a master it
-  // cannot see yet.
-  const itemsLoaded = itemsData !== undefined;
-  const itemsByCode = useMemo(() => {
-    const m = new Map<string, PrItemMaster>();
-    for (const it of items) m.set(it.code.toUpperCase(), it);
-    return m;
-  }, [items]);
+  // Searched on the SERVER with the typed code — it used to be one preloaded page
+  // of 1000, so a later item could neither be suggested nor auto-filled.
+  const itemCodeValue = watch('itemCodeText') ?? '';
+  const { items, match: matchedItem } = useItemCodeSearch(itemCodeValue, {
+    excludePartyOwned: true,
+  });
+  const resolveItemCode = useItemCodeResolver({ excludePartyOwned: true });
 
   // Item Code is the controller; Item Id + Item Name are its dependents.
   //
@@ -155,9 +151,9 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   // always clears it (as the old inline handler did).
   useFieldCascade<FormValues, PrItemMaster>({
     form,
-    value: watch('itemCodeText'),
-    enabled: itemsLoaded,
-    resolve: (code) => itemsByCode.get(code.toUpperCase()) ?? null,
+    value: itemCodeValue,
+    // Async exact-code lookup; a failed request leaves the fields as they are.
+    resolve: resolveItemCode,
     fields: [
       prField('itemId', (it) => it.id, undefined),
       prField('itemName', (it) => it.name, '', { userEditable: true }),
@@ -240,7 +236,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
 
   const itemLocked = Boolean(watch('itemId'));
   // The item's unit, shown beside PR Qty (KGS / MTR may be decimal).
-  const qtyUom = itemsByCode.get((watch('itemCodeText') ?? '').trim().toUpperCase())?.uom ?? null;
+  const qtyUom = matchedItem?.uom ?? null;
 
   return (
     <form onSubmit={handleSubmit(onValid)}>

@@ -17,12 +17,13 @@ import type {
   Item,
   ListItemsResponse,
 } from '@innovic/shared';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Copy, Download, Plus, Trash2, Upload } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
-import { useItemsList } from '@/modules/items/api';
+import { itemsKeys, useItemsList } from '@/modules/items/api';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
@@ -154,9 +155,10 @@ const REQUIRED_COLUMNS: ReadonlyArray<{ label: string; aliases: string[] }> = [
   { label: 'BOM Type', aliases: TYPE_ALIASES },
 ];
 
-// listItemsQuerySchema (packages/shared/src/schemas/item.ts) caps `limit` at
-// 1000. Asking for more is a 400, not a bigger page — keep these in step.
-const ITEM_PAGE_MAX = 1000;
+/** Stable `combine` for the per-id item lookups: just the rows that arrived. */
+function combineReferencedItems(results: { data?: Item | undefined }[]): Item[] {
+  return results.flatMap((r) => (r.data ? [r.data] : []));
+}
 
 function emptyLine(): BomFormLineDraft {
   return {
@@ -212,34 +214,68 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     setHeader((prev) => (prev.bomNo.trim() ? prev : { ...prev, bomNo: code }));
   }, [mode, nextBomNo]);
 
-  // Items list — drives the code autocomplete + Excel-import resolution.
-  //
-  // 1000 is the SERVER's ceiling (listItemsQuerySchema caps limit at 1000).
-  // This used to ask for 10000, which Zod rejected: the request 400'd, the map
-  // below stayed empty, and every imported row came back "item_code not found
-  // in master" — even codes that plainly exist. Never ask for more than the
-  // schema allows. Beyond 1000 items the map is only a fast path anyway:
-  // lookupMissingCodes() below asks the server directly for whatever it misses.
-  const { data: itemsList } = useItemsList({ limit: ITEM_PAGE_MAX, offset: 0 });
+  // Item picker — server-side search, as the dropdown skill requires. One
+  // shared term is enough: only the open dropdown is visible, so whichever line
+  // the user is typing in owns the current page of options.
+  const [itemSearch, setItemSearch] = useState('');
+  const { data: itemPage, isFetching: itemsFetching } = useItemsList({
+    ...(itemSearch.trim() ? { search: itemSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const itemOptions = useMemo(
+    () =>
+      (itemPage?.items ?? []).map((i) => ({
+        id: i.id,
+        code: i.code,
+        name: i.material ? `${i.name} [${i.material}]` : i.name,
+      })),
+    [itemPage],
+  );
 
-  const itemsByCode = useMemo(() => {
-    const m = new Map<string, Item>();
-    for (const i of itemsList?.items ?? []) m.set(i.code.toUpperCase(), i);
-    return m;
-  }, [itemsList]);
+  // Every item this form refers to, by id. There is NO preloaded master page
+  // any more (it was the first 1000 items, so a BOM line or parent past that
+  // showed a blank Item Name and a pasted code could not resolve). Instead:
+  //   • every row a search page returns is seeded into the item-detail cache,
+  //   • any id a line / the parent points at that is not cached yet (an edit
+  //     form's saved parts) is fetched by id — one small GET each, once.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    for (const it of itemPage?.items ?? []) {
+      if (!queryClient.getQueryData(itemsKeys.detail(it.id))) {
+        queryClient.setQueryData(itemsKeys.detail(it.id), it);
+      }
+    }
+  }, [itemPage, queryClient]);
+  const referencedIds = useMemo(
+    () =>
+      Array.from(
+        new Set([header.parentItemId, ...lines.map((l) => l.childItemId)].filter(Boolean)),
+      ).sort(),
+    [header.parentItemId, lines],
+  );
+  const referencedItems = useQueries({
+    queries: referencedIds.map((id) => ({
+      queryKey: itemsKeys.detail(id),
+      queryFn: () => apiFetch<Item>(`/items/${id}`),
+      staleTime: 5 * 60_000,
+    })),
+    combine: combineReferencedItems,
+  });
   const itemById = useMemo(() => {
     const m = new Map<string, Item>();
-    for (const i of itemsList?.items ?? []) m.set(i.id, i);
+    for (const i of referencedItems) m.set(i.id, i);
+    for (const i of itemPage?.items ?? []) m.set(i.id, i);
     return m;
-  }, [itemsList]);
+  }, [itemPage, referencedItems]);
+  const itemsByCode = useMemo(() => {
+    const m = new Map<string, Item>();
+    for (const i of itemById.values()) m.set(i.code.toUpperCase(), i);
+    return m;
+  }, [itemById]);
 
-  // True once the loaded page holds the ENTIRE master. Then a code the map does
-  // not have is genuinely absent, and the per-code lookups below are pure waste
-  // — an 83-row file used to fire 83 requests that could not possibly succeed.
-  const masterFullyLoaded = itemsList ? itemsList.items.length >= itemsList.total : false;
-
-  // A code the first page did not cover is not proof the item is missing — the
-  // master may simply be larger than one page. Ask the server for each such
+  // A code the form has not seen is not proof the item is missing — nothing
+  // preloads the master any more. Ask the server for each such
   // code before declaring it unknown. An import file holds a handful of rows,
   // so this stays a handful of small requests.
   //
@@ -259,7 +295,12 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             `/items?search=${encodeURIComponent(code)}&limit=50&offset=0`,
           );
           const hit = page.items.find((i) => i.code.toUpperCase() === code);
-          if (hit) found.set(code, hit);
+          if (hit) {
+            found.set(code, hit);
+            // Seed the detail cache so the imported line's name shows without
+            // a second fetch by id.
+            queryClient.setQueryData(itemsKeys.detail(hit.id), hit);
+          }
         } catch {
           failed.add(code);
         }
@@ -267,25 +308,6 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     );
     return { found, failed };
   };
-
-  // Item picker — server-side search, as the dropdown skill requires. One
-  // shared term is enough: only the open dropdown is visible, so whichever line
-  // the user is typing in owns the current page of options.
-  const [itemSearch, setItemSearch] = useState('');
-  const { data: itemPage, isFetching: itemsFetching } = useItemsList({
-    ...(itemSearch.trim() ? { search: itemSearch.trim() } : {}),
-    limit: 50,
-    offset: 0,
-  });
-  const itemOptions = useMemo(
-    () =>
-      (itemPage?.items ?? []).map((i) => ({
-        id: i.id,
-        code: i.code,
-        name: i.material ? `${i.name} [${i.material}]` : i.name,
-      })),
-    [itemPage],
-  );
 
   const updateLine = (idx: number, patch: Partial<BomFormLineDraft>): void => {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -455,14 +477,14 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           : '';
 
       // Resolve every code in one go BEFORE walking the rows: whatever the
-      // preloaded page missed gets one targeted ?search= each. Without this a
+      // form does not already know gets one targeted ?search= each. Without this a
       // large item master reads as "not found" for perfectly valid codes.
       const fileCodes = Array.from(
         new Set(rows.map((r) => getCol(r, CODE_ALIASES).trim().toUpperCase()).filter(Boolean)),
       );
       const unknownCodes = fileCodes.filter((c) => !itemsByCode.has(c));
       const { found: lateFound, failed: lookupFailed } =
-        masterFullyLoaded || unknownCodes.length === 0
+        unknownCodes.length === 0
           ? { found: new Map<string, Item>(), failed: new Set<string>() }
           : await lookupMissingCodes(unknownCodes);
 

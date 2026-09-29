@@ -1778,7 +1778,9 @@ async function executeDirectPurchase(
     throw new ValidationError('Vendor is required for a Buy plan.');
   }
   const today = todayIso();
-  const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
+  // A Buy plan raises a STANDARD (material) PR, so it takes the standard
+  // IN-PR- series (docs/NAMING.md). IN-JWPR- is for job-work / OSP PRs only.
+  const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-PR-');
 
   const prRows = await tx
     .insert(purchaseRequests)
@@ -1910,7 +1912,10 @@ async function executeFullOutsource(
       code: jwCode,
       prDate: today,
       status: 'open',
-      ...(ospOpId ? { prType: 'jw_osp' as const, sourceJcOpId: ospOpId } : {}),
+      // Always job work (IN-JWPR- series), so it converts to a Job Work PO
+      // even when no JC op was seeded; the op link is added when there is one.
+      prType: 'jw_osp' as const,
+      ...(ospOpId ? { sourceJcOpId: ospOpId } : {}),
       vendorId: plan.foVendorId ?? null,
       vendorCodeText: plan.foVendorCodeText ?? null,
       itemId: plan.itemId ?? null,

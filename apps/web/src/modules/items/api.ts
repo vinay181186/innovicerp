@@ -28,13 +28,20 @@ function toQueryString(q: ListItemsQuery): string {
   return params.toString();
 }
 
+/** One page of the Item Master, as the list hook fetches it. Exported so an
+ *  imperative lookup (e.g. `useItemCodeResolver`) can share the hook's cache key
+ *  and fetch through `queryClient.fetchQuery` instead of a second fetch path. */
+export function fetchItemsList(query: ListItemsQuery): Promise<ListItemsResponse> {
+  return apiFetch<ListItemsResponse>(`/items?${toQueryString(query)}`);
+}
+
 export function useItemsList(
   query: ListItemsQuery,
   options?: Omit<UseQueryOptions<ListItemsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListItemsResponse>({
     queryKey: itemsKeys.list(query),
-    queryFn: () => apiFetch<ListItemsResponse>(`/items?${toQueryString(query)}`),
+    queryFn: () => fetchItemsList(query),
     placeholderData: (prev) => prev,
     ...options,
   });

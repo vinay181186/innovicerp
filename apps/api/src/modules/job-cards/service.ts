@@ -906,7 +906,10 @@ export async function getJobCardEditModel(
         -- Read-only per-op live progress for the JC edit form's op summary
         -- (mirrors the JC Status page). 0 / 'waiting' when no status-view row.
         COALESCE(vos.input_avail, 0)::int AS "inputAvail",
-        COALESCE(vos.completed_qty, 0)::int AS "completedQty",
+        -- QC op: done = qty accepted at inspection (it never gets a complete
+        -- log). Same rule as the op-entry list and the JC Operations board.
+        COALESCE(CASE WHEN o.op_type = 'qc' THEN vos.qc_accepted_qty
+                      ELSE vos.completed_qty END, 0)::int AS "completedQty",
         COALESCE(vos.qc_accepted_qty, 0)::int AS "qcAcceptedQty",
         COALESCE(vos.computed_status, 'waiting') AS "computedStatus"
       FROM public.jc_ops o
