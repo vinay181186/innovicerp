@@ -1,0 +1,133 @@
+// Instrument register (ADR-193 phase 4a) — TanStack Query hooks.
+import type {
+  CreateInstrumentInput,
+  InstrumentDetail,
+  InstrumentListItem,
+  ListInstrumentsQuery,
+  ListInstrumentsResponse,
+  RecordCalibrationInput,
+  MarkMissingInstrumentInput,
+  ScrapInstrumentInput,
+  SendForCalibrationInput,
+  UnregisteredCount,
+  UpdateInstrumentInput,
+} from '@innovic/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api';
+
+export const instrumentsKeys = {
+  all: ['instruments'] as const,
+  list: (q: ListInstrumentsQuery) =>
+    [
+      ...instrumentsKeys.all,
+      'list',
+      q.search ?? null,
+      q.itemId ?? null,
+      q.status ?? null,
+      q.due ?? null,
+      q.limit,
+      q.offset,
+    ] as const,
+  detail: (id: string) => [...instrumentsKeys.all, 'detail', id] as const,
+  unregistered: () => [...instrumentsKeys.all, 'unregistered'] as const,
+};
+
+function buildSearch(q: ListInstrumentsQuery): string {
+  const p = new URLSearchParams();
+  if (q.search) p.set('search', q.search);
+  if (q.itemId) p.set('itemId', q.itemId);
+  if (q.status) p.set('status', q.status);
+  if (q.due) p.set('due', q.due);
+  p.set('limit', String(q.limit));
+  p.set('offset', String(q.offset));
+  return p.toString();
+}
+
+export function useInstrumentsList(query: ListInstrumentsQuery, enabled = true) {
+  return useQuery<ListInstrumentsResponse>({
+    queryKey: instrumentsKeys.list(query),
+    queryFn: () => apiFetch<ListInstrumentsResponse>(`/instruments?${buildSearch(query)}`),
+    placeholderData: (prev) => prev,
+    enabled,
+  });
+}
+
+export function useInstrument(id: string | null) {
+  return useQuery<InstrumentDetail>({
+    queryKey: instrumentsKeys.detail(id ?? ''),
+    queryFn: () => apiFetch<InstrumentDetail>(`/instruments/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useUnregisteredInstruments() {
+  return useQuery<UnregisteredCount[]>({
+    queryKey: instrumentsKeys.unregistered(),
+    queryFn: () => apiFetch<UnregisteredCount[]>('/instruments/unregistered'),
+  });
+}
+
+function invalidate(qc: ReturnType<typeof useQueryClient>): void {
+  void qc.invalidateQueries({ queryKey: instrumentsKeys.all });
+  void qc.invalidateQueries({ queryKey: ['tool-issues'] });
+  void qc.invalidateQueries({ queryKey: ['store-inventory'] });
+  void qc.invalidateQueries({ queryKey: ['store-transactions'] });
+}
+
+export function useCreateInstrument() {
+  const qc = useQueryClient();
+  return useMutation<InstrumentListItem, Error, CreateInstrumentInput>({
+    mutationFn: (input) =>
+      apiFetch<InstrumentListItem>('/instruments', { method: 'POST', json: input }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+export function useUpdateInstrument() {
+  const qc = useQueryClient();
+  return useMutation<InstrumentListItem, Error, { id: string } & UpdateInstrumentInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<InstrumentListItem>(`/instruments/${id}`, { method: 'PATCH', json: body }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+export function useSendForCalibration() {
+  const qc = useQueryClient();
+  return useMutation<InstrumentListItem, Error, { id: string } & SendForCalibrationInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<InstrumentListItem>(`/instruments/${id}/calibration-out`, {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+export function useRecordCalibration() {
+  const qc = useQueryClient();
+  return useMutation<InstrumentListItem, Error, { id: string } & RecordCalibrationInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<InstrumentListItem>(`/instruments/${id}/calibrate`, { method: 'POST', json: body }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+export function useScrapInstrument() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, { id: string } & ScrapInstrumentInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch(`/instruments/${id}/scrap`, { method: 'POST', json: body }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+/** An In Store piece that cannot be found → pending Lost write-off (approve tier). */
+export function useMarkMissingInstrument() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, { id: string } & MarkMissingInstrumentInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch(`/instruments/${id}/mark-missing`, { method: 'POST', json: body }),
+    onSuccess: () => invalidate(qc),
+  });
+}

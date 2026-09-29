@@ -165,13 +165,16 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
   },
   {
     kind: 'tool-issue',
-    from: sql`public.tool_issues t`,
+    // ADR-193 phase 4 (0159): issues now carry a Job Card; ref_type / ref_no
+    // stay for older rows. Return totals are derived (no columns) — qty/status
+    // below are the issued qty and return_status.
+    from: sql`public.tool_issues t LEFT JOIN public.job_cards jc ON jc.id = t.job_card_id`,
     docNo: sql`t.code`,
     date: sql`t.issue_date::date`,
     party: sql`t.issued_to`,
     text: [sql`t.purpose`, sql`t.remarks`],
     shown: [sql`t.item_code_text`, sql`t.item_name`],
-    refs: [ref(sql`NULLIF(t.ref_type, '')`, sql`t.ref_no`)],
+    refs: [ref('JC', sql`jc.code`), ref(sql`NULLIF(t.ref_type, '')`, sql`t.ref_no`)],
     flatLines: [pair(sql`t.item_code_text`, sql`t.item_name`)],
     qty: sql`t.qty`,
     status: sql`t.return_status::text`,

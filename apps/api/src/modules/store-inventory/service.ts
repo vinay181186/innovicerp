@@ -1,8 +1,9 @@
 // Store / Inventory service (PL-SI-1).
 //
 // GET /store-inventory — per-item rollup of current stock + open PO pending
-// + open JC pending. Mirrors legacy renderStore (HTML L24803). Plus two
-// write actions: adjust stock (manual + / − with reason) and set min qty.
+// + open JC pending. Mirrors legacy renderStore (HTML L24803). Plus the
+// adjust-stock write (manual + / − with reason). Reorder Level / Reorder List /
+// one-click PRs live in reorder.ts (ADR-193 phase 5).
 //
 // ADR-180 also parks two read-only stock-booking endpoints here rather than in
 // a module of their own: they answer questions about the Store screen's own
@@ -17,7 +18,6 @@ import type {
   ListStoreInventoryQuery,
   ListStoreInventoryResponse,
   ReservationDetail,
-  SetMinStockInput,
   StockAvailability,
   StoreInventoryRow,
 } from '@innovic/shared';
@@ -38,6 +38,7 @@ import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/er
 import { readStockPosition, readStockPositions } from '../../lib/stock-reservation';
 import { onPoByItemSql } from '../../lib/po-pending';
 import { readAssemblyReservationRows } from './assembly-reservations';
+import { isBelowReorder } from './reorder-rule';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -65,7 +66,7 @@ export async function listStoreInventory(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // Every text column the Store Inventory row shows: Item Code, Name,
-    // Material and UOM. The rest of the row is quantities — In Stock, Min Qty,
+    // Material and UOM. The rest of the row is quantities — In Stock, Reorder Level,
     // On PO, At Vendor, Mfg Pending — which stay out: a partial match on a
     // number makes "5" hit almost every item and the box stops being useful.
     // `uom` is a Postgres enum, so it needs the ::text cast the others do not.
@@ -125,9 +126,11 @@ export async function listStoreInventory(
         i.material                                 AS material,
         i.uom::text                                AS uom,
         COALESCE(s.on_hand_qty, 0)::float8            AS in_stock,
-        i.min_stock_qty                            AS min_qty,
-        COALESCE(po_pending.qty, 0)::numeric       AS on_po_qty,
-        COALESCE(at_vendor.qty, 0)::numeric        AS at_vendor_qty,
+        i.item_type::text                          AS item_type,
+        i.min_stock_qty::float8                    AS reorder_level,
+        i.reorder_qty::float8                      AS reorder_qty,
+        COALESCE(po_pending.qty, 0)::float8        AS on_po_qty,
+        COALESCE(at_vendor.qty, 0)::float8         AS at_vendor_qty,
         COALESCE(jc_open.qty, 0)::int              AS mfg_pending_qty
       FROM public.items i
       LEFT JOIN public.v_item_stock s
@@ -148,7 +151,9 @@ export async function listStoreInventory(
       material: string | null;
       uom: string;
       in_stock: number;
-      min_qty: number;
+      item_type: string;
+      reorder_level: number;
+      reorder_qty: number;
       on_po_qty: number;
       at_vendor_qty: number;
       mfg_pending_qty: number;
@@ -167,8 +172,10 @@ export async function listStoreInventory(
 
     const rows: StoreInventoryRow[] = typed.map((r) => {
       const inStock = Number(r.in_stock);
-      const minQty = Number(r.min_qty);
+      const reorderLevel = Number(r.reorder_level);
+      const onPoQty = Number(r.on_po_qty);
       const reservedQty = Math.max(0, positions.get(r.item_id)?.reservedQty ?? 0);
+      const availableQty = inStock - reservedQty;
       return {
         itemId: r.item_id,
         itemCode: r.item_code,
@@ -177,18 +184,25 @@ export async function listStoreInventory(
         uom: r.uom,
         inStock,
         reservedQty,
-        availableQty: inStock - reservedQty,
-        minQty,
-        onPoQty: Number(r.on_po_qty),
+        availableQty,
+        reorderLevel,
+        reorderQty: Number(r.reorder_qty),
+        onPoQty,
         atVendorQty: Number(r.at_vendor_qty),
         mfgPendingQty: Number(r.mfg_pending_qty),
-        lowStock: minQty > 0 && inStock <= minQty,
+        // ADR-193 phase 5 (P19) — the one rule, reorder-rule.ts.
+        belowReorder: isBelowReorder({
+          itemType: r.item_type,
+          reorderLevel,
+          availableQty,
+          onPoQty,
+        }),
       };
     });
 
     const filteredRows =
-      input.filter === 'low'
-        ? rows.filter((r) => r.lowStock)
+      input.filter === 'below'
+        ? rows.filter((r) => r.belowReorder)
         : input.filter === 'zero'
           ? rows.filter((r) => r.inStock === 0)
           : rows;
@@ -205,7 +219,7 @@ export async function listStoreInventory(
       // fault, and showing it as a tile figure helps nobody.
       totalAvailablePieces: Math.max(0, totalStockPieces - totalReservedPieces),
       itemsInStockCount: rows.filter((r) => r.inStock > 0).length,
-      lowStockCount: rows.filter((r) => r.lowStock).length,
+      belowReorderCount: rows.filter((r) => r.belowReorder).length,
       zeroStockCount: rows.filter((r) => r.inStock === 0).length,
     };
 
@@ -284,44 +298,6 @@ export async function adjustStock(
     );
 
     return { ok: true as const, stockAfter };
-  });
-}
-
-export async function setMinStock(
-  input: SetMinStockInput,
-  user: AuthContext,
-): Promise<{ ok: true; minQty: number }> {
-  // Same hole as adjustStock: unguarded, so anyone logged in could reset the
-  // low-stock threshold on any item. Min qty lives on a saved item row, so the
-  // action is `edit`.
-  await requireFormAccess(user, 'item_create', 'edit');
-  const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const before = await tx
-      .select({ minStockQty: items.minStockQty })
-      .from(items)
-      .where(and(eq(items.id, input.itemId), eq(items.companyId, companyId)))
-      .limit(1);
-    const result = await tx
-      .update(items)
-      .set({ minStockQty: input.minQty, updatedAt: new Date(), updatedBy: user.id })
-      .where(
-        and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
-      )
-      .returning({ minStockQty: items.minStockQty, code: items.code });
-    if (result.length === 0) throw new NotFoundError('Item not found. Refresh the page.');
-    await emitActivityLog(
-      tx,
-      {
-        action: 'SET_MIN_STOCK',
-        entity: 'Store Inventory',
-        detail: `${result[0]!.code}: min stock ${before[0]?.minStockQty ?? 0} → ${input.minQty}`,
-        refId: result[0]!.code,
-      },
-      companyId,
-      user,
-    );
-    return { ok: true as const, minQty: result[0]!.minStockQty };
   });
 }
 

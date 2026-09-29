@@ -37,6 +37,7 @@
 //   Description full                                    = 12
 //   Material lg · UOM xs · Item Type md                 = 12
 //   Source lg · HSN Code lg                             = 12
+//   Track by Serial No. full (Tool / Instrument only)   = 12
 //   Product image full                                  = 12
 
 import {
@@ -58,7 +59,7 @@ import { useForm } from 'react-hook-form';
 import { Button } from '@/ui/core';
 import { Banner } from '@/ui/feedback';
 import { Panel } from '@/ui/data';
-import { FormField, FormGrid, Input, Select } from '@/ui/forms';
+import { CheckField, FormField, FormGrid, Input, Select } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextItemCode } from '../api';
 import { ItemImageField } from './item-image-field';
@@ -118,6 +119,27 @@ const PROCUREMENT_OPTIONS = ITEM_PROCUREMENT_TYPES.map((t) => ({
 const SOURCE_HELP =
   'Make = planned & produced (Plan → Production Order → Route Card). Buy = purchased finished (+ PR from the Planning line).';
 
+const TRACK_SERIAL_LABEL =
+  'Track by Serial No. (instruments — one register row per piece, calibration)';
+
+/** ADR-193 phase 4 — Track by Serial No. is a Tool / Instrument setting only:
+ *  shown for that type, never sent for any other. */
+function TrackSerialField(props: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <FormField label="Tool / Instrument" size="full" htmlFor="trackSerial">
+      <CheckField
+        id="trackSerial"
+        label={TRACK_SERIAL_LABEL}
+        checked={props.checked}
+        onChange={props.onChange}
+      />
+    </FormField>
+  );
+}
+
 function itemToUpdateDefaults(item: Item): UpdateItemInput {
   return {
     name: item.name,
@@ -126,6 +148,7 @@ function itemToUpdateDefaults(item: Item): UpdateItemInput {
     uom: item.uom,
     itemType: item.itemType,
     procurementType: item.procurementType,
+    trackSerial: item.trackSerial ?? false,
     hsnCode: item.hsnCode ?? undefined,
     imagePath: item.imagePath ?? null,
   };
@@ -226,13 +249,18 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
     <form
       ref={formRef}
       onSubmit={form.handleSubmit(async (values) => {
-        // Safety net mirroring the shared helper: a Party Supplied Material code
-        // always ends with -rm on save, even if a hand-typed one slipped through.
-        const out: CreateItemInput =
-          values.itemType === 'party_supplied_material' && values.code
-            ? { ...values, code: withPartyMaterialSuffix(values.code) }
-            : values;
-        await props.onSubmit(out);
+        // Track by Serial No. is sent only for a Tool / Instrument item.
+        const { trackSerial, ...rest } = values;
+        // ADR-195 safety net mirroring the shared helper: a Party Supplied Material
+        // code always ends with -rm on save, even if a hand-typed one slipped through.
+        const withCode: CreateItemInput =
+          rest.itemType === 'party_supplied_material' && rest.code
+            ? { ...rest, code: withPartyMaterialSuffix(rest.code) }
+            : rest;
+        await props.onSubmit(
+          withCode.itemType === 'tool' ? { ...withCode, trackSerial: !!trackSerial } : withCode,
+        );
+
       })}
     >
       <ItemFormHeader
@@ -353,6 +381,13 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
 
+          {watch('itemType') === 'tool' ? (
+            <TrackSerialField
+              checked={!!watch('trackSerial')}
+              onChange={(v) => setValue('trackSerial', v, { shouldDirty: true })}
+            />
+          ) : null}
+
           <ItemImageField
             value={watch('imagePath')}
             onChange={(p) => setValue('imagePath', p, { shouldDirty: true })}
@@ -376,7 +411,13 @@ function EditItemForm(props: EditMode): React.JSX.Element {
     <form
       ref={formRef}
       onSubmit={form.handleSubmit(async (values) => {
-        await props.onSubmit(values);
+        // Sent only for a Tool / Instrument item, and only when it changed —
+        // the server locks it (409) once stock or instruments exist.
+        const { trackSerial, ...rest } = values;
+        const changed = !!trackSerial !== !!props.item.trackSerial;
+        await props.onSubmit(
+          rest.itemType === 'tool' && changed ? { ...rest, trackSerial: !!trackSerial } : rest,
+        );
       })}
     >
       <ItemFormHeader
@@ -483,6 +524,13 @@ function EditItemForm(props: EditMode): React.JSX.Element {
           <FormField label="HSN Code" size="md" htmlFor="hsnCode" error={errors.hsnCode?.message}>
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
+
+          {watch('itemType') === 'tool' ? (
+            <TrackSerialField
+              checked={!!watch('trackSerial')}
+              onChange={(v) => setValue('trackSerial', v, { shouldDirty: true })}
+            />
+          ) : null}
 
           <ItemImageField
             value={watch('imagePath')}

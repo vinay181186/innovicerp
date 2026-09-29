@@ -352,7 +352,11 @@ function deriveOrderedQty(input: {
 /** Same rule as `deriveOrderedQty`, expressed in SQL so a list can filter on the
  *  balance BEFORE paging — a post-filter would make the page counts and `total`
  *  lie. `prRef` is the alias the caller gave `purchase_requests` (e.g. `pr`). */
-function orderedQtySql(prRef: { id: SQLWrapper; poId: SQLWrapper; qty: SQLWrapper }): SQL<number> {
+export function orderedQtySql(prRef: {
+  id: SQLWrapper;
+  poId: SQLWrapper;
+  qty: SQLWrapper;
+}): SQL<number> {
   return sql<number>`(CASE
     WHEN ${prRef.poId} IS NOT NULL AND ${linkedLineCountSql(prRef.id)} = 0 THEN ${prRef.qty}
     ELSE ${liveOrderedQtySql(prRef.id)}
@@ -922,136 +926,142 @@ export async function createPurchaseRequest(
   // Raising a PR is an entry right — L2 Data Entry and above.
   await requireFormAccess(user, 'pr_create', 'entry');
   const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => insertPurchaseRequestTx(tx, input, user, companyId, opts));
+}
 
-  return withUserContext(user, async (tx) => {
-    // T23: blank code → auto-generate the next IN-PR-#####. OSP callers pass an
-    // explicit IN-JWPR- code, which is honoured; only the standalone PR form
-    // leaves it blank. nextSeriesCode is prefix-scoped so the series don't mix.
-    const code = input.code?.trim() || (await nextSeriesCode(tx, 'pr', companyId, 'IN-PR-'));
-    // Code uniqueness within company
-    const dup = await tx
-      .select({ id: purchaseRequests.id })
-      .from(purchaseRequests)
-      .where(
-        and(
-          eq(purchaseRequests.companyId, companyId),
-          eq(purchaseRequests.code, code),
-          isNull(purchaseRequests.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (dup.length > 0) {
-      throw new ConflictError(`PR No. "${code}" already exists.`);
-    }
+/** The whole create, inside the caller's transaction — numbering, checks,
+ *  insert (status 'open'), op stamp, activity log. createPurchaseRequest and
+ *  the Store Reorder List (ADR-193 phase 5) both go through here, so a PR
+ *  raised in bulk is identical to one raised by hand. Access is the caller's. */
+export async function insertPurchaseRequestTx(
+  tx: DbTransaction,
+  input: CreatePurchaseRequestInput,
+  user: AuthContext,
+  companyId: string,
+  opts: { systemRaised?: boolean } = {},
+): Promise<PurchaseRequest> {
+  // T23: blank code → auto-generate the next IN-PR-#####. OSP callers pass an
+  // explicit IN-JWPR- code, which is honoured; only the standalone PR form
+  // leaves it blank. nextSeriesCode is prefix-scoped so the series don't mix.
+  const code = input.code?.trim() || (await nextSeriesCode(tx, 'pr', companyId, 'IN-PR-'));
+  // Code uniqueness within company
+  const dup = await tx
+    .select({ id: purchaseRequests.id })
+    .from(purchaseRequests)
+    .where(
+      and(
+        eq(purchaseRequests.companyId, companyId),
+        eq(purchaseRequests.code, code),
+        isNull(purchaseRequests.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (dup.length > 0) {
+    throw new ConflictError(`PR No. "${code}" already exists.`);
+  }
 
-    if (input.vendorId) await assertVendorExists(tx, input.vendorId, companyId);
-    if (input.itemId) await assertItemExists(tx, input.itemId, companyId);
-    // ADR-189 — an OSP PR (type 'jw_osp' / a JC-op link) is raised by the
-    // system when an outsource op needs a vendor, and skips PR approval; a
-    // hand-made PR may not claim to be one. The form never sends either.
-    if (!opts.systemRaised && (input.prType === 'jw_osp' || input.sourceJcOpId)) {
-      throw new ValidationError(
-        'A Job Work OSP request is raised by the system from its Job Card operation, not by hand.',
-      );
-    }
-    if (input.sourceJcOpId) await assertJcOpExists(tx, input.sourceJcOpId, companyId);
-    if (input.sourceSoLineId) await assertSoLineExists(tx, input.sourceSoLineId, companyId);
-
-    // Back-stop for a caller that sends only the typed code: if it names a real
-    // master item, stamp the link. An off-master code still saves as free text.
-    const resolvedItemId =
-      input.itemId ??
-      (input.itemCodeText ? await resolveItemIdByCode(tx, input.itemCodeText, companyId) : null);
-    // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
-    await assertLineQtysFitUom(
-      tx,
-      companyId,
-      [{ itemId: resolvedItemId, qty: input.qty }],
-      'PR Qty',
+  if (input.vendorId) await assertVendorExists(tx, input.vendorId, companyId);
+  if (input.itemId) await assertItemExists(tx, input.itemId, companyId);
+  // ADR-189 — an OSP PR (type 'jw_osp' / a JC-op link) is raised by the
+  // system when an outsource op needs a vendor, and skips PR approval; a
+  // hand-made PR may not claim to be one. The form never sends either.
+  if (!opts.systemRaised && (input.prType === 'jw_osp' || input.sourceJcOpId)) {
+    throw new ValidationError(
+      'A Job Work OSP request is raised by the system from its Job Card operation, not by hand.',
     );
+  }
+  if (input.sourceJcOpId) await assertJcOpExists(tx, input.sourceJcOpId, companyId);
+  if (input.sourceSoLineId) await assertSoLineExists(tx, input.sourceSoLineId, companyId);
 
-    // When the caller links an item but sends no name (a PR raised from a rework
-    // child job card carries the id + code but a blank name snapshot), stamp the
-    // master's name so the PR — and the PO raised from it — shows the item and
-    // its Create button is not stuck disabled on an empty name.
-    const resolvedItemName =
-      input.itemName?.trim() ||
-      (resolvedItemId ? await resolveItemNameById(tx, resolvedItemId, companyId) : null);
+  // Back-stop for a caller that sends only the typed code: if it names a real
+  // master item, stamp the link. An off-master code still saves as free text.
+  const resolvedItemId =
+    input.itemId ??
+    (input.itemCodeText ? await resolveItemIdByCode(tx, input.itemCodeText, companyId) : null);
+  // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+  await assertLineQtysFitUom(tx, companyId, [{ itemId: resolvedItemId, qty: input.qty }], 'PR Qty');
 
-    const inserted = await tx
-      .insert(purchaseRequests)
-      .values({
-        companyId,
-        code,
-        prDate: input.prDate,
-        // A new PR is ALWAYS born 'open'. Any status on the payload is
-        // ignored, matching updatePurchaseRequest (which omits status
-        // entirely): it advances only through approve / reject / create-PO.
-        // Picking it at creation let a PR be born 'approved' with no
-        // approvedBy/approvedAt behind it, or born 'po_created' and never
-        // convertible. The create form no longer offers the field.
-        status: 'open',
-        prType: input.prType ?? (input.sourceJcOpId ? 'jw_osp' : 'standard'),
-        vendorId: input.vendorId ?? null,
-        vendorCodeText: input.vendorCodeText ?? null,
-        itemId: resolvedItemId,
-        itemCodeText: input.itemCodeText ?? null,
-        itemName: resolvedItemName,
-        qty: input.qty,
-        estCost: estCostToString(input.estCost),
-        requiredDate: input.requiredDate ?? null,
-        sourceJcOpId: input.sourceJcOpId ?? null,
-        sourceSoLineId: input.sourceSoLineId ?? null,
-        operation: input.operation ?? null,
-        remarks: input.remarks ?? null,
-        createdBy: user.id,
+  // When the caller links an item but sends no name (a PR raised from a rework
+  // child job card carries the id + code but a blank name snapshot), stamp the
+  // master's name so the PR — and the PO raised from it — shows the item and
+  // its Create button is not stuck disabled on an empty name.
+  const resolvedItemName =
+    input.itemName?.trim() ||
+    (resolvedItemId ? await resolveItemNameById(tx, resolvedItemId, companyId) : null);
+
+  const inserted = await tx
+    .insert(purchaseRequests)
+    .values({
+      companyId,
+      code,
+      prDate: input.prDate,
+      // A new PR is ALWAYS born 'open'. Any status on the payload is
+      // ignored, matching updatePurchaseRequest (which omits status
+      // entirely): it advances only through approve / reject / create-PO.
+      // Picking it at creation let a PR be born 'approved' with no
+      // approvedBy/approvedAt behind it, or born 'po_created' and never
+      // convertible. The create form no longer offers the field.
+      status: 'open',
+      prType: input.prType ?? (input.sourceJcOpId ? 'jw_osp' : 'standard'),
+      vendorId: input.vendorId ?? null,
+      vendorCodeText: input.vendorCodeText ?? null,
+      itemId: resolvedItemId,
+      itemCodeText: input.itemCodeText ?? null,
+      itemName: resolvedItemName,
+      qty: input.qty,
+      estCost: estCostToString(input.estCost),
+      requiredDate: input.requiredDate ?? null,
+      sourceJcOpId: input.sourceJcOpId ?? null,
+      sourceSoLineId: input.sourceSoLineId ?? null,
+      operation: input.operation ?? null,
+      remarks: input.remarks ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const row = inserted[0]!;
+
+  // Legacy createPR write-back — HTML L6207-08:
+  //   op.outsourceStatus='PR Raised'; op.outsourcePRNo=prNo;
+  // When a PR is raised from an outsource JC op, stamp the source op so the
+  // JC Ops board (jc-ops/service.ts joins pr ON pr.id = op.outsource_pr_id)
+  // surfaces the raised PR. This is ATOMIC with the insert above — same tx —
+  // so a committed PR is never left without its op stamped (the parity bug
+  // this fixes). 'PR Raised' maps to the 'pr_raised' OUTSOURCE_STATUSES
+  // member; legacy `op.outsourcePRNo` maps to our outsource_pr_id FK.
+  // The op's existence/company was already asserted above (assertJcOpExists).
+  if (input.sourceJcOpId) {
+    await tx
+      .update(jcOps)
+      .set({
+        outsourcePrId: row.id,
+        outsourceStatus: 'pr_raised',
+        updatedAt: new Date(),
         updatedBy: user.id,
       })
-      .returning();
-    const row = inserted[0]!;
+      .where(
+        and(
+          eq(jcOps.id, input.sourceJcOpId),
+          eq(jcOps.companyId, companyId),
+          isNull(jcOps.deletedAt),
+        ),
+      );
+  }
 
-    // Legacy createPR write-back — HTML L6207-08:
-    //   op.outsourceStatus='PR Raised'; op.outsourcePRNo=prNo;
-    // When a PR is raised from an outsource JC op, stamp the source op so the
-    // JC Ops board (jc-ops/service.ts joins pr ON pr.id = op.outsource_pr_id)
-    // surfaces the raised PR. This is ATOMIC with the insert above — same tx —
-    // so a committed PR is never left without its op stamped (the parity bug
-    // this fixes). 'PR Raised' maps to the 'pr_raised' OUTSOURCE_STATUSES
-    // member; legacy `op.outsourcePRNo` maps to our outsource_pr_id FK.
-    // The op's existence/company was already asserted above (assertJcOpExists).
-    if (input.sourceJcOpId) {
-      await tx
-        .update(jcOps)
-        .set({
-          outsourcePrId: row.id,
-          outsourceStatus: 'pr_raised',
-          updatedAt: new Date(),
-          updatedBy: user.id,
-        })
-        .where(
-          and(
-            eq(jcOps.id, input.sourceJcOpId),
-            eq(jcOps.companyId, companyId),
-            isNull(jcOps.deletedAt),
-          ),
-        );
-    }
-
-    await emitActivityLog(
-      tx,
-      {
-        action: 'CREATE',
-        entity: 'PurchaseRequest',
-        detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
-        refId: row.code,
-      },
-      companyId,
-      user,
-    );
-    // A PR born a moment ago has no PO line pointing at it and no header po_id,
-    // so its ordered quantity is 0 by construction — no query needed.
-    return toPurchaseRequest(row, 0);
-  });
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'PurchaseRequest',
+      detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+      refId: row.code,
+    },
+    companyId,
+    user,
+  );
+  // A PR born a moment ago has no PO line pointing at it and no header po_id,
+  // so its ordered quantity is 0 by construction — no query needed.
+  return toPurchaseRequest(row, 0);
 }
 
 export async function updatePurchaseRequest(

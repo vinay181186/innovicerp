@@ -36,6 +36,8 @@ export const STORE_TXN_SOURCE_TYPES = [
   'tool_issue',
   'tool_return',
   'stock_count',
+  // ADR-193 phase 4 (0159): an in-store instrument scrapped on an approved write-off.
+  'tool_writeoff',
   'other',
 ] as const;
 export type StoreTxnSourceType = (typeof STORE_TXN_SOURCE_TYPES)[number];

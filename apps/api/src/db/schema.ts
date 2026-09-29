@@ -246,15 +246,20 @@ export const items = pgTable(
     // ADR-171 (migration 0134): 'make' | 'buy'. Buy items skip plan / route
     // card / Production Order — the Planning line raises a PR instead.
     procurementType: text('procurement_type').notNull().default('make'),
+    // ADR-193 phase 4 (0159): Tool / Instrument items only — one register row
+    // (instruments) per piece. Locked once ledger rows or instruments exist.
+    trackSerial: boolean('track_serial').notNull().default(false),
     hsnCode: text('hsn_code'),
     drawingFilePath: text('drawing_file_path'),
     /** Product image (migration 0136) — storage path of the 3D render in the
      *  private bucket under `<companyId>/item-images/…`. A product picture, not
      *  a controlled drawing: shown as a thumbnail next to code · name. */
     imagePath: text('image_path'),
-    /** PL-SI-1 (migration 0028) — low-stock alert threshold per item.
-     *  Drives the "Low Stock" tile + per-row red tint on Store/Inventory. */
-    minStockQty: integer('min_stock_qty').notNull().default(0),
+    /** Reorder Level (PL-SI-1 0028; numeric since 0160, ADR-193 phase 5).
+     *  Below Reorder = Available + On PO < this, when > 0. */
+    minStockQty: stockQty('min_stock_qty').notNull().default(0),
+    /** Reorder Qty (0160) — how much one reorder buys; 0 = buy the shortfall. */
+    reorderQty: stockQty('reorder_qty').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -3647,17 +3652,24 @@ export const toolIssues = pgTable(
     expectedReturnDate: date('expected_return_date'),
     itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
     itemCodeText: text('item_code_text'),
-    itemName: text('item_name').notNull(),
-    qty: integer('qty').notNull(),
+    itemName: text('item_name'),
+    qty: stockQty('qty').notNull(),
     issuedTo: text('issued_to').notNull(),
+    // ADR-193 phase 4 (0159): the Operator picked (issuedTo keeps the name).
+    issuedToOperatorId: uuid('issued_to_operator_id').references(() => operators.id, {
+      onDelete: 'set null',
+    }),
+    jobCardId: uuid('job_card_id').references(() => jobCards.id, { onDelete: 'set null' }),
     refType: text('ref_type'),
     refNo: text('ref_no'),
     purpose: text('purpose'),
     remarks: text('remarks'),
+    // issued | partial | returned | cancelled. Good / Damaged / Lost / Consumed
+    // totals are derived from tool_issue_returns (0159 dropped the running totals).
     returnStatus: text('return_status').notNull().default('issued'),
-    returnGoodQty: integer('return_good_qty').notNull().default(0),
-    returnDamagedQty: integer('return_damaged_qty').notNull().default(0),
-    returnConsumedQty: integer('return_consumed_qty').notNull().default(0),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
       { onDelete: 'set null' },
@@ -3707,10 +3719,11 @@ export const toolIssueReturns = pgTable(
       .notNull()
       .references((): AnyPgColumn => toolIssues.id, { onDelete: 'cascade' }),
     returnDate: date('return_date').notNull(),
-    returnedBy: text('returned_by'),
-    goodQty: integer('good_qty').notNull().default(0),
-    damagedQty: integer('damaged_qty').notNull().default(0),
-    consumedQty: integer('consumed_qty').notNull().default(0),
+    goodQty: stockQty('good_qty').notNull().default(0),
+    damagedQty: stockQty('damaged_qty').notNull().default(0),
+    lostQty: stockQty('lost_qty').notNull().default(0),
+    consumedQty: stockQty('consumed_qty').notNull().default(0),
+    reason: text('reason'),
     remarks: text('remarks'),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
@@ -3740,6 +3753,205 @@ export const toolIssueReturns = pgTable(
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── ADR-193 phase 4 (migration 0159) — instrument register ──────────────
+// One row per serial piece of a Tool / Instrument item with track_serial.
+// Registering never moves stock: In Store + At Calibration ≤ On Hand (the
+// serial cover in lib/stock-ledger.ts postStockMove holds it afterwards).
+export const instruments = pgTable(
+  'instruments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    serialNo: text('serial_no').notNull(),
+    status: text('status').notNull().default('in_store'),
+    calibrationIntervalDays: integer('calibration_interval_days'),
+    lastCalibratedOn: date('last_calibrated_on'),
+    calibrationDueOn: date('calibration_due_on'),
+    location: text('location'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      'instruments_status_check',
+      sql`${t.status} IN ('in_store', 'issued', 'at_calibration', 'lost', 'scrapped')`,
+    ),
+    check('instruments_calibration_interval_days_check', sql`${t.calibrationIntervalDays} > 0`),
+    check('instruments_serial_not_blank', sql`length(btrim(${t.serialNo})) > 0`),
+    uniqueIndex('instruments_item_serial_uniq')
+      .on(t.companyId, t.itemId, sql`lower(${t.serialNo})`)
+      .where(sql`${t.deletedAt} is null`),
+    index('instruments_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('instruments_company_due_idx')
+      .on(t.companyId, t.calibrationDueOn)
+      .where(sql`${t.deletedAt} is null AND ${t.status} NOT IN ('lost', 'scrapped')`),
+    pgPolicy('instruments_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const instrumentCalibrations = pgTable(
+  'instrument_calibrations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    instrumentId: uuid('instrument_id')
+      .notNull()
+      .references(() => instruments.id),
+    calibratedOn: date('calibrated_on').notNull(),
+    result: text('result').notNull(),
+    certificateNo: text('certificate_no'),
+    agency: text('agency'),
+    nextDueOn: date('next_due_on'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('instrument_calibrations_result_check', sql`${t.result} IN ('pass', 'fail')`),
+    index('instrument_calibrations_instrument_idx')
+      .on(t.instrumentId, t.calibratedOn)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('instrument_calibrations_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// Which instruments went out on a Tool Issue, and how each came back.
+export const toolIssueInstruments = pgTable(
+  'tool_issue_instruments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    toolIssueId: uuid('tool_issue_id')
+      .notNull()
+      .references(() => toolIssues.id, { onDelete: 'cascade' }),
+    instrumentId: uuid('instrument_id')
+      .notNull()
+      .references(() => instruments.id),
+    returnedOn: date('returned_on'),
+    returnCondition: text('return_condition'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      'tool_issue_instruments_return_condition_check',
+      sql`${t.returnCondition} IN ('good', 'damaged', 'lost')`,
+    ),
+    uniqueIndex('tool_issue_instruments_issue_instrument_uniq').on(t.toolIssueId, t.instrumentId),
+    index('tool_issue_instruments_instrument_idx')
+      .on(t.instrumentId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('tool_issue_instruments_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// Damaged / Lost on a return, or Scrap of an in-store instrument, waiting for
+// the Store In-charge (approve tier, not the recorder). Only an approved Scrap
+// moves stock ('tool_writeoff' out); the rest already left at issue.
+export const toolWriteoffs = pgTable(
+  'tool_writeoffs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    instrumentId: uuid('instrument_id').references(() => instruments.id),
+    toolIssueId: uuid('tool_issue_id').references(() => toolIssues.id),
+    toolIssueReturnId: uuid('tool_issue_return_id').references(() => toolIssueReturns.id),
+    kind: text('kind').notNull(),
+    qty: stockQty('qty').notNull(),
+    reason: text('reason').notNull(),
+    status: text('status').notNull().default('pending'),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionRemarks: text('decision_remarks'),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('tool_writeoffs_kind_check', sql`${t.kind} IN ('damaged', 'lost', 'scrap')`),
+    check('tool_writeoffs_qty_check', sql`${t.qty} > 0`),
+    check('tool_writeoffs_reason_check', sql`length(btrim(${t.reason})) > 0`),
+    check('tool_writeoffs_status_check', sql`${t.status} IN ('pending', 'approved', 'rejected')`),
+    index('tool_writeoffs_pending_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null AND ${t.status} = 'pending'`),
+    index('tool_writeoffs_issue_idx')
+      .on(t.toolIssueId)
+      .where(sql`${t.deletedAt} is null`),
+    index('tool_writeoffs_instrument_idx')
+      .on(t.instrumentId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('tool_writeoffs_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
     }),
   ],
 ).enableRLS();

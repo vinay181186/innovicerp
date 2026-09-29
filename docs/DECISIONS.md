@@ -10444,3 +10444,40 @@ Party GRN is COMPULSORY**; everything else "as suggested".
 - Not done: modules/assembly/service.test.ts + routes.test.ts still expect the old stock debit (they run on
   PROD, so not run); a rare lock-order case when the finished item is itself issued in the same moment.
 
+### ADR-193 phase 4 — instrument register + tool issue rewrite (2026-09-28)
+- Owner decision Q4: instruments tracked one by one by Instrument Serial No.; the Store In-charge (approve
+  tier, never the person who recorded it) decides write-offs.
+- A Tool / Instrument item is bulk (qty) or `track_serial` (one `instruments` row per piece). Registering never
+  moves stock — it names a piece already received (GRN / Stock Count): In Store + At Calibration ≤ On Hand,
+  enforced inside `postStockMove` for every move of a serial item ("mark the missing one Lost or Scrapped first").
+- Tool Issue: to an Operator (or a typed name), optional Job Card, expected return. Serial tools by picking
+  instruments; overdue or failed calibration, At Calibration and a pending write-off block issue.
+- Return: Good → stock; Consumed → closed (normal wear); Damaged / Lost → write-off pending. Approve moves no
+  stock (it left at issue); Scrap of an in-store instrument → OUT `tool_writeoff`. Reject Damaged → back to
+  stock as Good; reject Lost → Still Out again. Cancel only while nothing was returned.
+- Tools cannot go out on an Item Issue (P39). Alerts AL-020 (calibration due in 7 days / overdue) and AL-021
+  (tools not returned by the expected date).
+- Names: Instrument Serial No. (plain "Serial No." is the assembly batch serial), Still Out (the register bans
+  "Outstanding" for qty).
+- Review fixes: flags re-read after the instrument lock; Mark Missing (Lost write-off, OUT 1 on approval);
+  serial correction while never issued; no future / back-dated dates that dodge calibration.
+- Verified on TEST: 31 scenarios pass; 3b 25/25 and 3c 27/27 again; 972 + 1369 cross-screen figures, 0 mismatches.
+
+### ADR-193 phase 5 — reorder level, one-click PR, consumption report (2026-09-29)
+- Owner decision Q5: Reorder Level + Reorder Qty per item; alert + one-click PR, never automatic.
+- "Min Qty" is renamed **Reorder Level** (same column, now decimal). **Below Reorder** = reorderable item type, Reorder
+  Level > 0 and Available + On PO < Reorder Level (Available leaves out reserved stock) — the same rule on Store
+  Inventory, the Reorder List, AL-019, the production dashboard and stock valuation.
+- **Reorder List** (Store): suggested PR qty = max(Reorder Qty, shortfall to the level), whole for NOS / SET; suggested
+  vendor = last live PO's active vendor (no OSP / service POs). Raise PRs → one Open PR per item through the PR
+  module's own insert (`insertPurchaseRequestTx`), so numbering, approval (ADR-189) and the activity log are the
+  same as a hand-raised PR; per-company lock; an item with an open standard PR balance is skipped. The Store row's
+  Raise PR now opens the Reorder List so there is one path.
+- Tools are reorderable (inserts and bits wear out); assemblies are not.
+- Report **Material Consumption**: Item Issue lines net of returns, reversed slips excluded, by month / item /
+  issue against / reference / department / issued to.
+- Verified on TEST: 13 scenarios pass; 3b 25/25, 3c 27/27, 4 31/31 again; 1148 + 1547 cross-screen figures, 0 mismatches.
+- Follow-up (2026-09-29): a closed Job Card, or one whose Production Order was short-closed (ADR-182), takes no
+  new Item Issues (returns still allowed). Reports can carry a plain-words `note`; Material Consumption says so when
+  it stops at 2,000 rows.
+

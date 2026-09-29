@@ -17,7 +17,7 @@ export const stockValuationRowSchema = z.object({
   hasRate: z.boolean(),
   value: z.number().nonnegative().nullable(),
   lastGrnDate: z.string().nullable(),
-  minStock: z.number().int().nonnegative(),
+  minStock: z.number().nonnegative(),
   lowStock: z.boolean(),
 });
 export type StockValuationRow = z.infer<typeof stockValuationRowSchema>;

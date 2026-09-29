@@ -15,6 +15,7 @@ import type {
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { readBelowReorder } from '../store-inventory/reorder-rule';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -195,15 +196,14 @@ export async function getProductionDashboard(
     // ── Supply Chain Snapshot (legacy L3804-3838) ─────────────────────────
     // Additive DTO exposure of figures already computed elsewhere — nothing is
     // recomputed in a new way:
-    //  · low/zero stock reuse store-inventory/service.ts's exact formula
-    //    (minQty>0 && inStock<=minQty; inStock=0) over the v_item_stock view.
+    //  · "low" stock = Below Reorder, the ONE rule (store-inventory/
+    //    reorder-rule.ts, ADR-193 phase 5): reorderable type, Reorder Level
+    //    > 0, Available + On PO < Reorder Level. Zero = on hand 0.
+    //    Field names (lowStockCount / lowStockItems / minQty) are unchanged.
     //  · openPos/todayGrn reuse sc-dashboard/service.ts's predicates
     //    (status IN open|partial|qc_pending; grn_date = current_date).
     const stockCountRows = await tx.execute(sql`
       SELECT
-        COUNT(*) FILTER (
-          WHERE i.min_stock_qty > 0 AND COALESCE(s.on_hand_qty, 0) <= i.min_stock_qty
-        )::int AS "lowStockCount",
         COUNT(*) FILTER (WHERE COALESCE(s.on_hand_qty, 0) = 0)::int AS "zeroStockCount"
       FROM public.items i
       LEFT JOIN public.v_item_stock s
@@ -212,28 +212,12 @@ export async function getProductionDashboard(
     `);
     const scc = (stockCountRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
 
-    const lowItemRows = await tx.execute(sql`
-      SELECT
-        i.id AS "itemId", i.code,
-        COALESCE(s.on_hand_qty, 0)::float8 AS "inStock",
-        i.min_stock_qty AS "minQty"
-      FROM public.items i
-      LEFT JOIN public.v_item_stock s
-        ON s.item_id = i.id AND s.company_id = i.company_id
-      WHERE i.company_id = ${companyId}::uuid
-        AND i.deleted_at IS NULL
-        AND i.min_stock_qty > 0
-        AND COALESCE(s.on_hand_qty, 0) <= i.min_stock_qty
-      ORDER BY i.code
-      LIMIT 50
-    `);
-    const lowStockItems: ProductionDashboardLowStockItem[] = (
-      lowItemRows as unknown as Array<Record<string, unknown>>
-    ).map((r) => ({
-      itemId: r['itemId'] as string,
-      code: r['code'] as string,
-      inStock: Number(r['inStock'] ?? 0),
-      minQty: Number(r['minQty'] ?? 0),
+    const belowReorder = await readBelowReorder(tx, companyId);
+    const lowStockItems: ProductionDashboardLowStockItem[] = belowReorder.slice(0, 50).map((r) => ({
+      itemId: r.itemId,
+      code: r.itemCode,
+      inStock: r.physicalQty,
+      minQty: r.reorderLevel,
     }));
 
     const poGrnRows = await tx.execute(sql`
@@ -250,7 +234,7 @@ export async function getProductionDashboard(
     const pg = (poGrnRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
 
     const supplyChain: ProductionDashboardSupplyChain = {
-      lowStockCount: Number(scc['lowStockCount'] ?? 0),
+      lowStockCount: belowReorder.length,
       zeroStockCount: Number(scc['zeroStockCount'] ?? 0),
       openPos: Number(pg['openPos'] ?? 0),
       todayGrn: Number(pg['todayGrn'] ?? 0),

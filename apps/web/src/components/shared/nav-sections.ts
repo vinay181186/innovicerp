@@ -119,6 +119,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/goods-receipt-notes', label: 'GRN', icon: '📥', formKey: 'grn_create' },
           { to: '/issue-register', label: 'Item Issue Register', icon: '📋', formKey: 'issue_create' },
           { to: '/stock-counts', label: 'Stock Count', icon: '🧮', formKey: 'stockcount_create' },
+          { to: '/instruments', label: 'Instrument Register', icon: '📏', formKey: 'toolissue_create' },
           { to: '/party-grn', label: 'Party GRN', icon: '📥', formKey: 'party_create' },
         ],
       },
@@ -133,6 +134,7 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Report',
         items: [
           { to: '/store-inventory', label: 'Store Inventory', icon: '📦' },
+          { to: '/reorder-list', label: 'Reorder List', icon: '🔁' },
           { to: '/party-stock-ledger', label: 'Party Stock Ledger', icon: '📒', formKey: 'party_create' },
           { to: '/reports', search: { group: 'Store' }, label: 'Reports', icon: '📊' },
         ],

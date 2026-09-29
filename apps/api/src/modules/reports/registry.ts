@@ -37,6 +37,7 @@ import { ospAtVendorReport } from './definitions/osp-at-vendor';
 import { stockBalanceReport } from './definitions/stock-balance';
 import { projectedStockReport } from './definitions/projected-stock';
 import { reservedStockReport } from './definitions/reserved-stock';
+import { materialConsumptionReport } from './definitions/material-consumption';
 import { inspectionSummaryReport } from './definitions/inspection-summary';
 import { firstPassYieldReport } from './definitions/first-pass-yield';
 import { vendorRejectionReport } from './definitions/vendor-rejection';
@@ -62,6 +63,8 @@ export interface ReportRunContext {
 export interface ReportRunResult {
   columns: ReportColumn[];
   rows: ReportRow[];
+  /** Shown above the grid (e.g. the result was cut off at a row cap). */
+  note?: string;
 }
 
 export interface RegisteredReport {
@@ -110,6 +113,8 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [stockBalanceReport.definition.slug]: stockBalanceReport,
   [projectedStockReport.definition.slug]: projectedStockReport,
   [reservedStockReport.definition.slug]: reservedStockReport,
+  // ADR-193 phase 5.
+  [materialConsumptionReport.definition.slug]: materialConsumptionReport,
   [inspectionSummaryReport.definition.slug]: inspectionSummaryReport,
   [firstPassYieldReport.definition.slug]: firstPassYieldReport,
   [vendorRejectionReport.definition.slug]: vendorRejectionReport,

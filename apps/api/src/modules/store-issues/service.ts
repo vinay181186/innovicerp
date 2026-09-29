@@ -19,6 +19,7 @@
 // Reads (list / one slip) live in read.ts.
 
 import {
+  ITEM_TYPE_RULES,
   ISSUE_AGAINST_LABELS,
   STORE_ISSUE_REVERSE_REASON_MIN,
   type CreateStoreIssueInput,
@@ -47,6 +48,9 @@ import { readStoreIssueDetail, requireCompany } from './read';
 
 export { getStoreIssue, listStoreIssues } from './read';
 
+const isReturnableType = (t: string): boolean =>
+  (ITEM_TYPE_RULES as Record<string, { returnable: boolean } | undefined>)[t]?.returnable === true;
+
 export async function getNextStoreIssueCode(user: AuthContext): Promise<{ code: string }> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => ({ code: await nextStoreIssueCode(tx, companyId) }));
@@ -64,13 +68,21 @@ export async function createStoreIssue(
     // 1) Every item must be live in this company.
     const itemIds = input.lines.map((l) => l.itemId);
     const live = (await tx.execute(sql`
-      SELECT id FROM public.items
+      SELECT id, code, item_type::text AS item_type FROM public.items
       WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
         AND id = ANY(${sql.param(itemIds)}::uuid[])
-    `)) as unknown as Array<{ id: string }>;
+    `)) as unknown as Array<{ id: string; code: string; item_type: string }>;
     if (live.length !== new Set(itemIds).size) {
       throw new NotFoundError(
         'An Item on this issue was not found. Please select the Item Code again.',
+      );
+    }
+    // P39 (ADR-193 phase 4): a tool goes out on the Tool Issue register, where
+    // it is expected back — never on an Item Issue slip.
+    const tool = live.find((r) => isReturnableType(r.item_type));
+    if (tool) {
+      throw new ValidationError(
+        `${tool.code} is a Tool / Instrument — issue it from the Tool Issue register`,
       );
     }
 
