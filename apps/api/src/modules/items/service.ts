@@ -6,6 +6,7 @@ import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { checkTypeAndSerialChange, SERIAL_ONLY_FOR_TOOLS, trackSerialForCreate } from './type-lock';
 import type {
   BulkCreateItemsInput,
   BulkCreateItemsResponse,
@@ -184,6 +185,7 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
           uom: input.uom,
           itemType: input.itemType,
           procurementType: input.procurementType,
+          trackSerial: trackSerialForCreate(input.itemType, input.trackSerial),
           hsnCode: input.hsnCode ?? null,
           drawingFilePath: input.drawingFilePath ?? null,
           imagePath: input.imagePath ?? null,
@@ -270,6 +272,10 @@ export async function createItemsBulk(
     for (const [i, it] of input.items.entries()) {
       const index = i + 1;
       const name = it.name.trim();
+      if (it.trackSerial && it.itemType !== 'tool') {
+        skipped.push({ index, name, reason: SERIAL_ONLY_FOR_TOOLS });
+        continue;
+      }
 
       let code = it.code?.trim();
       if (code) {
@@ -313,6 +319,7 @@ export async function createItemsBulk(
         uom: it.uom,
         itemType: it.itemType,
         procurementType: it.procurementType,
+        trackSerial: it.trackSerial === true,
         hsnCode: it.hsnCode ?? null,
         drawingFilePath: it.drawingFilePath ?? null,
         imagePath: it.imagePath ?? null,
@@ -358,7 +365,12 @@ export async function updateItem(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: items.id, code: items.code, itemType: items.itemType })
+      .select({
+        id: items.id,
+        code: items.code,
+        itemType: items.itemType,
+        trackSerial: items.trackSerial,
+      })
       .from(items)
       .where(and(eq(items.id, id), isNull(items.deletedAt)))
       .for('update')
@@ -366,24 +378,10 @@ export async function updateItem(
     if (existing.length === 0) {
       throw new NotFoundError('Item not found. It may have been moved to Trash.');
     }
-    // ADR-193 (P23): a Tool / Instrument is handed out and returned, so its
-    // history is built differently. Once stock has moved, the type may not be
-    // switched to or from 'tool'; other type changes stay allowed (logged).
+    // ADR-193 (P23 / P15 phase 4): no switch to or from 'tool', and no change
+    // of Track by Serial No., once stock has moved (type-lock.ts).
     const cur = existing[0]!;
-    if (
-      input.itemType !== undefined &&
-      input.itemType !== cur.itemType &&
-      (input.itemType === 'tool' || cur.itemType === 'tool')
-    ) {
-      const moved = (await tx.execute(sql`
-        SELECT 1 FROM public.store_transactions WHERE item_id = ${id}::uuid LIMIT 1
-      `)) as unknown as unknown[];
-      if (moved.length > 0) {
-        throw new ConflictError(
-          `${cur.code}: Item Type cannot be changed to or from Tool / Instrument once stock has moved. Create a new item instead.`,
-        );
-      }
-    }
+    const trackSerial = await checkTypeAndSerialChange(tx, id, cur, input);
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.name !== undefined) updates.name = input.name;
@@ -394,6 +392,7 @@ export async function updateItem(
     if (input.uom !== undefined) updates.uom = input.uom;
     if (input.itemType !== undefined) updates.itemType = input.itemType;
     if (input.procurementType !== undefined) updates.procurementType = input.procurementType;
+    if (trackSerial !== undefined) updates.trackSerial = trackSerial;
     if (input.hsnCode !== undefined) updates.hsnCode = input.hsnCode ?? null;
     if (input.drawingFilePath !== undefined)
       updates.drawingFilePath = input.drawingFilePath ?? null;

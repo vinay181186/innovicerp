@@ -10392,3 +10392,22 @@ integer, so KGS / MTR material could not be issued as 12.5.
 - Not done: modules/assembly/service.test.ts + routes.test.ts still expect the old stock debit (they run on
   PROD, so not run); a rare lock-order case when the finished item is itself issued in the same moment.
 
+### ADR-193 phase 4 — instrument register + tool issue rewrite (2026-09-28)
+- Owner decision Q4: instruments tracked one by one by Instrument Serial No.; the Store In-charge (approve
+  tier, never the person who recorded it) decides write-offs.
+- A Tool / Instrument item is bulk (qty) or `track_serial` (one `instruments` row per piece). Registering never
+  moves stock — it names a piece already received (GRN / Stock Count): In Store + At Calibration ≤ On Hand,
+  enforced inside `postStockMove` for every move of a serial item ("mark the missing one Lost or Scrapped first").
+- Tool Issue: to an Operator (or a typed name), optional Job Card, expected return. Serial tools by picking
+  instruments; overdue or failed calibration, At Calibration and a pending write-off block issue.
+- Return: Good → stock; Consumed → closed (normal wear); Damaged / Lost → write-off pending. Approve moves no
+  stock (it left at issue); Scrap of an in-store instrument → OUT `tool_writeoff`. Reject Damaged → back to
+  stock as Good; reject Lost → Still Out again. Cancel only while nothing was returned.
+- Tools cannot go out on an Item Issue (P39). Alerts AL-020 (calibration due in 7 days / overdue) and AL-021
+  (tools not returned by the expected date).
+- Names: Instrument Serial No. (plain "Serial No." is the assembly batch serial), Still Out (the register bans
+  "Outstanding" for qty).
+- Review fixes: flags re-read after the instrument lock; Mark Missing (Lost write-off, OUT 1 on approval);
+  serial correction while never issued; no future / back-dated dates that dodge calibration.
+- Verified on TEST: 31 scenarios pass; 3b 25/25 and 3c 27/27 again; 972 + 1369 cross-screen figures, 0 mismatches.
+

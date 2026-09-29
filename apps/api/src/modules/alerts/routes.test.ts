@@ -101,13 +101,13 @@ describe('alerts routes', () => {
     expect(codes).toContain('AL-005');
   });
 
-  it('GET /alerts/config returns 200 + 15 merged entries', async () => {
+  it('GET /alerts/config returns 200 + 17 merged entries', async () => {
     app = await buildApp(admin);
     const res = await app.inject({ method: 'GET', url: '/alerts/config' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    // 15 always — registry definitions merged with overrides.
-    expect(body.entries).toHaveLength(15);
+    // 17 always — registry definitions merged with overrides (AL-020/021: ADR-193 phase 4).
+    expect(body.entries).toHaveLength(17);
     // For codes this suite owns, untouched at this point → defaults.
     const al005 = body.entries.find((e: { code: string }) => e.code === 'AL-005');
     expect(al005?.active).toBe(true);

@@ -1,60 +1,47 @@
-// Tool Issue Register (PL-TI-1) — returnable items register.
-// Mirrors legacy renderToolIssue (HTML L23965) + addToolIssue (L24038) +
-// _toolReturn (L24080).
-//
-// Extracted from the standalone tool-issues route into a reusable view so it can
-// render as a tab inside the Item Issue Register. Uses LOCAL React state only —
-// no route/URL coupling. Hooks, modals, and behavior are IDENTICAL to the route.
+// Tool Issue Register — ADR-193 phase 4b. Renders as the Tool Issues tab of
+// /issue-register. Three views: the issues, who holds what, and write-offs
+// (Damaged / Lost / Scrap waiting for the Store In-charge). Local state only;
+// `initialSearch` is a one-time seed from the Global Search deep link.
 
-import {
-  type CreateToolIssueInput,
-  STORE_ISSUE_REF_TYPES,
-  type StoreIssueRefType,
-  type RecordToolReturnInput,
-  type ToolIssueListItem,
-} from '@innovic/shared';
+import type { ToolIssueListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { fmtDate, todayIst } from '@/lib/date';
+import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useItemsList } from '../../items/api';
+import { fmtDate } from '@/lib/date';
 import { ListFooter, ListHeader } from '@/ui/layout';
-import {
-  useCreateToolIssue,
-  useNextToolIssueCode,
-  useRecordToolReturn,
-  useToolIssuesList,
-} from '../api';
+import { useToolIssuesList } from '../api';
+import { NewToolIssueModal } from './new-tool-issue-modal';
+import { ToolHoldersView } from './tool-holders-view';
+import { ToolIssueViewModal } from './tool-issue-view-modal';
+import { ToolWriteoffsView } from './tool-writeoffs-view';
 
-type FilterKey = 'all' | 'out' | 'overdue' | 'returned';
+type FilterKey = 'all' | 'out' | 'overdue' | 'returned' | 'cancelled';
 const FILTER_LABELS: Record<FilterKey, string> = {
   all: 'All',
   out: 'Currently Out',
   overdue: 'Overdue',
   returned: 'Returned',
+  cancelled: 'Cancelled',
 };
+type View = 'issues' | 'holders' | 'writeoffs';
 const PAGE_SIZE = 25;
+const r3 = (v: number): number => Math.round(v * 1000) / 1000;
+const withCount = (label: string, n: number | undefined): string =>
+  n == null ? label : `${label} (${n})`;
 
-// `initialSearch` — one-time seed for the search box from the host route's
-// ?search param (Global Search deep link); typing afterwards stays local.
 export function ToolIssueRegisterView({
   initialSearch,
 }: {
   initialSearch?: string | undefined;
 }): React.JSX.Element {
-  // Tier-driven, per department (toolissue_create sits in Store). This view
-  // renders as the Tool Issues tab of /issue-register and is passed no access
-  // props, so it gates itself. Issuing a tool is a create (entry); recording
-  // its return changes a saved issue, so that is edit.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'toolissue_create');
-  const canIssue = perms.entry;
-  const canReturn = perms.edit;
+  const [view, setView] = useState<View>('issues');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState(() => initialSearch ?? '');
   const [page, setPage] = useState(1);
   const [showNew, setShowNew] = useState(false);
-  const [returnTarget, setReturnTarget] = useState<ToolIssueListItem | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error } = useToolIssuesList({
     filter,
@@ -62,13 +49,8 @@ export function ToolIssueRegisterView({
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
-
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
 
-  // "Hide page" (Access Control → Config): once access has loaded, a user whose
-  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
-  // is undefined only while access loads — don't block then, or every legitimate
-  // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
@@ -77,754 +59,196 @@ export function ToolIssueRegisterView({
     );
   }
 
+  const pendingWriteoffs = data?.summary?.writeoffsPending ?? 0;
+
   return (
     <div>
-      {/* THE list header (ui/layout ListHeader): title · count · + Issue Tool,
-          then the filter bar (search · status with counts · Clear). */}
-      <ListHeader
-        title="Tool Issue Register"
-        icon="🔧"
-        count={data?.total}
-        noun="tool issue"
-        filterNote={filter === 'all' ? undefined : FILTER_LABELS[filter]}
-        search={search}
-        onSearch={(v) => {
-          setSearch(v);
-          setPage(1);
-        }}
-        searchPlaceholder="Search Issue No., item, issued to, reference…"
-        filters={
-          // Status, with the counts the old strip tiles showed in the option
-          // labels (owner decision 2026-09-26). Overdue is offered only when
-          // there is one (legacy L24016) or it is the current choice.
-          <select
-            className="innovic-select"
-            aria-label="Tool Issue Status"
-            title="Tool Issue Status"
-            value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value as FilterKey);
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        {(
+          [
+            ['issues', 'Tool Issues'],
+            ['holders', 'Who Holds What'],
+            ['writeoffs', withCount('Write-offs', pendingWriteoffs || undefined)],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            className={view === k ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+            onClick={() => setView(k)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'holders' ? (
+        <ToolHoldersView onOpen={setOpenId} />
+      ) : view === 'writeoffs' ? (
+        <ToolWriteoffsView canDecide={perms.approve} />
+      ) : (
+        <>
+          <ListHeader
+            title="Tool Issue Register"
+            icon="🔧"
+            count={data?.total}
+            noun="tool issue"
+            filterNote={filter === 'all' ? undefined : FILTER_LABELS[filter]}
+            search={search}
+            onSearch={(v) => {
+              setSearch(v);
               setPage(1);
             }}
-          >
-            <option value="all">{withCount('All', data?.summary?.total)}</option>
-            <option value="out">{withCount(FILTER_LABELS.out, data?.summary?.out)}</option>
-            <option value="returned">
-              {withCount(FILTER_LABELS.returned, data?.summary?.returned)}
-            </option>
-            {(data?.summary?.overdue ?? 0) > 0 || filter === 'overdue' ? (
-              <option value="overdue">
-                {withCount(FILTER_LABELS.overdue, data?.summary?.overdue)}
-              </option>
-            ) : null}
-          </select>
-        }
-        onClearFilters={() => {
-          setFilter('all');
-          setSearch('');
-          setPage(1);
-        }}
-        filtersActive={filter !== 'all' || search !== ''}
-        primary={
-          canIssue ? (
-            <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
-              + Issue Tool
-            </button>
-          ) : null
-        }
-      />
-
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load tool issues. Try again.'}
-            </div>
-          </div>
-        ) : data ? (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Issue No.</th>
-                  <th>Issue Date</th>
-                  <th>Item Code</th>
-                  <th>Item Name</th>
-                  <th className="th-num">Issue Qty</th>
-                  <th>Issued To</th>
-                  <th>Reference No.</th>
-                  <th>Expected Return Date</th>
-                  <th>Issue Status</th>
-                  <th className="th-num" style={{ color: 'var(--green2)' }}>
-                    Good
-                  </th>
-                  <th className="th-num" style={{ color: 'var(--red2)' }}>
-                    Damaged
-                  </th>
-                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                    Consumed
-                  </th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={13} className="empty-state">
-                      {search.trim() || filter !== 'all'
-                        ? 'No tool issues match.'
-                        : 'No tool issues yet.'}
-                    </td>
-                  </tr>
-                ) : null}
-                {data.items.map((ti) => (
-                  <tr
-                    key={ti.id}
-                    // Overdue is carried by the red "Overdue" status badge; the
-                    // sheet's own cream / white rows stay as they are.
-                    title={ti.isOverdue ? 'Overdue' : undefined}
-                  >
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <span className="td-code" style={{ color: 'var(--cyan)' }}>
-                        {ti.code}
-                      </span>
-                    </td>
-                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {fmtDate(ti.issueDate)}
-                    </td>
-                    <td>
-                      <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
-                        {ti.itemCode ?? ti.itemCodeText ?? '—'}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: 12 }}>{ti.itemName}</td>
-                    <td className="td-num mono fw-700" style={{ fontSize: 14 }}>
-                      {ti.qty}
-                    </td>
-                    <td style={{ fontSize: 12 }}>{ti.issuedTo}</td>
-                    <td
-                      className="mono"
-                      style={{ fontSize: 11, color: 'var(--purple)', whiteSpace: 'nowrap' }}
-                    >
-                      {ti.refNo ?? '—'}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {fmtDate(ti.expectedReturnDate)}
-                    </td>
-                    <td>
-                      <StatusBadge issue={ti} />
-                    </td>
-                    <td
-                      className="td-num mono"
-                      style={{
-                        color: ti.returnGoodQty > 0 ? 'var(--green)' : 'var(--text3)',
-                      }}
-                    >
-                      {ti.returnGoodQty}
-                    </td>
-                    <td
-                      className="td-num mono"
-                      style={{
-                        color: ti.returnDamagedQty > 0 ? 'var(--red)' : 'var(--text3)',
-                      }}
-                    >
-                      {ti.returnDamagedQty}
-                    </td>
-                    <td
-                      className="td-num mono"
-                      style={{
-                        color: ti.returnConsumedQty > 0 ? 'var(--amber)' : 'var(--text3)',
-                      }}
-                    >
-                      {ti.returnConsumedQty}
-                    </td>
-                    <td>
-                      {ti.returnStatus !== 'returned' && canReturn ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => setReturnTarget(ti)}
-                          style={{ fontSize: 11, fontWeight: 700 }}
-                        >
-                          ↩ Return
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
-
-      {data ? (
-        <ListFooter
-          total={data.total}
-          noun="tool issue"
-          page={page}
-          pageSize={PAGE_SIZE}
-          onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
-        />
-      ) : null}
-      {showNew ? <NewToolIssueModal onClose={() => setShowNew(false)} /> : null}
-      {returnTarget ? (
-        <ReturnModal issue={returnTarget} onClose={() => setReturnTarget(null)} />
-      ) : null}
-    </div>
-  );
-}
-
-// Badge classes only (no hand-painted colours): Returned green; out with the
-// user (Issued / Partly Returned) amber; Overdue red.
-function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element {
-  if (issue.returnStatus === 'returned') {
-    return <span className="badge b-green">Returned</span>;
-  }
-  if (issue.returnStatus === 'partial') {
-    const out =
-      issue.qty - (issue.returnGoodQty + issue.returnDamagedQty + issue.returnConsumedQty);
-    return <span className="badge b-amber">Partly Returned ({out} out)</span>;
-  }
-  if (issue.isOverdue) {
-    return <span className="badge b-red">Overdue</span>;
-  }
-  return <span className="badge b-amber">Issued</span>;
-}
-
-/** "Label (N)" when a count is known, bare label otherwise. */
-function withCount(label: string, n: number | undefined): string {
-  return n === undefined ? label : `${label} (${n})`;
-}
-
-function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date, setDate] = useState(todayIst());
-  const [expRet, setExpRet] = useState('');
-  const [itemId, setItemId] = useState<string | null>(null);
-  const [itemSearch, setItemSearch] = useState('');
-  const [qty, setQty] = useState('');
-  const [issuedTo, setIssuedTo] = useState('');
-  const [refType, setRefType] = useState<StoreIssueRefType>('Job Card');
-  const [refNo, setRefNo] = useState('');
-  const [purpose, setPurpose] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-
-  const createMut = useCreateToolIssue();
-  const { data: next } = useNextToolIssueCode();
-  const { data: itemsData } = useItemsList({
-    search: itemSearch.trim() || undefined,
-    limit: 50,
-    offset: 0,
-  });
-  const selectedItem = useMemo(
-    () => itemsData?.items.find((i) => i.id === itemId) ?? null,
-    [itemsData, itemId],
-  );
-
-  const onSave = (): void => {
-    setErr(null);
-    if (!date) {
-      setErr('Issue Date is required.');
-      return;
-    }
-    if (!itemId) {
-      setErr('Tool is required.');
-      return;
-    }
-    const q = Number(qty);
-    if (!Number.isFinite(q) || q <= 0) {
-      setErr('Qty to Issue must be more than 0.');
-      return;
-    }
-    if (!issuedTo.trim()) {
-      setErr('Issued To is required.');
-      return;
-    }
-    if (!expRet) {
-      setErr('Expected Return Date is required.');
-      return;
-    }
-    const input: CreateToolIssueInput = {
-      issueDate: date,
-      expectedReturnDate: expRet,
-      itemId,
-      qty: q,
-      issuedTo: issuedTo.trim(),
-      refType,
-    };
-    if (refNo.trim()) input.refNo = refNo.trim();
-    if (purpose.trim()) input.purpose = purpose.trim();
-    if (remarks.trim()) input.remarks = remarks.trim();
-    createMut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not issue tool. Try again.'),
-    });
-  };
-
-  return (
-    <ModalShell
-      title="Issue Tool"
-      onClose={onClose}
-      footer={
-        <ModalFooter
-          onClose={onClose}
-          onSave={onSave}
-          saving={createMut.isPending}
-          saveLabel="Save Tool Issue"
-        />
-      }
-    >
-      <div className="form-grid">
-        <Field label="Issue No.">
-          <input
-            type="text"
-            className="innovic-input"
-            value={next?.code ?? '(auto on save)'}
-            readOnly
-          />
-        </Field>
-        <Field label="Issue Date" required>
-          <input
-            type="date"
-            className="innovic-input"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </Field>
-        <Field label="Tool" required full>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Type item code or name..."
-            value={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : itemSearch}
-            onChange={(e) => {
-              setItemId(null);
-              setItemSearch(e.target.value);
+            searchPlaceholder="Search Issue No., item, serial, issued to…"
+            filters={
+              <select
+                className="innovic-select"
+                aria-label="Tool Issue Status"
+                title="Tool Issue Status"
+                value={filter}
+                onChange={(e) => {
+                  setFilter(e.target.value as FilterKey);
+                  setPage(1);
+                }}
+              >
+                <option value="all">{withCount('All', data?.summary?.total)}</option>
+                <option value="out">{withCount(FILTER_LABELS.out, data?.summary?.out)}</option>
+                <option value="overdue">
+                  {withCount(FILTER_LABELS.overdue, data?.summary?.overdue)}
+                </option>
+                <option value="returned">
+                  {withCount(FILTER_LABELS.returned, data?.summary?.returned)}
+                </option>
+                <option value="cancelled">{FILTER_LABELS.cancelled}</option>
+              </select>
+            }
+            onClearFilters={() => {
+              setFilter('all');
+              setSearch('');
+              setPage(1);
             }}
-            style={{ width: '100%', fontSize: 13, fontWeight: 600 }}
+            filtersActive={filter !== 'all' || search !== ''}
+            primary={
+              perms.entry ? (
+                <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
+                  + Issue Tool
+                </button>
+              ) : null
+            }
           />
-          {!itemId && itemSearch && itemsData ? (
-            <div
-              style={{
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                background: 'var(--bg2)',
-                marginTop: 4,
-                maxHeight: 180,
-                overflowY: 'auto',
-              }}
-            >
-              {itemsData.items.slice(0, 20).map((it) => (
-                <div
-                  key={it.id}
-                  onClick={() => {
-                    setItemId(it.id);
-                    setItemSearch('');
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    borderBottom: '1px solid var(--border)',
-                  }}
-                >
-                  <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
-                    {it.code}
-                  </span>{' '}
-                  — {it.name}
-                </div>
-              ))}
-            </div>
+
+          <div className="panel">
+            {isLoading ? (
+              <div className="panel-body text3" style={{ fontSize: 12 }}>
+                <Loader2 size={14} className="inline animate-spin" /> Loading…
+              </div>
+            ) : isError ? (
+              <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
+                {error instanceof Error ? error.message : 'Could not load tool issues.'}
+              </div>
+            ) : data ? (
+              <div className="tbl-wrap">
+                <table className="innovic-table tbl-grid">
+                  <thead>
+                    <tr>
+                      <th>Issue No.</th>
+                      <th>Issue Date</th>
+                      <th>Item Code</th>
+                      <th>Instrument Serial No.</th>
+                      <th className="th-num">Issue Qty</th>
+                      <th>Issued To</th>
+                      <th>Expected Return</th>
+                      <th className="th-num">Returned Good</th>
+                      <th className="th-num">Still Out</th>
+                      <th>Return Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.items.map((t) => (
+                      <IssueRow key={t.id} t={t} onOpen={() => setOpenId(t.id)} />
+                    ))}
+                    {data.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="empty-state">
+                          {search.trim() || filter !== 'all'
+                            ? 'No tool issues match.'
+                            : 'No tool issues yet.'}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+          {data ? (
+            <ListFooter
+              total={data.total}
+              noun="tool issue"
+              page={page}
+              pageSize={PAGE_SIZE}
+              onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+            />
           ) : null}
-          {selectedItem ? (
-            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-              <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
-                {selectedItem.code}
-              </span>{' '}
-              — {selectedItem.name} | {selectedItem.uom}
-            </div>
-          ) : null}
-        </Field>
-        <Field label="Qty to Issue" required>
-          <input
-            type="number"
-            min={1}
-            className="innovic-input"
-            placeholder="0"
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            style={{ fontSize: 16, fontWeight: 700 }}
-          />
-        </Field>
-        <Field label="Issued To" required>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="Person / Dept / Machine"
-            value={issuedTo}
-            onChange={(e) => setIssuedTo(e.target.value)}
-          />
-        </Field>
-        <Field label="Expected Return Date" required>
-          <input
-            type="date"
-            className="innovic-input"
-            value={expRet}
-            onChange={(e) => setExpRet(e.target.value)}
-          />
-        </Field>
-        <Field label="Reference Type">
-          <select
-            className="innovic-select"
-            value={refType}
-            onChange={(e) => setRefType(e.target.value as StoreIssueRefType)}
-          >
-            {STORE_ISSUE_REF_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Reference No.">
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="e.g. IN-JC-26-00001"
-            value={refNo}
-            onChange={(e) => setRefNo(e.target.value)}
-          />
-        </Field>
-        <Field label="Purpose">
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="CNC Turning / Grinding / Assembly"
-            value={purpose}
-            onChange={(e) => setPurpose(e.target.value)}
-          />
-        </Field>
-        <Field label="Remarks" full>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="Additional notes"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-          />
-        </Field>
-      </div>
-      {err ? <ErrorBanner msg={err} /> : null}
-    </ModalShell>
+        </>
+      )}
+
+      {showNew && perms.entry ? <NewToolIssueModal onClose={() => setShowNew(false)} /> : null}
+      {openId ? (
+        <ToolIssueViewModal id={openId} canReturn={perms.edit} onClose={() => setOpenId(null)} />
+      ) : null}
+    </div>
   );
 }
 
-function ReturnModal({
-  issue,
-  onClose,
-}: {
-  issue: ToolIssueListItem;
-  onClose: () => void;
-}): React.JSX.Element {
-  const alreadyTotal = issue.returnGoodQty + issue.returnDamagedQty + issue.returnConsumedQty;
-  const remaining = issue.qty - alreadyTotal;
-
-  const [returnDate, setReturnDate] = useState(todayIst());
-  const [returnedBy, setReturnedBy] = useState(issue.issuedTo);
-  const [good, setGood] = useState('0');
-  const [damaged, setDamaged] = useState('0');
-  const [consumed, setConsumed] = useState('0');
-  const [remarks, setRemarks] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const mut = useRecordToolReturn(issue.id);
-
-  const onSave = (): void => {
-    setErr(null);
-    const g = Number(good) || 0;
-    const d = Number(damaged) || 0;
-    const c = Number(consumed) || 0;
-    if (g === 0 && d === 0 && c === 0) {
-      setErr('Enter a Good, Damaged or Consumed qty.');
-      return;
-    }
-    if (g + d + c > remaining) {
-      setErr(`Return total (${g + d + c}) cannot be more than Pending (${remaining}).`);
-      return;
-    }
-    const input: RecordToolReturnInput = {
-      returnDate,
-      goodQty: g,
-      damagedQty: d,
-      consumedQty: c,
-    };
-    if (returnedBy.trim()) input.returnedBy = returnedBy.trim();
-    if (remarks.trim()) input.remarks = remarks.trim();
-    mut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not return tool. Try again.'),
-    });
-  };
-
+function IssueRow({ t, onOpen }: { t: ToolIssueListItem; onOpen: () => void }): React.JSX.Element {
+  const status = t.cancelledAt ? (
+    <span className="badge b-red">Cancelled</span>
+  ) : t.returnStatus === 'returned' ? (
+    <span className="badge b-green">Returned</span>
+  ) : t.isOverdue ? (
+    <span className="badge b-red">Overdue</span>
+  ) : t.returnStatus === 'partial' ? (
+    <span className="badge b-amber">Partly Returned</span>
+  ) : (
+    <span className="badge b-amber">Out</span>
+  );
   return (
-    <ModalShell
-      title={`Return Tool — ${issue.code}`}
-      onClose={onClose}
-      footer={
-        <ModalFooter
-          onClose={onClose}
-          onSave={onSave}
-          saving={mut.isPending}
-          saveLabel="Save Return"
-        />
-      }
-    >
-      <div
-        style={{
-          background: 'var(--bg3)',
-          padding: '10px 14px',
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-          marginBottom: 14,
-          fontSize: 12,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-          <div>
-            <span className="text3">Item:</span>{' '}
-            <b className="mono" style={{ color: 'var(--text)' }}>
-              {issue.itemCode ?? issue.itemCodeText ?? '—'}
-            </b>{' '}
-            {issue.itemName}
-          </div>
-          <div>
-            <span className="text3">Issue Qty:</span> <b>{issue.qty}</b>
-          </div>
-          <div>
-            <span className="text3">Issued To:</span> {issue.issuedTo}
-          </div>
-          <div>
-            <span className="text3">Issue Date:</span> {fmtDate(issue.issueDate)}
-          </div>
-        </div>
-        {alreadyTotal > 0 ? (
-          <div className="text3" style={{ marginTop: 6, fontSize: 11 }}>
-            Already returned: Good {issue.returnGoodQty} | Damaged {issue.returnDamagedQty} |
-            Consumed {issue.returnConsumedQty} = {alreadyTotal} |{' '}
-            <b style={{ color: 'var(--red2)' }}>Pending: {remaining}</b>
+    <tr onClick={onOpen} style={{ cursor: 'pointer' }} title="Open — return, cancel, history">
+      <td className="td-code" style={{ color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
+        {t.code}
+      </td>
+      <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+        {fmtDate(t.issueDate)}
+      </td>
+      <td>
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+          {t.itemCode ?? '—'}
+        </span>
+        {t.itemName ? (
+          <div className="text3" style={{ fontSize: 11 }}>
+            {t.itemName}
           </div>
         ) : null}
-      </div>
-
-      <div className="form-grid">
-        <Field label="Return Date">
-          <input
-            type="date"
-            className="innovic-input"
-            value={returnDate}
-            onChange={(e) => setReturnDate(e.target.value)}
-          />
-        </Field>
-        <Field label="Returned By">
-          <input
-            type="text"
-            className="innovic-input"
-            value={returnedBy}
-            onChange={(e) => setReturnedBy(e.target.value)}
-          />
-        </Field>
-      </div>
-
-      <div
-        style={{
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 14,
-          marginBottom: 12,
-        }}
-      >
-        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>
-          Return Qty (max {remaining})
-        </div>
-        <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <Field label="Good" labelColor="var(--green)">
-            <input
-              type="number"
-              min={0}
-              max={remaining}
-              className="innovic-input"
-              value={good}
-              onChange={(e) => setGood(e.target.value)}
-              style={{
-                fontSize: 16,
-                fontWeight: 700,
-                textAlign: 'center',
-                color: 'var(--green2)',
-                border: '2px solid rgba(34,197,94,0.4)',
-              }}
-            />
-          </Field>
-          <Field label="Damaged" labelColor="var(--red)">
-            <input
-              type="number"
-              min={0}
-              max={remaining}
-              className="innovic-input"
-              value={damaged}
-              onChange={(e) => setDamaged(e.target.value)}
-              style={{
-                fontSize: 16,
-                fontWeight: 700,
-                textAlign: 'center',
-                color: 'var(--red2)',
-                border: '2px solid rgba(239,68,68,0.4)',
-              }}
-            />
-          </Field>
-          <Field label="Consumed" labelColor="var(--amber)">
-            <input
-              type="number"
-              min={0}
-              max={remaining}
-              className="innovic-input"
-              value={consumed}
-              onChange={(e) => setConsumed(e.target.value)}
-              style={{
-                fontSize: 16,
-                fontWeight: 700,
-                textAlign: 'center',
-                color: 'var(--amber2)',
-                border: '2px solid rgba(245,158,11,0.4)',
-              }}
-            />
-          </Field>
-        </div>
-      </div>
-
-      <Field label="Remarks">
-        <input
-          type="text"
-          className="innovic-input"
-          placeholder="Condition notes..."
-          value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
-        />
-      </Field>
-
-      {err ? <ErrorBanner msg={err} /> : null}
-    </ModalShell>
-  );
-}
-
-// ─── Shared modal helpers ─────────────────────────────────────────────────
-
-// Mirrors legacy showModal (L28015-31): .overlay > .modal > .modal-hdr / .modal-body /
-// .modal-footer. showModal takes exactly three args, so the footer is always Cancel / Save.
-function ModalShell({
-  title,
-  onClose,
-  footer,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  footer: React.ReactNode;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal">
-        <div className="modal-hdr">
-          <span className="modal-title">{title}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">{children}</div>
-        {footer}
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  labelColor,
-  required,
-  full,
-  children,
-}: {
-  label: string;
-  labelColor?: string;
-  required?: boolean;
-  full?: boolean;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div className={full ? 'form-grp form-full' : 'form-grp'}>
-      <label className="form-label" style={labelColor ? { color: labelColor } : undefined}>
-        {label}
-        {required ? <span className="req">★</span> : null}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function ErrorBanner({ msg }: { msg: string }): React.JSX.Element {
-  return (
-    <div
-      style={{
-        marginTop: 12,
-        padding: 8,
-        background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red2)',
-        fontSize: 12,
-        borderRadius: 4,
-      }}
-    >
-      {msg}
-    </div>
-  );
-}
-
-// Cancel / Save <Doc> — the save button names what it saves.
-function ModalFooter({
-  onClose,
-  onSave,
-  saving,
-  saveLabel,
-}: {
-  onClose: () => void;
-  onSave: () => void;
-  saving: boolean;
-  saveLabel: string;
-}): React.JSX.Element {
-  return (
-    <div className="modal-footer">
-      <button type="button" className="btn btn-ghost" onClick={onClose}>
-        Cancel
-      </button>
-      <button type="button" className="btn btn-primary" onClick={onSave} disabled={saving}>
-        {saving ? (
-          <>
-            <Loader2 size={14} className="inline animate-spin" /> Saving…
-          </>
-        ) : (
-          saveLabel
-        )}
-      </button>
-    </div>
+      </td>
+      <td className="mono" style={{ fontSize: 11 }}>
+        {t.serialNos || '—'}
+      </td>
+      <td className="mono fw-700 td-num">{r3(t.qty)}</td>
+      <td>{t.issuedTo || '—'}</td>
+      <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+        {t.expectedReturnDate ? fmtDate(t.expectedReturnDate) : '—'}
+      </td>
+      <td className="mono td-num">{r3(t.goodQty)}</td>
+      <td className="mono fw-700 td-num">
+        {r3(t.stillOutQty)}
+        {t.writeoffPendingQty > 0 ? (
+          <div style={{ fontSize: 10, color: 'var(--amber2)' }}>
+            {r3(t.writeoffPendingQty)} write-off pending
+          </div>
+        ) : null}
+      </td>
+      <td>{status}</td>
+    </tr>
   );
 }

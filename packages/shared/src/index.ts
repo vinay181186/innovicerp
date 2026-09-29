@@ -86,6 +86,7 @@ export * from './schemas/store-issue';
 export * from './schemas/stock-count';
 export * from './schemas/store-inventory';
 export * from './schemas/osp-wip';
+export * from './schemas/instrument';
 export * from './schemas/tool-issue';
 export * from './schemas/party-material';
 export * from './schemas/party-grn';

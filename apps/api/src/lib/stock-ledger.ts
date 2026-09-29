@@ -7,6 +7,7 @@
 //   3. refuses a fractional qty for a whole-number unit (NOS / SET),
 //   4. applies the caller's GUARD for an 'out',
 //   5. inserts the locked ledger line (the 0020 trigger moves the balance).
+//   (+ for a track_serial item, the serial cover — P38, see below.)
 //
 // Before this, eleven modules each re-implemented steps 1–5 with their own
 // `SELECT on_hand::int` — so a decimal quantity, a whole-number rule or an
@@ -73,16 +74,31 @@ export async function lockItemForStock(
   tx: DbTransaction,
   companyId: string,
   itemId: string,
-): Promise<{ code: string; uom: string }> {
+): Promise<{ code: string; uom: string; trackSerial: boolean }> {
   const rows = (await tx.execute(sql`
-    SELECT code, uom::text AS uom
+    SELECT code, uom::text AS uom, track_serial AS "trackSerial"
     FROM public.items
     WHERE id = ${itemId}::uuid AND company_id = ${companyId}::uuid
     FOR UPDATE
-  `)) as unknown as Array<{ code: string; uom: string }>;
+  `)) as unknown as Array<{ code: string; uom: string; trackSerial: boolean }>;
   const row = rows[0];
   if (!row) throw new NotFoundError('Item not found. Please select the Item Code again.');
-  return row;
+  return { code: row.code, uom: row.uom, trackSerial: Boolean(row.trackSerial) };
+}
+
+/** ADR-193 phase 4 (P38) — pieces the instrument register says are on the
+ *  shelf (In Store + At Calibration). On Hand may never fall below it. */
+export async function countInstrumentsInStore(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+): Promise<number> {
+  const rows = (await tx.execute(sql`
+    SELECT COUNT(*)::int AS n FROM public.instruments
+    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
+      AND deleted_at IS NULL AND status IN ('in_store', 'at_calibration')
+  `)) as unknown as Array<{ n: number }>;
+  return Number(rows[0]?.n ?? 0);
 }
 
 /** Refuse a fractional qty for a whole-number unit. */
@@ -125,6 +141,16 @@ export async function postStockMove(
   }
 
   const after = roundQty(input.txnType === 'in' ? before + qty : before - qty);
+  // Serial cover (P38): every move of a serial item — adjust, count, issue,
+  // dispatch — must leave On Hand ≥ the pieces registered as on the shelf.
+  if (item.trackSerial && input.txnType === 'out') {
+    const registered = await countInstrumentsInStore(tx, input.companyId, input.itemId);
+    if (after < registered) {
+      throw new ConflictError(
+        `${item.code}: On Hand would be ${after} but ${registered} instruments are registered In Store / At Calibration — use Instrument Register → Mark Missing (then count again) or Scrap first.`,
+      );
+    }
+  }
   const inserted = await tx
     .insert(storeTransactions)
     .values({
