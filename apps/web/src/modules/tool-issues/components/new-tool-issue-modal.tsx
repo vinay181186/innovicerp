@@ -8,6 +8,7 @@ import { useMemo, useState } from 'react';
 import { fmtDate, todayIst } from '@/lib/date';
 import { SearchableSelect } from '@/ui/forms';
 import { useInstrumentsList } from '../../instruments/api';
+import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { useItemsList } from '../../items/api';
 import { JobCardPicker, OperatorPicker } from '../../store-issues/components/issue-pickers';
 import { useCreateToolIssue } from '../api';
@@ -36,6 +37,16 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const createMut = useCreateToolIssue();
+  // Same "discard unsaved changes?" guard as the other Store pop-ups.
+  const dirty = Boolean(
+    itemId ||
+    qty.trim() ||
+    picked.length ||
+    issuedToText.trim() ||
+    purpose.trim() ||
+    remarks.trim(),
+  );
+  const guard = useDiscardGuard(dirty, onClose);
 
   const items = useItemsList({
     search: itemSearch.trim() || undefined,
@@ -100,17 +111,22 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
     <div
       className="overlay"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) guard.requestClose();
       }}
     >
       <div className="modal" style={{ maxWidth: 820, width: '96vw' }}>
         <div className="modal-hdr">
           <span className="modal-title">Issue Tool</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm btn-icon"
+            onClick={guard.requestClose}
+          >
             ✕
           </button>
         </div>
         <div className="modal-body">
+          {guard.dialog}
           <div className="form-grid">
             <div className="form-grp form-full">
               <label className="form-label" htmlFor="ti-item">
@@ -289,7 +305,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
           ) : null}
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
+          <button type="button" className="btn btn-ghost" onClick={guard.requestClose}>
             Cancel
           </button>
           <button

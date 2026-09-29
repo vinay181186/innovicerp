@@ -469,6 +469,11 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     // Same-state sample: the sheet prints SGST 9% + CGST 9%.
     taxType: 'sgst_cgst',
     remarks: 'Sample invoice — turning and grinding on client-supplied blanks.',
+    // ADR-194: a live (issued) sample invoice.
+    status: 'issued',
+    cancelledAt: null,
+    cancelledBy: null,
+    cancelReason: null,
     createdAt: '',
     createdBy: JWINV_SAMPLE_ID,
     updatedAt: '',

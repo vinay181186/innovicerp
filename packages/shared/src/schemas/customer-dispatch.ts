@@ -84,6 +84,10 @@ export const customerDispatchLineRowSchema = z.object({
   itemCodeText: z.string().nullable(), // stored snapshot alias (fallback only)
   itemName: z.string(),
   qty: z.number().int(),
+  /** POL — the customer's PO line no., off the same SO line (printed on the DC). */
+  clientPoLineNo: z.string().nullable().default(null),
+  /** The SO line's unit (printed on the DC). */
+  uom: z.string().nullable().default(null),
 });
 export type CustomerDispatchLineRow = z.infer<typeof customerDispatchLineRowSchema>;
 
@@ -113,6 +117,11 @@ export const customerDispatchRowSchema = z.object({
 export type CustomerDispatchRow = z.infer<typeof customerDispatchRowSchema>;
 
 export const customerDispatchDetailSchema = customerDispatchRowSchema.extend({
+  /** The SO's customer (sales_orders.client_id) — the DC print reads the
+   *  customer's address and GSTIN off the client master. */
+  clientId: z.string().uuid().nullable().default(null),
+  /** Client PO No. of the SO (sales_orders.client_po_no) — printed on the DC. */
+  clientPoNo: z.string().nullable().default(null),
   lines: z.array(customerDispatchLineRowSchema),
 });
 export type CustomerDispatchDetail = z.infer<typeof customerDispatchDetailSchema>;

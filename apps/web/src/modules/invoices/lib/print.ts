@@ -5,7 +5,8 @@
 // one type scale, one table, Times). It used to be its own boxed layout with a
 // "TAX INVOICE" banner; every print document now renders on the sheet.
 // `invoiceSheetHtml` is also what the detail page previews (screen = print).
-// GST split: home state (GSTIN prefix 24/Gujarat) → SGST+CGST, else IGST.
+// GST split: the invoice's Tax Type (0171); older invoices without one fall back
+// to home state (GSTIN prefix 24/Gujarat) → SGST+CGST, else IGST.
 //
 // Known gaps vs legacy (need a shared/API change — do NOT stub):
 //  - Bill To omits the client's ADDRESS; InvoiceDetail carries no address field.
@@ -16,6 +17,7 @@ import type { Company, InvoiceDetail } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
 import { inrFormat } from '@/lib/print/doc-print';
+import { splitGst } from './gst-split';
 import {
   type SheetField,
   type SheetPrintModel,
@@ -42,7 +44,28 @@ const STATE_MAP: Record<string, string> = {
 // Paise"), but legacy _printInvoice L21324 words only Math.floor(grandTotal).
 // Reusing the shared one would change what the invoice prints.
 function numWords(num: number): string {
-  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const a = [
+    '',
+    'One',
+    'Two',
+    'Three',
+    'Four',
+    'Five',
+    'Six',
+    'Seven',
+    'Eight',
+    'Nine',
+    'Ten',
+    'Eleven',
+    'Twelve',
+    'Thirteen',
+    'Fourteen',
+    'Fifteen',
+    'Sixteen',
+    'Seventeen',
+    'Eighteen',
+    'Nineteen',
+  ];
   const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
   if (num === 0) return 'Zero';
   let s = '';
@@ -71,10 +94,16 @@ function numWords(num: number): string {
 }
 
 /** The invoice as an Innovic Sheet print model. */
-function invoiceSheetModel(inv: InvoiceDetail, company: Company | null | undefined): SheetPrintModel {
+function invoiceSheetModel(
+  inv: InvoiceDetail,
+  company: Company | null | undefined,
+): SheetPrintModel {
   const gst = inv.clientGst ?? '';
   const stateCode = gst ? gst.substring(0, 2) : '24';
-  const isIGST = stateCode !== '24';
+  // The invoice's own Tax Type (migration 0171) decides the split. Invoices
+  // raised before it carry none and keep the old rule: home state (GSTIN
+  // prefix 24) → SGST + CGST, else IGST.
+  const isIGST = inv.taxType ? inv.taxType === 'igst' : stateCode !== '24';
   // Money hidden for L1 Viewers: TOLD by the server (priceVisible), never
   // inferred from a null money field. Rate / Amount print an em dash and no
   // money block or amount-in-words follows.
@@ -85,8 +114,8 @@ function invoiceSheetModel(inv: InvoiceDetail, company: Company | null | undefin
   const taxRows = isIGST
     ? [{ label: `IGST @ ${gstPct}%`, value: money(gstAmount) }]
     : [
-        { label: `SGST @ ${gstPct / 2}%`, value: money(gstAmount / 2) },
-        { label: `CGST @ ${gstPct / 2}%`, value: money(gstAmount / 2) },
+        { label: `SGST @ ${gstPct / 2}%`, value: money(splitGst(gstAmount).sgst) },
+        { label: `CGST @ ${gstPct / 2}%`, value: money(splitGst(gstAmount).cgst) },
       ];
 
   const uoms = new Set(inv.lines.map((l) => l.uom?.trim() || FALLBACK_UOM));
@@ -136,7 +165,7 @@ function invoiceSheetModel(inv: InvoiceDetail, company: Company | null | undefin
       amount: money(l.lineAmount),
     })),
     totalQty: qtyText(totalQty),
-    totalUom: uoms.size === 1 ? [...uoms][0] ?? '' : '',
+    totalUom: uoms.size === 1 ? ([...uoms][0] ?? '') : '',
     ...(priceHidden
       ? {}
       : {

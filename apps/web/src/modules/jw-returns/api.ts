@@ -1,6 +1,8 @@
 import type {
   CreateJwReturnChallanInput,
   JwReturnChallan,
+  JwReturnChallanListItem,
+  JwReturnableResponse,
   ListJwReturnChallansQuery,
   ListJwReturnChallansResponse,
 } from '@innovic/shared';
@@ -13,6 +15,8 @@ export const jwReturnsKeys = {
   // The query is part of the key, so a new search term is a new cache entry
   // and a new fetch — the whole point of moving the match to the server.
   list: (q: ListJwReturnChallansQuery) => [...jwReturnsKeys.lists(), q] as const,
+  detail: (id: string) => [...jwReturnsKeys.all, 'detail', id] as const,
+  returnable: (jwId: string) => [...jwReturnsKeys.all, 'returnable', jwId] as const,
 };
 
 /** The register's filters, as a query string. `search` is dropped when empty so
@@ -29,8 +33,7 @@ function toQueryString(q: ListJwReturnChallansQuery): string {
 export function useJwReturnsList(query: ListJwReturnChallansQuery) {
   return useQuery<ListJwReturnChallansResponse>({
     queryKey: jwReturnsKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListJwReturnChallansResponse>(`/jw-returns?${toQueryString(query)}`),
+    queryFn: () => apiFetch<ListJwReturnChallansResponse>(`/jw-returns?${toQueryString(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -50,15 +53,38 @@ export function useCreateJwReturnChallan() {
   });
 }
 
+/** R10 (ADR-194): cancel an issued JW Return Challan with a reason. Reverses
+ *  returned_qty so the goods can be returned again; blocked while an uncancelled
+ *  JW invoice still covers the returned qty. Reuses jw_create. */
 export function useCancelJwReturn() {
   const qc = useQueryClient();
-  return useMutation<JwReturnChallan, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<JwReturnChallan>(`/jw-returns/${id}/cancel`, { method: 'POST' }),
+  return useMutation<JwReturnChallan, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<JwReturnChallan>(`/jw-returns/${id}/cancel`, { method: 'POST', json: { reason } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwReturnsKeys.all });
       // Reversing the returned-qty cascade may revert the JWSO status.
       void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
     },
+  });
+}
+
+/** One return challan as a register row (the print after save reads it). */
+export function useJwReturn(id: string | undefined) {
+  return useQuery<JwReturnChallanListItem>({
+    queryKey: jwReturnsKeys.detail(id ?? '__none__'),
+    queryFn: () => apiFetch<JwReturnChallanListItem>(`/jw-returns/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+/** Per line of one JWSO: Ready / Returned / Pending / Returnable — the same
+ *  limit the server enforces on Save. */
+export function useJwReturnable(jwId: string | undefined) {
+  return useQuery<JwReturnableResponse>({
+    queryKey: jwReturnsKeys.returnable(jwId ?? '__none__'),
+    queryFn: () => apiFetch<JwReturnableResponse>(`/jw-returns/returnable/${jwId}`),
+    enabled: Boolean(jwId),
+    staleTime: 0,
   });
 }

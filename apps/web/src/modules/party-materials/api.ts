@@ -3,6 +3,7 @@ import type {
   ListPartyMaterialsQuery,
   ListPartyMaterialsResponse,
   PartyMaterial,
+  ReturnPartyMaterialInput,
   UpdatePartyMaterialInput,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -72,6 +73,22 @@ export function useUpdatePartyMaterial() {
       apiFetch<PartyMaterial>(`/party-materials/${id}`, { method: 'PATCH', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyMaterialsKeys.all });
+    },
+  });
+}
+
+/** R7 (ADR-194): return spare customer material to the customer. Caps at the
+ *  current party-store balance; posts a 'return' (out) row to the party stock
+ *  ledger and bumps returnedQty. Reuses jw_create. */
+export function useReturnPartyMaterial() {
+  const qc = useQueryClient();
+  return useMutation<PartyMaterial, Error, { id: string } & ReturnPartyMaterialInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<PartyMaterial>(`/party-materials/${id}/return`, { method: 'POST', json: body }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: partyMaterialsKeys.all });
+      // A return posts a ledger row → the party stock ledger changes too.
+      void qc.invalidateQueries({ queryKey: ['party-stock-ledger'] });
     },
   });
 }

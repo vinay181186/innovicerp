@@ -10,6 +10,7 @@ import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { PrintDcButton } from './print-dc-button';
 
 /** One dispatch document plus the register rows that belong to it. */
 export type DispatchGroup = {
@@ -122,12 +123,18 @@ export function DispatchCard(props: {
           <span style={{ color: 'var(--text3)', display: 'inline-flex' }} aria-hidden>
             {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </span>
-          {/* Not a link — customer dispatches have no detail route; the card's
-              own expand IS the detail. Kept in --cyan, this module's existing
-              identity colour (JC No. and the KPI tile use it too). */}
-          <span className="td-code" style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}>
+          {/* Opens the dispatch record (DC preview + Print DC). Kept in --cyan,
+              this module's existing identity colour (JC No. and the KPI tile
+              use it too). */}
+          <Link
+            to="/customer-dispatches/$id"
+            params={{ id: g.dispatchId }}
+            className="td-code"
+            style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}
+            onClick={(e) => e.stopPropagation()}
+          >
             {g.code}
-          </span>
+          </Link>
           <span className="fw-700" style={{ fontSize: 13 }}>
             {g.customer ?? '—'}
           </span>
@@ -144,6 +151,7 @@ export function DispatchCard(props: {
               style={{ display: 'flex', gap: 4, alignItems: 'center' }}
               onClick={(e) => e.stopPropagation()}
             >
+              <PrintDcButton dispatchId={g.dispatchId} />
               {/* Fully invoiced — nothing left to bill, so no Invoice button. */}
               {props.billedStatus === 'full' ? null : (
                 <Link

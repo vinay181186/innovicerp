@@ -14,7 +14,7 @@ const idParamSchema = z.object({ id: z.string().uuid() });
 export async function savedReportsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/saved-reports/sources', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listSources();
+    return service.listSources(req.user);
   });
 
   app.get('/saved-reports', async (req) => {

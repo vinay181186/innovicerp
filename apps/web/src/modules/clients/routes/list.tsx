@@ -140,7 +140,7 @@ function ClientsListPage(): React.JSX.Element {
     setImporting(true);
     setImportMsg(null);
     try {
-      const { payloads, errors } = await parseClientImportFile(file);
+      const { payloads, rowNums, errors } = await parseClientImportFile(file);
       if (payloads.length === 0) {
         setImportMsg(
           errors.length
@@ -150,11 +150,15 @@ function ClientsListPage(): React.JSX.Element {
         return;
       }
       const res = await bulkCreate.mutateAsync({ clients: payloads });
-      const skips = res.skipped.map((s) => `Row ${s.index} "${s.name}": ${s.reason}`);
+      // s.index is the 1-based position in the array sent; map it back to the
+      // sheet row, since rows with bad values were already left out above.
+      const skips = res.skipped.map(
+        (s) => `Row ${rowNums[s.index - 1] ?? s.index} "${s.name}": ${s.reason}`,
+      );
       setImportMsg(
         `Imported ${res.created}/${payloads.length} customer(s).` +
           (skips.length ? ` ${skips.length} skipped: ${fmtList(skips)}` : '') +
-          (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
+          (errors.length ? ` ${errors.length} row issue(s): ${fmtList(errors)}` : ''),
       );
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');

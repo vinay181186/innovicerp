@@ -1,4 +1,6 @@
-// Shared plan form for new + edit. Mirrors legacy renderSOPlanning panels
+// Plan EDIT form (plans/$id/edit). /plans/new no longer uses it — a new plan
+// is made by plan-create-form.tsx, the same Route-Card plan as SO Planning
+// "+ Plan". Mirrors legacy renderSOPlanning panels
 // (HTML L9299) — type picker + type-specific sub-form + ops table for
 // manufacture/assembly plans. Direct-purchase / full-outsource hide the
 // ops table.
@@ -14,6 +16,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { RmItemFields, rmItemToInput } from '@/components/shared/rm-item-fields';
+import { VendorPicker } from '@/components/shared/vendor-picker';
 import { useItemsList } from '@/modules/items/api';
 import {
   MaterialGradePicker,
@@ -473,7 +476,11 @@ export function PlanForm({
               disabled={isEdit}
               title={isEdit ? 'Type cannot be changed after create' : undefined}
             >
-              {PLAN_TYPE_OPTIONS.map((opt) => (
+              {/* ADR-171: Buy is not planned any more (bought lines get "+ PR"
+                  on SO Planning) — only an existing Buy plan still shows it. */}
+              {PLAN_TYPE_OPTIONS.filter(
+                (opt) => opt.value !== 'direct_purchase' || values.planType === 'direct_purchase',
+              ).map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.icon} {opt.label}
                 </option>
@@ -502,8 +509,11 @@ export function PlanForm({
           <Field label="Item Code" required>
             <input
               className="innovic-input"
-              list="dlPlanItems"
+              list={isEdit ? undefined : 'dlPlanItems'}
               required
+              // The item is fixed once the plan exists — the edit never sends it.
+              readOnly={isEdit}
+              style={isEdit ? { background: 'var(--bg4)' } : undefined}
               placeholder="🔍 search code…"
               value={values.itemCodeText}
               onChange={(e) => onItemCodeChange(e.target.value)}
@@ -554,29 +564,22 @@ export function PlanForm({
               onChange={(e) => update('planQty', Number(e.target.value))}
             />
           </Field>
-          <Field label="SO line id (UUID, optional)">
+          {/* The SO / JWSO line is fixed once the plan exists (a new plan picks
+              it on /plans/new). No raw "SO line id (UUID)" box: shown, not typed. */}
+          <Field label="SO / JWSO No.">
             <input
               className="innovic-input"
-              placeholder="optional — link to a sales order line"
-              value={values.soLineId ?? ''}
-              onChange={(e) => update('soLineId', e.target.value || null)}
-            />
-          </Field>
-          <Field label="SO No.">
-            <input
-              className="innovic-input"
-              value={values.soCodeText}
-              onChange={(e) => update('soCodeText', e.target.value)}
+              readOnly
+              style={{ background: 'var(--bg4)' }}
+              value={values.soCodeText || '—'}
             />
           </Field>
           <Field label="Ln">
             <input
-              type="number"
               className="innovic-input"
-              value={values.lineNo ?? ''}
-              onChange={(e) =>
-                update('lineNo', e.target.value === '' ? null : Number(e.target.value))
-              }
+              readOnly
+              style={{ background: 'var(--bg4)' }}
+              value={values.lineNo ?? '—'}
             />
           </Field>
           <Field label="Planned Start Date">
@@ -652,21 +655,22 @@ export function PlanForm({
               gap: 10,
             }}
           >
-            <Field label="Vendor Code" required>
-              <input
-                className="innovic-input"
-                required
-                value={values.dpVendorCodeText}
-                onChange={(e) => update('dpVendorCodeText', e.target.value)}
-              />
-            </Field>
-            <Field label="Vendor id (optional)">
-              <input
-                className="innovic-input"
-                value={values.dpVendorId ?? ''}
-                onChange={(e) => update('dpVendorId', e.target.value || null)}
-              />
-            </Field>
+            {/* The shared vendor picker: master vendors only, stores the id
+                AND the code snapshot. No free-text code, no raw id box. */}
+            <VendorPicker
+              id="plan-dp-vendor"
+              className=""
+              value={values.dpVendorId}
+              initialLabel={values.dpVendorCodeText}
+              carriedText={values.dpVendorId ? '' : values.dpVendorCodeText}
+              onChange={(id, label) =>
+                setValues((v) => ({
+                  ...v,
+                  dpVendorId: id,
+                  dpVendorCodeText: id ? vendorCodeOf(label) : '',
+                }))
+              }
+            />
             <Field label="Unit Cost">
               <input
                 type="number"
@@ -703,14 +707,21 @@ export function PlanForm({
               gap: 10,
             }}
           >
-            <Field label="JW Vendor Code" required>
-              <input
-                className="innovic-input"
-                required
-                value={values.foVendorCodeText}
-                onChange={(e) => update('foVendorCodeText', e.target.value)}
-              />
-            </Field>
+            <VendorPicker
+              id="plan-fo-vendor"
+              className=""
+              labelText="JW Vendor"
+              value={values.foVendorId}
+              initialLabel={values.foVendorCodeText}
+              carriedText={values.foVendorId ? '' : values.foVendorCodeText}
+              onChange={(id, label) =>
+                setValues((v) => ({
+                  ...v,
+                  foVendorId: id,
+                  foVendorCodeText: id ? vendorCodeOf(label) : '',
+                }))
+              }
+            />
             <Field label="Process" required>
               <input
                 className="innovic-input"
@@ -1032,6 +1043,11 @@ export function PlanForm({
       </div>
     </form>
   );
+}
+
+/** "CODE — Name" (the picker's label) → CODE, the snapshot the plan keeps. */
+function vendorCodeOf(label: string): string {
+  return label.split(' — ')[0]?.trim() ?? '';
 }
 
 function Field({

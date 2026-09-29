@@ -6,18 +6,25 @@
 // RETURNED to the customer minus already invoiced. Bumps
 // job_work_order_lines.invoiced_qty.
 
-import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
 import type {
+  CancelJwInvoiceInput,
   CreateJwInvoiceInput,
   JwInvoice,
+  JwInvoiceableLinesResponse,
   ListJwInvoicesQuery,
   ListJwInvoicesResponse,
 } from '@innovic/shared';
 import { clients, items, jobWorkOrderLines, jobWorkOrders, jwInvoices } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
-import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -65,6 +72,13 @@ function rowToInvoice(row: typeof jwInvoices.$inferSelect): JwInvoice {
     // GST row instead of guessing a split.
     taxType: row.taxType === 'sgst_cgst' || row.taxType === 'igst' ? row.taxType : null,
     remarks: row.remarks,
+    // R5 (ADR-194): a cancelled invoice reverses its billed qty and never prints
+    // as a live tax document. The text column is CHECK-free here, so any value
+    // other than 'cancelled' reads as the default 'issued'.
+    status: row.status === 'cancelled' ? 'cancelled' : 'issued',
+    cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
+    cancelledBy: row.cancelledBy,
+    cancelReason: row.cancelReason,
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt.toISOString(),
@@ -78,6 +92,9 @@ export async function createJwInvoice(
   user: AuthContext,
 ): Promise<JwInvoice> {
   requireWriteRole(user);
+  // Raising a JW invoice is Finance invoice entry — the same form key the SO
+  // invoice checks, so Access Control governs both from one switch.
+  await requireFormAccess(user, 'invoice_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -182,6 +199,135 @@ export async function createJwInvoice(
   });
 }
 
+// R5 (ADR-194) — cancel an issued JW invoice.
+//
+// A JW invoice bumped job_work_order_lines.invoiced_qty; cancelling gives that
+// billed qty back so the line can be re-billed, and flags the row so it never
+// prints as a live tax document. Refused when already cancelled (double-cancel
+// would credit the line twice). Cancelling reverses a billed quantity, so — like
+// the other job-work cancels — it takes the edit AND approve pair only L5
+// Department Admin and above hold.
+export async function cancelJwInvoice(
+  id: string,
+  input: CancelJwInvoiceInput,
+  user: AuthContext,
+): Promise<JwInvoice> {
+  await requireFormAccess(user, 'jw_create', 'edit');
+  await requireFormAccess(user, 'jw_create', 'approve');
+  const companyId = requireCompany(user);
+  const userId = user.id;
+  const reason = input.reason.trim();
+  if (!reason) throw new ValidationError('Reason is required to cancel a JW Invoice.');
+
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(jwInvoices)
+      .where(
+        and(
+          eq(jwInvoices.id, id),
+          eq(jwInvoices.companyId, companyId),
+          isNull(jwInvoices.deletedAt),
+        ),
+      )
+      .limit(1);
+    const inv = rows[0];
+    if (!inv) throw new NotFoundError('JW Invoice not found. Refresh the page.');
+    if (inv.status === 'cancelled') {
+      throw new ConflictError(`JW Invoice ${inv.code} is already Cancelled.`);
+    }
+
+    // Lock the JW line, then give the billed qty back (clamp at 0).
+    await tx.execute(
+      sql`SELECT 1 FROM public.job_work_order_lines WHERE id = ${inv.jobWorkOrderLineId}::uuid FOR UPDATE`,
+    );
+    await tx
+      .update(jobWorkOrderLines)
+      .set({
+        invoicedQty: sql`GREATEST(${jobWorkOrderLines.invoicedQty} - ${inv.qty}, 0)`,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
+      .where(eq(jobWorkOrderLines.id, inv.jobWorkOrderLineId));
+
+    const updated = await tx
+      .update(jwInvoices)
+      .set({
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        cancelledBy: userId,
+        cancelReason: reason,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
+      .where(eq(jwInvoices.id, inv.id))
+      .returning();
+    const row = updated[0];
+    if (!row) throw new ConflictError(`Could not cancel JW Invoice ${inv.code}. Try again.`);
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CANCEL',
+        entity: 'JwInvoice',
+        detail: `${inv.code} cancelled: ${reason} — reversed ${inv.qty} billed on ${inv.jwCodeText ?? ''}`,
+        refId: inv.id,
+      },
+      companyId,
+      user,
+    );
+
+    return rowToInvoice(row);
+  });
+}
+
+/**
+ * The New JW Invoice form's line options for one JWSO: each line's Returned,
+ * Invoiced and To Invoice (Returned − Invoiced) — the same figures and the same
+ * limit createJwInvoice checks, so the form can show the limit and prefill it
+ * instead of the user learning it from an error. Qty only, no money.
+ */
+export async function listJwInvoiceableLines(
+  jobWorkOrderId: string,
+  user: AuthContext,
+): Promise<JwInvoiceableLinesResponse> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select({
+        id: jobWorkOrderLines.id,
+        lineNo: jobWorkOrderLines.lineNo,
+        itemCode: sql<string | null>`COALESCE(${items.code}, ${jobWorkOrderLines.itemCodeText})`,
+        itemRevision: sql<string | null>`${jobWorkOrderLines.revision}::text`,
+        partName: jobWorkOrderLines.partName,
+        returnedQty: jobWorkOrderLines.returnedQty,
+        invoicedQty: jobWorkOrderLines.invoicedQty,
+      })
+      .from(jobWorkOrderLines)
+      .leftJoin(items, eq(items.id, jobWorkOrderLines.itemId))
+      .where(
+        and(
+          eq(jobWorkOrderLines.jobWorkOrderId, jobWorkOrderId),
+          eq(jobWorkOrderLines.companyId, companyId),
+          isNull(jobWorkOrderLines.deletedAt),
+        ),
+      )
+      .orderBy(asc(jobWorkOrderLines.lineNo));
+    return {
+      lines: rows.map((r) => ({
+        jobWorkOrderLineId: r.id,
+        lineNo: r.lineNo,
+        itemCode: r.itemCode ?? null,
+        itemRevision: r.itemRevision ?? null,
+        partName: r.partName ?? null,
+        returnedQty: r.returnedQty,
+        invoicedQty: r.invoicedQty,
+        toInvoiceQty: Math.max(0, r.returnedQty - r.invoicedQty),
+      })),
+    };
+  });
+}
+
 // Money-hiding for L1 Viewers ("Can See Price"). JW invoices ride the JW
 // department's price permission (jw_create).
 function hideJwInvoiceMoney<
@@ -193,7 +339,14 @@ function hideJwInvoiceMoney<
     totalAmount: number | null;
   },
 >(r: T): T {
-  return { ...r, rate: null, taxableAmount: null, gstPercent: null, gstAmount: null, totalAmount: null };
+  return {
+    ...r,
+    rate: null,
+    taxableAmount: null,
+    gstPercent: null,
+    gstAmount: null,
+    totalAmount: null,
+  };
 }
 
 /** Escape the ILIKE metacharacters in a user's search term. Without this a user

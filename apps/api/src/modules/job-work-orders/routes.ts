@@ -4,11 +4,13 @@ import { AuthenticationError } from '../../lib/errors';
 import {
   createJobWorkOrderInputSchema,
   listJobWorkOrdersQuerySchema,
+  shortCloseJobWorkOrderLineInputSchema,
   updateJobWorkOrderInputSchema,
 } from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
+const lineIdParamSchema = z.object({ lineId: z.string().uuid() });
 
 export async function jobWorkOrdersRoutes(app: FastifyInstance): Promise<void> {
   app.get('/job-work-orders', async (req) => {
@@ -50,5 +52,13 @@ export async function jobWorkOrdersRoutes(app: FastifyInstance): Promise<void> {
     await service.softDeleteJobWorkOrder(id, req.user);
     reply.code(204);
     return null;
+  });
+
+  // R6 (ADR-194): short-close ONE JWSO line — close it with the balance unmet.
+  app.post('/job-work-order-lines/:lineId/short-close', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { lineId } = lineIdParamSchema.parse(req.params);
+    const body = shortCloseJobWorkOrderLineInputSchema.parse(req.body);
+    return service.shortCloseJobWorkOrderLine(lineId, body, req.user);
   });
 }

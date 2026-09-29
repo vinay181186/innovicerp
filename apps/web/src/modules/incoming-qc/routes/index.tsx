@@ -6,7 +6,7 @@
 // they are working through. Legacy chrome.
 
 import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
@@ -17,8 +17,10 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback/Banner';
 import { ListHeader } from '@/ui/layout';
 import { useIncomingQc } from '../api';
+import { type IncomingRaisedNc } from '../components/incoming-qc-inspect-form';
 import { IncomingQcInspectModal } from '../components/incoming-qc-inspect-modal';
 
 const searchSchema = z.object({
@@ -77,6 +79,9 @@ function IncomingQcPage(): React.JSX.Element {
   // so a refetch (the queue polls every 30s) cannot leave the box on stale
   // figures.
   const [inspectLineId, setInspectLineId] = useState<string | null>(null);
+  // The NC the last reject raised — named with a link to its disposition,
+  // the same banner the QC Call Register shows (incoming-qc-inspect#1).
+  const [raisedNc, setRaisedNc] = useState<IncomingRaisedNc | null>(null);
   const pending = data?.pending;
   const inspectRow = inspectLineId
     ? (pending?.find((r) => r.grnLineId === inspectLineId) ?? null)
@@ -199,6 +204,28 @@ function IncomingQcPage(): React.JSX.Element {
           />
         ) : null}
       </ListHeader>
+
+      {raisedNc ? (
+        <Banner
+          tone="warn"
+          accent
+          onDismiss={() => setRaisedNc(null)}
+          title={
+            <>
+              NC{' '}
+              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                {raisedNc.code}
+              </span>{' '}
+              raised —{' '}
+              <Link to="/nc-register/$id" params={{ id: raisedNc.id }}>
+                Dispose now →
+              </Link>
+            </>
+          }
+        >
+          The rejected qty from the Incoming QC just saved is on this NC until it is disposed.
+        </Banner>
+      ) : null}
 
       {isLoading ? (
         <div className="panel">
@@ -358,6 +385,7 @@ function IncomingQcPage(): React.JSX.Element {
           key={inspectRow.grnLineId}
           o={inspectRow}
           onClose={() => setInspectLineId(null)}
+          onNcRaised={setRaisedNc}
         />
       ) : null}
     </div>

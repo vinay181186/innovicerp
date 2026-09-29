@@ -33,6 +33,8 @@ export const partyMaterialSchema = z.object({
   stockQty: z.number().int().nonnegative(),
   issuedQty: z.number().int().nonnegative(),
   receivedQty: z.number().int().nonnegative(),
+  /** R7 (ADR-194): spare customer material returned to the customer. */
+  returnedQty: z.number().int().nonnegative().default(0),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -74,6 +76,16 @@ export const updatePartyMaterialInputSchema = z.object({
   itemId: z.string().uuid().nullable().optional(),
 });
 export type UpdatePartyMaterialInput = z.infer<typeof updatePartyMaterialInputSchema>;
+
+/** R7 (ADR-194): return spare customer material to the customer. Caps at the
+ *  current party-store balance (stockQty); posts a 'return' (out) row to the
+ *  party stock ledger and bumps returnedQty. Reuses the jw_create permission. */
+export const returnPartyMaterialInputSchema = z.object({
+  qty: z.number().int().positive(),
+  jwLineId: z.string().uuid().optional(),
+  reason: z.string().trim().min(1).max(500),
+});
+export type ReturnPartyMaterialInput = z.infer<typeof returnPartyMaterialInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

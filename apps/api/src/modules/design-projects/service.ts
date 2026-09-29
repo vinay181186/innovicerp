@@ -46,6 +46,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
+  ConflictError,
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
@@ -477,6 +478,27 @@ export async function createDesignProject(
       soCode = so.code;
       clientId = so.clientId ?? null;
       if (!clientText && so.customerName) clientText = so.customerName;
+
+      // ADR-188: the Design Project is the ONE per-SO design record — Design
+      // Tracker "Log Time" files hours under the SO's project only when there
+      // is exactly one. So a second project for the same SO is refused; the
+      // user is sent to the existing one instead.
+      const existing = await tx
+        .select({ code: designProjects.code, status: designProjects.status })
+        .from(designProjects)
+        .where(
+          and(
+            eq(designProjects.companyId, companyId),
+            eq(designProjects.salesOrderId, so.id),
+            isNull(designProjects.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) {
+        throw new ConflictError(
+          `${so.code} already has Design Project ${existing[0].code} (${existing[0].status}). Open ${existing[0].code} instead of creating another.`,
+        );
+      }
     }
     if (clientId) {
       const cRows = await tx
@@ -623,10 +645,7 @@ export async function toggleDesignChecklistItem(
   });
 }
 
-export async function releaseDesignProject(
-  id: string,
-  user: AuthContext,
-): Promise<DesignProject> {
+export async function releaseDesignProject(id: string, user: AuthContext): Promise<DesignProject> {
   // Releasing the design package is a formal sign-off → `approve` (judgment
   // call; see report — it is a finalisation, not a field edit).
   await requireFormAccess(user, 'dsnproj_create', 'approve');
@@ -784,7 +803,9 @@ export async function addDesignTaskComment(
       .limit(1);
     const existing = rows[0];
     if (!existing) throw new NotFoundError('Design Task not found. Refresh the page.');
-    const list = (Array.isArray(existing.discussions) ? existing.discussions : []) as DesignDiscussion[];
+    const list = (
+      Array.isArray(existing.discussions) ? existing.discussions : []
+    ) as DesignDiscussion[];
     const next: DesignDiscussion[] = [
       ...list,
       {
@@ -853,7 +874,7 @@ export async function createDesignIssue(
         partText: input.partText ?? null,
         severity: input.severity,
         status: input.status,
-        raisedByText: input.raisedByText ?? (user.email ?? user.id),
+        raisedByText: input.raisedByText ?? user.email ?? user.id,
         assignedToText: input.assignedToText ?? null,
         raisedDate: new Date().toISOString().slice(0, 10),
         description: input.description ?? null,
@@ -947,7 +968,9 @@ export async function addDesignIssueComment(
       .limit(1);
     const existing = rows[0];
     if (!existing) throw new NotFoundError('Design Issue not found. Refresh the page.');
-    const list = (Array.isArray(existing.discussions) ? existing.discussions : []) as DesignDiscussion[];
+    const list = (
+      Array.isArray(existing.discussions) ? existing.discussions : []
+    ) as DesignDiscussion[];
     const next: DesignDiscussion[] = [
       ...list,
       {
@@ -1003,7 +1026,7 @@ export async function createDesignDcr(
         partAffected: input.partAffected ?? null,
         priority: input.priority,
         status: 'Submitted',
-        requestedByText: input.requestedByText ?? (user.email ?? user.id),
+        requestedByText: input.requestedByText ?? user.email ?? user.id,
         requestDate: input.requestDate,
         description: input.description ?? null,
         createdBy: userId,

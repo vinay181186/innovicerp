@@ -41,6 +41,7 @@ import { soCostingListRoute } from './modules/so-costing/routes/list';
 import { soCostingDetailRoute } from './modules/so-costing/routes/detail';
 import { customerDispatchListRoute } from './modules/customer-dispatches/routes/list';
 import { customerDispatchNewRoute } from './modules/customer-dispatches/routes/create';
+import { customerDispatchDetailRoute } from './modules/customer-dispatches/routes/detail';
 import { taskBoardRoute } from './modules/tasks/routes/board';
 import { dailyTaskReportsRoute } from './modules/daily-task-reports/routes/list';
 import { invoiceListRoute } from './modules/invoices/routes/list';
@@ -132,6 +133,7 @@ import { instrumentsListRoute } from './modules/instruments/routes/list';
 import { storeInventoryRoute } from './modules/store-inventory/routes/list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
+import { partyStockLedgerListRoute } from './modules/party-stock-ledger/routes/list';
 import { jwDcListRoute } from './modules/jw-dc/routes/list';
 import { jwDcOutwardDetailRoute } from './modules/jw-dc/routes/detail';
 import { designTrackerListRoute } from './modules/design-tracker/routes/list';
@@ -209,6 +211,7 @@ const routeTree = rootRoute.addChildren([
     storeInventoryRoute,
     partyMaterialsListRoute,
     partyGrnListRoute,
+    partyStockLedgerListRoute,
     jwDcListRoute,
     jwDcOutwardDetailRoute,
     designTrackerListRoute,
@@ -329,6 +332,7 @@ const routeTree = rootRoute.addChildren([
     soCostingDetailRoute,
     customerDispatchListRoute,
     customerDispatchNewRoute,
+    customerDispatchDetailRoute,
     taskBoardRoute,
     dailyTaskReportsRoute,
     invoiceListRoute,

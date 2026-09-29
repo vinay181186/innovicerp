@@ -182,7 +182,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
     setCapaError(null);
     const operation = detail.operationText ?? detail.qcOperationText;
     try {
-      await createCapa.mutateAsync({
+      const created = await createCapa.mutateAsync({
         type: 'Corrective',
         ncRefs: [detail.code],
         ...(jcCode ? { jcNo: jcCode } : {}),
@@ -192,7 +192,11 @@ function NcRegisterDetailPage(): React.JSX.Element {
         problem: detail.reason ?? NC_REASON_CATEGORY_LABELS[detail.reasonCategory],
         department: 'QC',
       });
-      void navigate({ to: '/nc-register' });
+      // Land on the new CAPA's 5-step edit, not the bare NC list.
+      void navigate({
+        to: '/nc-register',
+        search: { tab: 'capa', capa: created.code, capaEdit: true },
+      });
     } catch (e) {
       setCapaError(e instanceof Error ? e.message : 'Could not create CAPA. Try again.');
     }

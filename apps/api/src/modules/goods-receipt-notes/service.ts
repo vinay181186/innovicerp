@@ -39,6 +39,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty, resolveGrnLineJobCardId } from './cascades';
@@ -455,9 +456,9 @@ export async function listGoodsReceiptNotes(
         v.name AS "vendorName",
         po.code AS "poCode",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
-        COALESCE(line_agg.total_received_qty, 0)::int AS "totalReceivedQty",
-        COALESCE(line_agg.qc_accepted_qty, 0)::int AS "totalQcAcceptedQty",
-        COALESCE(line_agg.qc_rejected_qty, 0)::int AS "totalQcRejectedQty",
+        COALESCE(line_agg.total_received_qty, 0)::float8 AS "totalReceivedQty",
+        COALESCE(line_agg.qc_accepted_qty, 0)::float8 AS "totalQcAcceptedQty",
+        COALESCE(line_agg.qc_rejected_qty, 0)::float8 AS "totalQcRejectedQty",
         COALESCE(line_agg.qc_pending_count, 0)::int AS "qcPendingCount",
         -- GRN is 'close' once every line is fully QC-inspected (no qty left to
         -- accept/reject); 'pending' while any line still has QC qty remaining
@@ -897,6 +898,13 @@ export async function createGoodsReceiptNote(
         updatedBy: user.id,
       };
     });
+    // Decimal Received Qty is for KGS / MTR items; NOS / SET stay whole (0172).
+    await assertLineQtysFitUom(
+      tx,
+      companyId,
+      lineValues.map((l) => ({ itemId: l.itemId, qty: l.receivedQty })),
+      'Received Qty',
+    );
     const insertedLines = await tx.insert(goodsReceiptNoteLines).values(lineValues).returning();
 
     // ADR-182 — a receipt against a short-closed Production Order's Job Card is
@@ -1018,6 +1026,13 @@ export async function insertGrnForOspReceipt(
       updatedBy: user.id,
     };
   });
+  // Decimal Received Qty is for KGS / MTR items; NOS / SET stay whole (0172).
+  await assertLineQtysFitUom(
+    tx,
+    companyId,
+    lineValues.map((l) => ({ itemId: l.itemId, qty: l.receivedQty })),
+    'Received Qty',
+  );
   const insertedLines = await tx.insert(goodsReceiptNoteLines).values(lineValues).returning();
   // Recompute PO-line received qty / PO status; no stock (all lines pending).
   await runCascades(tx, companyId, user.id, insertedLines, []);
@@ -1336,6 +1351,13 @@ async function mergeLines(
         updatedBy: user.id,
       };
     });
+    // Decimal Received Qty is for KGS / MTR items; NOS / SET stay whole (0172).
+    await assertLineQtysFitUom(
+      tx,
+      companyId,
+      values.map((l) => ({ itemId: l.itemId, qty: l.receivedQty })),
+      'Received Qty',
+    );
     const insertedLines = await tx.insert(goodsReceiptNoteLines).values(values).returning();
     for (const r of insertedLines) {
       if (r.purchaseOrderLineId) touchedPoLineIds.add(r.purchaseOrderLineId);

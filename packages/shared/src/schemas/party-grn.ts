@@ -19,6 +19,15 @@ export const partyGrnLineSchema = z.object({
   partyMaterialName: z.string().nullable(),
   receivedQty: z.number().int().positive(),
   jwLineNoText: z.string().nullable(),
+  // R4 (ADR-194): real FK to the JWSO line (backfilled from jwLineNoText).
+  jwLineId: z.string().uuid().nullable(),
+  // R2 (ADR-194): compulsory incoming QC. Only acceptedQty enters the party
+  // store; rejectedQty is recorded with a reason and never becomes stock.
+  acceptedQty: z.number().int().nonnegative(),
+  rejectedQty: z.number().int().nonnegative(),
+  rejectReason: z.string().nullable(),
+  qcBy: z.string().uuid().nullable(),
+  qcAt: z.string().nullable(),
   remarks: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -66,16 +75,32 @@ export type PartyGrnDetail = z.infer<typeof partyGrnDetailSchema>;
 
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
-export const createPartyGrnLineInputSchema = z.object({
-  partyMaterialId: z.string().uuid(),
-  receivedQty: z.number().int().positive(),
-  /** ADR-102: REQUIRED. Which JWSO line this material is for. Every downstream
-   *  check keys off it — the order-qty cap here, and the first-op material gate
-   *  in op-entry. While it was optional, leaving it blank silently disabled
-   *  both. The service additionally verifies the line exists on that JWSO. */
-  jwLineNoText: z.string().trim().min(1).max(64),
-  remarks: z.string().trim().max(500).optional(),
-});
+export const createPartyGrnLineInputSchema = z
+  .object({
+    partyMaterialId: z.string().uuid(),
+    receivedQty: z.number().int().positive(),
+    /** ADR-102: REQUIRED. Which JWSO line this material is for. Every downstream
+     *  check keys off it — the order-qty cap here, and the first-op material gate
+     *  in op-entry. While it was optional, leaving it blank silently disabled
+     *  both. The service additionally verifies the line exists on that JWSO. */
+    jwLineNoText: z.string().trim().min(1).max(64),
+    /** R2 (ADR-194): incoming QC is COMPULSORY on every party GRN line — the
+     *  receiver must split the received qty into accepted + rejected here.
+     *  acceptedQty + rejectedQty must equal receivedQty; only acceptedQty
+     *  enters the party store. A reason is required when anything is rejected. */
+    acceptedQty: z.number().int().nonnegative(),
+    rejectedQty: z.number().int().nonnegative().default(0),
+    rejectReason: z.string().trim().max(500).optional(),
+    remarks: z.string().trim().max(500).optional(),
+  })
+  .refine((l) => l.acceptedQty + l.rejectedQty === l.receivedQty, {
+    message: 'Accepted + Rejected must equal Received',
+    path: ['acceptedQty'],
+  })
+  .refine((l) => l.rejectedQty === 0 || (l.rejectReason?.length ?? 0) > 0, {
+    message: 'A reject reason is required when any quantity is rejected',
+    path: ['rejectReason'],
+  });
 export type CreatePartyGrnLineInput = z.infer<typeof createPartyGrnLineInputSchema>;
 
 export const cancelPartyGrnInputSchema = z.object({

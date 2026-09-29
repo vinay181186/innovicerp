@@ -37,7 +37,8 @@ export const purchaseRequestSchema = z.object({
   itemId: z.string().uuid().nullable(),
   itemCodeText: z.string().nullable(),
   itemName: z.string().nullable(),
-  qty: z.number().int().positive(),
+  /** Decimal (KGS / MTR, 3 places) — 0172. */
+  qty: z.number().positive(),
   estCost: z.string().nullable(), // numeric stored as string; NULL when prices hidden
   requiredDate: z.string().nullable(),
   sourceJcOpId: z.string().uuid().nullable(),
@@ -61,12 +62,12 @@ export const purchaseRequestSchema = z.object({
    *  migration 0103, which deliberately did not backfill. Those three PRs report
    *  their full `qty` as ordered so they stay closed and can never be offered
    *  for a second PO. */
-  orderedQty: z.number().int().nonnegative(),
+  orderedQty: z.number().nonnegative(),
   /** `qty` minus `orderedQty`, less anything short-closed. What may still be
    *  ordered. Deliberately a plain int, not nonnegative: if a PR is somehow
    *  over-ordered the balance goes negative and the screen says so, rather than
    *  clamping to 0 and hiding it. */
-  balanceQty: z.number().int(),
+  balanceQty: z.number(),
   /** Set when the buyer SHORT-CLOSES the remainder: "we ordered 10 of 100 and
    *  the rest is not coming" (migration 0117, ADR-152 gap 6). Deliberately not
    *  the same as editing `qty` down — the PR still records that 100 was asked
@@ -189,7 +190,9 @@ const _prInputBase = z.object({
   itemId: z.string().uuid().optional(),
   itemCodeText: z.string().min(1).max(64).optional(),
   itemName: z.string().max(255).optional(),
-  qty: z.number().int().positive(),
+  /** Decimal for KGS / MTR (3 places); a NOS / SET item is refused a
+   *  fraction by the API (0172). */
+  qty: z.number().positive().multipleOf(0.001),
   estCost: z.coerce.number().nonnegative().default(0),
   requiredDate: z
     .string()
@@ -205,10 +208,14 @@ const _prInputBase = z.object({
  *  ADR-012 #10 fallback pattern; same DB CHECK constraints back this up. */
 export const createPurchaseRequestInputSchema = _prInputBase
   .refine((i) => Boolean(i.vendorId) || Boolean(i.vendorCodeText?.trim()), {
-    message: 'vendorId or vendorCodeText is required (per ADR-015 vendor CHECK)',
+    // Plain words — this is what the user reads (ADR-015 vendor CHECK).
+    message: 'Vendor is required.',
+    path: ['vendorId'],
   })
   .refine((i) => Boolean(i.itemId) || Boolean(i.itemCodeText?.trim()), {
-    message: 'itemId or itemCodeText is required (per ADR-012 #10)',
+    // Plain words — this is what the user reads (ADR-012 #10).
+    message: 'Item Code is required.',
+    path: ['itemCodeText'],
   });
 export type CreatePurchaseRequestInput = z.infer<typeof createPurchaseRequestInputSchema>;
 

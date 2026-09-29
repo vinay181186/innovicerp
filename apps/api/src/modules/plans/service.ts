@@ -17,6 +17,7 @@
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePlanInput,
+  CreatePlansBatchInput,
   CreateRouteCardOpInput,
   DefaultRouteOpsResponse,
   DocumentTraceability,
@@ -611,202 +612,255 @@ export async function createPlan(input: CreatePlanInput, user: AuthContext): Pro
   await requireFormAccess(user, 'plan_create', 'entry');
   const companyId = requireCompany(user);
 
+  return withUserContext(user, (tx) => createPlanInTx(tx, companyId, input, user));
+}
+
+/**
+ * BOM Planning "Save N Plans" — every child plan (and the assembly plan) in
+ * ONE transaction. Each goes through exactly the same rules as a single
+ * createPlan; if any one is refused the whole batch rolls back, so the planner
+ * never ends up with rows 1–2 saved and row 3 missing. The error names the
+ * item that was refused.
+ */
+export async function createPlansBatch(
+  input: CreatePlansBatchInput,
+  user: AuthContext,
+): Promise<{ plans: PlanDetail[] }> {
+  requireWriteRole(user);
+  await requireFormAccess(user, 'plan_create', 'entry');
+  const companyId = requireCompany(user);
+
   return withUserContext(user, async (tx) => {
-    // Blank/omitted code → auto-number the next PLN-NNNN. A user-supplied code
-    // is still honoured (and dup-checked).
-    const code =
-      input.code && input.code.trim().length > 0
-        ? input.code.trim()
-        : await nextPlanCode(tx, companyId);
+    const out: PlanDetail[] = [];
+    for (const one of input.plans) {
+      try {
+        out.push(await createPlanInTx(tx, companyId, one, user));
+      } catch (e) {
+        const label = one.bomChildCode ?? one.itemCodeText ?? 'a plan';
+        if (e instanceof ValidationError) {
+          throw new ValidationError(`${label}: ${e.message} Nothing was saved.`);
+        }
+        if (e instanceof ConflictError) {
+          throw new ConflictError(`${label}: ${e.message} Nothing was saved.`);
+        }
+        throw e;
+      }
+    }
+    return { plans: out };
+  });
+}
 
-    const dup = await tx
-      .select({ id: plans.id })
-      .from(plans)
-      .where(and(eq(plans.companyId, companyId), eq(plans.code, code), isNull(plans.deletedAt)))
+async function createPlanInTx(
+  tx: DbTransaction,
+  companyId: string,
+  input: CreatePlanInput,
+  user: AuthContext,
+): Promise<PlanDetail> {
+  // Blank/omitted code → auto-number the next PLN-NNNN. A user-supplied code
+  // is still honoured (and dup-checked).
+  const code =
+    input.code && input.code.trim().length > 0
+      ? input.code.trim()
+      : await nextPlanCode(tx, companyId);
+
+  const dup = await tx
+    .select({ id: plans.id })
+    .from(plans)
+    .where(and(eq(plans.companyId, companyId), eq(plans.code, code), isNull(plans.deletedAt)))
+    .limit(1);
+  if (dup.length > 0) {
+    throw new ConflictError(`Plan code "${code}" already exists`);
+  }
+
+  // ADR-171 — a bought SO line is not planned; it gets "+ PR" on SO Planning.
+  // Only a BOM child marked Purchase (BOM Planning) still makes a Buy plan
+  // against a line. (Unlinked legacy Buy plans are left as they were.)
+  if (
+    input.planType === 'direct_purchase' &&
+    !input.bomMasterId &&
+    (input.soLineId || input.jwLineId)
+  ) {
+    throw new ValidationError('A Buy item is not planned — use + PR on SO Planning.');
+  }
+
+  // ADR-170 — a route-card-driven plan holds qty / dates / raw material /
+  // remark only. Operations arrive from the item's Route Card when a
+  // Production Order is created, so the plan is stored `planned` straight
+  // away (there is nothing to finalize) and carries no ops of its own. The
+  // Production Order needs a master item to find the Route Card, so a
+  // text-only item is refused here rather than at order time.
+  //
+  // The plan TYPE is the route card's decision, not the client's
+  // (`route_cards.plan_type`, migration 0123: how the item is normally
+  // made). Whatever planType the form sent is ignored for such a plan and
+  // the card's value is stored; an item with no card yet falls back to
+  // 'manufacture'. The Production Order re-reads the card when it is
+  // created and re-stamps the plan, so a card changed in between still wins.
+  const isRouteCardPlan = input.opsSource === 'route_card';
+  let planType = input.planType;
+  if (isRouteCardPlan) {
+    if (!input.itemId) {
+      throw new ValidationError(
+        'Pick the item from Item Master — a Production Order needs the item to find its Route Card',
+      );
+    }
+    const rc = await tx
+      .select({ planType: routeCards.planType })
+      .from(routeCards)
+      .where(
+        and(
+          eq(routeCards.companyId, companyId),
+          eq(routeCards.itemId, input.itemId),
+          isNull(routeCards.deletedAt),
+        ),
+      )
       .limit(1);
-    if (dup.length > 0) {
-      throw new ConflictError(`Plan code "${code}" already exists`);
+    planType = rc[0]?.planType ?? 'manufacture';
+    // ADR-171: bought items are flagged on the Item Master (Source = Buy) and
+    // raise a PR from the Planning line — a card still marked with the
+    // retired "Direct Purchase" tile must not silently become an
+    // un-orderable plan.
+    if (planType === 'direct_purchase') {
+      throw new ValidationError(
+        `${input.itemCodeText ? `Item ${input.itemCodeText}` : 'This item'} is a Buy item — use + PR.`,
+      );
     }
+  }
 
-    // ADR-170 — a route-card-driven plan holds qty / dates / raw material /
-    // remark only. Operations arrive from the item's Route Card when a
-    // Production Order is created, so the plan is stored `planned` straight
-    // away (there is nothing to finalize) and carries no ops of its own. The
-    // Production Order needs a master item to find the Route Card, so a
-    // text-only item is refused here rather than at order time.
-    //
-    // The plan TYPE is the route card's decision, not the client's
-    // (`route_cards.plan_type`, migration 0123: how the item is normally
-    // made). Whatever planType the form sent is ignored for such a plan and
-    // the card's value is stored; an item with no card yet falls back to
-    // 'manufacture'. The Production Order re-reads the card when it is
-    // created and re-stamps the plan, so a card changed in between still wins.
-    const isRouteCardPlan = input.opsSource === 'route_card';
-    let planType = input.planType;
-    if (isRouteCardPlan) {
-      if (!input.itemId) {
-        throw new ValidationError(
-          'Pick the item from Item Master — a Production Order needs the item to find its Route Card',
-        );
-      }
-      const rc = await tx
-        .select({ planType: routeCards.planType })
-        .from(routeCards)
-        .where(
-          and(
-            eq(routeCards.companyId, companyId),
-            eq(routeCards.itemId, input.itemId),
-            isNull(routeCards.deletedAt),
-          ),
-        )
-        .limit(1);
-      planType = rc[0]?.planType ?? 'manufacture';
-      // ADR-171: bought items are flagged on the Item Master (Source = Buy) and
-      // raise a PR from the Planning line — a card still marked with the
-      // retired "Direct Purchase" tile must not silently become an
-      // un-orderable plan.
-      if (planType === 'direct_purchase') {
-        throw new ValidationError(
-          `${input.itemCodeText ? `Item ${input.itemCodeText}` : 'This item'} is a Buy item — use + PR.`,
-        );
-      }
+  // Direct Purchase (buy finished item outright) is not valid for job-work —
+  // the client owns the job and supplies the material.
+  if (planType === 'direct_purchase' && input.jwLineId) {
+    throw new ValidationError('A Buy plan is not allowed for a JWSO order.');
+  }
+
+  await assertPlanQtyWithinRemaining(tx, companyId, {
+    soLineId: input.soLineId ?? null,
+    jwLineId: input.jwLineId ?? null,
+    planQty: input.planQty,
+    bomMasterId: input.bomMasterId ?? null,
+    bomChildCode: input.bomChildCode ?? null,
+  });
+
+  // ADR-193 phase 3a — RM item + qty per piece, validated as a pair. When the
+  // caller does not send the item at all (undefined — the SO Planning
+  // "+ Plan" box), it defaults from the item's active Route Card, the source
+  // of truth, exactly as getDefaultRouteOpsForItem serves it. An explicit
+  // null means the user cleared it and stays null.
+  let rmInput: {
+    rawMaterialItemId?: string | null | undefined;
+    rmQtyPerPiece?: number | null | undefined;
+  } = input;
+  if (input.rawMaterialItemId === undefined && input.itemId) {
+    const rcRm = await tx
+      .select({
+        rawMaterialItemId: routeCards.rawMaterialItemId,
+        rmQtyPerPiece: routeCards.rmQtyPerPiece,
+      })
+      .from(routeCards)
+      .innerJoin(
+        items,
+        and(
+          eq(items.id, routeCards.rawMaterialItemId),
+          eq(items.companyId, routeCards.companyId),
+          isNull(items.deletedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(routeCards.companyId, companyId),
+          eq(routeCards.itemId, input.itemId),
+          isNull(routeCards.deletedAt),
+        ),
+      )
+      .limit(1);
+    const rc = rcRm[0];
+    if (rc) {
+      rmInput = {
+        rawMaterialItemId: rc.rawMaterialItemId,
+        rmQtyPerPiece: input.rmQtyPerPiece ?? rc.rmQtyPerPiece,
+      };
     }
+  }
+  // Review M3: a Route Card default the user never typed must not block
+  // "+ Plan" — if it no longer passes the rule (item retyped), drop it.
+  const defaulted = input.rawMaterialItemId === undefined && rmInput !== input;
+  const rmItem = defaulted
+    ? await resolveRmItem(tx, companyId, rmInput).catch(() => ({
+        rawMaterialItemId: null,
+        rmQtyPerPiece: null,
+      }))
+    : await resolveRmItem(tx, companyId, rmInput);
 
-    // Direct Purchase (buy finished item outright) is not valid for job-work —
-    // the client owns the job and supplies the material.
-    if (planType === 'direct_purchase' && input.jwLineId) {
-      throw new ValidationError('A Buy plan is not allowed for a JWSO order.');
-    }
-
-    await assertPlanQtyWithinRemaining(tx, companyId, {
+  const inserted = await tx
+    .insert(plans)
+    .values({
+      companyId,
+      code,
+      planDate: input.planDate,
+      planStatus: isRouteCardPlan ? 'planned' : 'in_planning',
+      planType,
+      opsSource: isRouteCardPlan ? 'route_card' : 'plan',
       soLineId: input.soLineId ?? null,
       jwLineId: input.jwLineId ?? null,
+      soCodeText: input.soCodeText ?? null,
+      lineNo: input.lineNo ?? null,
+      itemId: input.itemId ?? null,
+      itemCodeText: input.itemCodeText ?? null,
+      itemNameText: input.itemNameText ?? null,
+      orderQty: input.orderQty,
       planQty: input.planQty,
+      plannedStartDate: input.plannedStartDate ?? null,
+      plannedEndDate: input.plannedEndDate ?? null,
+      // Customer Dispatch Date (0137) — the day the goods must leave for the customer.
+      customerDispatchDate: input.customerDispatchDate ?? null,
+      // Raw material (0106) — both masters optional and independent. The FK
+      // and the text snapshot are stored together; the snapshot is what is
+      // displayed and printed, and what gets copied onto the JC at execute.
+      rawMaterialGradeId: input.rawMaterialGradeId ?? null,
+      rawMaterialGradeText: input.rawMaterialGradeText ?? null,
+      rawMaterialSizeId: input.rawMaterialSizeId ?? null,
+      rawMaterialSizeText: input.rawMaterialSizeText ?? null,
+      ...rmItem,
       bomMasterId: input.bomMasterId ?? null,
+      bomParentCode: input.bomParentCode ?? null,
       bomChildCode: input.bomChildCode ?? null,
-    });
+      dpVendorId: input.dpVendorId ?? null,
+      dpVendorCodeText: input.dpVendorCodeText ?? null,
+      dpCost: numericToString(input.dpCost),
+      dpRemarks: input.dpRemarks ?? null,
+      foVendorId: input.foVendorId ?? null,
+      foVendorCodeText: input.foVendorCodeText ?? null,
+      foProcess: input.foProcess ?? null,
+      foRate: numericToString(input.foRate),
+      foMaterialSrc: input.foMaterialSrc ?? null,
+      foDeliveryDate: input.foDeliveryDate ?? null,
+      foCostCenter: input.foCostCenter ?? null,
+      foRemarks: input.foRemarks ?? null,
+      requiredDocs: input.requiredDocs ?? [],
+      remarks: input.remarks ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const plan = inserted[0]!;
 
-    // ADR-193 phase 3a — RM item + qty per piece, validated as a pair. When the
-    // caller does not send the item at all (undefined — the SO Planning
-    // "+ Plan" box), it defaults from the item's active Route Card, the source
-    // of truth, exactly as getDefaultRouteOpsForItem serves it. An explicit
-    // null means the user cleared it and stays null.
-    let rmInput: {
-      rawMaterialItemId?: string | null | undefined;
-      rmQtyPerPiece?: number | null | undefined;
-    } = input;
-    if (input.rawMaterialItemId === undefined && input.itemId) {
-      const rcRm = await tx
-        .select({
-          rawMaterialItemId: routeCards.rawMaterialItemId,
-          rmQtyPerPiece: routeCards.rmQtyPerPiece,
-        })
-        .from(routeCards)
-        .innerJoin(
-          items,
-          and(
-            eq(items.id, routeCards.rawMaterialItemId),
-            eq(items.companyId, routeCards.companyId),
-            isNull(items.deletedAt),
-          ),
-        )
-        .where(
-          and(
-            eq(routeCards.companyId, companyId),
-            eq(routeCards.itemId, input.itemId),
-            isNull(routeCards.deletedAt),
-          ),
-        )
-        .limit(1);
-      const rc = rcRm[0];
-      if (rc) {
-        rmInput = {
-          rawMaterialItemId: rc.rawMaterialItemId,
-          rmQtyPerPiece: input.rmQtyPerPiece ?? rc.rmQtyPerPiece,
-        };
-      }
-    }
-    // Review M3: a Route Card default the user never typed must not block
-    // "+ Plan" — if it no longer passes the rule (item retyped), drop it.
-    const defaulted = input.rawMaterialItemId === undefined && rmInput !== input;
-    const rmItem = defaulted
-      ? await resolveRmItem(tx, companyId, rmInput).catch(() => ({
-          rawMaterialItemId: null,
-          rmQtyPerPiece: null,
-        }))
-      : await resolveRmItem(tx, companyId, rmInput);
+  if (!isRouteCardPlan && input.ops && input.ops.length > 0) {
+    await insertOps(tx, companyId, plan.id, input.ops, user);
+  }
 
-    const inserted = await tx
-      .insert(plans)
-      .values({
-        companyId,
-        code,
-        planDate: input.planDate,
-        planStatus: isRouteCardPlan ? 'planned' : 'in_planning',
-        planType,
-        opsSource: isRouteCardPlan ? 'route_card' : 'plan',
-        soLineId: input.soLineId ?? null,
-        jwLineId: input.jwLineId ?? null,
-        soCodeText: input.soCodeText ?? null,
-        lineNo: input.lineNo ?? null,
-        itemId: input.itemId ?? null,
-        itemCodeText: input.itemCodeText ?? null,
-        itemNameText: input.itemNameText ?? null,
-        orderQty: input.orderQty,
-        planQty: input.planQty,
-        plannedStartDate: input.plannedStartDate ?? null,
-        plannedEndDate: input.plannedEndDate ?? null,
-        // Customer Dispatch Date (0137) — the day the goods must leave for the customer.
-        customerDispatchDate: input.customerDispatchDate ?? null,
-        // Raw material (0106) — both masters optional and independent. The FK
-        // and the text snapshot are stored together; the snapshot is what is
-        // displayed and printed, and what gets copied onto the JC at execute.
-        rawMaterialGradeId: input.rawMaterialGradeId ?? null,
-        rawMaterialGradeText: input.rawMaterialGradeText ?? null,
-        rawMaterialSizeId: input.rawMaterialSizeId ?? null,
-        rawMaterialSizeText: input.rawMaterialSizeText ?? null,
-        ...rmItem,
-        bomMasterId: input.bomMasterId ?? null,
-        bomParentCode: input.bomParentCode ?? null,
-        bomChildCode: input.bomChildCode ?? null,
-        dpVendorId: input.dpVendorId ?? null,
-        dpVendorCodeText: input.dpVendorCodeText ?? null,
-        dpCost: numericToString(input.dpCost),
-        dpRemarks: input.dpRemarks ?? null,
-        foVendorId: input.foVendorId ?? null,
-        foVendorCodeText: input.foVendorCodeText ?? null,
-        foProcess: input.foProcess ?? null,
-        foRate: numericToString(input.foRate),
-        foMaterialSrc: input.foMaterialSrc ?? null,
-        foDeliveryDate: input.foDeliveryDate ?? null,
-        foCostCenter: input.foCostCenter ?? null,
-        foRemarks: input.foRemarks ?? null,
-        requiredDocs: input.requiredDocs ?? [],
-        remarks: input.remarks ?? null,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    const plan = inserted[0]!;
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'Plan',
+      detail: detail(plan),
+      refId: plan.code,
+    },
+    companyId,
+    user,
+  );
 
-    if (!isRouteCardPlan && input.ops && input.ops.length > 0) {
-      await insertOps(tx, companyId, plan.id, input.ops, user);
-    }
-
-    await emitActivityLog(
-      tx,
-      {
-        action: 'CREATE',
-        entity: 'Plan',
-        detail: detail(plan),
-        refId: plan.code,
-      },
-      companyId,
-      user,
-    );
-
-    return getPlanInTx(tx, plan.id, companyId);
-  });
+  return getPlanInTx(tx, plan.id, companyId);
 }
 
 export async function updatePlan(
@@ -2059,7 +2113,7 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
         -- the Needs Planning KPI tile counts. Covered is computed ONCE per
         -- line (the LATERAL) and to-plan derived from it.
         cov.covered       AS planned_qty,
-        GREATEST(sol.order_qty - cov.covered, 0)::int AS remaining_qty
+        GREATEST(sol.order_qty - cov.covered, 0)::numeric AS remaining_qty
       FROM public.sales_order_lines sol
       JOIN public.sales_orders so ON so.id = sol.sales_order_id
       CROSS JOIN LATERAL (SELECT ${sql.raw(soLineCoveredRaw('sol'))} AS covered) cov

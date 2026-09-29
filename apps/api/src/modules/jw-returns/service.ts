@@ -11,11 +11,14 @@ import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'dr
 import type {
   CreateJwReturnChallanInput,
   JwReturnChallan,
+  JwReturnChallanListItem,
+  JwReturnableResponse,
   ListJwReturnChallansQuery,
   ListJwReturnChallansResponse,
 } from '@innovic/shared';
 import {
   clients,
+  items,
   jobCards,
   jobWorkOrderLines,
   jobWorkOrders,
@@ -23,7 +26,12 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
-import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -96,7 +104,9 @@ async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<str
   const rows = await tx
     .select({ code: jwReturnChallans.code })
     .from(jwReturnChallans)
-    .where(and(eq(jwReturnChallans.companyId, companyId), like(jwReturnChallans.code, `${prefix}%`)));
+    .where(
+      and(eq(jwReturnChallans.companyId, companyId), like(jwReturnChallans.code, `${prefix}%`)),
+    );
   let max = 0;
   for (const r of rows) {
     const m = r.code.slice(prefix.length).match(/^(\d+)$/);
@@ -121,8 +131,20 @@ async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<str
  * on a job-work order outright (assertBomUsableForJobWork).
  */
 async function producedForLine(tx: DbTransaction, lineId: string): Promise<number> {
+  return (await producedForLines(tx, [lineId])).get(lineId) ?? 0;
+}
+
+/** producedForLine for many JW lines in ONE query (one row per line id). */
+async function producedForLines(
+  tx: DbTransaction,
+  lineIds: readonly string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const unique = Array.from(new Set(lineIds));
+  if (unique.length === 0) return out;
   const rows = (await tx.execute(sql`
     SELECT
+      l.id AS line_id,
       CASE
         WHEN l.source_bom_master_id IS NOT NULL THEN COALESCE(bom.produced, 0)
         ELSE COALESCE(own.produced, 0)
@@ -172,9 +194,10 @@ async function producedForLine(tx: DbTransaction, lineId: string): Promise<numbe
         AND bml.deleted_at IS NULL
         AND bml.qty_per_set > 0
     ) bom ON TRUE
-    WHERE l.id = ${lineId}::uuid
-  `)) as unknown as Array<{ produced: number | string }>;
-  return Number(rows[0]?.produced ?? 0);
+    WHERE l.id = ANY(${unique}::uuid[])
+  `)) as unknown as Array<{ line_id: string; produced: number | string | null }>;
+  for (const r of rows) out.set(r.line_id, Number(r.produced ?? 0));
+  return out;
 }
 
 interface JwBomComponent {
@@ -188,10 +211,7 @@ interface JwBomComponent {
  * line. Returning the finished assembly consumes its COMPONENTS — the parent
  * is a phantom that never had stock to debit.
  */
-async function bomComponentsForLine(
-  tx: DbTransaction,
-  lineId: string,
-): Promise<JwBomComponent[]> {
+async function bomComponentsForLine(tx: DbTransaction, lineId: string): Promise<JwBomComponent[]> {
   const rows = (await tx.execute(sql`
     SELECT bml.child_item_id, i.code AS child_code, bml.qty_per_set
     FROM public.job_work_order_lines l
@@ -234,7 +254,9 @@ async function returnedComponents(
       AND st.source_ref LIKE ${`${code} / `} || '%'
   `)) as unknown as Array<{ item_id: string | null; qty: number; item_code: string | null }>;
   return rows
-    .filter((r): r is { item_id: string; qty: number; item_code: string | null } => Boolean(r.item_id))
+    .filter((r): r is { item_id: string; qty: number; item_code: string | null } =>
+      Boolean(r.item_id),
+    )
     .map((r) => ({
       itemId: r.item_id,
       itemCode: r.item_code ?? r.item_id.slice(0, 8),
@@ -247,7 +269,9 @@ function rowToReturn(row: typeof jwReturnChallans.$inferSelect): JwReturnChallan
     id: row.id,
     companyId: row.companyId,
     code: row.code,
-    status: row.status,
+    // R10 (ADR-194): the column is free-text; map anything but 'cancelled' to the
+    // default 'issued' so the read shape matches the real enum.
+    status: row.status === 'cancelled' ? 'cancelled' : 'issued',
     returnDate: dateLike(row.returnDate),
     jobWorkOrderId: row.jobWorkOrderId,
     jobWorkOrderLineId: row.jobWorkOrderLineId,
@@ -258,6 +282,9 @@ function rowToReturn(row: typeof jwReturnChallans.$inferSelect): JwReturnChallan
     transport: row.transport,
     vehicleNo: row.vehicleNo,
     remarks: row.remarks,
+    cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
+    cancelledBy: row.cancelledBy,
+    cancelReason: row.cancelReason,
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt.toISOString(),
@@ -413,9 +440,7 @@ export async function createJwReturnChallan(
         returnedQty: jobWorkOrderLines.returnedQty,
       })
       .from(jobWorkOrderLines)
-      .where(
-        and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)),
-      );
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)));
     const allReturned = siblings.every((s) => {
       const eff = s.id === line.id ? newReturned : s.returnedQty;
       return eff >= s.orderQty;
@@ -445,6 +470,7 @@ export async function createJwReturnChallan(
 
 export async function cancelJwReturnChallan(
   id: string,
+  reason: string,
   user: AuthContext,
 ): Promise<JwReturnChallan> {
   // Reverses a JW Return Challan (mirrors delivery-challans.cancelDeliveryChallan).
@@ -481,6 +507,7 @@ export async function cancelJwReturnChallan(
       .select({
         id: jobWorkOrderLines.id,
         returnedQty: jobWorkOrderLines.returnedQty,
+        invoicedQty: jobWorkOrderLines.invoicedQty,
         jwId: jobWorkOrderLines.jobWorkOrderId,
         itemId: jobWorkOrderLines.itemId,
       })
@@ -495,6 +522,19 @@ export async function cancelJwReturnChallan(
       .limit(1);
     const line = lineRows[0];
     if (!line) throw new NotFoundError('JWSO line not found. Refresh the page.');
+
+    // R10 (ADR-194): a JW invoice bills only what has been RETURNED. Cancelling
+    // this return would drop returned_qty below what is still invoiced, leaving
+    // a live invoice for goods the books say were never returned. Block it — the
+    // JW Invoice must be cancelled first.
+    const returnedAfter = Math.max(0, line.returnedQty - ret.qty);
+    if (line.invoicedQty > returnedAfter) {
+      throw new ConflictError(
+        `Cannot cancel ${ret.code}: ${line.invoicedQty} piece(s) on this line are still ` +
+          `invoiced, but cancelling would leave only ${returnedAfter} returned. ` +
+          `Cancel the JW Invoice for this line first, then cancel the return.`,
+      );
+    }
 
     // 0) ADR-106 — the goods never left, so put them back in own stock. Written
     // as a compensating 'in' row rather than deleting the 'out', so the ledger
@@ -532,7 +572,14 @@ export async function cancelJwReturnChallan(
     // 1) Mark the return cancelled
     const updated = await tx
       .update(jwReturnChallans)
-      .set({ status: 'cancelled', updatedAt: new Date(), updatedBy: userId })
+      .set({
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        cancelledBy: userId,
+        cancelReason: reason,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
       .where(eq(jwReturnChallans.id, ret.id))
       .returning();
     const row = updated[0];
@@ -648,15 +695,7 @@ export async function listJwReturnChallans(
     // ONE predicate, used by both the page query and the count — a total that
     // ignored the search would break the pager the moment anyone typed.
     const [rows, totals] = await Promise.all([
-      tx
-        .select({
-          ret: jwReturnChallans,
-          clientName: clients.name,
-          partName: jobWorkOrderLines.partName,
-        })
-        .from(jwReturnChallans)
-        .leftJoin(clients, eq(clients.id, jwReturnChallans.clientId))
-        .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwReturnChallans.jobWorkOrderLineId))
+      selectListItems(tx)
         .where(where)
         .orderBy(desc(jwReturnChallans.returnDate), desc(jwReturnChallans.code))
         .limit(input.limit)
@@ -670,12 +709,120 @@ export async function listJwReturnChallans(
     ]);
 
     return {
-      items: rows.map((r) => ({
-        ...rowToReturn(r.ret),
-        clientName: r.clientName ?? null,
-        partName: r.partName ?? null,
-      })),
+      items: rows.map(toListItem),
       total: totals[0]?.value ?? 0,
     };
+  });
+}
+
+// The register row plus what the printed return challan needs: item code
+// (live join, snapshot fallback), the customer's drawing revision, the unit and
+// the JWSO's Client PO No. Shared by the list and the single read.
+function selectListItems(tx: DbTransaction) {
+  return tx
+    .select({
+      ret: jwReturnChallans,
+      clientName: clients.name,
+      partName: jobWorkOrderLines.partName,
+      itemCode: items.code,
+      itemCodeText: jobWorkOrderLines.itemCodeText,
+      itemRevision: jobWorkOrderLines.revision,
+      uom: sql<string | null>`${jobWorkOrderLines.uom}::text`,
+      clientPoNo: jobWorkOrders.clientPoNo,
+    })
+    .from(jwReturnChallans)
+    .leftJoin(clients, eq(clients.id, jwReturnChallans.clientId))
+    .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwReturnChallans.jobWorkOrderLineId))
+    .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
+    .leftJoin(jobWorkOrders, eq(jobWorkOrders.id, jwReturnChallans.jobWorkOrderId));
+}
+
+function toListItem(r: {
+  ret: typeof jwReturnChallans.$inferSelect;
+  clientName: string | null;
+  partName: string | null;
+  itemCode: string | null;
+  itemCodeText: string | null;
+  itemRevision: string | null;
+  uom: string | null;
+  clientPoNo: string | null;
+}): JwReturnChallanListItem {
+  return {
+    ...rowToReturn(r.ret),
+    clientName: r.clientName ?? null,
+    partName: r.partName ?? null,
+    itemCode: r.itemCode ?? r.itemCodeText ?? null,
+    itemRevision: r.itemRevision ?? null,
+    uom: r.uom ?? null,
+    clientPoNo: r.clientPoNo ?? null,
+  };
+}
+
+/** One return challan as a register row — the print after save reads this. */
+export async function getJwReturnChallan(
+  id: string,
+  user: AuthContext,
+): Promise<JwReturnChallanListItem> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = await selectListItems(tx)
+      .where(
+        and(
+          eq(jwReturnChallans.id, id),
+          eq(jwReturnChallans.companyId, companyId),
+          isNull(jwReturnChallans.deletedAt),
+        ),
+      )
+      .limit(1);
+    const r = rows[0];
+    if (!r) throw new NotFoundError('JW Return not found. Refresh the page.');
+    return toListItem(r);
+  });
+}
+
+/**
+ * Per line of one JWSO: what can go back right now. The SAME two limits
+ * createJwReturnChallan enforces — Ready (produced, via producedForLine) −
+ * Returned, and Order Qty − Returned — so the New Return form can show the
+ * number and prefill it instead of the user learning it from a refusal.
+ */
+export async function getReturnableForJobWorkOrder(
+  jobWorkOrderId: string,
+  user: AuthContext,
+): Promise<JwReturnableResponse> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const lines = await tx
+      .select({
+        id: jobWorkOrderLines.id,
+        orderQty: jobWorkOrderLines.orderQty,
+        returnedQty: jobWorkOrderLines.returnedQty,
+      })
+      .from(jobWorkOrderLines)
+      .where(
+        and(
+          eq(jobWorkOrderLines.jobWorkOrderId, jobWorkOrderId),
+          eq(jobWorkOrderLines.companyId, companyId),
+          isNull(jobWorkOrderLines.deletedAt),
+        ),
+      );
+    const produced = await producedForLines(
+      tx,
+      lines.map((l) => l.id),
+    );
+    const out: JwReturnableResponse['lines'] = [];
+    for (const l of lines) {
+      const ready = Math.max(0, Math.floor(produced.get(l.id) ?? 0));
+      const returned = Math.max(0, l.returnedQty);
+      const pending = Math.max(0, l.orderQty - returned);
+      out.push({
+        jobWorkOrderLineId: l.id,
+        readyQty: ready,
+        returnedQty: returned,
+        pendingQty: pending,
+        returnableQty: Math.max(0, Math.min(ready - returned, pending)),
+      });
+    }
+    return { lines: out };
   });
 }

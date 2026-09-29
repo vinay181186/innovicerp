@@ -10350,6 +10350,58 @@ integer, so KGS / MTR material could not be issued as 12.5.
   copies it; rework / repair cards carry none (nothing new is cut). BOM child JCs: none.
 - Verified on TEST: 5 scenarios pass; 642 + 967 cross-screen figures, 0 mismatches.
 
+## ADR-194: Customer job-work (JWSO) chain — QC-gated receipt, a zero-value party store, and closable paperwork
+
+**Date:** 2026-09-28
+**Status:** Accepted (schema 0173 on TEST; services + UI live on TEST on the `jwso-material` branch. Migrations renumbered to 0173 + 0174 after a collision with the store-redesign 0157/0158 on `test`.)
+
+### Context
+The JWSO audit (Innovic vs ERPNext, `Job Work (JWSO) Audit - Innovic vs ERPNext.pdf`) found the
+customer-material side of the job-work chain thin: a Party GRN accepted material with no incoming QC,
+it linked to its JWSO line only by a typed line-number **text** (silently breaking the order-qty cap
+and the first-op material gate when mistyped), customer-owned material had no store of its own, and the
+downstream paperwork could not be undone — a JW invoice or a JW return challan, once issued, was
+permanent, and a JWSO line could not be closed while it still had an unmet balance. Owner decisions
+(2026-09-28): **Q6 = keep party material in a SEPARATE store at ZERO value**; **Q2 = incoming QC on a
+Party GRN is COMPULSORY**; everything else "as suggested".
+
+### Decision
+1. **Compulsory incoming QC (R2).** Every Party GRN line splits its received qty into
+   `accepted_qty` + `rejected_qty` (must sum to received; a reject reason is required when any is
+   rejected). Only the **accepted** qty enters the party store. Existing rows are grandfathered
+   (accepted = received).
+2. **Real FK to the JWSO line (R4).** `party_grn_lines.jw_line_id` replaces the typed text as the key
+   every downstream check uses; the text is kept and backfilled. The per-line cap is on **accepted**
+   qty, not received.
+3. **A separate, zero-value party store (R3, Q6).** New append-only `party_stock_ledger` — one row per
+   movement (receive / issue / consume / return / reversal, each in or out), **no value column**.
+   Customer-owned material never touches `store_transactions` (holds ADR-189). Balance = Σ ledger.
+4. **Closable paperwork.** A JW invoice can be **cancelled** (R5: `status` issued|cancelled; reverses
+   `invoiced_qty`). A JW return challan cancel is fixed to a real enum and blocked while an uncancelled
+   invoice still covers it (R10). A JWSO line can be **short-closed** (R6): status stays `closed` (the
+   shared `so_status` PG enum is NOT widened — that would leak to SO code) with
+   `short_closed_at/by` + `short_close_reason` recording the unmet balance.
+5. **Return spare customer material (R7).** `party_materials.returned_qty` + a `return` (out) ledger
+   row; capped at the party-store balance.
+6. **Roll-up on the JC (R1).** A JW-sourced Job Card shows Needed (rmQtyPerPiece × qty, from the
+   ADR-193 route-card RM) / Received / Issued / Returned / Balance from the party ledger.
+7. **Permissions (R8).** Return, invoice, cancel and short-close all reuse the existing `jw_create`
+   key — no new permission keys.
+
+### Alternatives considered
+- Widen the `so_status` enum with a `short_closed` value — rejected: it is a shared PG enum and would
+  leak into every SO code path; flag columns keep the change on the JWSO side.
+- Put party material in `store_transactions` at zero value — rejected: it is not company stock
+  (ADR-189); a separate ledger keeps the books clean and the value truly absent.
+- A new per-line "needed" table for R1 — rejected: the ADR-193 route-card RM already carries qty/piece.
+
+### Consequences
+- All changes are additive (new columns + one table in 0173; jw_return cancel columns in 0174); safe to
+  run as one batch, applied to TEST.
+- PROD must run 0173 then 0174 (after the store-redesign 0157/0158) before test → main.
+- The frozen contract now requires services to populate the new read fields (QC split, party balance,
+  invoice/line status).
+
 ### ADR-193 phase 3b — Item Issue slip with lines; issue against the job (2026-09-28)
 - An Item Issue is a slip (store_issues) with lines (store_issue_lines, 0157), issued against ONE of: a Job
   Card, an Assembly (Equipment) SO, or General / Consumable (Department required). Issued To = an Operator

@@ -494,6 +494,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       <input
                         type="number"
                         min={0}
+                        step="any"
                         className="innovic-input"
                         readOnly={locked}
                         {...register(`lines.${idx}.receivedQty` as const, {
@@ -533,6 +534,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       <input
                         type="number"
                         min={0}
+                        step="any"
                         className="innovic-input"
                         readOnly
                         {...register(`lines.${idx}.qcAcceptedQty` as const, {
@@ -546,6 +548,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       <input
                         type="number"
                         min={0}
+                        step="any"
                         className="innovic-input"
                         readOnly
                         {...register(`lines.${idx}.qcRejectedQty` as const, {

@@ -31,7 +31,8 @@ import { useBomMastersList } from '@/modules/bom-master/api';
 import { apiFetch } from '@/lib/api';
 import { todayLocal } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
-import { useClientsList, useCreateClient } from '@/modules/clients/api';
+import { useClientsList } from '@/modules/clients/api';
+import { QuickAddClient } from '@/modules/clients/components/quick-add-client';
 import { useItemsList } from '@/modules/items/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -1408,130 +1409,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         <QuickAddClient onClose={() => setShowAddClient(false)} onCreated={onClientCreated} />
       ) : null}
     </form>
-  );
-}
-
-/** Minimal client quick-add modal (mirrors the SO form's QuickAddClient). Name
- *  is the only required field; the server auto-generates the CLI-### code. */
-function QuickAddClient({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: (id: string, label: string) => void;
-}): React.JSX.Element {
-  const create = useCreateClient();
-  const [name, setName] = useState('');
-  const [contactPerson, setContactPerson] = useState('');
-  const [phone, setPhone] = useState('');
-  const [gstNumber, setGstNumber] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-
-  async function onSave(): Promise<void> {
-    setErr(null);
-    if (!name.trim()) {
-      setErr('Customer is required.');
-      return;
-    }
-    try {
-      const c = await create.mutateAsync({
-        name: name.trim(),
-        ...(contactPerson.trim() ? { contactPerson: contactPerson.trim() } : {}),
-        ...(phone.trim() ? { phone: phone.trim() } : {}),
-        ...(gstNumber.trim() ? { gstNumber: gstNumber.trim() } : {}),
-        isActive: true,
-      });
-      onCreated(c.id, `${c.code} — ${c.name}`);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not save Customer. Try again.');
-    }
-  }
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 200,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(420px, 94vw)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 12 }}>
-          New Customer
-        </div>
-        <div className="form-grp">
-          <label className="form-label">
-            Customer<span className="req">★</span>
-          </label>
-          <input
-            className="innovic-input"
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Company / customer name"
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">Contact Person</label>
-          <input
-            className="innovic-input"
-            value={contactPerson}
-            onChange={(e) => setContactPerson(e.target.value)}
-            placeholder="Optional"
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">Phone</label>
-          <input
-            className="innovic-input"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="Optional"
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">GSTIN</label>
-          <input
-            className="innovic-input"
-            value={gstNumber}
-            onChange={(e) => setGstNumber(e.target.value)}
-            placeholder="Optional"
-          />
-        </div>
-        {err ? (
-          <div className="form-error" style={{ marginTop: 6 }}>
-            {err}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 14 }}>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={create.isPending}
-            onClick={() => void onSave()}
-          >
-            {create.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Add Customer
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 

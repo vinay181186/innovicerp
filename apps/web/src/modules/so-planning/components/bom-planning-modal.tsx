@@ -4,7 +4,8 @@
 //
 // Shows the BOM explosion (per child item: qty/set × orderQty = totalNeed,
 // stock, shortfall) and lets the planner select which children to plan +
-// what qty for each. Save creates one in_planning plan per checked child.
+// what qty for each. Save creates every checked child's plan in ONE server
+// call / ONE transaction; a Make child is a Route-Card plan like "+ Plan".
 // Existing plans are shown disabled.
 
 import type {
@@ -16,9 +17,10 @@ import type {
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { todayLocal } from '@/lib/date';
+import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { useCreatePlan } from '@/modules/plans/api';
+import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
+import { useCreatePlansBatch } from '@/modules/plans/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { usePlanningBom } from '../api';
 import { Modal } from './modal';
@@ -99,7 +101,7 @@ export function BomPlanningModal({
   onSaved,
 }: Props): JSX.Element {
   const { data, isLoading, error } = usePlanningBom(soId, soLineId);
-  const createPlan = useCreatePlan();
+  const createPlans = useCreatePlansBatch();
   const [rowState, setRowState] = useState<Map<string, RowState>>(new Map());
   const [planAssembly, setPlanAssembly] = useState<boolean>(false);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
@@ -146,100 +148,97 @@ export function BomPlanningModal({
       setSubmitErr(`Cannot plan yet: ${missing.join('; ')}.`);
       return;
     }
+    // ONE call, ONE transaction: every ticked child (and the assembly plan)
+    // lands together or none does, so the planner never sees "2 created, 1
+    // could not" and has to work out what is half-saved.
+    //
+    // A Make child is saved exactly like SO Planning "+ Plan" (ADR-170): a
+    // Route-Card plan — its operations come from the child's Route Card when
+    // the Production Order is raised — born 'Planned' and dated start today,
+    // end PLAN_DEFAULT_SPAN_DAYS later, so nothing has to be opened and
+    // finished by hand. Buy / Outsource children keep their vendor plan.
+    const start = todayLocal();
+    const end = addDaysLocal(start, PLAN_DEFAULT_SPAN_DAYS);
+    const plansToSave: CreatePlanInput[] = [];
+    for (const c of data.children) {
+      if (c.existingPlan) continue;
+      const s = rowState.get(c.childItemCode);
+      if (!s || !s.checked || s.qty <= 0) continue;
+      const qty = Math.min(s.qty, c.totalNeed);
+      const planType = planTypeFor(c.bomType);
+      plansToSave.push({
+        // code omitted → server assigns the next sequential PLN-NNNN.
+        planDate: start,
+        planType,
+        ...(planType === 'manufacture'
+          ? { opsSource: 'route_card' as const, plannedStartDate: start, plannedEndDate: end }
+          : {}),
+        soLineId,
+        soCodeText: soCode,
+        itemId: c.childItemId,
+        itemCodeText: c.childItemCode,
+        itemNameText: c.childItemName,
+        orderQty: c.totalNeed,
+        planQty: qty,
+        bomMasterId: data.bomMasterId,
+        bomParentCode: data.parentItemCode ?? null,
+        bomChildCode: c.childItemCode,
+        // Send the vendor's CODE as well as its id. The Edit Plan modal reads
+        // the *CodeText snapshot, so an id-only plan opened there showed a
+        // blank vendor and refused to save.
+        ...(planType === 'direct_purchase'
+          ? { dpVendorId: s.vendorId, dpVendorCodeText: s.vendorCode || null }
+          : {}),
+        ...(planType === 'full_outsource'
+          ? {
+              foVendorId: s.vendorId,
+              foVendorCodeText: s.vendorCode || null,
+              foProcess: s.process.trim(),
+            }
+          : {}),
+      });
+    }
+    if (data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly) {
+      plansToSave.push({
+        // code omitted → server assigns the next sequential PLN-NNNN.
+        planDate: start,
+        planType: 'assembly',
+        soLineId,
+        soCodeText: soCode,
+        itemCodeText: data.parentItemCode ?? '',
+        itemNameText: data.parentItemName ?? '',
+        orderQty: data.orderQty,
+        planQty: data.orderQty,
+        bomMasterId: data.bomMasterId,
+        bomParentCode: data.parentItemCode ?? null,
+      });
+    }
+    if (plansToSave.length === 0) {
+      setSubmitErr('No plans to create. Check at least one item.');
+      return;
+    }
     setSubmitting(true);
-    let plansCreated = 0;
-    // One child failing must NOT abandon the rest. The loop used to throw
-    // straight out, so a purchase child that the server refused silently took
-    // every child after it down with it: 3 ticked, 1 created, one message that
-    // named neither of the two that were dropped.
-    const failures: string[] = [];
     try {
-      for (const c of data.children) {
-        if (c.existingPlan) continue;
-        const s = rowState.get(c.childItemCode);
-        if (!s || !s.checked || s.qty <= 0) continue;
-        const qty = Math.min(s.qty, c.totalNeed);
-        const planType = planTypeFor(c.bomType);
-        const input: CreatePlanInput = {
-          // code omitted → server assigns the next sequential PLN-NNNN.
-          planDate: todayLocal(),
-          planType,
-          soLineId,
-          soCodeText: soCode,
-          itemId: c.childItemId,
-          itemCodeText: c.childItemCode,
-          itemNameText: c.childItemName,
-          orderQty: c.totalNeed,
-          planQty: qty,
-          bomMasterId: data.bomMasterId,
-          bomParentCode: data.parentItemCode ?? null,
-          bomChildCode: c.childItemCode,
-          // Send the vendor's CODE as well as its id. The Edit Plan modal reads
-          // the *CodeText snapshot, so an id-only plan opened there showed a
-          // blank vendor and refused to save.
-          ...(planType === 'direct_purchase'
-            ? { dpVendorId: s.vendorId, dpVendorCodeText: s.vendorCode || null }
-            : {}),
-          ...(planType === 'full_outsource'
-            ? {
-                foVendorId: s.vendorId,
-                foVendorCodeText: s.vendorCode || null,
-                foProcess: s.process.trim(),
-              }
-            : {}),
-        };
-        try {
-          await createPlan.mutateAsync(input);
-          plansCreated++;
-        } catch (e) {
-          failures.push(
-            `${c.childItemCode}: ${e instanceof Error ? e.message : 'could not create plan'}`,
-          );
-        }
-      }
-      if (data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly) {
-        const input: CreatePlanInput = {
-          // code omitted → server assigns the next sequential PLN-NNNN.
-          planDate: todayLocal(),
-          planType: 'assembly',
-          soLineId,
-          soCodeText: soCode,
-          itemCodeText: data.parentItemCode ?? '',
-          itemNameText: data.parentItemName ?? '',
-          orderQty: data.orderQty,
-          planQty: data.orderQty,
-          bomMasterId: data.bomMasterId,
-          bomParentCode: data.parentItemCode ?? null,
-        };
-        try {
-          await createPlan.mutateAsync(input);
-          plansCreated++;
-        } catch (e) {
-          failures.push(`assembly: ${e instanceof Error ? e.message : 'could not create plan'}`);
-        }
-      }
-      if (failures.length > 0) {
-        // Say what DID land as well as what did not — the planner has to know
-        // the partial state before deciding what to do next.
-        setSubmitErr(
-          `${plansCreated} plan(s) created. ${failures.length} could not be created — ${failures.join('; ')}`,
-        );
-        if (plansCreated > 0) onSaved();
-        return;
-      }
-      if (plansCreated === 0) {
-        setSubmitErr('No plans to create. Check at least one item.');
-        return;
-      }
+      await createPlans.mutateAsync({ plans: plansToSave });
       onSaved();
     } catch (e) {
-      setSubmitErr(e instanceof Error ? e.message : 'Could not create plans. Try again.');
+      setSubmitErr(
+        e instanceof Error ? e.message : 'Could not create plans — nothing was saved. Try again.',
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  const unplannedCount = data?.children.filter((c) => !c.existingPlan).length ?? 0;
+  // The button counts what Save will actually create: ticked rows with a qty,
+  // plus the assembly plan when it is ticked.
+  const saveCount =
+    (data?.children.filter((c) => {
+      if (c.existingPlan) return false;
+      const s = rowState.get(c.childItemCode);
+      return Boolean(s && s.checked && s.qty > 0);
+    }).length ?? 0) +
+    (data && data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly ? 1 : 0);
 
   const title =
     mode === 'equipment'
@@ -265,7 +264,7 @@ export function BomPlanningModal({
             Saving…
           </>
         ) : (
-          `Save ${unplannedCount} Plans`
+          `Save ${saveCount} Plan${saveCount === 1 ? '' : 's'}`
         )}
       </button>
     </>

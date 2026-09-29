@@ -10,7 +10,7 @@ export const jwReturnChallanSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
   code: z.string(),
-  status: z.string(), // 'issued' | 'cancelled'
+  status: z.enum(['issued', 'cancelled']), // R10 (ADR-194): fixed to a real enum
   returnDate: z.string(),
   jobWorkOrderId: z.string().uuid(),
   jobWorkOrderLineId: z.string().uuid(),
@@ -21,6 +21,10 @@ export const jwReturnChallanSchema = z.object({
   transport: z.string().nullable(),
   vehicleNo: z.string().nullable(),
   remarks: z.string().nullable(),
+  // R10 (ADR-194): cancel audit trail (migration 0174).
+  cancelledAt: z.string().nullable().default(null),
+  cancelledBy: z.string().uuid().nullable().default(null),
+  cancelReason: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -32,6 +36,13 @@ export type JwReturnChallan = z.infer<typeof jwReturnChallanSchema>;
 export const jwReturnChallanListItemSchema = jwReturnChallanSchema.extend({
   clientName: z.string().nullable(),
   partName: z.string().nullable(),
+  /** For the printed return challan: the JWSO line's item code (live join,
+   *  snapshot fallback), the customer's drawing revision, unit, and the
+   *  JWSO's Client PO No. */
+  itemCode: z.string().nullable().default(null),
+  itemRevision: z.string().nullable().default(null),
+  uom: z.string().nullable().default(null),
+  clientPoNo: z.string().nullable().default(null),
 });
 export type JwReturnChallanListItem = z.infer<typeof jwReturnChallanListItemSchema>;
 
@@ -46,6 +57,14 @@ export const createJwReturnChallanInputSchema = z.object({
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreateJwReturnChallanInput = z.infer<typeof createJwReturnChallanInputSchema>;
+
+/** R10 (ADR-194): cancel an issued JW Return Challan — reverses returned_qty on
+ *  the line so the goods can be returned again, and is blocked while an
+ *  uncancelled JW invoice still covers the returned qty. Reuses jw_create. */
+export const cancelJwReturnChallanInputSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+export type CancelJwReturnChallanInput = z.infer<typeof cancelJwReturnChallanInputSchema>;
 
 export const listJwReturnChallansResponseSchema = z.object({
   items: z.array(jwReturnChallanListItemSchema),
@@ -72,3 +91,21 @@ export const listJwReturnChallansQuerySchema = z.object({
   offset: z.coerce.number().int().nonnegative().default(0),
 });
 export type ListJwReturnChallansQuery = z.infer<typeof listJwReturnChallansQuerySchema>;
+
+/** Per JWSO line: how much can go back to the customer right now — the SAME
+ *  limit createJwReturnChallan enforces. Ready = final-QC-accepted qty on the
+ *  line's Job Card(s) (assembly lines: complete sets); Returnable =
+ *  min(Ready − Returned, Order Qty − Returned), never below 0. */
+export const jwReturnableLineSchema = z.object({
+  jobWorkOrderLineId: z.string().uuid(),
+  readyQty: z.number().int().nonnegative(),
+  returnedQty: z.number().int().nonnegative(),
+  pendingQty: z.number().int().nonnegative(),
+  returnableQty: z.number().int().nonnegative(),
+});
+export type JwReturnableLine = z.infer<typeof jwReturnableLineSchema>;
+
+export const jwReturnableResponseSchema = z.object({
+  lines: z.array(jwReturnableLineSchema),
+});
+export type JwReturnableResponse = z.infer<typeof jwReturnableResponseSchema>;

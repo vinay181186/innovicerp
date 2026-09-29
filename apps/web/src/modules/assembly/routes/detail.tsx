@@ -28,6 +28,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { fmtDate, todayIst } from '@/lib/date';
 import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
 import { VarianceConfirm } from '../components/variance-confirm';
 
@@ -50,6 +51,8 @@ function AssemblyDetailPage(): React.JSX.Element {
   // Prefilled with today (IST) so the default is visible, not hidden in a tooltip.
   const [assemblyDate, setAssemblyDate] = useState(() => todayIst());
   const [remarks, setRemarks] = useState('');
+  // Undo un-builds a batch (and reverses its stock when completed) — ask first.
+  const [confirmUndo, setConfirmUndo] = useState(false);
 
   if (isLoading) {
     return (
@@ -101,11 +104,21 @@ function AssemblyDetailPage(): React.JSX.Element {
       },
     );
   };
+  // The batch the server will undo: the highest Batch No. still on the order
+  // (undoLastUnit orders by unitNo desc).
+  const lastBatch = data.units.reduce<(typeof data.units)[number] | null>(
+    (best, u) => (best === null || u.unitNo > best.unitNo ? u : best),
+    null,
+  );
   const onUndo = (): void => {
     setActionError(null);
-    undo.mutate(undefined, {
-      onError: (e) => setActionError(e instanceof Error ? e.message : 'Could not undo. Try again.'),
-    });
+    setConfirmUndo(true);
+  };
+  // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
+  // shows a failure (e.g. "already dispatched") inside the dialog.
+  const doUndo = async (): Promise<void> => {
+    await undo.mutateAsync(undefined);
+    setConfirmUndo(false);
   };
 
   return (
@@ -241,6 +254,22 @@ function AssemblyDetailPage(): React.JSX.Element {
             )}
             Undo Last Batch
           </button>
+          {confirmUndo && lastBatch ? (
+            <ConfirmDialog
+              open
+              tone="danger"
+              title={`Undo Batch No. ${lastBatch.unitNo}?`}
+              message={
+                lastBatch.status === 'completed'
+                  ? `Batch No. ${lastBatch.unitNo} (${lastBatch.qty} qty) is COMPLETED. Undo removes it: the ${lastBatch.qty} finished unit(s) leave stock and the parts fitted to it go back to Still Out.`
+                  : `Batch No. ${lastBatch.unitNo} (${lastBatch.qty} qty) is in progress. Undo removes it from the bench; any parts fitted to it go back to Still Out.`
+              }
+              confirmLabel="Undo Batch"
+              pendingLabel="Undoing…"
+              onConfirm={doUndo}
+              onCancel={() => setConfirmUndo(false)}
+            />
+          ) : null}
         </div>
 
         {/* Legacy's action row (L28878-28880) carried three navigation buttons

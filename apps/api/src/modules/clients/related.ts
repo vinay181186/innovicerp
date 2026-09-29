@@ -50,9 +50,10 @@ export async function getClientRelated(
       ORDER BY cd.dispatch_date DESC, cd.code DESC
       LIMIT ${MASTER_RELATED_ROW_CAP}
     `);
-    // Outstanding = Grand Total − Paid; named only to those who may see money.
+    // Outstanding = Grand Total − Paid − TDS (0171, as the invoices service);
+    // named only to those who may see money.
     const dueLabel = showMoney
-      ? sql`'Due ' || to_char(inv.grand_total - inv.total_paid, 'FM99,99,99,99,990.00')`
+      ? sql`'Due ' || to_char(inv.grand_total - inv.total_paid - COALESCE(inv.total_tds, 0), 'FM99,99,99,99,990.00')`
       : sql`NULL::text`;
     const invoiceRaw = await tx.execute(sql`
       SELECT inv.id, inv.code, inv.status::text AS status, inv.invoice_date AS date,

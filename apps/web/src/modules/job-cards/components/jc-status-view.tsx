@@ -29,6 +29,7 @@ import { useJobCard, useJobCardEditModel, useJobCardStatusExtras } from '../api'
 import { useJcDrawing } from '../lib/jc-drawing';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
+import { JcCustomerMaterialPanel } from './jc-customer-material-panel';
 import { JcOpCard } from './jc-op-card';
 import { RecoveryBanner } from './jc-recovery-banner';
 import { JcStatusBadge } from './jc-status-badge';
@@ -258,6 +259,10 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           onClose={() => setDrawingPreviewOpen(false)}
         />
       ) : null}
+
+      {/* ── C2. Customer Material roll-up — only on a JW-sourced card (R1,
+             ADR-194); renders null on an own-material JC. ── */}
+      <JcCustomerMaterialPanel jc={jc} />
 
       {/* ── D. Route / Operation Flow ── */}
       <JcRouteFlowPanel

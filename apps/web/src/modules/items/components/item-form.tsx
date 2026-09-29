@@ -53,13 +53,13 @@ import {
   updateItemInputSchema,
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { Button } from '@/ui/core';
 import { Banner } from '@/ui/feedback';
 import { Panel } from '@/ui/data';
 import { CheckField, FormField, FormGrid, Input, Select } from '@/ui/forms';
-import { PageHeader } from '@/ui/layout';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextItemCode } from '../api';
 import { ItemImageField } from './item-image-field';
 
@@ -169,9 +169,18 @@ function ItemFormHeader(props: {
   onCancel?: (() => void) | undefined;
   isSubmitting: boolean;
   submitLabel: string;
+  /** Unsaved edits → the "Not saved" pill beside Save. */
+  dirty: boolean;
+  /** The page's own <form>, so Ctrl+S runs the same submit as the Save button. */
+  formRef: React.RefObject<HTMLFormElement | null>;
 }): React.JSX.Element {
+  const { formRef } = props;
+  const runSave = useCallback(() => formRef.current?.requestSubmit(), [formRef]);
+  useSaveShortcut(runSave, !props.isSubmitting);
   return (
     <PageHeader
+      sticky
+      dirty={props.dirty}
       title={props.title}
       backLabel={props.backLabel ?? 'Back'}
       onBack={props.onBack}
@@ -192,6 +201,7 @@ function ItemFormHeader(props: {
 }
 
 function CreateItemForm(props: CreateMode): React.JSX.Element {
+  const formRef = useRef<HTMLFormElement>(null);
   const form = useForm<CreateItemInput>({
     resolver: zodResolver(createItemInputSchema),
     defaultValues: { ...CREATE_DEFAULTS, ...props.defaultValues },
@@ -211,6 +221,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
 
   return (
     <form
+      ref={formRef}
       onSubmit={form.handleSubmit(async (values) => {
         // Track by Serial No. is sent only for a Tool / Instrument item.
         const { trackSerial, ...rest } = values;
@@ -225,6 +236,8 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
         onBack={props.onBack}
         onCancel={props.onCancel}
         isSubmitting={formState.isSubmitting}
+        dirty={formState.isDirty}
+        formRef={formRef}
         submitLabel="Save Item"
       />
 
@@ -353,6 +366,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
 }
 
 function EditItemForm(props: EditMode): React.JSX.Element {
+  const formRef = useRef<HTMLFormElement>(null);
   const form = useForm<UpdateItemInput>({
     resolver: zodResolver(updateItemInputSchema),
     defaultValues: itemToUpdateDefaults(props.item),
@@ -362,6 +376,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
 
   return (
     <form
+      ref={formRef}
       onSubmit={form.handleSubmit(async (values) => {
         // Sent only for a Tool / Instrument item, and only when it changed —
         // the server locks it (409) once stock or instruments exist.
@@ -378,6 +393,8 @@ function EditItemForm(props: EditMode): React.JSX.Element {
         onBack={props.onBack}
         onCancel={props.onCancel}
         isSubmitting={formState.isSubmitting}
+        dirty={formState.isDirty}
+        formRef={formRef}
         submitLabel="Save Changes"
       />
 

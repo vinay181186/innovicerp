@@ -1,5 +1,6 @@
 import type {
   CreatePlanInput,
+  CreatePlansBatchInput,
   DefaultRouteOpsResponse,
   ExecutePlanResultShape,
   ListPlansQuery,
@@ -96,6 +97,21 @@ export function useUnplannedOrders(enabled: boolean) {
     enabled,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+  });
+}
+
+/** BOM Planning "Save N Plans" — every plan in one call, one transaction. */
+export function useCreatePlansBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreatePlansBatchInput) =>
+      apiFetch<{ plans: PlanDetail[] }>('/plans/batch', {
+        method: 'POST',
+        json: input,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: plansKeys.all });
+    },
   });
 }
 

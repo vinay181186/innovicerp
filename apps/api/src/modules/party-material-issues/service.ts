@@ -24,6 +24,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -242,7 +243,10 @@ export async function createPartyMaterialIssue(
     const balRows = (await tx.execute(sql`
       SELECT
         COALESCE((
-          SELECT SUM(pgl.received_qty)
+          -- R2 (ADR-194): only ACCEPTED qty enters the party store, so issue
+          -- availability is Σ accepted (not received — rejected pieces never
+          -- became stock and must not show as pending to issue).
+          SELECT SUM(pgl.accepted_qty)
           FROM public.party_grn pg
           JOIN public.party_grn_lines pgl
             ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
@@ -264,7 +268,7 @@ export async function createPartyMaterialIssue(
     if (input.qty > remainingForLine) {
       throw new ValidationError(
         `Qty (${input.qty}) for "${jc.linePartName}" (${jw.code} Ln ${lineNo ?? '?'}) cannot be more than ` +
-          `Pending to Issue (${remainingForLine}) — Received ${receivedForLine}, already Issued ${issuedForLine}. ` +
+          `Pending to Issue (${remainingForLine}) — Accepted ${receivedForLine}, already Issued ${issuedForLine}. ` +
           `Record a Party GRN for the rest first.`,
       );
     }
@@ -313,12 +317,27 @@ export async function createPartyMaterialIssue(
     const row = inserted[0];
     if (!row) throw new ValidationError('Could not save Party Material Issue. Try again.');
 
-    // 5) Draw down party stock
+    // 5) Draw down party stock. R3 (ADR-194): the ledger writer takes the qty
+    // OUT of the party store (an 'issue'/'out' row, capped at the balance) and
+    // lowers stock_qty; this service keeps the issued_qty lifetime counter and
+    // stamps the JWSO line so the JC customer-material roll-up can read it.
+    await postPartyStockMove(tx, {
+      companyId,
+      partyMaterialId: pm.id,
+      jwLineId: jc.sourceJwLineId,
+      movement: 'issue',
+      direction: 'out',
+      qty: input.qty,
+      sourceDocType: 'party_material_issue',
+      sourceDocId: row.id,
+      remarks: `${code} · issued to ${jcCodeText ?? jw.code}`,
+      userId,
+      qtyLabel: 'Issue Qty',
+    });
     await tx
       .update(partyMaterials)
       .set({
-        stockQty: pm.stockQty - input.qty,
-        issuedQty: pm.issuedQty + input.qty,
+        issuedQty: sql`${partyMaterials.issuedQty} + ${input.qty}`,
         updatedAt: new Date(),
         updatedBy: userId,
       })
@@ -418,18 +437,31 @@ export async function cancelPartyMaterialIssue(
     }
 
     const now = new Date();
-    await tx.execute(
-      sql`SELECT 1 FROM public.party_materials WHERE id = ${iss.partyMaterialId}::uuid FOR UPDATE`,
-    );
-    await tx
-      .update(partyMaterials)
-      .set({
-        stockQty: sql`${partyMaterials.stockQty} + ${iss.qty}`,
-        issuedQty: sql`GREATEST(${partyMaterials.issuedQty} - ${iss.qty}, 0)`,
-        updatedAt: now,
-        updatedBy: user.id,
-      })
-      .where(eq(partyMaterials.id, iss.partyMaterialId));
+    // R3 (ADR-194): the ledger writer puts the qty back into the party store (a
+    // compensating 'reversal'/'in' row) and raises stock_qty; this service
+    // unwinds the issued_qty lifetime counter alongside it.
+    if (iss.partyMaterialId) {
+      await postPartyStockMove(tx, {
+        companyId,
+        partyMaterialId: iss.partyMaterialId,
+        movement: 'reversal',
+        direction: 'in',
+        qty: iss.qty,
+        sourceDocType: 'party_material_issue',
+        sourceDocId: id,
+        remarks: `${iss.code} cancelled: ${trimmed}`,
+        userId: user.id,
+        qtyLabel: 'Reversal Qty',
+      });
+      await tx
+        .update(partyMaterials)
+        .set({
+          issuedQty: sql`GREATEST(${partyMaterials.issuedQty} - ${iss.qty}, 0)`,
+          updatedAt: now,
+          updatedBy: user.id,
+        })
+        .where(eq(partyMaterials.id, iss.partyMaterialId));
+    }
 
     await tx
       .update(partyMaterialIssues)

@@ -20,11 +20,10 @@ import type {
 } from '@innovic/shared';
 import { opSrNo, qcAfterOutsourceError } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { RmItemFields, rmItemToInput } from '@/components/shared/rm-item-fields';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { usePlansList } from '@/modules/plans/api';
@@ -37,7 +36,7 @@ import {
 import { useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
-import { FormField, FormGrid } from '@/ui/forms';
+import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useFetchRouteCard, useNextRouteCardCode, useRouteCardsList } from '../api';
 
@@ -258,20 +257,20 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       itemCodeText: it?.code ?? '',
       itemName: it?.name ?? '',
     });
-    setDupDismissed(false); // a new pick gets a fresh warning
   };
 
-  // "This item already has a route card" banner (user, 2026-09-22). On create,
-  // the moment an item is picked we look up its existing route cards and say
-  // so at the top of the form, naming them, so a second card is never made by
-  // accident. The × only hides the banner — creating another card is still
-  // allowed (revisions vs. a fresh card is the planner's call).
-  const [dupDismissed, setDupDismissed] = useState(false);
+  // "This item already has a route card" (user, 2026-09-22; hardened by the
+  // 2026-09-28 form audit). On create, the moment an item is picked we look up
+  // its route cards. The server ALWAYS refuses a second card for an item, so
+  // the form is blocked instead of warned: the operations table is hidden,
+  // Save is off, and the banner offers "Open RC-xxxx to add a revision" —
+  // nobody types ten ops only to lose them to a refusal on Save.
   const { data: existingForItem } = useRouteCardsList(
     { itemId: header.itemId, limit: 5, offset: 0 },
     { enabled: mode === 'create' && Boolean(header.itemId) },
   );
   const existingCards = mode === 'create' && header.itemId ? (existingForItem?.items ?? []) : [];
+  const blockingCard = existingCards[0] ?? null;
 
   // "Copy ops from Route Card…" (round-2 "Next" item, 2026-09-26). On create,
   // pick any existing card and its operations are copied into this form as
@@ -321,7 +320,6 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     }
     applyCopy(detail);
   };
-  const showDupBanner = existingCards.length > 0 && !dupDismissed;
 
   // Raw material prefilled from the item's latest PLAN, on create only.
   //
@@ -450,14 +448,22 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
 
   const validationError = useMemo<string | null>(() => {
     if (!header.itemId) return 'Item Code is required.';
+    if (blockingCard) {
+      return `Item ${header.itemCodeText} already has Route Card ${blockingCard.code} — open it to add a revision.`;
+    }
     if (ops.length === 0) return 'Add at least one operation.';
     for (let i = 0; i < ops.length; i++) {
       const o = ops[i]!;
       // Messages name the op as the table shows it (10, 20, 30) — see opSrNo.
       const sr = opSrNo(i + 1);
       if (!o.operation.trim()) return `Op ${sr}: Operation is required.`;
-      if (o.opType === 'process' && !o.machineId && !o.machineCodeText.trim()) {
-        return `Op ${sr}: Machine is required.`;
+      // Master-only (2026-09-28 audit): a typed machine that is not in the
+      // Machine Master was saved as text only, so loading and costing never
+      // saw the op. An old row holding such text must be re-picked.
+      if (o.opType === 'process' && !o.machineId) {
+        return o.machineCodeText.trim()
+          ? `Op ${sr}: Machine "${o.machineCodeText.trim()}" is not in the Machine Master — pick one from the list.`
+          : `Op ${sr}: Machine is required.`;
       }
       if (o.opType === 'outsource' && !o.ospVendorId && !o.ospVendorCodeText.trim()) {
         return `Op ${sr}: Vendor is required.`;
@@ -483,7 +489,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     );
     if (seqError) return seqError;
     return null;
-  }, [header, ops]);
+  }, [header, ops, blockingCard]);
 
   const save = async (): Promise<void> => {
     if (validationError || submitting) return;
@@ -567,48 +573,34 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           {submitError}
         </Banner>
       ) : null}
-      {showDupBanner ? (
-        <div
+      {blockingCard ? (
+        <Banner
+          tone="warn"
           role="alert"
-          style={{
-            color: 'var(--amber2)',
-            background: 'var(--amber3)',
-            border: '1px solid var(--amber)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
+          accent
+          title={
+            <>
+              Item <span className="mono">{header.itemCodeText}</span> already has Route Card{' '}
+              <span className="mono">{blockingCard.code}</span>
+            </>
+          }
         >
-          <span style={{ flex: 1 }}>
-            ⚠ A route card already exists for item <b className="mono">{header.itemCodeText}</b>:{' '}
-            {existingCards.map((rc, i) => (
-              <span key={rc.id}>
-                {i > 0 ? ', ' : ''}
-                <Link to="/route-cards/$id" params={{ id: rc.id }} className="mono fw-700">
-                  {rc.code}
-                </Link>
-              </span>
-            ))}
-            {existingForItem && existingForItem.total > existingCards.length
-              ? ` and ${existingForItem.total - existingCards.length} more`
-              : ''}
-            . Check it before creating another.
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setDupDismissed(true)}
-            title="Dismiss"
-            aria-label="Dismiss"
-            style={{ padding: '2px 6px' }}
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', flexWrap: 'wrap' }}
           >
-            <X size={14} />
-          </button>
-        </div>
+            <span style={{ flex: 1 }}>
+              An item has one Route Card. Changes to its operations are saved as a new revision of
+              that card, not as a second card.
+            </span>
+            <Link
+              to="/route-cards/$id/edit"
+              params={{ id: blockingCard.id }}
+              className="btn btn-primary btn-sm"
+            >
+              Open {blockingCard.code} to add a revision
+            </Link>
+          </div>
+        </Banner>
       ) : null}
       {/* Plain panels (the old inline cyan / amber left stripes were not theme
           classes). Header fields sit on the 12-column grid, sized by content. */}
@@ -773,129 +765,138 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         </FormGrid>
       </Panel>
 
-      <Panel
-        title={`Operation Sequence (${ops.length})`}
-        bodyPadding="none"
-        bodyClassName="tbl-wrap"
-        actions={
-          <>
-            {mode === 'create' ? (
-              <div style={{ minWidth: 240 }} title="Copy another card's operations into this form">
-                <SearchableSelect
-                  id="rc-copy-from"
-                  value={copyFromId}
-                  onChange={(id) => void onPickCopySource(id)}
-                  onSearch={setCopySearch}
-                  loading={copyListFetching}
-                  options={(copyList?.items ?? []).map((rc) => ({
-                    id: rc.id,
-                    code: rc.code,
-                    name: [rc.itemCode, rc.itemName].filter(Boolean).join(' — ') || '—',
-                  }))}
-                  placeholder="Copy ops from Route Card…"
-                  emptyText="No route cards"
-                  selectedLabel={(o) => o.code ?? o.name}
-                />
-              </div>
-            ) : null}
-            {copyError ? (
-              <span className="text2" role="alert" style={{ fontSize: 11, color: 'var(--red2)' }}>
-                {copyError}
-              </span>
-            ) : null}
-            {copiedFrom && mode === 'create' ? (
-              <span className="text2" style={{ fontSize: 11 }}>
-                Copied from <span className="mono fw-700">{copiedFrom.label}</span> — edit freely
-              </span>
-            ) : null}
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('process')}>
-              <Plus size={13} /> Add Op
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{
-                background: 'var(--purple3)',
-                color: 'var(--purple)',
-                border: '1px solid var(--purple)',
-              }}
-              onClick={() => addOp('outsource')}
-            >
-              <Plus size={13} /> Add Outsource Op
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{
-                background: 'var(--green3)',
-                color: 'var(--green2)',
-                border: '1px solid var(--green)',
-              }}
-              onClick={() => addOp('qc')}
-            >
-              <Plus size={13} /> Add QC Op
-            </button>
-          </>
-        }
-      >
-        <table className="innovic-table">
-          <thead>
-            <tr>
-              <th style={{ width: 36 }}>Op</th>
-              {/* Group replaces the old Type dropdown. The KIND of a row is
+      {blockingCard ? null : (
+        <Panel
+          title={`Operation Sequence (${ops.length})`}
+          bodyPadding="none"
+          bodyClassName="tbl-wrap"
+          actions={
+            <>
+              {mode === 'create' ? (
+                <div
+                  style={{ minWidth: 240 }}
+                  title="Copy another card's operations into this form"
+                >
+                  <SearchableSelect
+                    id="rc-copy-from"
+                    value={copyFromId}
+                    onChange={(id) => void onPickCopySource(id)}
+                    onSearch={setCopySearch}
+                    loading={copyListFetching}
+                    options={(copyList?.items ?? []).map((rc) => ({
+                      id: rc.id,
+                      code: rc.code,
+                      name: [rc.itemCode, rc.itemName].filter(Boolean).join(' — ') || '—',
+                    }))}
+                    placeholder="Copy ops from Route Card…"
+                    emptyText="No route cards"
+                    selectedLabel={(o) => o.code ?? o.name}
+                  />
+                </div>
+              ) : null}
+              {copyError ? (
+                <span className="text2" role="alert" style={{ fontSize: 11, color: 'var(--red2)' }}>
+                  {copyError}
+                </span>
+              ) : null}
+              {copiedFrom && mode === 'create' ? (
+                <span className="text2" style={{ fontSize: 11 }}>
+                  Copied from <span className="mono fw-700">{copiedFrom.label}</span> — edit freely
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => addOp('process')}
+              >
+                <Plus size={13} /> Add Op
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: 'var(--purple3)',
+                  color: 'var(--purple)',
+                  border: '1px solid var(--purple)',
+                }}
+                onClick={() => addOp('outsource')}
+              >
+                <Plus size={13} /> Add Outsource Op
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: 'var(--green3)',
+                  color: 'var(--green2)',
+                  border: '1px solid var(--green)',
+                }}
+                onClick={() => addOp('qc')}
+              >
+                <Plus size={13} /> Add QC Op
+              </button>
+            </>
+          }
+        >
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th style={{ width: 36 }}>Op</th>
+                {/* Group replaces the old Type dropdown. The KIND of a row is
                     decided by which Add button raised it (Op / OSP / QC) and is
                     shown by the row's tint and by the QC / OSP badge in this
                     column, exactly as SO Planning does — a second control for
                     the same fact invited rows whose Type disagreed with their
                     machine. */}
-              <th style={{ width: 140 }}>Group</th>
-              <th style={{ width: 150 }}>
-                Machine / Vendor<span className="req">★</span>
-              </th>
-              <th>
-                Operation<span className="req">★</span>
-              </th>
-              <th className="th-num text3" style={{ width: 90 }}>
-                Cycle Time (min)
-              </th>
-              <th style={{ width: 90 }}>Program No.</th>
-              <th className="th-num" style={{ width: 70 }}>
-                Lead Days
-              </th>
-              <th className="cyan" style={{ width: 90 }}>
-                Tool No.
-              </th>
-              <th>Tool Details</th>
-              <th style={{ width: 44 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {ops.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="empty-state">
-                  No operations yet.
-                </td>
+                <th style={{ width: 140 }}>Group</th>
+                <th style={{ width: 150 }}>
+                  Machine / Vendor<span className="req">★</span>
+                </th>
+                <th>
+                  Operation<span className="req">★</span>
+                </th>
+                <th className="th-num text3" style={{ width: 90 }}>
+                  Cycle Time (min)
+                </th>
+                <th style={{ width: 90 }}>Program No.</th>
+                <th className="th-num" style={{ width: 70 }}>
+                  Lead Days
+                </th>
+                <th className="cyan" style={{ width: 90 }}>
+                  Tool No.
+                </th>
+                <th>Tool Details</th>
+                <th style={{ width: 44 }}></th>
               </tr>
-            ) : (
-              ops.map((op, idx) => (
-                <RouteCardOpRow
-                  key={idx}
-                  idx={idx}
-                  op={op}
-                  machinesList={machinesList?.machines ?? []}
-                  machineGroupCodeById={machineGroupCodeById}
-                  vendorsList={vendorsList?.vendors ?? []}
-                  onChange={(patch) => updateOp(idx, patch)}
-                  onMachineChange={(code) => onOpMachineChange(idx, code)}
-                  onGroupChange={(gid) => onOpGroupChange(idx, gid)}
-                  onVendorChange={(code) => onOpVendorChange(idx, code)}
-                  onRemove={() => removeOp(idx)}
-                />
-              ))
-            )}
-          </tbody>
-        </table>
-      </Panel>
+            </thead>
+            <tbody>
+              {ops.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="empty-state">
+                    No operations yet.
+                  </td>
+                </tr>
+              ) : (
+                ops.map((op, idx) => (
+                  <RouteCardOpRow
+                    key={idx}
+                    idx={idx}
+                    op={op}
+                    machinesList={machinesList?.machines ?? []}
+                    machineGroupCodeById={machineGroupCodeById}
+                    vendorsList={vendorsList?.vendors ?? []}
+                    onChange={(patch) => updateOp(idx, patch)}
+                    onMachineChange={(code) => onOpMachineChange(idx, code)}
+                    onGroupChange={(gid) => onOpGroupChange(idx, gid)}
+                    onVendorChange={(code) => onOpVendorChange(idx, code)}
+                    onRemove={() => removeOp(idx)}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </Panel>
+      )}
 
       {mode === 'edit' ? (
         <Panel title="Revision Note">
@@ -975,7 +976,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   const machineLabel = op.machineId
     ? machinesList.find((m) => m.id === op.machineId)?.name
     : op.machineCodeText.trim()
-      ? '⚠ Not in master'
+      ? `⚠ "${op.machineCodeText.trim()}" is not in the master — pick again`
       : null;
   // Warning only — the vendor NAME is shown in the picker field itself (CODE — Name).
   const vendorLabel = !op.ospVendorId && op.ospVendorCodeText.trim() ? '⚠ Not in master' : null;
@@ -1051,20 +1052,25 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           </span>
         ) : (
           <>
-            <input
-              className="innovic-input"
-              list={`rc-machines-dl-${idx}`}
-              value={op.machineCodeText}
-              onChange={(e) => onMachineChange(e.target.value)}
-              placeholder={op.machineGroupId ? '🔍 Machine in group' : '🔍 Machine code'}
+            {/* Master-only machine picker (2026-09-28 audit), like the Group and
+                Vendor boxes: a machine not in the Machine Master cannot be
+                picked, so loading and costing always see the op. */}
+            <SearchableSelect
+              id={`rc-mach-${idx}`}
+              value={op.machineId || null}
+              onChange={(id) =>
+                onMachineChange(id ? (machinesList.find((m) => m.id === id)?.code ?? '') : '')
+              }
+              options={rowMachines.map((m) => ({ id: m.id, code: m.code, name: m.name }))}
+              placeholder={op.machineGroupId ? '🔍 Machine in group' : '🔍 Machine'}
+              emptyText="No machine in the master"
+              valueLabel={
+                op.machineId
+                  ? (machinesList.find((m) => m.id === op.machineId)?.code ?? op.machineCodeText)
+                  : undefined
+              }
+              selectedLabel={(o) => o.code ?? o.name}
             />
-            <datalist id={`rc-machines-dl-${idx}`}>
-              {rowMachines.map((m) => (
-                <option key={m.id} value={m.code}>
-                  {m.name}
-                </option>
-              ))}
-            </datalist>
             {machineLabel ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                 {machineLabel}

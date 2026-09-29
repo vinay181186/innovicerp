@@ -586,6 +586,7 @@ function QcCallRegisterPage(): React.JSX.Element {
           key={inspectInc.grnLineId}
           o={inspectInc}
           onClose={() => setInspect(null)}
+          onNcRaised={setRaisedNc}
         />
       ) : null}
     </>,

@@ -158,12 +158,43 @@ export const jobCardListItemSchema = z.object({
   rawMaterialItemId: z.string().uuid().nullable().default(null),
   rawMaterialItemCode: z.string().nullable().default(null),
   rmQtyPerPiece: z.number().nullable().default(null),
+  // R1 (ADR-194): customer-material roll-up for a JW-sourced JC. Null on a
+  // regular (own-material) JC. Needed = rmQtyPerPiece × orderQty (from the
+  // ADR-193 route-card RM); Received/Issued/Returned come from the party store
+  // ledger for this JWSO line; Balance = received − issued − returned.
+  customerMaterial: z
+    .object({
+      needed: z.number().int().nonnegative().nullable(),
+      received: z.number().int().nonnegative(),
+      issued: z.number().int().nonnegative(),
+      returned: z.number().int().nonnegative(),
+      balance: z.number().int(),
+    })
+    .nullable()
+    .default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
   updatedBy: z.string().uuid(),
 });
 export type JobCardListItem = z.infer<typeof jobCardListItemSchema>;
+
+/** What a Job Card save wrote back to the item's Route Card (ADR-051 write
+ *  half), so the screen can SAY so instead of changing the routing silently
+ *  (2026-09-28 form audit). null on the save result = Route Card untouched. */
+export const jcRouteCardWriteBackSchema = z.object({
+  routeCardId: z.string().uuid(),
+  routeCardCode: z.string(),
+  /** The card's Route Card Rev after this save. */
+  routeCardRevision: z.number().int(),
+  /** true = this save created the item's first Route Card. */
+  created: z.boolean(),
+});
+export type JcRouteCardWriteBack = z.infer<typeof jcRouteCardWriteBackSchema>;
+/** POST / PATCH /job-cards response: the saved card + the write-back note. */
+export type JobCardSaveResult = JobCardListItem & {
+  routeCardWriteBack: JcRouteCardWriteBack | null;
+};
 
 // ─── Query filters ────────────────────────────────────────────────────────
 
@@ -296,6 +327,10 @@ export const jobCardSourceOptionSchema = z.object({
   lineNo: z.number().int(),
   partName: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The line's master item id; null on a legacy text-only line (item_code_text
+   *  only). The JC form locks the item only when this is set — the same rule
+   *  the server's assertItemIsJwLineItem applies. */
+  itemId: z.string().uuid().nullable(),
   customerName: z.string().nullable(),
   orderQty: z.number().int(),
   dueDate: z.string().nullable(),

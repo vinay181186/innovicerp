@@ -5,7 +5,7 @@ import type { ReportColumn, ReportRow, ReportRowLink } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Skeleton } from '@/ui/data/Skeleton';
 import type { SortState } from '../lib/grid-model';
-import { formatCell, formatNumber, isBlank, statusBadge } from '../lib/report-format';
+import { formatCell, formatNumber, isBlank, isQtyColumn, statusBadge } from '../lib/report-format';
 
 const SKELETON_ROWS = 6;
 
@@ -124,7 +124,9 @@ export function GridTable(props: GridTableProps): React.JSX.Element {
               const t = totals.get(col.key);
               return (
                 <td key={col.key} className={numericKeys.has(col.key) ? 'is-num' : undefined}>
-                  <span className="rpt-cell">{t != null ? formatNumber(t) : ''}</span>
+                  <span className="rpt-cell">
+                    {t != null ? formatNumber(t, isQtyColumn(col)) : ''}
+                  </span>
                 </td>
               );
             })}

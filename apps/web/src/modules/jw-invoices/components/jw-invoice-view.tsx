@@ -9,12 +9,14 @@ import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { useCreateJwInvoice, useJwInvoicesList } from '../api';
+import { useCreateJwInvoice, useJwInvoiceableLines, useJwInvoicesList } from '../api';
+import { CancelJwInvoiceModal } from './cancel-jw-invoice-modal';
 import { PrintJwInvoiceButton } from './print-jw-invoice-button';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
@@ -40,7 +42,17 @@ export function JwInvoiceView({
   initialJwId?: string | undefined;
 }): React.JSX.Element {
   const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  const { data: eff } = useMyAccess();
+  // Raising a JW invoice needs the write role AND Finance invoice entry — the
+  // same form key the SO invoice uses (the server checks both).
+  const canWrite =
+    (me?.role === 'admin' || me?.role === 'manager') &&
+    (!eff || effectiveFormPerms(eff, 'invoice_create').entry);
+  // ADR-194 #4: cancel hits requireFormAccess(jw_create,'approve') on the server,
+  // so gate it on jw_create edit+approve — not the looser create guard — so a
+  // user without approve never sees a Cancel button that would 403.
+  const jwPerms = effectiveFormPerms(eff, 'jw_create');
+  const canCancel = jwPerms.edit && jwPerms.approve;
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(() => Boolean(initialJwId));
@@ -66,6 +78,9 @@ export function JwInvoiceView({
 
   const { data, isLoading, isFetching, isError, error } = useJwInvoicesList(query);
   const items = data?.items ?? [];
+
+  // The invoice the Cancel dialog is asking about, or null when closed.
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
 
   // Money hidden for L1 Viewers: the API nulls the amounts, so the Rate /
   // Taxable / GST% / GST Amt / Total columns are dropped for them.
@@ -129,18 +144,25 @@ export function JwInvoiceView({
                       </th>
                     </>
                   )}
+                  {/* R5 (ADR-194): issued | cancelled. A cancelled invoice
+                      reads visibly cancelled and offers no Cancel again. */}
+                  <th>Status</th>
                   {/* Print. No new permission gate: anyone who can see the row
                       can print it, exactly as on the DC detail page. What a
                       viewer without price rights may not see is already gone
                       from the row AND from the printed sheet — the invoice
                       prints with the money suppressed, not blocked. */}
                   <th>Print</th>
+                  {canCancel ? <th className="td-ctr">Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={priceHidden ? 8 : 13} className="empty-state">
+                    <td
+                      colSpan={priceHidden ? (canCancel ? 10 : 9) : canCancel ? 15 : 14}
+                      className="empty-state"
+                    >
                       {term ? 'No JW Invoices match.' : 'No JW Invoices yet.'}
                     </td>
                   </tr>
@@ -186,8 +208,48 @@ export function JwInvoiceView({
                       </>
                     )}
                     <td>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          color: r.status === 'cancelled' ? 'var(--red2)' : 'var(--green2)',
+                          background:
+                            r.status === 'cancelled'
+                              ? 'rgba(239,68,68,0.10)'
+                              : 'rgba(34,197,94,0.10)',
+                        }}
+                        title={
+                          r.status === 'cancelled' && r.cancelReason
+                            ? `Cancelled: ${r.cancelReason}`
+                            : undefined
+                        }
+                      >
+                        {r.status === 'cancelled' ? 'Cancelled' : 'Issued'}
+                      </span>
+                    </td>
+                    <td>
                       <PrintJwInvoiceButton invoice={r} priceVisible={!priceHidden} />
                     </td>
+                    {canCancel ? (
+                      <td className="td-ctr">
+                        {r.status === 'cancelled' ? (
+                          <span className="text3" style={{ fontSize: 11 }}>
+                            —
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ color: 'var(--red2)' }}
+                            onClick={() => setCancelTarget({ id: r.id, code: r.code })}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -199,6 +261,13 @@ export function JwInvoiceView({
 
       {showModal && canWrite ? (
         <NewJwInvoiceModal initialJwId={initialJwId} onClose={() => setShowModal(false)} />
+      ) : null}
+      {cancelTarget && canCancel ? (
+        <CancelJwInvoiceModal
+          id={cancelTarget.id}
+          code={cancelTarget.code}
+          onClose={() => setCancelTarget(null)}
+        />
       ) : null}
     </div>
   );
@@ -218,7 +287,8 @@ function NewJwInvoiceModal({
   const [jwSearch, setJwSearch] = useState('');
   const [jwId, setJwId] = useState<string | null>(() => initialJwId ?? null);
   const [lineId, setLineId] = useState<string | null>(null);
-  const [qty, setQty] = useState('1');
+  // Filled with the line's To Invoice when a line is picked.
+  const [qty, setQty] = useState('');
   const [rate, setRate] = useState('');
   const [remarks, setRemarks] = useState('');
   // Same-state supply by default: the print splits the GST into SGST + CGST.
@@ -241,11 +311,21 @@ function NewJwInvoiceModal({
   const jwLines = jwDetailQ.data?.lines ?? [];
   const gstPct = Number(jwDetailQ.data?.gstPercent ?? 0);
 
+  // To Invoice (Returned − Invoiced) per line — the limit the server checks.
+  const billableQ = useJwInvoiceableLines(jwId ?? undefined);
+  const toInvoiceById = useMemo(
+    () => new Map((billableQ.data?.lines ?? []).map((b) => [b.jobWorkOrderLineId, b])),
+    [billableQ.data],
+  );
+  const pickedBillable = lineId ? toInvoiceById.get(lineId) : undefined;
+
   const createMut = useCreateJwInvoice();
 
   const onPickLine = (id: string): void => {
     setLineId(id || null);
     const line = jwLines.find((l) => l.id === id);
+    const billable = toInvoiceById.get(id);
+    setQty(billable && billable.toInvoiceQty > 0 ? String(billable.toInvoiceQty) : '');
     // Prefill the (editable) rate from the JW line's processing charge. Null
     // only when the picker can't see prices (they can't reach this create flow),
     // so fall back to blank.
@@ -269,7 +349,13 @@ function NewJwInvoiceModal({
       return;
     }
     if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
-      setErr('Qty must be ≥ 1');
+      setErr('Invoice Qty must be at least 1.');
+      return;
+    }
+    if (pickedBillable && qtyNum > pickedBillable.toInvoiceQty) {
+      setErr(
+        `Invoice Qty (${qtyNum}) cannot be more than To Invoice (${pickedBillable.toInvoiceQty}).`,
+      );
       return;
     }
     const input: CreateJwInvoiceInput = {
@@ -329,6 +415,7 @@ function NewJwInvoiceModal({
                   setJwId(id);
                   setLineId(null);
                   setRate('');
+                  setQty('');
                 }}
                 onSearch={setJwSearch}
                 loading={jwQuery.isFetching}
@@ -354,24 +441,28 @@ function NewJwInvoiceModal({
               <select
                 className="innovic-input"
                 value={lineId ?? ''}
-                disabled={!jwId || jwDetailQ.isFetching}
+                disabled={!jwId || jwDetailQ.isFetching || billableQ.isFetching}
                 onChange={(e) => onPickLine(e.target.value)}
                 style={{ width: '100%' }}
               >
                 <option value="">
                   {!jwId
                     ? 'Select a JWSO first…'
-                    : jwDetailQ.isFetching
+                    : jwDetailQ.isFetching || billableQ.isFetching
                       ? 'Loading lines…'
                       : jwLines.length === 0
                         ? 'No lines on this JWSO'
                         : 'Select a line…'}
                 </option>
-                {jwLines.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    L{l.lineNo} · {l.partName} · rate {l.rate}
-                  </option>
-                ))}
+                {jwLines.map((l) => {
+                  const b = toInvoiceById.get(l.id);
+                  return (
+                    <option key={l.id} value={l.id} disabled={b ? b.toInvoiceQty <= 0 : false}>
+                      L{l.lineNo} · {l.partName} · rate {l.rate}
+                      {b ? ` · To Invoice ${b.toInvoiceQty}` : ''}
+                    </option>
+                  );
+                })}
               </select>
             </Field>
           </div>
@@ -384,10 +475,17 @@ function NewJwInvoiceModal({
               onChange={(e) => setDate(e.target.value)}
             />
           </Field>
-          <Field label="Invoice Qty ★">
+          <Field
+            label={
+              pickedBillable
+                ? `Invoice Qty ★ (To Invoice ${pickedBillable.toInvoiceQty})`
+                : 'Invoice Qty ★'
+            }
+          >
             <input
               type="number"
               min={1}
+              max={pickedBillable?.toInvoiceQty}
               className="innovic-input"
               value={qty}
               onChange={(e) => setQty(e.target.value)}

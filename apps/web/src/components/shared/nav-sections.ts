@@ -134,6 +134,7 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Report',
         items: [
           { to: '/store-inventory', label: 'Store Inventory', icon: '📦' },
+          { to: '/party-stock-ledger', label: 'Party Stock Ledger', icon: '📒', formKey: 'party_create' },
           { to: '/reports', search: { group: 'Store' }, label: 'Reports', icon: '📊' },
         ],
       },

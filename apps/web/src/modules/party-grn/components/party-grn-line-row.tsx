@@ -15,6 +15,11 @@ import { itemCodeWithRev } from '@/lib/item-code';
 export interface UiLine {
   partyMaterialId: string | null;
   receivedQty: string;
+  /** R2 (ADR-194): compulsory incoming QC — the received qty splits into
+   *  accepted (enters the party store) + rejected (never becomes stock). */
+  acceptedQty: string;
+  rejectedQty: string;
+  rejectReason: string;
   jwLineNoText: string;
   remarks: string;
   /** Local search box value for the material picker (per-line). */
@@ -25,6 +30,9 @@ export function makeEmptyLine(): UiLine {
   return {
     partyMaterialId: null,
     receivedQty: '',
+    acceptedQty: '',
+    rejectedQty: '',
+    rejectReason: '',
     jwLineNoText: '',
     remarks: '',
     materialSearch: '',
@@ -66,6 +74,13 @@ export function LineRow({
     selected.itemId != null &&
     pickedLine.itemId != null &&
     selected.itemId !== pickedLine.itemId;
+
+  // R2 (ADR-194): incoming QC split. Accepted + Rejected must equal Received.
+  // Typing Received seeds Accepted = Received / Rejected = 0; editing either of
+  // the two keeps the pair summing to Received (mirrors the JW DC inward split).
+  const received = Number(line.receivedQty) || 0;
+  const rejected = Number(line.rejectedQty) || 0;
+  const rejectRequired = rejected > 0 && !line.rejectReason.trim();
 
   return (
     <tr>
@@ -159,7 +174,18 @@ export function LineRow({
           min={1}
           className="innovic-input"
           value={line.receivedQty}
-          onChange={(e) => onChange({ receivedQty: e.target.value })}
+          onChange={(e) => {
+            // Seed the QC split: everything received is accepted by default,
+            // nothing rejected, until the receiver says otherwise.
+            const r = e.target.value;
+            const rNum = Number(r) || 0;
+            onChange({
+              receivedQty: r,
+              acceptedQty: String(rNum),
+              rejectedQty: '0',
+              rejectReason: '',
+            });
+          }}
           placeholder="0"
           style={{
             width: '100%',
@@ -168,6 +194,67 @@ export function LineRow({
             padding: '3px 4px',
             border: '2px solid var(--green)',
             borderRadius: 4,
+          }}
+        />
+      </td>
+      {/* R2 (ADR-194): Accepted — only this qty enters the party store. */}
+      <td className="td-num">
+        <input
+          type="number"
+          min={0}
+          max={received}
+          className="innovic-input"
+          value={line.acceptedQty}
+          onChange={(e) => {
+            const a = Math.min(Math.max(0, Number(e.target.value) || 0), received);
+            onChange({ acceptedQty: String(a), rejectedQty: String(received - a) });
+          }}
+          placeholder="0"
+          style={{
+            width: '100%',
+            fontSize: 13,
+            fontWeight: 700,
+            padding: '3px 4px',
+            color: 'var(--green2)',
+          }}
+        />
+      </td>
+      {/* R2 (ADR-194): Rejected — recorded with a reason, never becomes stock. */}
+      <td className="td-num">
+        <input
+          type="number"
+          min={0}
+          max={received}
+          className="innovic-input"
+          value={line.rejectedQty}
+          onChange={(e) => {
+            const x = Math.min(Math.max(0, Number(e.target.value) || 0), received);
+            onChange({ rejectedQty: String(x), acceptedQty: String(received - x) });
+          }}
+          placeholder="0"
+          style={{
+            width: '100%',
+            fontSize: 13,
+            fontWeight: 700,
+            padding: '3px 4px',
+            color: 'var(--red2)',
+          }}
+        />
+      </td>
+      {/* Reject reason — required only when something is rejected. */}
+      <td>
+        <input
+          type="text"
+          className="innovic-input"
+          placeholder={rejected > 0 ? 'Reason (required)…' : '—'}
+          disabled={rejected === 0}
+          value={line.rejectReason}
+          onChange={(e) => onChange({ rejectReason: e.target.value })}
+          style={{
+            width: '100%',
+            fontSize: 11,
+            padding: '4px 6px',
+            ...(rejectRequired ? { border: '2px solid var(--amber)' } : {}),
           }}
         />
       </td>

@@ -64,6 +64,13 @@ export const jobWorkOrderLineSchema = z.object({
   rate: z.string().nullable(), // processing charge/unit; NULL when prices hidden
   dueDate: z.string().nullable(), // ISO date
   status: jwStatusSchema,
+  /** R6 (ADR-194): short-close markers. When set, this line was closed with an
+   *  unmet balance (orderQty − returnedQty) — status is still 'closed'; these
+   *  record that the close was short and why. Null on a normally-closed or open
+   *  line. */
+  shortClosedAt: z.string().nullable().default(null),
+  shortClosedBy: z.string().uuid().nullable().default(null),
+  shortCloseReason: z.string().nullable().default(null),
   sourceBomMasterId: z.string().uuid().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -246,6 +253,16 @@ export const updateJobWorkOrderInputSchema = z.object({
   lines: z.array(jobWorkOrderLineInputSchema).optional(),
 });
 export type UpdateJobWorkOrderInput = z.infer<typeof updateJobWorkOrderInputSchema>;
+
+/** R6 (ADR-194): short-close ONE JWSO line — close it with the balance left
+ *  unmet (the customer will not send / take the rest). Sets status='closed' and
+ *  records the shortfall + reason on the line. Reuses the jw_create permission. */
+export const shortCloseJobWorkOrderLineInputSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+export type ShortCloseJobWorkOrderLineInput = z.infer<
+  typeof shortCloseJobWorkOrderLineInputSchema
+>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

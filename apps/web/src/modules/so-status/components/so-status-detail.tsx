@@ -255,8 +255,8 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
                 so={planning.data}
                 line={line}
                 onClose={() => setModal({ kind: 'none' })}
-                onCreated={(planId) => {
-                  setModal({ kind: 'edit', planId });
+                onCreated={(plan) => {
+                  setModal({ kind: 'edit', planId: plan.id });
                   refreshAll();
                 }}
               />

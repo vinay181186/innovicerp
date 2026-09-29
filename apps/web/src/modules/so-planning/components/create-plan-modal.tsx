@@ -12,7 +12,12 @@
 //
 // ESC / click outside ask "Are you sure you want to exit?" through `Modal`.
 
-import type { CreatePlanInput, PlanningDetailResponse, PlanningLine } from '@innovic/shared';
+import type {
+  CreatePlanInput,
+  PlanDetail,
+  PlanningDetailResponse,
+  PlanningLine,
+} from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
@@ -45,8 +50,9 @@ interface Props {
   so: PlanningDetailResponse;
   line: PlanningLine;
   onClose: () => void;
-  /** Called with the new plan id once it is saved. */
-  onCreated: (planId: string) => void;
+  /** Called with the saved plan, so the page can offer the next step
+   *  (Create Production Order →, or make the Route Card first). */
+  onCreated: (plan: PlanDetail) => void;
 }
 
 export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.Element {
@@ -190,7 +196,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
     };
     try {
       const created = await createPlan.mutateAsync(input);
-      onCreated(created.id);
+      onCreated(created);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save Plan. Try again.');
     }

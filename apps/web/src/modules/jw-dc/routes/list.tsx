@@ -13,9 +13,11 @@ import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate, todayLocal } from '@/lib/date';
+import { ExitConfirmDialog } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder } from '../../job-work-orders/api';
 import { usePurchaseOrdersList } from '../../purchase-orders/api';
@@ -351,6 +353,9 @@ function InwardView(): React.JSX.Element {
                   <th>DC No.</th>
                   <th>Vendor</th>
                   <th>Vendor Challan No.</th>
+                  {/* The QC-pending GRN the receipt raised; Accepted / Rejected
+                      below are that GRN's Incoming QC figures (0172). */}
+                  <th>GRN No.</th>
                   <th className="th-num">Received</th>
                   <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Accepted
@@ -363,7 +368,7 @@ function InwardView(): React.JSX.Element {
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="empty-state">
+                    <td colSpan={9} className="empty-state">
                       {search.trim() ? 'No inward entries match.' : 'No inward entries yet.'}
                     </td>
                   </tr>
@@ -387,6 +392,19 @@ function InwardView(): React.JSX.Element {
                       </td>
                       <td style={{ fontWeight: 600 }}>{inv.vendorNameText ?? '—'}</td>
                       <td style={{ fontSize: 11 }}>{inv.vendorChallanNo ?? '—'}</td>
+                      <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {inv.goodsReceiptNoteId && inv.grnCode ? (
+                          <Link
+                            to="/goods-receipt-notes/$id"
+                            params={{ id: inv.goodsReceiptNoteId }}
+                            style={{ color: 'var(--blue)' }}
+                          >
+                            {inv.grnCode}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td className="mono fw-700 td-num">{inv.totalReceivedQty}</td>
                       <td className="mono td-num" style={{ color: 'var(--green2)' }}>
                         {inv.totalOkQty}
@@ -421,6 +439,9 @@ function InwardView(): React.JSX.Element {
 
 // ─── New Outward modal ────────────────────────────────────────────────────
 
+/** PO statuses material may go out against: approved and still live. */
+const SENDABLE_PO_STATUSES: ReadonlySet<string> = new Set(['open', 'partial', 'qc_pending']);
+
 interface OutwardLineUi {
   purchaseOrderLineId: string;
   itemCode: string;
@@ -430,6 +451,7 @@ interface OutwardLineUi {
   clientPoLineNo: string | null;
   itemName: string;
   processText: string | null;
+  uom: string | null;
   poQty: number;
   alreadySent: number;
   available: number;
@@ -455,6 +477,8 @@ function NewOutwardModal({
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<OutwardLineUi[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  // Anything the user typed, picked or ticked — arms the exit question.
+  const [touched, setTouched] = useState(false);
 
   const { data: next } = useNextOutwardCode();
 
@@ -478,19 +502,23 @@ function NewOutwardModal({
     { enabled: Boolean(forJwId) },
   );
   const forJwPos = forJwId ? (poDataForJw?.items ?? null) : null;
-  const poData = useMemo(
-    () =>
+  // Only an approved, live PO can send material out — the server refuses a
+  // Draft, Closed or Cancelled one (same rule as the OSP DC), so they are not
+  // offered here either.
+  const poData = useMemo(() => {
+    const all =
       forJwPos && forJwPos.length > 0
-        ? { items: forJwPos }
-        : { items: [...(poDataJw?.items ?? []), ...(poDataSvc?.items ?? [])] },
-    [forJwPos, poDataJw, poDataSvc],
-  );
+        ? forJwPos
+        : [...(poDataJw?.items ?? []), ...(poDataSvc?.items ?? [])];
+    return { items: all.filter((p) => SENDABLE_PO_STATUSES.has(p.status)) };
+  }, [forJwPos, poDataJw, poDataSvc]);
   // Exactly one PO carries the JWSO → pick it (once; the user may change it).
   const [prePicked, setPrePicked] = useState(false);
   useEffect(() => {
     if (prePicked || !forJwPos) return;
     setPrePicked(true);
-    if (forJwPos.length === 1 && forJwPos[0]) setPoId(forJwPos[0].id);
+    const sendable = forJwPos.filter((p) => SENDABLE_PO_STATUSES.has(p.status));
+    if (sendable.length === 1 && sendable[0]) setPoId(sendable[0].id);
   }, [forJwPos, prePicked]);
   const selectedPo = useMemo(() => poData.items.find((p) => p.id === poId) ?? null, [poData, poId]);
 
@@ -506,6 +534,7 @@ function NewOutwardModal({
           clientPoLineNo: l.clientPoLineNo,
           itemName: l.itemName,
           processText: l.processText,
+          uom: l.uom,
           poQty: l.poQty,
           alreadySent: l.alreadySent,
           available: l.available,
@@ -551,6 +580,7 @@ function NewOutwardModal({
   };
 
   const setLine = (i: number, patch: Partial<OutwardLineUi>): void => {
+    setTouched(true);
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   };
 
@@ -561,6 +591,7 @@ function NewOutwardModal({
       onSave={onSave}
       saving={createMut.isPending}
       saveLabel="Save Outward DC"
+      dirty={touched}
     >
       {forJw ? (
         <div
@@ -599,7 +630,10 @@ function NewOutwardModal({
             type="date"
             className="innovic-input"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setDate(e.target.value);
+            }}
           />
         </div>
         <div className="form-grp form-full">
@@ -609,7 +643,10 @@ function NewOutwardModal({
           <select
             className="innovic-select"
             value={poId ?? ''}
-            onChange={(e) => setPoId(e.target.value || null)}
+            onChange={(e) => {
+              setTouched(true);
+              setPoId(e.target.value || null);
+            }}
           >
             <option value="">-- Select PO --</option>
             {poData.items.map((p) => (
@@ -667,6 +704,8 @@ function NewOutwardModal({
                 <th className="th-num" style={{ padding: 6 }}>
                   PO Qty
                 </th>
+                <th style={{ padding: 6 }}>UOM</th>
+                {/* Sent on OSP DCs AND JW DCs together — the one figure. */}
                 <th className="th-num" style={{ color: 'var(--amber2)', padding: 6 }}>
                   Sent
                 </th>
@@ -714,6 +753,9 @@ function NewOutwardModal({
                     <td className="mono td-num" style={{ padding: 6 }}>
                       {l.poQty}
                     </td>
+                    <td className="mono" style={{ padding: 6, fontSize: 11 }}>
+                      {l.uom ?? 'NOS'}
+                    </td>
                     <td className="mono td-num" style={{ padding: 6, color: 'var(--amber2)' }}>
                       {l.alreadySent > 0 ? l.alreadySent : '0'}
                     </td>
@@ -730,6 +772,7 @@ function NewOutwardModal({
                       <input
                         type="number"
                         min={0}
+                        step="any"
                         max={l.available}
                         value={l.sendQty}
                         disabled={!hasQty}
@@ -764,7 +807,10 @@ function NewOutwardModal({
             type="text"
             className="innovic-input"
             value={vehicleNo}
-            onChange={(e) => setVehicleNo(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setVehicleNo(e.target.value);
+            }}
             placeholder="GJ-05-XX-1234"
           />
         </div>
@@ -774,7 +820,10 @@ function NewOutwardModal({
             type="text"
             className="innovic-input"
             value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setRemarks(e.target.value);
+            }}
             placeholder="Packing, handling notes..."
           />
         </div>
@@ -800,8 +849,6 @@ interface InwardLineUi {
   alreadyReturned: number;
   pending: number;
   receivedQty: number;
-  okQty: number;
-  rejectedQty: number;
 }
 
 function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element {
@@ -812,6 +859,8 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<InwardLineUi[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  // Anything the user typed or picked — arms the exit question.
+  const [touched, setTouched] = useState(false);
 
   const { data: next } = useNextInwardCode();
 
@@ -837,8 +886,6 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
           alreadyReturned: l.alreadyReturned,
           pending: l.pending,
           receivedQty: l.pending,
-          okQty: l.pending,
-          rejectedQty: 0,
         })),
       );
     } else {
@@ -857,16 +904,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
     const valid: CreateJwDcInwardLineInput[] = [];
     for (const l of lines) {
       if (l.receivedQty <= 0) continue;
-      if (l.okQty + l.rejectedQty !== l.receivedQty) {
-        setErr(`${l.itemCode}: Accepted + Rejected must equal Receive Now.`);
-        return;
-      }
-      valid.push({
-        jwDcOutwardLineId: l.outwardLineId,
-        receivedQty: l.receivedQty,
-        okQty: l.okQty,
-        rejectedQty: l.rejectedQty,
-      });
+      valid.push({ jwDcOutwardLineId: l.outwardLineId, receivedQty: l.receivedQty });
     }
     if (valid.length === 0) {
       setErr('Enter Receive Now for at least one line.');
@@ -891,14 +929,13 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
   };
 
   const setLine = (i: number, patch: Partial<InwardLineUi>): void => {
+    setTouched(true);
     setLines((prev) =>
       prev.map((l, idx) => {
         if (idx !== i) return l;
         const next = { ...l, ...patch };
         // Re-clamp to pending bound
         next.receivedQty = Math.min(Math.max(0, next.receivedQty), l.pending);
-        next.okQty = Math.min(Math.max(0, next.okQty), next.receivedQty);
-        next.rejectedQty = Math.min(Math.max(0, next.rejectedQty), next.receivedQty - next.okQty);
         return next;
       }),
     );
@@ -911,7 +948,14 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
       onSave={onSave}
       saving={createMut.isPending}
       saveLabel="Save Inward"
+      dirty={touched}
     >
+      {/* ADR-189 — Incoming QC is the only inspector. The store records what
+          came back; accept / reject happens at Incoming QC, as for DC Receive. */}
+      <Banner tone="info">
+        Enter only the quantity received. It goes to Incoming QC on a GRN (QC pending); QC accepts
+        it into stock or rejects it with an NC.
+      </Banner>
       <div className="form-grid" style={{ marginBottom: 14 }}>
         <div className="form-grp">
           <label className="form-label">Inward No.</label>
@@ -928,7 +972,10 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             type="date"
             className="innovic-input"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setDate(e.target.value);
+            }}
           />
         </div>
         <div className="form-grp form-full">
@@ -938,7 +985,10 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
           <select
             className="innovic-select"
             value={dcId ?? ''}
-            onChange={(e) => setDcId(e.target.value || null)}
+            onChange={(e) => {
+              setTouched(true);
+              setDcId(e.target.value || null);
+            }}
           >
             <option value="">-- Select DC --</option>
             {pendingDcs.map((dc) => (
@@ -954,7 +1004,10 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             type="text"
             className="innovic-input"
             value={vendorChallan}
-            onChange={(e) => setVendorChallan(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setVendorChallan(e.target.value);
+            }}
             placeholder="Vendor reference"
           />
         </div>
@@ -964,7 +1017,10 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             type="text"
             className="innovic-input"
             value={vehicleNo}
-            onChange={(e) => setVehicleNo(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setVehicleNo(e.target.value);
+            }}
             placeholder="GJ-05-XX-5678"
           />
         </div>
@@ -1005,12 +1061,6 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                 </th>
                 <th className="th-num" style={{ padding: 6 }}>
                   Receive Now
-                </th>
-                <th className="th-num" style={{ padding: 6, color: 'var(--green2)' }}>
-                  Accepted
-                </th>
-                <th className="th-num" style={{ padding: 6, color: 'var(--red2)' }}>
-                  Rejected
                 </th>
               </tr>
             </thead>
@@ -1057,58 +1107,19 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                       <input
                         type="number"
                         min={0}
+                        step="any"
                         max={l.pending}
                         value={l.receivedQty}
                         disabled={!hasPending}
                         onChange={(e) => {
                           const r = Math.min(Number(e.target.value) || 0, l.pending);
-                          setLine(i, { receivedQty: r, okQty: r, rejectedQty: 0 });
+                          setLine(i, { receivedQty: r });
                         }}
                         style={{
                           width: 65,
                           fontSize: 13,
                           fontWeight: 700,
                           textAlign: 'right',
-                        }}
-                      />
-                    </td>
-                    <td className="td-num" style={{ padding: 6 }}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={l.receivedQty}
-                        value={l.okQty}
-                        disabled={!hasPending}
-                        onChange={(e) => {
-                          const v = Math.min(Number(e.target.value) || 0, l.receivedQty);
-                          setLine(i, { okQty: v, rejectedQty: l.receivedQty - v });
-                        }}
-                        style={{
-                          width: 65,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          textAlign: 'right',
-                          color: 'var(--green2)',
-                        }}
-                      />
-                    </td>
-                    <td className="td-num" style={{ padding: 6 }}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={l.receivedQty}
-                        value={l.rejectedQty}
-                        disabled={!hasPending}
-                        onChange={(e) => {
-                          const v = Math.min(Number(e.target.value) || 0, l.receivedQty);
-                          setLine(i, { rejectedQty: v, okQty: l.receivedQty - v });
-                        }}
-                        style={{
-                          width: 65,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          textAlign: 'right',
-                          color: 'var(--red2)',
                         }}
                       />
                     </td>
@@ -1126,7 +1137,10 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
           type="text"
           className="innovic-input"
           value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
+          onChange={(e) => {
+            setTouched(true);
+            setRemarks(e.target.value);
+          }}
           placeholder="Condition notes, issues..."
         />
       </div>
@@ -1146,6 +1160,7 @@ function ModalShell({
   onSave,
   saving,
   saveLabel,
+  dirty,
   children,
 }: {
   onClose: () => void;
@@ -1153,19 +1168,37 @@ function ModalShell({
   onSave: () => void;
   saving: boolean;
   saveLabel: string;
+  /** Something was typed or ticked. Then a click on the grey backdrop, the ✕
+   *  or Cancel asks "Are you sure you want to exit?" instead of throwing the
+   *  popup away (the shared exit guard, lib/exit-guard.tsx). */
+  dirty: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
+  const [askExit, setAskExit] = useState(false);
+  const requestClose = (): void => {
+    if (dirty) setAskExit(true);
+    else onClose();
+  };
   return (
     <div
       className="overlay"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) requestClose();
       }}
     >
+      {askExit ? (
+        <ExitConfirmDialog
+          onStay={() => setAskExit(false)}
+          onExit={() => {
+            setAskExit(false);
+            onClose();
+          }}
+        />
+      ) : null}
       <div className="modal modal-lg">
         <div className="modal-hdr">
           <span className="modal-title">{title}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
+          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={requestClose}>
             ✕
           </button>
         </div>
@@ -1173,7 +1206,7 @@ function ModalShell({
           {children}
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
+          <button type="button" className="btn btn-ghost" onClick={requestClose}>
             Cancel
           </button>
           <button type="button" className="btn btn-primary" disabled={saving} onClick={onSave}>

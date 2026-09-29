@@ -5,11 +5,12 @@
 // _dpWlProject/_dpWlAlerts.
 
 import { and, count, eq, isNull, sql } from 'drizzle-orm';
-import type {
-  CreateDesignWorkLogInput,
-  DesignWorkLogEntry,
-  ListDesignWorkLogQuery,
-  ListDesignWorkLogResponse,
+import {
+  type CreateDesignWorkLogInput,
+  DESIGN_HOURS_MAX_PER_ENTRY,
+  type DesignWorkLogEntry,
+  type ListDesignWorkLogQuery,
+  type ListDesignWorkLogResponse,
 } from '@innovic/shared';
 import { designProjects, designWorkLog, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -93,6 +94,13 @@ export async function insertDesignWorkLogRow(
   },
 ): Promise<DesignWorkLogEntry> {
   const companyId = requireCompany(user);
+  // One hours rule for every booking (Work Log entry + Design Tracker Log
+  // Time): an entry is more than 0 and at most 24 hours.
+  if (!(input.hours > 0) || input.hours > DESIGN_HOURS_MAX_PER_ENTRY) {
+    throw new ValidationError(
+      `Hours must be more than 0 and not more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`,
+    );
+  }
   const inserted = await tx
     .insert(designWorkLog)
     .values({
@@ -111,7 +119,21 @@ export async function insertDesignWorkLogRow(
     .returning();
   const row = inserted[0];
   if (!row) throw new ValidationError('Could not log work. Try again.');
+  // The engineer's total for that day, this entry included — the form warns
+  // when it goes above DESIGN_DAY_HOURS_WARN (a warning, not a refusal).
+  const dayRows = await tx
+    .select({ total: sql<string>`coalesce(sum(${designWorkLog.hours}), 0)` })
+    .from(designWorkLog)
+    .where(
+      and(
+        eq(designWorkLog.companyId, companyId),
+        eq(designWorkLog.engineerText, row.engineerText),
+        eq(designWorkLog.logDate, input.logDate),
+        isNull(designWorkLog.deletedAt),
+      ),
+    );
   return {
+    dayTotalHours: num(dayRows[0]?.total),
     id: row.id,
     logDate: dateLike(row.logDate),
     engineerText: row.engineerText,

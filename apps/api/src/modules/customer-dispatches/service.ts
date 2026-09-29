@@ -741,6 +741,9 @@ async function getDispatchInternal(
       itemCodeText: customerDispatchLines.itemCodeText,
       itemName: customerDispatchLines.itemName,
       qty: customerDispatchLines.qty,
+      // POL + unit off the same SO line — the DC print carries both.
+      clientPoLineNo: salesOrderLines.clientPoLineNo,
+      uom: sql<string | null>`${salesOrderLines.uom}::text`,
     })
     .from(customerDispatchLines)
     .leftJoin(items, and(eq(items.id, customerDispatchLines.itemId), isNull(items.deletedAt)))
@@ -765,13 +768,24 @@ async function getDispatchInternal(
     itemCodeText: l.itemCodeText,
     itemName: l.itemName,
     qty: l.qty,
+    clientPoLineNo: l.clientPoLineNo ?? null,
+    uom: l.uom ?? null,
   }));
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
+  // The SO's customer + Client PO No. — the DC print reads the customer's
+  // address and GSTIN off the client master.
+  const soRows = await tx
+    .select({ clientId: salesOrders.clientId, clientPoNo: salesOrders.clientPoNo })
+    .from(salesOrders)
+    .where(eq(salesOrders.id, h.salesOrderId))
+    .limit(1);
   const billedQty = (await loadBilledQtyByDispatch(tx, companyId, h.salesOrderId)).get(h.id) ?? 0;
   return {
     ...rowToHeader(h, lines.length, totalQty),
     billedQty,
     billedStatus: billedStatusOf(billedQty, totalQty),
+    clientId: soRows[0]?.clientId ?? null,
+    clientPoNo: soRows[0]?.clientPoNo ?? null,
     lines,
   };
 }

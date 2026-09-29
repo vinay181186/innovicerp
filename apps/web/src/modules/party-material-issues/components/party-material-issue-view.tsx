@@ -10,7 +10,7 @@ import {
   type PartyMaterialIssueListItem,
 } from '@innovic/shared';
 import { Loader2, Plus, XCircle } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { fmtDate, todayLocal } from '@/lib/date';
@@ -19,6 +19,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useJobWorkOrdersList } from '@/modules/job-work-orders/api';
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
+import { useDiscardGuard } from '@/modules/store-inventory/components/discard-guard';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   useCancelPartyMaterialIssue,
@@ -373,19 +374,107 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
   });
   const jwHeaders = jwQuery.data?.items ?? [];
 
-  const jcQuery = useJobCardsList({ search: jcSearch.trim() || undefined, limit: 50, offset: 0 });
-  const jcItems = jcQuery.data?.items ?? [];
+  // Cascade JWSO → JC → Party Material (party-material-issue-create#1). The
+  // picked JWSO / JC are remembered, since the pickers' option lists change
+  // with every search. The server still makes the same checks on Save.
+  const [pickedJw, setPickedJw] = useState<{ code: string; clientId: string | null } | null>(null);
+  const [pickedJcItemId, setPickedJcItemId] = useState<string | null>(null);
 
-  const { data: pmData, isFetching: pmFetching } = usePartyMaterialsList({
-    search: pmSearch.trim() || undefined,
-    limit: 200,
-    offset: 0,
-  });
-  const pmAll = pmData?.items ?? [];
+  // Only this JWSO's job cards: the JC search also matches the source JWSO
+  // code, so with no JC typed the JWSO code brings its cards.
+  const jcQuery = useJobCardsList(
+    {
+      search: jcSearch.trim() || pickedJw?.code || undefined,
+      limit: 200,
+      offset: 0,
+    },
+    { enabled: Boolean(jobWorkOrderId) },
+  );
+  const jcItems = useMemo(
+    () =>
+      (jcQuery.data?.items ?? []).filter(
+        (jc) => jc.sourceLink?.type === 'jw' && jc.sourceLink.jobWorkOrderId === jobWorkOrderId,
+      ),
+    [jcQuery.data, jobWorkOrderId],
+  );
+
+  // Only the JWSO customer's materials, and — once a JC is picked — only the
+  // ones for the part that JC makes (a material with no Item Code still shows).
+  const {
+    data: pmData,
+    isFetching: pmFetching,
+    isPlaceholderData: pmStale,
+  } = usePartyMaterialsList(
+    {
+      search: pmSearch.trim() || undefined,
+      ...(pickedJw?.clientId ? { clientId: pickedJw.clientId } : {}),
+      limit: 200,
+      offset: 0,
+    },
+    { enabled: Boolean(jobWorkOrderId) },
+  );
+  const pmAll = useMemo(
+    () =>
+      (pmData?.items ?? []).filter(
+        (p) => !pickedJcItemId || !p.itemId || p.itemId === pickedJcItemId,
+      ),
+    [pmData, pickedJcItemId],
+  );
   const selectedPm = useMemo(
     () => pmAll.find((p) => p.id === partyMaterialId) ?? null,
     [pmAll, partyMaterialId],
   );
+
+  const onJwChange = (id: string | null): void => {
+    setJobWorkOrderId(id);
+    const jw = jwHeaders.find((j) => j.jwId === id);
+    setPickedJw(jw ? { code: jw.code, clientId: jw.clientId ?? null } : null);
+    setJcSearch('');
+    setJobCardId(null);
+    setPickedJcItemId(null);
+    setPmSearch('');
+    setPartyMaterialId(null);
+  };
+  const onJcChange = (id: string | null): void => {
+    setJobCardId(id);
+    setPickedJcItemId(jcItems.find((jc) => jc.id === id)?.itemId ?? null);
+    setPartyMaterialId(null);
+  };
+
+  // Auto-pick when only one fits — once per parent pick, so clearing it by
+  // hand is not undone.
+  const autoJcFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jobWorkOrderId || jobCardId || jcSearch.trim()) return;
+    if (!jcQuery.data || jcQuery.isFetching || jcQuery.isPlaceholderData) return;
+    if (autoJcFor.current === jobWorkOrderId) return;
+    autoJcFor.current = jobWorkOrderId;
+    const only = jcItems.length === 1 ? jcItems[0] : undefined;
+    if (only) {
+      setJobCardId(only.id);
+      setPickedJcItemId(only.itemId);
+    }
+  }, [
+    jobWorkOrderId,
+    jobCardId,
+    jcSearch,
+    jcQuery.data,
+    jcQuery.isFetching,
+    jcQuery.isPlaceholderData,
+    jcItems,
+  ]);
+  const autoPmFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jobCardId || partyMaterialId || pmSearch.trim()) return;
+    if (!pmData || pmFetching || pmStale) return;
+    if (autoPmFor.current === jobCardId) return;
+    autoPmFor.current = jobCardId;
+    const only = pmAll.length === 1 ? pmAll[0] : undefined;
+    if (only) setPartyMaterialId(only.id);
+  }, [jobCardId, partyMaterialId, pmSearch, pmData, pmFetching, pmStale, pmAll]);
+
+  const dirty = Boolean(jobWorkOrderId || qty.trim() || remarks.trim());
+  const guard = useDiscardGuard(dirty, onClose);
 
   const createMut = useCreatePartyMaterialIssue();
 
@@ -437,8 +526,11 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
         justifyContent: 'center',
         zIndex: 100,
       }}
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) guard.requestClose();
+      }}
     >
+      {guard.dialog}
       <div
         style={{
           background: 'var(--bg)',
@@ -486,7 +578,8 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
               <SearchableSelect
                 id="pmi-jwso"
                 value={jobWorkOrderId}
-                onChange={setJobWorkOrderId}
+                onChange={onJwChange}
+                valueLabel={pickedJw?.code}
                 onSearch={setJwSearch}
                 loading={jwQuery.isFetching}
                 placeholder="🔍 Select JWSO — type number or customer…"
@@ -504,10 +597,14 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
               <SearchableSelect
                 id="pmi-jc"
                 value={jobCardId}
-                onChange={setJobCardId}
+                onChange={onJcChange}
                 onSearch={setJcSearch}
                 loading={jcQuery.isFetching}
-                placeholder="🔍 Select Job Card — type number…"
+                disabled={!jobWorkOrderId}
+                emptyText="No Job Card on this JWSO"
+                placeholder={
+                  jobWorkOrderId ? '🔍 Select Job Card of this JWSO…' : 'Pick the JWSO first'
+                }
                 options={jcItems.map((jc) => ({ id: jc.id, code: jc.code, name: jc.itemName }))}
               />
             </Field>
@@ -521,7 +618,13 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
                 onChange={setPartyMaterialId}
                 onSearch={setPmSearch}
                 loading={pmFetching}
-                placeholder="🔍 Select party material — type code or name…"
+                disabled={!jobWorkOrderId}
+                emptyText="No material of this customer for this part"
+                placeholder={
+                  jobWorkOrderId
+                    ? '🔍 Select party material — type code or name…'
+                    : 'Pick the JWSO first'
+                }
                 options={pmAll.map((p) => ({
                   id: p.id,
                   code: p.code,

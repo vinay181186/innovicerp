@@ -40,10 +40,14 @@ describe('matchOspProcess (pure)', () => {
     expect(matchOspProcess('HEAT TREATMENT - stage 2', cfg)?.processName).toBe('Heat Treatment');
   });
 
-  it('returns the first configured match in order', () => {
-    // "Coating" appears before "Painting" in the config; an op mentioning both
-    // resolves to the first.
-    expect(matchOspProcess('coating then painting', cfg)?.processName).toBe('Coating');
+  it('prefers an exact name, then the longest contained name', () => {
+    // "Painting" (8 letters) is longer than "Coating" (7) — an op mentioning
+    // both resolves to the longer one, whatever the list order.
+    expect(matchOspProcess('coating then painting', cfg)?.processName).toBe('Painting');
+    const plating = [{ processName: 'Plating' }, { processName: 'Zinc Plating' }];
+    expect(matchOspProcess('Zinc Plating', plating)?.processName).toBe('Zinc Plating');
+    expect(matchOspProcess('zinc plating - blue', plating)?.processName).toBe('Zinc Plating');
+    expect(matchOspProcess('Nickel Plating', plating)?.processName).toBe('Plating');
   });
 
   it('returns null when nothing matches or input is empty', () => {
@@ -74,7 +78,13 @@ describe('generateOspPr (integration)', () => {
   beforeAll(async () => {
     const u = (await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1))[0];
     if (!u || !u.companyId) throw new Error('Seed admin missing');
-    admin = { id: u.id, email: u.email, companyId: u.companyId, role: u.role, isActive: u.isActive };
+    admin = {
+      id: u.id,
+      email: u.email,
+      companyId: u.companyId,
+      role: u.role,
+      isActive: u.isActive,
+    };
 
     const v = (
       await db
@@ -179,7 +189,9 @@ describe('generateOspPr (integration)', () => {
   afterAll(async () => {
     // PO lines → POs → PRs → ops → jc → item → osp processes → activity log.
     if (createdPoIds.length > 0) {
-      await db.delete(purchaseOrderLines).where(inArray(purchaseOrderLines.purchaseOrderId, createdPoIds));
+      await db
+        .delete(purchaseOrderLines)
+        .where(inArray(purchaseOrderLines.purchaseOrderId, createdPoIds));
       await db.delete(purchaseOrders).where(inArray(purchaseOrders.id, createdPoIds));
     }
     if (createdPrIds.length > 0) {
@@ -208,7 +220,9 @@ describe('generateOspPr (integration)', () => {
     expect(res.poId).toBeNull();
     expect(res.prCode).toMatch(/^IN-JWPR-\d{5}$/);
 
-    const pr = (await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, res.prId)))[0]!;
+    const pr = (
+      await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, res.prId))
+    )[0]!;
     expect(pr.prType).toBe('jw_osp');
     expect(pr.status).toBe('open');
     expect(pr.sourceJcOpId).toBe(opCoatingId);
@@ -231,7 +245,9 @@ describe('generateOspPr (integration)', () => {
     expect(res.poId).not.toBeNull();
     expect(res.poCode).toMatch(/^IN-JWPO-\d{5}$/);
 
-    const pr = (await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, res.prId)))[0]!;
+    const pr = (
+      await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, res.prId))
+    )[0]!;
     expect(pr.status).toBe('po_created'); // React PR→PO invariant
     expect(pr.poId).toBe(res.poId);
 

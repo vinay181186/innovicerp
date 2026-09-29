@@ -847,8 +847,10 @@ export async function stopAssembly(
         qty: completedQty,
         serialNo: serial,
         assemblyDate: input.assemblyDate ?? todayIso(),
-        assembledBy: input.assembledBy ?? null,
-        remarks: input.remarks ?? null,
+        // The Complete screen sends only the qty, so carry the started batch's
+        // Assembled By / Remarks onto the completed row unless new ones are given.
+        assembledBy: input.assembledBy ?? batch.assembledBy ?? null,
+        remarks: input.remarks ?? batch.remarks ?? null,
         bomMasterId: batch.bomMasterId ?? null,
         dispatched: false,
         createdBy: user.id,

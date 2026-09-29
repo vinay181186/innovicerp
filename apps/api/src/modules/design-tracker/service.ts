@@ -426,34 +426,57 @@ export async function createDesignTracker(
     const so = soRows[0];
     if (!so) throw new NotFoundError('Sales Order not found. Refresh the page.');
 
-    // Reject if an existing (non-deleted) design already targets this SO
-    const dup = await tx
-      .select({ id: designTracker.id })
-      .from(designTracker)
-      .where(
-        and(
-          eq(designTracker.companyId, companyId),
-          eq(designTracker.salesOrderId, so.id),
-          isNull(designTracker.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (dup[0]) {
-      throw new ConflictError(`A design is already assigned to ${so.code}`);
-    }
-
-    // Best-effort item snapshot from first SO line
+    // The design's item: the SO line the user picked (POL + CODE/REV), or —
+    // for an older caller that sends no line — the SO's first line.
     const lineRows = await tx
       .select({
+        id: salesOrderLines.id,
         itemId: salesOrderLines.itemId,
         itemCodeText: salesOrderLines.itemCodeText,
         partName: salesOrderLines.partName,
       })
       .from(salesOrderLines)
-      .where(and(eq(salesOrderLines.salesOrderId, so.id), isNull(salesOrderLines.deletedAt)))
+      .where(
+        and(
+          eq(salesOrderLines.salesOrderId, so.id),
+          isNull(salesOrderLines.deletedAt),
+          ...(input.salesOrderLineId ? [eq(salesOrderLines.id, input.salesOrderLineId)] : []),
+        ),
+      )
       .orderBy(salesOrderLines.lineNo)
       .limit(1);
     const firstLine = lineRows[0];
+    if (input.salesOrderLineId && !firstLine) {
+      throw new ValidationError(
+        `That line is not on ${so.code}. Refresh the page and pick the line again.`,
+      );
+    }
+
+    // One design per SO line item. With a line picked, only a design for the
+    // SAME item on this SO (or an older SO-wide design with no item) blocks;
+    // without a line, the old rule — one design per SO — stands.
+    const dupConds = [
+      eq(designTracker.companyId, companyId),
+      eq(designTracker.salesOrderId, so.id),
+      isNull(designTracker.deletedAt),
+    ];
+    if (input.salesOrderLineId && firstLine?.itemId) {
+      dupConds.push(
+        sql`(${designTracker.itemId} = ${firstLine.itemId}::uuid OR ${designTracker.itemId} IS NULL)`,
+      );
+    }
+    const dup = await tx
+      .select({ id: designTracker.id, code: designTracker.code })
+      .from(designTracker)
+      .where(and(...dupConds))
+      .limit(1);
+    if (dup[0]) {
+      throw new ConflictError(
+        input.salesOrderLineId
+          ? `Design ${dup[0].code} is already assigned to this line of ${so.code}.`
+          : `A design is already assigned to ${so.code}`,
+      );
+    }
 
     const code = await nextDesignCode(tx, companyId);
     const inserted = await tx
@@ -596,6 +619,7 @@ export async function logDesignTime(
       workerText: entry.engineerText,
       description: entry.description,
       createdAt: entry.createdAt,
+      ...(entry.dayTotalHours !== undefined ? { dayTotalHours: entry.dayTotalHours } : {}),
     };
   });
 }

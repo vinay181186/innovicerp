@@ -1809,6 +1809,12 @@ export const jobWorkOrderLines = pgTable(
     invoicedQty: integer('invoiced_qty').notNull().default(0),
     dueDate: date('due_date'),
     status: soStatusEnum('status').notNull().default('open'),
+    // R6 (ADR-194): short-close a line — closed with a recorded shortfall.
+    // status stays 'closed' (the shared so_status enum is NOT widened); these
+    // flag columns record that the close left an unmet balance and why.
+    shortClosedAt: timestamp('short_closed_at', { withTimezone: true }),
+    shortClosedBy: uuid('short_closed_by').references(() => users.id),
+    shortCloseReason: text('short_close_reason'),
     // BOM-8 for job work (migration 0086): when set, the BOM cascade spawns a
     // child Job Card per component and readiness becomes weakest-component
     // rather than this line's own output. A BOM containing a `purchase`
@@ -1878,7 +1884,8 @@ export const purchaseRequests = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name'),
-    qty: integer('qty').notNull(),
+    // Decimal (KGS / MTR) — 0172; NOS / SET stay whole by the API rule.
+    qty: stockQty('qty').notNull(),
     estCost: numeric('est_cost', { precision: 12, scale: 2 }).notNull().default('0'),
     requiredDate: date('required_date'),
     sourceJcOpId: uuid('source_jc_op_id').references((): AnyPgColumn => jcOps.id, {
@@ -2060,9 +2067,10 @@ export const purchaseOrderLines = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name').notNull(),
-    qty: integer('qty').notNull(),
+    // Decimal (KGS / MTR) — 0172; NOS / SET stay whole by the API rule.
+    qty: stockQty('qty').notNull(),
     rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
-    receivedQty: integer('received_qty').notNull().default(0),
+    receivedQty: stockQty('received_qty').notNull().default(0),
     dueDate: date('due_date'),
     sourceSoLineId: uuid('source_so_line_id').references(() => salesOrderLines.id, {
       onDelete: 'set null',
@@ -2109,7 +2117,7 @@ export const purchaseOrderLines = pgTable(
     check(
       'purchase_order_lines_received_qty_check',
       // Allow up to 10% over-receipt (legitimate vendor over-shipments).
-      sql`${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty} + (${t.qty} * 0.1)::int`,
+      sql`${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty} * 1.1`,
     ),
     pgPolicy('purchase_order_lines_company_read', {
       for: 'select',
@@ -2271,11 +2279,12 @@ export const goodsReceiptNoteLines = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name').notNull(),
-    receivedQty: integer('received_qty').notNull(),
+    // Decimal (KGS / MTR) — 0172.
+    receivedQty: stockQty('received_qty').notNull(),
     dcRefNo: text('dc_ref_no'),
     qcStatus: grnQcStatusEnum('qc_status').notNull().default('pending'),
-    qcAcceptedQty: integer('qc_accepted_qty').notNull().default(0),
-    qcRejectedQty: integer('qc_rejected_qty').notNull().default(0),
+    qcAcceptedQty: stockQty('qc_accepted_qty').notNull().default(0),
+    qcRejectedQty: stockQty('qc_rejected_qty').notNull().default(0),
     qcDate: date('qc_date'),
     qcRemarks: text('qc_remarks'),
     qcInspectedBy: uuid('qc_inspected_by').references(() => users.id),
@@ -4389,6 +4398,8 @@ export const partyMaterials = pgTable(
     stockQty: integer('stock_qty').notNull().default(0),
     issuedQty: integer('issued_qty').notNull().default(0),
     receivedQty: integer('received_qty').notNull().default(0),
+    // R7 (ADR-194): spare customer material returned to the customer.
+    returnedQty: integer('returned_qty').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4502,6 +4513,16 @@ export const partyGrnLines = pgTable(
     partyMaterialName: text('party_material_name'),
     receivedQty: integer('received_qty').notNull(),
     jwLineNoText: text('jw_line_no_text'),
+    // R4 (ADR-194): real FK to the JWSO line (replaces the typed line-no text).
+    jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    // R2 (ADR-194): compulsory incoming QC — only accepted qty enters the party store.
+    acceptedQty: integer('accepted_qty').notNull().default(0),
+    rejectedQty: integer('rejected_qty').notNull().default(0),
+    rejectReason: text('reject_reason'),
+    qcBy: uuid('qc_by').references(() => users.id),
+    qcAt: timestamp('qc_at', { withTimezone: true }),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -4520,12 +4541,80 @@ export const partyGrnLines = pgTable(
     index('party_grn_lines_material_idx')
       .on(t.partyMaterialId)
       .where(sql`${t.deletedAt} is null`),
+    index('party_grn_lines_jw_line_idx')
+      .on(t.jwLineId)
+      .where(sql`${t.deletedAt} is null AND ${t.jwLineId} is not null`),
     pgPolicy('party_grn_lines_company_read', {
       for: 'select',
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
     pgPolicy('party_grn_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Party Store (migration 0173, ADR-194) — separate zero-value ledger ────
+// Q6 decision: customer-supplied (party) material is kept in a SEPARATE store
+// at ZERO value — it is never company stock (ADR-189) and never touches
+// store_transactions. Every movement is one append-only row here:
+//   receive  (in)  — accepted qty from a Party GRN line enters the party store
+//   issue    (out) — client material issued to a Job Card
+//   consume  (out) — booked as consumed against production
+//   return   (out) — spare material returned to the customer
+//   reversal (in/out) — compensating entry that undoes a prior movement
+// No value column: party material carries no rupee value on our books.
+
+export const partyStockLedger = pgTable(
+  'party_stock_ledger',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    partyMaterialId: uuid('party_material_id')
+      .notNull()
+      .references((): AnyPgColumn => partyMaterials.id),
+    jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    movement: text('movement').notNull(),
+    direction: text('direction').notNull(),
+    qty: integer('qty').notNull(),
+    balanceAfter: integer('balance_after').notNull(),
+    sourceDocType: text('source_doc_type').notNull(),
+    sourceDocId: uuid('source_doc_id'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('party_stock_ledger_material_idx')
+      .on(t.partyMaterialId)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_stock_ledger_jw_line_idx')
+      .on(t.jwLineId)
+      .where(sql`${t.deletedAt} is null AND ${t.jwLineId} is not null`),
+    check('party_stock_ledger_movement_check', sql`${t.movement} IN ('receive','issue','consume','return','reversal')`),
+    check('party_stock_ledger_direction_check', sql`${t.direction} IN ('in','out')`),
+    check('party_stock_ledger_qty_positive', sql`${t.qty} > 0`),
+    pgPolicy('party_stock_ledger_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('party_stock_ledger_manager_write', {
       for: 'all',
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
@@ -4623,6 +4712,10 @@ export const jwReturnChallans = pgTable(
     transport: text('transport'),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
+    // R10 (ADR-194, migration 0174): cancel audit trail, symmetric with jw_invoices.
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4687,6 +4780,11 @@ export const jwInvoices = pgTable(
     // 0148. NULL on rows raised before it: those print a single GST row.
     taxType: text('tax_type'),
     remarks: text('remarks'),
+    // R5 (ADR-194): a JW Invoice can be cancelled. 'issued' | 'cancelled'.
+    status: text('status').notNull().default('issued'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4796,8 +4894,9 @@ export const jwDcOutwardLines = pgTable(
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
     processText: text('process_text'),
-    poQty: integer('po_qty').notNull().default(0),
-    sentQty: integer('sent_qty').notNull(),
+    // Decimal (KGS / MTR) — 0172.
+    poQty: stockQty('po_qty').notNull().default(0),
+    sentQty: stockQty('sent_qty').notNull(),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
       { onDelete: 'set null' },
@@ -4849,6 +4948,12 @@ export const jwDcInward = pgTable(
     vendorChallanNo: text('vendor_challan_no'),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
+    // The QC-pending GRN raised for this receipt (0172, ADR-189 — Incoming QC is
+    // the only inspector). NULL on receipts made before 0172.
+    goodsReceiptNoteId: uuid('goods_receipt_note_id').references(
+      (): AnyPgColumn => goodsReceiptNotes.id,
+      { onDelete: 'set null' },
+    ),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4900,10 +5005,12 @@ export const jwDcInwardLines = pgTable(
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
     processText: text('process_text'),
-    sentQty: integer('sent_qty').notNull().default(0),
-    receivedQty: integer('received_qty').notNull(),
-    okQty: integer('ok_qty').notNull().default(0),
-    rejectedQty: integer('rejected_qty').notNull().default(0),
+    // Decimal (KGS / MTR) — 0172. From 0172 a receipt goes to Incoming QC on a
+    // GRN, so new rows carry ok / rejected 0 / 0 (CHECK ok + rejected <= received).
+    sentQty: stockQty('sent_qty').notNull().default(0),
+    receivedQty: stockQty('received_qty').notNull(),
+    okQty: stockQty('ok_qty').notNull().default(0),
+    rejectedQty: stockQty('rejected_qty').notNull().default(0),
     remarks: text('remarks'),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
@@ -5403,6 +5510,12 @@ export const invoices = pgTable(
     gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     grandTotal: numeric('grand_total', { precision: 14, scale: 2 }).notNull().default('0'),
     totalPaid: numeric('total_paid', { precision: 14, scale: 2 }).notNull().default('0'),
+    // Σ invoice_payments.tds_amount (migration 0171) — TDS / short amount the
+    // customer deducted; counts toward settling. Outstanding = grand − paid − tds.
+    totalTds: numeric('total_tds', { precision: 14, scale: 2 }).notNull().default('0'),
+    // 'sgst_cgst' | 'igst' (same codes as jw_invoices.tax_type), migration
+    // 0171. NULL on invoices raised before it: those print as they always did.
+    taxType: text('tax_type'),
     paymentTermsDays: integer('payment_terms_days').notNull().default(45),
     dueDate: date('due_date'),
     status: invoiceStatusEnum('status').notNull().default('unpaid'),
@@ -5510,6 +5623,9 @@ export const invoicePayments = pgTable(
       .references(() => invoices.id, { onDelete: 'cascade' }),
     paymentDate: date('payment_date').notNull(),
     amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    // TDS / short amount the customer deducted on this payment (migration
+    // 0171). Counts toward settling the invoice; never part of `amount`.
+    tdsAmount: numeric('tds_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     mode: text('mode').notNull().default('NEFT'),
     refNo: text('ref_no'),
     notes: text('notes'),
