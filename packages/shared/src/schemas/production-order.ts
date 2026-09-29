@@ -154,7 +154,7 @@ export const productionOrderDetailSchema = productionOrderListItemSchema.extend(
   /** Pieces that can be closed right now = max(0, jcFinishedQty − creditedQty).
    *  The close qty field defaults to and is capped at this. */
   availableToClose: z.number().int().nonnegative(),
-  /** Pieces still to be closed = max(0, orderQty − creditedQty). */
+  /** Pieces still to be closed = max(0, orderQty − creditedQty) while the order is open; 0 once it is closed or short closed (ADR-179/184). */
   remainingQty: z.number().int().nonnegative(),
   /** The close ledger, newest first — every partial close + reversal. */
   closes: z.array(productionOrderCloseSchema),
