@@ -482,7 +482,12 @@ function toDetail(
   const credited = item.creditedQty ?? 0;
   const reason = closeBlockedReason({ ...item, jcSettledWithLosses, creditedQty: credited });
   const availableToClose = Math.max(0, item.jcFinishedQty - credited);
-  const remainingQty = Math.max(0, item.orderQty - credited);
+  // A stopped order (closed, incl. Finish Short, or short_closed) has nothing
+  // left to close: its unmade pieces are lost and go back to the plan Pending
+  // (ADR-179 credited + lost = order; ADR-184 a stopped order covers only
+  // what it credited). Only an order still open shows order minus credited.
+  const stopped = item.status === 'closed' || item.status === 'short_closed';
+  const remainingQty = stopped ? 0 : Math.max(0, item.orderQty - credited);
   return {
     ...item,
     canClose: reason === null,

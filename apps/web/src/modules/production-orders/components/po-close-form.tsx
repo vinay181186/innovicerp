@@ -178,7 +178,9 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           <b style={{ color: 'var(--amber2)' }}>Finish Short</b>
           <span className="text3">
             {' '}
-            — finish now; {po.remainingQty} of {po.orderQty} not made are recorded as lost.
+            — finish now: the {po.availableToClose} ready are credited, the other{' '}
+            {Math.max(0, po.remainingQty - po.availableToClose)} of {po.orderQty} are recorded as
+            lost.
           </span>
         </span>
       </label>
@@ -220,7 +222,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           style={compact ? { padding: '4px 10px' } : undefined}
           title={
             finish
-              ? `Finish ${po.code}: credit the ${po.availableToClose} available, record ${po.remainingQty} lost`
+              ? `Finish ${po.code}: credit the ${po.availableToClose} available, record ${Math.max(0, po.remainingQty - po.availableToClose)} lost`
               : `Credit ${qtyValid ? qtyNum : 0} of ${po.availableToClose} to stock`
           }
         >
