@@ -1,4 +1,4 @@
-// Production Schedule (Gantt) — mirrors legacy renderProductionSchedule
+// Production Schedule (Gantt chart) — mirrors legacy renderProductionSchedule
 // (HTML L15588). 30-day grid, one row per machine, drag-drop reschedule.
 
 import { type ProductionScheduleBar, type ProductionScheduleFilter } from '@innovic/shared';
@@ -7,9 +7,13 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Select } from '@/ui/forms';
+import { ListHeader } from '@/ui/layout';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
 
 const COL_WIDTH = 48; // px per day
@@ -33,17 +37,16 @@ const BAR_PALETTE: Record<
   ok: { bg: 'var(--sig-ok-bg)', border: 'var(--sig-ok)', fg: 'var(--green2)' },
   tight: { bg: 'var(--sig-warn-bg)', border: 'var(--sig-warn)', fg: 'var(--amber2)' },
   at_risk: { bg: 'var(--sig-critical-bg)', border: 'var(--sig-critical)', fg: 'var(--red2)' },
-  running: { bg: 'var(--sig-info)', border: 'var(--blue2)', fg: '#fff' },
+  // Running = green everywhere (R5 PR-N8). Solid fill so it still reads apart
+  // from the pale-green "On schedule" bars.
+  running: { bg: 'var(--sig-ok)', border: 'var(--green2)', fg: '#fff' },
   done: { bg: 'var(--sig-neutral)', border: 'var(--sig-neutral)', fg: '#fff' },
 };
 
-// FIXME(ISSUE-065): toISOString() yields the UTC date, so between 00:00 and
-// 05:30 IST this returns YESTERDAY. That misdates the default window start,
-// the "Today" button and the highlighted "today" column on a date-critical
-// screen. Legacy's today() (HTML L1485) used LOCAL date parts and was correct.
-// Not fixed here: needs one shared IST helper across all 53 call sites.
+// ISSUE-065: today's date in IST (not UTC, which reads as yesterday between
+// 00:00 and 05:30 IST).
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayIst();
 }
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + 'T00:00:00Z');
@@ -131,76 +134,58 @@ function ProductionSchedulePage(): React.JSX.Element {
 
   return (
     <div>
-      {/* Top toolbar */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          gap: 10,
-        }}
-      >
-        <div className="section-hdr m-0">📅 Production Schedule (Gantt)</div>
-      </div>
-
-      {/* Filter + nav */}
-      <div
-        className="panel"
-        style={{
-          padding: '10px 14px',
-          marginBottom: 10,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 10,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, color: 'var(--text3)', marginRight: 4 }}>Show:</span>
-          {FILTER_BTNS.map(([f, label]) => (
-            <button
-              key={f}
-              type="button"
-              className={`btn ${filter === f ? 'btn-primary' : 'btn-ghost'} btn-sm`}
-              style={{ fontSize: 10, padding: '4px 10px' }}
-              onClick={() => setFilter(f)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(-7)}>
-            ◀ -7d
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(-1)}>
-            ◀
-          </button>
-          <input
-            type="date"
-            className="innovic-input"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            style={{ fontSize: 11, padding: '4px 8px' }}
+      {/* The one header band: title · op count … the window's date controls;
+          the filter bar carries the Show dropdown (it replaced the row of
+          Show buttons — owner's filter-bar decision 2026-09-26) and Clear. */}
+      <ListHeader
+        title="Production Schedule (Gantt)"
+        icon="📅"
+        count={isLoading ? undefined : stats.total}
+        noun="op"
+        filterNote={filter === 'all' ? undefined : FILTER_BTNS.find(([f]) => f === filter)?.[1]}
+        filters={
+          <Select
+            aria-label="Show"
+            title="Show"
+            value={filter}
+            options={FILTER_BTNS.map(([f, label]) => ({ value: f, label }))}
+            onChange={(e) => setFilter(e.target.value as ProductionScheduleFilter)}
           />
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(1)}>
-            ▶
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(7)}>
-            +7d ▶
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setStartDate(todayIso())}
-          >
-            Today
-          </button>
-        </div>
-      </div>
+        }
+        onClearFilters={() => setFilter('all')}
+        filtersActive={filter !== 'all'}
+        tools={
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(-7)}>
+              ◀ -7d
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(-1)}>
+              ◀
+            </button>
+            <input
+              type="date"
+              className="innovic-input"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              aria-label="Window start date"
+              style={{ fontSize: 11, padding: '4px 8px' }}
+            />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(1)}>
+              ▶
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(7)}>
+              +7d ▶
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setStartDate(todayIso())}
+            >
+              Today
+            </button>
+          </div>
+        }
+      />
 
       {/* Legend */}
       <div
@@ -208,7 +193,7 @@ function ProductionSchedulePage(): React.JSX.Element {
           display: 'flex',
           gap: 14,
           marginBottom: 10,
-          fontSize: 10,
+          fontSize: 11,
           flexWrap: 'wrap',
           padding: '6px 10px',
           background: 'var(--bg3)',
@@ -218,25 +203,27 @@ function ProductionSchedulePage(): React.JSX.Element {
         <LegendDot kind="ok" label="On schedule" />
         <LegendDot kind="tight" label="Tight (≤ 2-day buffer)" />
         <LegendDot kind="at_risk" label="Will miss due date" />
-        <LegendDot kind="running" label="Currently running" />
+        <LegendDot kind="running" label="Running" />
         <LegendDot kind="done" label="Completed" />
       </div>
 
-      {/* Stats */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: 8,
-          marginBottom: 12,
-        }}
-      >
-        <StatCard label="Total Ops" value={stats.total} color="var(--text)" />
-        <StatCard label="On Schedule" value={stats.onSchedule} color="var(--sig-ok)" />
-        <StatCard label="Tight" value={stats.tight} color="var(--sig-warn)" />
-        <StatCard label="At Risk" value={stats.atRisk} color="var(--sig-critical)" />
-        <StatCard label="Running Now" value={stats.running} color="var(--sig-info)" />
-        <StatCard label="Unscheduled" value={stats.unscheduled} color="var(--text3)" />
+      {/* Stats — one StatStrip (plain totals, not filters). */}
+      <div style={{ marginBottom: 12 }}>
+        <StatStrip
+          items={[
+            { key: 'total', label: 'Total Ops', count: stats.total },
+            { key: 'ok', label: 'On Schedule', count: stats.onSchedule, color: 'var(--sig-ok)' },
+            { key: 'tight', label: 'Tight', count: stats.tight, color: 'var(--sig-warn)' },
+            { key: 'risk', label: 'At Risk', count: stats.atRisk, color: 'var(--sig-critical)' },
+            { key: 'running', label: 'Running', count: stats.running, color: 'var(--sig-ok)' },
+            {
+              key: 'unscheduled',
+              label: 'Unscheduled',
+              count: stats.unscheduled,
+              color: 'var(--text3)',
+            },
+          ]}
+        />
       </div>
 
       {/* Gantt grid */}
@@ -251,19 +238,16 @@ function ProductionSchedulePage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error
+                ? error.message
+                : 'Could not load production schedule. Try again.'}
             </div>
           </div>
         </div>
       ) : !data || data.machines.length === 0 ? (
         <div className="panel empty-state">
-          <div style={{ fontSize: 32, marginBottom: 8 }}>📅</div>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>No operations to display</div>
-          <div style={{ fontSize: 11 }}>
-            No Job Card operations match the current filter or window. Try &quot;All Ops&quot;
-            filter, move the window date, or create some Job Cards first.
-          </div>
+          <div style={{ fontWeight: 700 }}>No operations match.</div>
         </div>
       ) : (
         <>
@@ -272,7 +256,7 @@ function ProductionSchedulePage(): React.JSX.Element {
               style={{
                 borderCollapse: 'collapse',
                 width: '100%',
-                fontSize: 10,
+                fontSize: 11,
                 minWidth: 220 + 30 * COL_WIDTH,
               }}
             >
@@ -297,7 +281,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                   </th>
                   {days.map((d) => {
                     const bg = d.isToday
-                      ? 'rgba(59,130,246,0.15)'
+                      ? 'var(--sig-info-bg)'
                       : d.isWeekend
                         ? 'var(--bg3)'
                         : 'var(--bg2)';
@@ -312,7 +296,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                         style={{
                           border: '1px solid var(--border)',
                           padding: '4px 2px',
-                          fontSize: 9,
+                          fontSize: 11,
                           fontWeight: 600,
                           background: bg,
                           color: col,
@@ -346,7 +330,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                         {m.machineName ? `${m.machineCode} — ${m.machineName}` : m.machineCode}
                       </div>
                       {m.machineType ? (
-                        <div style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
                           {m.machineType}
                         </div>
                       ) : null}
@@ -354,7 +338,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                     {days.map((d, dayIdx) => {
                       const startingHere = m.bars.filter((b) => b.plannedStart === d.iso);
                       const bg = d.isToday
-                        ? 'rgba(59,130,246,0.05)'
+                        ? 'var(--sig-info-bg)'
                         : d.isWeekend
                           ? 'var(--bg3)'
                           : 'transparent';
@@ -382,32 +366,6 @@ function ProductionSchedulePage(): React.JSX.Element {
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* Help text — legacy HTML L15762. Legacy's "Click any bar to see
-            operation details" and "Auto-Schedule ..." clauses are omitted:
-            neither the op-detail modal nor the Auto-Schedule button is ported
-            (no endpoint exists), so the text would advertise features this
-            page does not have. */}
-          <div
-            style={{
-              marginTop: 10,
-              padding: 10,
-              background: 'var(--sig-info-bg)',
-              border: '1px solid var(--sig-info-bd)',
-              borderRadius: 6,
-              fontSize: 11,
-              color: 'var(--text2)',
-              lineHeight: 1.6,
-            }}
-          >
-            <b style={{ color: 'var(--sig-info)' }}>How to use:</b>{' '}
-            {canWrite ? (
-              <>
-                <b>Drag</b> a bar to a different machine row or day to reschedule.{' '}
-              </>
-            ) : null}
-            Color shows schedule health: green = on track, yellow = tight, red = will miss due date.
           </div>
         </>
       )}
@@ -456,9 +414,10 @@ function Bar({
       draggable={canWrite}
       onDragStart={(e) => e.dataTransfer.setData('text/jc-op-id', bar.jcOpId)}
       title={
-        `${bar.jcCode} Op${fmtOpSrNo(bar.opSeq)} ${bar.operation}` +
-        (bar.dueDate ? ` (Due ${bar.dueDate})` : '') +
-        (itemLabel ? `\n${itemLabel}` : '')
+        `${bar.jcCode} Op ${fmtOpSrNo(bar.opSeq)} ${bar.operation}` +
+        (bar.dueDate ? ` (Due ${fmtDate(bar.dueDate)})` : '') +
+        (itemLabel ? `\n${itemLabel}` : '') +
+        (canWrite ? '\nDrag a bar to reschedule.' : '')
       }
       style={{
         position: 'absolute',
@@ -473,7 +432,7 @@ function Bar({
         cursor: canWrite ? 'grab' : 'pointer',
         overflow: 'hidden',
         color: c.fg,
-        fontSize: 9,
+        fontSize: 11,
         lineHeight: 1.2,
         zIndex: 2 + colIdx,
       }}
@@ -481,17 +440,17 @@ function Bar({
       <div
         style={{
           fontWeight: 700,
-          fontSize: 10,
+          fontSize: 11,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
         }}
       >
-        {bar.jcCode} · Op{opSrNo(bar.opSeq)}
+        {bar.jcCode} · Op {opSrNo(bar.opSeq)}
       </div>
       <div
         style={{
-          fontSize: 9,
+          fontSize: 11,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -524,32 +483,6 @@ function LegendDot({
         }}
       />
       {label}
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ textAlign: 'center', padding: 10 }}>
-      <div
-        className="text3"
-        style={{
-          fontSize: 9,
-          textTransform: 'uppercase',
-          letterSpacing: '.04em',
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }

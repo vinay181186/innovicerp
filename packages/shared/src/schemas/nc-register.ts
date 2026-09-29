@@ -33,7 +33,9 @@ export const ncRegisterSchema = z.object({
   companyId: z.string().uuid(),
   code: z.string().min(1),
   ncDate: z.string(), // ISO date
-  jobCardId: z.string().uuid(),
+  /** ADR-189 — null for a bought-material reject raised by Incoming QC on a
+   *  GRN line that no job card stands behind (grnLineId is set instead). */
+  jobCardId: z.string().uuid().nullable(),
   jcOpId: z.string().uuid().nullable(),
   opSeq: z.number().int().nullable(),
   operationText: z.string().nullable(),
@@ -149,11 +151,19 @@ export type NcRegisterListItem = z.infer<typeof ncRegisterListItemSchema>;
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
 export const createNcRegisterInputSchema = z.object({
-  code: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen'),
+  // NC No. is optional: blank (or omitted) means the server assigns the next
+  // number from the company's NC series (NC-#####), like an ERPNext naming
+  // series. A code that IS sent is kept, subject to the duplicate check.
+  code: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen')
+      .optional(),
+  ),
   ncDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ncDate must be YYYY-MM-DD'),
   jobCardId: z.string().uuid(),
   jcOpId: z.string().uuid().optional(),
@@ -304,7 +314,7 @@ export const NC_STATUS_LABELS: Record<NcStatus, string> = {
   under_repair: 'Under Repair',
   sent_to_vendor: 'Sent to Vendor',
   received_qc_pending: 'Received – QC Pending',
-  rework_done: 'Rework Complete',
+  rework_done: 'Rework Completed',
   closed: 'Closed',
 };
 
@@ -313,7 +323,7 @@ export const NC_DISPOSITION_LABELS: Record<NcDisposition, string> = {
   rework: 'Rework',
   repair: 'Repair',
   return_to_vendor: 'Return to Vendor',
-  scrap: 'Reject / Scrap',
+  scrap: 'Scrap',
   use_as_is: 'Use As Is',
   make_fresh: 'Make Fresh',
 };

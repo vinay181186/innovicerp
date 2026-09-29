@@ -5,7 +5,7 @@
 // canonical one and nothing else:
 //
 //   <TabStrip>              QC Processes | Report Types
-//   <ListHeader>            title · count · SearchInput · Active filter · primary
+//   <ListHeader>            title · count · primary; filter bar: SearchInput · Active · Clear
 //   <Panel>                 the 💡 what-this-master-is-for note
 //   <Banner>                a refused delete, in the server's own words
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
@@ -50,8 +50,8 @@ import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
 const PAGE_SIZE = 25;
 
 const TABS = [
-  { key: 'processes', label: '⚙ QC Processes' },
-  { key: 'reports', label: '📄 Report Types' },
+  { key: 'processes', label: 'QC Processes' },
+  { key: 'reports', label: 'Report Types' },
 ];
 
 const listSearchSchema = z.object({
@@ -88,7 +88,11 @@ function QcProcessesListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -170,7 +174,7 @@ function QcProcessesListPage(): React.JSX.Element {
         title: (p) => p.description ?? '',
       },
       {
-        header: 'Std Time (min)',
+        header: 'Default Cycle Time (min)',
         width: '11%',
         className: 'mono',
         nowrap: true,
@@ -238,10 +242,10 @@ function QcProcessesListPage(): React.JSX.Element {
             search={searchInput}
             onSearch={setSearchInput}
             updating={isFetching && !isLoading}
-            tools={
+            filters={
               <Select
                 aria-label="Active"
-                fieldWidth="md"
+                title="Active"
                 value={search.isActive === undefined ? '' : String(search.isActive)}
                 options={[
                   { value: '', label: 'All' },
@@ -261,6 +265,14 @@ function QcProcessesListPage(): React.JSX.Element {
                 }}
               />
             }
+            onClearFilters={() => {
+              setSearchInput('');
+              void navigate({
+                search: (prev) => ({ ...prev, isActive: undefined, search: undefined, page: 1 }),
+                replace: true,
+              });
+            }}
+            filtersActive={search.isActive !== undefined || searchInput.trim() !== ''}
             primary={
               perms.entry ? (
                 <Link to="/qc-processes/new" className="btn btn-primary">
@@ -275,9 +287,7 @@ function QcProcessesListPage(): React.JSX.Element {
               created — not a hint about operating the list. */}
           <Panel>
             <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
-              💡 Define QC inspection processes here (e.g. Dimensional Check, Hardness Test, CMM
-              Inspection). These can be added as <b>QC operations</b> in Route Cards and Job Cards,
-              just like machining operations.
+              QC checks used as operations on Route Cards and Job Cards.
             </span>
           </Panel>
 
@@ -294,7 +304,9 @@ function QcProcessesListPage(): React.JSX.Element {
           {isError ? (
             <PageState
               state="error"
-              message={error instanceof Error ? error.message : 'Failed to load QC processes'}
+              message={
+                error instanceof Error ? error.message : 'Could not load QC Processes. Try again.'
+              }
             />
           ) : (
             <Panel bodyPadding="none">
@@ -302,14 +314,17 @@ function QcProcessesListPage(): React.JSX.Element {
                 columns={columns}
                 rows={rows}
                 loading={isLoading}
-                emptyText="No QC processes defined. Click + Add QC Process."
+                emptyText={
+                  search.search || search.isActive !== undefined
+                    ? 'No QC Processes match.'
+                    : 'No QC Processes yet.'
+                }
                 onRowClick={(p) => void navigate({ to: '/qc-processes/$id', params: { id: p.id } })}
                 rowActionsWidth="10%"
                 rowActions={(p) => (
                   <RowActions
-                    // View and Edit are ROUTES, so they stay real links —
-                    // ctrl-click / middle-click still open a new tab.
-                    viewTo={`/qc-processes/${p.id}`}
+                    // Row click opens the record (ERPNext list); Edit stays a
+                    // real link so ctrl-click / middle-click open a new tab.
                     editTo={perms.edit ? `/qc-processes/${p.id}/edit` : undefined}
                     renderLink={(p2) => <Link {...p2} />}
                     // The PROMISE is handed back, not swallowed: the confirm
@@ -330,9 +345,10 @@ function QcProcessesListPage(): React.JSX.Element {
                     // flight, exactly as `disabled={softDelete.isPending}` did.
                     deleteDisabled={softDelete.isPending}
                     deleteConfirm={{
-                      title: `Delete QC process "${p.code}"?`,
-                      message: `${p.code} stops appearing in the QC Process Master and in every QC operation picker.`,
-                      pendingLabel: 'Deleting…',
+                      title: `Move QC Process ${p.code} to Trash?`,
+                      message: 'You can restore it from Trash.',
+                      confirmLabel: 'Move to Trash',
+                      pendingLabel: 'Moving…',
                     }}
                   />
                 )}

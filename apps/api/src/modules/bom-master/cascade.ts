@@ -113,7 +113,7 @@ export async function cascadeBomToSoLine(
     .where(and(eq(salesOrderLines.id, soLineId), isNull(salesOrderLines.deletedAt)))
     .limit(1);
   const soLine = soRows[0] as SoLineForCascade | undefined;
-  if (!soLine) throw new NotFoundError(`Sales order line ${soLineId} not found`);
+  if (!soLine) throw new NotFoundError('Sales Order line not found. Refresh the page.');
   if (!soLine.sourceBomMasterId) {
     return {
       fired: false,
@@ -356,7 +356,7 @@ export async function cascadeBomToJwLine(
     .where(and(eq(jobWorkOrderLines.id, jwLineId), isNull(jobWorkOrderLines.deletedAt)))
     .limit(1);
   const jwLine = jwRows[0] as JwLineForCascade | undefined;
-  if (!jwLine) throw new NotFoundError(`Job work order line ${jwLineId} not found`);
+  if (!jwLine) throw new NotFoundError('JWSO line not found. Refresh the page.');
   if (!jwLine.sourceBomMasterId) {
     return { fired: false, jwLineId, bomMasterId: '', createdJobCardCodes: [] };
   }

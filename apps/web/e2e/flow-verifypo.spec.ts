@@ -13,14 +13,14 @@ test('T20/22 create PO from PR blank → IN-PO', async ({ page }: { page: Page }
   test.setTimeout(150_000);
   await page.goto('/purchase-requests?search=IN-PR-00001', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByText('📝 PO', { exact: false }).first().click();
+  await page.getByText('Create PO', { exact: false }).first().click();
   await page.waitForTimeout(3000);
   // Clear the auto-filled PO number → exercise the blank→auto path (T20/22).
   const poNo = page.locator('input[value^="IN-PO-"], input[value^="IN-JWPO-"]').first();
   await poNo.fill('');
   await page.waitForTimeout(700);
   await page.screenshot({ path: `${SHOT}/vpo-blank.png`, fullPage: true });
-  await page.getByRole('button', { name: /Create PO/i }).click();
+  await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(4500);
   await page.screenshot({ path: `${SHOT}/vpo-saved.png`, fullPage: true });
   const body = await page.locator('body').innerText();

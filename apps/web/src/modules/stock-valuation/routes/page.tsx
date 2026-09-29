@@ -7,8 +7,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { exportStockValuation } from '../lib/export';
+import { StatStrip } from '@/ui/data';
+import { ReportFilter, ReportShell, reportTotalRowStyle } from '@/ui/data/ReportShell';
+import { categoryLabel, exportStockValuation } from '../lib/export';
 
 export const stockValuationRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -20,21 +23,6 @@ function inr(v: number | null): string {
   if (v == null) return '';
   return `₹${Math.round(v).toLocaleString('en-IN')}`;
 }
-
-// Legacy's per-category text colour for the Category cell, ported verbatim from
-// renderStockValuation L21038 (local to this page — not a shared colour fn).
-// NOTE: legacy keys this on its own six-value item.category taxonomy. Our
-// `category` is items.item_type ('component' | 'assembly'), so every real row
-// currently falls through to the same var(--text3) legacy gives an unmapped
-// category. See ISSUE-043 — the taxonomy gap, not the colour map, is the defect.
-const CAT_COLOR: Record<string, string> = {
-  'Raw Material': 'var(--blue)',
-  Component: 'var(--cyan)',
-  'Finished Goods': 'var(--green)',
-  'Bought Out': 'var(--purple)',
-  Consumable: 'var(--amber)',
-};
-const catColor = (c: string): string => CAT_COLOR[c] ?? 'var(--text3)';
 
 function StockValuationPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useQuery<StockValuationResponse>({
@@ -57,18 +45,21 @@ function StockValuationPage(): React.JSX.Element {
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
   }, [rows, filter, showZero, search]);
 
+  const shell = (body: React.ReactNode): React.JSX.Element => (
+    <ReportShell title="Stock Valuation">{body}</ReportShell>
+  );
   if (isLoading) {
-    return (
-      <div className="empty-state" style={{ padding: 40 }}>
+    return shell(
+      <div className="empty-state">
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
-      </div>
+      </div>,
     );
   }
   if (isError || !data) {
-    return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
-      </div>
+    return shell(
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
+        {error instanceof Error ? error.message : 'Could not load stock valuation. Try again.'}
+      </div>,
     );
   }
 
@@ -77,107 +68,79 @@ function StockValuationPage(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = !data.priceVisible;
-  const catKeys = ['all', ...data.categories.map((c) => c.category)];
-  const catCount = (k: string): number =>
-    k === 'all' ? data.grandItems : (data.categories.find((c) => c.category === k)?.count ?? 0);
   const tblTotal = filtered.reduce((s, r) => s + (r.value ?? 0), 0);
 
   return (
-    <div>
-      <div className="section-hdr" style={{ marginBottom: 12 }}>
-        📦 Stock Valuation
-      </div>
-
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
-        {catKeys.map((k) => (
-          <button
-            key={k}
-            type="button"
-            className="btn btn-sm"
+    <ReportShell
+      title="Stock Valuation"
+      filters={
+        <>
+          {/* Category is filtered by the tiles above the table (one strip:
+              category value + count, click to filter) — no second dropdown. */}
+          {/* Legacy L21029 — searchBox('svSearch','svTable','Search item code or name...'). */}
+          <ReportFilter label="Search" htmlFor="sv-search" size="lg">
+            <input
+              id="sv-search"
+              className="innovic-input"
+              placeholder="Search item code, item name…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </ReportFilter>
+          {/* Legacy L20980 — the zero-stock toggle. */}
+          <label
+            className="form-label"
             style={{
-              fontWeight: 700,
-              background: filter === k ? 'var(--blue)' : 'var(--bg4)',
-              color: filter === k ? '#fff' : 'var(--text2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--sp-1)',
+              height: 'var(--control-h)',
+              cursor: 'pointer',
             }}
-            onClick={() => setFilter(k)}
           >
-            {k === 'all' ? 'All Categories' : k} ({catCount(k)})
-          </button>
-        ))}
-      </div>
-
-      {/* Legacy L20980 — the zero-stock toggle sits directly under the category
-          filter buttons, above the summary cards. */}
-      <label
-        style={{
-          fontSize: 11,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          marginBottom: 14,
-          cursor: 'pointer',
-        }}
-      >
-        <input type="checkbox" checked={showZero} onChange={(e) => setShowZero(e.target.checked)} /> Show
-        zero-stock items
-      </label>
-
-      {priceHidden ? null : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: 8,
-            marginBottom: 16,
-          }}
-        >
-          <div className="panel" style={{ padding: 10, textAlign: 'center', border: '2px solid var(--cyan)' }}>
-            <div style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>TOTAL STOCK VALUE</div>
-            <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--cyan)' }}>
-              {inr(data.grandTotal)}
-            </div>
-            <div className="text3" style={{ fontSize: 9 }}>
-              {data.grandStockItems} / {data.grandItems} items in stock
-            </div>
-          </div>
-          {data.categories.map((c) => (
-            <div key={c.category} className="panel" style={{ padding: 10, textAlign: 'center' }}>
-              <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
-                {c.category}
-              </div>
-              <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
-                {inr(c.value)}
-              </div>
-              <div className="text3" style={{ fontSize: 9 }}>
-                {c.stockCount} in stock
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Legacy L21029 — searchBox('svSearch','svTable','Search item code or name...').
-          Width/padding mirror legacy's own inline styles; our .innovic-input is
-          width:100%, which legacy's classless input is not. */}
-      <input
-        className="innovic-input"
-        placeholder="🔍 Search item code or name..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ padding: '7px 12px', width: 220 }}
-      />
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{ fontSize: 11 }}
-          onClick={() => exportStockValuation(rows)}
-        >
-          ⬇ Export to Excel
-        </button>
-      </div>
-
+            <input
+              type="checkbox"
+              checked={showZero}
+              onChange={(e) => setShowZero(e.target.checked)}
+            />{' '}
+            Show zero-stock items
+          </label>
+        </>
+      }
+      onClear={() => {
+        setFilter('all');
+        setShowZero(false);
+        setSearch('');
+      }}
+      onExport={{ excel: () => exportStockValuation(rows) }}
+      kpis={
+        // Money hidden for L1 Viewers: the tiles then show item counts only.
+        <StatStrip
+          items={[
+            {
+              key: 'all',
+              label: 'All Categories',
+              count: priceHidden ? data.grandItems : inr(data.grandTotal),
+              color: 'var(--cyan)',
+              sub: `${data.grandStockItems} / ${data.grandItems} items in stock`,
+              active: filter === 'all',
+              onClick: () => setFilter('all'),
+            },
+            ...data.categories.map((c) => ({
+              key: c.category,
+              label: categoryLabel(c.category),
+              count: priceHidden ? c.count : inr(c.value),
+              color: 'var(--green2)',
+              sub: `${c.stockCount} / ${c.count} items in stock`,
+              active: filter === c.category,
+              onClick: () => setFilter(filter === c.category ? 'all' : c.category),
+            })),
+          ]}
+        />
+      }
+      rowCount={filtered.length}
+      rowNoun="item"
+    >
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
@@ -187,11 +150,13 @@ function StockValuationPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>UOM</th>
-                <th>Stock Qty</th>
+                <th className="th-num">Physical</th>
                 {priceHidden ? null : (
                   <>
-                    <th>Rate</th>
-                    <th>Stock Value</th>
+                    <th className="th-num">Rate</th>
+                    <th className="th-num" title="Physical × Last GRN Rate (or PO Rate if no GRN)">
+                      Stock Value
+                    </th>
                   </>
                 )}
                 <th>Last GRN Date</th>
@@ -201,29 +166,28 @@ function StockValuationPage(): React.JSX.Element {
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={priceHidden ? 6 : 8} className="empty-state">
-                    No items
+                    {filter !== 'all' || search.trim() || rows.length > 0
+                      ? 'No items match.'
+                      : 'No items yet.'}
                   </td>
                 </tr>
               ) : (
                 filtered.map((r) => (
                   <tr key={r.itemId}>
-                    <td>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: catColor(r.category) }}>
-                        {r.category}
-                      </span>
-                    </td>
-                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td className="text2">{categoryLabel(r.category)}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                       {r.code}
                     </td>
                     <td>{r.name}</td>
-                    <td style={{ fontSize: 11 }}>{r.uom}</td>
+                    <td>{r.uom}</td>
                     <td
-                      className="mono fw-700"
+                      className="td-num mono fw-700"
+                      title={r.lowStock ? 'Low Stock' : undefined}
                       style={{
                         color:
                           r.stockQty > 0
                             ? r.lowStock
-                              ? 'var(--red)'
+                              ? 'var(--amber2)'
                               : 'var(--green)'
                             : 'var(--text3)',
                       }}
@@ -234,31 +198,31 @@ function StockValuationPage(): React.JSX.Element {
                     {priceHidden ? null : (
                       <>
                         <td
-                          className="mono"
+                          className="td-num mono"
                           style={{ color: r.hasRate ? undefined : 'var(--text3)' }}
                         >
                           {r.hasRate ? inr(r.rate) : 'No Rate'}
                         </td>
                         <td
-                          className="mono fw-700"
+                          className="td-num mono fw-700"
                           style={{ color: (r.value ?? 0) > 0 ? 'var(--green)' : 'var(--text3)' }}
                         >
                           {inr(r.value)}
                         </td>
                       </>
                     )}
-                    <td style={{ fontSize: 11 }}>{r.lastGrnDate ?? '—'}</td>
+                    <td>{fmtDate(r.lastGrnDate)}</td>
                   </tr>
                 ))
               )}
             </tbody>
             <tfoot>
-              <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
-                <td colSpan={priceHidden ? 5 : 6} style={{ fontSize: 12, color: 'var(--text2)' }}>
-                  TOTAL ({filtered.length} items)
+              <tr style={reportTotalRowStyle}>
+                <td colSpan={priceHidden ? 5 : 6} style={{ color: 'var(--text2)' }}>
+                  Total ({filtered.length} items)
                 </td>
                 {priceHidden ? null : (
-                  <td className="mono" style={{ color: 'var(--cyan)' }}>
+                  <td className="td-num mono" style={{ color: 'var(--cyan)' }}>
                     {inr(tblTotal)}
                   </td>
                 )}
@@ -268,10 +232,6 @@ function StockValuationPage(): React.JSX.Element {
           </table>
         </div>
       </div>
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Stock Value = Current Stock Qty × Last GRN Rate (or PO Rate if no GRN). ⚠ = below minimum stock.
-        Items with no rate show “No Rate”.
-      </div>
-    </div>
+    </ReportShell>
   );
 }

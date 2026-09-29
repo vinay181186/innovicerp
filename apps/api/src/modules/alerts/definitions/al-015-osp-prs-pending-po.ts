@@ -8,6 +8,7 @@
 // been created yet (po_id IS NULL — same gate as the dashboard
 // "PRs pending PO" tile).
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -15,9 +16,8 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
   definition: {
     code: 'AL-015',
     dept: 'purchase',
-    name: 'OSP PRs pending PO',
-    description:
-      'Outsourcing-process purchase requests (linked to a JC op) that are open/approved with no PO yet.',
+    name: 'OSP PRs Pending PO',
+    description: 'OSP PRs (raised from a JC operation) that are Open or Approved with no PO yet.',
     columns: [
       { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'pr_date', label: 'PR Date', type: 'date' },
@@ -31,7 +31,7 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT pr.code AS pr_code, pr.pr_date,
+      SELECT pr.id AS nav_id, pr.code AS pr_code, pr.pr_date,
              jc.code AS jc_code, jo.op_seq,
              COALESCE(v.code, pr.vendor_code_text, '') AS vendor,
              COALESCE(i.code, pr.item_code_text, '') AS item, pr.status
@@ -47,6 +47,7 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
       ORDER BY pr.pr_date, pr.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('purchase-request', String(r['nav_id'])),
       pr_code: (r['pr_code'] as string) ?? '',
       pr_date:
         r['pr_date'] instanceof Date

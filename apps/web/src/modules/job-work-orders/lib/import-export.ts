@@ -11,10 +11,20 @@
 import { normalizeRevision } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
-// 'Rev' = the revision printed on the client's drawing (migration 0120). It is
-// compulsory on the form, so it is offered in the sheet too; a sheet without the
-// column still imports and leaves the Rev box empty for the person to fill in.
-const LINE_COLUMNS = ['Item Code', 'Material', 'Drawing No', 'Rev', 'Qty', 'Rate', 'Due Date'] as const;
+// 'Drawing Rev' = the revision printed on the customer's drawing (migration 0120).
+// It is compulsory on the form, so it is offered in the sheet too; a sheet without
+// the column still imports and leaves the Rev box empty for the person to fill in.
+// Headers renamed 2026-09-26 (Drawing No → Drawing No., Rev → Drawing Rev,
+// Qty → Order Qty); the parser still reads the old names so an older sheet imports.
+const LINE_COLUMNS = [
+  'Item Code',
+  'Material',
+  'Drawing No.',
+  'Drawing Rev',
+  'Order Qty',
+  'Rate',
+  'Due Date',
+] as const;
 
 export interface JwLineImportRow {
   itemCodeText: string;
@@ -38,7 +48,7 @@ export function downloadJwLineTemplate(): void {
   const ws = XLSX.utils.aoa_to_sheet([LINE_COLUMNS as unknown as string[], sample]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'JW Lines');
-  XLSX.writeFile(wb, 'jw-line-items-template.xlsx');
+  XLSX.writeFile(wb, 'JW Lines Import Template.xlsx');
 }
 
 export async function parseJwLineFile(file: File): Promise<{ rows: JwLineImportRow[]; errors: string[] }> {
@@ -51,7 +61,7 @@ export async function parseJwLineFile(file: File): Promise<{ rows: JwLineImportR
   const rows: JwLineImportRow[] = [];
   raw.forEach((r, i) => {
     const itemCodeText = String(r['Item Code'] ?? '').trim();
-    const orderQty = Math.round(Number(r['Qty']));
+    const orderQty = Math.round(Number(r['Order Qty'] ?? r['Qty']));
     // Item Code is the only key now. A row without one used to be parsed on its
     // Part Name, then dropped further down for having no master match — with no
     // message, so it vanished silently. Say so here instead.
@@ -60,15 +70,15 @@ export async function parseJwLineFile(file: File): Promise<{ rows: JwLineImportR
       return;
     }
     if (!Number.isFinite(orderQty) || orderQty <= 0) {
-      errors.push(`Row ${i + 2}: Qty must be a positive number — skipped`);
+      errors.push(`Row ${i + 2}: Order Qty must be a positive number — skipped`);
       return;
     }
     rows.push({
       itemCodeText,
       material: String(r['Material'] ?? '').trim() || undefined,
-      drawingNo: String(r['Drawing No'] ?? '').trim() || undefined,
+      drawingNo: String(r['Drawing No.'] ?? r['Drawing No'] ?? '').trim() || undefined,
       // ADR-177: capital letters always — 'b' in the sheet lands as 'B'.
-      revision: normalizeRevision(String(r['Rev'] ?? '')) || undefined,
+      revision: normalizeRevision(String(r['Drawing Rev'] ?? r['Rev'] ?? '')) || undefined,
       orderQty,
       rate: Number(r['Rate']) || 0,
       dueDate: toDate(r['Due Date']),

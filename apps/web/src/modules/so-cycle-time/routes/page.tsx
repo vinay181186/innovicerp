@@ -22,6 +22,10 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
+import { ListFooter } from '@/ui/layout';
+import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { exportSoCycleTime } from '../lib/export';
 
 export const soCycleTimeRoute = createRoute({
@@ -31,7 +35,7 @@ export const soCycleTimeRoute = createRoute({
 });
 
 const TYPE_LABEL: Record<string, string> = {
-  component_manufacturing: 'Component Mfg',
+  component_manufacturing: 'Component',
   equipment: 'Equipment',
   with_material: 'With Material',
 };
@@ -44,7 +48,7 @@ const FILTERS: { value: string; label: string }[] = [
   // vocabulary (SO_TYPES) has no 'job work'; the last two mirror legacy's
   // "<Type> Only" pattern over the types we actually have.
   { value: 'equipment', label: 'Equipment Only' },
-  { value: 'component_manufacturing', label: 'Component Mfg Only' },
+  { value: 'component_manufacturing', label: 'Component Only' },
   { value: 'with_material', label: 'With Material Only' },
 ];
 
@@ -97,81 +101,104 @@ function SoCycleTimePage(): React.JSX.Element {
     [filtered],
   );
 
+  const title = 'SO Cycle Time Report';
   if (isLoading) {
     return (
-      <div className="empty-state" style={{ padding: 40 }}>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
-      </div>
+      <ReportShell title={title}>
+        <div className="empty-state">
+          <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
+        </div>
+      </ReportShell>
     );
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
-      </div>
+      <ReportShell title={title}>
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          {error instanceof Error ? error.message : 'Could not load SO cycle time. Try again.'}
+        </div>
+      </ReportShell>
     );
   }
 
   return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          ⏱ SO Cycle Time Report
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            className="innovic-input"
-            placeholder="🔍 Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ fontSize: 12, padding: '6px 10px', minWidth: 160 }}
-          />
-          <select
-            className="innovic-select"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            style={{ fontSize: 12, padding: '6px 10px' }}
-          >
-            {FILTERS.map((f) => (
-              <option key={f.value} value={f.value}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => exportSoCycleTime(filtered)}
-          >
-            📊 Export Excel
-          </button>
-        </div>
-      </div>
-
-      {/* Averages over the filtered set */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 8,
-          margin: '12px 0 16px',
-        }}
-      >
-        <Avg label="Avg Design" value={averages.design} color="var(--purple)" />
-        <Avg label="Avg Production" value={averages.production} color="var(--cyan)" />
-        <Avg label="Avg QC" value={averages.qc} color="var(--red)" />
-        <Avg label="Avg Assembly" value={averages.assembly} color="var(--blue)" />
-        <Avg label="Avg Total Cycle" value={averages.total} color="var(--green)" />
-      </div>
-
+    <ReportShell
+      title={title}
+      filters={
+        <>
+          <ReportFilter label="Search" htmlFor="sct-search" size="lg">
+            <input
+              id="sct-search"
+              className="innovic-input"
+              placeholder="Search SO No., customer…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </ReportFilter>
+          <ReportFilter label="Show" htmlFor="sct-filter">
+            <select
+              id="sct-filter"
+              className="innovic-select"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            >
+              {FILTERS.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </ReportFilter>
+        </>
+      }
+      onClear={() => {
+        setSearch('');
+        setFilter('all');
+      }}
+      onExport={{ excel: () => exportSoCycleTime(filtered) }}
+      kpis={
+        // Averages over the filtered set
+        <StatStrip
+          items={[
+            {
+              key: 'design',
+              label: 'Avg Design',
+              count: `${averages.design}d`,
+              color: 'var(--purple)',
+            },
+            {
+              key: 'production',
+              label: 'Avg Production',
+              count: `${averages.production}d`,
+              color: 'var(--cyan)',
+            },
+            { key: 'qc', label: 'Avg QC', count: `${averages.qc}d`, color: 'var(--text)' },
+            {
+              key: 'assembly',
+              label: 'Avg Assembly',
+              count: `${averages.assembly}d`,
+              color: 'var(--blue)',
+            },
+            {
+              key: 'total',
+              label: 'Avg Total Cycle',
+              count: `${averages.total}d`,
+              color: 'var(--green)',
+            },
+          ]}
+        />
+      }
+      rowCount={filtered.length}
+      rowNoun="SO"
+      footer={
+        <>
+          <ListFooter total={filtered.length} noun="SO" />
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
+            Days · amber &gt; 10 · red &gt; 20 · green = dispatched
+          </div>
+        </>
+      }
+    >
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
@@ -181,20 +208,20 @@ function SoCycleTimePage(): React.JSX.Element {
                 <th>Customer</th>
                 <th>SO Type</th>
                 <th>SO Status</th>
-                <th className="td-ctr">Design</th>
-                <th className="td-ctr">Material</th>
-                <th className="td-ctr">Production</th>
-                <th className="td-ctr">QC</th>
-                <th className="td-ctr">Assembly</th>
-                <th className="td-ctr">Dispatch</th>
-                <th className="td-ctr">Total</th>
+                <th className="th-num">Design</th>
+                <th className="th-num">Material</th>
+                <th className="th-num">Production</th>
+                <th className="th-num">QC</th>
+                <th className="th-num">Assembly</th>
+                <th className="th-num">Dispatch</th>
+                <th className="th-num">Total</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="empty-state">
-                    No SOs match
+                    {search.trim() || filter !== 'all' ? 'No SOs match.' : 'No SOs yet.'}
                   </td>
                 </tr>
               ) : (
@@ -203,7 +230,10 @@ function SoCycleTimePage(): React.JSX.Element {
                   const totalOverAvg =
                     r.durations.total != null && r.durations.total > averages.total;
                   return (
-                    <tr key={r.soId} style={done ? { background: 'rgba(34,197,94,0.02)' } : undefined}>
+                    <tr
+                      key={r.soId}
+                      style={done ? { background: 'rgba(34,197,94,0.02)' } : undefined}
+                    >
                       <td>
                         <Link
                           to="/sales-orders/$id"
@@ -214,13 +244,13 @@ function SoCycleTimePage(): React.JSX.Element {
                           {r.soNo}
                         </Link>
                       </td>
-                      <td style={{ fontSize: 12 }}>{r.customer ?? '—'}</td>
-                      <td style={{ fontSize: 11 }}>{TYPE_LABEL[r.type ?? ''] ?? r.type ?? '—'}</td>
+                      <td>{r.customer ?? '—'}</td>
+                      <td>{TYPE_LABEL[r.type ?? ''] ?? r.type ?? '—'}</td>
                       <td>
                         <span
-                          className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-grey' : 'b-cyan'}`}
+                          className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-grey' : 'b-blue'}`}
                         >
-                          {done ? 'Done' : r.status}
+                          {done ? 'Completed' : soStatusLabel(r.status)}
                         </span>
                       </td>
                       <DurCell v={r.durations.design} />
@@ -230,11 +260,8 @@ function SoCycleTimePage(): React.JSX.Element {
                       <DurCell v={r.durations.assembly} />
                       <DurCell v={r.durations.assemblyToDispatch} />
                       <td
-                        className="td-ctr mono fw-700"
-                        style={{
-                          color: totalOverAvg ? 'var(--amber)' : 'var(--green)',
-                          fontSize: 14,
-                        }}
+                        className="td-num mono fw-700"
+                        style={{ color: totalOverAvg ? 'var(--amber)' : 'var(--green)' }}
                       >
                         {r.durations.total != null ? `${r.durations.total}d` : '—'}
                       </td>
@@ -246,41 +273,16 @@ function SoCycleTimePage(): React.JSX.Element {
           </table>
         </div>
       </div>
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Durations in days. Amber = over 10d, Red = over 20d. Green rows = dispatched. Averages
-        reflect the current filter.
-      </div>
-    </div>
+    </ReportShell>
   );
 }
 
 function DurCell({ v }: { v: number | null }): React.JSX.Element {
-  if (v == null) return <td className="td-ctr text3">—</td>;
+  if (v == null) return <td className="td-num text3">—</td>;
   const color = v > 20 ? 'var(--red)' : v > 10 ? 'var(--amber)' : 'var(--text)';
   return (
-    <td className="td-ctr mono fw-700" style={{ color }}>
+    <td className="td-num mono fw-700" style={{ color }}>
       {v}d
     </td>
-  );
-}
-
-function Avg({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ padding: 12, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 10 }}>
-        {label}
-      </div>
-      <div className="fw-700" style={{ fontSize: 22, color }}>
-        {value}d
-      </div>
-    </div>
   );
 }

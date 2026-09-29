@@ -44,7 +44,7 @@ export async function uploadFile(
   const folder = opts?.folder ? `${opts.folder}/` : '';
   const path = `${companyId}/${folder}${Date.now()}-${safe}`;
   const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: false });
-  if (error) throw new Error(`Upload failed: ${error.message}`);
+  if (error) throw new Error(`Could not upload the file. ${error.message}`);
   return path;
 }
 

@@ -32,8 +32,8 @@ export const jwDcOutwardLineSchema = z.object({
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
   processText: z.string().nullable(),
-  poQty: z.number().int().nonnegative(),
-  sentQty: z.number().int().positive(),
+  poQty: z.number().nonnegative(),
+  sentQty: z.number().positive(),
   storeTransactionId: z.string().uuid().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -65,9 +65,9 @@ export type JwDcOutward = z.infer<typeof jwDcOutwardSchema>;
 
 export const jwDcOutwardListItemSchema = jwDcOutwardSchema.extend({
   linesCount: z.number().int().nonnegative(),
-  totalSentQty: z.number().int().nonnegative(),
-  totalReturnedQty: z.number().int().nonnegative(),
-  pendingQty: z.number().int().nonnegative(),
+  totalSentQty: z.number().nonnegative(),
+  totalReturnedQty: z.number().nonnegative(),
+  pendingQty: z.number().nonnegative(),
   /** out | partial | fully_returned */
   returnStatus: z.enum(['out', 'partial', 'fully_returned']),
   /** SO code(s) resolved via the JWPO's lines (source_so_line_id →
@@ -79,8 +79,11 @@ export type JwDcOutwardListItem = z.infer<typeof jwDcOutwardListItemSchema>;
 export const jwDcOutwardDetailSchema = jwDcOutwardListItemSchema.extend({
   lines: z.array(
     jwDcOutwardLineSchema.extend({
-      alreadyReturned: z.number().int().nonnegative(),
-      pending: z.number().int().nonnegative(),
+      alreadyReturned: z.number().nonnegative(),
+      pending: z.number().nonnegative(),
+      /** Unit from the items master (items.uom) for the printed UOM column.
+       *  Null when the line names no item; the print then shows NOS. */
+      uom: z.string().nullable().default(null),
     }),
   ),
 });
@@ -90,7 +93,8 @@ export type JwDcOutwardDetail = z.infer<typeof jwDcOutwardDetailSchema>;
 
 export const createJwDcOutwardLineInputSchema = z.object({
   purchaseOrderLineId: z.string().uuid(),
-  sentQty: z.number().int().positive(),
+  /** Decimal for KGS / MTR (3 places); NOS / SET stay whole (stock ledger, 0172). */
+  sentQty: z.number().positive().multipleOf(0.001),
 });
 export type CreateJwDcOutwardLineInput = z.infer<typeof createJwDcOutwardLineInputSchema>;
 
@@ -129,10 +133,10 @@ export const jwDcInwardLineSchema = z.object({
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
   processText: z.string().nullable(),
-  sentQty: z.number().int().nonnegative(),
-  receivedQty: z.number().int().positive(),
-  okQty: z.number().int().nonnegative(),
-  rejectedQty: z.number().int().nonnegative(),
+  sentQty: z.number().nonnegative(),
+  receivedQty: z.number().positive(),
+  okQty: z.number().nonnegative(),
+  rejectedQty: z.number().nonnegative(),
   remarks: z.string().nullable(),
   storeTransactionId: z.string().uuid().nullable(),
   createdAt: z.string(),
@@ -153,6 +157,11 @@ export const jwDcInwardSchema = z.object({
   vendorChallanNo: z.string().nullable(),
   vehicleNo: z.string().nullable(),
   remarks: z.string().nullable(),
+  /** The QC-pending GRN this receipt raised (0172). Null on receipts made
+   *  before 0172, which the store accepted itself. */
+  goodsReceiptNoteId: z.string().uuid().nullable().default(null),
+  /** That GRN's number, joined live — shown so the store can follow it to QC. */
+  grnCode: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -163,22 +172,22 @@ export type JwDcInward = z.infer<typeof jwDcInwardSchema>;
 
 export const jwDcInwardListItemSchema = jwDcInwardSchema.extend({
   vendorNameText: z.string().nullable(),
-  totalReceivedQty: z.number().int().nonnegative(),
-  totalOkQty: z.number().int().nonnegative(),
-  totalRejectedQty: z.number().int().nonnegative(),
+  totalReceivedQty: z.number().nonnegative(),
+  totalOkQty: z.number().nonnegative(),
+  totalRejectedQty: z.number().nonnegative(),
 });
 export type JwDcInwardListItem = z.infer<typeof jwDcInwardListItemSchema>;
 
 // ─── Inward write inputs ───────────────────────────────────────────────────
 
+/** The store says only how much came back. Accept / reject is decided at
+ *  Incoming QC on the QC-pending GRN the receipt raises (ADR-189 — Incoming QC
+ *  is the only inspector, 0172), exactly like DC Receive. */
 export const createJwDcInwardLineInputSchema = z.object({
   jwDcOutwardLineId: z.string().uuid(),
-  receivedQty: z.number().int().positive(),
-  okQty: z.number().int().nonnegative(),
-  rejectedQty: z.number().int().nonnegative(),
+  /** Decimal for KGS / MTR (3 places); NOS / SET stay whole (0172). */
+  receivedQty: z.number().positive().multipleOf(0.001),
   remarks: z.string().trim().max(500).optional(),
-}).refine((v) => v.okQty + v.rejectedQty === v.receivedQty, {
-  message: 'OK + Rejected must equal Received',
 });
 export type CreateJwDcInwardLineInput = z.infer<typeof createJwDcInwardLineInputSchema>;
 
@@ -242,9 +251,14 @@ export const jwDcPoLineSchema = z.object({
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string(),
   processText: z.string().nullable(),
-  poQty: z.number().int().nonnegative(),
-  alreadySent: z.number().int().nonnegative(),
-  available: z.number().int().nonnegative(),
+  /** Unit from the items master (items.uom), shown beside the quantities.
+   *  Null when the line names no item. */
+  uom: z.string().nullable().default(null),
+  poQty: z.number().nonnegative(),
+  /** SENT against the PO line — OSP DCs AND JW DC Outwards together, the one
+   *  figure both screens check (lib/po-line-sent.ts). */
+  alreadySent: z.number().nonnegative(),
+  available: z.number().nonnegative(),
 });
 export type JwDcPoLine = z.infer<typeof jwDcPoLineSchema>;
 

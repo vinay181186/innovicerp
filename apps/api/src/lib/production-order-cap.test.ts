@@ -45,13 +45,13 @@ describe('productionOrderCapError (ADR-182)', () => {
 
   it('refuses an order bigger than what is left, and says how much is left', () => {
     expect(productionOrderCapError('PLN-0009', 50, 40, 30)).toBe(
-      'Plan PLN-0009 has only 10 left of 50 — reduce the qty.',
+      'Order Qty (30) cannot be more than Pending (10) on Plan PLN-0009.',
     );
   });
 
   it('refuses one piece over the line', () => {
     expect(productionOrderCapError('PLN-0009', 50, 40, 11)).toBe(
-      'Plan PLN-0009 has only 10 left of 50 — reduce the qty.',
+      'Order Qty (11) cannot be more than Pending (10) on Plan PLN-0009.',
     );
   });
 
@@ -97,7 +97,7 @@ describe('short close returns the qty to the plan (ADR-182)', () => {
     expect(planCoverage(50, 20)).toEqual({ planQty: 50, coveredQty: 20, pendingQty: 30 });
     expect(productionOrderCapError('PLN-0009', 50, 20, 30)).toBeNull();
     expect(productionOrderCapError('PLN-0009', 50, 20, 31)).toBe(
-      'Plan PLN-0009 has only 30 left of 50 — reduce the qty.',
+      'Order Qty (31) cannot be more than Pending (30) on Plan PLN-0009.',
     );
   });
 });

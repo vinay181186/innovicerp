@@ -10,10 +10,13 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
 import { computeReceivedByLine } from '../lib/receipt-math';
 
@@ -22,6 +25,8 @@ export const deliveryChallanReceiveRoute = createRoute({
   path: 'delivery-challans/$id/receive',
   component: DeliveryChallanReceivePage,
 });
+
+const RECEIVE_FORM_ID = 'dc-receive-form';
 
 interface LineDraft {
   dcLineId: string;
@@ -36,7 +41,10 @@ interface LineDraft {
   clientPoLineNo: string | null;
   itemNameText: string | null;
   sentQty: number;
+  /** ADR-189 — good pieces back so far; rejects are their own column, as on
+   *  the DC detail page, so "Received" means one thing on both screens. */
   alreadyReceived: number;
+  alreadyRejected: number;
   remaining: number;
   receivedQty: string;
 }
@@ -58,7 +66,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   );
   const exit = useExitConfirm({ onExit: goBack });
 
-  const [receiptDate, setReceiptDate] = useState(todayLocal());
+  const [receiptDate, setReceiptDate] = useState(todayIst());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
   const [remarks, setRemarks] = useState('');
   const [lineDrafts, setLineDrafts] = useState<LineDraft[]>([]);
@@ -68,9 +76,20 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   useEffect(() => {
     if (!detail) return;
     const receivedByLine = computeReceivedByLine(detail);
+    const rejectedByLine = new Map<string, number>();
+    for (const r of detail.receipts) {
+      for (const rl of r.lines) {
+        rejectedByLine.set(
+          rl.deliveryChallanLineId,
+          (rejectedByLine.get(rl.deliveryChallanLineId) ?? 0) + Number(rl.rejectedQty ?? 0),
+        );
+      }
+    }
     setLineDrafts(
       detail.lines.map((l) => {
+        // Everything back so far (good + rejected) — what Pending subtracts.
         const already = receivedByLine.get(l.id) ?? 0;
+        const rejected = rejectedByLine.get(l.id) ?? 0;
         const sent = Number(l.qty);
         return {
           dcLineId: l.id,
@@ -80,7 +99,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           clientPoLineNo: l.clientPoLineNo,
           itemNameText: l.itemNameText,
           sentQty: sent,
-          alreadyReceived: already,
+          alreadyReceived: already - rejected,
+          alreadyRejected: rejected,
           remaining: Math.max(0, sent - already),
           receivedQty: '',
         };
@@ -126,17 +146,34 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
       await receive.mutateAsync({ dcId: id, input });
       exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id } }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to record receipt.');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save receipt. Try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  const submitForm = useCallback(() => {
+    const el = document.getElementById(RECEIVE_FORM_ID);
+    if (el instanceof HTMLFormElement) el.requestSubmit();
+  }, []);
+  useSaveShortcut(submitForm, canSubmit && perms.entry);
+  const dirty =
+    vendorInvoiceText !== '' || remarks !== '' || lineDrafts.some((d) => d.receivedQty !== '');
+
+  // FLOW HELPER (frontend only): put each line's Pending into its Receive Now
+  // box. Lines with nothing pending stay blank. Every box stays editable;
+  // nothing is filled until this is clicked.
+  const fillAllPending = (): void => {
+    setLineDrafts((prev) =>
+      prev.map((d) => ({ ...d, receivedQty: d.remaining > 0 ? String(d.remaining) : '' })),
+    );
+  };
+
   if (!perms.entry) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
-          ⛔ You do not have entry access to receive against a delivery challan.
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
+          You do not have permission to receive against a DC. Ask an admin.
         </div>
       </div>
     );
@@ -145,7 +182,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   if (isLoading) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading delivery challan…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading DC…
       </div>
     );
   }
@@ -158,8 +195,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Delivery challan not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'DC not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -169,46 +206,51 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link
-        to="/delivery-challans/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to DC
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
+      <PageHeader
+        sticky
+        title={`Receive against ${detail.vendorName ?? detail.vendorCodeText}`}
+        subtitle={
+          <>
+            <span className="td-code">{detail.code}</span> · Received qty goes to Incoming QC.
+          </>
+        }
+        backLabel="Back to DC"
+        onBack={goBack}
+        dirty={dirty}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form={RECEIVE_FORM_ID}
+              className="btn btn-primary"
+              disabled={!canSubmit}
             >
-              {detail.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Receive against {detail.vendorName ?? detail.vendorCodeText}
-            </div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Record the qty received per line. Everything received goes to Incoming QC as pending —
-              the accept/reject decision (and any defect record) is made there.
-            </div>
-          </div>
-        </div>
-      </div>
+              {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+              {submitting ? 'Saving…' : 'Save Receipt'}
+            </button>
+          </>
+        }
+      />
 
-      <form onSubmit={(e) => void onSubmit(e)}>
+      {/* Save error right under the header's Save. */}
+      {submitError ? (
+        <Banner tone="error" role="alert">
+          {submitError}
+        </Banner>
+      ) : null}
+
+      <form id={RECEIVE_FORM_ID} onSubmit={(e) => void onSubmit(e)}>
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">Receipt header</div>
+            <h2 className="panel-title">Receipt Header</h2>
           </div>
           <div className="panel-body">
-            <div className="form-grid form-grid-3">
-              <div className="form-grp">
-                <label className="form-label" htmlFor="receiptDate">
-                  Receipt date<span className="req">★</span>
-                </label>
+            {/* 12-column grid: Receipt Date · Vendor Invoice · Remarks (3 + 3 + 6). */}
+            <FormGrid>
+              <FormField label="Receipt Date" required size="sm" htmlFor="receiptDate">
                 <input
                   id="receiptDate"
                   type="date"
@@ -217,11 +259,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   onChange={(e) => setReceiptDate(e.target.value)}
                   required
                 />
-              </div>
-              <div className="form-grp">
-                <label className="form-label" htmlFor="vendorInvoice">
-                  Vendor invoice
-                </label>
+              </FormField>
+              <FormField label="Vendor Invoice" size="sm" htmlFor="vendorInvoice">
                 <input
                   id="vendorInvoice"
                   type="text"
@@ -230,11 +269,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   value={vendorInvoiceText}
                   onChange={(e) => setVendorInvoiceText(e.target.value)}
                 />
-              </div>
-              <div className="form-grp">
-                <label className="form-label" htmlFor="remarks">
-                  Remarks
-                </label>
+              </FormField>
+              <FormField label="Remarks" size="lg" htmlFor="remarks">
                 <input
                   id="remarks"
                   type="text"
@@ -243,107 +279,73 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                 />
-              </div>
-            </div>
+              </FormField>
+            </FormGrid>
           </div>
         </div>
 
         <div className="panel">
           <div className="panel-hdr">
-            <div>
-              <div className="panel-title">Lines</div>
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                Each row shows what was sent and what's still outstanding. Enter the qty just
-                received — quality is checked later at Incoming QC.
-              </div>
-            </div>
+            <h2 className="panel-title">Lines</h2>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={fillAllPending}>
+              Fill all pending
+            </button>
           </div>
-          <div className="panel-body">
-            <div className="tbl-wrap">
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th>Ln</th>
-                    {/* POL = the CUSTOMER's own PO line number off the SO line
-                        behind this challan line. */}
-                    <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item Code · Name</th>
-                    <th>Sent</th>
-                    <th>Received so far</th>
-                    <th>Pending</th>
-                    <th>Receive Now</th>
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>Ln</th>
+                  {/* POL = the CUSTOMER's own PO line number off the SO line
+                      behind this challan line. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
+                  <th>Item Code · Name</th>
+                  <th className="th-num">Sent</th>
+                  <th className="th-num">Received</th>
+                  <th className="th-num">Rejected</th>
+                  <th className="th-num">Pending</th>
+                  <th className="th-num">Receive Now</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineDrafts.map((d, idx) => (
+                  <tr key={d.dcLineId}>
+                    <td className="mono">{d.lineNo}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {d.clientPoLineNo ?? '—'}
+                    </td>
+                    <td>
+                      <span className="mono fw-700">
+                        {itemCodeWithRev(d.itemCodeText, d.itemRevision)}
+                      </span>
+                      {d.itemNameText ? (
+                        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                          {d.itemNameText}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="mono td-num">{d.sentQty.toFixed(0)}</td>
+                    <td className="mono td-num">{d.alreadyReceived.toFixed(0)}</td>
+                    <td className="mono td-num">{d.alreadyRejected.toFixed(0)}</td>
+                    <td className="mono td-num fw-700">{d.remaining.toFixed(0)}</td>
+                    <td className="td-num">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={d.remaining}
+                        className="innovic-input"
+                        value={d.receivedQty}
+                        onChange={(e) => updateDraft(idx, { receivedQty: e.target.value })}
+                        disabled={d.remaining === 0}
+                        style={{ width: 90 }}
+                      />
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {lineDrafts.map((d, idx) => (
-                    <tr key={d.dcLineId}>
-                      <td className="mono">{d.lineNo}</td>
-                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                        {d.clientPoLineNo ?? '—'}
-                      </td>
-                      <td>
-                        <span className="mono">
-                          {itemCodeWithRev(d.itemCodeText, d.itemRevision)}
-                        </span>
-                        {d.itemNameText ? (
-                          <div className="text3" style={{ fontSize: 11 }}>
-                            {d.itemNameText}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="mono">{d.sentQty.toFixed(0)}</td>
-                      <td className="mono">{d.alreadyReceived.toFixed(0)}</td>
-                      <td className="mono fw-700">{d.remaining.toFixed(0)}</td>
-                      <td>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={0}
-                          max={d.remaining}
-                          className="innovic-input"
-                          value={d.receivedQty}
-                          onChange={(e) => updateDraft(idx, { receivedQty: e.target.value })}
-                          disabled={d.remaining === 0}
-                          style={{ width: 90, textAlign: 'right' }}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        {submitError ? (
-          <div
-            style={{
-              color: 'var(--red)',
-              background: 'var(--red3)',
-              border: '1px solid #fca5a5',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
-          >
-            {submitError}
-          </div>
-        ) : null}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          <Link
-            to="/delivery-challans/$id"
-            params={{ id }}
-            className="btn btn-ghost"
-            onClick={exit.allow}
-          >
-            Cancel
-          </Link>
-          <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
-            {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {submitting ? 'Recording…' : 'Record receipt'}
-          </button>
         </div>
       </form>
     </div>

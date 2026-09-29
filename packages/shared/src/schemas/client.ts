@@ -15,6 +15,9 @@ export const clientSchema = z.object({
   city: z.string().max(100).nullable(),
   state: z.string().max(100).nullable(),
   pincode: z.string().max(12).nullable(),
+  /** Payment Days — days this customer is allowed to pay an invoice in. The
+   *  default for a new invoice's Payment Terms (ADR-188). Null = not set. */
+  paymentDays: z.number().int().min(0).max(365).nullable(),
   isActive: z.boolean(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -42,6 +45,8 @@ export const createClientInputSchema = z.object({
   city: z.string().max(100).optional(),
   state: z.string().max(100).optional(),
   pincode: z.string().max(12).optional(),
+  /** Payment Days (ADR-188). null clears it on update. */
+  paymentDays: z.number().int().min(0).max(365).nullable().optional(),
   isActive: z.boolean().default(true),
 });
 export type CreateClientInput = z.infer<typeof createClientInputSchema>;

@@ -25,14 +25,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { QcCallInspectForm } from './qc-call-inspect-form';
+import { QcCallInspectForm, type RaisedNc } from './qc-call-inspect-form';
 
 export function QcCallInspectModal({
   o,
   onClose,
+  onNcRaised,
 }: {
   o: QcHistoryPendingRow;
   onClose: () => void;
+  /** A reject raised an NC — the register shows it with a link (ADR-190). */
+  onNcRaised?: ((nc: RaisedNc) => void) | undefined;
 }): React.JSX.Element {
   // Whether anything has been typed or attached — reported up by the form.
   // Decides if closing asks first.
@@ -78,7 +81,7 @@ export function QcCallInspectModal({
   }, []);
 
   const itemCode = itemCodeWithRev(o.itemCode, o.itemRevision, '');
-  const opLabel = `Op${opSrNo(o.opSeq)} ${o.operation}`;
+  const opLabel = `Op ${opSrNo(o.opSeq)} ${o.operation}`;
   const titleText = `${o.jcCode} · ${opLabel}${itemCode ? ` · ${itemCode}` : ''}${
     o.itemName ? ` ${o.itemName}` : ''
   }`;
@@ -179,7 +182,10 @@ export function QcCallInspectModal({
             onCancel={requestClose}
             // Close once the entry has actually landed. The register refetches
             // behind the box (the form invalidates its feed on success).
-            onDone={onClose}
+            onDone={(nc) => {
+              if (nc) onNcRaised?.(nc);
+              onClose();
+            }}
             onDirtyChange={setDirty}
           />
         ) : eff ? (
@@ -188,7 +194,7 @@ export function QcCallInspectModal({
              shown while access is still loading, or every inspector would see
              it flash. */
           <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
-            Your access lets you view this queue but not record an inspection.
+            You do not have permission to inspect this QC call. Ask an admin.
           </div>
         ) : null}
       </div>

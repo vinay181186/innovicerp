@@ -44,7 +44,7 @@ export function ItemImageField({
       const path = await uploadItemImage(file, me.companyId);
       onChange(path);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
     } finally {
       setBusy(false);
     }

@@ -4,9 +4,9 @@
 
 import { NC_REASON_CATEGORY_LABELS, type QcCommandPareto } from '@innovic/shared';
 
-const RANK_COLORS = ['#EF4444', '#F59E0B', '#F97316', '#64748B'];
+const RANK_COLORS = ['var(--red2)', 'var(--amber2)', 'var(--orange2)', 'var(--text3)'];
 function rankColor(i: number): string {
-  return RANK_COLORS[i] ?? '#64748B';
+  return RANK_COLORS[i] ?? 'var(--text3)';
 }
 
 function reasonLabel(reason: string): string {
@@ -28,22 +28,22 @@ export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.El
             color: 'var(--text2)',
           }}
         >
-          Rejection Reason Pareto — Total: {pareto.totalCount} NCs, {pareto.totalQty} pcs rejected
+          Top Rejection Reasons — Total: {pareto.totalCount} NCs, {pareto.totalQty} pcs rejected
         </div>
         {pareto.rows.length === 0 ? (
-          <div className="empty-state" style={{ color: 'var(--green)' }}>
-            ✅ No rejections recorded
+          <div className="empty-state" style={{ color: 'var(--green2)' }}>
+            No rejections recorded yet.
           </div>
         ) : (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Sr No</th>
                   <th>Reason</th>
-                  <th className="td-ctr">NC Count</th>
-                  <th className="td-ctr">Rejected</th>
-                  <th className="td-ctr">% of Total</th>
+                  <th className="th-num">NC Count</th>
+                  <th className="th-num">Rejected</th>
+                  <th className="th-num">% of Total</th>
                   <th>Top Items</th>
                   <th style={{ width: 200 }}>Distribution</th>
                 </tr>
@@ -51,13 +51,13 @@ export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.El
               <tbody>
                 {pareto.rows.map((r, i) => (
                   <tr key={r.reason}>
-                    <td className="td-ctr mono fw-700">{i + 1}</td>
+                    <td className="mono fw-700">{i + 1}</td>
                     <td style={{ fontSize: 12, fontWeight: 600 }}>{reasonLabel(r.reason)}</td>
-                    <td className="td-ctr mono">{r.count}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
+                    <td className="td-num mono">{r.count}</td>
+                    <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
                       {r.rejectedQty}
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: rankColor(i) }}>
+                    <td className="td-num mono fw-700" style={{ color: rankColor(i) }}>
                       {r.pct}%
                     </td>
                     <td className="text3" style={{ fontSize: 11 }}>
@@ -84,13 +84,6 @@ export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.El
           </div>
         )}
       </div>
-      {/* Legacy L18848 returns before emitting the tip when there are no rows. */}
-      {pareto.rows.length > 0 ? (
-        <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-          💡 Focus on the top 2-3 reasons to improve quality. The Pareto principle: often 80% of
-          rejections come from 20% of causes.
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -3,8 +3,8 @@
 // _29-04-2026.html L6217-6310): status counts → filter row → the PR book.
 //
 // Styled to SO Master (sales-orders/routes/list.tsx) 2026-08-13:
-//  - The four status COUNT CARDS are one `<StatStrip>` row (styling skill
-//    Rule 3) — same counts, same click-to-filter, no per-tile cards.
+//  - The four status COUNTS ride in the status dropdown's option labels
+//    (2026-09-26 filter bar; they were a clickable StatStrip row before).
 //  - Title + search + status filter + New PR sit in the frozen header band.
 //  - The 11-column table (nowrap on every cell, three free-text columns) is one
 //    `.panel` card per PR, so the page no longer scrolls sideways and the PR No.
@@ -12,10 +12,12 @@
 // Nothing about the data, the filters, the mutations or the API changed.
 //
 // Legacy deltas kept deliberately (see docs/ISSUES.md ISSUE-025..027):
-//  - No checkbox column / "🛒 Create PO from Selected" and no SO filter: the
-//    club-PO flow is ported on /outsource-jobs (from-pr-batch) and the list API
-//    has no SO/JC filter param. The legacy tip line that advertises both is
-//    therefore not shipped either.
+//  - No SO filter: the list API has no SO/JC filter param.
+//  - 2026-09-26 (round-2): each orderable PR card carries a tick box; ticked
+//    PRs of ONE vendor go to /purchase-orders/from-pr?prIds=… as one PO with a
+//    line per PR (the club-PO flow). The Outsource Jobs tab's "Create PO from
+//    Selected" goes to the same form the same way (2026-09-28; its old popup
+//    and from-pr-batch call are retired).
 //  - Approve / Reject buttons (L4 Approver and above, open PRs) call the dedicated
 //    /approve + /reject endpoints, which stamp approvedBy/approvedAt (approve)
 //    or record a reason + cancel (reject). A raw PATCH can no longer change
@@ -30,16 +32,19 @@ import {
   type PurchaseRequestListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
 import { PrCard } from '../components/pr-card';
+import { prOrderBalance } from '../lib/pr-balance';
+import { PR_STATUS_LABELS } from '../lib/pr-labels';
+import { prVendorKey } from '../lib/pr-vendor-key';
 
 const PAGE_SIZE = 25;
 
@@ -50,6 +55,21 @@ const COUNT_ALL: ListPurchaseRequestsQuery = { limit: 1, offset: 0 };
 const COUNT_OPEN: ListPurchaseRequestsQuery = { status: 'open', limit: 1, offset: 0 };
 const COUNT_APPROVED: ListPurchaseRequestsQuery = { status: 'approved', limit: 1, offset: 0 };
 const COUNT_PO_CREATED: ListPurchaseRequestsQuery = { status: 'po_created', limit: 1, offset: 0 };
+const COUNT_CANCELLED: ListPurchaseRequestsQuery = { status: 'cancelled', limit: 1, offset: 0 };
+
+/** One ticked PR on the list — kept by id so a tick survives paging. */
+interface SelectedPr {
+  id: string;
+  /** null = vendor still TBD: fits any vendor. */
+  vendorKey: string | null;
+  vendorLabel: string;
+}
+
+/** Same gate as the card's own "Create PO" button: not cancelled and still has
+ *  quantity left to order (ADR-152). */
+function isOrderable(pr: PurchaseRequestListItem): boolean {
+  return pr.status !== 'cancelled' && prOrderBalance(pr).balance > 0;
+}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -85,7 +105,11 @@ function PurchaseRequestsListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -122,9 +146,10 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const handleApprove = useCallback(
     (pr: PurchaseRequestListItem): void => {
       setActionError(null);
-      if (!window.confirm(`Approve ${pr.code}?`)) return;
+      if (!window.confirm(`Approve PR ${pr.code}?`)) return;
       approveMut.mutate(pr.id, {
-        onError: (e) => setActionError(e instanceof Error ? e.message : 'Approve failed'),
+        onError: (e) =>
+          setActionError(e instanceof Error ? e.message : 'Could not approve PR. Try again.'),
       });
     },
     [approveMut],
@@ -136,12 +161,15 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       const reason = window.prompt(`Reject ${pr.code} — reason:`);
       if (reason === null) return; // cancelled prompt
       if (!reason.trim()) {
-        setActionError('Rejection reason is required');
+        setActionError('Rejection reason is required.');
         return;
       }
       rejectMut.mutate(
         { id: pr.id, reason: reason.trim() },
-        { onError: (e) => setActionError(e instanceof Error ? e.message : 'Reject failed') },
+        {
+          onError: (e) =>
+            setActionError(e instanceof Error ? e.message : 'Could not reject PR. Try again.'),
+        },
       );
     },
     [rejectMut],
@@ -154,6 +182,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const openCount = usePurchaseRequestsList(COUNT_OPEN).data?.total ?? 0;
   const approvedCount = usePurchaseRequestsList(COUNT_APPROVED).data?.total ?? 0;
   const poCreatedCount = usePurchaseRequestsList(COUNT_PO_CREATED).data?.total ?? 0;
+  const cancelledCount = usePurchaseRequestsList(COUNT_CANCELLED).data?.total ?? 0;
 
   const setStatusFilter = useCallback(
     (next: PrStatus | undefined): void => {
@@ -162,12 +191,52 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     [navigate],
   );
 
-  const toggleStatus = (s: PrStatus) => () => setStatusFilter(search.status === s ? undefined : s);
+  // Status counts ride in the status dropdown's option labels (owner decision
+  // 2026-09-26: one filter bar, no capsule row).
+  const statusCounts: Partial<Record<PrStatus, number>> = {
+    open: openCount,
+    approved: approvedCount,
+    po_created: poCreatedCount,
+    cancelled: cancelledCount,
+  };
+
+  const clearFilters = useCallback((): void => {
+    setSearchInput('');
+    void navigate({
+      search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+      replace: true,
+    });
+  }, [navigate]);
 
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
+
+  // — "Create PO from Selected" (round-2). Ticks survive paging and filtering
+  //    (the map is keyed by PR id), and are limited to ONE vendor: once a PR
+  //    with a vendor is ticked, a PR of a different vendor cannot be. A PR whose
+  //    vendor is still TBD fits any vendor — the PO form treats it the same way.
+  const [selected, setSelected] = useState<Map<string, SelectedPr>>(() => new Map());
+  const selectedList = useMemo(() => [...selected.values()], [selected]);
+  const lockedVendor = useMemo(() => {
+    const hit = selectedList.find((x) => x.vendorKey !== null);
+    return hit && hit.vendorKey !== null ? { key: hit.vendorKey, label: hit.vendorLabel } : null;
+  }, [selectedList]);
+  const toggleSelect = useCallback((pr: PurchaseRequestListItem): void => {
+    setSelected((m) => {
+      const next = new Map(m);
+      if (next.has(pr.id)) next.delete(pr.id);
+      else
+        next.set(pr.id, {
+          id: pr.id,
+          vendorKey: prVendorKey(pr),
+          vendorLabel: pr.vendorName ?? pr.vendorCodeText ?? '—',
+        });
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelected(new Map()), []);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
@@ -175,8 +244,8 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Purchase Requests. Ask an admin.
       </div>
     );
   }
@@ -208,7 +277,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               marginBottom: -1,
             }}
           >
-            {t === 'pr' ? '📋 Purchase Requests' : '🔗 Outsource Jobs'}
+            {t === 'pr' ? 'Purchase Requests' : 'Outsource Jobs'}
           </button>
         ))}
       </div>
@@ -217,126 +286,88 @@ function PurchaseRequestsListPage(): React.JSX.Element {
         <OutsourceJobsView />
       ) : (
         <>
-          {/* Frozen header band — title + count + search + status + New PR + the
-          count strip stay pinned; the PR cards scroll under them. `#content` is
-          the scroll container, so the background must be the opaque `--bg` or
-          cards show through. Never bled to the edges: that gives the whole app
-          a horizontal scrollbar. */}
-          <div
-            style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 20,
-              background: 'var(--bg)',
-              paddingBottom: 8,
-              marginBottom: 10,
-              borderBottom: '1px solid var(--border)',
-            }}
+          {/* THE list header (ui/layout ListHeader): title · count · + New PR,
+              then the filter bar (search · status with counts · Clear), with
+              the "Create PO from Selected" bar pinned inside the same band. */}
+          <ListHeader
+            title="Purchase Requests"
+            icon="📄"
+            count={total}
+            noun="request"
+            filterNote={search.status ? PR_STATUS_LABELS[search.status] : undefined}
+            search={searchInput}
+            onSearch={setSearchInput}
+            searchPlaceholder="Search PR No., item, vendor, SO/JC, PO…"
+            updating={isFetching && !isLoading}
+            filters={
+              <select
+                className="innovic-select"
+                value={search.status ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value as PrStatus | '';
+                  setStatusFilter(v === '' ? undefined : v);
+                }}
+                aria-label="PR Status"
+                title="PR Status"
+              >
+                <option value="">All PRs ({allCount})</option>
+                {PR_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {statusCounts[s] !== undefined
+                      ? `${PR_STATUS_LABELS[s]} (${statusCounts[s]})`
+                      : PR_STATUS_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            }
+            onClearFilters={clearFilters}
+            filtersActive={search.status !== undefined || searchInput !== ''}
+            primary={
+              perms.entry ? (
+                <Link to="/purchase-requests/new" className="btn btn-primary">
+                  <Plus size={14} /> New PR
+                </Link>
+              ) : null
+            }
           >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                marginBottom: 10,
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div className="section-hdr" style={{ marginBottom: 0 }}>
-                  Purchase Requests
-                </div>
-                <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-                  {total} request{total === 1 ? '' : 's'}
-                  {search.status ? (
-                    <>
-                      {' '}
-                      · <span className="text2">{search.status.replaceAll('_', ' ')}</span> only
-                    </>
-                  ) : null}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <input
-                  className="innovic-input"
-                  placeholder="🔍 Search PR no, item, vendor, SO/JC, PO…"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  style={{ width: 220, fontSize: 12 }}
-                />
-                <select
-                  className="innovic-select"
-                  value={search.status ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value as PrStatus | '';
-                    setStatusFilter(v === '' ? undefined : v);
-                  }}
-                  style={{ width: 160, fontSize: 12 }}
-                >
-                  <option value="">All statuses</option>
-                  {PR_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s.replaceAll('_', ' ')}
-                    </option>
-                  ))}
-                </select>
-                {isFetching && !isLoading ? (
-                  <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                    <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+            {selectedList.length > 0 ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  marginTop: 8,
+                  fontSize: 12,
+                }}
+              >
+                <span className="fw-700">
+                  {selectedList.length} PR{selectedList.length === 1 ? '' : 's'} selected
+                </span>
+                {lockedVendor ? (
+                  <span className="text3">
+                    · Vendor <span className="text2 fw-700">{lockedVendor.label}</span>
                   </span>
                 ) : null}
-                {perms.entry ? (
-                  <Link to="/purchase-requests/new" className="btn btn-primary">
-                    <Plus size={14} /> New PR
-                  </Link>
-                ) : null}
+                <span style={{ flex: 1 }} />
+                <button type="button" className="btn btn-ghost btn-sm" onClick={clearSelection}>
+                  Clear
+                </button>
+                <Link
+                  to="/purchase-orders/from-pr"
+                  search={{ prIds: selectedList.map((x) => x.id).join(',') }}
+                  className="btn btn-primary btn-sm"
+                >
+                  Create PO from Selected ({selectedList.length})
+                </Link>
               </div>
-            </div>
-
-            <StatStrip
-              items={[
-                {
-                  key: 'open',
-                  label: 'Open',
-                  count: openCount,
-                  color: 'var(--amber)',
-                  active: search.status === 'open',
-                  onClick: toggleStatus('open'),
-                },
-                {
-                  key: 'approved',
-                  label: 'Approved (Awaiting PO)',
-                  count: approvedCount,
-                  color: 'var(--blue)',
-                  active: search.status === 'approved',
-                  onClick: toggleStatus('approved'),
-                },
-                {
-                  key: 'po_created',
-                  label: 'PO Created',
-                  count: poCreatedCount,
-                  color: 'var(--green)',
-                  active: search.status === 'po_created',
-                  onClick: toggleStatus('po_created'),
-                },
-                {
-                  key: 'all',
-                  label: 'All PRs',
-                  count: allCount,
-                  color: 'var(--cyan)',
-                  active: search.status === undefined,
-                  onClick: () => setStatusFilter(undefined),
-                  title: 'Clear the status filter',
-                },
-              ]}
-            />
-          </div>
+            ) : null}
+          </ListHeader>
 
           {actionError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red)',
                 borderRadius: 6,
@@ -355,75 +386,65 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               Loading…
             </div>
           ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load purchase requests'}
+            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load PRs. Try again.'}
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No purchase requests found
+              {search.search || search.status ? 'No PRs match.' : 'No PRs yet.'}
             </div>
           ) : (
-            rows.map((pr) => (
-              <PrCard
-                key={pr.id}
-                pr={pr}
-                canApprove={perms.approve}
-                canEntry={canCreatePo}
-                approving={approveMut.isPending}
-                rejecting={rejectMut.isPending}
-                onApprove={handleApprove}
-                onReject={handleReject}
-              />
-            ))
+            rows.map((pr) => {
+              const orderable = canCreatePo && isOrderable(pr);
+              const key = prVendorKey(pr);
+              const clashWith =
+                lockedVendor && key !== null && key !== lockedVendor.key && !selected.has(pr.id)
+                  ? lockedVendor.label
+                  : null;
+              return (
+                <PrCard
+                  key={pr.id}
+                  pr={pr}
+                  canApprove={perms.approve}
+                  canEntry={canCreatePo}
+                  approving={approveMut.isPending}
+                  rejecting={rejectMut.isPending}
+                  onApprove={handleApprove}
+                  onReject={handleReject}
+                  select={
+                    orderable
+                      ? {
+                          checked: selected.has(pr.id),
+                          disabledReason:
+                            clashWith !== null
+                              ? `Only one vendor per PO — ${clashWith} is already selected`
+                              : undefined,
+                          onToggle: () => toggleSelect(pr),
+                        }
+                      : undefined
+                  }
+                />
+              );
+            })
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 8,
-              fontSize: 12,
-              color: 'var(--text3)',
-            }}
-          >
-            <span>
-              {total === 0
-                ? 'No purchase requests'
-                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-            </span>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage <= 1}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-                Page {currentPage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage >= totalPages}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                Next <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
+          <ListFooter
+            total={total}
+            noun="purchase request"
+            page={currentPage}
+            pageSize={PAGE_SIZE}
+            onPage={(p) =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+                replace: true,
+              })
+            }
+            hint={
+              canCreatePo
+                ? 'Tick the PRs of one vendor, then "Create PO from Selected" to raise one PO with a line per PR.'
+                : undefined
+            }
+          />
         </>
       )}
     </div>

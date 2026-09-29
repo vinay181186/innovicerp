@@ -14,15 +14,15 @@ import { getCol, parseActiveStatus, readSheetRows } from '@/lib/xlsx-import';
 
 // No Code column — the server auto-generates the next VND-### on import.
 const COLUMNS = [
-  'Name*',
+  'Vendor Name*',
   'Contact Person',
   'Phone',
   'Email',
-  'GST No.',
+  'GSTIN',
   'Address',
   'City',
   'State',
-  'PIN',
+  'Pincode',
   'Materials/Services',
   'Rating (A/B/C)',
   'Status (Active/Inactive)',
@@ -37,7 +37,7 @@ export function downloadVendorTemplate(): void {
   ws['!cols'] = [20, 18, 14, 22, 18, 30, 14, 12, 8, 25, 12, 18].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Vendors');
-  XLSX.writeFile(wb, 'Vendor_Import_Template.xlsx');
+  XLSX.writeFile(wb, 'Vendor Import Template.xlsx');
 }
 
 export interface VendorImportResult {
@@ -58,10 +58,12 @@ export async function parseVendorImportFile(file: File): Promise<VendorImportRes
     // Code is optional — the server auto-generates the next VND-### when it is
     // omitted. A file that still carries a Code column is honoured if present.
     const code = getCol(r, ['Code*', 'Code', 'code', 'Vendor Code']);
-    const name = getCol(r, ['Name*', 'Name', 'name', 'Vendor Name']);
+    // Headers renamed 2026-09-26 (Name → Vendor Name, GST No. → GSTIN, PIN →
+    // Pincode); the old names stay in each alias list so older sheets import.
+    const name = getCol(r, ['Vendor Name*', 'Vendor Name', 'Name*', 'Name', 'name']);
     if (!code && !name) return;
     if (!name) {
-      errors.push(`Row ${rowNum}: Name is required — skipped`);
+      errors.push(`Row ${rowNum}: Vendor Name is required — skipped`);
       return;
     }
     if (code && seen.has(code)) {
@@ -86,11 +88,11 @@ export async function parseVendorImportFile(file: File): Promise<VendorImportRes
       contactPerson: getCol(r, ['Contact Person', 'Contact', 'contact']) || undefined,
       phone: getCol(r, ['Phone', 'phone']) || undefined,
       email: email || '',
-      gstNumber: getCol(r, ['GST No.', 'GST', 'gst', 'GST No']) || undefined,
+      gstNumber: getCol(r, ['GSTIN', 'GST No.', 'GST', 'gst', 'GST No']) || undefined,
       addressLine1: getCol(r, ['Address', 'address']) || undefined,
       city: getCol(r, ['City', 'city']) || undefined,
       state: getCol(r, ['State', 'state']) || undefined,
-      pincode: getCol(r, ['PIN', 'Pincode', 'pincode', 'PinCode']) || undefined,
+      pincode: getCol(r, ['Pincode', 'PIN', 'pincode', 'PinCode']) || undefined,
       materialsSupplied: getCol(r, ['Materials/Services', 'Materials', 'materials']) || undefined,
       rating,
       isActive: status.value,

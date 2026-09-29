@@ -3,10 +3,10 @@
 // PHASE 4 — migrated onto apps/web/src/ui/ following the GROUP 1 reference
 // implementation, modules/clients/routes/list.tsx:
 //
-//   <ListHeader>            title · count · ⟳ Updating… · the two create buttons
-//     <StatStrip>           the KPI strip (loaded/filtered counts, read-only)
-//     <FilterBar>           search · status · machine · operator · dates · ☰/▦
-//   </ListHeader>           — all of it inside the ONE sticky band, as before
+//   <ListHeader>            row 1: title · count … ☰/▦ · + New JWSO JC · + Plan &
+//                           Create (primary); row 2 (filter bar): search · status
+//                           (counts in the labels) · machine · operator · dates ·
+//                           Clear — all inside the ONE sticky band
 //   <Panel><DataTable>      LIST VIEW — the ruled sheet
 //   … or the card list      CARD VIEW — unchanged anatomy, primitives inside
 //   <ListFooter>            count line · pager · 💡 hint
@@ -27,12 +27,11 @@
 //     IMAGE (items.image_path), NOT the drawing (user decision 2026-09-21);
 //     the old drawing-based PartThumb wrote a drawing_view audit row per row
 //     shown, and the product image is not a controlled document;
-//   · the KPI buckets (open = not started · in progress = started · completed =
-//     complete or closed · overdue = past due and not done · on hold = always
-//     0, no such state exists) and their note that they count the LOADED list;
+//   · (the Open / In Progress / Completed / Overdue strip was removed on
+//     2026-09-26 — owner's filter-bar decision; the counts now sit in the JC
+//     Status dropdown labels, still counting the LOADED list);
 //   · the Days Left colour rule — no date or done: muted · late: red ·
-//     5 days or less: amber · otherwise green — and the same isDone() behind
-//     both it and the KPI buckets, so the two can never disagree;
+//     5 days or less: amber · otherwise green;
 //   · the card's left accent bar (red late · green finished · blue otherwise)
 //     and its overdue "Due <date> ⚠" in red;
 //   · the List/Card choice remembered per browser, in a try/catch so a
@@ -41,7 +40,7 @@
 //     edit+approve pair only L5 Department Admin and above hold.
 //
 // JC STATUS COLOURS are now <StatusBadge kind="jc">, whose map
-// (open grey · qc_pending amber · complete cyan · closed green · no_ops red)
+// (open grey · qc_pending amber · complete green · closed green · no_ops red)
 // is the SAME map the local jc-status-badge.tsx carries, checked value by
 // value — nothing about what a colour means has changed. That file stays: the
 // Job Card detail view, the stat tiles and two Production Order screens still
@@ -56,28 +55,23 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { ItemBadge, ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Badge, StatusBadge } from '@/ui/core';
-import {
-  DataTable,
-  Panel,
-  ProgressBar,
-  QtyStrip,
-  StatStrip,
-  type DataTableColumn,
-} from '@/ui/data';
-import { Input } from '@/ui/forms';
+import { DataTable, Panel, ProgressBar, QtyStrip, type DataTableColumn } from '@/ui/data';
+import { Input, Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions, ViewToggle } from '@/ui/layout';
-import { FilterBar } from '@/ui/navigation';
 import { useDeleteJobCard, useJobCardsList } from '../api';
 import { ExcelJcButton } from '../components/excel-jc-button';
+import { JC_STATUS_LABEL } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
 
 // One fetch, cap 200 (mirrors the SO/WO list).
@@ -102,8 +96,18 @@ function accentFor(jc: JobCardListItem, today: string): string {
   return 'var(--blue)';
 }
 
-/** A job is "done" when it has reached complete or closed — used by both the KPI
- *  buckets and the Days Left column so the two never disagree. */
+/** Late and unfinished — the same rule as the red accent bar and "Due ⚠". */
+function isOverdueJc(jc: JobCardListItem, today: string): boolean {
+  return (
+    jc.dueDate != null &&
+    jc.dueDate < today &&
+    jc.computedStatus !== 'closed' &&
+    jc.computedStatus !== 'complete'
+  );
+}
+
+/** A job is "done" when it has reached complete or closed — the Days Left
+ *  column's rule. */
 function isDone(jc: JobCardListItem): boolean {
   return jc.computedStatus === 'complete' || jc.computedStatus === 'closed';
 }
@@ -139,6 +143,9 @@ function sourceRoute(link: NonNullable<JobCardListItem['sourceLink']>): {
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(JC_COMPUTED_STATUSES).optional(),
+  /** "Overdue" in the Status dropdown — not a stored status: past its due
+   *  date and not complete / closed. Filtered on the loaded set. */
+  overdue: z.boolean().optional(),
   machineId: z.string().uuid().optional(),
   operatorId: z.string().uuid().optional(),
   fromDate: z
@@ -165,7 +172,11 @@ function JobCardsListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   // List View (the sheet) vs Card View (the SO-style cards). List is the
@@ -191,9 +202,9 @@ function JobCardsListPage(): React.JSX.Element {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  IN-JC  26 " and "IN-JC 26" are one query, one cache entry, one URL.
     //
-    // The debounce stays HERE, not on <FilterBar searchDebounceMs>: what is
-    // being delayed is the URL write, and the box must show the keystroke at
-    // once. FilterBar reports every keystroke into `searchInput`; this effect
+    // The debounce stays HERE, not on the search box: what is being delayed
+    // is the URL write, and the box must show the keystroke at once. The
+    // ListHeader box reports every keystroke into `searchInput`; this effect
     // is what waits 300ms before the route changes.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
@@ -245,9 +256,22 @@ function JobCardsListPage(): React.JSX.Element {
   const canDeleteJc = perms.edit && perms.approve;
   const del = useDeleteJobCard();
 
-  const total = data?.total ?? 0;
-  const rows = useMemo(() => data?.items ?? [], [data?.items]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
+  const rows = useMemo(() => {
+    const loaded = data?.items ?? [];
+    return search.overdue ? loaded.filter((jc) => isOverdueJc(jc, today)) : loaded;
+  }, [data?.items, search.overdue, today]);
+  // Overdue is filtered in the browser, so its total is the rows shown.
+  const total = search.overdue ? rows.length : (data?.total ?? 0);
+  const filtered =
+    !!search.search ||
+    !!search.status ||
+    !!search.overdue ||
+    !!search.machineId ||
+    !!search.operatorId ||
+    !!search.fromDate ||
+    !!search.toDate;
+  const emptyText = filtered ? 'No Job Cards match.' : 'No Job Cards yet.';
 
   // Client-side pagination for the List View (Card View keeps its full scroll).
   // Keeps each page to PAGE_SIZE rows so only a page's worth of thumbnails load.
@@ -258,38 +282,65 @@ function JobCardsListPage(): React.JSX.Element {
     void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
   };
 
-  // KPI tiles — computed from the CURRENTLY LOADED/filtered rows (the API returns
-  // a filtered total, not global per-status counts). Buckets:
-  //   Open        = not started (no ops done) and not done
-  //   In Progress = started (an op done / QC pending / a running session) not done
-  //   Completed   = complete or closed
-  //   Overdue     = past due and not done
-  //   On Hold     = no such state exists in job-card data → always 0 (see report)
-  const kpis = useMemo(() => {
-    let open = 0;
-    let inProgress = 0;
-    let completed = 0;
+  // Status counts for the JC Status dropdown labels ("Open (40)") — the
+  // owner's 2026-09-26 filter-bar decision replaced the Open / In Progress /
+  // Completed / Overdue strip with these. Counted over the list loaded WITHOUT
+  // the status filter (every other filter and the search still apply), so
+  // picking "Closed" does not turn every other option into "(0)". While no
+  // status is picked this is the very same query as the list — one fetch,
+  // shared cache entry. Like the old strip, it counts the LOADED set (cap 200).
+  const countQuery: ListJobCardsQuery = useMemo(() => ({ ...query, status: undefined }), [query]);
+  const { data: countData } = useJobCardsList(countQuery);
+  const statusCounts = useMemo(() => {
+    const c: Record<JcComputedStatus, number> = {
+      open: 0,
+      qc_pending: 0,
+      complete: 0,
+      closed: 0,
+      no_ops: 0,
+    };
     let overdue = 0;
-    for (const jc of rows) {
-      if (isDone(jc)) {
-        completed += 1;
-      } else if (jc.doneOps > 0 || jc.computedStatus === 'qc_pending' || jc.runningCount > 0) {
-        inProgress += 1;
-      } else {
-        open += 1;
-      }
-      if (!isDone(jc) && jc.dueDate != null && jc.dueDate < today) overdue += 1;
+    for (const jc of countData?.items ?? []) {
+      c[jc.computedStatus] += 1;
+      if (isOverdueJc(jc, today)) overdue += 1;
     }
-    return { total: rows.length, open, inProgress, onHold: 0, completed, overdue };
-  }, [rows, today]);
+    return { all: countData?.items.length ?? 0, byStatus: c, overdue };
+  }, [countData?.items, today]);
+  const countsReady = countData != null;
 
   const setNav = (
     update: Partial<
-      Pick<typeof search, 'status' | 'machineId' | 'operatorId' | 'fromDate' | 'toDate'>
+      Pick<typeof search, 'status' | 'overdue' | 'machineId' | 'operatorId' | 'fromDate' | 'toDate'>
     >,
   ): void => {
     void navigate({
       search: (prev) => ({ ...prev, ...update, page: 1 }),
+      replace: true,
+    });
+  };
+
+  const filtersActive =
+    searchInput.trim() !== '' ||
+    search.status != null ||
+    search.overdue === true ||
+    search.machineId != null ||
+    search.operatorId != null ||
+    search.fromDate != null ||
+    search.toDate != null;
+  const clearFilters = (): void => {
+    setSearchInput('');
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        search: undefined,
+        status: undefined,
+        overdue: undefined,
+        machineId: undefined,
+        operatorId: undefined,
+        fromDate: undefined,
+        toDate: undefined,
+        page: 1,
+      }),
       replace: true,
     });
   };
@@ -326,19 +377,21 @@ function JobCardsListPage(): React.JSX.Element {
       onDelete={canDeleteJc ? (): Promise<void> => del.mutateAsync(jc.id) : undefined}
       deleteDisabled={del.isPending}
       deleteConfirm={{
-        title: `Delete job card ${jc.code}?`,
-        message: `${jc.code} — ${itemCodeWithRev(jc.itemCode, jc.itemRevision)} stops appearing in Job Cards, on the shop floor and in Op Entry.`,
-        confirmLabel: 'Delete',
-        pendingLabel: 'Deleting…',
+        title: `Move Job Card ${jc.code} to Trash?`,
+        message: `${itemCodeWithRev(jc.itemCode, jc.itemRevision)} stops appearing in Job Cards, on the shop floor and in Op Entry. You can restore it from Trash.`,
+        confirmLabel: 'Move to Trash',
+        pendingLabel: 'Moving to Trash…',
       }}
     />
   );
 
-  // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+11+8+12+9+6+8+8+7+7+5 = 85, + 15 = 100,
-  // so the table never scrolls sideways. Centred by the standard; only the
-  // item code · name is left-aligned, so the code starts at the same x in
-  // every row.
+  // The sheet's columns. The sheet lays out AUTO (2026-09-26, the owner's
+  // "overflowing text" on this list), so there are no % widths any more except
+  // the two fixed-content columns (Sr No, Thumbnail): every short value — JC
+  // No., SO No., qty, status, dates, days left — sits on ONE line and sizes its
+  // own column, and only the item NAME wraps, taking whatever width is left.
+  // Centred by the standard; only the item code · name is left-aligned, so the
+  // code starts at the same x in every row.
   const columns = useMemo<DataTableColumn<JobCardListItem>[]>(
     () => [
       {
@@ -349,30 +402,21 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'JC No.',
-        width: '11%',
         nowrap: true,
         render: (jc) => (
-          <>
-            <Link
-              to="/job-cards/$id"
-              params={{ id: jc.id }}
-              className="td-code"
-              style={{ color: 'var(--blue)', fontWeight: 800 }}
-              title="View job card status"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {jc.code}
-            </Link>
-            {jc.itemRevision ? (
-              <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                Rev. {jc.itemRevision}
-              </div>
-            ) : null}
-          </>
+          <Link
+            to="/job-cards/$id"
+            params={{ id: jc.id }}
+            className="td-code"
+            style={{ color: 'var(--blue)', fontWeight: 800 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {jc.code}
+          </Link>
         ),
       },
       {
-        header: 'Thumbnail',
+        header: 'Image',
         width: THUMBNAIL_COL_WIDTH,
         // The picture fills the cell edge to edge, the gridlines being its
         // frame (user decision 2026-09-22 — the thumbnail column sits before
@@ -398,27 +442,48 @@ function JobCardsListPage(): React.JSX.Element {
         ),
       },
       {
+        // The CUSTOMER's PO line no. (never our SO line no.), beside CODE/REV.
+        header: 'POL',
+        width: '4%',
+        nowrap: true,
+        render: (jc) =>
+          jc.clientPoLineNo ? (
+            <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+              {jc.clientPoLineNo}
+            </span>
+          ) : (
+            <span className="text3">—</span>
+          ),
+      },
+      {
         header: 'Item Code',
-        width: '12%',
         align: 'left',
         // CODE/REV + name, text only — the picture is the column to the left.
         // The revision is the customer's drawing revision off the SO line
-        // (null → the bare code, never a trailing slash).
-        render: (jc) => (
-          <ItemBadge
-            size="row"
-            showImage={false}
-            code={jc.itemCode}
-            name={jc.itemName}
-            revision={jc.itemRevision}
-            imagePath={jc.itemImagePath}
-            style={{ display: 'flex', width: '100%' }}
-          />
-        ),
+        // (null → the bare code, never a trailing slash). Drawn here rather
+        // than with <ItemBadge size="row">, whose name line is one clipped
+        // line: on this list the code stays on one line and the NAME wraps,
+        // so a long part name never pushes the sheet wider than the screen.
+        render: (jc) => {
+          const codeText = itemCodeWithRev(jc.itemCode, jc.itemRevision);
+          return (
+            <div style={{ textAlign: 'left', minWidth: 140 }}>
+              <div
+                className="mono fw-700"
+                style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}
+                title={codeText}
+              >
+                {codeText}
+              </div>
+              <div className="text2" style={{ fontSize: 'var(--fs-xs)', lineHeight: 1.25 }}>
+                {jc.itemName?.trim() || '—'}
+              </div>
+            </div>
+          );
+        },
       },
       {
         header: 'SO No.',
-        width: '9%',
         nowrap: true,
         render: (jc) => {
           const s = jc.sourceLink;
@@ -444,7 +509,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Order Qty',
-        width: '6%',
+        align: 'right',
         nowrap: true,
         render: (jc) => (
           <>
@@ -457,7 +522,6 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Progress',
-        width: '8%',
         // Completed pieces at the LAST operation over the order qty — the
         // same figure the card view's Completed box shows.
         render: (jc) => {
@@ -468,9 +532,12 @@ function JobCardsListPage(): React.JSX.Element {
               <ProgressBar
                 value={pct}
                 color="var(--green)"
-                label={`${done} of ${jc.orderQty} complete`}
+                label={`${done} of ${jc.orderQty} Completed`}
               />
-              <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
+              <div
+                className="mono text3"
+                style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
+              >
                 {done} / {jc.orderQty} · {pct}%
               </div>
             </>
@@ -479,28 +546,31 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'JC Status',
-        width: '8%',
         nowrap: true,
         render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} />,
       },
-      { header: 'Start Date', width: '7%', className: 'mono', nowrap: true, key: 'jcDate' },
+      {
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (jc) => fmtDate(jc.jcDate),
+      },
       {
         header: 'Due Date',
-        width: '7%',
         className: 'mono',
         nowrap: true,
         render: (jc) => (
           <>
-            {jc.dueDate ?? '—'}
+            {fmtDate(jc.dueDate)}
             {/* The plan's Customer Dispatch Date under the due date — a second
-                line, not a column, so the tuned widths above still add up. */}
+                line, not a column, so the sheet stays one column narrower. */}
             {jc.customerDispatchDate ? (
               <div
                 className="text3"
                 style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
                 title="Customer Dispatch Date (from the plan)"
               >
-                Disp {jc.customerDispatchDate}
+                Dispatch {fmtDate(jc.customerDispatchDate)}
               </div>
             ) : null}
           </>
@@ -508,7 +578,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Days Left',
-        width: '5%',
+        align: 'right',
         nowrap: true,
         render: (jc) => {
           const dLeft = daysLeftFor(jc, today);
@@ -533,130 +603,119 @@ function JobCardsListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, the create buttons, the KPI
-          strip AND the filter panel stay pinned while the list scrolls
+      {/* The frozen header band: title, count, the create buttons AND the
+          filter bar stay pinned while the list scrolls
           underneath, so the filters stay reachable. */}
       <ListHeader
         title="Job Cards"
         icon="▭"
         count={total}
         noun="job card"
-        filterNote={search.status ? search.status.replaceAll('_', ' ') : undefined}
+        filterNote={
+          search.overdue ? 'Overdue' : search.status ? JC_STATUS_LABEL[search.status] : undefined
+        }
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search JC no., item code / name, customer, SO no.…"
         updating={isFetching && !isLoading}
-        primary={
-          canWrite ? (
-            <>
-              <Link to="/planning" className="btn btn-primary">
-                + Plan &amp; Create Job Card
-              </Link>
+        onClearFilters={clearFilters}
+        filtersActive={filtersActive}
+        filters={
+          <>
+            <Select
+              aria-label="JC Status"
+              value={search.overdue ? 'overdue' : (search.status ?? '')}
+              options={[
+                {
+                  value: '',
+                  label: countsReady ? `All statuses (${statusCounts.all})` : 'All statuses',
+                },
+                ...JC_COMPUTED_STATUSES.map((s) => ({
+                  value: s,
+                  label: countsReady
+                    ? `${JC_STATUS_LABEL[s]} (${statusCounts.byStatus[s]})`
+                    : JC_STATUS_LABEL[s],
+                })),
+                {
+                  value: 'overdue',
+                  label: countsReady ? `Overdue (${statusCounts.overdue})` : 'Overdue',
+                },
+              ]}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'overdue') setNav({ status: undefined, overdue: true });
+                else
+                  setNav({
+                    status: v === '' ? undefined : (v as JcComputedStatus),
+                    overdue: undefined,
+                  });
+              }}
+            />
+            <Select
+              aria-label="Machine"
+              value={search.machineId ?? ''}
+              options={[
+                { value: '', label: 'All machines' },
+                ...machines.map((m) => ({ value: m.id, label: `${m.code} — ${m.name}` })),
+              ]}
+              onChange={(e) =>
+                setNav({ machineId: e.target.value === '' ? undefined : e.target.value })
+              }
+            />
+            <Select
+              aria-label="Operator"
+              value={search.operatorId ?? ''}
+              options={[
+                { value: '', label: 'All operators' },
+                ...operators.map((o) => ({ value: o.id, label: `${o.code} — ${o.name}` })),
+              ]}
+              onChange={(e) =>
+                setNav({ operatorId: e.target.value === '' ? undefined : e.target.value })
+              }
+            />
+            <Input
+              type="date"
+              value={search.fromDate ?? ''}
+              onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
+              title="JC Date from"
+              aria-label="JC Date from"
+            />
+            <Input
+              type="date"
+              value={search.toDate ?? ''}
+              onChange={(e) => setNav({ toDate: e.target.value || undefined })}
+              title="JC Date to"
+              aria-label="JC Date to"
+            />
+          </>
+        }
+        tools={
+          <>
+            <ViewToggle value={view} onChange={changeView} />
+            {canWrite ? (
               <Link
                 to="/job-cards/new"
                 className="btn btn-ghost"
-                title="Job Work Sales Orders (JWSO) only. Sales Order items are created via Planning."
+                title="JWSO only. Sales Order items: Planning → Production Order."
               >
                 + New JWSO Job Card
               </Link>
-            </>
+            ) : null}
+          </>
+        }
+        primary={
+          canWrite ? (
+            <Link to="/planning" className="btn btn-primary">
+              + Plan &amp; Create Job Card
+            </Link>
           ) : null
         }
-      >
-        {/* KPI strip — ONE single-row strip (styling skill Rule 3). Counts
-            reflect the loaded / filtered set, not global, so they are read-only
-            figures: no onClick, no filtering. */}
-        <StatStrip
-          items={[
-            { key: 'total', label: 'Total Job Cards', count: kpis.total, color: 'var(--cyan)' },
-            { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber)' },
-            {
-              key: 'in_progress',
-              label: 'In Progress',
-              count: kpis.inProgress,
-              color: 'var(--blue)',
-            },
-            {
-              key: 'on_hold',
-              label: 'On Hold',
-              count: kpis.onHold,
-              color: 'var(--text3)',
-              title: 'No hold state exists in job-card data — see report',
-            },
-            {
-              key: 'completed',
-              label: 'Completed',
-              count: kpis.completed,
-              color: 'var(--green)',
-            },
-            { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red)' },
-          ]}
-        />
-        <div className="text3" style={{ fontSize: 'var(--fs-xs)', margin: 'var(--sp-1) 0' }}>
-          Counts reflect the currently loaded / filtered list, not every job card in the system.
-        </div>
-
-        <FilterBar
-          search={searchInput}
-          onSearch={setSearchInput}
-          placeholder="Search JC no., item code / name, customer, SO no.…"
-          filters={[
-            {
-              key: 'status',
-              value: search.status ?? '',
-              onChange: (v) => setNav({ status: v === '' ? undefined : (v as JcComputedStatus) }),
-              options: [
-                { value: '', label: 'All statuses' },
-                ...JC_COMPUTED_STATUSES.map((s) => ({
-                  value: s,
-                  label: s.replaceAll('_', ' '),
-                })),
-              ],
-            },
-            {
-              key: 'machine',
-              value: search.machineId ?? '',
-              onChange: (v) => setNav({ machineId: v === '' ? undefined : v }),
-              options: [
-                { value: '', label: 'All machines' },
-                ...machines.map((m) => ({ value: m.id, label: `${m.code} — ${m.name}` })),
-              ],
-            },
-            {
-              key: 'operator',
-              value: search.operatorId ?? '',
-              onChange: (v) => setNav({ operatorId: v === '' ? undefined : v }),
-              options: [
-                { value: '', label: 'All operators' },
-                ...operators.map((o) => ({ value: o.id, label: `${o.code} — ${o.name}` })),
-              ],
-            },
-          ]}
-        >
-          {/* Dates and the view switch are not dropdowns, so they ride in
-              FilterBar's own slot for extra controls rather than becoming
-              fake selects. */}
-          <Input
-            type="date"
-            value={search.fromDate ?? ''}
-            onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
-            title="From date"
-            aria-label="From date"
-          />
-          <Input
-            type="date"
-            value={search.toDate ?? ''}
-            onChange={(e) => setNav({ toDate: e.target.value || undefined })}
-            title="To date"
-            aria-label="To date"
-          />
-          <div style={{ display: 'flex', gap: 'var(--sp-1)', alignItems: 'center' }}>
-            <ViewToggle value={view} onChange={changeView} />
-          </div>
-        </FilterBar>
-      </ListHeader>
+      />
 
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load job cards'}
+          message={error instanceof Error ? error.message : 'Could not load Job Cards. Try again.'}
         />
       ) : view === 'list' ? (
         // ── LIST VIEW (the ruled sheet) ──────────────────────────────────────
@@ -665,16 +724,17 @@ function JobCardsListPage(): React.JSX.Element {
             columns={columns}
             rows={pagedRows}
             loading={isLoading}
-            emptyText="No job cards match these filters."
+            emptyText={emptyText}
             onRowClick={(jc) => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
-            rowActionsWidth="15%"
+            frozen
+            rowActionsWidth="1%"
             rowActions={(jc) => rowActions(jc, false)}
           />
         </Panel>
       ) : isLoading ? (
         <PageState state="loading" />
       ) : rows.length === 0 ? (
-        <PageState state="empty" message="No job cards match these filters." />
+        <PageState state="empty" message={emptyText} />
       ) : (
         // ── CARD VIEW ────────────────────────────────────────────────────────
         // Kept as its own card, NOT <DocCard>: a DocCard's band click is its
@@ -727,7 +787,6 @@ function JobCardsListPage(): React.JSX.Element {
                     params={{ id: jc.id }}
                     className="td-code"
                     style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 'var(--fs-sm)' }}
-                    title="View job card status"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {jc.code}
@@ -785,8 +844,8 @@ function JobCardsListPage(): React.JSX.Element {
                   {jc.runningCount > 0 ? (
                     <span
                       className="fw-700"
-                      style={{ fontSize: 'var(--fs-xs)', color: 'var(--amber2)' }}
-                      title="Operations running right now"
+                      style={{ fontSize: 'var(--fs-xs)', color: 'var(--green2)' }}
+                      title="Operations running now"
                     >
                       ▶{jc.runningCount}
                     </span>
@@ -809,17 +868,17 @@ function JobCardsListPage(): React.JSX.Element {
                   <QtyStrip
                     items={[
                       { label: 'Order Qty', value: jc.orderQty },
-                      { label: 'Completed', value: done, color: 'var(--green)' },
+                      { label: 'Completed', value: done, color: 'var(--green2)' },
                       {
                         label: 'Pending',
                         value: pending,
-                        color: pending > 0 ? 'var(--red)' : 'var(--green)',
+                        color: pending > 0 ? 'var(--blue)' : 'var(--green)',
                       },
                       { label: 'Ops', value: `${jc.doneOps}/${jc.totalOps}` },
                     ]}
                   />
                   <div style={{ minWidth: 90 }}>
-                    <ProgressBar value={pct} color="var(--green)" label="Complete" />
+                    <ProgressBar value={pct} color="var(--green)" label="Completed" />
                     <div
                       className="mono text3"
                       style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
@@ -837,7 +896,7 @@ function JobCardsListPage(): React.JSX.Element {
                       flexWrap: 'wrap',
                     }}
                   >
-                    <span className="text2">{jc.jcDate}</span>
+                    <span className="text2">{fmtDate(jc.jcDate)}</span>
                     {jc.clientPoLineNo ? (
                       <>
                         <span>·</span>
@@ -856,7 +915,9 @@ function JobCardsListPage(): React.JSX.Element {
                         fontWeight: overdue ? 700 : undefined,
                       }}
                     >
-                      {jc.dueDate ? `Due ${jc.dueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                      {jc.dueDate
+                        ? `Due ${fmtDate(jc.dueDate)}${overdue ? ' ⚠' : ''}`
+                        : 'No due date'}
                     </span>
                     {jc.remarks ? (
                       <>
@@ -893,10 +954,17 @@ function JobCardsListPage(): React.JSX.Element {
           shown={rows.length}
           noun="job card"
           limit={LIST_LIMIT}
+          // Overdue is picked from the loaded set; when the server matched
+          // more than LIST_LIMIT cards, say so — otherwise the filtered count
+          // (always ≤ the cap) would hide that later overdue cards are missing.
+          {...(search.overdue && (data?.total ?? 0) > LIST_LIMIT
+            ? {
+                hint: `Overdue is checked in the first ${LIST_LIMIT} of ${data?.total ?? 0} job cards loaded — narrow with search, machine, operator or dates to see all of them.`,
+              }
+            : {})}
           {...(totalPages > 1 && view === 'list'
             ? { page: currentPage, pageSize: PAGE_SIZE, onPage: gotoPage }
             : {})}
-          hint="Click a row to open the job card."
         />
       )}
     </div>

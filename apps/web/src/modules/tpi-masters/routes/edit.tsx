@@ -48,8 +48,8 @@ function TpiMasterEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to TPI Master
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have edit access to TPI Master. Ask an admin for L3 Editor or above in QC.
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+            ⛔ You do not have permission to edit an Inspector. Ask an admin.
           </div>
         </div>
       </div>
@@ -64,8 +64,8 @@ function TpiMasterEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Inspector not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Inspector not found.'}
           </div>
         </div>
       </div>
@@ -86,7 +86,7 @@ function TpiMasterEditPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="fw-700" style={{ color: 'var(--green)', fontSize: 14 }}>
+            <div className="fw-700" style={{ color: 'var(--green2)', fontSize: 14 }}>
               {detail.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
@@ -99,7 +99,7 @@ function TpiMasterEditPage(): React.JSX.Element {
             mode="edit"
             detail={detail}
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save Changes"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: UpdateTpiMasterInput) => {
               setSubmitError(null);
@@ -107,7 +107,9 @@ function TpiMasterEditPage(): React.JSX.Element {
                 await update.mutateAsync(values);
                 exit.leave(goBack);
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
+                setSubmitError(
+                  e instanceof Error ? e.message : 'Could not save Inspector. Try again.',
+                );
               }
             }}
           />

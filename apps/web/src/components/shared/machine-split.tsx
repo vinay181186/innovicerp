@@ -63,9 +63,9 @@ export function MachineChip({
       title={machineSplitTitle(machines)}
       style={{
         marginLeft: 4,
-        fontSize: 9,
+        fontSize: 11,
         fontWeight: 700,
-        color: 'var(--amber)',
+        color: 'var(--amber2)',
         cursor: 'help',
       }}
     >
@@ -89,7 +89,7 @@ export function MachineSplitLines({
       {machines.map((m) => (
         <div
           key={m.machineCode}
-          style={{ fontSize: 9, fontWeight: 400, color: 'var(--text3)', whiteSpace: 'nowrap' }}
+          style={{ fontSize: 11, fontWeight: 400, color: 'var(--text3)', whiteSpace: 'nowrap' }}
         >
           {m.machineCode}: <b style={{ fontWeight: 700 }}>{m.qty}</b> pcs
         </div>
@@ -201,7 +201,7 @@ export function ActualMachineCell({
       {actual.split.map((m) => (
         <div
           key={m.machineCode}
-          style={{ fontSize: 9, color: 'var(--text3)', whiteSpace: 'nowrap' }}
+          style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}
         >
           {m.machineCode}: <b>{m.qty}</b> pcs
         </div>
@@ -226,7 +226,7 @@ export function ActualMachineLine({
     <>
       <div
         style={{
-          fontSize: 9,
+          fontSize: 11,
           fontWeight: 400,
           whiteSpace: 'nowrap',
           color: actual.differs ? 'var(--amber)' : 'var(--text3)',
@@ -237,7 +237,7 @@ export function ActualMachineLine({
       {actual.split.map((m) => (
         <div
           key={m.machineCode}
-          style={{ fontSize: 9, fontWeight: 400, color: 'var(--text3)', whiteSpace: 'nowrap' }}
+          style={{ fontSize: 11, fontWeight: 400, color: 'var(--text3)', whiteSpace: 'nowrap' }}
         >
           {m.machineCode}: <b style={{ fontWeight: 700 }}>{m.qty}</b> pcs
         </div>

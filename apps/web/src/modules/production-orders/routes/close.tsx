@@ -200,12 +200,11 @@ function ProductionOrderClosePage(): React.JSX.Element {
         <div className="panel-body">
           <div style={{ marginBottom: 8 }}>
             <Link to="/production-orders" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back to Production Orders
+              <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have edit access to Production Orders. Ask an admin for L3 Editor or above
-            in Production.
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+            You do not have permission to close Production Orders. Ask an admin.
           </div>
         </div>
       </div>
@@ -215,16 +214,12 @@ function ProductionOrderClosePage(): React.JSX.Element {
   return (
     <div>
       <Link to="/production-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Production Orders
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">🔒 Close Production Order</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Plan → PO → JC → Close. Blocked until the Job Card is complete; on close stock is
-              credited once with the Job Card&apos;s actually finished qty.
-            </div>
+            <div className="panel-title">Close Production Order</div>
           </div>
         </div>
         <div className="panel-body">
@@ -239,7 +234,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
 
             <div className="form-grp">
               <label className="form-label" htmlFor="close-po">
-                Production Order No<span className="req">★</span>
+                Production Order No.<span className="req">★</span>
               </label>
               <SearchableSelect
                 id="close-po"
@@ -252,14 +247,14 @@ function ProductionOrderClosePage(): React.JSX.Element {
                   code: p.code,
                   // POL (the CUSTOMER's own PO line number) leads the label,
                   // ahead of the item code, and is searchable with it.
-                  name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCodeText, p.itemRevision)} · ${p.planCodeText} · qty ${p.orderQty}`,
+                  name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCodeText, p.itemRevision)} · ${p.planCodeText} · Order Qty ${p.orderQty}`,
                   searchText: [p.jcCodeText, p.soCodeText, p.itemNameText, p.clientPoLineNo]
                     .filter(Boolean)
                     .join(' '),
                 }))}
-                placeholder="🔍 Type production order no, item or plan…"
+                placeholder="Search Production Order No., item or plan…"
                 valueLabel={po ? poRowLabel(po) : poLabel || undefined}
-                emptyText="No open Production Order matches"
+                emptyText="No Production Orders match."
               />
             </div>
 
@@ -284,9 +279,9 @@ function ProductionOrderClosePage(): React.JSX.Element {
                     .filter(Boolean)
                     .join(' '),
                 }))}
-                placeholder="🔍 Type JC no, item or production order no…"
+                placeholder="Search JC No., item or Production Order No.…"
                 valueLabel={po?.jcCodeText ?? (jcLabel || undefined)}
-                emptyText="No Job Card with a closeable Production Order matches"
+                emptyText="No Job Cards match."
               />
             </div>
           </div>
@@ -296,7 +291,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
               role="alert"
               style={{
                 marginTop: 12,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red)',
                 borderRadius: 6,
@@ -304,7 +299,9 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 fontSize: 12,
               }}
             >
-              {detail.error instanceof Error ? detail.error.message : 'Failed to load the PO.'}
+              {detail.error instanceof Error
+                ? detail.error.message
+                : 'Could not load the Production Order. Try again.'}
             </div>
           ) : null}
 
@@ -340,10 +337,10 @@ function ProductionOrderClosePage(): React.JSX.Element {
               {po.jcComputedStatus ? (
                 <JcStatusBadge status={po.jcComputedStatus} />
               ) : (
-                <span className="badge b-grey">no job card</span>
+                <span className="badge b-grey">No Job Card</span>
               )}
               <span className="text2" style={{ fontSize: 12 }}>
-                finished{' '}
+                Completed{' '}
                 <b className="mono" style={{ color: 'var(--text)' }}>
                   {po.jcFinishedQty}
                 </b>{' '}
@@ -403,17 +400,11 @@ function ProductionOrderClosePage(): React.JSX.Element {
           {po && po.closes.length > 0 ? (
             <div style={{ marginTop: 16 }}>
               <div className="form-label" style={{ marginBottom: 6 }}>
-                Close ledger
+                Close Ledger
               </div>
               <PoCloseLedger po={po} canReverse={perms.edit} />
             </div>
           ) : null}
-
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-            <Link to="/production-orders" className="btn btn-ghost">
-              Back to Production Orders
-            </Link>
-          </div>
         </div>
       </div>
     </div>

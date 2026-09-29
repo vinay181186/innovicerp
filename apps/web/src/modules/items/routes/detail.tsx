@@ -20,7 +20,7 @@
 //    would lose working behaviour.
 //  - NO Revision or Drawing no. (user decision 2026-09-21): both belong to the
 //    SO / JWSO line, not the item. An item that still carries a pre-cutover
-//    drawing file shows it under "Legacy drawing" so nothing already uploaded
+//    drawing file shows it under "Old Drawing" so nothing already uploaded
 //    goes missing; new items never get one.
 //  - The header is the shared <ItemBadge> at its 96 px size: product image
 //    (3D render), code, name. Click the picture to see it large.
@@ -30,17 +30,26 @@
 // Route Card table (L11799-11802) and Job Card History (L11803-11806) all need
 // route-card / job-card / running-op reads this page does not have.
 
-import { type Company, ITEM_PROCUREMENT_TYPE_LABEL, type Item } from '@innovic/shared';
+import {
+  type Company,
+  ITEM_PROCUREMENT_TYPE_LABEL,
+  type Item,
+  itemTypeLabel,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useMyCompany } from '@/modules/settings/api';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
+import { STORE_TXN_SOURCE_LABELS } from '@/modules/store-transactions/lib/txn-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useItem, useSoftDeleteItem } from '../api';
 import { printItemDrawing } from '../lib/print-drawing';
 
@@ -70,8 +79,8 @@ function ItemDetailPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Items. Ask an admin.
       </div>
     );
   }
@@ -93,20 +102,20 @@ function ItemDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Item not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Item not found. Refresh the page.'}
           </div>
         </div>
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(item.id, {
-      onSuccess: () => {
-        void navigate({ to: '/items', replace: true });
-      },
-    });
+  // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
+  // shows a rejection in the dialog instead of closing it.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(item.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/items', replace: true });
   };
 
   // Tier-driven, per department (Store). Was admin/manager for Edit and
@@ -117,6 +126,9 @@ function ItemDetailPage(): React.JSX.Element {
   // edit without approve; L4 has approve without edit. Admin-only was locking
   // out the tier meant to run the department.
   const canDelete = perms.edit && perms.approve;
+  // "Raise PR" opens a new Purchase Request for this item — gated on the PR's
+  // own entry right, the same gate /purchase-requests/new enforces.
+  const canRaisePr = effectiveFormPerms(eff, 'pr_create').entry;
 
   return (
     <div>
@@ -139,84 +151,69 @@ function ItemDetailPage(): React.JSX.Element {
             </div>
           </ItemBadge>
           <div style={{ display: 'flex', gap: 6 }}>
+            {canRaisePr ? (
+              <Link
+                to="/purchase-requests/new"
+                search={{ itemId: item.id }}
+                className="btn btn-primary btn-sm"
+                title="Raise a Purchase Request for this item"
+              >
+                Raise PR
+              </Link>
+            ) : null}
             {canEdit ? (
               <Link to="/items/$id/edit" params={{ id: item.id }} className="btn btn-ghost btn-sm">
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
             {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={13} /> Delete
+              </button>
             ) : null}
           </div>
         </div>
         <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete item.'}
-            </div>
-          ) : null}
           <DetailGrid item={item} company={company} />
         </div>
       </div>
 
       <StockHistoryCard itemId={item.id} />
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Move Item ${item.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          tone="danger"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
+      {/* Open PRs, POs and GRNs for this item (ADR-190). Hides when empty. */}
+      <RelatedDocsPanel module="items" id={item.id} />
     </div>
   );
 }
 
 function OnHandBadge(props: { itemId: string }): React.JSX.Element {
-  const { data, isLoading } = useItemBalance(props.itemId);
+  const { data, isLoading, isError } = useItemBalance(props.itemId);
   if (isLoading) {
     return (
-      <span className="badge b-grey" title="Loading stock from v_item_stock">
+      <span className="badge b-grey" title="Loading stock…">
         <Loader2 size={11} className="animate-spin" style={{ marginRight: 4 }} /> stock…
+      </span>
+    );
+  }
+  if (isError) {
+    return (
+      <span className="badge b-grey" title="You do not have access to store stock">
+        <Package size={11} style={{ marginRight: 4 }} /> stock not shown
       </span>
     );
   }
@@ -224,10 +221,10 @@ function OnHandBadge(props: { itemId: string }): React.JSX.Element {
   return (
     <span
       className={`badge ${onHand > 0 ? 'b-green' : 'b-grey'}`}
-      title="On-hand from v_item_stock — sum of in/out/adjust txns"
+      title="Physical: stock on the shelf now"
     >
       <Package size={11} style={{ marginRight: 4 }} />
-      On hand:{' '}
+      Physical:{' '}
       <span className="mono" style={{ marginLeft: 4 }}>
         {onHand}
       </span>
@@ -264,12 +261,12 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Txn Date</th>
-              <th>Txn Type</th>
+              <th>Movement Date</th>
+              <th>Type</th>
               <th>Source</th>
               <th>Ref No.</th>
-              <th>Txn Qty</th>
-              <th>Stock before → after</th>
+              <th className="th-num">Qty</th>
+              <th className="th-num">Stock Before → After</th>
               <th>Remarks</th>
             </tr>
           </thead>
@@ -282,36 +279,49 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
               </tr>
             ) : isError ? (
               <tr>
-                <td colSpan={7} className="empty-state" style={{ color: 'var(--red)' }}>
-                  Failed to load stock history.
+                <td colSpan={7} className="empty-state" style={{ color: 'var(--red2)' }}>
+                  Could not load stock history. Try again.
                 </td>
               </tr>
             ) : (data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={7} className="empty-state">
-                  No stock transactions recorded
+                  No stock movements yet.
                 </td>
               </tr>
             ) : (
               data!.items.map((r) => (
                 <tr key={r.id}>
                   <td className="mono" style={{ fontSize: 11 }}>
-                    {r.txnDate}
+                    {fmtDate(r.txnDate)}
                   </td>
                   <td>
                     <TxnTypeBadge type={r.txnType} />
                   </td>
-                  <td className="text2" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    {r.sourceType.replaceAll('_', ' ')}
+                  <td className="text2" style={{ fontSize: 11 }}>
+                    {STORE_TXN_SOURCE_LABELS[r.sourceType]}
                   </td>
                   <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
                     {r.sourceRef}
                   </td>
-                  <td className="mono fw-700">{r.qty}</td>
-                  <td className="mono" style={{ fontSize: 11 }}>
+                  {/* Same +/− colours as the Stock Ledger tab. */}
+                  <td
+                    className="mono fw-700 td-num"
+                    style={
+                      r.txnType === 'in'
+                        ? { color: 'var(--green2)' }
+                        : r.txnType === 'out'
+                          ? { color: 'var(--red2)' }
+                          : undefined
+                    }
+                  >
+                    {r.txnType === 'in' ? '+' : r.txnType === 'out' ? '-' : ''}
+                    {r.qty}
+                  </td>
+                  <td className="mono td-num" style={{ fontSize: 11 }}>
                     {r.stockBefore} → <b>{r.stockAfter}</b>
                   </td>
-                  <td className="text3" style={{ fontSize: 10 }}>
+                  <td className="text3" style={{ fontSize: 11 }}>
                     {r.remarks ?? ''}
                   </td>
                 </tr>
@@ -328,9 +338,9 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
   const { item, company } = props;
   return (
     <div className="form-grid">
-      <Pair label="Item type" value={item.itemType} />
+      <Pair label="Item Type" value={itemTypeLabel(item.itemType)} />
       <div className="form-grp">
-        <span className="form-label">Source</span>
+        <span className="form-label">Make / Buy</span>
         <div>
           <span className={`badge ${item.procurementType === 'buy' ? 'b-blue' : 'b-grey'}`}>
             {ITEM_PROCUREMENT_TYPE_LABEL[item.procurementType]}
@@ -339,7 +349,7 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
       </div>
       <Pair label="UOM" value={item.uom} />
       <Pair label="Material" value={item.material ?? '—'} />
-      <Pair label="HSN code" value={item.hsnCode ?? '—'} />
+      <Pair label="HSN Code" value={item.hsnCode ?? '—'} />
       {/* Old items only — a drawing uploaded on the item before drawings moved
           to the SO line. Never shown for an item without one. */}
       {item.drawingFilePath ? <DrawingFilePair item={item} company={company} /> : null}
@@ -380,15 +390,12 @@ function DrawingFilePair({
       const ok = await printItemDrawing({ item, company });
       if (!ok) window.alert('Allow popups to print.');
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not open drawing for printing');
+      window.alert(e instanceof Error ? e.message : 'Could not open drawing. Try again.');
     }
   }
   return (
     <div className="form-grp">
-      <span className="form-label">Legacy drawing</span>
-      <div className="form-help" style={{ marginBottom: 4 }}>
-        Legacy drawing (drawings now live on the SO line)
-      </div>
+      <span className="form-label">Old Drawing</span>
       <div style={{ fontWeight: 600, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {path ? (
           <>

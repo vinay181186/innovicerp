@@ -4,7 +4,7 @@
 // replacement this one continues. Renders nothing when there is
 // nothing to link.
 
-import type { NcRegister } from '@innovic/shared';
+import { NC_STATUS_LABELS, type NcRegister } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 
 export function NcLinksBlock(props: {
@@ -27,7 +27,6 @@ export function NcLinksBlock(props: {
             params={{ id: childId }}
             className="mono"
             style={{ ...linkStyle, color: 'var(--cyan)' }}
-            title="Open the child job card"
           >
             {detail.childJobCardCode}
           </Link>
@@ -47,13 +46,13 @@ export function NcLinksBlock(props: {
         </InlinePair>
       ) : null}
       {detail.parentNcId ? (
-        <InlinePair label="Continues NC">
+        <InlinePair label="Earlier NC:">
           <Link
             to="/nc-register/$id"
             params={{ id: detail.parentNcId }}
             className="mono fw-700"
-            style={{ ...linkStyle, color: 'var(--red)' }}
-            title="The NC whose return-to-vendor replacement was rejected again (ADR-167)"
+            style={{ ...linkStyle, color: 'var(--red2)' }}
+            title="Earlier NC whose vendor replacement was rejected again"
           >
             {detail.parentNcCode ?? '…'}
           </Link>
@@ -65,7 +64,7 @@ export function NcLinksBlock(props: {
             to="/nc-register/$id"
             params={{ id: detail.splitFromNcId }}
             className="mono"
-            style={{ ...linkStyle, color: 'var(--red)' }}
+            style={{ ...linkStyle, color: 'var(--red2)' }}
           >
             {splitParent?.code ?? '…'}
           </Link>
@@ -80,8 +79,8 @@ export function NcLinksBlock(props: {
                 to="/nc-register/$id"
                 params={{ id: s.id }}
                 className="mono"
-                style={{ ...linkStyle, color: 'var(--red)' }}
-                title={`${Number(s.rejectedQty)} pcs · ${s.status}`}
+                style={{ ...linkStyle, color: 'var(--red2)' }}
+                title={`${Number(s.rejectedQty)} pcs · ${NC_STATUS_LABELS[s.status]}`}
               >
                 {s.code}
               </Link>

@@ -7,10 +7,12 @@ import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-re
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatusBadge } from '@/ui/core';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useExecutePlan, useFinalizePlan, usePlan, useSoftDeletePlan } from '../api';
+import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
 
 export const planDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -18,24 +20,30 @@ export const planDetailRoute = createRoute({
   component: PlanDetailPage,
 });
 
-// The plan-status words. The COLOURS live in ui/core/StatusBadge.tsx under
-// kind="plan" — one map, shared with the Plans list, so the two screens cannot
-// paint the same status differently.
+// The plan-status words. The COLOURS are STORED_BADGE (lib/derived-status) —
+// one map, shared with the Plans list, so the two screens cannot paint the
+// same status differently.
 const STATUS_LABEL: Record<PlanStatus, string> = {
   in_planning: 'In Planning',
   planned: 'Planned',
   jc_created: 'JC Created',
   pr_created: 'PR Created',
   in_production: 'In Production',
-  complete: 'Complete',
+  complete: 'Completed',
   cancelled: 'Cancelled',
 };
 
 const TYPE_LABEL: Record<PlanType, string> = {
   manufacture: '🏭 Manufacture',
-  direct_purchase: '🛒 Direct Purchase',
+  direct_purchase: '🛒 Buy',
   full_outsource: '📦 Full Outsource',
   assembly: '🔧 Assembly',
+};
+
+const OP_TYPE_LABEL: Record<string, string> = {
+  process: 'In-house',
+  outsource: 'Outsource',
+  qc: 'QC',
 };
 
 function PlanDetailPage(): React.JSX.Element {
@@ -64,8 +72,8 @@ function PlanDetailPage(): React.JSX.Element {
           <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}>
             <ArrowLeft size={14} /> Back
           </Link>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Plan not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Plan not found.'}
           </div>
         </div>
       </div>
@@ -88,28 +96,31 @@ function PlanDetailPage(): React.JSX.Element {
   const onFinalize = (): void => {
     setActionError(null);
     finalize.mutate(plan.id, {
-      onError: (e) => setActionError(e instanceof Error ? e.message : 'Finalize failed'),
+      onError: (e) =>
+        setActionError(
+          e instanceof Error ? e.message : 'Could not mark the plan Planned. Try again.',
+        ),
     });
   };
   const onExecute = (): void => {
     setActionError(null);
     execute.mutate(plan.id, {
-      onError: (e) => setActionError(e instanceof Error ? e.message : 'Execute failed'),
+      onError: (e) =>
+        setActionError(
+          e instanceof Error ? e.message : 'Could not create the Job Card / PR. Try again.',
+        ),
     });
   };
-  const onDelete = (): void => {
-    softDelete.mutate(plan.id, {
-      onSuccess: () => {
-        void navigate({ to: '/plans', replace: true });
-      },
-      onError: (e) => setActionError(e instanceof Error ? e.message : 'Delete failed'),
-    });
+  // ConfirmDialog owns the wait and shows a refusal inside the dialog.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(plan.id);
+    void navigate({ to: '/plans', replace: true });
   };
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Plans. Ask an admin.
       </div>
     );
   }
@@ -117,7 +128,7 @@ function PlanDetailPage(): React.JSX.Element {
   return (
     <div>
       <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to plans
+        <ArrowLeft size={14} /> Back
       </Link>
 
       <div className="panel">
@@ -139,11 +150,18 @@ function PlanDetailPage(): React.JSX.Element {
               {plan.itemName ??
                 plan.itemNameText ??
                 itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
-              <StatusBadge
-                kind="plan"
-                status={plan.planStatus}
-                label={STATUS_LABEL[plan.planStatus]}
-              />
+              {/* ADR-185 — a route-card plan states its DERIVED status, the
+                  same word and colour the Plans list shows for it; only old
+                  plans keep their stored status label. */}
+              {plan.derivedStatus ? (
+                <span className={`badge ${DERIVED_BADGE[plan.derivedStatus]}`}>
+                  {DERIVED_LABEL[plan.derivedStatus]}
+                </span>
+              ) : (
+                <span className={`badge ${STORED_BADGE[plan.planStatus]}`}>
+                  {STATUS_LABEL[plan.planStatus]}
+                </span>
+              )}
               <span className="text3" style={{ fontSize: 12 }}>
                 {TYPE_LABEL[plan.planType]}
               </span>
@@ -163,7 +181,7 @@ function PlanDetailPage(): React.JSX.Element {
                 ) : (
                   <CheckCircle size={13} />
                 )}{' '}
-                Finalize
+                Mark Planned
               </button>
             ) : null}
             {perms.edit && canExecute ? (
@@ -174,8 +192,8 @@ function PlanDetailPage(): React.JSX.Element {
                 disabled={execute.isPending}
                 title={
                   plan.planType === 'manufacture' || plan.planType === 'assembly'
-                    ? 'Create JC + copy ops'
-                    : 'Create PR(s)'
+                    ? 'Create the Job Card and copy the operations'
+                    : 'Raise the PR(s)'
                 }
               >
                 {execute.isPending ? (
@@ -183,7 +201,9 @@ function PlanDetailPage(): React.JSX.Element {
                 ) : (
                   <Play size={13} />
                 )}{' '}
-                Execute
+                {plan.planType === 'manufacture' || plan.planType === 'assembly'
+                  ? 'Create Job Card'
+                  : 'Raise PR'}
               </button>
             ) : null}
             {perms.edit && isEditable ? (
@@ -192,42 +212,14 @@ function PlanDetailPage(): React.JSX.Element {
               </Link>
             ) : null}
             {perms.edit && perms.approve && isEditable ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}{' '}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setConfirmDelete(true)}
+                disabled={softDelete.isPending}
+              >
+                <Trash2 size={13} /> Delete
+              </button>
             ) : null}
           </div>
         </div>
@@ -235,9 +227,9 @@ function PlanDetailPage(): React.JSX.Element {
           {actionError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
-                border: '1px solid #fca5a5',
+                border: '1px solid var(--red2)',
                 borderRadius: 6,
                 padding: '6px 10px',
                 fontSize: 12,
@@ -249,23 +241,35 @@ function PlanDetailPage(): React.JSX.Element {
           ) : null}
 
           <Grid>
-            <KV label="Plan date" value={plan.planDate} />
+            <KV label="Plan Date" value={fmtDate(plan.planDate)} />
             <KV label="Order Qty" value={plan.orderQty} />
-            <KV label="Plan qty" value={plan.planQty} />
-            <KV label="Planned start" value={plan.plannedStartDate ?? '—'} />
-            <KV label="Planned end" value={plan.plannedEndDate ?? '—'} />
-            <KV label="Customer Dispatch Date" value={plan.customerDispatchDate ?? '—'} />
+            <KV label="Plan Qty" value={plan.planQty} />
+            {/* ADR-185 — the same Covered / Pending the Plans list shows for
+                this plan (one SQL definition serves both). Route-card plans only. */}
+            {plan.derivedStatus ? (
+              <>
+                <KV label="Covered" value={plan.coveredQty} />
+                <KV label="Pending" value={plan.pendingQty} />
+              </>
+            ) : null}
+            <KV label="Planned Start Date" value={fmtDate(plan.plannedStartDate)} />
+            <KV label="Planned End Date" value={fmtDate(plan.plannedEndDate)} />
+            <KV label="Customer Dispatch Date" value={fmtDate(plan.customerDispatchDate)} />
             {/* Raw material — read-only here; both are optional, so a plan with
                 neither still shows the pair as dashes rather than hiding them
                 (a missing grade is a planning gap worth seeing). */}
-            <KV label="RM grade" value={plan.rawMaterialGradeText ?? '—'} />
-            <KV label="RM size" value={plan.rawMaterialSizeText ?? '—'} />
+            <KV label="RM Grade" value={plan.rawMaterialGradeText ?? '—'} />
+            <KV label="RM Size" value={plan.rawMaterialSizeText ?? '—'} />
             {/* `CODE/REV` — the customer's drawing revision from the SO line this
                 plan was raised against; a JW-sourced or ad-hoc plan has none and
                 keeps the bare code, with no trailing slash. */}
             <KV
               label="Item Code"
-              value={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+              value={
+                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                  {itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+                </span>
+              }
             />
             {/* POL — the line number printed on the CUSTOMER's own purchase
                 order. It is NOT our SO line number ("Line #" below); on live
@@ -285,7 +289,7 @@ function PlanDetailPage(): React.JSX.Element {
           {plan.planType === 'direct_purchase' ? (
             <>
               <div className="section-hdr" style={{ marginTop: 14 }}>
-                Direct purchase
+                Buy
               </div>
               <Grid>
                 <KV label="Vendor" value={plan.dpVendorCodeText ?? '—'} />
@@ -299,17 +303,17 @@ function PlanDetailPage(): React.JSX.Element {
           {plan.planType === 'full_outsource' ? (
             <>
               <div className="section-hdr" style={{ marginTop: 14 }}>
-                Full outsource
+                Full Outsource
               </div>
               <Grid>
-                <KV label="JW vendor" value={plan.foVendorCodeText ?? '—'} />
+                <KV label="JW Vendor" value={plan.foVendorCodeText ?? '—'} />
                 <KV label="Process" value={plan.foProcess ?? '—'} />
                 {priceHidden ? null : <KV label="Rate" value={plan.foRate ?? '—'} />}
-                <KV label="Material src" value={plan.foMaterialSrc ?? '—'} />
-                <KV label="Delivery" value={plan.foDeliveryDate ?? '—'} />
+                <KV label="Material Source" value={plan.foMaterialSrc ?? '—'} />
+                <KV label="Delivery Date" value={fmtDate(plan.foDeliveryDate)} />
                 <KV label="Cost Centre" value={plan.foCostCenter ?? '—'} />
                 <KV label="JW PR" value={plan.foPrId ? '✓ Created' : '—'} />
-                <KV label="Mat PR" value={plan.foMatPrId ? '✓ Created' : '—'} />
+                <KV label="Material PR" value={plan.foMatPrId ? '✓ Created' : '—'} />
                 {plan.foRemarks ? <KV label="Remarks" value={plan.foRemarks} /> : null}
               </Grid>
             </>
@@ -317,7 +321,7 @@ function PlanDetailPage(): React.JSX.Element {
 
           {(plan.planType === 'manufacture' || plan.planType === 'assembly') && plan.jcId ? (
             <Grid>
-              <KV label="Linked JC" value="✓ Created" />
+              <KV label="Job Card" value="✓ Created" />
             </Grid>
           ) : null}
 
@@ -336,7 +340,12 @@ function PlanDetailPage(): React.JSX.Element {
               Operations come from the item's Route Card. Create a Production Order to build the Job
               Card.{' '}
               {perms.entry && plan.planStatus === 'planned' && !plan.jcId ? (
-                <Link to="/production-orders/new" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
+                <Link
+                  to="/production-orders/new"
+                  // Open the form on THIS plan (same search the Plans list sends).
+                  search={{ planId: plan.id, planCode: plan.code }}
+                  style={{ color: 'var(--cyan)', fontWeight: 600 }}
+                >
                   Create Production Order →
                 </Link>
               ) : null}
@@ -348,9 +357,7 @@ function PlanDetailPage(): React.JSX.Element {
               <div
                 className="text3"
                 style={{
-                  fontSize: 10,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
+                  fontSize: 11,
                   marginBottom: 4,
                 }}
               >
@@ -374,11 +381,11 @@ function PlanDetailPage(): React.JSX.Element {
                   <th>Op</th>
                   <th>Operation</th>
                   <th>Op Type</th>
-                  <th>Machine</th>
-                  <th>Cycle Time (h)</th>
-                  <th>QC?</th>
-                  <th>OSP vendor</th>
-                  {priceHidden ? null : <th>OSP cost</th>}
+                  <th>Planned Machine</th>
+                  <th>Cycle Time (min)</th>
+                  <th>QC Required</th>
+                  <th>OSP Vendor</th>
+                  {priceHidden ? null : <th>OSP Cost</th>}
                 </tr>
               </thead>
               <tbody>
@@ -387,7 +394,7 @@ function PlanDetailPage(): React.JSX.Element {
                     {/* 10, 20, 30 on screen — display rule, see opSrNo */}
                     <td>{opSrNo(op.opSeq)}</td>
                     <td>{op.operation}</td>
-                    <td>{op.opType}</td>
+                    <td>{OP_TYPE_LABEL[op.opType] ?? op.opType}</td>
                     <td>{op.machineCodeText ?? '—'}</td>
                     <td>{op.cycleTimeMin}</td>
                     <td>{op.qcRequired ? '✓' : ''}</td>
@@ -402,6 +409,16 @@ function PlanDetailPage(): React.JSX.Element {
       ) : null}
 
       <RelatedDocsPanel module="plans" id={plan.id} />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Move Plan ${plan.code} to Trash?`}
+        message="You can restore it from Trash."
+        confirmLabel="Move to Trash"
+        pendingLabel="Moving to Trash…"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={onDelete}
+      />
     </div>
   );
 }
@@ -426,9 +443,7 @@ function KV({ label, value }: { label: string; value: React.ReactNode }): React.
       <div
         className="text3"
         style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
+          fontSize: 11,
           marginBottom: 2,
         }}
       >

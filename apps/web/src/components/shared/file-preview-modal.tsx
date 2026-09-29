@@ -161,7 +161,7 @@ export function FilePreviewModal({
       a.click();
       a.remove();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Download failed');
+      setErr(e instanceof Error ? e.message : 'Could not download the file. Try again.');
     } finally {
       setSaving(false);
     }
@@ -211,7 +211,7 @@ export function FilePreviewModal({
 
         <div className="modal-body" style={{ padding: 0, background: 'var(--bg1, var(--bg3))' }}>
           {err ? (
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {err}
             </div>
           ) : preview === 'none' ? (

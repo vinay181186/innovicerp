@@ -167,13 +167,13 @@ test('@chain 01 — create the JWSO', async ({ page }) => {
   await page.waitForTimeout(3000);
 
   state.jwCode = await page.locator('input[value^="IN-JW-"]').first().inputValue().catch(() => '');
-  await pick(page, /Type client code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
+  await pick(page, /Type customer code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
   await page.getByPlaceholder(/Client PO reference/i).fill(TAG);
 
   // The form already renders one empty line by default. Clicking "+ Add Line"
   // unconditionally left a blank Line 2 behind, which failed "Part name is
   // required" and blocked the save — add a row only when there is none.
-  const lineCodeBoxes = page.locator('input[name$=".itemCodeText"]');
+  const lineCodeBoxes = page.locator('input[id^="jwln-ic-"]');
   if ((await lineCodeBoxes.count()) === 0) {
     await page.getByRole('button', { name: /Add Line/i }).first().click();
     await page.waitForTimeout(800);
@@ -183,7 +183,10 @@ test('@chain 01 — create the JWSO', async ({ page }) => {
   // Address the line row by its react-hook-form field names. Picking inputs
   // positionally put the qty into the HEADER's clientMaterialQty box and left
   // lines.0.orderQty empty, so the form failed validation and nothing saved.
-  await page.locator('input[name="lines.0.itemCodeText"]').fill(ITEM_CODE);
+  // Line Item Code is a type-to-search picker (#jwln-ic-0): type, then pick the option.
+  await page.locator('#jwln-ic-0').click();
+  await page.locator('#jwln-ic-0').fill(ITEM_CODE);
+  await page.getByRole('option').filter({ hasText: ITEM_CODE }).first().click({ timeout: 30_000 });
   await page.waitForTimeout(2000);
 
   // ELEMENT: an on-master item code must auto-fill Part Name and lock it.
@@ -267,7 +270,7 @@ test('@chain 02 — create the party material for this JWSO line', async ({ page
 
   // The master's cascade: Client → SO/JWSO → Item. Each picker only enables
   // once its parent is chosen, which is what pins the material to one item.
-  await pick(page, /Type client code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
+  await pick(page, /Type customer code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
   await page.waitForTimeout(1500);
   await pick(page, /Type SO \/ JWSO no/i, state.jwCode, new RegExp(state.jwCode));
   await page.waitForTimeout(1500);
@@ -572,7 +575,7 @@ test('@chain 05 — plan and execute a Job Card for the JWSO line', async ({ pag
 
   await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
   await page.waitForTimeout(2000);
-  await page.getByRole('button', { name: /^Save$/ }).first().click();
+  await page.getByRole('button', { name: /^Save Plan$/ }).first().click();
   await page.waitForTimeout(3000);
   state.planCode = await codeOnPage(page, /PLN-\d+/);
 
@@ -596,7 +599,7 @@ test('@chain 05 — plan and execute a Job Card for the JWSO line', async ({ pag
 
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3500);
-  await page.getByRole('button', { name: /Execute/i }).first().click();
+  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
   await page.waitForTimeout(6000);
 
   state.jcCode = await codeOnPage(page, /IN-JC-\d{2}-\d+/);
@@ -738,7 +741,7 @@ test('@chain 07 — log the operation and pass QC', async ({ page }) => {
   await page.waitForTimeout(1500);
   // An op that has not been started yet offers "▶ Start Operation" instead of
   // the completion form. Start it first when that is the state we land in.
-  const startBtn = page.getByRole('button', { name: /Start Operation/i });
+  const startBtn = page.getByRole('dialog').getByRole('button', { name: /Start Operation/i });
   if ((await startBtn.count()) > 0) {
     // eslint-disable-next-line no-console
     console.log('>> op not started — clicking ▶ Start Operation first');
@@ -747,7 +750,7 @@ test('@chain 07 — log the operation and pass QC', async ({ page }) => {
   }
   await page.getByRole('spinbutton').first().fill(String(ORDER_QTY));
   await page.getByPlaceholder(/Operator name/i).fill('E2E Auto').catch(() => {});
-  await page.getByRole('button', { name: /Submit completion/i }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /^✓\s*Complete$/ }).click();
   await page.waitForTimeout(4000);
   const opErr = await bannerText(page);
   if (opErr) {
@@ -759,7 +762,7 @@ test('@chain 07 — log the operation and pass QC', async ({ page }) => {
   await page.waitForTimeout(1800);
   await page.getByRole('spinbutton').first().fill(String(ORDER_QTY));
   await page.waitForTimeout(400);
-  await page.getByRole('button', { name: /Submit QC inspection/i }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await page.waitForTimeout(4500);
 
   const body = await page.locator('body').innerText();

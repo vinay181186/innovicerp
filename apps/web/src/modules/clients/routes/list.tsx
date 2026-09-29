@@ -8,9 +8,9 @@
 // PHASE 4 — this screen is the GROUP 1 reference implementation. It is the
 // canonical LIST composition and nothing else:
 //
-//   <ListHeader>            title · count · SearchInput · ⟳ Updating… · primary
-//     <StatStrip>           counts that double as the status filter
-//   </ListHeader>
+//   <ListHeader>            title · count · ⟳ Updating… · primary, then the
+//                           filter bar: SearchInput · status (counts in the
+//                           option labels) · Clear
 //   <Banner>                import result (dismissible)
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint · Excel template / import
@@ -24,7 +24,7 @@
 //
 // What did NOT change: the route and its search params, the 300ms debounce on
 // the URL write, normalizeSearchTerm, the single un-filtered fetch (so the
-// strip can count all three tiles), perms -> canAdd/canEdit/canDelete, the
+// status dropdown can count all three options), perms -> canAdd/canEdit/canDelete, the
 // one-request bulk import, row click -> detail, Code cell -> detail.
 
 import type { Client, ListClientsQuery } from '@innovic/shared';
@@ -35,7 +35,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import { DataTable, Panel, StatStrip, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateClients, useClientsList, useSoftDeleteClient } from '../api';
@@ -75,7 +75,11 @@ function ClientsListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -96,8 +100,8 @@ function ClientsListPage(): React.JSX.Element {
   }, [searchInput, search.search, navigate]);
 
   // One fetch of every client matching the search (no isActive server filter):
-  // the Active/Inactive split is derived + filtered client-side so the StatStrip
-  // can show real counts for all three tiles.
+  // the Active/Inactive split is derived + filtered client-side so the status
+  // dropdown can show real counts for all three options.
   const query: ListClientsQuery = useMemo(
     () => ({
       search: search.search,
@@ -136,24 +140,28 @@ function ClientsListPage(): React.JSX.Element {
     setImporting(true);
     setImportMsg(null);
     try {
-      const { payloads, errors } = await parseClientImportFile(file);
+      const { payloads, rowNums, errors } = await parseClientImportFile(file);
       if (payloads.length === 0) {
         setImportMsg(
           errors.length
             ? `Nothing to import. ${errors.length} row issue(s): ${fmtList(errors)}`
-            : 'Nothing to import — the sheet has no client rows.',
+            : 'Nothing to import — the sheet has no customer rows.',
         );
         return;
       }
       const res = await bulkCreate.mutateAsync({ clients: payloads });
-      const skips = res.skipped.map((s) => `Row ${s.index} "${s.name}": ${s.reason}`);
+      // s.index is the 1-based position in the array sent; map it back to the
+      // sheet row, since rows with bad values were already left out above.
+      const skips = res.skipped.map(
+        (s) => `Row ${rowNums[s.index - 1] ?? s.index} "${s.name}": ${s.reason}`,
+      );
       setImportMsg(
-        `Imported ${res.created}/${payloads.length} client(s).` +
+        `Imported ${res.created}/${payloads.length} customer(s).` +
           (skips.length ? ` ${skips.length} skipped: ${fmtList(skips)}` : '') +
-          (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
+          (errors.length ? ` ${errors.length} row issue(s): ${fmtList(errors)}` : ''),
       );
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -254,56 +262,55 @@ function ClientsListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, search, primary action and the
-          StatStrip stay put while the rows scroll underneath. */}
+      {/* The frozen header band: title, count, primary action and the filter
+          bar (search · status with counts · Clear) stay put while the rows
+          scroll underneath. */}
       <ListHeader
-        title="Client Master"
-        icon="🏢"
+        title="Customer Master"
         count={total}
-        noun="client"
-        filterNote={search.status}
+        noun="customer"
+        filterNote={
+          search.status === 'active'
+            ? 'Active'
+            : search.status === 'inactive'
+              ? 'Inactive'
+              : undefined
+        }
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
+        filters={
+          <select
+            className="innovic-select"
+            aria-label="Customer status"
+            title="Customer status"
+            value={search.status ?? ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              setStatus(v === 'active' || v === 'inactive' ? v : undefined);
+            }}
+          >
+            <option value="">All Customers ({total})</option>
+            <option value="active">Active ({activeCount})</option>
+            <option value="inactive">Inactive ({inactiveCount})</option>
+          </select>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, status: undefined }),
+            replace: true,
+          });
+        }}
+        filtersActive={search.search != null || search.status != null || searchInput !== ''}
         primary={
           canAdd ? (
             <Link to="/clients/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> New Client
+              <Icon name="plus" size={14} /> New Customer
             </Link>
           ) : null
         }
-      >
-        {/* Counts double as the status filter (styling skill, Rule 3). Active
-            state = coloured label + underline, handled inside <StatStrip>. */}
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: 'All Clients',
-              count: total,
-              color: 'var(--cyan)',
-              active: search.status === undefined,
-              onClick: () => setStatus(undefined),
-            },
-            {
-              key: 'active',
-              label: 'Active',
-              count: activeCount,
-              color: 'var(--green)',
-              active: search.status === 'active',
-              onClick: () => setStatus('active'),
-            },
-            {
-              key: 'inactive',
-              label: 'Inactive',
-              count: inactiveCount,
-              color: 'var(--text3)',
-              active: search.status === 'inactive',
-              onClick: () => setStatus('inactive'),
-            },
-          ]}
-        />
-      </ListHeader>
+      />
 
       {importMsg ? (
         <Banner tone="info" onDismiss={() => setImportMsg(null)}>
@@ -314,7 +321,7 @@ function ClientsListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load clients'}
+          message={error instanceof Error ? error.message : 'Could not load customers. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">
@@ -322,16 +329,13 @@ function ClientsListPage(): React.JSX.Element {
             columns={columns}
             rows={visibleRows}
             loading={isLoading}
-            emptyText={
-              search.status ? `No ${search.status} clients` : 'No clients yet — click + New Client'
-            }
+            emptyText={search.status || search.search ? 'No Customers match.' : 'No Customers yet.'}
             onRowClick={(c) => void navigate({ to: '/clients/$id', params: { id: c.id } })}
             rowActionsWidth="11%"
             rowActions={(c) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/clients/${c.id}`}
+                // Row click opens the customer (ERPNext list); Edit is a
+                // ROUTE, so it stays a real link for ctrl-click / new tab.
                 editTo={canEdit ? `/clients/${c.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed. The confirm
@@ -347,8 +351,8 @@ function ClientsListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move client ${c.name} to Trash?`,
-                  message: `${c.code} — ${c.name} stops appearing in the Client Master and in every client picker.`,
+                  title: `Move Customer ${c.code} to Trash?`,
+                  message: 'You can restore it from Trash.',
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',
                 }}
@@ -361,9 +365,8 @@ function ClientsListPage(): React.JSX.Element {
       <ListFooter
         total={total}
         shown={visibleRows.length}
-        noun="client"
+        noun="customer"
         limit={LIST_LIMIT}
-        hint="Click a row to open the client. Click a count above to filter by status."
         // Excel template + import sit below the count line (mirror of Vendor
         // Master). The file input is hidden and only opened by the button.
         actions={

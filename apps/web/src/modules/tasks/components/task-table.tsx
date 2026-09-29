@@ -2,7 +2,7 @@
 // <Person> | Related To | Priority | Due Date | Status | Last Update | Actions.
 // The person column is the OTHER party of the current view — who assigned it
 // (Inbox), who it went to (Outbox / All), "Me" on My To-Do. Rows open the
-// detail; the small action buttons appear only when the server says the
+// detail (no separate View button); the small action buttons appear only when the server says the
 // caller may take that action on that row.
 
 import type { TaskRow, TaskView } from '@innovic/shared';
@@ -15,13 +15,6 @@ export const PERSON_LABEL: Record<TaskView, string> = {
   outbox: 'Assigned To',
   todo: 'Owner',
   all: 'Assigned To',
-};
-
-export const VIEW_HINT: Record<TaskView, string> = {
-  inbox: 'Inbox: tasks assigned to the logged-in user by other users.',
-  outbox: 'Outbox: tasks created by the logged-in user and assigned to other users.',
-  todo: 'My To-Do: personal tasks created by and assigned to the logged-in user.',
-  all: 'All Tasks: Admin-only view. Backend permission must enforce this.',
 };
 
 export type RowAction = 'view' | 'status' | 'complete' | 'reassign' | 'cancel';
@@ -90,7 +83,7 @@ export function TaskTableRow({
         {t.attachmentCount > 0 ? (
           <span
             className="text3"
-            style={{ fontSize: 10, marginLeft: 6 }}
+            style={{ fontSize: 11, marginLeft: 6 }}
             title={`${t.attachmentCount} attachment(s)`}
           >
             📎{t.attachmentCount}
@@ -99,7 +92,7 @@ export function TaskTableRow({
         {t.commentCount > 0 ? (
           <span
             className="text3"
-            style={{ fontSize: 10, marginLeft: 4 }}
+            style={{ fontSize: 11, marginLeft: 4 }}
             title={`${t.commentCount} remark(s)`}
           >
             💬{t.commentCount}
@@ -138,13 +131,6 @@ export function TaskTableRow({
           style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => onAction('view', t)}
-          >
-            View
-          </button>
           {p.canUpdateStatus && open ? (
             <IconBtn title="Update status" onClick={() => onAction('status', t)}>
               ✏
@@ -174,16 +160,19 @@ export function TaskTableRow({
 export function TaskTable({
   rows,
   view,
+  filtered,
   onAction,
 }: {
   rows: TaskRow[];
   view: TaskView;
+  /** True when a search / filter is on — picks the empty-state wording. */
+  filtered: boolean;
   onAction: (action: RowAction, task: TaskRow) => void;
 }): React.JSX.Element {
   return (
     <div className="panel" style={{ marginBottom: 0 }}>
       <div className="tbl-wrap tbl-frozen">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               <th>Task No.</th>
@@ -201,7 +190,7 @@ export function TaskTable({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={9} className="empty-state">
-                  No tasks found
+                  {filtered ? 'No Tasks match.' : 'No Tasks yet.'}
                 </td>
               </tr>
             ) : (
@@ -209,16 +198,6 @@ export function TaskTable({
             )}
           </tbody>
         </table>
-      </div>
-      <div
-        style={{
-          padding: '8px 12px',
-          fontSize: 11,
-          color: 'var(--text3)',
-          borderTop: '1px solid var(--border)',
-        }}
-      >
-        {VIEW_HINT[view]} 💡 Click a row to open it.
       </div>
     </div>
   );

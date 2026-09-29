@@ -1,7 +1,8 @@
 // Alerts drill-down page (T-041d Phase A). Mirrors legacy `_alertDrillDown`
 // (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html L22374):
-//   - modal title "🔔 <name> (<n> records)" (L22418) → the page `.section-hdr`
-//   - header block: name · "dept · code" · "<n> records" in amber (L22419-22422)
+//   - modal title "<name> (<n> records)" (L22418) → the page `.section-hdr`
+//   - legacy's header block (L22419-22422) dropped — it repeated the name and
+//     count already in the title (R5 SH-N19)
 //   - `.tbl-wrap > table` records table (L22423)
 //
 // Legacy rendered this as a `showModalLg` opened from the dashboard row; the
@@ -16,9 +17,10 @@
 
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useAlert } from '../api';
-import { DEPT_LABEL } from '../lib/dept';
 
 export const alertsDrillRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -37,21 +39,17 @@ function AlertDrillPage() {
       {/* Header — legacy's modal title bar (L22418). The Back link has no legacy
           counterpart (the modal had a close button); kept as the port's only
           in-page route back to the dashboard. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔔 {data ? `${data.alert.name} (${data.alert.count} records)` : code}
-        </div>
-        <Link to="/alerts" className="btn btn-ghost" style={{ fontSize: 12 }}>
-          ← Back to Alerts
-        </Link>
-      </div>
+      <ListHeader
+        title={data ? data.alert.name : 'Alert'}
+        icon="🔔"
+        count={data ? data.alert.count : undefined}
+        noun="record"
+        tools={
+          <Link to="/alerts" className="btn btn-ghost btn-sm">
+            ← Back to Alerts
+          </Link>
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -63,45 +61,26 @@ function AlertDrillPage() {
       ) : isError || !data ? (
         <div className="panel">
           <div className="empty-state">
-            <span style={{ color: 'var(--red)' }}>
+            <span style={{ color: 'var(--red2)' }}>
               {notFound
-                ? `No registered alert with code ${code}.`
-                : (error?.message ?? 'Failed to load alert.')}
+                ? 'Alert not found. Refresh the page.'
+                : (error?.message ?? 'Could not load alert. Try again.')}
             </span>
           </div>
         </div>
       ) : (
         <>
-          {/* Header block — legacy L22419-22422. Legacy sets `color:var(--text1)`
-              on the name span; `--text1` is undefined in legacy's own :root, so
-              the text inherits the default colour. Reproduced by omitting it. */}
-          <div
-            style={{
-              padding: '10px 14px',
-              background: 'var(--bg3)',
-              borderRadius: 8,
-              border: '1px solid var(--border)',
-              marginBottom: 14,
-            }}
-          >
-            <span style={{ fontWeight: 700 }}>{data.alert.name}</span>{' '}
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {DEPT_LABEL[data.alert.dept]} · {data.alert.code}
-            </span>{' '}
-            <span className="mono fw-700" style={{ color: 'var(--amber)', marginLeft: 8 }}>
-              {data.alert.count} records
-            </span>
-          </div>
-
           <div className="panel">
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     {/* Legacy's drill headers are bare `<th>` in every branch —
                         no alignment, even over its centred qty cells. */}
                     {data.columns.map((c) => (
-                      <th key={c.key}>{c.label}</th>
+                      <th key={c.key} className={c.type === 'number' ? 'th-num' : undefined}>
+                        {c.label}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -112,7 +91,7 @@ function AlertDrillPage() {
                     // The route can be reached directly, so the state is kept.
                     <tr>
                       <td colSpan={data.columns.length} className="empty-state">
-                        ✅ No records — alert is currently clear.
+                        ✅ Nothing pending
                       </td>
                     </tr>
                   ) : (
@@ -125,12 +104,16 @@ function AlertDrillPage() {
                               ? ''
                               : c.type === 'number'
                                 ? Number(v).toLocaleString()
-                                : String(v);
+                                : c.type === 'date'
+                                  ? fmtDate(String(v), '')
+                                  : String(v);
                           // Legacy styles drill cells per code branch. Keyed off
                           // `type` here — the payload's only per-column signal:
                           //   first col  → `mono fw-700` + cyan (L22385 etc.)
-                          //   number     → `td-ctr mono` (legacy's qty cells)
-                          //   date       → font-size 11 (L22385)
+                          //   number     → `td-num mono` (right-aligned qty)
+                          // ADR-190: the row carries `navPage` (not a column) —
+                          // the record code opens its document.
+                          const nav = row['navPage'];
                           return (
                             <td
                               key={c.key}
@@ -138,18 +121,21 @@ function AlertDrillPage() {
                                 ci === 0
                                   ? 'mono fw-700'
                                   : c.type === 'number'
-                                    ? 'td-ctr mono'
+                                    ? 'td-num mono'
                                     : undefined
                               }
-                              style={
-                                ci === 0
-                                  ? { color: 'var(--cyan)' }
-                                  : c.type === 'date'
-                                    ? { fontSize: 11 }
-                                    : undefined
-                              }
+                              style={ci === 0 ? { color: 'var(--cyan)' } : undefined}
                             >
-                              {display}
+                              {ci === 0 && typeof nav === 'string' && nav ? (
+                                <Link
+                                  to={nav}
+                                  style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                                >
+                                  {display}
+                                </Link>
+                              ) : (
+                                display
+                              )}
                             </td>
                           );
                         })}

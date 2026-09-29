@@ -21,7 +21,6 @@ import {
   items,
   salesOrderLines,
   salesOrders,
-  storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
@@ -32,6 +31,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { postStockMove } from '../../lib/stock-ledger';
 import {
   consumeForLine,
   readReservedByLine,
@@ -39,6 +39,8 @@ import {
   unconsumeForDispatch,
 } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
+import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
+import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -112,7 +114,7 @@ async function syncSoDispatchStatus(
         detail:
           next === 'dispatched'
             ? `${soCode} — All lines fully dispatched`
-            : `${soCode} — Dispatch reversed → ${next}`,
+            : `${soCode} — Dispatch cancelled; status back to ${next === 'closed' ? 'Closed' : 'Open'}`,
         refId: soCode,
       },
       companyId,
@@ -143,26 +145,12 @@ async function moveDispatchStock(
   component?: { code: string },
 ): Promise<void> {
   if (!itemId || qty <= 0) return;
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-  const bal = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const before = Number(bal[0]?.on_hand ?? 0);
   // On-hand floor: never dispatch more finished goods than physically in stock
   // (readiness math is decoupled from the ledger, so without this guard a
-  // dispatch could drive on_hand negative — SO-517 class of bug).
-  if (dir === 'out' && qty > before) {
-    throw new ConflictError(
-      `Insufficient stock to dispatch${component ? ` ${component.code}` : ''}: ` +
-        `on-hand ${before}, requested ${qty}. Cannot dispatch more than physical stock.`,
-    );
-  }
-  const after = dir === 'out' ? before - qty : before + qty;
-  await tx.insert(storeTransactions).values({
+  // dispatch could drive on_hand negative — SO-517 class of bug). On-hand, not
+  // Available: the dispatch consumes its OWN booking.
+  await postStockMove(tx, {
     companyId,
-    txnDate: date,
     itemId,
     txnType: dir,
     qty,
@@ -170,11 +158,13 @@ async function moveDispatchStock(
     sourceRef:
       `${code} / ln ${lineNo}` +
       `${component ? ` / ${component.code}` : ''}${dir === 'in' ? ' (cancel)' : ''}`,
-    stockBefore: before,
-    stockAfter: after,
     remarks:
       dir === 'out' ? `Customer dispatch · ${qty} pcs` : `Dispatch cancel reversal · ${qty} pcs`,
-    createdBy: userId,
+    txnDate: date,
+    userId,
+    itemCodeText: null,
+    guard: dir === 'out' ? 'on_hand' : 'none',
+    qtyLabel: 'Dispatch Qty',
   });
 }
 
@@ -277,7 +267,9 @@ async function loadDispatchable(
       LEFT JOIN v_item_stock fg
         ON fg.company_id = sol.company_id AND fg.item_id = sol.item_id
       LEFT JOIN LATERAL (
-        SELECT COALESCE(SUM(x.eff), 0) AS ready FROM (
+        SELECT COALESCE(SUM(
+          CASE WHEN x.sc_cap IS NULL THEN x.eff ELSE LEAST(x.eff, x.sc_cap) END
+        ), 0) AS ready FROM (
           SELECT DISTINCT ON (jc.id)
             CASE
               WHEN vs.op_type = 'qc' OR vs.qc_required THEN vs.qc_accepted_qty
@@ -293,11 +285,19 @@ async function loadDispatchable(
                   AND grl.deleted_at IS NULL
               ), 0)
               ELSE vs.completed_qty
-            END AS eff
+            END AS eff,
+            -- ADR-184 — a short-closed order's card counts only up to what the
+            -- order CREDITED: those pieces are real stock and may ship. NULL
+            -- for every other card (no cap).
+            CASE WHEN spo.id IS NULL THEN NULL ELSE COALESCE(spo.credited_qty, 0) END AS sc_cap
           FROM job_cards jc
           JOIN v_jc_op_status vs ON vs.job_card_id = jc.id
           LEFT JOIN jc_ops jo
             ON jo.job_card_id = jc.id AND jo.op_seq = vs.op_seq AND jo.deleted_at IS NULL
+          LEFT JOIN production_orders spo
+            ON spo.id = jc.production_order_id
+           AND spo.status = 'short_closed'
+           AND spo.deleted_at IS NULL
           WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
             -- A rework/repair child inherits the parent's line link, but its
             -- accepted pieces are re-injected into the PARENT's route and
@@ -306,16 +306,11 @@ async function loadDispatchable(
             -- 12" on a 10-piece line with 2 reworked (QC-NC audit 2026-09-21,
             -- gap 4) and would let 2 phantom pieces be dispatched.
             AND jc.recovery_kind IS NULL
-            -- ADR-182 — a short-closed Production Order's Job Card is out of
-            -- the sum. Its pieces are abandoned work, so they must not look
-            -- ready to ship; the SIBLING orders' pieces on the same SO line
-            -- still count (a plan of 50 may be covered by 20 + 30, and
-            -- stopping the 20 must not strand the 30).
-            AND NOT EXISTS (
-              SELECT 1 FROM production_orders po
-              WHERE po.id = jc.production_order_id
-                AND po.status = 'short_closed'
-            )
+            -- ADR-182 / ADR-184 — a short-closed Production Order's Job Card
+            -- is capped at its credited qty (sc_cap above), not dropped: the
+            -- un-credited pieces are abandoned work and must not look ready to
+            -- ship, but the pieces it credited are real stock. The SIBLING
+            -- orders' pieces on the same SO line count as before.
           ORDER BY jc.id, vs.op_seq DESC
         ) x
       ) rdy ON TRUE
@@ -459,9 +454,14 @@ async function loadSo(
   tx: DbTransaction,
   companyId: string,
   soId: string,
-): Promise<{ id: string; code: string; customer: string | null }> {
+): Promise<{ id: string; code: string; customer: string | null; status: string }> {
   const rows = await tx
-    .select({ id: salesOrders.id, code: salesOrders.code, customer: salesOrders.customerName })
+    .select({
+      id: salesOrders.id,
+      code: salesOrders.code,
+      customer: salesOrders.customerName,
+      status: salesOrders.status,
+    })
     .from(salesOrders)
     .where(
       and(
@@ -472,7 +472,7 @@ async function loadSo(
     )
     .limit(1);
   const so = rows[0];
-  if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+  if (!so) throw new NotFoundError('SO not found. Refresh the page.');
   return so;
 }
 
@@ -576,11 +576,17 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
       )
       .groupBy(customerDispatchLines.customerDispatchId);
     const agg = new Map(aggRows.map((a) => [a.id, { cnt: Number(a.cnt), qty: Number(a.qty) }]));
+    const billed = await loadBilledQtyByDispatch(tx, companyId);
 
     return {
       dispatches: headers.map((h) => {
         const a = agg.get(h.id) ?? { cnt: 0, qty: 0 };
-        return rowToHeader(h, a.cnt, a.qty);
+        const billedQty = billed.get(h.id) ?? 0;
+        return {
+          ...rowToHeader(h, a.cnt, a.qty),
+          billedQty,
+          billedStatus: billedStatusOf(billedQty, a.qty),
+        };
       }),
     };
   });
@@ -635,7 +641,7 @@ export async function listDispatchRegister(
         sol.client_po_line_no, sol.uom::text AS uom,
         u.full_name AS dispatched_by,
         st.stock_before, st.stock_after,
-        vis.on_hand_qty::int AS current_stock,
+        vis.on_hand_qty::float8 AS current_stock,
         jcs.jc_codes AS jc_no
       FROM customer_dispatch_lines l
       JOIN customer_dispatches h ON h.id = l.customer_dispatch_id
@@ -694,8 +700,8 @@ export async function listDispatchRegister(
         customer: r.customer,
         dispatchedBy: r.dispatched_by,
         remarks: r.remarks,
-        stockBefore: r.stock_before === null ? null : Math.round(n(r.stock_before)),
-        stockAfter: r.stock_after === null ? null : Math.round(n(r.stock_after)),
+        stockBefore: r.stock_before === null ? null : n(r.stock_before),
+        stockAfter: r.stock_after === null ? null : n(r.stock_after),
         currentStock: r.current_stock === null ? null : Math.round(n(r.current_stock)),
       })),
     };
@@ -719,7 +725,7 @@ async function getDispatchInternal(
     )
     .limit(1);
   const h = rows[0];
-  if (!h) throw new NotFoundError(`Dispatch ${id} not found`);
+  if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
 
   const lineRows = await tx
     .select({
@@ -735,6 +741,9 @@ async function getDispatchInternal(
       itemCodeText: customerDispatchLines.itemCodeText,
       itemName: customerDispatchLines.itemName,
       qty: customerDispatchLines.qty,
+      // POL + unit off the same SO line — the DC print carries both.
+      clientPoLineNo: salesOrderLines.clientPoLineNo,
+      uom: sql<string | null>`${salesOrderLines.uom}::text`,
     })
     .from(customerDispatchLines)
     .leftJoin(items, and(eq(items.id, customerDispatchLines.itemId), isNull(items.deletedAt)))
@@ -759,9 +768,26 @@ async function getDispatchInternal(
     itemCodeText: l.itemCodeText,
     itemName: l.itemName,
     qty: l.qty,
+    clientPoLineNo: l.clientPoLineNo ?? null,
+    uom: l.uom ?? null,
   }));
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
-  return { ...rowToHeader(h, lines.length, totalQty), lines };
+  // The SO's customer + Client PO No. — the DC print reads the customer's
+  // address and GSTIN off the client master.
+  const soRows = await tx
+    .select({ clientId: salesOrders.clientId, clientPoNo: salesOrders.clientPoNo })
+    .from(salesOrders)
+    .where(eq(salesOrders.id, h.salesOrderId))
+    .limit(1);
+  const billedQty = (await loadBilledQtyByDispatch(tx, companyId, h.salesOrderId)).get(h.id) ?? 0;
+  return {
+    ...rowToHeader(h, lines.length, totalQty),
+    billedQty,
+    billedStatus: billedStatusOf(billedQty, totalQty),
+    clientId: soRows[0]?.clientId ?? null,
+    clientPoNo: soRows[0]?.clientPoNo ?? null,
+    lines,
+  };
 }
 
 export async function getDispatch(id: string, user: AuthContext): Promise<CustomerDispatchDetail> {
@@ -779,6 +805,9 @@ export async function createDispatch(
 
   return withUserContext(user, async (tx) => {
     const so = await loadSo(tx, companyId, input.salesOrderId);
+    // ADR-185 — nothing ships against a draft or cancelled order (the SO
+    // picker already hides a cancelled one; the server now says so too).
+    assertSoAcceptsWork(so.status, so.code, 'nothing can be dispatched against it');
     // Lock the SO lines being dispatched BEFORE reading availability, so two
     // concurrent dispatches on the same line serialize instead of both passing
     // the qty check and over-dispatching.
@@ -788,6 +817,9 @@ export async function createDispatch(
         .select({ id: salesOrderLines.id })
         .from(salesOrderLines)
         .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, lineIds)))
+        // ADR-185 review — the same row order invoice create locks in (by id),
+        // so a dispatch and an invoice on one SO can never deadlock.
+        .orderBy(asc(salesOrderLines.id))
         .for('update');
 
       // Also lock the ITEM rows these lines are for, in a stable order.
@@ -820,11 +852,11 @@ export async function createDispatch(
     for (const l of input.lines) {
       const d = byLine.get(l.salesOrderLineId);
       if (!d) {
-        throw new ValidationError(`Line ${l.salesOrderLineId} does not belong to SO ${so.code}`);
+        throw new ValidationError(`This line is not on SO ${so.code}. Please reload the SO.`);
       }
       if (l.qty > d.availableQty) {
         throw new ConflictError(
-          `${d.itemName}: only ${d.availableQty} ready to dispatch (requested ${l.qty})`,
+          `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}): Dispatch Qty (${l.qty}) cannot be more than Dispatchable (${d.availableQty}).`,
         );
       }
       // The order itself is the outer ceiling. Readiness is derived from
@@ -834,8 +866,8 @@ export async function createDispatch(
       // and the invoice cap are computed from.
       if (l.qty > d.pendingQty) {
         throw new ConflictError(
-          `${d.itemName}: only ${d.pendingQty} still pending on this order line ` +
-            `(ordered ${d.orderQty}, already dispatched ${d.dispatchedQty}) — requested ${l.qty}`,
+          `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}): Dispatch Qty (${l.qty}) cannot be more than ` +
+            `Pending (${d.pendingQty}) — Order Qty ${d.orderQty}, Already Dispatched ${d.dispatchedQty}.`,
         );
       }
     }
@@ -979,9 +1011,9 @@ export async function cancelDispatch(
       )
       .limit(1);
     const h = rows[0];
-    if (!h) throw new NotFoundError(`Dispatch ${id} not found`);
+    if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
     if (h.status === 'cancelled')
-      throw new ValidationError(`Dispatch ${h.code} is already cancelled`);
+      throw new ValidationError(`Dispatch ${h.code} is already Cancelled.`);
 
     const lineRows = await tx
       .select()
@@ -1014,8 +1046,8 @@ export async function cancelDispatch(
       const invoiced = Number(chk[0]?.invoiced ?? 0);
       if (invoiced > dispatched - l.qty) {
         throw new ValidationError(
-          `Cannot cancel dispatch ${h.code}: line ${l.lineNo} is already invoiced ` +
-            `(invoiced ${invoiced}, dispatched ${dispatched}). Cancel or credit the invoice first.`,
+          `Cannot cancel Dispatch ${h.code}: Ln ${l.lineNo} is already invoiced ` +
+            `(Invoiced ${invoiced}, Dispatched ${dispatched}). Cancel the invoice first.`,
         );
       }
     }

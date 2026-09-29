@@ -4,17 +4,9 @@
 // needs the same timestamp format and importing it from a route file would
 // close an import cycle (detail → history → detail).
 
-/** Format a stored UTC timestamp as IST date + time (e.g. "16 Jun 2026, 02:30 PM"). */
+import { fmtDateTime } from '@/lib/date';
+
+/** Format a stored UTC timestamp as IST date + time (e.g. "16-Jun-2026 14:30"). */
 export function fmtIstDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
+  return fmtDateTime(iso);
 }

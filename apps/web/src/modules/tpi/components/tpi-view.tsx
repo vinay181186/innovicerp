@@ -17,21 +17,21 @@ import {
   type TpiPendingRow,
   opSrNo,
 } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { ListHeader } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
+import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { useTpiMastersList } from '@/modules/tpi-masters/api';
-import { useTpi } from '../api';
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { tpiKeys, useTpi } from '../api';
 
 // Excel export of completed TPI records (legacy _tpiExport L21572 / "⬇ Excel"
 // button). Client-side from the loaded `completed` rows — columns mirror the
@@ -39,7 +39,8 @@ function todayIso(): string {
 // the user actually exports.
 async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
   const { utils: xlsxUtils, write: xlsxWrite } = await import('xlsx');
-  const respLabel = (d: number | null): string => (d === null ? '' : d <= 0 ? 'Same day' : `${d}d`);
+  const respLabel = (d: number | null): string =>
+    d === null ? '' : d <= 0 ? 'Same day' : `${d} day${d === 1 ? '' : 's'}`;
   const aoa: (string | number)[][] = [
     [
       'JC No.',
@@ -62,15 +63,15 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'Accepted',
       'Rejected',
       'Call Date',
-      'Attended',
-      'Response',
-      'Inspector',
-      'Organization',
-      'Cert No.',
+      'TPI Date',
+      'Days to Attend',
+      'Inspector Name',
+      'Organisation',
+      'TPI Certificate No.',
     ],
     ...rows.map((l) => [
       l.jcCode,
-      `Op${opSrNo(l.opSeq)}`,
+      `Op ${opSrNo(l.opSeq)}`,
       l.soCode ?? '',
       l.clientPoLineNo ?? '',
       l.itemCode ?? '',
@@ -95,7 +96,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `TPI_Records_${todayIso()}.xlsx`;
+  a.download = `TPI_Records_${todayIst()}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -106,32 +107,57 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useTpi();
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const pending = data?.pending ?? [];
-  const completed = data?.completed ?? [];
+  // Client-side search over the rows already loaded — every text column the
+  // two lists show (JC, SO, POL, item code / name, operation, inspector,
+  // organisation, certificate).
+  const [term, setTerm] = useState('');
+  const pending = (data?.pending ?? []).filter((o) =>
+    matchesSearchTerm(
+      [o.jcCode, o.soCode, o.clientPoLineNo, o.itemCode, o.itemRevision, o.itemName, o.operation],
+      term,
+    ),
+  );
+  const completed = (data?.completed ?? []).filter((l) =>
+    matchesSearchTerm(
+      [
+        l.jcCode,
+        l.soCode,
+        l.clientPoLineNo,
+        l.itemCode,
+        l.itemRevision,
+        l.itemName,
+        l.operation,
+        l.inspector,
+        l.organization,
+        l.certNo,
+      ],
+      term,
+    ),
+  );
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        {props.title ? (
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            {props.title}
-          </div>
-        ) : (
-          <div />
-        )}
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" />
-          </span>
-        ) : null}
-      </div>
+      <ListHeader
+        title={props.title ?? 'TPI'}
+        icon="🔍"
+        count={data ? pending.length : undefined}
+        noun="pending TPI call"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search JC, SO, POL, item, operation, inspector, certificate…"
+        updating={isFetching && !isLoading}
+        tools={
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            title="Export the completed TPI records on screen to Excel"
+            disabled={completed.length === 0}
+            onClick={() => void exportTpiRecords(completed)}
+          >
+            ⬇ Export
+          </button>
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -141,8 +167,8 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
         </div>
       ) : isError || !data ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load TPI'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Could not load TPI. Try again.'}
           </div>
         </div>
       ) : (
@@ -160,12 +186,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               }}
             >
               <span style={{ fontWeight: 700, fontSize: 13 }}>
-                <span style={{ color: 'var(--amber)' }}>⏳</span> Pending TPI ({pending.length})
+                <span style={{ color: 'var(--amber2)' }}>⏳</span> Pending TPI ({pending.length})
               </span>
             </div>
             <div style={{ padding: 10 }}>
               {pending.length === 0 ? (
-                <div className="empty-state" style={{ padding: 20, color: 'var(--green)' }}>
+                <div className="empty-state" style={{ padding: 20, color: 'var(--green2)' }}>
                   ✅ No pending TPI calls
                 </div>
               ) : (
@@ -194,21 +220,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               }}
             >
               <span style={{ fontWeight: 700, fontSize: 13 }}>
-                <span style={{ color: 'var(--green)' }}>✅</span> TPI Completed Records (
-                {completed.length})
+                <span style={{ color: 'var(--green2)' }}>✅</span> Completed TPI ({completed.length}
+                )
               </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10 }}
-                disabled={completed.length === 0}
-                onClick={() => void exportTpiRecords(completed)}
-              >
-                ⬇ Excel
-              </button>
             </div>
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     <th>JC No.</th>
@@ -223,14 +240,14 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         it rather than being crammed into the same cell. */}
                     <th>Item Name</th>
                     <th>Operation</th>
-                    <th>Accepted</th>
-                    <th>Rejected</th>
+                    <th className="th-num">Accepted</th>
+                    <th className="th-num">Rejected</th>
                     <th>Call Date</th>
-                    <th>Attended</th>
-                    <th>Response</th>
-                    <th>Inspector</th>
-                    <th>Organization</th>
-                    <th>Cert No.</th>
+                    <th>TPI Date</th>
+                    <th>Days to Attend</th>
+                    <th>Inspector Name</th>
+                    <th>Organisation</th>
+                    <th>TPI Certificate No.</th>
                     <th>Report</th>
                   </tr>
                 </thead>
@@ -238,7 +255,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                   {completed.length === 0 ? (
                     <tr>
                       <td colSpan={16} className="empty-state">
-                        No TPI records yet
+                        No TPI records yet.
                       </td>
                     </tr>
                   ) : (
@@ -254,12 +271,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         <td className="fw-700 cyan" style={{ fontSize: 12 }}>
                           {l.jcCode}
                         </td>
-                        <td style={{ fontSize: 11 }}>Op{opSrNo(l.opSeq)}</td>
+                        <td style={{ fontSize: 11 }}>Op {opSrNo(l.opSeq)}</td>
                         <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{l.soCode ?? '—'}</td>
                         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                           {l.clientPoLineNo ?? '—'}
                         </td>
-                        <td style={{ fontSize: 11, color: 'var(--purple)' }}>
+                        <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--text)' }}>
                           {itemCodeWithRev(l.itemCode, l.itemRevision)}
                         </td>
                         {/* A part name is free text of any length, so it is capped
@@ -282,17 +299,21 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                           {l.itemName ? l.itemName : null}
                         </td>
                         <td style={{ fontSize: 11 }}>{l.operation}</td>
-                        <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                        <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
                           {l.accepted}
                         </td>
                         <td
-                          className="mono fw-700"
-                          style={{ color: l.rejected > 0 ? 'var(--red)' : 'var(--text3)' }}
+                          className="td-num mono fw-700"
+                          style={{ color: l.rejected > 0 ? 'var(--red2)' : 'var(--text3)' }}
                         >
                           {l.rejected}
                         </td>
-                        <td style={{ fontSize: 11, color: 'var(--amber)' }}>{l.callDate ?? '—'}</td>
-                        <td style={{ fontSize: 11, color: 'var(--green)' }}>{l.attendedDate}</td>
+                        <td style={{ fontSize: 11, color: 'var(--amber2)' }}>
+                          {fmtDate(l.callDate)}
+                        </td>
+                        <td style={{ fontSize: 11, color: 'var(--green2)' }}>
+                          {fmtDate(l.attendedDate)}
+                        </td>
                         <td
                           style={{
                             fontSize: 11,
@@ -307,15 +328,15 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                             ? '—'
                             : l.respDays <= 0
                               ? 'Same day'
-                              : `${l.respDays}d`}
+                              : `${l.respDays} day${l.respDays === 1 ? '' : 's'}`}
                         </td>
                         <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)' }}>
                           {l.inspector ?? '—'}
                         </td>
-                        <td className="text2" style={{ fontSize: 10 }}>
+                        <td className="text2" style={{ fontSize: 11 }}>
                           {l.organization ?? '—'}
                         </td>
-                        <td style={{ fontSize: 10, fontWeight: 700, color: 'var(--purple)' }}>
+                        <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)' }}>
                           {l.certNo ?? '—'}
                         </td>
                         <td style={{ fontSize: 11 }}>
@@ -323,7 +344,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                             <QcReportLink
                               path={l.qcReportPath}
                               name={l.qcReportName}
-                              label="View"
+                              label="Report"
                             />
                           ) : (
                             '—'
@@ -350,6 +371,7 @@ function PendingTpi(props: {
 }): React.JSX.Element {
   const { o, open, onToggle, onDone } = props;
   const submit = useSubmitQcLog();
+  const queryClient = useQueryClient();
   const companyId = useSession().data?.companyId ?? null;
   // TPI posts through op-entry's submitQcLog, which now enforces BOTH qc_submit
   // `entry` (ordinary QC accept/reject) AND tpi_submit `entry` (the TPI-specific
@@ -398,19 +420,19 @@ function PendingTpi(props: {
     const acc = Number(accept || '0');
     const rej = Number(reject || '0');
     if (!Number.isInteger(acc) || acc < 0 || !Number.isInteger(rej) || rej < 0) {
-      setErr('Accept/Reject must be non-negative integers.');
+      setErr('Accepted and Rejected must be whole numbers, 0 or more.');
       return;
     }
     if (acc + rej <= 0) {
-      setErr('Enter accept and/or reject qty.');
+      setErr('Enter the Accepted and/or Rejected qty.');
       return;
     }
     if (acc + rej > o.qcPending) {
-      setErr(`Total ${acc + rej} exceeds pending ${o.qcPending}.`);
+      setErr(`Accepted + Rejected (${acc + rej}) cannot be more than QC Pending (${o.qcPending}).`);
       return;
     }
     if (!inspector.trim() || !organization.trim()) {
-      setErr('Inspector and Organization are required.');
+      setErr('Inspector Name and Organisation are required.');
       return;
     }
     const input: SubmitQcLogInput = {
@@ -429,9 +451,24 @@ function PendingTpi(props: {
     };
     try {
       await submit.mutateAsync(input);
+      // useSubmitQcLog only refreshes the op-entry views. Refresh the TPI list
+      // and the QC register too (as the QC popup does) so this card drops its
+      // old QC Pending at once — otherwise the inspector thinks it failed and
+      // submits again.
+      void queryClient.invalidateQueries({ queryKey: tpiKeys.all });
+      void queryClient.invalidateQueries({ queryKey: qcHistoryKeys.all });
+      // Clear what was just booked so re-opening the card after a partial TPI
+      // does not show the last qty / cert no. again (easy to double-book).
+      // Inspector, organisation, date and shift stay — usually the same visit.
+      setAccept('');
+      setReject('0');
+      setCertNo('');
+      setRemarks('');
+      setQcReportPath(null);
+      setQcReportName(null);
       onDone();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'TPI submit failed');
+      setErr(e instanceof Error ? e.message : 'Could not save TPI Inspection. Try again.');
     }
   }
 
@@ -460,11 +497,11 @@ function PendingTpi(props: {
             {o.jcCode}
           </b>{' '}
           <span className="text3" style={{ fontSize: 11 }}>
-            Op{opSrNo(o.opSeq)} — {o.operation}
+            Op {opSrNo(o.opSeq)} — {o.operation}
           </span>
           {o.waitDays > 1 ? (
-            <span style={{ fontSize: 10, color: 'var(--red)', fontWeight: 700, marginLeft: 8 }}>
-              ⚠ WAITING {o.waitDays} DAYS
+            <span style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700, marginLeft: 8 }}>
+              ⚠ Waiting {o.waitDays} days
             </span>
           ) : null}
           <div className="text2" style={{ fontSize: 11 }}>
@@ -506,13 +543,15 @@ function PendingTpi(props: {
             • Order: {o.orderQty} pcs
           </div>
           {o.callDate ? (
-            <div style={{ fontSize: 10, color: 'var(--amber)' }}>Called: {o.callDate}</div>
+            <div style={{ fontSize: 11, color: 'var(--amber2)' }}>
+              Called: {fmtDate(o.callDate)}
+            </div>
           ) : null}
         </div>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber)' }}>{o.qcPending}</div>
-          <div className="text3" style={{ fontSize: 9 }}>
-            PENDING
+          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber2)' }}>{o.qcPending}</div>
+          <div className="text3" style={{ fontSize: 11 }}>
+            QC Pending
           </div>
         </div>
       </div>
@@ -527,14 +566,14 @@ function PendingTpi(props: {
             borderTop: '2px solid var(--green)',
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)', marginBottom: 12 }}>
-            ✅ TPI Entry — {o.jcCode} Op{opSrNo(o.opSeq)}
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green2)', marginBottom: 12 }}>
+            TPI Entry
           </div>
 
           {/* Legacy L21413-21416: Date | Shift */}
           <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10 }}>
+              <label className="form-label" style={{ fontSize: 11 }}>
                 TPI Date
               </label>
               <input
@@ -545,7 +584,7 @@ function PendingTpi(props: {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10 }}>
+              <label className="form-label" style={{ fontSize: 11 }}>
                 Shift
               </label>
               <select
@@ -565,7 +604,7 @@ function PendingTpi(props: {
           {/* Legacy L21417-21420: the big centred Accept / Reject qty inputs */}
           <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10, color: 'var(--green)' }}>
+              <label className="form-label" style={{ fontSize: 11, color: 'var(--green2)' }}>
                 ✅ Accepted (max {o.qcPending})
               </label>
               <input
@@ -579,7 +618,7 @@ function PendingTpi(props: {
                 style={{
                   fontSize: 20,
                   fontWeight: 800,
-                  color: 'var(--green)',
+                  color: 'var(--green2)',
                   textAlign: 'center',
                   padding: 8,
                   border: '2px solid var(--green)',
@@ -588,7 +627,7 @@ function PendingTpi(props: {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10, color: 'var(--red)' }}>
+              <label className="form-label" style={{ fontSize: 11, color: 'var(--red2)' }}>
                 ❌ Rejected
               </label>
               <input
@@ -602,7 +641,7 @@ function PendingTpi(props: {
                 style={{
                   fontSize: 20,
                   fontWeight: 800,
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                   textAlign: 'center',
                   padding: 8,
                   border: '2px solid var(--red)',
@@ -624,12 +663,12 @@ function PendingTpi(props: {
             }}
           >
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)', marginBottom: 8 }}>
-              🔍 TPI DETAILS (Required)
+              🔍 TPI Details
             </div>
             <div className="form-grid" style={{ gap: 10 }}>
               <div className="form-grp">
-                <label className="form-label" style={{ fontSize: 10 }}>
-                  Inspector Name ★
+                <label className="form-label" style={{ fontSize: 11 }}>
+                  Inspector Name<span className="req">★</span>
                 </label>
                 {/* What gets SAVED is unchanged: still the inspector's name as
                     plain text (tpiInspector / operatorName), never an id — a TPI
@@ -650,13 +689,13 @@ function PendingTpi(props: {
                   loading={inspectorQuery.isFetching}
                   options={inspectorOptions}
                   selectedLabel={(op) => op.code ?? op.name}
-                  placeholder="🔍 Click to browse or type a name…"
-                  emptyText="No inspector found — add them in TPI Master"
+                  placeholder="Search Inspector…"
+                  emptyText="No Inspectors match. Add one in TPI Master."
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label" style={{ fontSize: 10 }}>
-                  Organization ★
+                <label className="form-label" style={{ fontSize: 11 }}>
+                  Organisation<span className="req">★</span>
                 </label>
                 <input
                   className="innovic-input"
@@ -666,7 +705,7 @@ function PendingTpi(props: {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label" style={{ fontSize: 10 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>
                   TPI Certificate No.
                 </label>
                 <input
@@ -678,7 +717,7 @@ function PendingTpi(props: {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label" style={{ fontSize: 10 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>
                   Remarks
                 </label>
                 <input
@@ -709,7 +748,7 @@ function PendingTpi(props: {
           </div>
 
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginBottom: 8 }}>
+            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginBottom: 8 }}>
               {err}
             </div>
           ) : null}
@@ -719,10 +758,8 @@ function PendingTpi(props: {
             </button>
             <button
               type="button"
-              className="btn"
+              className="btn btn-success"
               style={{
-                background: 'var(--green)',
-                color: '#fff',
                 fontWeight: 700,
                 fontSize: 13,
                 padding: '8px 24px',
@@ -730,7 +767,7 @@ function PendingTpi(props: {
               disabled={submit.isPending}
               onClick={() => void send()}
             >
-              {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit TPI
+              {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Submit TPI
             </button>
           </div>
         </div>

@@ -29,7 +29,7 @@ export function printCustomerDispatchRegister(args: {
       <td style="color:#7c3aed;font-weight:700">${esc(r.clientPoLineNo ?? '—')}</td>
       <td style="color:#7c3aed;font-family:monospace">${esc(itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision))}</td>
       <td>${esc(r.itemName)}</td>
-      <td style="text-align:center;font-weight:700;color:#dc2626">${r.qty}</td>
+      <td style="text-align:center;font-weight:700;color:#16a34a">${r.qty}</td>
       <td style="text-align:center">${esc(r.uom ?? 'NOS')}</td>
       <td>${esc(r.customer ?? '—')}</td>
       <td>${esc(r.dispatchedBy ?? '—')}</td>
@@ -41,7 +41,7 @@ export function printCustomerDispatchRegister(args: {
   const body = `
     <div class="doc-title"><h1>DISPATCH REGISTER</h1><span class="print-meta">${printedMeta()}</span></div>
     <div class="info-grid" style="grid-template-columns:repeat(3,1fr)">
-      <div class="info-box"><div class="info-lbl">Total Dispatched</div><div class="info-val" style="color:#dc2626;font-size:20px">${totalPcs} pcs</div></div>
+      <div class="info-box"><div class="info-lbl">Total Dispatched</div><div class="info-val" style="color:#16a34a;font-size:20px">${totalPcs} pcs</div></div>
       <div class="info-box"><div class="info-lbl">Dispatch Entries</div><div class="info-val">${rows.length}</div></div>
       <div class="info-box"><div class="info-lbl">Items Dispatched</div><div class="info-val">${itemCount}</div></div>
     </div>

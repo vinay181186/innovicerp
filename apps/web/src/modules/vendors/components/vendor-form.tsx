@@ -99,7 +99,7 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Code
+            Vendor Code
           </label>
           <input
             id="code"
@@ -114,7 +114,6 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
               setValueAs: (v: string) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
             })}
           />
-          <div className="form-help">Generated automatically in series (VND-…) when you save.</div>
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">
@@ -242,7 +241,7 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
-            Status
+            Vendor Status
           </label>
           <select
             id="isActive"
@@ -259,7 +258,7 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Vendor'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -284,10 +283,9 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Code
+            Vendor Code
           </label>
           <input id="code" className="innovic-input" value={props.vendor.code} readOnly />
-          <div className="form-help">Code cannot be changed after creation.</div>
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="name">
@@ -414,7 +412,7 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
-            Status
+            Vendor Status
           </label>
           <select
             id="isActive"
@@ -431,7 +429,7 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Changes'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -450,7 +448,7 @@ function FormFooter(props: {
       {props.submitError ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid #fca5a5',
             borderRadius: 6,

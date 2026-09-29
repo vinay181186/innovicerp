@@ -1,7 +1,7 @@
 // Store / Inventory (PL-SI-1) — per-item current stock dashboard.
 // Mirrors legacy renderStore (HTML L24803). 4-tile KPI strip + filter +
-// per-item table with In Stock, Min Qty, On PO, Mfg Pending, + actions:
-// ± Adjust (modal), Min Qty (modal).
+// per-item table with In Stock, Reorder Level, On PO, Mfg Pending, + actions:
+// ± Adjust (modal), Reorder (modal).
 //
 // Two legacy features are NOT ported (reported as parity gaps):
 //   - per-row History button (legacy L24847/24953) — needs a per-item txn
@@ -11,21 +11,27 @@
 import type {
   AdjustStockInput,
   ListStoreInventoryResponse,
-  SetMinStockInput,
+  ManualReceiptSource,
   StoreInventoryRow,
 } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { MANUAL_RECEIPT_SOURCE_LABEL } from '@innovic/shared';
+import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useAdjustStock, useSetMinStock, useStoreInventory } from '../api';
+import { ListHeader } from '@/ui/layout';
+import { useAdjustStock, useStoreInventory } from '../api';
+import { useItemsList } from '@/modules/items/api';
+import { SearchableSelect } from '@/ui/forms';
+import { useDiscardGuard } from '../components/discard-guard';
 import { ModalShell } from '../components/modal-shell';
+import { ReorderModal } from '../components/reorder-modal';
 import { ReservationDrilldown } from '../components/reservation-drilldown';
 import { StockLedger } from '@/modules/store-transactions/components/stock-ledger';
 
-type FilterKey = 'all' | 'low' | 'zero';
+type FilterKey = 'all' | 'below' | 'zero';
 
 export const storeInventoryRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -35,12 +41,16 @@ export const storeInventoryRoute = createRoute({
 
 function StoreInventoryPage(): React.JSX.Element {
   // Tier-driven, per department (Store). Was admin/manager on `users.role`.
-  // Every write on this screen — ± Adjust, Min Qty and Manual Receipt, which
+  // Every write on this screen — ± Adjust, Reorder and Manual Receipt, which
   // posts through the same adjust-stock endpoint — moves a saved balance, so
   // all three sit on `edit`: an L2 Data Entry hand cannot restate stock.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'item_create');
   const canEdit = perms.edit;
+  // "Raise PR" on a low-stock row opens a new Purchase Request — gated on the
+  // PR's own entry right, the same gate /purchase-requests/new enforces.
+  const canRaisePr = effectiveFormPerms(eff, 'pr_create').entry;
+  const showActions = canEdit || canRaisePr;
   // Inventory | Stock Ledger tabs — Stock Ledger is the former standalone screen.
   const [tab, setTab] = useState<'inventory' | 'ledger'>('inventory');
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -84,7 +94,7 @@ function StoreInventoryPage(): React.JSX.Element {
               marginBottom: -1,
             }}
           >
-            {t === 'inventory' ? '🏬 Inventory' : '📖 Stock Ledger'}
+            {t === 'inventory' ? 'Inventory' : 'Stock Ledger'}
           </button>
         ))}
       </div>
@@ -93,18 +103,46 @@ function StoreInventoryPage(): React.JSX.Element {
         <StockLedger />
       ) : (
         <>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="section-hdr m-0">🏬 Store / Inventory</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="🔍 Search item code, name, material, UOM…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={{ width: 240, fontSize: 12 }}
-              />
-              {canEdit ? (
+          {/* THE list header (ui/layout ListHeader): title · count · + Manual
+              Receipt, then the filter bar (search · stock filter with counts ·
+              Clear), with the read-only "Items in Stock" tile in the band. */}
+          <ListHeader
+            title="Store Inventory"
+            icon="📦"
+            count={data?.rows.length}
+            noun="item"
+            filterNote={
+              filter === 'below' ? 'Below Reorder' : filter === 'zero' ? 'Zero Stock' : undefined
+            }
+            search={search}
+            onSearch={setSearch}
+            searchPlaceholder="Search item code, name, material, UOM…"
+            filters={
+              // Stock filter, with the item counts the old strip tiles showed
+              // in the option labels (owner decision 2026-09-26).
+              <select
+                className="innovic-select"
+                aria-label="Stock filter"
+                title="Stock filter"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as FilterKey)}
+              >
+                <option value="all">{withCount('All Items', data?.summary.totalItems)}</option>
+                <option value="below">
+                  {withCount('Below Reorder', data?.summary.belowReorderCount)}
+                </option>
+                <option value="zero">
+                  {withCount('Zero Stock', data?.summary.zeroStockCount)}
+                </option>
+              </select>
+            }
+            onClearFilters={() => {
+              setFilter('all');
+              setSearch('');
+            }}
+            filtersActive={filter !== 'all' || search !== ''}
+            primary={
+              canEdit ? (
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -112,9 +150,11 @@ function StoreInventoryPage(): React.JSX.Element {
                 >
                   + Manual Receipt
                 </button>
-              ) : null}
-            </div>
-          </div>
+              ) : null
+            }
+          >
+            {data ? <KpiStrip summary={data.summary} /> : null}
+          </ListHeader>
 
           {isLoading ? (
             <div className="panel">
@@ -127,37 +167,19 @@ function StoreInventoryPage(): React.JSX.Element {
           ) : isError ? (
             <div className="panel">
               <div className="panel-body">
-                <div className="empty-state" style={{ color: 'var(--red)' }}>
-                  {error instanceof Error ? error.message : 'Failed to load inventory'}
+                <div className="empty-state" style={{ color: 'var(--red2)' }}>
+                  {error instanceof Error ? error.message : 'Could not load inventory. Try again.'}
                 </div>
               </div>
             </div>
           ) : data ? (
             <>
-              <KpiStrip summary={data.summary} filter={filter} setFilter={setFilter} />
-
               <div className="panel">
                 <div className="panel-hdr">
-                  <span className="panel-title">
-                    Stock Levels{' '}
-                    {filter !== 'all' ? (
-                      <span style={{ color: 'var(--amber)', fontSize: 12 }}>
-                        (Filtered: {filter})
-                      </span>
-                    ) : null}
-                  </span>
-                  {filter !== 'all' ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => setFilter('all')}
-                    >
-                      Show All
-                    </button>
-                  ) : null}
+                  <span className="panel-title">Stock Levels</span>
                 </div>
                 <div className="tbl-wrap">
-                  <table className="innovic-table">
+                  <table className="innovic-table tbl-grid">
                     <thead>
                       <tr>
                         <th>Item Code</th>
@@ -167,53 +189,68 @@ function StoreInventoryPage(): React.JSX.Element {
                         {/* ADR-180 — three numbers, three columns, always in
                             this order: Physical − Reserved = Available. */}
                         <th
-                          style={{ color: 'var(--green)' }}
+                          className="th-num"
+                          style={{ color: 'var(--green2)' }}
                           title="On the shelf, reserved or not. Reserving never changes it."
                         >
                           Physical
                         </th>
                         <th
+                          className="th-num"
                           style={{ color: 'var(--purple)' }}
                           title="Promised to SO lines but still on the shelf — click a number to see where"
                         >
                           Reserved
                         </th>
                         <th
+                          className="th-num"
                           style={{ color: 'var(--cyan)' }}
                           title="Physical − Reserved: what a new order may still be promised"
                         >
                           Available
                         </th>
-                        <th>Min Qty</th>
-                        <th style={{ color: 'var(--blue)' }}>On PO</th>
-                        <th style={{ color: 'var(--orange)' }}>At Vendor</th>
-                        <th style={{ color: 'var(--amber)' }}>Mfg Pending</th>
-                        {canEdit ? <th>Actions</th> : null}
+                        <th className="th-num">Reorder Level</th>
+                        <th className="th-num" style={{ color: 'var(--blue)' }}>
+                          On PO
+                        </th>
+                        <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                          At Vendor
+                        </th>
+                        <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                          Pending to Make
+                        </th>
+                        {showActions ? <th>Actions</th> : null}
                       </tr>
                     </thead>
                     <tbody>
                       {data.rows.length === 0 ? (
                         <tr>
-                          <td colSpan={canEdit ? 12 : 11} className="empty-state">
-                            No items in master
+                          <td colSpan={showActions ? 12 : 11} className="empty-state">
+                            {search.trim() || filter !== 'all'
+                              ? 'No items match.'
+                              : 'No items yet.'}
                           </td>
                         </tr>
                       ) : (
                         data.rows.map((row) => (
-                          <tr
-                            key={row.itemId}
-                            style={{
-                              background: row.lowStock ? 'rgba(220,38,38,0.04)' : undefined,
-                            }}
-                          >
-                            <td className="td-code" style={{ color: 'var(--purple)' }}>
-                              {row.itemCode}
+                          <tr key={row.itemId}>
+                            {/* Item code opens the Item Master record. */}
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <Link
+                                to="/items/$id"
+                                params={{ id: row.itemId }}
+                                className="td-code fw-700"
+                                style={{ color: 'var(--text)' }}
+                                title="Open this item in the Item Master"
+                              >
+                                {row.itemCode}
+                              </Link>
                             </td>
                             <td className="fw-700">{row.itemName}</td>
                             <td className="text2" style={{ fontSize: 11 }}>
                               {row.material ?? '—'}
                             </td>
-                            <td className="td-ctr">
+                            <td>
                               <span
                                 className="tag"
                                 style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
@@ -221,7 +258,7 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.uom}
                               </span>
                             </td>
-                            <td className="td-ctr">
+                            <td className="td-num">
                               <span
                                 className="mono fw-700"
                                 style={{
@@ -236,21 +273,22 @@ function StoreInventoryPage(): React.JSX.Element {
                               >
                                 {row.inStock}
                               </span>
-                              {row.lowStock ? (
-                                <div style={{ fontSize: 9, color: 'var(--red)', fontWeight: 700 }}>
-                                  ⚠ LOW
+                              {row.belowReorder ? (
+                                <div
+                                  style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}
+                                >
+                                  ⚠ Below Reorder
                                 </div>
                               ) : null}
                             </td>
                             {/* Reserved is clickable: it opens the list of SO
                                 lines holding this item's stock. */}
-                            <td className="td-ctr">
+                            <td className="td-num">
                               {row.reservedQty > 0 ? (
                                 <button
                                   type="button"
                                   className="mono fw-700"
                                   onClick={() => setReservedRow(row)}
-                                  title="See which SO lines are holding this stock"
                                   style={{
                                     background: 'none',
                                     border: 'none',
@@ -267,20 +305,19 @@ function StoreInventoryPage(): React.JSX.Element {
                                 <span className="mono text3">—</span>
                               )}
                             </td>
-                            <td className="td-ctr">
+                            <td className="td-num">
                               <span
                                 className="mono fw-700"
                                 style={{
                                   fontSize: 15,
                                   color: row.availableQty > 0 ? 'var(--cyan)' : 'var(--text3)',
                                 }}
-                                title="Physical − Reserved"
                               >
                                 {row.availableQty}
                               </span>
                             </td>
-                            <td className="td-ctr mono text3">{row.minQty || '—'}</td>
-                            <td className="td-ctr">
+                            <td className="mono text3 td-num">{row.reorderLevel || '—'}</td>
+                            <td className="td-num">
                               <span
                                 className="mono"
                                 style={{ color: row.onPoQty > 0 ? 'var(--blue)' : 'var(--text3)' }}
@@ -288,22 +325,18 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.onPoQty || '—'}
                               </span>
                             </td>
-                            <td className="td-ctr">
+                            <td className="td-num">
                               <span
                                 className="mono"
                                 style={{
-                                  color: row.atVendorQty > 0 ? 'var(--orange)' : 'var(--text3)',
+                                  color: row.atVendorQty > 0 ? 'var(--amber2)' : 'var(--text3)',
                                 }}
-                                title={
-                                  row.atVendorQty > 0
-                                    ? `${row.atVendorQty} pcs out at an OSP vendor — not on the shelf`
-                                    : undefined
-                                }
+                                title={row.atVendorQty > 0 ? 'At an OSP vendor' : undefined}
                               >
                                 {row.atVendorQty || '—'}
                               </span>
                             </td>
-                            <td className="td-ctr">
+                            <td className="td-num">
                               <span
                                 className="mono"
                                 style={{
@@ -313,25 +346,43 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.mfgPendingQty || '—'}
                               </span>
                             </td>
-                            {canEdit ? (
+                            {showActions ? (
                               <td>
                                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm"
-                                    onClick={() => setAdjustRow(row)}
-                                    style={{ fontSize: 11 }}
-                                  >
-                                    ± Adjust
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm"
-                                    onClick={() => setMinRow(row)}
-                                    style={{ fontSize: 11 }}
-                                  >
-                                    Min Qty
-                                  </button>
+                                  {/* Below Reorder → the Reorder List (ADR-193 phase 5,
+                                      review): the one place PRs are raised for it, so an
+                                      item that already has an open PR is never bought twice. */}
+                                  {canRaisePr && row.belowReorder ? (
+                                    <Link
+                                      to="/reorder-list"
+                                      className="btn btn-primary btn-sm"
+                                      style={{ fontSize: 11 }}
+                                      title="Open the Reorder List — one PR per item, open PRs shown"
+                                    >
+                                      Raise PR
+                                    </Link>
+                                  ) : null}
+                                  {canEdit ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => setAdjustRow(row)}
+                                        style={{ fontSize: 11 }}
+                                      >
+                                        ± Adjust
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => setMinRow(row)}
+                                        title="Reorder Level and Reorder Qty"
+                                        style={{ fontSize: 11 }}
+                                      >
+                                        Reorder
+                                      </button>
+                                    </>
+                                  ) : null}
                                 </div>
                               </td>
                             ) : null}
@@ -342,23 +393,13 @@ function StoreInventoryPage(): React.JSX.Element {
                   </table>
                 </div>
               </div>
-
-              <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-                💡 Stock is automatically updated via GRN (inward) and Dispatch (outward). Use ±
-                Adjust for manual corrections. Reserving stock for an order does NOT change Physical
-                — it only moves pieces from Available to Reserved. Click a Reserved number to see
-                which orders are holding it.
-              </div>
             </>
           ) : null}
 
           {adjustRow ? <AdjustModal row={adjustRow} onClose={() => setAdjustRow(null)} /> : null}
-          {minRow ? <SetMinModal row={minRow} onClose={() => setMinRow(null)} /> : null}
+          {minRow ? <ReorderModal row={minRow} onClose={() => setMinRow(null)} /> : null}
           {showManualReceipt ? (
-            <ManualReceiveModal
-              onClose={() => setShowManualReceipt(false)}
-              rows={data?.rows ?? []}
-            />
+            <ManualReceiveModal onClose={() => setShowManualReceipt(false)} />
           ) : null}
           {reservedRow ? (
             <ReservationDrilldown
@@ -374,73 +415,31 @@ function StoreInventoryPage(): React.JSX.Element {
   );
 }
 
-// ONE strip, one row — the shared <StatStrip>, not a grid of cards. The two
-// ADR-180 totals (Reserved, Available) join the four that were already here;
-// a 4-column card grid would have pushed them onto a second row.
+// ONE strip, one row — the shared <StatStrip>, not a grid of cards. Item
+// counts only: the ADR-180 piece totals (Reserved, Available) were removed
+// because they summed kg + Nos + m into one meaningless number.
+// 2026-09-26 filter bar: Total / Low / Zero filtered the table, so they are now
+// the counts in the Stock filter dropdown. "Items in Stock" never filtered —
+// it stays here as a read-only tile.
 function KpiStrip({
   summary,
-  filter,
-  setFilter,
 }: {
   summary: ListStoreInventoryResponse['summary'];
-  filter: FilterKey;
-  setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
   const items: StatStripItem[] = [
-    {
-      key: 'all',
-      label: 'Total Items',
-      count: summary.totalItems,
-      color: 'var(--cyan)',
-      sub: `${summary.totalStockPieces} physical pieces in store`,
-      active: filter === 'all',
-      onClick: () => setFilter('all'),
-    },
-    {
-      key: 'reserved',
-      label: 'Reserved Pieces',
-      count: summary.totalReservedPieces,
-      color: 'var(--purple)',
-      sub: 'Promised to SO lines, still on the shelf',
-      title: 'Total pieces held by active reservations',
-    },
-    {
-      key: 'available',
-      label: 'Available Pieces',
-      count: summary.totalAvailablePieces,
-      color: 'var(--green)',
-      sub: 'Physical − Reserved',
-      title: 'What a new order may still be promised',
-    },
     {
       key: 'inStock',
       label: 'Items in Stock',
       count: summary.itemsInStockCount,
-      color: 'var(--green)',
-    },
-    {
-      key: 'low',
-      label: 'Low Stock Alert',
-      count: summary.lowStockCount,
-      color: 'var(--red)',
-      sub: 'Below minimum level',
-      active: filter === 'low',
-      onClick: () => setFilter(filter === 'low' ? 'all' : 'low'),
-    },
-    {
-      key: 'zero',
-      label: 'Zero Stock',
-      count: summary.zeroStockCount,
-      color: 'var(--amber)',
-      active: filter === 'zero',
-      onClick: () => setFilter(filter === 'zero' ? 'all' : 'zero'),
+      color: 'var(--green2)',
     },
   ];
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <StatStrip items={items} />
-    </div>
-  );
+  return <StatStrip items={items} />;
+}
+
+/** "Label (N)" when a count is known, bare label otherwise. */
+function withCount(label: string, n: number | undefined): string {
+  return n === undefined ? label : `${label} (${n})`;
 }
 
 function AdjustModal({
@@ -459,12 +458,16 @@ function AdjustModal({
   const onSave = (): void => {
     setErr(null);
     const q = Number(qty);
+    if (qty.trim() === '') {
+      setErr('Quantity is required.');
+      return;
+    }
     if (!Number.isFinite(q) || q <= 0) {
-      setErr('Enter a valid quantity');
+      setErr('Quantity must be more than 0.');
       return;
     }
     if (!remarks.trim()) {
-      setErr('Enter a reason for the adjustment');
+      setErr('Reason / Remarks is required.');
       return;
     }
     const input: AdjustStockInput = {
@@ -475,12 +478,12 @@ function AdjustModal({
     };
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Adjust failed'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not adjust stock. Try again.'),
     });
   };
 
   return (
-    <ModalShell onClose={onClose} title={`± Stock Adjustment — ${row.itemCode} (${row.itemName})`}>
+    <ModalShell onClose={onClose} title={`Adjust Stock — ${row.itemCode}`}>
       <div
         style={{
           marginBottom: 12,
@@ -490,11 +493,11 @@ function AdjustModal({
         }}
       >
         <span className="text3" style={{ fontSize: 11 }}>
-          Physical Stock:
+          Physical:
         </span>
         <span
           className="mono fw-700"
-          style={{ fontSize: 18, color: 'var(--green)', marginLeft: 8 }}
+          style={{ fontSize: 18, color: 'var(--green2)', marginLeft: 8 }}
         >
           {row.inStock} {row.uom}
         </span>
@@ -522,7 +525,9 @@ function AdjustModal({
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label">Quantity ★</label>
+          <label className="form-label">
+            Quantity <span className="req">★</span>
+          </label>
           <input
             type="number"
             min={1}
@@ -534,7 +539,9 @@ function AdjustModal({
           />
         </div>
         <div className="form-grp form-full">
-          <label className="form-label">Reason / Remarks ★</label>
+          <label className="form-label">
+            Reason / Remarks <span className="req">★</span>
+          </label>
           <input
             type="text"
             className="innovic-input"
@@ -550,7 +557,7 @@ function AdjustModal({
             marginTop: 12,
             padding: 8,
             background: 'rgba(239,68,68,0.08)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
             borderRadius: 4,
           }}
@@ -576,129 +583,72 @@ function AdjustModal({
   );
 }
 
-function SetMinModal({
-  row,
-  onClose,
-}: {
-  row: StoreInventoryRow;
-  onClose: () => void;
-}): React.JSX.Element {
-  const [val, setVal] = useState(String(row.minQty));
-  const [err, setErr] = useState<string | null>(null);
-  const mut = useSetMinStock();
-
-  const onSave = (): void => {
-    setErr(null);
-    const n = Number(val);
-    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
-      setErr('Enter a non-negative integer');
-      return;
-    }
-    const input: SetMinStockInput = { itemId: row.itemId, minQty: n };
-    mut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Save failed'),
-    });
-  };
-
-  return (
-    <ModalShell onClose={onClose} title={`Min Stock — ${row.itemCode} (${row.itemName})`}>
-      <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
-        Sets the low-stock alert threshold for <b>{row.itemName}</b>. Items show a ⚠ LOW tag when
-        current stock ≤ this value. Use 0 to disable.
-      </div>
-      <div className="form-grid">
-        <div className="form-grp form-full">
-          <label className="form-label">Min Stock Qty</label>
-          <input
-            type="number"
-            min={0}
-            className="innovic-input"
-            value={val}
-            onChange={(e) => setVal(e.target.value)}
-            style={{ fontSize: 16, fontWeight: 700 }}
-          />
-        </div>
-      </div>
-      {err ? (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 8,
-            background: 'rgba(239,68,68,0.08)',
-            color: 'var(--red)',
-            fontSize: 12,
-            borderRadius: 4,
-          }}
-        >
-          {err}
-        </div>
-      ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
-          {mut.isPending ? (
-            <>
-              <Loader2 size={14} className="inline animate-spin" /> Saving…
-            </>
-          ) : (
-            'Save'
-          )}
-        </button>
-      </div>
-    </ModalShell>
-  );
-}
-
 // Legacy storeReceiveManual (HTML L24981) — manual stock IN entry. Today the
 // underlying ledger writes `source_type='manual_adjust'` via the existing
-// AdjustStock service; the "Source" dropdown + Ref No fields shown in the
-// legacy modal are stored only on the local input here and folded into the
-// remarks string (a DELTA to track separately — adding source/ref to
-// store_transactions requires a backend schema bump).
-function ManualReceiveModal({
-  onClose,
-  rows,
-}: {
-  onClose: () => void;
-  rows: StoreInventoryRow[];
-}): React.JSX.Element {
+// AdjustStock service; the "Source" dropdown is sent as its own `source` field
+// (the server refuses 'purchase'), and the Ref No + remarks stay free text.
+//
+// The Item is picked from the whole Item Master (shared type-to-search), not
+// from the rows on the inventory page — with "Low Stock" on, most items used
+// to be unreachable. 'Purchase' is NOT a source here: bought material comes in
+// through a GRN (PO link + incoming QC); the server refuses it too.
+/** Sources a Manual Receipt may pick — every one but Purchase (GRN only). */
+const RECEIPT_SOURCES: ReadonlyArray<Exclude<ManualReceiptSource, 'purchase'>> = [
+  'production',
+  'return',
+  'other',
+];
+
+function ManualReceiveModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [itemId, setItemId] = useState<string | null>(null);
   const [itemSearch, setItemSearch] = useState('');
   const [qty, setQty] = useState('');
-  const [source, setSource] = useState('Production');
+  const [source, setSource] = useState<Exclude<ManualReceiptSource, 'purchase'>>('production');
   const [refNo, setRefNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const mut = useAdjustStock();
 
-  const selected = useMemo(() => rows.find((r) => r.itemId === itemId) ?? null, [rows, itemId]);
-  const filtered = useMemo(() => {
-    const q = itemSearch.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (r) =>
-        r.itemCode.toLowerCase().includes(q) ||
-        r.itemName.toLowerCase().includes(q) ||
-        (r.material ?? '').toLowerCase().includes(q),
-    );
-  }, [rows, itemSearch]);
+  const { data: itemsData, isFetching: itemsFetching } = useItemsList({
+    search: itemSearch.trim() || undefined,
+    limit: 50,
+    offset: 0,
+  });
+  // Remember the picked item so its code / UOM stay shown after the search changes.
+  const [picked, setPicked] = useState<{ code: string; name: string; uom: string | null } | null>(
+    null,
+  );
+  const itemOptions = useMemo(
+    () => (itemsData?.items ?? []).map((it) => ({ id: it.id, code: it.code, name: it.name })),
+    [itemsData],
+  );
+  // Current stock of the picked item, whatever the inventory page's filter is.
+  const { data: stockData } = useStoreInventory(
+    { search: picked?.code ?? '', filter: 'all' },
+    Boolean(picked),
+  );
+  const stockRow = picked ? (stockData?.rows ?? []).find((r) => r.itemId === itemId) : undefined;
+
+  const dirty = Boolean(itemId || qty.trim() || refNo.trim() || remarks.trim());
+  const guard = useDiscardGuard(dirty, onClose);
 
   const onSave = (): void => {
     setErr(null);
     if (!itemId) {
-      setErr('Select an item');
+      setErr('Item is required.');
       return;
     }
     const q = Number(qty);
+    if (qty.trim() === '') {
+      setErr('Quantity is required.');
+      return;
+    }
     if (!Number.isFinite(q) || q <= 0) {
-      setErr('Enter a valid quantity');
+      setErr('Quantity must be more than 0.');
       return;
     }
     const composedRemarks = [
-      `Manual receipt · source=${source}`,
+      'Manual receipt',
       refNo.trim() ? `ref=${refNo.trim()}` : null,
       remarks.trim() || null,
     ]
@@ -710,72 +660,56 @@ function ManualReceiveModal({
       direction: 'add',
       qty: q,
       remarks: composedRemarks,
+      source,
     };
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to record receipt'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save receipt. Try again.'),
     });
   };
 
   return (
-    <ModalShell onClose={onClose} title="+ Manual Stock Receipt">
+    <ModalShell onClose={guard.requestClose} title="Manual Receipt">
+      {guard.dialog}
       <div className="form-grid">
         <div className="form-grp">
-          <label className="form-label">Item ★</label>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search item..."
-            style={{ fontSize: 12 }}
-            value={selected ? `${selected.itemCode} — ${selected.itemName}` : itemSearch}
-            onChange={(e) => {
-              setItemId(null);
-              setItemSearch(e.target.value);
+          <label className="form-label" htmlFor="mr-item">
+            Item <span className="req">★</span>
+          </label>
+          <SearchableSelect
+            id="mr-item"
+            value={itemId}
+            onChange={(id) => {
+              setItemId(id);
+              const it = itemsData?.items.find((x) => x.id === id);
+              setPicked(it ? { code: it.code, name: it.name, uom: it.uom ?? null } : null);
             }}
+            options={itemOptions}
+            valueLabel={picked ? `${picked.code} — ${picked.name}` : undefined}
+            onSearch={setItemSearch}
+            loading={itemsFetching}
+            placeholder="Type item code or name…"
+            emptyText="No matching item"
           />
-          {!itemId && itemSearch.trim() ? (
-            <div
-              style={{
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                background: 'var(--bg2)',
-                marginTop: 4,
-                maxHeight: 180,
-                overflowY: 'auto',
-              }}
-            >
-              {filtered.slice(0, 20).map((r) => (
-                <div
-                  key={r.itemId}
-                  onClick={() => {
-                    setItemId(r.itemId);
-                    setItemSearch('');
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    borderBottom: '1px solid var(--border)',
-                  }}
-                >
-                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{r.itemCode}</span> —{' '}
-                  {r.itemName}
-                  <span className="text3" style={{ marginLeft: 6 }}>
-                    · stock {r.inStock} {r.uom}
-                  </span>
-                </div>
-              ))}
+          {picked ? (
+            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+              In stock now: {stockRow ? stockRow.inStock : '—'} {picked.uom ?? ''}
             </div>
           ) : null}
         </div>
         <div className="form-grp">
-          <label className="form-label">Quantity ★</label>
+          <label className="form-label">
+            Quantity <span className="req">★</span>
+            {picked?.uom ? <span className="text3"> ({picked.uom})</span> : null}
+          </label>
           <input
             type="number"
-            min={1}
+            min={0}
+            step="any"
             className="innovic-input"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
+            onWheel={(e) => e.currentTarget.blur()}
             placeholder="0"
             style={{ fontSize: 16, fontWeight: 700 }}
           />
@@ -785,22 +719,26 @@ function ManualReceiveModal({
           <select
             className="innovic-select"
             value={source}
-            onChange={(e) => setSource(e.target.value)}
+            onChange={(e) => setSource(e.target.value as Exclude<ManualReceiptSource, 'purchase'>)}
           >
-            <option>Production</option>
-            <option>Purchase</option>
-            <option>Return</option>
-            <option>Other</option>
+            {RECEIPT_SOURCES.map((s) => (
+              <option key={s} value={s}>
+                {MANUAL_RECEIPT_SOURCE_LABEL[s]}
+              </option>
+            ))}
           </select>
+          <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+            Bought material is received through a GRN (against its PO, with incoming QC) — not here.
+          </div>
         </div>
         <div className="form-grp">
-          <label className="form-label">Reference No.</label>
+          <label className="form-label">Ref No.</label>
           <input
             type="text"
             className="innovic-input"
             value={refNo}
             onChange={(e) => setRefNo(e.target.value)}
-            placeholder="JC / PO / GRN number"
+            placeholder="JC / return slip number"
           />
         </div>
         <div className="form-grp form-full">
@@ -810,7 +748,6 @@ function ManualReceiveModal({
             className="innovic-input"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Optional notes"
           />
         </div>
       </div>
@@ -820,7 +757,7 @@ function ManualReceiveModal({
             marginTop: 12,
             padding: 8,
             background: 'rgba(239,68,68,0.08)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
             borderRadius: 4,
           }}
@@ -838,7 +775,7 @@ function ManualReceiveModal({
               <Loader2 size={14} className="inline animate-spin" /> Saving…
             </>
           ) : (
-            'Receive'
+            'Save Receipt'
           )}
         </button>
       </div>

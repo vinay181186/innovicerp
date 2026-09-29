@@ -37,6 +37,7 @@
 //   Description full                                    = 12
 //   Material lg · UOM xs · Item Type md                 = 12
 //   Source lg · HSN Code lg                             = 12
+//   Track by Serial No. full (Tool / Instrument only)   = 12
 //   Product image full                                  = 12
 
 import {
@@ -44,6 +45,7 @@ import {
   ITEM_PROCUREMENT_TYPES,
   ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPES,
+  ITEM_TYPE_RULES,
   type Item,
   type UpdateItemInput,
   UOMS,
@@ -51,13 +53,13 @@ import {
   updateItemInputSchema,
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { Button } from '@/ui/core';
 import { Banner } from '@/ui/feedback';
 import { Panel } from '@/ui/data';
-import { FormField, FormGrid, Input, Select } from '@/ui/forms';
-import { PageHeader } from '@/ui/layout';
+import { CheckField, FormField, FormGrid, Input, Select } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextItemCode } from '../api';
 import { ItemImageField } from './item-image-field';
 
@@ -100,11 +102,13 @@ const CREATE_DEFAULTS: Partial<CreateItemInput> = {
   description: undefined,
   material: undefined,
   uom: 'NOS',
-  itemType: 'component',
+  // Q2 (ADR-193): no default — the user chooses the Item Type.
   procurementType: 'make',
   hsnCode: undefined,
   imagePath: null,
 };
+
+const ITEM_TYPE_OPTIONS = ITEM_TYPES.map((t) => ({ value: t, label: ITEM_TYPE_RULES[t].label }));
 
 const PROCUREMENT_OPTIONS = ITEM_PROCUREMENT_TYPES.map((t) => ({
   value: t,
@@ -114,6 +118,27 @@ const PROCUREMENT_OPTIONS = ITEM_PROCUREMENT_TYPES.map((t) => ({
 const SOURCE_HELP =
   'Make = planned & produced (Plan → Production Order → Route Card). Buy = purchased finished (+ PR from the Planning line).';
 
+const TRACK_SERIAL_LABEL =
+  'Track by Serial No. (instruments — one register row per piece, calibration)';
+
+/** ADR-193 phase 4 — Track by Serial No. is a Tool / Instrument setting only:
+ *  shown for that type, never sent for any other. */
+function TrackSerialField(props: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <FormField label="Tool / Instrument" size="full" htmlFor="trackSerial">
+      <CheckField
+        id="trackSerial"
+        label={TRACK_SERIAL_LABEL}
+        checked={props.checked}
+        onChange={props.onChange}
+      />
+    </FormField>
+  );
+}
+
 function itemToUpdateDefaults(item: Item): UpdateItemInput {
   return {
     name: item.name,
@@ -122,6 +147,7 @@ function itemToUpdateDefaults(item: Item): UpdateItemInput {
     uom: item.uom,
     itemType: item.itemType,
     procurementType: item.procurementType,
+    trackSerial: item.trackSerial ?? false,
     hsnCode: item.hsnCode ?? undefined,
     imagePath: item.imagePath ?? null,
   };
@@ -142,9 +168,19 @@ function ItemFormHeader(props: {
   onBack?: (() => void) | undefined;
   onCancel?: (() => void) | undefined;
   isSubmitting: boolean;
+  submitLabel: string;
+  /** Unsaved edits → the "Not saved" pill beside Save. */
+  dirty: boolean;
+  /** The page's own <form>, so Ctrl+S runs the same submit as the Save button. */
+  formRef: React.RefObject<HTMLFormElement | null>;
 }): React.JSX.Element {
+  const { formRef } = props;
+  const runSave = useCallback(() => formRef.current?.requestSubmit(), [formRef]);
+  useSaveShortcut(runSave, !props.isSubmitting);
   return (
     <PageHeader
+      sticky
+      dirty={props.dirty}
       title={props.title}
       backLabel={props.backLabel ?? 'Back'}
       onBack={props.onBack}
@@ -155,9 +191,8 @@ function ItemFormHeader(props: {
               Cancel
             </Button>
           ) : null}
-          {/* Legacy uses the same "Save" label for Add and for Edit. */}
           <Button type="submit" variant="primary" loading={props.isSubmitting}>
-            Save
+            {props.submitLabel}
           </Button>
         </>
       }
@@ -166,6 +201,7 @@ function ItemFormHeader(props: {
 }
 
 function CreateItemForm(props: CreateMode): React.JSX.Element {
+  const formRef = useRef<HTMLFormElement>(null);
   const form = useForm<CreateItemInput>({
     resolver: zodResolver(createItemInputSchema),
     defaultValues: { ...CREATE_DEFAULTS, ...props.defaultValues },
@@ -185,8 +221,13 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
 
   return (
     <form
+      ref={formRef}
       onSubmit={form.handleSubmit(async (values) => {
-        await props.onSubmit(values);
+        // Track by Serial No. is sent only for a Tool / Instrument item.
+        const { trackSerial, ...rest } = values;
+        await props.onSubmit(
+          rest.itemType === 'tool' ? { ...rest, trackSerial: !!trackSerial } : rest,
+        );
       })}
     >
       <ItemFormHeader
@@ -195,6 +236,9 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
         onBack={props.onBack}
         onCancel={props.onCancel}
         isSubmitting={formState.isSubmitting}
+        dirty={formState.isDirty}
+        formRef={formRef}
+        submitLabel="Save Item"
       />
 
       {props.submitError ? (
@@ -220,7 +264,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
               className="fw-700"
               autoFocus
               autoComplete="off"
-              placeholder="e.g. ITM-0001 (auto — editable)"
+              placeholder="Auto on save"
               {...register('code', {
                 // Blank → undefined so the server auto-generates the next code;
                 // a kept/typed value is validated by the schema's code rules.
@@ -240,7 +284,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             <Input
               id="name"
               autoComplete="off"
-              placeholder="Full part name"
+              placeholder="Full item name"
               {...register('name')}
             />
           </FormField>
@@ -278,11 +322,16 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             htmlFor="itemType"
             error={errors.itemType?.message}
           >
-            <Select id="itemType" options={ITEM_TYPES} {...register('itemType')} />
+            <Select
+              id="itemType"
+              options={ITEM_TYPE_OPTIONS}
+              placeholder="Choose Item Type…"
+              {...register('itemType')}
+            />
           </FormField>
 
           <FormField
-            label="Source"
+            label="Make / Buy"
             size="md"
             htmlFor="procurementType"
             error={errors.procurementType?.message}
@@ -299,6 +348,13 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
 
+          {watch('itemType') === 'tool' ? (
+            <TrackSerialField
+              checked={!!watch('trackSerial')}
+              onChange={(v) => setValue('trackSerial', v, { shouldDirty: true })}
+            />
+          ) : null}
+
           <ItemImageField
             value={watch('imagePath')}
             onChange={(p) => setValue('imagePath', p, { shouldDirty: true })}
@@ -310,6 +366,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
 }
 
 function EditItemForm(props: EditMode): React.JSX.Element {
+  const formRef = useRef<HTMLFormElement>(null);
   const form = useForm<UpdateItemInput>({
     resolver: zodResolver(updateItemInputSchema),
     defaultValues: itemToUpdateDefaults(props.item),
@@ -319,8 +376,15 @@ function EditItemForm(props: EditMode): React.JSX.Element {
 
   return (
     <form
+      ref={formRef}
       onSubmit={form.handleSubmit(async (values) => {
-        await props.onSubmit(values);
+        // Sent only for a Tool / Instrument item, and only when it changed —
+        // the server locks it (409) once stock or instruments exist.
+        const { trackSerial, ...rest } = values;
+        const changed = !!trackSerial !== !!props.item.trackSerial;
+        await props.onSubmit(
+          rest.itemType === 'tool' && changed ? { ...rest, trackSerial: !!trackSerial } : rest,
+        );
       })}
     >
       <ItemFormHeader
@@ -329,6 +393,9 @@ function EditItemForm(props: EditMode): React.JSX.Element {
         onBack={props.onBack}
         onCancel={props.onCancel}
         isSubmitting={formState.isSubmitting}
+        dirty={formState.isDirty}
+        formRef={formRef}
+        submitLabel="Save Changes"
       />
 
       {props.submitError ? (
@@ -361,7 +428,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             <Input
               id="name"
               autoComplete="off"
-              placeholder="Full part name"
+              placeholder="Full item name"
               {...register('name')}
             />
           </FormField>
@@ -399,11 +466,16 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             htmlFor="itemType"
             error={errors.itemType?.message}
           >
-            <Select id="itemType" options={ITEM_TYPES} {...register('itemType')} />
+            <Select
+              id="itemType"
+              options={ITEM_TYPE_OPTIONS}
+              placeholder="Choose Item Type…"
+              {...register('itemType')}
+            />
           </FormField>
 
           <FormField
-            label="Source"
+            label="Make / Buy"
             size="md"
             htmlFor="procurementType"
             error={errors.procurementType?.message}
@@ -419,6 +491,13 @@ function EditItemForm(props: EditMode): React.JSX.Element {
           <FormField label="HSN Code" size="md" htmlFor="hsnCode" error={errors.hsnCode?.message}>
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
+
+          {watch('itemType') === 'tool' ? (
+            <TrackSerialField
+              checked={!!watch('trackSerial')}
+              onChange={(v) => setValue('trackSerial', v, { shouldDirty: true })}
+            />
+          ) : null}
 
           <ItemImageField
             value={watch('imagePath')}

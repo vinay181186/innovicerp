@@ -60,6 +60,8 @@ export type DailyTaskReportDetail = z.infer<typeof dailyTaskReportDetailSchema>;
 export const listDailyTaskReportsResponseSchema = z.object({
   reports: z.array(dailyTaskReportRowSchema),
   isAdmin: z.boolean(),
+  /** Admin or manager: sees every user's reports (others see only their own). */
+  canSeeAll: z.boolean(),
   userOptions: z.array(z.object({ id: z.string().uuid(), name: z.string() })),
 });
 export type ListDailyTaskReportsResponse = z.infer<typeof listDailyTaskReportsResponseSchema>;

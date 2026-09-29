@@ -10,12 +10,14 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtDate } from '@/lib/date';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { useSoQcStatus } from '../api';
 
-const TABLE_COLS = 10;
+const TABLE_COLS = 9;
 
 function pctColor(pct: number): string {
   if (pct >= 100) return 'var(--green)';
@@ -45,7 +47,7 @@ export function SoQcStatusView(): React.JSX.Element {
             onChange={setSelectedSo}
             onSearch={setSoSearch}
             loading={soList.isFetching}
-            placeholder="🔍 Select SO — type code or customer…"
+            placeholder="Search SO No. or customer…"
             options={(soList.data?.items ?? []).map((s) => ({
               id: s.id,
               code: s.code,
@@ -59,9 +61,8 @@ export function SoQcStatusView(): React.JSX.Element {
         <div className="panel">
           <div className="empty-state">
             <div className="empty-icon">🔬</div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Select a Sales Order to view QC status</div>
-            <div style={{ fontSize: 12, marginTop: 6 }}>
-              This report shows all QC stages for each SO line in table format
+            <div style={{ fontSize: 14, fontWeight: 700 }}>
+              Select a Sales Order to view QC status
             </div>
           </div>
         </div>
@@ -73,8 +74,10 @@ export function SoQcStatusView(): React.JSX.Element {
         </div>
       ) : detail.isError || !detail.data ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {detail.error instanceof Error ? detail.error.message : 'Failed to load SO QC status'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {detail.error instanceof Error
+              ? detail.error.message
+              : 'Could not load SO QC status. Try again.'}
           </div>
         </div>
       ) : (
@@ -105,9 +108,9 @@ export function SoQcStatusView(): React.JSX.Element {
               </span>
             </div>
             <div className="text3" style={{ fontSize: 12 }}>
-              SO Date: {detail.data.so.soDate ?? '—'}
-              {detail.data.so.dueDate ? ` | Due: ${detail.data.so.dueDate}` : ''}
-              {detail.data.so.type ? ` | Type: ${detail.data.so.type}` : ''}
+              SO Date: {fmtDate(detail.data.so.soDate)}
+              {detail.data.so.dueDate ? ` · Due: ${fmtDate(detail.data.so.dueDate)}` : ''}
+              {detail.data.so.type ? ` · Type: ${detail.data.so.type}` : ''}
             </div>
           </div>
 
@@ -115,21 +118,20 @@ export function SoQcStatusView(): React.JSX.Element {
 
           <div className="panel">
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     <th style={{ width: 40 }}>Ln</th>
                     {/* POL — the CUSTOMER's own line number off their purchase
                         order, beside (never instead of) our SO line number. */}
-                    <th style={{ width: 50, color: 'var(--purple)' }}>POL</th>
-                    <th style={{ width: 100 }}>Item Code</th>
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
+                    <th>Item Code</th>
                     <th>Item Name</th>
-                    <th style={{ width: 40 }}>Order Qty</th>
+                    <th className="th-num">Order Qty</th>
                     <th style={{ minWidth: 240 }}>QC Stages (in JC)</th>
-                    <th style={{ width: 80 }}>Incoming QC</th>
-                    <th style={{ width: 60 }}>TPI</th>
-                    <th style={{ width: 60 }}>Docs</th>
-                    <th style={{ width: 90 }}>Overall</th>
+                    <th>Incoming QC</th>
+                    <th>Docs</th>
+                    <th>Overall</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -150,10 +152,6 @@ export function SoQcStatusView(): React.JSX.Element {
                 </tbody>
               </table>
             </div>
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-            💡 QC stages from JC shown directly. Click any line row to expand Incoming QC, TPI &
-            Document detail tables. ⚠ = No QC stage defined.
           </div>
         </>
       )}
@@ -183,22 +181,25 @@ function StageOpRow({ op }: { op: SoQcStageOp }): React.JSX.Element {
         {stageIcon(op.status)}
       </span>
       <span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{op.operation}</span>
-      <span className="mono fw-700" style={{ fontSize: 10, color: countColor, whiteSpace: 'nowrap' }}>
+      <span
+        className="mono fw-700"
+        style={{ fontSize: 11, color: countColor, whiteSpace: 'nowrap' }}
+      >
         {op.accepted}/{op.orderQty}
       </span>
       {op.rejected > 0 ? (
-        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', marginLeft: 2 }}>
-          ({op.rejected} rej)
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red2)', marginLeft: 2 }}>
+          {op.rejected} Rejected
         </span>
       ) : null}
       {op.pending > 0 ? (
-        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--amber)', marginLeft: 2 }}>
-          [{op.pending} pending]
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)', marginLeft: 2 }}>
+          {op.pending} QC Pending
         </span>
       ) : null}
       {op.attempts > 1 ? (
-        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--amber)', marginLeft: 2 }}>
-          [{op.attempts}x]
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)', marginLeft: 2 }}>
+          {op.attempts} attempts
         </span>
       ) : null}
     </div>
@@ -244,22 +245,22 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
           {l.clientPoLineNo ?? '—'}
         </td>
-        <td className="td-code mono fw-700" style={{ color: 'var(--cyan)' }}>
+        <td className="td-code mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
           {itemCodeWithRev(l.itemCode, l.itemRevision)}
         </td>
         <td>{l.partName ?? '—'}</td>
-        <td className="mono fw-700">{l.orderQty}</td>
+        <td className="mono fw-700 td-num">{l.orderQty}</td>
 
         {!l.hasAnyQc ? (
           <>
-            <td style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 11 }}>
+            <td style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 11 }}>
               ⚠ No QC stage defined for this line
             </td>
             <td className="text3">—</td>
             <td className="text3">—</td>
             <td className="text3">—</td>
             <td>
-              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)' }}>— N/A</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)' }}>— N/A</span>
             </td>
           </>
         ) : (
@@ -275,7 +276,7 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
                     <div
                       className="mono fw-700"
                       style={{
-                        fontSize: 10,
+                        fontSize: 11,
                         color: 'var(--cyan)',
                         padding: '3px 0 2px',
                         marginTop: ji > 0 ? 4 : 0,
@@ -295,9 +296,6 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
               <StatusPill done={l.grnDone} total={l.grnTotal} />
             </td>
             <td style={{ verticalAlign: 'middle' }}>
-              <StatusPill done={l.tpiCount} total={l.tpiCount} />
-            </td>
-            <td style={{ verticalAlign: 'middle' }}>
               <StatusPill done={l.docUploaded} total={l.docCount} />
             </td>
             <td style={{ verticalAlign: 'middle' }}>
@@ -310,7 +308,9 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
       {hasDetail && open ? (
         <tr>
           <td colSpan={TABLE_COLS} style={{ padding: 0 }}>
-            <div style={{ background: 'var(--bg)', borderTop: '2px solid var(--cyan)', padding: 16 }}>
+            <div
+              style={{ background: 'var(--bg)', borderTop: '2px solid var(--cyan)', padding: 16 }}
+            >
               {l.grnDetail.length > 0 ? <GrnDetailTable l={l} /> : null}
               {l.tpiDetail.length > 0 ? <TpiDetailTable l={l} /> : null}
               {l.docDetail.length > 0 ? <DocDetailTable l={l} /> : null}
@@ -322,14 +322,18 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
   );
 }
 
-function DetailHeading({ color, children }: { color: string; children: React.ReactNode }): React.JSX.Element {
+function DetailHeading({
+  color,
+  children,
+}: {
+  color: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
   return (
     <div
       style={{
         fontSize: 11,
         fontWeight: 700,
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
         marginBottom: 8,
         color,
       }}
@@ -353,7 +357,7 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>Received</th>
             <th>Accepted</th>
             <th>Rejected</th>
-            <th>Pending</th>
+            <th>QC Pending</th>
             <th>QC Status</th>
             <th>Report</th>
           </tr>
@@ -373,29 +377,29 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               </td>
               <td>{g.vendorName ?? '—'}</td>
               <td className="mono">{g.receivedQty}</td>
-              <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+              <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                 {g.accepted}
               </td>
               <td
                 className="mono"
-                style={g.rejected > 0 ? { color: 'var(--red)', fontWeight: 700 } : undefined}
+                style={g.rejected > 0 ? { color: 'var(--red2)', fontWeight: 700 } : undefined}
               >
                 {g.rejected}
               </td>
               <td
                 className="mono"
-                style={g.pending > 0 ? { color: 'var(--amber)', fontWeight: 700 } : undefined}
+                style={g.pending > 0 ? { color: 'var(--amber2)', fontWeight: 700 } : undefined}
               >
                 {g.pending}
               </td>
               <td>
                 <span className={`badge ${g.status === 'done' ? 'b-green' : 'b-amber'}`}>
-                  {g.status === 'done' ? '✅ Accepted' : '⏳ Pending'}
+                  {g.status === 'done' ? '✅ Inspected' : '⏳ QC Pending'}
                 </span>
               </td>
               <td>
                 {g.qcReportPath ? (
-                  <QcReportLink path={g.qcReportPath} name={g.qcReportName} label="View" />
+                  <QcReportLink path={g.qcReportPath} name={g.qcReportName} label="Report" />
                 ) : (
                   '—'
                 )}
@@ -417,11 +421,11 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
           <tr>
             <th>JC No.</th>
             <th style={{ color: 'var(--purple)' }}>POL</th>
-            <th>Organization</th>
-            <th>Inspector</th>
+            <th>Organisation</th>
+            <th>Inspector Name</th>
             <th>Accepted</th>
             <th>Rejected</th>
-            <th>Inspection Date</th>
+            <th>TPI Date</th>
             <th>TPI Status</th>
             <th>Report</th>
           </tr>
@@ -439,24 +443,24 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               </td>
               <td>{t.organization ?? '—'}</td>
               <td>{t.inspector ?? '—'}</td>
-              <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+              <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                 {t.accepted}
               </td>
               <td
                 className="mono"
-                style={t.rejected > 0 ? { color: 'var(--red)', fontWeight: 700 } : undefined}
+                style={t.rejected > 0 ? { color: 'var(--red2)', fontWeight: 700 } : undefined}
               >
                 {t.rejected}
               </td>
-              <td>{t.date ?? '—'}</td>
+              <td>{fmtDate(t.date)}</td>
               <td>
                 <span className={`badge ${t.status === 'passed' ? 'b-green' : 'b-amber'}`}>
-                  {t.status === 'passed' ? '✅ Passed' : '⚠ Partial'}
+                  {t.status === 'passed' ? '✅ Accepted' : '⚠ Partly Accepted'}
                 </span>
               </td>
               <td>
                 {t.qcReportPath ? (
-                  <QcReportLink path={t.qcReportPath} name={t.qcReportName} label="View" />
+                  <QcReportLink path={t.qcReportPath} name={t.qcReportName} label="Report" />
                 ) : (
                   '—'
                 )}
@@ -472,7 +476,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
 function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
   return (
     <>
-      <DetailHeading color="var(--teal, #0d9488)">📄 QC Documents</DetailHeading>
+      <DetailHeading color="var(--teal)">📄 QC Documents</DetailHeading>
       <table className="innovic-table" style={{ marginBottom: 14 }}>
         <thead>
           <tr>
@@ -489,7 +493,7 @@ function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
                 {d.jcCode}
               </td>
               <td>{d.docType}</td>
-              <td className="text3" style={{ fontSize: 10 }}>
+              <td className="text3" style={{ fontSize: 11 }}>
                 {d.fileName ?? '—'}
               </td>
               <td>
@@ -526,9 +530,11 @@ function TotalRow({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
     total > 0 && done >= total ? 'var(--green)' : 'var(--amber)';
 
   return (
-    <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border2)' }}>
+    <tr
+      style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border2)' }}
+    >
       <td colSpan={5} style={{ fontSize: 11, color: 'var(--text2)' }}>
-        TOTAL ({lines.length} lines)
+        Total ({lines.length} lines)
       </td>
       <td style={{ fontSize: 11, color: 'var(--text2)' }}>
         {t.qcOps} QC stages across {t.jcCount} JCs
@@ -536,11 +542,6 @@ function TotalRow({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
       <td>
         <span className="mono" style={{ color: color(t.grnDone, t.grn) }}>
           {t.grnDone}/{t.grn}
-        </span>
-      </td>
-      <td>
-        <span className="mono" style={{ color: t.tpi > 0 ? 'var(--green)' : 'var(--text3)' }}>
-          {t.tpi}/{t.tpi}
         </span>
       </td>
       <td>
@@ -560,52 +561,42 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
     (a, l) => ({
       qcOps: a.qcOps + l.qcOpsTotal,
       qcPassed: a.qcPassed + l.qcOpsPassed,
-      pendingOps: a.pendingOps + Math.max(0, l.qcOpsTotal - l.qcOpsPassed),
       grn: a.grn + l.grnTotal,
       grnDone: a.grnDone + l.grnDone,
       docs: a.docs + l.docCount,
       docsUp: a.docsUp + l.docUploaded,
-      tpi: a.tpi + l.tpiCount,
     }),
-    { qcOps: 0, qcPassed: 0, pendingOps: 0, grn: 0, grnDone: 0, docs: 0, docsUp: 0, tpi: 0 },
+    { qcOps: 0, qcPassed: 0, grn: 0, grnDone: 0, docs: 0, docsUp: 0 },
   );
   const allDone = (done: number, total: number): string =>
     total > 0 && done >= total ? 'var(--green)' : 'var(--amber)';
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-        gap: 8,
-        marginBottom: 16,
-      }}
-    >
-      <Card label="QC OPS" value={`${t.qcPassed}/${t.qcOps}`} sub="passed" color={allDone(t.qcPassed, t.qcOps)} />
-      <Card label="INCOMING QC" value={`${t.grnDone}/${t.grn}`} sub="done" color={allDone(t.grnDone, t.grn)} />
-      <Card
-        label="QC PENDING"
-        value={t.pendingOps}
-        sub="ops"
-        color={t.pendingOps > 0 ? 'var(--red)' : 'var(--green)'}
+    <div style={{ marginBottom: 16 }}>
+      <StatStrip
+        items={[
+          {
+            key: 'qc-ops',
+            label: 'QC Ops',
+            count: `${t.qcPassed}/${t.qcOps}`,
+            sub: 'Accepted',
+            color: allDone(t.qcPassed, t.qcOps),
+          },
+          {
+            key: 'incoming-qc',
+            label: 'Incoming QC',
+            count: `${t.grnDone}/${t.grn}`,
+            sub: 'Completed',
+            color: allDone(t.grnDone, t.grn),
+          },
+          {
+            key: 'documents',
+            label: 'Documents',
+            count: `${t.docsUp}/${t.docs}`,
+            sub: 'Uploaded',
+            color: allDone(t.docsUp, t.docs),
+          },
+        ]}
       />
-      <Card label="DOCUMENTS" value={`${t.docsUp}/${t.docs}`} sub="uploaded" color={allDone(t.docsUp, t.docs)} />
-      <Card label="TPI" value={`${t.tpi}/${t.tpi}`} sub="done" color={t.tpi > 0 ? 'var(--green)' : 'var(--text3)'} />
-    </div>
-  );
-}
-
-function Card(props: { label: string; value: number | string; sub: string; color: string }): React.JSX.Element {
-  return (
-    <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 9 }}>
-        {props.label}
-      </div>
-      <div className="mono fw-700" style={{ fontSize: 20, color: props.color }}>
-        {props.value}
-      </div>
-      <div className="text3" style={{ fontSize: 9 }}>
-        {props.sub}
-      </div>
     </div>
   );
 }

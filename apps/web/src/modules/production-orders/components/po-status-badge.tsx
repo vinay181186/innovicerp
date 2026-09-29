@@ -14,20 +14,20 @@
 import { PRODUCTION_ORDER_STATUS_LABEL, type ProductionOrderStatus } from '@innovic/shared';
 
 const CLASSES: Record<ProductionOrderStatus, string> = {
-  open: 'b-amber',
-  // A distinct blue so a half-closed order reads apart from open (amber) and
-  // closed (green) at a glance.
-  partially_closed: 'b-blue',
+  // Wave 2 (owner): one colour per state across Plan / PO / JC / Op badges —
+  // open = blue (not started), partly closed = amber (under way).
+  open: 'b-blue',
+  partially_closed: 'b-amber',
   closed: 'b-green',
-  // Red: a stopped order is a dead end, not a finished one.
-  short_closed: 'b-red',
+  // Grey: a stopped order is a dead end, not a finished one (R5 palette).
+  short_closed: 'b-grey',
 };
 
 const LABELS: Record<ProductionOrderStatus, string> = {
-  open: 'open',
-  partially_closed: 'partially closed',
-  closed: 'closed',
-  short_closed: PRODUCTION_ORDER_STATUS_LABEL.short_closed.toLowerCase(),
+  open: 'Open',
+  partially_closed: 'Partly Closed',
+  closed: 'Closed',
+  short_closed: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
 };
 
 export function PoStatusBadge({ status }: { status: ProductionOrderStatus }): React.JSX.Element {

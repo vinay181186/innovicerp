@@ -1,24 +1,25 @@
 // Alert configuration (T-041d Phase A). Admin/manager-only — toggles
 // per-rule on/off, persisted as alert_config rows. Mirrors legacy
 // `renderAlertConfig` (legacy HTML L22427):
-//   - `.section-hdr` "🔔 Alert Configuration" (L22446)
-//   - `.panel > .tbl-wrap > table`: Active · Code · Department · Alert Name
+//   - `.section-hdr` "Alert Configuration" (L22446)
+//   - `.panel > .tbl-wrap > table`: Active · Department · Alert Name (Code dropped, R5 SH-N17)
 //     (L22447-22449); `<th style="width:40px">` on Active
 //   - checkbox `accent-color:var(--green)`, name cell dimmed to opacity .4
 //     when inactive (L22438-22441)
-//   - tip line (L22450)
+//   - tip line (L22450) dropped — it restated the Active column (R5 SH-N45)
 // Legacy gated on `isAdmin()` and returned a bare `.empty-state`
 // "⛔ Admin access required" (L22428); our service layer additionally allows
 // `manager` to match the `manager_write` RLS policy — gate left as-is.
 //
 // Port-only beyond legacy's four columns: the rule `description` sub-line and
-// the Status (override/default) column — both real server fields.
+// the Setting column ("Changed" when overridden, blank for default) — both real server fields.
 
-import { Link, createRoute } from '@tanstack/react-router';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { PageHeader } from '@/ui/layout';
 import { useAlertConfig, useToggleAlert } from '../api';
 import { DEPT_COLOR, DEPT_LABEL } from '../lib/dept';
 
@@ -31,39 +32,26 @@ export const alertsConfigRoute = createRoute({
 function AlertsConfigPage() {
   const { data: session } = useSession();
   const canEdit = session?.role === 'admin' || session?.role === 'manager';
+  const navigate = useNavigate();
 
   return (
     <div>
       {/* Header — legacy L22446 is a bare `.section-hdr`. The Back link has no
           legacy counterpart (legacy navigated from its sidebar); kept because
           it is the port's only in-page route back to the dashboard. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔔 Alert Configuration
-        </div>
-        <Link to="/alerts" className="btn btn-ghost" style={{ fontSize: 12 }}>
-          ← Back to Alerts
-        </Link>
-      </div>
+      <PageHeader
+        title="Alert Configuration"
+        icon="🔔"
+        backLabel="Back to Alerts"
+        onBack={() => void navigate({ to: '/alerts' })}
+      />
 
       {!canEdit ? (
-        // Legacy L22428: bare `.empty-state` "⛔ Admin access required" (its
-        // inline padding:40px is already the class default in our theme). The
-        // role sentence below is ours — it is the only thing telling the user
-        // why the table is hidden.
+        // Legacy L22428 showed "⛔ Admin access required" in a bare `.empty-state` (its
+        // inline padding:40px is already the class default in our theme). Now the
+        // settled no-permission sentence (R5), without the raw role code.
         <div className="empty-state">
-          ⛔ Admin access required
-          <div style={{ fontSize: 11, marginTop: 8 }}>
-            Your role ({session?.role ?? 'unknown'}) cannot change alert configuration. The dashboard
-            remains visible — only admin/manager can flip toggles.
-          </div>
+          You do not have permission to change alert settings. Ask an admin.
         </div>
       ) : (
         <ConfigTable />
@@ -93,8 +81,8 @@ function ConfigTable() {
     return (
       <div className="panel">
         <div className="empty-state">
-          <span style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load configuration.'}
+          <span style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Could not load alert settings. Try again.'}
           </span>
         </div>
       </div>
@@ -118,14 +106,13 @@ function ConfigTable() {
           rule does the same job. */}
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th style={{ width: 40 }}>Active</th>
-                <th>Code</th>
                 <th>Department</th>
                 <th>Alert Name</th>
-                <th>Alert Status</th>
+                <th>Setting</th>
               </tr>
             </thead>
             <tbody>
@@ -145,9 +132,6 @@ function ConfigTable() {
                       }}
                     />
                   </td>
-                  <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    {e.code}
-                  </td>
                   <td>
                     <span style={{ fontWeight: 700, color: DEPT_COLOR[e.dept] }}>
                       {DEPT_LABEL[e.dept]}
@@ -159,29 +143,12 @@ function ConfigTable() {
                       {e.description}
                     </div>
                   </td>
-                  <td>
-                    {e.isOverridden ? (
-                      <span className="badge b-amber">override</span>
-                    ) : (
-                      <span className="badge b-grey">default</span>
-                    )}
-                  </td>
+                  <td>{e.isOverridden ? <span className="badge b-amber">Changed</span> : null}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Tip — legacy L22450, minus its trailing clause "for users with
-          department access". Legacy `renderAlerts` filtered rows through
-          `_hasDeptAccess` (L22326); our `runAllAlerts` does not — every
-          company member sees every active alert. The clause is dropped rather
-          than copied so the page does not advertise a filter that is not
-          wired up (see the dept-access gap raised against alerts/service.ts;
-          fixing it is a backend authorization change, not a UI one). */}
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-        💡 Toggle alerts on/off. Active alerts will show in Alerts Dashboard.
       </div>
     </>
   );

@@ -17,10 +17,17 @@ import type {
   QcMatrixResponse,
   QcMatrixRow,
 } from '@innovic/shared';
-import { items, jobCards, jobWorkOrderLines, qcDocuments, salesOrderLines } from '../../db/schema';
+import {
+  items,
+  jobCards,
+  jobWorkOrderLines,
+  qcDocuments,
+  salesOrderLines,
+  salesOrders,
+} from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -245,14 +252,49 @@ export async function createQcDocument(
   await requireFormAccess(user, 'qcdocs_upload', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // The QC matrix and line detail find files by job_card_id, so a picked JC /
+    // SO is stored by id. The id must be this company's live record, and the
+    // saved code text is taken from that record (never a stale typed code).
+    let jcCodeText = input.jcCodeText ?? null;
+    if (input.jobCardId) {
+      const jc = await tx
+        .select({ code: jobCards.code })
+        .from(jobCards)
+        .where(
+          and(
+            eq(jobCards.id, input.jobCardId),
+            eq(jobCards.companyId, companyId),
+            isNull(jobCards.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!jc[0]) throw new ValidationError('Job Card not found. Pick the JC No. again.');
+      jcCodeText = jc[0].code;
+    }
+    let soCodeText = input.soCodeText ?? null;
+    if (input.salesOrderId) {
+      const so = await tx
+        .select({ code: salesOrders.code })
+        .from(salesOrders)
+        .where(
+          and(
+            eq(salesOrders.id, input.salesOrderId),
+            eq(salesOrders.companyId, companyId),
+            isNull(salesOrders.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!so[0]) throw new ValidationError('Sales Order not found. Pick the SO No. again.');
+      soCodeText = so[0].code;
+    }
     const inserted = await tx
       .insert(qcDocuments)
       .values({
         companyId,
         jobCardId: input.jobCardId ?? null,
-        jcCodeText: input.jcCodeText ?? null,
+        jcCodeText,
         salesOrderId: input.salesOrderId ?? null,
-        soCodeText: input.soCodeText ?? null,
+        soCodeText,
         category: input.category,
         docType: input.docType,
         fileName: input.fileName,
@@ -295,7 +337,7 @@ export async function deleteQcDocument(id: string, user: AuthContext): Promise<{
         ),
       )
       .returning({ id: qcDocuments.id });
-    if (updated.length === 0) throw new NotFoundError(`QC document ${id} not found`);
+    if (updated.length === 0) throw new NotFoundError('QC Document not found. Refresh the page.');
     return { id };
   });
 }
@@ -406,7 +448,7 @@ export async function getQcMatrix(
         AND so.deleted_at IS NULL
     `);
     const soRow = rows(soRows)[0];
-    if (!soRow) throw new NotFoundError(`Sales order ${salesOrderId} not found`);
+    if (!soRow) throw new NotFoundError('Sales Order not found. Refresh the page.');
 
     // SO lines (one row per line, with item code/name). Lines with no JC still
     // surface as a "No JC" matrix row (legacy L23070-23073).
@@ -700,7 +742,7 @@ export async function getQcLineDetail(
         AND jc.deleted_at IS NULL
     `);
     const jcRow = rows(jcRows)[0];
-    if (!jcRow) throw new NotFoundError(`Job card ${jobCardId} not found`);
+    if (!jcRow) throw new NotFoundError('Job Card not found. Refresh the page.');
 
     // QC ops on this JC (drives doc-type sections + batch op names).
     const opRows = rows(

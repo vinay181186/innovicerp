@@ -16,7 +16,7 @@
 
 import { poCodePrefix, withDocRevision } from '@innovic/shared';
 import type { GenerateOspPrResult } from '@innovic/shared';
-import { and, eq, isNull, like } from 'drizzle-orm';
+import { and, asc, eq, isNull, like } from 'drizzle-orm';
 import {
   items,
   jcOps,
@@ -44,16 +44,33 @@ interface OspProcessMatch {
   autoPo: boolean;
 }
 
-/** Legacy _isOspOperation (L13295): first configured process whose name is a
- *  substring (case-insensitive) of the operation name. Pure + exported for
- *  unit testing without a DB. */
+/** Which configured OSP process an operation belongs to (legacy
+ *  _isOspOperation L13295, made deterministic). Case-insensitive:
+ *   1. a process whose name IS the operation name wins;
+ *   2. otherwise the LONGEST process name contained in the operation name —
+ *      so with "Plating" and "Zinc Plating" both set, op "Zinc Plating Blue"
+ *      picks "Zinc Plating" (and its vendor), never plain "Plating";
+ *   3. a tie on length keeps the earlier one in the list.
+ *  Pure + exported for unit testing without a DB. */
 export function matchOspProcess<T extends { processName: string }>(
   opName: string | null | undefined,
   processes: readonly T[],
 ): T | null {
   if (!opName) return null;
-  const lower = opName.toLowerCase();
-  return processes.find((p) => lower.includes(p.processName.toLowerCase())) ?? null;
+  const lower = opName.trim().toLowerCase();
+  if (!lower) return null;
+  const exact = processes.find((p) => p.processName.trim().toLowerCase() === lower);
+  if (exact) return exact;
+  let best: T | null = null;
+  let bestLen = 0;
+  for (const p of processes) {
+    const name = p.processName.trim().toLowerCase();
+    if (name && name.length > bestLen && lower.includes(name)) {
+      best = p;
+      bestLen = name.length;
+    }
+  }
+  return best;
 }
 
 /** Next IN-JWPR-NNNNN / IN-JWPO-NNNNN per company. Highest numeric suffix + 1,
@@ -128,7 +145,7 @@ export async function generateOspPrForOp(
     .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
     .limit(1);
   const op = opRows[0];
-  if (!op) throw new NotFoundError(`Op ${jcOpId} not found`);
+  if (!op) throw new NotFoundError('Operation not found. Refresh the page.');
 
   // 2. Match the operation name against configured OSP processes.
   const cfgRows = await tx
@@ -139,7 +156,9 @@ export async function generateOspPrForOp(
       autoPo: ospProcesses.autoPo,
     })
     .from(ospProcesses)
-    .where(and(eq(ospProcesses.companyId, companyId), isNull(ospProcesses.deletedAt)));
+    .where(and(eq(ospProcesses.companyId, companyId), isNull(ospProcesses.deletedAt)))
+    // Fixed order so a length tie always resolves the same way.
+    .orderBy(asc(ospProcesses.processName));
   const matched: OspProcessMatch | null = matchOspProcess(op.operation, cfgRows);
   if (!matched) {
     throw new ValidationError(
@@ -155,7 +174,11 @@ export async function generateOspPrForOp(
       .from(purchaseRequests)
       .where(eq(purchaseRequests.id, op.outsourcePrId))
       .limit(1);
-    throw new ConflictError(`OSP PR already exists for this op: ${linked[0]?.code ?? 'linked'}`);
+    throw new ConflictError(
+      linked[0]
+        ? `PR ${linked[0].code} is already raised for this operation. Open it instead.`
+        : 'A PR is already raised for this operation. Open it instead.',
+    );
   }
   const dup = await tx
     .select({ code: purchaseRequests.code })
@@ -169,7 +192,11 @@ export async function generateOspPrForOp(
       ),
     )
     .limit(1);
-  if (dup[0]) throw new ConflictError(`OSP PR already exists for this op: ${dup[0].code}`);
+  if (dup[0]) {
+    throw new ConflictError(
+      `PR ${dup[0].code} is already raised for this operation. Open it instead.`,
+    );
+  }
 
   // 4. Load the JC + its item (code/name) for the PR/PO line.
   const jcRows = await tx
@@ -186,7 +213,7 @@ export async function generateOspPrForOp(
     .where(and(eq(jobCards.id, op.jobCardId), eq(jobCards.companyId, companyId)))
     .limit(1);
   const jc = jcRows[0];
-  if (!jc) throw new NotFoundError(`Job card for op ${jcOpId} not found`);
+  if (!jc) throw new NotFoundError('Job Card not found. Refresh the page.');
 
   // Vendor snapshot from the matched OSP process (name for the result message).
   let vendorName: string | null = null;
@@ -347,5 +374,6 @@ export async function generateOspPrForOp(
 // today() as a plain ISO date — matches the rest of the codebase's `date`
 // columns, which store dates without a zone.
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  // TODAY IN IST — the UTC date is still yesterday between 00:00 and 05:30 IST.
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }

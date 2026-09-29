@@ -6,7 +6,7 @@
 // One row per PO, one column per thing the card already shows: PO No. + date,
 // type chip, vendor, PR ref, lines, qty strip (total / received / pending),
 // value, status, and the SAME row actions with the SAME gates as the card —
-// View, Edit (edit tier, not closed), DC (edit tier, sends material out, not
+// Edit (edit tier, not closed), Create DC (edit tier, sends material out, not
 // draft), Assign (admin/manager, not closed/cancelled). Nothing here reads a
 // field the card does not, except Value, which is `totalAmount` off the list
 // payload — the API nulls it when the viewer's access hides prices, and that
@@ -14,7 +14,9 @@
 
 import { type PurchaseOrderListItem, poSendsMaterialOut } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { PO_TYPE_LABELS } from '../lib/po-labels';
 import { PoStatusBadge } from './po-status-badge';
 
 // Whole rupees, Indian grouping — the same shape the Invoices list uses.
@@ -34,10 +36,10 @@ export function PoSheetTable({
   return (
     <>
       {/* The sheet look (tbl-grid): bold blue column names, gridlines, cream /
-          white rows, fixed widths that add up to 100% so nothing scrolls
-          sideways. The sheet centres every column; only Vendor is left-aligned
-          so the names share one edge. */}
-      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+          white rows. Column widths are minimum hints (the sheet is auto
+          layout); codes / dates / qty stay on one line, Vendor may wrap. The
+          💡 hint lives in the page's ListFooter. */}
+      <div className="tbl-wrap">
         <table className="innovic-table tbl-grid">
           <colgroup>
             <col style={{ width: '4%' }} />
@@ -55,16 +57,16 @@ export function PoSheetTable({
           </colgroup>
           <thead>
             <tr>
-              <th>Sr No</th>
+              <th className="th-num">Sr No</th>
               <th>PO No.</th>
               <th>PO Type</th>
-              <th style={{ textAlign: 'left' }}>Vendor</th>
-              <th>PR Ref</th>
-              <th>Lines</th>
-              <th>Total Qty</th>
-              <th>Received</th>
-              <th>Pending</th>
-              <th>Value</th>
+              <th>Vendor</th>
+              <th>PR No.</th>
+              <th className="th-num">Lines</th>
+              <th className="th-num">Qty</th>
+              <th className="th-num">Received</th>
+              <th className="th-num">Pending</th>
+              <th className="th-num">Value</th>
               <th>PO Status</th>
               <th>Action</th>
             </tr>
@@ -73,12 +75,12 @@ export function PoSheetTable({
             {rows.map((po, i) => {
               const isJW = po.poType === 'job_work';
               const isSvc = po.poType === 'service';
-              const pending = po.totalQty - po.receivedQty;
+              const pending = po.pendingQty;
               const vendor = po.vendorName ?? po.vendorCodeText ?? '—';
               return (
                 <tr key={po.id} onClick={() => onOpen(po.id)} style={{ cursor: 'pointer' }}>
-                  <td className="text3">{i + 1}</td>
-                  <td>
+                  <td className="td-num text3">{i + 1}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
                     <Link
                       to="/purchase-orders/$id"
                       params={{ id: po.id }}
@@ -90,26 +92,19 @@ export function PoSheetTable({
                       {po.code}
                     </Link>
                     <div className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                      {po.poDate}
+                      {fmtDate(po.poDate)}
                     </div>
                   </td>
                   <td>
-                    {/* Same chip the card shows — amber JW, teal SVC, blue MAT. */}
+                    {/* Same chip the card shows — amber Job Work, teal Service, blue
+                        Standard / Outsource. */}
                     <span className={`badge ${isJW ? 'b-amber' : isSvc ? 'b-teal' : 'b-blue'}`}>
-                      {isJW ? 'JW' : isSvc ? 'SVC' : 'MAT'}
+                      {PO_TYPE_LABELS[po.poType]}
                     </span>
                   </td>
-                  <td style={{ textAlign: 'left' }}>
-                    <span
-                      className="fw-700"
-                      style={{
-                        display: 'block',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title={vendor}
-                    >
+                  <td>
+                    {/* A name — allowed to wrap (list-page standard). */}
+                    <span className="fw-700" title={vendor}>
                       {vendor}
                     </span>
                   </td>
@@ -121,11 +116,11 @@ export function PoSheetTable({
                       {po.prCodeText ?? '—'}
                     </span>
                   </td>
-                  <td className="mono">{po.lineCount}</td>
-                  <td>
+                  <td className="td-num mono">{po.lineCount}</td>
+                  <td className="td-num">
                     <span className="mono fw-700">{po.totalQty}</span>
                   </td>
-                  <td>
+                  <td className="td-num">
                     <span
                       className="mono fw-700"
                       style={{ color: po.receivedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
@@ -133,15 +128,15 @@ export function PoSheetTable({
                       {po.receivedQty}
                     </span>
                   </td>
-                  <td>
+                  <td className="td-num">
                     <span
                       className="mono fw-700"
-                      style={{ color: pending > 0 ? 'var(--amber)' : 'var(--green)' }}
+                      style={{ color: pending > 0 ? 'var(--blue)' : 'var(--green)' }}
                     >
                       {pending}
                     </span>
                   </td>
-                  <td>
+                  <td className="td-num">
                     {/* null = prices hidden for this viewer (API-side). */}
                     {po.totalAmount == null ? (
                       <span className="text3">—</span>
@@ -153,7 +148,8 @@ export function PoSheetTable({
                     <PoStatusBadge status={po.status} />
                   </td>
                   <td>
-                    {/* 2×2 action grid — the card's actions and gates, verbatim.
+                    {/* Action grid — the card's actions and gates, verbatim (row
+                        click opens the PO, so there is no View button).
                         stopPropagation so a button click does not also open
                         the row. */}
                     <div
@@ -161,14 +157,6 @@ export function PoSheetTable({
                       style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3 }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <Link
-                        to="/purchase-orders/$id"
-                        params={{ id: po.id }}
-                        className="btn btn-primary btn-sm"
-                        title="View"
-                      >
-                        👁 View
-                      </Link>
                       {canEdit && po.status !== 'closed' ? (
                         <Link
                           to="/purchase-orders/$id/edit"
@@ -187,7 +175,7 @@ export function PoSheetTable({
                           className="btn btn-ghost btn-sm"
                           title="Create DC"
                         >
-                          📦 DC
+                          Create DC
                         </Link>
                       ) : null}
                       {po.status !== 'closed' && po.status !== 'cancelled' ? (
@@ -208,10 +196,6 @@ export function PoSheetTable({
             })}
           </tbody>
         </table>
-      </div>
-
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-        💡 Click a row to open the purchase order.
       </div>
     </>
   );

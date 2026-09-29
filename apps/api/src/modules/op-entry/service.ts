@@ -35,7 +35,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { requireOpEntryRole, requireQcRole, requireWriteRole } from '../../lib/auth';
+import { isWriteRole, requireOpEntryRole, requireQcRole, requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -46,9 +46,11 @@ import {
   assertProductionOrderNotShortClosed,
   assertProductionOrderNotShortClosedForOp,
 } from '../../lib/production-order-stop';
+import { codeLabel, labelOf, OP_LOG_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onRecoveryJobCardQc } from '../nc-register/recovery';
+import { autoCloseLinkedTasks } from '../tasks/service';
 import { generateOspPrForOp } from './osp-cascade';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from './qc-stock-cascade';
 import { cascadeJcCompleteUpChain, tryCascadeJcComplete } from './sales-cascade';
@@ -98,7 +100,7 @@ export async function listJcOpsEnriched(
 ): Promise<JcOpEnriched[]> {
   const companyId = requireCompany(user);
   if (!input.jobCardId && !input.jobCardCode && !input.machineId) {
-    throw new ValidationError('Provide jobCardId, jobCardCode, or machineId');
+    throw new ValidationError('Please select a JC No. or a Machine.');
   }
   return withUserContext(user, async (tx) => {
     let filter: SQL;
@@ -538,7 +540,7 @@ export async function listOpMachineOutput(
 ): Promise<OpMachineOutput[]> {
   const companyId = requireCompany(user);
   if (!input.jcOpId && !input.jobCardId) {
-    throw new ValidationError('Provide jcOpId or jobCardId');
+    throw new ValidationError('Please select a JC No. or an Operation.');
   }
   return withUserContext(user, async (tx) => {
     const result = await tx.execute(sql`
@@ -699,7 +701,7 @@ async function loadJcOp(
     .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId)))
     .limit(1);
   const op = rows[0];
-  if (!op) throw new NotFoundError(`Op ${jcOpId} not found`);
+  if (!op) throw new NotFoundError('Operation not found. Refresh the page and try again.');
   return op as JcOpRow;
 }
 
@@ -908,20 +910,20 @@ export async function loadMaterialCap(
 export function materialCapMessage(cap: MaterialCap, allowed: number, asked: number): string {
   if (!cap.issuedBased) {
     return (
-      `Qty ${asked} exceeds client material received. Only ${allowed} can be worked now ` +
-      `(received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
-      `Record a Party Material GRN for the balance to continue.`
+      `Qty (${asked}) is more than customer material received. Only ${allowed} can be worked now ` +
+      `(Received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
+      `Record a Party GRN for the rest to continue.`
     );
   }
   if (allowed <= 0) {
     return cap.received === 0
-      ? `No client material has been issued to this job card yet, so work cannot start. ` +
+      ? `No customer material has been issued to this JC yet, so work cannot start. ` +
           `Issue material from Party Material Issue first (JWSO ${cap.jwCode}).`
-      : `All ${cap.received} issued piece(s) are already accounted for on this job card. ` +
-          `Issue more client material to continue (JWSO ${cap.jwCode}).`;
+      : `All ${cap.received} issued piece(s) are already used on this JC. ` +
+          `Issue more customer material to continue (JWSO ${cap.jwCode}).`;
   }
   return (
-    `Qty ${asked} is more than the client material issued to this job card. ` +
+    `Qty (${asked}) is more than the customer material issued to this JC. ` +
     `Only ${allowed} can be worked now (${cap.received} of ${cap.orderQty} issued, ` +
     `JWSO ${cap.jwCode}). Issue more material from Party Material Issue to continue.`
   );
@@ -978,10 +980,7 @@ function nextLogNo(): string {
 function assertNotFutureDate(value: string, label: string): void {
   const istToday = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
   if (value > istToday) {
-    throw new ValidationError(
-      `${label} ${value} is in the future — an operation cannot be worked on a day that has ` +
-        `not happened yet. Today is ${istToday}.`,
-    );
+    throw new ValidationError(`${label} cannot be in the future.`);
   }
 }
 
@@ -1013,23 +1012,21 @@ async function writeProductionLog(
 }> {
   // Covers BOTH ways production is booked -- POST /op-entry/op-log and the
   // quantity carried by a stop -- because both write through here.
-  assertNotFutureDate(input.logDate, 'Log date');
+  assertNotFutureDate(input.logDate, 'Log Date');
   const op = await loadJcOp(tx, input.jcOpId, companyId);
   // ADR-182 — nothing may be booked against a short-closed Production Order's
   // Job Card (or a rework child of one). Checked before any write.
   await assertProductionOrderNotShortClosed(tx, op.jobCardId);
   if (op.opType === 'outsource') {
     throw new ValidationError(
-      'This is an outsource operation; use the procurement flow, not Op Entry',
+      'This is an OSP operation. Record it through its PR / PO, not Op Entry.',
     );
   }
   // T-040d / ISSUE-001 — production-complete logs are not valid against QC ops.
   // QC ops use POST /op-entry/qc-log which writes log_type='qc' with split
   // accept/reject qty.
   if (op.opType === 'qc') {
-    throw new ValidationError(
-      'This is a QC operation; use the QC inspection flow (POST /op-entry/qc-log)',
-    );
+    throw new ValidationError('This is a QC operation. Record it from QC Pending, not Op Entry.');
   }
 
   // Serialize concurrent production logs on the SAME op: lock the jc_ops row
@@ -1039,7 +1036,7 @@ async function writeProductionLog(
 
   const snapshot = await loadAvailability(tx, input.jcOpId);
   if (snapshot.computedStatus === 'qc_pending') {
-    throw new ValidationError('Operation is waiting for QC clearance — go to QC dashboard');
+    throw new ValidationError('This operation is QC Pending. Record the inspection first.');
   }
   // Client-material gate: on the first op of a JWSO Job Card, cap the loggable
   // qty at the client material available for this part — ISSUED to this job
@@ -1060,8 +1057,8 @@ async function writeProductionLog(
     }
     throw new ValidationError(
       input.rejectQty > 0
-        ? `Qty ${input.qty} + rejected ${input.rejectQty} exceeds available ${snapshot.available} — cannot exceed planned qty`
-        : `Qty ${input.qty} exceeds available ${snapshot.available} — cannot exceed planned qty`,
+        ? `Completed + Rejected (${input.qty + input.rejectQty}) cannot be more than Available (${snapshot.available}).`
+        : `Completed (${input.qty}) cannot be more than Available (${snapshot.available}).`,
     );
   }
 
@@ -1314,7 +1311,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
   const companyId = requireCompany(user);
   // A QC date box is blank and typed like every other one, so it can be
   // mistyped like every other one.
-  assertNotFutureDate(input.logDate, 'Inspection date');
+  assertNotFutureDate(input.logDate, 'Inspection Date');
 
   return withUserContext(user, async (tx) => {
     // Load op + qc_required + qc_call_date in one go (loadJcOp doesn't carry
@@ -1333,15 +1330,13 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       .where(and(eq(jcOps.id, input.jcOpId), eq(jcOps.companyId, companyId)))
       .limit(1);
     const op = opRows[0];
-    if (!op) throw new NotFoundError(`Op ${input.jcOpId} not found`);
+    if (!op) throw new NotFoundError('Operation not found. Refresh the page and try again.');
     // ADR-182 — no inspection may be recorded on a short-closed order's card.
     await assertProductionOrderNotShortClosed(tx, op.jobCardId);
 
     const isQcBearing = op.opType === 'qc' || op.qcRequired;
     if (!isQcBearing) {
-      throw new ValidationError(
-        'This operation does not require QC; use POST /op-entry/op-log for production logs',
-      );
+      throw new ValidationError('This operation has no QC step. Use Complete on Op Entry instead.');
     }
 
     // Serialize concurrent QC logs on the SAME op (over-inspection race).
@@ -1356,7 +1351,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     );
     const total = input.qty + input.rejectQty;
     if (qcPending <= 0) {
-      throw new ValidationError('No QC pending on this operation');
+      throw new ValidationError('Nothing is QC Pending on this operation.');
     }
     // ADR-103: NO client-material gate on QC. Client-supplied material never
     // goes through inspection — a Party GRN is followed straight by an issue,
@@ -1366,7 +1361,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // capping it again would double-count the same restriction.
     if (total > qcPending) {
       throw new ValidationError(
-        `Total qty ${total} exceeds QC pending ${qcPending} — cannot inspect more than what's pending`,
+        `Accepted + Rejected (${total}) cannot be more than QC Pending (${qcPending}).`,
       );
     }
 
@@ -1427,7 +1422,12 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         // operatorName and linked to nobody. operatorName stays as it was: the
         // snapshot of who signed off on the day, which must not move when a
         // person is later renamed or removed.
-        qcUserId: input.qcUserId ?? null,
+        // ADR-185 — every QC log names a USER who answers for it. A path that
+        // picks no inspector login (the Op Entry form, TPI) records the
+        // logged-in user who entered and submitted the result; the person who
+        // physically inspected stays in operator_name (for TPI, tpi_inspector).
+        // qc_user_id therefore reads "accountable login", never "inspector".
+        qcUserId: input.qcUserId ?? user.id,
         // 0095 — no machine on QC: inspection is not machining, and jc_ops
         // carries the literal 'QC' as a type label, not a machine (ISSUE-010).
         // Time of the inspection, when supplied (was hard-coded null).
@@ -1468,6 +1468,9 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // later scrapped), and it must already exist by the time the cascade
     // climbs so the trail reads reject → NC → child JC → reject → NC without
     // a gap.
+    // The NC this inspection raised — named on the response (ADR-183 `ncs`),
+    // the same way the production-entry path already names its NC.
+    let raisedNc: { ncId: string; ncCode: string } | null = null;
     if (input.rejectQty > 0 && jcCode) {
       // WI1 (ADR-164/0095): the auto-NC must name the ACTUAL machine that MADE
       // the rejected pieces, not null. nc.opSeq/operationText still point at the
@@ -1518,7 +1521,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         producingOperatorText = mRows[0]?.opName ?? null;
       }
 
-      await autoCreateNcFromQcReject(
+      raisedNc = await autoCreateNcFromQcReject(
         tx,
         {
           companyId,
@@ -1611,6 +1614,25 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // ordinary JC (no parent) this is exactly one cascade call, as before.
     await cascadeJcCompleteUpChain(tx, op.jobCardId, user);
 
+    // ADR-190 — a task raised against this QC call closes itself once the
+    // call has nothing left to inspect. A partial inspection leaves it open.
+    const pendRows = (await tx.execute(sql`
+      SELECT qc_pending AS "qcPending" FROM public.v_jc_op_status
+      WHERE jc_op_id = ${input.jcOpId}::uuid
+    `)) as unknown as Array<{ qcPending: number | string | null }>;
+    if (Number(pendRows[0]?.qcPending ?? 0) <= 0) {
+      await autoCloseLinkedTasks(
+        tx,
+        {
+          companyId,
+          refTypes: ['qc_call'],
+          refId: input.jcOpId,
+          doneLabel: `QC call ${jcCode ?? ''} Op #${opSrNo(op.opSeq)} inspected`,
+        },
+        user,
+      );
+    }
+
     // Audit emit. Single OP_QC action with both qtys in detail (one log can
     // carry both per legacy; splitting into _ACCEPT/_REJECT loses the link).
     if (jcCode) {
@@ -1652,6 +1674,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       createdAt:
         row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
       createdBy: row.createdBy,
+      // A freshly raised NC is always pending and on its own (see toInsertedOpLog).
+      ncs: raisedNc ? [{ id: raisedNc.ncId, code: raisedNc.ncCode, status: 'pending' }] : [],
     } as OpLog;
   });
 }
@@ -1756,8 +1780,8 @@ async function applyTimingChange(
       action: 'OP_LOG_TIME_EDIT',
       entity: 'Op',
       detail:
-        `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — ${row.logType} entry ${row.logNo} ` +
-        `retimed ${was} → ${now} (qty ${row.qty} unchanged)${via}`,
+        `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — ${labelOf(OP_LOG_TYPE_LABEL, row.logType)} entry ${row.logNo} ` +
+        `time changed ${was} → ${now} (qty ${row.qty} unchanged)${via}`,
       refId: jc?.code ?? row.logNo,
     },
     companyId,
@@ -1789,7 +1813,7 @@ export async function updateOpLogTiming(
   // The fourth way a date reaches op_log. Guarding the three entry paths and
   // leaving the correction path open would only move the hole -- a retime can
   // put a row in the future just as easily as an original entry can.
-  assertNotFutureDate(input.logDate, 'Corrected date');
+  assertNotFutureDate(input.logDate, 'Log Date');
 
   return withUserContext(user, async (tx) => {
     const row = await loadTimingTarget(tx, input.id, companyId);
@@ -2050,7 +2074,7 @@ export async function decideOpLogTimeChange(
     const req = rows[0];
     if (!req) throw new NotFoundError('Change request not found');
     if (req.status !== 'pending') {
-      throw new ValidationError(`This request was already ${req.status}`);
+      throw new ValidationError(`This request was already ${codeLabel(req.status)}.`);
     }
 
     if (input.decision === 'approve') {
@@ -2117,18 +2141,22 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
   // session records shop-floor work → `entry`. Admins bypass.
   await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
-  assertNotFutureDate(input.startDate, 'Start date');
+  assertNotFutureDate(input.startDate, 'Start Date');
 
   return withUserContext(user, async (tx) => {
     const op = await loadJcOp(tx, input.jcOpId, companyId);
     // ADR-182 — a short-closed order's Job Card cannot be started either.
     await assertProductionOrderNotShortClosed(tx, op.jobCardId);
     if (op.opType === 'outsource') {
-      throw new ValidationError('Cannot start outsource operation on shop floor');
+      throw new ValidationError(
+        'Cannot start an OSP operation here. Raise the PR from the Job Card.',
+      );
     }
     const snapshot = await loadAvailability(tx, input.jcOpId);
     if (snapshot.available <= 0) {
-      throw new ValidationError('No qty available to start for this operation');
+      throw new ValidationError(
+        'Nothing Available on this operation — finish the previous op first.',
+      );
     }
     // Client-material gate: the first op of a JWSO Job Card can only start once
     // client material has been ISSUED to it (ADR-103) — zero issued means the
@@ -2141,12 +2169,12 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
         throw new ValidationError(
           cap.issuedBased
             ? cap.received === 0
-              ? `Cannot start — no client material has been issued to this job card. ` +
+              ? `Cannot start — no customer material has been issued to this JC. ` +
                 `Issue material from Party Material Issue first (JWSO ${cap.jwCode}).`
               : `Cannot start — all ${cap.received} issued piece(s) are already accounted for. ` +
-                `Issue more client material to continue (JWSO ${cap.jwCode}).`
-            : `No client material available to start. Received ${cap.received} of ${cap.orderQty} ` +
-                `for this part (JWSO ${cap.jwCode}). Record a Party Material GRN first.`,
+                `Issue more customer material to continue (JWSO ${cap.jwCode}).`
+            : `No customer material available to start. Received ${cap.received} of ${cap.orderQty} ` +
+                `for this part (JWSO ${cap.jwCode}). Record a Party GRN first.`,
         );
       }
     }
@@ -2167,7 +2195,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       }
     } else {
       if (!input.machineId) {
-        throw new ValidationError('Select the machine this operation will actually run on');
+        throw new ValidationError('Please select the Actual Machine.');
       }
       const m = await tx
         .select({ id: machines.id, code: machines.code })
@@ -2219,7 +2247,9 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       // Both partial unique indexes (one running per op; one running per
       // non-OSP machine) raise unique_violation = SQLSTATE 23505.
       if ((e as { code?: string }).code === '23505') {
-        throw new ConflictError('Operation already running OR machine busy with another op');
+        throw new ConflictError(
+          'Cannot start: this operation is running or the machine is busy. Stop Operation first.',
+        );
       }
       throw e;
     }
@@ -2337,16 +2367,17 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
   });
 }
 
-// OSP auto-PR generation (ADR-039). Manager/admin only (PR/PO writes are
-// gated at RLS to admin/manager — a deliberate DELTA from legacy, where
-// operators trigger it on op-start). Delegates to generateOspPrForOp inside a
-// single transaction so the PR, optional PO, op link, and audit rows all
-// commit or roll back together.
+// OSP auto-PR generation (ADR-039). Allowed to admin / manager, and to anyone
+// whose Access Control grants Purchase Requests ENTRY (pr_create entry) — the
+// same right that lets them raise a PR from the PR form; JC Operations "Raise
+// PR" now calls this path. Server-enforced here, not just a hidden button.
+// Delegates to generateOspPrForOp inside a single transaction so the PR,
+// optional PO, op link, and audit rows all commit or roll back together.
 export async function generateOspPr(
   input: GenerateOspPrInput,
   user: AuthContext,
 ): Promise<GenerateOspPrResult> {
-  requireWriteRole(user);
+  if (!isWriteRole(user)) await requireFormAccess(user, 'pr_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // ADR-182 — this route commits MONEY to an outside vendor (a jw_osp
@@ -2402,9 +2433,9 @@ export async function stopOp(
       .where(and(eq(runningOps.id, runningOpId), eq(runningOps.companyId, companyId)))
       .limit(1);
     const row = existing[0];
-    if (!row) throw new NotFoundError(`Running op ${runningOpId} not found`);
+    if (!row) throw new NotFoundError('Running operation not found. Refresh the page.');
     if (row.status !== 'running') {
-      throw new ValidationError(`Running op already in status "${row.status}"`);
+      throw new ValidationError('This operation is already stopped. Refresh the page.');
     }
     // ADR-183 — a whole batch can fail. The machine ran, QC looked at what came
     // off it, and none of it passed; that entry is qty 0 with rejects, and it

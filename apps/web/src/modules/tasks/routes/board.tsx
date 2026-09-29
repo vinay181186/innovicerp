@@ -1,7 +1,8 @@
 // Task Board (ADR-176) — the approved Inbox / Outbox / My To-Do / All Tasks
 // board. Title row with "+ My To-Do" and "+ Assign Task" (any user), a tab
-// strip with open counts, the KPI strip (TO DO / IN PROGRESS / COMPLETED /
-// OVERDUE, each a filter), the five-box filter strip, the table, and a hint
+// strip with open counts, the filter bar (search + Status / Priority / Person /
+// Due Date, with the TO DO / IN PROGRESS / COMPLETED / OVERDUE counts in the
+// Status and Due Date options — they replaced the clickable KPI strip), the table, and a hint
 // line that names the view. `?view=` keeps the tab across a refresh;
 // `?task=<uuid>` (Global Search deep link) opens that task's detail on
 // arrival; `?search=` keeps the typed term. Everything else is local state.
@@ -24,8 +25,8 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useMarkTasksViewed, useTaskList, useTaskUserOptions } from '../api';
 import { AssignTaskModal } from '../components/assign-task-modal';
 import {
@@ -158,8 +159,8 @@ function TaskBoardPage(): React.JSX.Element {
   }
   if (!data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
+        {error instanceof Error ? error.message : 'Could not load tasks. Try again.'}
       </div>
     );
   }
@@ -167,43 +168,67 @@ function TaskBoardPage(): React.JSX.Element {
   const counts = data.counts;
   const tabs: TaskView[] = data.isAdmin ? [...TASK_VIEWS] : TASK_VIEWS.filter((v) => v !== 'all');
   const tabCount = (v: TaskView): number | null => data.viewCounts[v];
-  const toggleStatus = (k: TaskStatus): void => setStatus((cur) => (cur === k ? '' : k));
-  const toggleOverdue = (): void => setDue((cur) => (cur === 'overdue' ? '' : 'overdue'));
 
   return (
     <div>
-      {/* Title row */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-          marginBottom: 10,
+      <ListHeader
+        title="Task Board"
+        icon="📋"
+        count={data.tasks.length}
+        noun="task"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search Task No., title, related document…"
+        updating={isFetching}
+        filters={
+          <TaskFilters
+            view={view}
+            users={users}
+            departments={departments}
+            values={{ searchInput, status, priority, person, assignedBy, dept, due }}
+            counts={counts}
+            onStatus={setStatus}
+            onPriority={setPriority}
+            onPerson={setPerson}
+            onAssignedBy={setAssignedBy}
+            onDept={setDept}
+            onDue={setDue}
+          />
+        }
+        onClearFilters={() => {
+          setStatus('');
+          setPriority('');
+          setPerson('');
+          setAssignedBy('');
+          setDept('');
+          setDue('');
+          setSearchInput('');
+          void navigate({ search: (prev) => ({ ...prev, search: undefined }), replace: true });
         }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📋 Task Board
-          {data.unreadCount > 0 ? (
-            <span className="badge b-red" style={{ marginLeft: 8 }}>
-              🔔 {data.unreadCount} new
-            </span>
-          ) : null}
-          {isFetching ? (
-            <span className="text3 mono" style={{ fontSize: 11, marginLeft: 8, fontWeight: 400 }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setModal({ kind: 'todo' })}
-          >
-            + My To-Do
-          </button>
+        filtersActive={
+          status !== '' ||
+          priority !== '' ||
+          person !== '' ||
+          assignedBy !== '' ||
+          dept !== '' ||
+          due !== '' ||
+          searchInput.trim() !== ''
+        }
+        tools={
+          <>
+            {data.unreadCount > 0 ? (
+              <span className="badge b-red">🔔 {data.unreadCount} new</span>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setModal({ kind: 'todo' })}
+            >
+              + My To-Do
+            </button>
+          </>
+        }
+        primary={
           <button
             type="button"
             className="btn btn-primary"
@@ -211,72 +236,27 @@ function TaskBoardPage(): React.JSX.Element {
           >
             + Assign Task
           </button>
-        </div>
-      </div>
-
-      <TaskTabs tabs={tabs} view={view} countOf={tabCount} onChange={setView} />
-
-      {/* KPI strip — each tile is a filter */}
-      <StatStrip
-        items={[
-          {
-            key: 'todo',
-            label: 'To Do',
-            count: counts.todo,
-            color: 'var(--amber)',
-            active: status === 'todo',
-            onClick: () => toggleStatus('todo'),
-          },
-          {
-            key: 'in_progress',
-            label: 'In Progress',
-            count: counts.in_progress,
-            color: 'var(--blue)',
-            active: status === 'in_progress',
-            onClick: () => toggleStatus('in_progress'),
-          },
-          {
-            key: 'completed',
-            label: 'Completed',
-            count: counts.completed,
-            color: 'var(--green)',
-            active: status === 'completed',
-            onClick: () => toggleStatus('completed'),
-          },
-          {
-            key: 'overdue',
-            label: 'Overdue',
-            count: counts.overdue,
-            color: 'var(--red)',
-            active: due === 'overdue',
-            onClick: toggleOverdue,
-          },
-        ]}
-      />
-
-      <TaskFilters
-        view={view}
-        users={users}
-        departments={departments}
-        values={{ searchInput, status, priority, person, assignedBy, dept, due }}
-        onSearch={setSearchInput}
-        onStatus={setStatus}
-        onPriority={setPriority}
-        onPerson={setPerson}
-        onAssignedBy={setAssignedBy}
-        onDept={setDept}
-        onDue={setDue}
-      />
+        }
+      >
+        <TaskTabs tabs={tabs} view={view} countOf={tabCount} onChange={setView} />
+      </ListHeader>
 
       {isError ? (
         // A refetch failed (e.g. a non-admin landing on ?view=all): keep the
         // board and its tabs on screen so the user can move off the bad view.
         <div className="panel" style={{ padding: '8px 12px', fontSize: 12, color: 'var(--red2)' }}>
-          {error instanceof Error ? error.message : 'Failed to load'}
+          {error instanceof Error ? error.message : 'Could not load tasks. Try again.'}
         </div>
       ) : null}
 
-      <TaskTable rows={data.tasks} view={view} onAction={onRowAction} />
+      <TaskTable
+        rows={data.tasks}
+        view={view}
+        filtered={Boolean(
+          routeSearch.search || status || priority || person || assignedBy || dept || due,
+        )}
+        onAction={onRowAction}
+      />
 
       {modal.kind === 'assign' ? <AssignTaskModal onClose={closeModal} /> : null}
       {modal.kind === 'todo' ? <TodoModal onClose={closeModal} /> : null}

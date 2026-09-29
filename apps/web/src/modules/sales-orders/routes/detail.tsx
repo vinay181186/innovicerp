@@ -19,11 +19,14 @@ import type { DrawingSource, SalesOrderDetail, SalesOrderLine } from '@innovic/s
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { z } from 'zod';
+import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
+import { inrFormat } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -31,10 +34,16 @@ import { SoDocumentsSection } from '@/modules/so-documents/components/so-documen
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, QtyStrip, type DataTableColumn } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
-import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
+import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
+
+/** ₹ with Indian grouping, to the paise — the SO totals strip. */
+function fmtInr(n: number): string {
+  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 /** The file the user asked to look at, or null when nothing is open.
  *
@@ -59,14 +68,20 @@ type PreviewFile = {
   refCode?: string;
 };
 
+/** `uploadFailed` — set by New SO when the SO saved but a picked Client PO /
+ *  Email Reference file did not upload; names the file(s) for the red banner. */
+const detailSearchSchema = z.object({ uploadFailed: z.string().optional() });
+
 export const salesOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'sales-orders/$id',
+  validateSearch: detailSearchSchema,
   component: SalesOrderDetailPage,
 });
 
 function SalesOrderDetailPage(): React.JSX.Element {
   const { id } = salesOrderDetailRoute.useParams();
+  const { uploadFailed } = salesOrderDetailRoute.useSearch();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useSalesOrder(id);
   const { data: me } = useSession();
@@ -74,6 +89,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'so_create');
   const softDelete = useSoftDeleteSalesOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   // One preview slot for the whole page — the client PO bar, the email
   // references and the per-line drawings all feed the same modal.
   const [preview, setPreview] = useState<PreviewFile | null>(null);
@@ -94,7 +110,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </Link>
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Sales order not found'}
+          message={error instanceof Error ? error.message : 'SO not found. Refresh the page.'}
         />
       </>
     );
@@ -116,6 +132,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = detail.priceVisible === false;
   const totalValue = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
+  // Still to ship = ordered − already dispatched, per line (never below zero).
+  // Drives whether "Dispatch" is offered as the next step.
+  const pendingDispatchQty = detail.lines.reduce(
+    (s, l) => s + Math.max(0, l.orderQty - l.dispatchedQty),
+    0,
+  );
 
   return (
     <div>
@@ -125,50 +147,95 @@ function SalesOrderDetailPage(): React.JSX.Element {
         renderLink={(p) => <Link {...p} />}
         code={detail.code}
         name={detail.customerName ?? 'Untitled customer'}
-        badges={<StatusBadge kind="so" status={detail.status} />}
+        badges={
+          <StatusBadge kind="so" status={detail.status} label={SO_STATUS_LABEL[detail.status]} />
+        }
         actions={
+          /* ONE primary next step (Dispatch, while anything is left to ship),
+             Plan as a quiet link, and everything else in the Actions menu —
+             Delete last, in red. Same permission gates as before. */
           <>
-            <AssignTaskButton
-              linkedRef={{
-                type: 'sales_order',
-                id: detail.id,
-                display: `SO ${detail.code}`,
-                navPage: `/sales-orders/${detail.id}`,
-              }}
-              suggestedTitle={`Follow up on SO ${detail.code}`}
-            />
             <Link
-              to="/sales-orders/$id/status"
-              params={{ id: detail.id }}
-              className="btn btn-ghost btn-sm"
-              title="Open SO Status Review"
+              to="/planning"
+              search={{ soId: detail.id }}
+              className="btn btn-ghost"
+              title="Open this SO in Planning"
             >
-              <Icon name="activity" size={13} /> Status
+              Plan
             </Link>
-            {canEdit ? (
+            <ActionMenu
+              items={[
+                { label: 'Assign Task', onClick: () => setAssignOpen(true) },
+                {
+                  label: 'Status',
+                  title: 'Open SO Status Review',
+                  onClick: () =>
+                    void navigate({ to: '/sales-orders/$id/status', params: { id: detail.id } }),
+                },
+                {
+                  label: 'Edit',
+                  hidden: !canEdit,
+                  onClick: () =>
+                    void navigate({ to: '/sales-orders/$id/edit', params: { id: detail.id } }),
+                },
+                {
+                  label: 'Delete',
+                  danger: true,
+                  hidden: !canDelete,
+                  onClick: () => setConfirmDelete(true),
+                },
+              ]}
+            />
+            {pendingDispatchQty > 0 ? (
               <Link
-                to="/sales-orders/$id/edit"
-                params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
+                to="/customer-dispatches/new"
+                search={{ so: detail.id }}
+                className="btn btn-primary"
+                title={`${pendingDispatchQty} still to dispatch on this SO`}
               >
-                <Icon name="pencil" size={13} /> Edit
+                Dispatch
               </Link>
-            ) : null}
-            {canDelete ? (
-              <Button
-                variant="danger"
-                size="sm"
-                icon={<Icon name="trash-2" size={13} />}
-                onClick={() => setConfirmDelete(true)}
-              >
-                Delete
-              </Button>
             ) : null}
           </>
         }
       >
         <SoReadGrid detail={detail} />
+        {/* ADR-190 — the SO's money, summed on the server. Null when this
+            user's access hides prices, and then the strip is not shown. */}
+        {detail.totals ? (
+          <QtyStrip
+            style={{ marginTop: 'var(--sp-3)' }}
+            items={[
+              { label: 'Subtotal', value: fmtInr(detail.totals.subtotal) },
+              {
+                label: `GST ${detail.totals.gstPercent}%`,
+                value: fmtInr(detail.totals.gstAmount),
+              },
+              { label: 'Grand Total', value: fmtInr(detail.totals.grandTotal) },
+            ]}
+          />
+        ) : null}
       </DetailHeader>
+
+      {uploadFailed ? (
+        <Banner
+          tone="error"
+          role="alert"
+          title="PO document not attached"
+          onDismiss={() =>
+            void navigate({
+              to: '/sales-orders/$id',
+              params: { id: detail.id },
+              search: {},
+              replace: true,
+            })
+          }
+        >
+          SO {detail.code} was saved, but the {uploadFailed} did not upload. Upload it again here —
+          Client PO with the Upload button just below, Email Reference with Upload Document under SO
+          Documents.
+        </Banner>
+      ) : null}
 
       <SoFilesPanel
         detail={detail}
@@ -178,14 +245,14 @@ function SalesOrderDetailPage(): React.JSX.Element {
       />
 
       <Panel
-        title={`Line items (${detail.lines.length})`}
+        title={`Line Items (${detail.lines.length})`}
         bodyPadding="none"
         actions={
           <QtyStrip
             items={[
               { label: 'Total Qty', value: totalQty },
               ...(!priceHidden && totalValue > 0
-                ? [{ label: 'Value', value: `₹${totalValue.toFixed(2)}` }]
+                ? [{ label: 'Value', value: `₹ ${inrFormat(totalValue)}` }]
                 : []),
             ]}
           />
@@ -199,7 +266,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
       </Panel>
 
       {detail.milestones.length > 0 ? (
-        <Panel title={`📅 Delivery Schedule (${detail.milestones.length})`} bodyPadding="none">
+        <Panel title={`Delivery Schedule (${detail.milestones.length})`} bodyPadding="none">
           <DataTable
             columns={MILESTONE_COLUMNS}
             rows={detail.milestones}
@@ -226,11 +293,24 @@ function SalesOrderDetailPage(): React.JSX.Element {
 
       {/* SO Documents — file store folded in from the former standalone screen. */}
       <div className="section-hdr" style={{ marginTop: 'var(--sp-5)' }}>
-        📁 SO Documents
+        SO Documents
       </div>
       <SoDocumentsSection soId={detail.id} />
 
       {preview ? <FilePreviewModal {...preview} onClose={() => setPreview(null)} /> : null}
+
+      {assignOpen ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'sales_order',
+            id: detail.id,
+            display: `SO ${detail.code}`,
+            navPage: `/sales-orders/${detail.id}`,
+          }}
+          suggestedTitle={`Follow up on SO ${detail.code}`}
+          onClose={() => setAssignOpen(false)}
+        />
+      ) : null}
 
       {/* Delete goes through the ONE confirm dialog — never an inline
           "Delete? [Confirm][Cancel]" swap, never window.confirm. A failed
@@ -238,12 +318,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
           user does not lose it along with the error. */}
       <ConfirmDialog
         open={confirmDelete}
-        title={`Delete sales order ${detail.code}?`}
+        title={`Move SO ${detail.code} to Trash?`}
         message={`${detail.code} and its ${detail.lines.length} line${
           detail.lines.length === 1 ? '' : 's'
-        } will be removed from the Sales Order list.`}
-        confirmLabel="Delete"
-        pendingLabel="Deleting…"
+        } will be removed from the Sales Order list. You can restore it from Trash.`}
+        confirmLabel="Move to Trash"
+        pendingLabel="Moving to Trash…"
         onCancel={() => setConfirmDelete(false)}
         onConfirm={async () => {
           await softDelete.mutateAsync(detail.id);
@@ -349,25 +429,37 @@ function lineColumns(opts: {
         );
       },
     },
-    { header: 'Order Qty', key: 'orderQty', width: '6%', className: 'mono', nowrap: true },
+    {
+      header: 'Order Qty',
+      key: 'orderQty',
+      width: '6%',
+      align: 'right',
+      className: 'mono',
+      nowrap: true,
+    },
     {
       header: 'Dispatched',
+      align: 'right',
       width: '7%',
       headColor: 'var(--green)',
       className: 'mono',
       nowrap: true,
-      render: (l) => <span style={{ color: 'var(--green)' }}>{l.dispatchedQty}</span>,
+      render: (l) => <span style={{ color: 'var(--green2)' }}>{l.dispatchedQty}</span>,
     },
     {
       header: 'Billed',
+      align: 'right',
       width: '6%',
       headColor: 'var(--green)',
       className: 'mono',
       nowrap: true,
-      render: (l) => <span style={{ color: 'var(--green)' }}>{l.billedQty}</span>,
+      render: (l) => <span style={{ color: 'var(--green2)' }}>{l.billedQty}</span>,
     },
     {
-      header: 'Pending',
+      // Order − Billed: still to invoice (NAMING.md "To Bill"), not the
+      // qty still owed on the order ("Pending").
+      header: 'To Bill',
+      align: 'right',
       width: '7%',
       headColor: 'var(--red)',
       className: 'mono fw-700',
@@ -389,7 +481,7 @@ function lineColumns(opts: {
             className: 'mono',
             nowrap: true,
             render: (l: SalesOrderLine) =>
-              Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—',
+              Number(l.rate) > 0 ? `₹ ${inrFormat(Number(l.rate))}` : '—',
           },
         ]),
     {
@@ -397,12 +489,12 @@ function lineColumns(opts: {
       width: '8%',
       className: 'mono text2',
       nowrap: true,
-      render: (l) => l.dueDate ?? '—',
+      render: (l) => fmtDate(l.dueDate),
     },
     {
       header: 'SO Status',
       width: '10%',
-      render: (l) => <StatusBadge kind="so" status={l.status} />,
+      render: (l) => <StatusBadge kind="so" status={l.status} label={SO_STATUS_LABEL[l.status]} />,
     },
   ];
 }
@@ -412,14 +504,14 @@ function lineColumns(opts: {
 type Milestone = SalesOrderDetail['milestones'][number];
 
 const MILESTONE_COLUMNS: DataTableColumn<Milestone>[] = [
-  { header: 'Lot #', key: 'lotNo', width: '18%', className: 'mono fw-700', nowrap: true },
-  { header: 'Qty', key: 'qty', width: '14%', className: 'mono', nowrap: true },
+  { header: 'Lot No.', key: 'lotNo', width: '18%', className: 'mono fw-700', nowrap: true },
+  { header: 'Qty', key: 'qty', width: '14%', align: 'right', className: 'mono', nowrap: true },
   {
     header: 'Due Date',
     width: '20%',
     className: 'mono',
     nowrap: true,
-    render: (m) => m.dueDate ?? '—',
+    render: (m) => fmtDate(m.dueDate),
   },
   {
     header: 'Remarks',
@@ -462,7 +554,7 @@ function SoFilesPanel({
 
   async function onPick(file: File): Promise<void> {
     if (!companyId) {
-      setErr('No company on session — cannot upload.');
+      setErr('Could not upload file. Sign in again and retry.');
       return;
     }
     setBusy(true);
@@ -481,7 +573,7 @@ function SoFilesPanel({
       });
       await qc.invalidateQueries({ queryKey: salesOrdersKeys.detail(detail.id) });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -504,7 +596,7 @@ function SoFilesPanel({
             variant="ghost"
             size="sm"
             icon={<Icon name="eye" size={13} />}
-            title="Preview the client PO document"
+            title="Preview Client PO Document"
             // Only the path is on the SO record; the modal derives a display
             // name from it.
             onClick={() => onPreview({ storagePath: clientPoPath })}
@@ -619,8 +711,8 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
 
   return (
     <ReadGrid>
-      <ReadField label="SO Type" size="md" value={detail.type.replaceAll('_', ' ')} />
-      <ReadField label="SO Date" size="sm" mono value={detail.soDate} />
+      <ReadField label="SO Type" size="md" value={SO_TYPE_LABEL[detail.type]} />
+      <ReadField label="SO Date" size="sm" mono value={fmtDate(detail.soDate)} />
       <ReadField
         label="Client PO No."
         size="sm"
@@ -636,14 +728,14 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
           label="GST %"
           size="xs"
           value={
-            <span style={{ color: 'var(--green)', fontWeight: 700 }}>{detail.gstPercent}%</span>
+            <span style={{ color: 'var(--green2)', fontWeight: 700 }}>{detail.gstPercent}%</span>
           }
         />
       )}
       <ReadField label="Cost Centre" size="md" value={detail.costCenter} />
       {detail.type === 'component_manufacturing' ? null : (
         <ReadField
-          label="BOM master"
+          label="BOM"
           size="md"
           value={
             detail.bomMasterId ? (
@@ -670,7 +762,7 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
         />
       )}
       <ReadField
-        label="SO raised by"
+        label="Raised By"
         size="md"
         value={
           (detail.createdByName ?? '—') +

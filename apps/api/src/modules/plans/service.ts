@@ -17,6 +17,7 @@
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePlanInput,
+  CreatePlansBatchInput,
   CreateRouteCardOpInput,
   DefaultRouteOpsResponse,
   DocumentTraceability,
@@ -37,6 +38,7 @@ import type {
   UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import {
   bomMasters,
   items,
@@ -57,6 +59,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
+import { resolveRmItem } from '../../lib/rm-item';
 import {
   AuthorizationError,
   ConflictError,
@@ -74,6 +77,7 @@ import {
 } from '../../lib/stock-reservation';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { derivePlanStatus } from '../../lib/plan-derived-status';
+import { soLineCoveredRaw } from '../../lib/so-line-coverage';
 import {
   PLAN_ACTIVE_ORDER_COUNT_SQL,
   PLAN_COVERED_QTY_SQL,
@@ -87,10 +91,23 @@ import {
 } from '../../lib/plan-order-coverage';
 import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
+import { labelOf, PLAN_STATUS_LABEL, PLAN_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { nextJcCode } from '../job-cards/service';
 import { saveRouteCardForItem } from '../route-cards/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
+import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
+
+// Today's calendar date in IST (same as assembly / production-schedule). The
+// UTC date is still yesterday between 00:00 and 05:30 IST.
+function todayIso(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
 
 const EDITABLE_STATUSES: readonly PlanStatus[] = ['in_planning', 'planned'];
 
@@ -136,7 +153,7 @@ function numericToString(v: number | null | undefined): string | null {
 }
 
 function detail(plan: { code: string; planType: string; itemNameText: string | null }): string {
-  return `${plan.code} — ${plan.itemNameText ?? plan.planType}`;
+  return `${plan.code} — ${plan.itemNameText ?? labelOf(PLAN_TYPE_LABEL, plan.planType)}`;
 }
 
 /** The customer's drawing revision for whichever SO line a plan hangs on.
@@ -181,6 +198,24 @@ const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
 
 const DERIVED_STATUS_SQL = planDerivedStatusSql(HAS_ROUTE_CARD_SQL);
 
+/** ADR-193 phase 3a — the plan's raw-material item code, for display. A scalar
+ *  so it cannot multiply the plan row; no deleted_at filter, so a plan keeps
+ *  naming the item it was planned with. */
+const PLAN_RM_ITEM_CODE_SQL = sql<string | null>`(
+  SELECT rmi.code FROM public.items rmi
+  WHERE rmi.id = ${plans.rawMaterialItemId} AND rmi.company_id = ${plans.companyId}
+)`;
+
+// ADR-185 — the status a plan's ROW shows (PLAN_EFFECTIVE_STATUSES): the
+// derived status for a live route-card plan (production_complete spelled
+// 'complete', like the stored word the tile uses), the stored status
+// otherwise. The list filter AND the KPI tile counts both read this, so the
+// tile a user clicks lists exactly the rows it counted.
+const EFFECTIVE_STATUS_SQL = sql<string>`COALESCE(
+  REPLACE((${DERIVED_STATUS_SQL})::text, 'production_complete', 'complete'),
+  ${plans.planStatus}::text
+)`;
+
 export async function listPlans(
   query: ListPlansQuery,
   user: AuthContext,
@@ -189,7 +224,7 @@ export async function listPlans(
 
   return withUserContext(user, async (tx) => {
     const conditions = [eq(plans.companyId, companyId), isNull(plans.deletedAt)];
-    if (query.status) conditions.push(eq(plans.planStatus, query.status));
+    if (query.status) conditions.push(sql`${EFFECTIVE_STATUS_SQL} = ${query.status}`);
     if (query.planType) conditions.push(eq(plans.planType, query.planType));
     if (query.soLineId) conditions.push(eq(plans.soLineId, query.soLineId));
     if (query.opsSource) conditions.push(eq(plans.opsSource, query.opsSource));
@@ -237,6 +272,7 @@ export async function listPlans(
         // Close only when the card is actually finished.
         jcStatus: sql<string | null>`jcs.computed_status`,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
+        rmItemCode: PLAN_RM_ITEM_CODE_SQL,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -282,7 +318,7 @@ export async function listPlans(
       items: rows.map((r) => {
         const hasRouteCard = Boolean(r.hasRouteCard);
         return {
-          ...toPlan(r.plan),
+          ...toPlan(r.plan, r.rmItemCode),
           itemCode: r.itemCode ?? null,
           // Null passed through, not coerced to a blank string: the UI has to be
           // able to tell "this plan has no SO line" from "the revision is empty".
@@ -342,6 +378,15 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         itemName: items.name,
         itemRevision: SO_LINE_REVISION,
         clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
+        // ADR-185 — the same Covered / Pending / derived-status facts the
+        // Plans list states, from the same SQL, so the list and the detail can
+        // never show one plan two ways.
+        coveredQty: PLAN_COVERED_QTY_SQL,
+        pendingQty: PLAN_PENDING_QTY_SQL,
+        activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
+        openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
+        hasRouteCard: HAS_ROUTE_CARD_SQL,
+        rmItemCode: PLAN_RM_ITEM_CODE_SQL,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -358,7 +403,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const row = headers[0];
-    if (!row) throw new NotFoundError(`Plan ${id} not found`);
+    if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     const opRows = await tx
       .select()
@@ -367,7 +412,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       .orderBy(asc(planOps.opSeq));
 
     const detail: PlanDetail = {
-      ...toPlan(row.plan),
+      ...toPlan(row.plan, row.rmItemCode),
       itemCode: row.itemCode ?? null,
       // Null passed through, not coerced to a blank string: the UI has to be
       // able to tell "this plan has no SO line" from "the revision is empty".
@@ -376,6 +421,16 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       itemName: row.itemName ?? null,
       ops: opRows.map(toPlanOp),
       priceVisible: showMoney,
+      derivedStatus: derivePlanStatus({
+        opsSource: row.plan.opsSource,
+        planStatus: row.plan.planStatus,
+        hasRouteCard: Boolean(row.hasRouteCard),
+        activeOrderCount: Number(row.activeOrderCount ?? 0),
+        openOrderCount: Number(row.openOrderCount ?? 0),
+        pendingQty: Number(row.pendingQty ?? 0),
+      }),
+      coveredQty: Number(row.coveredQty ?? 0),
+      pendingQty: Number(row.pendingQty ?? 0),
     };
     return showMoney ? detail : hidePlanMoney(detail);
   });
@@ -442,9 +497,8 @@ async function assertBomChildQtyWithinRequirement(
   const remaining = required - alreadyPlanned;
   if (planQty > remaining) {
     throw new ValidationError(
-      `Plan qty ${planQty} exceeds remaining ${Math.max(0, remaining)} for BOM part ` +
-        `${bomChildCode} (needs ${required} = ${Number(req.qtyPerSet)} per set x ${req.orderQty} ` +
-        `ordered, already planned ${alreadyPlanned}). Reduce the plan qty.`,
+      `Plan Qty (${planQty}) for ${bomChildCode} cannot be more than Pending to Plan ` +
+        `(${Math.max(0, remaining)}).`,
     );
   }
 }
@@ -483,28 +537,56 @@ async function assertPlanQtyWithinRemaining(
     return;
   }
 
-  let orderQty: number;
   if (soLineId) {
+    // ADR-185 — lock the SO line (the SO edit guards lock it too, so a qty cut
+    // and a new plan cannot both pass), refuse a draft / cancelled order, and
+    // measure against the ONE "to plan" rule (lib/so-line-coverage.ts: plans +
+    // a Buy line's PRs + direct cards) — the figure Needs Planning shows.
     const r = (await tx.execute(sql`
-      SELECT order_qty AS "orderQty" FROM public.sales_order_lines
-      WHERE id = ${soLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-      LIMIT 1
-    `)) as unknown as Array<{ orderQty: number }>;
-    if (!r[0]) return;
-    orderQty = Number(r[0].orderQty);
-  } else {
-    const r = (await tx.execute(sql`
-      SELECT order_qty AS "orderQty" FROM public.job_work_order_lines
-      WHERE id = ${jwLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-      LIMIT 1
-    `)) as unknown as Array<{ orderQty: number }>;
-    if (!r[0]) return;
-    orderQty = Number(r[0].orderQty);
+      SELECT sol.order_qty AS "orderQty", so.status AS "soStatus", so.code AS "soCode",
+             ${sql.raw(soLineCoveredRaw('sol'))} AS "covered",
+             COALESCE((SELECT p_x.plan_qty FROM public.plans p_x
+                       WHERE p_x.id = ${excludePlanId ?? null}::uuid
+                         AND p_x.so_line_id = sol.id AND p_x.deleted_at IS NULL
+                         AND p_x.plan_status <> 'cancelled'), 0)::int AS "own"
+      FROM public.sales_order_lines sol
+      JOIN public.sales_orders so ON so.id = sol.sales_order_id
+      WHERE sol.id = ${soLineId}::uuid AND sol.company_id = ${companyId}::uuid
+        AND sol.deleted_at IS NULL
+      FOR UPDATE OF sol
+    `)) as unknown as Array<{
+      orderQty: number;
+      soStatus: string;
+      soCode: string;
+      covered: number;
+      own: number;
+    }>;
+    const line = r[0];
+    if (!line) return;
+    // A cut (or an unchanged re-save) of an existing plan only ever reduces
+    // what the line is covered by — always allowed, even on an over-covered
+    // line or a cancelled order, so a planner can fix an over-plan.
+    if (Number(line.own) > 0 && planQty <= Number(line.own)) return;
+    assertSoAcceptsWork(line.soStatus, line.soCode, 'it cannot be planned');
+    const covered = Number(line.covered) - Number(line.own);
+    const toPlan = Math.max(0, Number(line.orderQty) - covered);
+    if (planQty > toPlan) {
+      throw new ValidationError(
+        `Plan Qty (${planQty}) cannot be more than Pending to Plan (${toPlan}).`,
+      );
+    }
+    return;
   }
 
-  const lineCond = soLineId
-    ? sql`p.so_line_id = ${soLineId}::uuid`
-    : sql`p.jw_line_id = ${jwLineId}::uuid`;
+  // JW lines: Plan Qty against the order qty less the other plans.
+  const jwRows = (await tx.execute(sql`
+    SELECT order_qty AS "orderQty" FROM public.job_work_order_lines
+    WHERE id = ${jwLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+    LIMIT 1
+  `)) as unknown as Array<{ orderQty: number }>;
+  if (!jwRows[0]) return;
+  const orderQty = Number(jwRows[0].orderQty);
+  const lineCond = sql`p.jw_line_id = ${jwLineId}::uuid`;
   const excl = excludePlanId ? sql`AND p.id <> ${excludePlanId}::uuid` : sql``;
   const rows = (await tx.execute(sql`
     SELECT COALESCE(SUM(p.plan_qty), 0)::int AS "planned"
@@ -519,8 +601,7 @@ async function assertPlanQtyWithinRemaining(
   const remaining = orderQty - alreadyPlanned;
   if (planQty > remaining) {
     throw new ValidationError(
-      `Plan qty ${planQty} exceeds remaining ${Math.max(0, remaining)} for this line ` +
-        `(ordered ${orderQty}, already planned ${alreadyPlanned}). Reduce the plan qty.`,
+      `Plan Qty (${planQty}) cannot be more than Pending to Plan (${Math.max(0, remaining)}).`,
     );
   }
 }
@@ -531,152 +612,255 @@ export async function createPlan(input: CreatePlanInput, user: AuthContext): Pro
   await requireFormAccess(user, 'plan_create', 'entry');
   const companyId = requireCompany(user);
 
+  return withUserContext(user, (tx) => createPlanInTx(tx, companyId, input, user));
+}
+
+/**
+ * BOM Planning "Save N Plans" — every child plan (and the assembly plan) in
+ * ONE transaction. Each goes through exactly the same rules as a single
+ * createPlan; if any one is refused the whole batch rolls back, so the planner
+ * never ends up with rows 1–2 saved and row 3 missing. The error names the
+ * item that was refused.
+ */
+export async function createPlansBatch(
+  input: CreatePlansBatchInput,
+  user: AuthContext,
+): Promise<{ plans: PlanDetail[] }> {
+  requireWriteRole(user);
+  await requireFormAccess(user, 'plan_create', 'entry');
+  const companyId = requireCompany(user);
+
   return withUserContext(user, async (tx) => {
-    // Blank/omitted code → auto-number the next PLN-NNNN. A user-supplied code
-    // is still honoured (and dup-checked).
-    const code =
-      input.code && input.code.trim().length > 0
-        ? input.code.trim()
-        : await nextPlanCode(tx, companyId);
+    const out: PlanDetail[] = [];
+    for (const one of input.plans) {
+      try {
+        out.push(await createPlanInTx(tx, companyId, one, user));
+      } catch (e) {
+        const label = one.bomChildCode ?? one.itemCodeText ?? 'a plan';
+        if (e instanceof ValidationError) {
+          throw new ValidationError(`${label}: ${e.message} Nothing was saved.`);
+        }
+        if (e instanceof ConflictError) {
+          throw new ConflictError(`${label}: ${e.message} Nothing was saved.`);
+        }
+        throw e;
+      }
+    }
+    return { plans: out };
+  });
+}
 
-    const dup = await tx
-      .select({ id: plans.id })
-      .from(plans)
-      .where(and(eq(plans.companyId, companyId), eq(plans.code, code), isNull(plans.deletedAt)))
+async function createPlanInTx(
+  tx: DbTransaction,
+  companyId: string,
+  input: CreatePlanInput,
+  user: AuthContext,
+): Promise<PlanDetail> {
+  // Blank/omitted code → auto-number the next PLN-NNNN. A user-supplied code
+  // is still honoured (and dup-checked).
+  const code =
+    input.code && input.code.trim().length > 0
+      ? input.code.trim()
+      : await nextPlanCode(tx, companyId);
+
+  const dup = await tx
+    .select({ id: plans.id })
+    .from(plans)
+    .where(and(eq(plans.companyId, companyId), eq(plans.code, code), isNull(plans.deletedAt)))
+    .limit(1);
+  if (dup.length > 0) {
+    throw new ConflictError(`Plan code "${code}" already exists`);
+  }
+
+  // ADR-171 — a bought SO line is not planned; it gets "+ PR" on SO Planning.
+  // Only a BOM child marked Purchase (BOM Planning) still makes a Buy plan
+  // against a line. (Unlinked legacy Buy plans are left as they were.)
+  if (
+    input.planType === 'direct_purchase' &&
+    !input.bomMasterId &&
+    (input.soLineId || input.jwLineId)
+  ) {
+    throw new ValidationError('A Buy item is not planned — use + PR on SO Planning.');
+  }
+
+  // ADR-170 — a route-card-driven plan holds qty / dates / raw material /
+  // remark only. Operations arrive from the item's Route Card when a
+  // Production Order is created, so the plan is stored `planned` straight
+  // away (there is nothing to finalize) and carries no ops of its own. The
+  // Production Order needs a master item to find the Route Card, so a
+  // text-only item is refused here rather than at order time.
+  //
+  // The plan TYPE is the route card's decision, not the client's
+  // (`route_cards.plan_type`, migration 0123: how the item is normally
+  // made). Whatever planType the form sent is ignored for such a plan and
+  // the card's value is stored; an item with no card yet falls back to
+  // 'manufacture'. The Production Order re-reads the card when it is
+  // created and re-stamps the plan, so a card changed in between still wins.
+  const isRouteCardPlan = input.opsSource === 'route_card';
+  let planType = input.planType;
+  if (isRouteCardPlan) {
+    if (!input.itemId) {
+      throw new ValidationError(
+        'Pick the item from Item Master — a Production Order needs the item to find its Route Card',
+      );
+    }
+    const rc = await tx
+      .select({ planType: routeCards.planType })
+      .from(routeCards)
+      .where(
+        and(
+          eq(routeCards.companyId, companyId),
+          eq(routeCards.itemId, input.itemId),
+          isNull(routeCards.deletedAt),
+        ),
+      )
       .limit(1);
-    if (dup.length > 0) {
-      throw new ConflictError(`Plan code "${code}" already exists`);
+    planType = rc[0]?.planType ?? 'manufacture';
+    // ADR-171: bought items are flagged on the Item Master (Source = Buy) and
+    // raise a PR from the Planning line — a card still marked with the
+    // retired "Direct Purchase" tile must not silently become an
+    // un-orderable plan.
+    if (planType === 'direct_purchase') {
+      throw new ValidationError(
+        `${input.itemCodeText ? `Item ${input.itemCodeText}` : 'This item'} is a Buy item — use + PR.`,
+      );
     }
+  }
 
-    // ADR-170 — a route-card-driven plan holds qty / dates / raw material /
-    // remark only. Operations arrive from the item's Route Card when a
-    // Production Order is created, so the plan is stored `planned` straight
-    // away (there is nothing to finalize) and carries no ops of its own. The
-    // Production Order needs a master item to find the Route Card, so a
-    // text-only item is refused here rather than at order time.
-    //
-    // The plan TYPE is the route card's decision, not the client's
-    // (`route_cards.plan_type`, migration 0123: how the item is normally
-    // made). Whatever planType the form sent is ignored for such a plan and
-    // the card's value is stored; an item with no card yet falls back to
-    // 'manufacture'. The Production Order re-reads the card when it is
-    // created and re-stamps the plan, so a card changed in between still wins.
-    const isRouteCardPlan = input.opsSource === 'route_card';
-    let planType = input.planType;
-    if (isRouteCardPlan) {
-      if (!input.itemId) {
-        throw new ValidationError(
-          'Pick the item from Item Master — a Production Order needs the item to find its Route Card',
-        );
-      }
-      const rc = await tx
-        .select({ planType: routeCards.planType })
-        .from(routeCards)
-        .where(
-          and(
-            eq(routeCards.companyId, companyId),
-            eq(routeCards.itemId, input.itemId),
-            isNull(routeCards.deletedAt),
-          ),
-        )
-        .limit(1);
-      planType = rc[0]?.planType ?? 'manufacture';
-      // ADR-171: bought items are flagged on the Item Master (Source = Buy) and
-      // raise a PR from the Planning line — a card still marked with the
-      // retired "Direct Purchase" tile must not silently become an
-      // un-orderable plan.
-      if (planType === 'direct_purchase') {
-        throw new ValidationError(
-          `Route card for ${input.itemCodeText ?? 'this item'} is marked Direct Purchase (legacy) — ` +
-            'set the item\'s Source to Buy in Item Master and use "+ PR" on the line instead',
-        );
-      }
+  // Direct Purchase (buy finished item outright) is not valid for job-work —
+  // the client owns the job and supplies the material.
+  if (planType === 'direct_purchase' && input.jwLineId) {
+    throw new ValidationError('A Buy plan is not allowed for a JWSO order.');
+  }
+
+  await assertPlanQtyWithinRemaining(tx, companyId, {
+    soLineId: input.soLineId ?? null,
+    jwLineId: input.jwLineId ?? null,
+    planQty: input.planQty,
+    bomMasterId: input.bomMasterId ?? null,
+    bomChildCode: input.bomChildCode ?? null,
+  });
+
+  // ADR-193 phase 3a — RM item + qty per piece, validated as a pair. When the
+  // caller does not send the item at all (undefined — the SO Planning
+  // "+ Plan" box), it defaults from the item's active Route Card, the source
+  // of truth, exactly as getDefaultRouteOpsForItem serves it. An explicit
+  // null means the user cleared it and stays null.
+  let rmInput: {
+    rawMaterialItemId?: string | null | undefined;
+    rmQtyPerPiece?: number | null | undefined;
+  } = input;
+  if (input.rawMaterialItemId === undefined && input.itemId) {
+    const rcRm = await tx
+      .select({
+        rawMaterialItemId: routeCards.rawMaterialItemId,
+        rmQtyPerPiece: routeCards.rmQtyPerPiece,
+      })
+      .from(routeCards)
+      .innerJoin(
+        items,
+        and(
+          eq(items.id, routeCards.rawMaterialItemId),
+          eq(items.companyId, routeCards.companyId),
+          isNull(items.deletedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(routeCards.companyId, companyId),
+          eq(routeCards.itemId, input.itemId),
+          isNull(routeCards.deletedAt),
+        ),
+      )
+      .limit(1);
+    const rc = rcRm[0];
+    if (rc) {
+      rmInput = {
+        rawMaterialItemId: rc.rawMaterialItemId,
+        rmQtyPerPiece: input.rmQtyPerPiece ?? rc.rmQtyPerPiece,
+      };
     }
+  }
+  // Review M3: a Route Card default the user never typed must not block
+  // "+ Plan" — if it no longer passes the rule (item retyped), drop it.
+  const defaulted = input.rawMaterialItemId === undefined && rmInput !== input;
+  const rmItem = defaulted
+    ? await resolveRmItem(tx, companyId, rmInput).catch(() => ({
+        rawMaterialItemId: null,
+        rmQtyPerPiece: null,
+      }))
+    : await resolveRmItem(tx, companyId, rmInput);
 
-    // Direct Purchase (buy finished item outright) is not valid for job-work —
-    // the client owns the job and supplies the material.
-    if (planType === 'direct_purchase' && input.jwLineId) {
-      throw new ValidationError('Direct Purchase is not allowed for a job-work (JWSO) order');
-    }
-
-    await assertPlanQtyWithinRemaining(tx, companyId, {
+  const inserted = await tx
+    .insert(plans)
+    .values({
+      companyId,
+      code,
+      planDate: input.planDate,
+      planStatus: isRouteCardPlan ? 'planned' : 'in_planning',
+      planType,
+      opsSource: isRouteCardPlan ? 'route_card' : 'plan',
       soLineId: input.soLineId ?? null,
       jwLineId: input.jwLineId ?? null,
+      soCodeText: input.soCodeText ?? null,
+      lineNo: input.lineNo ?? null,
+      itemId: input.itemId ?? null,
+      itemCodeText: input.itemCodeText ?? null,
+      itemNameText: input.itemNameText ?? null,
+      orderQty: input.orderQty,
       planQty: input.planQty,
+      plannedStartDate: input.plannedStartDate ?? null,
+      plannedEndDate: input.plannedEndDate ?? null,
+      // Customer Dispatch Date (0137) — the day the goods must leave for the customer.
+      customerDispatchDate: input.customerDispatchDate ?? null,
+      // Raw material (0106) — both masters optional and independent. The FK
+      // and the text snapshot are stored together; the snapshot is what is
+      // displayed and printed, and what gets copied onto the JC at execute.
+      rawMaterialGradeId: input.rawMaterialGradeId ?? null,
+      rawMaterialGradeText: input.rawMaterialGradeText ?? null,
+      rawMaterialSizeId: input.rawMaterialSizeId ?? null,
+      rawMaterialSizeText: input.rawMaterialSizeText ?? null,
+      ...rmItem,
       bomMasterId: input.bomMasterId ?? null,
+      bomParentCode: input.bomParentCode ?? null,
       bomChildCode: input.bomChildCode ?? null,
-    });
+      dpVendorId: input.dpVendorId ?? null,
+      dpVendorCodeText: input.dpVendorCodeText ?? null,
+      dpCost: numericToString(input.dpCost),
+      dpRemarks: input.dpRemarks ?? null,
+      foVendorId: input.foVendorId ?? null,
+      foVendorCodeText: input.foVendorCodeText ?? null,
+      foProcess: input.foProcess ?? null,
+      foRate: numericToString(input.foRate),
+      foMaterialSrc: input.foMaterialSrc ?? null,
+      foDeliveryDate: input.foDeliveryDate ?? null,
+      foCostCenter: input.foCostCenter ?? null,
+      foRemarks: input.foRemarks ?? null,
+      requiredDocs: input.requiredDocs ?? [],
+      remarks: input.remarks ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const plan = inserted[0]!;
 
-    const inserted = await tx
-      .insert(plans)
-      .values({
-        companyId,
-        code,
-        planDate: input.planDate,
-        planStatus: isRouteCardPlan ? 'planned' : 'in_planning',
-        planType,
-        opsSource: isRouteCardPlan ? 'route_card' : 'plan',
-        soLineId: input.soLineId ?? null,
-        jwLineId: input.jwLineId ?? null,
-        soCodeText: input.soCodeText ?? null,
-        lineNo: input.lineNo ?? null,
-        itemId: input.itemId ?? null,
-        itemCodeText: input.itemCodeText ?? null,
-        itemNameText: input.itemNameText ?? null,
-        orderQty: input.orderQty,
-        planQty: input.planQty,
-        plannedStartDate: input.plannedStartDate ?? null,
-        plannedEndDate: input.plannedEndDate ?? null,
-        // Customer Dispatch Date (0137) — the day the goods must leave for the customer.
-        customerDispatchDate: input.customerDispatchDate ?? null,
-        // Raw material (0106) — both masters optional and independent. The FK
-        // and the text snapshot are stored together; the snapshot is what is
-        // displayed and printed, and what gets copied onto the JC at execute.
-        rawMaterialGradeId: input.rawMaterialGradeId ?? null,
-        rawMaterialGradeText: input.rawMaterialGradeText ?? null,
-        rawMaterialSizeId: input.rawMaterialSizeId ?? null,
-        rawMaterialSizeText: input.rawMaterialSizeText ?? null,
-        bomMasterId: input.bomMasterId ?? null,
-        bomParentCode: input.bomParentCode ?? null,
-        bomChildCode: input.bomChildCode ?? null,
-        dpVendorId: input.dpVendorId ?? null,
-        dpVendorCodeText: input.dpVendorCodeText ?? null,
-        dpCost: numericToString(input.dpCost),
-        dpRemarks: input.dpRemarks ?? null,
-        foVendorId: input.foVendorId ?? null,
-        foVendorCodeText: input.foVendorCodeText ?? null,
-        foProcess: input.foProcess ?? null,
-        foRate: numericToString(input.foRate),
-        foMaterialSrc: input.foMaterialSrc ?? null,
-        foDeliveryDate: input.foDeliveryDate ?? null,
-        foCostCenter: input.foCostCenter ?? null,
-        foRemarks: input.foRemarks ?? null,
-        requiredDocs: input.requiredDocs ?? [],
-        remarks: input.remarks ?? null,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    const plan = inserted[0]!;
+  if (!isRouteCardPlan && input.ops && input.ops.length > 0) {
+    await insertOps(tx, companyId, plan.id, input.ops, user);
+  }
 
-    if (!isRouteCardPlan && input.ops && input.ops.length > 0) {
-      await insertOps(tx, companyId, plan.id, input.ops, user);
-    }
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'Plan',
+      detail: detail(plan),
+      refId: plan.code,
+    },
+    companyId,
+    user,
+  );
 
-    await emitActivityLog(
-      tx,
-      {
-        action: 'CREATE',
-        entity: 'Plan',
-        detail: detail(plan),
-        refId: plan.code,
-      },
-      companyId,
-      user,
-    );
-
-    return getPlanInTx(tx, plan.id, companyId);
-  });
+  return getPlanInTx(tx, plan.id, companyId);
 }
 
 export async function updatePlan(
@@ -700,11 +884,11 @@ export async function updatePlan(
       .limit(1)
       .for('update');
     const row = existing[0];
-    if (!row) throw new NotFoundError(`Plan ${id} not found`);
+    if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     if (!EDITABLE_STATUSES.includes(row.planStatus)) {
       throw new ValidationError(
-        `Plan in status '${row.planStatus}' cannot be edited (only in_planning / planned)`,
+        `Plan ${row.code} is ${labelOf(PLAN_STATUS_LABEL, row.planStatus)}. Only In Planning or Planned plans can be edited.`,
       );
     }
 
@@ -714,8 +898,8 @@ export async function updatePlan(
     // one-order-per-plan rule kept shut: the plan could be cut below what its
     // Job Cards are already building, or have its raw material re-typed after
     // the card had snapshotted it. Both are refused while live work exists.
-    // Short-closed orders do not count — their qty went back to the plan.
-    const { coveredQty, orderCodes } = await readPlanOrderCoverage(tx, row.id);
+    // ADR-184: a stopped order counts what it credited (lib/plan-order-coverage.ts).
+    const { coveredQty } = await readPlanOrderCoverage(tx, row.id);
     if (coveredQty > 0) {
       const resultingPlanQty = input.planQty ?? row.planQty;
       const belowCovered = planQtyBelowCoveredError(row.code, resultingPlanQty, coveredQty);
@@ -727,12 +911,24 @@ export async function updatePlan(
         changed(input.rawMaterialGradeId, row.rawMaterialGradeId) ||
         changed(input.rawMaterialGradeText, row.rawMaterialGradeText) ||
         changed(input.rawMaterialSizeId, row.rawMaterialSizeId) ||
-        changed(input.rawMaterialSizeText, row.rawMaterialSizeText);
-      if (rawMaterialRetyped) {
+        changed(input.rawMaterialSizeText, row.rawMaterialSizeText) ||
+        changed(input.rawMaterialItemId, row.rawMaterialItemId) ||
+        changed(input.rmQtyPerPiece, row.rmQtyPerPiece);
+      // ADR-184 review — only an order STILL BEING MADE has a card that copied
+      // the raw material and would disagree with the plan. A stopped order's
+      // credited pieces count toward Covered (above) but no longer lock the
+      // material: the remake order for the Pending qty may need a new one.
+      const liveRows = (await tx.execute(sql`
+        SELECT COALESCE(ARRAY_AGG(po.code ORDER BY po.code), '{}') AS codes
+        FROM public.production_orders po
+        WHERE po.plan_id = ${row.id}::uuid
+          AND po.deleted_at IS NULL
+          AND po.status IN ('open', 'partially_closed')
+      `)) as unknown as Array<{ codes: string[] | null }>;
+      const liveOrderCodes = liveRows[0]?.codes ?? [];
+      if (rawMaterialRetyped && liveOrderCodes.length > 0) {
         throw new ValidationError(
-          `Plan ${row.code} already has Production Order(s) ${orderCodes.join(', ')} — ` +
-            `raw material cannot be changed now; their Job Cards have already copied it. ` +
-            `Short close the order(s) first.`,
+          `Cannot change raw material: Production Order ${liveOrderCodes.join(', ')} exists. Short close it first.`,
         );
       }
     }
@@ -740,7 +936,7 @@ export async function updatePlan(
     // Direct Purchase is not valid for a job-work (JWSO) plan.
     const resultingType = input.planType ?? row.planType;
     if (resultingType === 'direct_purchase' && row.jwLineId) {
-      throw new ValidationError('Direct Purchase is not allowed for a job-work (JWSO) order');
+      throw new ValidationError('A Buy plan is not allowed for a JWSO order.');
     }
 
     // ADR-170 — a route-card-driven plan has no operations of its own; they
@@ -792,6 +988,18 @@ export async function updatePlan(
       updates['rawMaterialSizeId'] = input.rawMaterialSizeId;
     if (input.rawMaterialSizeText !== undefined)
       updates['rawMaterialSizeText'] = input.rawMaterialSizeText;
+    // ADR-193 phase 3a — RM item + qty per piece. Same "only when sent" rule,
+    // but validated as a PAIR: a field left out keeps its stored value, and
+    // the resulting pair must still be both-set or both-null.
+    if (input.rawMaterialItemId !== undefined || input.rmQtyPerPiece !== undefined) {
+      const rmItem = await resolveRmItem(tx, companyId, {
+        rawMaterialItemId:
+          input.rawMaterialItemId !== undefined ? input.rawMaterialItemId : row.rawMaterialItemId,
+        rmQtyPerPiece: input.rmQtyPerPiece !== undefined ? input.rmQtyPerPiece : row.rmQtyPerPiece,
+      });
+      updates['rawMaterialItemId'] = rmItem.rawMaterialItemId;
+      updates['rmQtyPerPiece'] = rmItem.rmQtyPerPiece;
+    }
     if (input.dpVendorId !== undefined) updates['dpVendorId'] = input.dpVendorId;
     if (input.dpVendorCodeText !== undefined) updates['dpVendorCodeText'] = input.dpVendorCodeText;
     if (input.dpCost !== undefined) updates['dpCost'] = numericToString(input.dpCost);
@@ -894,7 +1102,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const row = existing[0];
-    if (!row) throw new NotFoundError(`Plan ${id} not found`);
+    if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     if (row.planStatus === 'planned') {
       // Idempotent: caller sent finalize again on an already-planned row.
@@ -902,7 +1110,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
     }
     if (row.planStatus !== 'in_planning') {
       throw new ValidationError(
-        `Plan in status '${row.planStatus}' cannot be finalized (must be in_planning)`,
+        `Only an In Planning plan can be marked Planned. This one is ${labelOf(PLAN_STATUS_LABEL, row.planStatus)}.`,
       );
     }
 
@@ -920,9 +1128,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
         .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
       const ops = opCheck[0]?.c ?? 0;
       if (Number(ops) === 0) {
-        throw new ValidationError(
-          `${row.planType} plan requires at least 1 operation to be finalized`,
-        );
+        throw new ValidationError('Add at least one operation before marking the plan Planned.');
       }
     }
 
@@ -936,7 +1142,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
       {
         action: 'PLAN_FINALIZED',
         entity: 'Plan',
-        detail: `${row.code} — ${row.planType} marked Planned`,
+        detail: `${row.code} — ${labelOf(PLAN_TYPE_LABEL, row.planType)} marked Planned`,
         refId: row.code,
       },
       companyId,
@@ -967,11 +1173,11 @@ export async function softDeletePlan(id: string, user: AuthContext): Promise<{ o
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const row = existing[0];
-    if (!row) throw new NotFoundError(`Plan ${id} not found`);
+    if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     if (!EDITABLE_STATUSES.includes(row.planStatus)) {
       throw new ConflictError(
-        `Plan in status '${row.planStatus}' cannot be deleted — cancel via the workflow instead`,
+        `Plan ${row.code} is ${labelOf(PLAN_STATUS_LABEL, row.planStatus)}. Only In Planning or Planned plans can be deleted.`,
       );
     }
 
@@ -993,8 +1199,11 @@ export async function softDeletePlan(id: string, user: AuthContext): Promise<{ o
     const orderCodes = orderRows.map((r) => r.code);
     if (orderCodes.length > 0) {
       throw new ConflictError(
-        `Plan ${row.code} has Production Order(s) ${orderCodes.join(', ')} — ` +
-          `short close them first.`,
+        // ADR-185 — the old wording told the user to short close the orders,
+        // yet a short-closed order blocks the delete too (it is history). Say
+        // what is true: a plan with order history stays.
+        `Plan ${row.code} has Production Order(s) ${orderCodes.join(', ')}. ` +
+          `A plan with order history cannot be deleted.`,
       );
     }
 
@@ -1044,6 +1253,12 @@ export async function getDefaultRouteOpsForItem(
         rawMaterialGradeText: routeCards.rawMaterialGradeText,
         rawMaterialSizeId: routeCards.rawMaterialSizeId,
         rawMaterialSizeText: routeCards.rawMaterialSizeText,
+        rawMaterialItemId: routeCards.rawMaterialItemId,
+        rmQtyPerPiece: routeCards.rmQtyPerPiece,
+        rawMaterialItemCode: sql<string | null>`(
+          SELECT rmi.code FROM public.items rmi
+          WHERE rmi.id = ${routeCards.rawMaterialItemId} AND rmi.company_id = ${routeCards.companyId}
+        )`,
       })
       .from(routeCards)
       .where(
@@ -1064,6 +1279,9 @@ export async function getDefaultRouteOpsForItem(
         rawMaterialGradeText: null,
         rawMaterialSizeId: null,
         rawMaterialSizeText: null,
+        rawMaterialItemId: null,
+        rawMaterialItemCode: null,
+        rmQtyPerPiece: null,
       };
 
     const ops = await tx
@@ -1096,6 +1314,9 @@ export async function getDefaultRouteOpsForItem(
       rawMaterialGradeText: rc.rawMaterialGradeText,
       rawMaterialSizeId: rc.rawMaterialSizeId,
       rawMaterialSizeText: rc.rawMaterialSizeText,
+      rawMaterialItemId: rc.rawMaterialItemId,
+      rawMaterialItemCode: rc.rawMaterialItemCode ?? null,
+      rmQtyPerPiece: rc.rmQtyPerPiece,
     };
   });
 }
@@ -1135,7 +1356,7 @@ export async function executePlan(id: string, user: AuthContext): Promise<Execut
       .limit(1)
       .for('update');
     const plan = existing[0];
-    if (!plan) throw new NotFoundError(`Plan ${id} not found`);
+    if (!plan) throw new NotFoundError('Plan not found. It may have been deleted.');
     // ADR-170 — a route-card-driven plan is never executed here: its Job Card
     // is built by a Production Order, which is where the Route Card and the
     // target date are chosen.
@@ -1146,7 +1367,7 @@ export async function executePlan(id: string, user: AuthContext): Promise<Execut
     }
     if (plan.planStatus !== 'planned') {
       throw new ValidationError(
-        `Plan in status '${plan.planStatus}' cannot be executed (must be planned)`,
+        `Only a Planned plan can create a JC / PR. This one is ${labelOf(PLAN_STATUS_LABEL, plan.planStatus)}.`,
       );
     }
 
@@ -1202,6 +1423,9 @@ export interface JcBuildPlan {
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  // ADR-193 phase 3a — RM item + qty per piece, copied onto the JC like grade/size.
+  rawMaterialItemId: string | null;
+  rmQtyPerPiece: number | null;
 }
 
 export interface JcBuildResult {
@@ -1262,7 +1486,7 @@ export async function buildJobCardFromOps(
   },
 ): Promise<JcBuildResult> {
   const { plan, ops, user, companyId } = opts;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const jcCode = await nextJcCode(tx, companyId);
   // How many pieces THIS card is for — the Production Order's Order Qty since
   // ADR-182, the whole plan qty on the old Execute path. Everything built below
@@ -1295,6 +1519,9 @@ export async function buildJobCardFromOps(
       rawMaterialGradeText: plan.rawMaterialGradeText,
       rawMaterialSizeId: plan.rawMaterialSizeId,
       rawMaterialSizeText: plan.rawMaterialSizeText,
+      // ADR-193 phase 3a — RM item + qty per piece, from the plan's snapshot.
+      rawMaterialItemId: plan.rawMaterialItemId,
+      rmQtyPerPiece: plan.rmQtyPerPiece,
       // ADR-182 — what was really cut, beside the master-picked size above.
       actualSize: opts.actualSize ?? null,
       createdBy: user.id,
@@ -1451,16 +1678,14 @@ async function executeManufacture(
     .where(and(eq(planOps.planId, plan.id), isNull(planOps.deletedAt)))
     .orderBy(asc(planOps.opSeq));
   if (ops.length === 0) {
-    throw new ValidationError(`${plan.planType} plan cannot be executed with zero operations`);
+    throw new ValidationError('Add at least one operation before running this plan.');
   }
   // Routing rule: a QC op may not sit directly after an OSP op. A plan-born JC
   // is never a rework/repair child, so no exemption. Checked on the plan's own
   // ops (already ordered by op_seq), before the terminal QC op is appended.
   assertNoQcDirectlyAfterOutsource(ops);
   if (!plan.itemId) {
-    throw new ValidationError(
-      `${plan.planType} plan requires a resolved itemId to create a JC (item_code_text alone is not enough)`,
-    );
+    throw new ValidationError('Please select the Item Code from Item Master first.');
   }
   const itemId = plan.itemId;
 
@@ -1506,6 +1731,8 @@ async function executeManufacture(
           rawMaterialGradeText: plan.rawMaterialGradeText,
           rawMaterialSizeId: plan.rawMaterialSizeId,
           rawMaterialSizeText: plan.rawMaterialSizeText,
+          rawMaterialItemId: plan.rawMaterialItemId,
+          rmQtyPerPiece: plan.rmQtyPerPiece,
         },
       );
     },
@@ -1528,8 +1755,8 @@ async function executeManufacture(
       entity: 'Plan',
       detail:
         raisedPrCodes.length > 0
-          ? `${plan.code} → JC ${jc.code} (${plan.planType}, ${ops.length} ops) + OSP PR ${raisedPrCodes.join(', ')}`
-          : `${plan.code} → JC ${jc.code} (${plan.planType}, ${ops.length} ops)`,
+          ? `${plan.code} → JC ${jc.code} (${labelOf(PLAN_TYPE_LABEL, plan.planType)}, ${ops.length} operations) + OSP PR ${raisedPrCodes.join(', ')}`
+          : `${plan.code} → JC ${jc.code} (${labelOf(PLAN_TYPE_LABEL, plan.planType)}, ${ops.length} operations)`,
       refId: plan.code,
     },
     plan.companyId,
@@ -1548,9 +1775,9 @@ async function executeDirectPurchase(
   user: AuthContext,
 ): Promise<ExecutePlanResult> {
   if (!plan.dpVendorId && !plan.dpVendorCodeText) {
-    throw new ValidationError('direct_purchase plan requires a vendor before execute');
+    throw new ValidationError('Vendor is required for a Buy plan.');
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
 
   const prRows = await tx
@@ -1589,7 +1816,7 @@ async function executeDirectPurchase(
     {
       action: 'PLAN_EXECUTED',
       entity: 'Plan',
-      detail: `${plan.code} → PR ${pr.code} (direct_purchase)`,
+      detail: `${plan.code} → PR ${pr.code} (Buy)`,
       refId: plan.code,
     },
     plan.companyId,
@@ -1608,12 +1835,12 @@ async function executeFullOutsource(
   user: AuthContext,
 ): Promise<ExecutePlanResult> {
   if (!plan.foVendorId && !plan.foVendorCodeText) {
-    throw new ValidationError('full_outsource plan requires a vendor before execute');
+    throw new ValidationError('Vendor is required for a Full Outsource plan.');
   }
   if (!plan.foProcess) {
-    throw new ValidationError('full_outsource plan requires a process description before execute');
+    throw new ValidationError('Process is required for a Full Outsource plan.');
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
 
   // Seed a Job Card with ONE default outsource op (the default OSP route), so a
   // full-outsource plan lands as an editable JC op — vendor/cost prefilled from
@@ -1642,6 +1869,8 @@ async function executeFullOutsource(
         rawMaterialGradeText: plan.rawMaterialGradeText,
         rawMaterialSizeId: plan.rawMaterialSizeId,
         rawMaterialSizeText: plan.rawMaterialSizeText,
+        rawMaterialItemId: plan.rawMaterialItemId,
+        rmQtyPerPiece: plan.rmQtyPerPiece,
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -1736,7 +1965,7 @@ async function executeFullOutsource(
     {
       action: 'PLAN_EXECUTED',
       entity: 'Plan',
-      detail: `${plan.code} → ${jc ? `JC ${jc.code} + ` : ''}PR ${jwPr.code} (full_outsource)`,
+      detail: `${plan.code} → ${jc ? `JC ${jc.code} + ` : ''}PR ${jwPr.code} (Full Outsource)`,
       refId: plan.code,
     },
     plan.companyId,
@@ -1758,11 +1987,13 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
 
   return withUserContext(user, async (tx) => {
     const [statusCounts, recentRows, needsPlanningRows] = await Promise.all([
+      // ADR-185 — counted by the status each row SHOWS (EFFECTIVE_STATUS_SQL),
+      // the same expression the list filters on.
       tx
-        .select({ status: plans.planStatus, c: count() })
+        .select({ status: sql<string>`${EFFECTIVE_STATUS_SQL}`, c: count() })
         .from(plans)
         .where(and(eq(plans.companyId, companyId), isNull(plans.deletedAt)))
-        .groupBy(plans.planStatus),
+        .groupBy(sql`1`),
       tx
         .select({
           plan: plans,
@@ -1770,6 +2001,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
           itemName: items.name,
           itemRevision: SO_LINE_REVISION,
           clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
+          rmItemCode: PLAN_RM_ITEM_CODE_SQL,
         })
         .from(plans)
         .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -1786,7 +2018,8 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         .where(and(eq(plans.companyId, companyId), isNull(plans.deletedAt)))
         .orderBy(desc(plans.planDate), asc(plans.code))
         .limit(50),
-      // needsPlanning = SO lines on open SOs with NO non-cancelled plan covering them.
+      // needsPlanning = open SO lines on open SOs with qty still TO PLAN (ADR-185,
+      // lib/so-line-coverage.ts) — the same rows the Needs Planning table lists.
       // Counts each unplanned SO line once. Same shape as the legacy renderPlanDashboard
       // "Needs Planning" tile: open SO lines that haven't been planned yet.
       tx.execute(sql`
@@ -1798,16 +2031,12 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
           AND so.deleted_at IS NULL
           AND sol.deleted_at IS NULL
           AND sol.status = 'open'
-          AND NOT EXISTS (
-            SELECT 1 FROM public.plans p
-            WHERE p.so_line_id = sol.id
-              AND p.deleted_at IS NULL
-              AND p.plan_status <> 'cancelled'
-          )
+          -- ADR-185 — exactly the rows the Needs Planning table lists.
+          AND sol.order_qty > ${sql.raw(soLineCoveredRaw('sol'))}
       `),
     ]);
 
-    const byStatus = new Map<PlanStatus, number>();
+    const byStatus = new Map<string, number>();
     for (const r of statusCounts) byStatus.set(r.status, Number(r.c));
 
     const recentIds = recentRows.map((r) => r.plan.id);
@@ -1832,10 +2061,12 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         jcCreated: byStatus.get('jc_created') ?? 0,
         prCreated: byStatus.get('pr_created') ?? 0,
         inProduction: byStatus.get('in_production') ?? 0,
+        rcPending: byStatus.get('route_card_pending') ?? 0,
+        rcCreated: byStatus.get('gen_production_order') ?? 0,
         complete: byStatus.get('complete') ?? 0,
       },
       recentPlans: recentRows.map((r) => ({
-        ...toPlan(r.plan),
+        ...toPlan(r.plan, r.rmItemCode),
         itemCode: r.itemCode ?? null,
         // Null passed through, not coerced to a blank string: the UI has to be
         // able to tell "this plan has no SO line" from "the revision is empty".
@@ -1857,15 +2088,6 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
 
   return withUserContext(user, async (tx) => {
     const rows = await tx.execute(sql`
-      WITH planned_qty AS (
-        SELECT so_line_id, COALESCE(SUM(plan_qty), 0)::int AS qty
-        FROM public.plans
-        WHERE company_id = ${companyId}::uuid
-          AND deleted_at IS NULL
-          AND plan_status <> 'cancelled'
-          AND so_line_id IS NOT NULL
-        GROUP BY so_line_id
-      )
       SELECT
         sol.id            AS so_line_id,
         so.id             AS so_id,
@@ -1886,17 +2108,21 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
         so.customer_name  AS customer_name,
         sol.due_date::text AS due_date,
         sol.order_qty     AS order_qty,
-        COALESCE(pq.qty, 0)::int AS planned_qty,
-        GREATEST(sol.order_qty - COALESCE(pq.qty, 0), 0)::int AS remaining_qty
+        -- ADR-185 — the one "covered / to plan" rule (lib/so-line-coverage.ts),
+        -- the same figures SO Planning states for this line and the same rows
+        -- the Needs Planning KPI tile counts. Covered is computed ONCE per
+        -- line (the LATERAL) and to-plan derived from it.
+        cov.covered       AS planned_qty,
+        GREATEST(sol.order_qty - cov.covered, 0)::numeric AS remaining_qty
       FROM public.sales_order_lines sol
       JOIN public.sales_orders so ON so.id = sol.sales_order_id
-      LEFT JOIN planned_qty pq ON pq.so_line_id = sol.id
+      CROSS JOIN LATERAL (SELECT ${sql.raw(soLineCoveredRaw('sol'))} AS covered) cov
       WHERE so.company_id = ${companyId}::uuid
         AND so.status = 'open'
         AND so.deleted_at IS NULL
         AND sol.deleted_at IS NULL
         AND sol.status = 'open'
-        AND COALESCE(pq.qty, 0) < sol.order_qty
+        AND sol.order_qty > cov.covered
       ORDER BY sol.due_date ASC NULLS LAST, so.code ASC, sol.line_no ASC
     `);
 
@@ -1951,9 +2177,11 @@ async function insertOps(
   user: AuthContext,
 ): Promise<void> {
   const seen = new Set<number>();
-  for (const op of ops) {
+  for (const [i, op] of ops.entries()) {
     if (seen.has(op.opSeq)) {
-      throw new ValidationError(`Duplicate op_seq ${op.opSeq} within plan ops`);
+      throw new ValidationError(
+        `Row #${i + 1}: Op ${opSrNo(op.opSeq)} is used twice. Each Op number must be unique.`,
+      );
     }
     seen.add(op.opSeq);
   }
@@ -1995,6 +2223,13 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       itemName: items.name,
       itemRevision: SO_LINE_REVISION,
       clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
+      // ADR-185 — same facts, same SQL as getPlan and the Plans list.
+      coveredQty: PLAN_COVERED_QTY_SQL,
+      pendingQty: PLAN_PENDING_QTY_SQL,
+      activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
+      openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
+      hasRouteCard: HAS_ROUTE_CARD_SQL,
+      rmItemCode: PLAN_RM_ITEM_CODE_SQL,
     })
     .from(plans)
     .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -2011,14 +2246,14 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     .where(and(eq(plans.id, id), eq(plans.companyId, companyId)))
     .limit(1);
   const row = headers[0];
-  if (!row) throw new NotFoundError(`Plan ${id} not found after write`);
+  if (!row) throw new NotFoundError('Plan not found. Refresh the page.');
   const opRows = await tx
     .select()
     .from(planOps)
     .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)))
     .orderBy(asc(planOps.opSeq));
   return {
-    ...toPlan(row.plan),
+    ...toPlan(row.plan, row.rmItemCode),
     itemCode: row.itemCode ?? null,
     // Null passed through, not coerced to a blank string: the UI has to be able
     // to tell "this plan has no SO line" from "the revision is empty".
@@ -2030,10 +2265,20 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     // (see hidePlanMoney, which sets this false). Default true so the field is
     // always present and the gate stays the single decision point.
     priceVisible: true,
+    derivedStatus: derivePlanStatus({
+      opsSource: row.plan.opsSource,
+      planStatus: row.plan.planStatus,
+      hasRouteCard: Boolean(row.hasRouteCard),
+      activeOrderCount: Number(row.activeOrderCount ?? 0),
+      openOrderCount: Number(row.openOrderCount ?? 0),
+      pendingQty: Number(row.pendingQty ?? 0),
+    }),
+    coveredQty: Number(row.coveredQty ?? 0),
+    pendingQty: Number(row.pendingQty ?? 0),
   };
 }
 
-function toPlan(row: typeof plans.$inferSelect): Plan {
+function toPlan(row: typeof plans.$inferSelect, rmItemCode: string | null): Plan {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -2060,6 +2305,9 @@ function toPlan(row: typeof plans.$inferSelect): Plan {
     rawMaterialGradeText: row.rawMaterialGradeText,
     rawMaterialSizeId: row.rawMaterialSizeId,
     rawMaterialSizeText: row.rawMaterialSizeText,
+    rawMaterialItemId: row.rawMaterialItemId,
+    rawMaterialItemCode: rmItemCode ?? null,
+    rmQtyPerPiece: row.rmQtyPerPiece,
     bomMasterId: row.bomMasterId,
     bomParentCode: row.bomParentCode,
     bomChildCode: row.bomChildCode,
@@ -2166,7 +2414,7 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Plan ${id} not found`);
+    if (!header) throw new NotFoundError('Plan not found. It may have been deleted.');
 
     const row = (
       id_: string,
@@ -2431,7 +2679,7 @@ export async function reserveStock(
         entity: 'Reservation',
         detail:
           `${input.soCodeText} L${input.lineNo} — reserved ${input.qty} of ${itemCode ?? 'item'} ` +
-          `(available ${created.position.availableQty} left, physical unchanged at ${created.position.physicalQty})`,
+          `(available ${created.position.availableQty}, physical unchanged at ${created.position.physicalQty})`,
         refId: input.soCodeText,
       },
       companyId,

@@ -51,6 +51,16 @@ import { readStockPositionLocked, reconcileLineReservations } from '../../lib/st
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { cascadeBomToSoLine } from '../bom-master/cascade';
+import {
+  describeCommitments,
+  describeSoBlockingDocuments,
+  hasCommitments,
+  lineLabel,
+  qtyReductionBlocker,
+  readSoLineCommitments,
+} from './line-commitments';
+import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
+import { buildSoEditSummary, type SoLineSnapshot } from './edit-summary';
 
 function soDetail(code: string, customerName: string | null | undefined): string {
   return customerName ? `${code} — ${customerName}` : code;
@@ -73,6 +83,7 @@ import type {
   SoMilestone,
   UpdateSalesOrderInput,
 } from './schema';
+import type { SoTotals } from '@innovic/shared';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -97,7 +108,7 @@ async function assertClientExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Client ${clientId} not found in this company`);
+    throw new ValidationError('Selected Customer was not found. Please select the Customer again.');
   }
   return rows[0]!.name;
 }
@@ -138,9 +149,7 @@ async function assertItemIdsExist(
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = unique.filter((id) => !found.has(id));
-    throw new ValidationError(`Item id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('Item not found. Please select the Item Code again.');
   }
 }
 
@@ -158,7 +167,7 @@ function resolveLineItemRefs(
   const code = line.itemCodeText?.trim();
   if (!code) {
     // Refine on the schema already blocks this, but be defensive.
-    throw new ValidationError('itemId or itemCodeText is required');
+    throw new ValidationError('Item Code is required.');
   }
   const found = resolved.get(code);
   return found ? { itemId: found, itemCodeText: null } : { itemId: null, itemCodeText: code };
@@ -205,7 +214,7 @@ function assignLineNos(lines: SalesOrderLineInput[], startFrom: number): number[
   // If any line has lineNo, all must — otherwise reject (mixing is ambiguous).
   const provided = lines.filter((l) => l.lineNo !== undefined);
   if (provided.length > 0 && provided.length !== lines.length) {
-    throw new ValidationError('Provide lineNo on every line or none');
+    throw new ValidationError('Ln is required on every row, or leave all blank.');
   }
   if (provided.length === 0) {
     return lines.map((_, i) => startFrom + i);
@@ -216,7 +225,7 @@ function assignLineNos(lines: SalesOrderLineInput[], startFrom: number): number[
   for (const l of lines) {
     const n = l.lineNo!;
     if (seen.has(n)) {
-      throw new ValidationError(`Duplicate lineNo ${n} within input`);
+      throw new ValidationError(`Ln ${n} is used twice. Each row needs its own Ln.`);
     }
     seen.add(n);
     out.push(n);
@@ -396,6 +405,26 @@ function hideSoHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
   return { ...h, gstPercent: null, priceVisible: false };
 }
 
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** Σ Order Qty × Rate over the lines, GST at the SO's GST % (ADR-190). A
+ *  cancelled line is no longer part of the order (the line editor treats it as
+ *  removed), so it adds nothing. Closed / dispatched lines were ordered and
+ *  still count. */
+function computeSoTotals(
+  lines: ReadonlyArray<{ orderQty: number; rate: string | null; status: string }>,
+  gstPercentRaw: string | null,
+): SoTotals {
+  const subtotal = round2(
+    lines
+      .filter((l) => l.status !== 'cancelled')
+      .reduce((sum, l) => sum + Number(l.orderQty) * Number(l.rate ?? 0), 0),
+  );
+  const gstPercent = Number(gstPercentRaw ?? 0);
+  const gstAmount = round2((subtotal * gstPercent) / 100);
+  return { subtotal, gstPercent, gstAmount, grandTotal: round2(subtotal + gstAmount) };
+}
+
 function hideSoLineMoney<T extends { rate: string | null }>(l: T): T {
   return { ...l, rate: null };
 }
@@ -508,7 +537,7 @@ export async function listSalesOrders(
         GROUP BY sales_order_id
       ) line_agg ON line_agg.sales_order_id = so.id
       LEFT JOIN (
-        SELECT sol.sales_order_id, SUM(jc.order_qty) AS jc_qty
+        SELECT sol.sales_order_id, SUM(${jcEffectiveQtySql('jc')}) AS jc_qty
         FROM public.job_cards jc
         JOIN public.sales_order_lines sol ON jc.source_so_line_id = sol.id
         WHERE jc.deleted_at IS NULL
@@ -646,7 +675,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Sales order ${id} not found`);
+    if (!header) throw new NotFoundError('SO not found. It may have been moved to Trash.');
 
     const lineRows = await tx
       .select({
@@ -679,13 +708,15 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       billedRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.billed)]),
     );
 
-    // JC qty per SO line = Σ job_cards.order_qty whose source_so_line_id = line.
+    // JC qty per SO line = Σ of each card's JC Qty (lib/jc-effective-qty.ts:
+    // a stopped order's card counts what it credited) whose source_so_line_id = line.
     // Rework/repair children excluded — they re-make pieces the parent JC
     // already covers (QC-NC audit 2026-09-21, gap 3; same rule as the list).
     const jcRows = await tx
       .select({
         lineId: jobCards.sourceSoLineId,
-        jcQty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int`,
+        // ADR-185 — the shared JC Qty rule (stopped order → credited).
+        jcQty: sql<number>`coalesce(sum(${jcEffectiveQtySql('"job_cards"')}), 0)::int`,
       })
       .from(jobCards)
       .innerJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
@@ -730,6 +761,13 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       ...(showMoney ? headerOut : hideSoHeaderMoney(headerOut)),
       createdByName,
       bomMasterCode,
+      // ADR-190 — totals are the server's arithmetic, never the browser's.
+      totals: showMoney
+        ? computeSoTotals(
+            lineRows.map((r) => r.row),
+            header.gstPercent,
+          )
+        : null,
       lines: lineRows.map((r) => {
         const line = {
           ...toSalesOrderLine(r.row, r.itemCode, r.itemImagePath ?? null),
@@ -788,7 +826,7 @@ export async function getSalesOrderRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Sales order ${id} not found`);
+    if (!header) throw new NotFoundError('SO not found. It may have been moved to Trash.');
 
     // SO lines drive the plan / job-card / PO joins and the upstream BOM link
     // (all reference sales_order_lines).
@@ -1104,7 +1142,7 @@ export async function getSalesOrderDrawingHistory(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Sales order ${id} not found`);
+    if (!header) throw new NotFoundError('SO not found. It may have been moved to Trash.');
 
     // One pass over every revision row of every live line. The line's identity
     // (item code, part name, current Rev) is joined LIVE — the item_code_text
@@ -1567,7 +1605,7 @@ export async function updateSalesOrder(
       )
       .limit(1);
     const existingHdr = existingHdrRows[0];
-    if (!existingHdr) throw new NotFoundError(`Sales order ${id} not found`);
+    if (!existingHdr) throw new NotFoundError('SO not found. It may have been moved to Trash.');
 
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;
@@ -1584,7 +1622,30 @@ export async function updateSalesOrder(
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     if (h.type !== undefined) updates['type'] = h.type;
-    if (h.status !== undefined) updates['status'] = h.status;
+    // ADR-184 — 'closed' and 'dispatched' are set by the system (dispatch
+    // roll-up), never by hand. A manual change may only move among
+    // draft / open / cancelled; re-sending the stored value is a no-op and
+    // always allowed, so an unchanged form still saves.
+    if (h.status !== undefined && h.status !== existingHdr.status) {
+      const manual = ['draft', 'open', 'cancelled'];
+      if (!manual.includes(h.status) || !manual.includes(existingHdr.status)) {
+        throw new ValidationError(
+          `SO status cannot be changed by hand from '${existingHdr.status}' to '${h.status}' — ` +
+            `'closed' and 'dispatched' are set by the system from dispatches.`,
+        );
+      }
+      // Review fix — back to 'draft' ("not yet committed") is refused on the
+      // same grounds as 'cancelled': production / dispatch already runs on it.
+      if (h.status === 'cancelled' || h.status === 'draft') {
+        const blocking = await describeSoBlockingDocuments(tx, companyId, id);
+        if (blocking) {
+          throw new ValidationError(
+            `${existingHdr.code} cannot be set to ${h.status === 'draft' ? 'draft' : 'cancelled'} — it is used by ${blocking}. Remove or cancel those first.`,
+          );
+        }
+      }
+      updates['status'] = h.status;
+    }
     if (h.gstPercent !== undefined && showMoney) updates['gstPercent'] = gstToString(h.gstPercent);
     if (h.bomMasterId !== undefined) updates['bomMasterId'] = h.bomMasterId ?? null;
     if (h.bomStatus !== undefined) updates['bomStatus'] = h.bomStatus ?? null;
@@ -1594,19 +1655,27 @@ export async function updateSalesOrder(
     await tx.update(salesOrders).set(updates).where(eq(salesOrders.id, id));
 
     // Lines merge — only when caller provided a `lines` array (option C).
+    // Snapshot what the lines held BEFORE the merge: after it, a removed line
+    // is soft-deleted and a shrunk line already carries its new qty, so there
+    // is nothing left to compare against. ADR-184: the same snapshot feeds the
+    // before → after activity-log trail.
+    const before =
+      input.lines === undefined
+        ? []
+        : await tx
+            .select({
+              id: salesOrderLines.id,
+              lineNo: salesOrderLines.lineNo,
+              orderQty: salesOrderLines.orderQty,
+              itemId: salesOrderLines.itemId,
+              itemCodeText: salesOrderLines.itemCodeText,
+              rate: salesOrderLines.rate,
+              status: salesOrderLines.status,
+            })
+            .from(salesOrderLines)
+            .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
+    const linesBefore = input.lines !== undefined ? before : null;
     if (input.lines !== undefined) {
-      // Snapshot what the lines held BEFORE the merge: after it, a removed line
-      // is soft-deleted and a shrunk line already carries its new qty, so there
-      // is nothing left to compare against.
-      const before = await tx
-        .select({
-          id: salesOrderLines.id,
-          lineNo: salesOrderLines.lineNo,
-          orderQty: salesOrderLines.orderQty,
-        })
-        .from(salesOrderLines)
-        .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
-
       await mergeLines(tx, id, companyId, input.lines, user, showMoney);
 
       await reconcileAmendedLineReservations(tx, companyId, id, existingHdr.code, before, user);
@@ -1632,23 +1701,46 @@ export async function updateSalesOrder(
     const clientPoFilePath = await readClientPoFilePath(tx, id);
 
     const updatedHdr = updatedHdrRows[0]!;
+    const updatedCodeMap = await resolveItemCodesById(
+      tx,
+      [...lineRows.map((l) => l.itemId), ...before.map((l) => l.itemId)],
+      companyId,
+    );
+    // ADR-184 — before → after trail of what this save changed.
+    const toLineSnap = (l: {
+      id: string;
+      lineNo: number;
+      orderQty: number;
+      itemId: string | null;
+      itemCodeText: string | null;
+      rate: string | null;
+      status: string;
+    }): SoLineSnapshot => ({
+      id: l.id,
+      lineNo: l.lineNo,
+      itemCode: (l.itemId ? updatedCodeMap.get(l.itemId) : undefined) ?? l.itemCodeText ?? null,
+      orderQty: Number(l.orderQty),
+      rate: l.rate,
+      status: l.status,
+    });
     await emitActivityLog(
       tx,
       {
         action: 'EDIT',
         entity: 'SalesOrder',
-        detail: soDetail(updatedHdr.code, updatedHdr.customerName),
+        detail: buildSoEditSummary(
+          soDetail(updatedHdr.code, updatedHdr.customerName),
+          existingHdr,
+          updatedHdr,
+          linesBefore ? linesBefore.map(toLineSnap) : null,
+          linesBefore ? lineRows.map(toLineSnap) : null,
+        ),
         refId: updatedHdr.code,
       },
       companyId,
       user,
     );
 
-    const updatedCodeMap = await resolveItemCodesById(
-      tx,
-      lineRows.map((l) => l.itemId),
-      companyId,
-    );
     const updatedImageMap = await resolveItemImagesById(
       tx,
       lineRows.map((l) => l.itemId),
@@ -1737,7 +1829,7 @@ async function reconcileAmendedLineReservations(
         {
           action: 'UPDATE',
           entity: 'Reservation',
-          detail: `${soCode} L${b.lineNo} — ${released} released back to free stock (${reason})`,
+          detail: `${soCode} Ln ${b.lineNo} — ${released} released back to free stock (${reason})`,
           refId: soCode,
         },
         companyId,
@@ -1834,6 +1926,8 @@ async function mergeLines(
       drawingFilePath: salesOrderLines.drawingFilePath,
       drawingNo: salesOrderLines.drawingNo,
       revision: salesOrderLines.revision,
+      // ADR-184 — the stored item, so an item swap on a committed line is refused.
+      itemId: salesOrderLines.itemId,
     })
     .from(salesOrderLines)
     .where(and(eq(salesOrderLines.salesOrderId, salesOrderId), isNull(salesOrderLines.deletedAt)));
@@ -1861,8 +1955,53 @@ async function mergeLines(
     }
   }
 
-  // Soft-delete absentees.
   const absentIds = existing.map((e) => e.id).filter((eid) => !seenInputIds.has(eid));
+
+  // ADR-184 — refuse any edit that would orphan downstream work, BEFORE a
+  // single row is written. The lines are locked FOR UPDATE by the read, so a
+  // plan / dispatch / invoice cannot be raised between this check and the save.
+  const commitments = await readSoLineCommitments(
+    tx,
+    companyId,
+    existing.map((e) => e.id),
+  );
+  for (const eid of absentIds) {
+    const c = commitments.get(eid);
+    if (c && hasCommitments(c)) {
+      throw new ValidationError(
+        `${lineLabel(c)} cannot be removed — it is used by ${describeCommitments(c)}. Remove or cancel those first.`,
+      );
+    }
+  }
+  for (const u of toUpdate) {
+    const c = commitments.get(u.id);
+    if (!c) continue;
+    // Only a REDUCTION is checked: saving a line unchanged must keep working
+    // even on old data whose qty already sits below a downstream figure.
+    if (u.data.orderQty !== undefined && u.data.orderQty < c.orderQty) {
+      const reason = qtyReductionBlocker(c, u.data.orderQty);
+      if (reason) throw new ValidationError(reason);
+    }
+    // Review fix — swapping the item on a line that already has plans, orders,
+    // dispatches or invoices would leave all of them hanging off a line for a
+    // different part.
+    if (u.data.itemId !== undefined || u.data.itemCodeText !== undefined) {
+      const nextItemId = resolveLineItemRefs(u.data, resolved).itemId;
+      const storedItemId = existingById.get(u.id)?.itemId ?? null;
+      if ((nextItemId ?? null) !== storedItemId && hasCommitments(c)) {
+        throw new ValidationError(
+          `${lineLabel(c)}: the item cannot be changed — the line is used by ${describeCommitments(c)}. Remove or cancel those first.`,
+        );
+      }
+    }
+    if (u.data.status === 'cancelled' && c.status !== 'cancelled' && hasCommitments(c)) {
+      throw new ValidationError(
+        `${lineLabel(c)} cannot be cancelled — it is used by ${describeCommitments(c)}. Remove or cancel those first.`,
+      );
+    }
+  }
+
+  // Soft-delete absentees.
   if (absentIds.length > 0) {
     await tx
       .update(salesOrderLines)
@@ -2022,8 +2161,19 @@ export async function softDeleteSalesOrder(id: string, user: AuthContext): Promi
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`Sales order ${id} not found`);
+      throw new NotFoundError('SO not found. It may have been moved to Trash.');
     }
+
+    // ADR-184 — an SO with live plans, production orders, dispatches or
+    // invoices cannot be deleted: those documents would point at a vanished
+    // order. The read locks the SO's lines for the rest of this transaction.
+    const blocking = await describeSoBlockingDocuments(tx, companyId, id);
+    if (blocking) {
+      throw new ValidationError(
+        `${row.code} cannot be deleted — it is used by ${blocking}. Remove or cancel those first.`,
+      );
+    }
+
     const now = new Date();
 
     // Hand back whatever these lines are holding BEFORE they are soft-deleted

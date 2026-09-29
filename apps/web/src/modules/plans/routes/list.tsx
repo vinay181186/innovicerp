@@ -1,36 +1,37 @@
 // Plans list (PL-4). All plans with status + type + search filters + pagination.
 //
 // ADR-170 (Production Orders): the same list is Production → Master → Plans.
-// Two pills above the table — All | Pending — where Pending is the server's
+// An All | Pending dropdown in the filter bar (was two pills) — where Pending is the server's
 // `poPending=true` (route-card-driven plans that still have no Production
 // Order). The Status column shows the DERIVED status for those plans
 // (Route card pending → Gen production order → In production → Production
 // complete) and the stored planStatus for old plans, exactly as before.
 
-import type { ListPlansResponse, PlanDerivedStatus, PlanStatus, PlanType } from '@innovic/shared';
+import {
+  PLAN_EFFECTIVE_STATUSES,
+  PRODUCTION_ORDER_STATUS_LABEL,
+  type ListPlansResponse,
+  type PlanEffectiveStatus,
+  type PlanStatus,
+  type PlanType,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePlansList, usePlanningDashboard } from '../api';
-import { PlanningKpiStrip } from '../components/planning-kpi-strip';
 import { NeedsPlanningTable } from '../components/needs-planning-table';
+import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
 
 const searchSchema = z.object({
   search: z.string().optional(),
-  status: z
-    .enum([
-      'in_planning',
-      'planned',
-      'jc_created',
-      'pr_created',
-      'in_production',
-      'complete',
-      'cancelled',
-    ])
-    .optional(),
+  // ADR-185 — the status the row shows (stored for old plans, derived for
+  // route-card plans); the KPI tiles count by the same word.
+  status: z.enum(PLAN_EFFECTIVE_STATUSES).optional(),
   planType: z.enum(['manufacture', 'direct_purchase', 'full_outsource', 'assembly']).optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
   // Needs-Planning mode — folded in from the retired Planning Dashboard; swaps
@@ -48,40 +49,22 @@ export const plansListRoute = createRoute({
   component: PlansListPage,
 });
 
+// Colours from the one STORED_BADGE map the plan detail also reads.
 const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
-  in_planning: { cls: 'b-grey', label: 'In Planning' },
-  planned: { cls: 'b-blue', label: 'Planned' },
-  jc_created: { cls: 'b-cyan', label: 'JC Created' },
-  pr_created: { cls: 'b-cyan', label: 'PR Created' },
-  in_production: { cls: 'b-amber', label: 'In Production' },
-  complete: { cls: 'b-green', label: 'Complete' },
-  cancelled: { cls: 'b-grey', label: 'Cancelled' },
+  in_planning: { cls: STORED_BADGE.in_planning, label: 'In Planning' },
+  planned: { cls: STORED_BADGE.planned, label: 'Planned' },
+  jc_created: { cls: STORED_BADGE.jc_created, label: 'JC Created' },
+  pr_created: { cls: STORED_BADGE.pr_created, label: 'PR Created' },
+  in_production: { cls: STORED_BADGE.in_production, label: 'In Production' },
+  complete: { cls: STORED_BADGE.complete, label: 'Completed' },
+  cancelled: { cls: STORED_BADGE.cancelled, label: 'Cancelled' },
 };
 
-// ADR-170 — derived status of a route-card-driven plan. Same badge classes as
-// the old statuses; amber = blocked (no route card), blue = ready for a
-// Production Order, cyan = PO open, green = PO closed.
-// Status column wording (user, 2026-09-19): where the plan stands, in the
-// planner's own words — "RC" is the route card. The shared labels stay as
-// they are for the other screens that print them.
-const DERIVED_LABEL: Record<PlanDerivedStatus, string> = {
-  route_card_pending: 'RC Pending',
-  gen_production_order: 'RC Created',
-  in_production: 'In Production',
-  production_complete: 'Complete',
-};
 const TYPE_LABEL: Record<PlanType, string> = {
   manufacture: 'Manufacture',
-  direct_purchase: 'Direct Purchase',
+  direct_purchase: 'Buy',
   full_outsource: 'Full Outsource',
   assembly: 'Assembly',
-};
-
-const DERIVED_BADGE: Record<PlanDerivedStatus, string> = {
-  route_card_pending: 'b-amber',
-  gen_production_order: 'b-blue',
-  in_production: 'b-cyan',
-  production_complete: 'b-green',
 };
 
 const TYPE_ICON: Record<PlanType, string> = {
@@ -89,6 +72,27 @@ const TYPE_ICON: Record<PlanType, string> = {
   direct_purchase: '🛒',
   full_outsource: '📦',
   assembly: '🔧',
+};
+
+// Status dropdown value for the Needs-Planning mode (the `needsPlanning` URL
+// flag, not a plan status).
+const NEEDS_PLANNING = '__needs_planning';
+
+// Status → the planning-dashboard KPI key that counts it (same keys the old
+// tiles read). Cancelled has no tile, so no count.
+const STATUS_KPI_KEY: Record<
+  PlanStatus | 'route_card_pending' | 'gen_production_order',
+  string | undefined
+> = {
+  in_planning: 'inPlanning',
+  planned: 'planned',
+  jc_created: 'jcCreated',
+  pr_created: 'prCreated',
+  in_production: 'inProduction',
+  complete: 'complete',
+  cancelled: undefined,
+  route_card_pending: 'rcPending',
+  gen_production_order: 'rcCreated',
 };
 
 // One fetch, then scroll — no Prev / Next (user, 2026-09-19). The list-query
@@ -107,24 +111,15 @@ function PlansListPage(): React.JSX.Element {
     limit: LIMIT,
     offset: off,
   });
-  // KPI counts for the filter-bar tiles (folded in from the Planning Dashboard).
+  // KPI counts for the status dropdown's option labels (folded in from the
+  // Planning Dashboard; they used to be clickable tiles).
   const dash = usePlanningDashboard();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
 
-  // Tile → URL filter. Status tiles set `status`; the Needs Planning tile flips
-  // the body to the unplanned-SO-lines table. Both clear the other so only one
-  // mode is ever active.
-  const selectStatus = (s: PlanStatus | undefined): void =>
-    void navigate({
-      to: '/plans',
-      search: {
-        ...(search ? { search } : {}),
-        ...(planType ? { planType } : {}),
-        ...(pending ? { pending } : {}),
-        ...(s ? { status: s } : {}),
-      },
-    });
+  // Status dropdown → URL filter. A status sets `status`; "Needs Planning"
+  // flips the body to the unplanned-SO-lines table. Each clears the other so
+  // only one mode is ever active.
   const selectNeedsPlanning = (): void =>
     void navigate({
       to: '/plans',
@@ -135,7 +130,7 @@ function PlansListPage(): React.JSX.Element {
         ...(needsPlanning ? {} : { needsPlanning: true }),
       },
     });
-  // All | Pending pills. Same URL-param shape as the SO list's status pills;
+  // All | Pending dropdown (was pills). Same URL-param shape as the SO list's status pills;
   // drops the offset so a narrower result never starts on an empty page.
   const selectPending = (p: boolean): void =>
     void navigate({
@@ -149,122 +144,138 @@ function PlansListPage(): React.JSX.Element {
       replace: true,
     });
 
+  // "In Planning (12)" — the count the old tile showed; bare label while the
+  // dashboard loads or for a status that has no tile.
+  const kpi: Record<string, number> = dash.data?.kpi ?? {};
+  const withCount = (label: string, kpiKey: string | undefined): string => {
+    const n = kpiKey ? kpi[kpiKey] : undefined;
+    return n == null ? label : `${label} (${n})`;
+  };
+
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
+      <PageState
+        as="page"
+        state="noaccess"
+        message="You do not have permission to view Plans. Ask an admin."
+      />
     );
   }
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📋 Plans</div>
-        <div className="flex items-center gap-2">
-          <input
-            className="innovic-input"
-            style={{ width: 200 }}
-            placeholder="Search plan, item, SO, PO, JC…"
-            value={search ?? ''}
-            onChange={(e) =>
-              void navigate({
-                to: '/plans',
-                search: {
-                  ...(status ? { status } : {}),
-                  ...(planType ? { planType } : {}),
-                  ...(pending ? { pending } : {}),
-                  search: e.target.value || undefined,
-                },
-              })
-            }
-          />
-          <select
-            className="innovic-select"
-            style={{ width: 140 }}
-            value={status ?? ''}
-            onChange={(e) =>
-              void navigate({
-                to: '/plans',
-                search: {
-                  ...(search ? { search } : {}),
-                  ...(planType ? { planType } : {}),
-                  ...(pending ? { pending } : {}),
-                  status: (e.target.value as PlanStatus | '') || undefined,
-                },
-              })
-            }
-          >
-            <option value="">All statuses</option>
-            {(Object.keys(STATUS_BADGE) as PlanStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {STATUS_BADGE[s].label}
+      {/* The ONE list header (ui/layout ListHeader). Same URL params and the
+          same server search / status / type filters as before. The filter bar
+          carries status (with the old KPI-tile counts), type and All |
+          Pending (ADR-170) as dropdowns — no tiles, no pills. */}
+      <ListHeader
+        title="Plans"
+        icon="📋"
+        count={needsPlanning ? undefined : data?.total}
+        noun="plan"
+        filterNote={pending ? 'Pending' : undefined}
+        search={search ?? ''}
+        onSearch={(v) =>
+          void navigate({
+            to: '/plans',
+            search: {
+              ...(status ? { status } : {}),
+              ...(planType ? { planType } : {}),
+              ...(pending ? { pending } : {}),
+              search: v || undefined,
+            },
+          })
+        }
+        searchPlaceholder="Search plan no., item code / name, SO no., POL, Production Order, JC…"
+        filters={
+          <>
+            {/* Status — the former KPI tiles, folded in: every option carries
+                the same count its tile showed, and "Needs Planning" still
+                swaps the body for the unplanned-SO-lines table. */}
+            <select
+              className="innovic-select"
+              aria-label="Plan status"
+              title="Plan status"
+              value={needsPlanning ? NEEDS_PLANNING : (status ?? '')}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === NEEDS_PLANNING) {
+                  if (!needsPlanning) selectNeedsPlanning();
+                  return;
+                }
+                void navigate({
+                  to: '/plans',
+                  search: {
+                    ...(search ? { search } : {}),
+                    ...(planType ? { planType } : {}),
+                    ...(pending ? { pending } : {}),
+                    status: (v as PlanEffectiveStatus | '') || undefined,
+                  },
+                });
+              }}
+            >
+              <option value="">All statuses</option>
+              <option value={NEEDS_PLANNING}>{withCount('Needs Planning', 'needsPlanning')}</option>
+              {(Object.keys(STATUS_BADGE) as PlanStatus[]).map((s) => (
+                <option key={s} value={s}>
+                  {withCount(STATUS_BADGE[s].label, STATUS_KPI_KEY[s])}
+                </option>
+              ))}
+              {/* ADR-185 — the two route-card states with no stored twin. */}
+              <option value="route_card_pending">
+                {withCount(DERIVED_LABEL.route_card_pending, STATUS_KPI_KEY.route_card_pending)}
               </option>
-            ))}
-          </select>
-          <select
-            className="innovic-select"
-            style={{ width: 140 }}
-            value={planType ?? ''}
-            onChange={(e) =>
-              void navigate({
-                to: '/plans',
-                search: {
-                  ...(search ? { search } : {}),
-                  ...(status ? { status } : {}),
-                  ...(pending ? { pending } : {}),
-                  planType: (e.target.value as PlanType | '') || undefined,
-                },
-              })
-            }
-          >
-            <option value="">All types</option>
-            <option value="manufacture">🏭 Manufacture</option>
-            <option value="direct_purchase">🛒 Direct Purchase</option>
-            <option value="full_outsource">📦 Full Outsource</option>
-            <option value="assembly">🔧 Assembly</option>
-          </select>
-          {perms.entry ? (
-            <Link to="/plans/new" className="btn btn-primary btn-sm">
-              <Plus size={13} /> New plan
+              <option value="gen_production_order">
+                {withCount(DERIVED_LABEL.gen_production_order, STATUS_KPI_KEY.gen_production_order)}
+              </option>
+            </select>
+            <select
+              className="innovic-select"
+              aria-label="Plan type"
+              title="Plan type"
+              value={planType ?? ''}
+              onChange={(e) =>
+                void navigate({
+                  to: '/plans',
+                  search: {
+                    ...(search ? { search } : {}),
+                    ...(status ? { status } : {}),
+                    ...(pending ? { pending } : {}),
+                    planType: (e.target.value as PlanType | '') || undefined,
+                  },
+                })
+              }
+            >
+              <option value="">All types</option>
+              <option value="manufacture">🏭 Manufacture</option>
+              <option value="direct_purchase">🛒 Buy</option>
+              <option value="full_outsource">📦 Full Outsource</option>
+              <option value="assembly">🔧 Assembly</option>
+            </select>
+            {/* ADR-170 — All | Pending. "Pending" = route-card-driven plans
+                that still need a Production Order (server filter `poPending`).
+                Old plans only ever appear under All. */}
+            <select
+              className="innovic-select"
+              aria-label="Plans waiting for a Production Order"
+              title="Plans waiting for a Production Order"
+              value={pending ? 'pending' : ''}
+              onChange={(e) => selectPending(e.target.value === 'pending')}
+            >
+              <option value="">All plans</option>
+              <option value="pending">Pending</option>
+            </select>
+          </>
+        }
+        onClearFilters={() => void navigate({ to: '/plans', search: {} })}
+        filtersActive={!!(search || status || planType || pending || needsPlanning)}
+        primary={
+          perms.entry ? (
+            <Link to="/plans/new" className="btn btn-primary">
+              <Plus size={13} /> New Plan
             </Link>
-          ) : null}
-        </div>
-      </div>
-
-      {/* ADR-170 — All | Pending. "Pending" = route-card-driven plans that
-          still need a Production Order (server filter `poPending`). Old plans
-          only ever appear under All. Pill styling copied from the SO list. */}
-      <div className="mb-3" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {(
-          [
-            { key: 'all', label: 'All', on: !pending },
-            { key: 'pending', label: 'Pending', on: !!pending },
-          ] as const
-        ).map((p) => (
-          <button
-            key={p.key}
-            type="button"
-            className={`btn btn-sm ${p.on ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ fontSize: 11, borderRadius: 999, padding: '3px 12px' }}
-            title={
-              p.key === 'pending'
-                ? 'Plans waiting for a Production Order (route card pending / gen production order)'
-                : 'Every plan'
-            }
-            onClick={() => selectPending(p.key === 'pending')}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      <PlanningKpiStrip
-        kpi={dash.data?.kpi ?? {}}
-        activeStatus={status}
-        needsPlanning={!!needsPlanning}
-        onSelectStatus={selectStatus}
-        onSelectNeedsPlanning={selectNeedsPlanning}
+          ) : null
+        }
       />
 
       {needsPlanning ? (
@@ -280,19 +291,26 @@ function PlansListPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load plans'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load plans. Try again.'}
             </div>
           </div>
         </div>
       ) : data ? (
-        <Table data={data} />
+        <Table data={data} filtered={Boolean(search || status || planType || pending)} />
       ) : null}
     </div>
   );
 }
 
-function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
+function Table({
+  data,
+  filtered,
+}: {
+  data: ListPlansResponse;
+  filtered: boolean;
+}): React.JSX.Element {
+  const navigate = useNavigate();
   // The Status column's next-step buttons: each one is the action that moves
   // the plan out of the state it shows, offered only to someone allowed to
   // take it.
@@ -303,10 +321,7 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div className="empty-state">
-            <div className="empty-icon">📋</div>
-            No plans match the filter.
-          </div>
+          <div className="empty-state">{filtered ? 'No Plans match.' : 'No Plans yet.'}</div>
         </div>
       </div>
     );
@@ -319,7 +334,7 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
             add up to the page so nothing scrolls sideways. Plan # carries its
             date and type underneath; Ops is gone; Status states where the plan
             IS and Action holds the one button that moves it on. */}
-        <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+        <div className="tbl-wrap">
           <table className="innovic-table tbl-grid">
             {/* Widths total exactly 100. POL took 5% — one each off Plan No.,
                 SO and Action, two off Item — when it was added (2026-09-23). */}
@@ -337,18 +352,18 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
             </colgroup>
             <thead>
               <tr>
-                <th>PLAN NO.</th>
+                <th>Plan No.</th>
                 {/* POL — the CUSTOMER's own PO line number, not our SO line
-                    number (that stays in the SO column as "L#"). */}
+                    number (that stays in the SO column as "Ln"). */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>ITEM</th>
-                <th>SO NO.</th>
-                <th className="td-ctr">ORDER QTY</th>
-                <th className="td-ctr">PLAN QTY</th>
-                <th>PRODUCTION ORDER NO</th>
-                <th>JC NO.</th>
-                <th>PLAN STATUS</th>
-                <th>ACTION</th>
+                <th>Item Code</th>
+                <th>SO No.</th>
+                <th className="th-num">Order Qty</th>
+                <th className="th-num">Plan Qty</th>
+                <th>Production Order No.</th>
+                <th>JC No.</th>
+                <th>Plan Status</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -364,7 +379,16 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                 const itemLabel = (row.itemCode ?? row.itemCodeText) as string | null;
                 const itemName = row.itemName ?? row.itemNameText;
                 return (
-                  <tr key={row.id}>
+                  // Row click opens the plan (ERPNext list); a click on a link
+                  // or button inside the row keeps its own target.
+                  <tr
+                    key={row.id}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest('a,button')) return;
+                      void navigate({ to: '/plans/$id', params: { id: row.id } });
+                    }}
+                  >
                     <td>
                       <Link
                         to="/plans/$id"
@@ -375,14 +399,14 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                         {row.code}
                       </Link>
                       <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                        {row.planDate}
+                        {fmtDate(row.planDate)}
                       </div>
                       <div className="text3" style={{ fontSize: 11 }}>
                         {TYPE_ICON[row.planType]} {TYPE_LABEL[row.planType]}
                       </div>
                       {row.customerDispatchDate ? (
                         <div className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                          Dispatch {row.customerDispatchDate}
+                          Dispatch {fmtDate(row.customerDispatchDate)}
                         </div>
                       ) : null}
                     </td>
@@ -406,19 +430,19 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                     <td>
                       <span className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                         {row.soCodeText ?? '—'}
-                        {row.lineNo ? ` · L#${row.lineNo}` : ''}
+                        {row.lineNo ? ` · Ln ${row.lineNo}` : ''}
                       </span>
                     </td>
-                    <td className="td-ctr mono fw-700">{row.orderQty}</td>
+                    <td className="mono fw-700 td-num">{row.orderQty}</td>
                     {/* ADR-182 — Plan Qty, and under it how much of it the
                         plan's Production Orders already cover. `Pending` is
                         what a new order may still be raised for (NAMING.md —
                         never "Remaining" or "Balance"). Only route-card plans
                         carry orders, so only they show the two lines. */}
-                    <td className="td-ctr mono fw-700">
+                    <td className="mono fw-700 td-num">
                       {row.planQty}
                       {row.derivedStatus ? (
-                        <div className="text3" style={{ fontSize: 10, fontWeight: 400 }}>
+                        <div className="text3" style={{ fontSize: 11, fontWeight: 400 }}>
                           Covered {row.coveredQty}
                           <br />
                           Pending{' '}
@@ -442,7 +466,14 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                           style={{ whiteSpace: 'nowrap' }}
                           title={
                             row.productionOrderStatus
-                              ? `Production Order · ${row.productionOrderStatus}`
+                              ? `Production Order · ${
+                                  (
+                                    PRODUCTION_ORDER_STATUS_LABEL as Record<
+                                      string,
+                                      string | undefined
+                                    >
+                                  )[row.productionOrderStatus] ?? row.productionOrderStatus
+                                }`
                               : 'Production Order'
                           }
                         >
@@ -550,10 +581,7 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
         </div>
       </div>
 
-      <div className="text3" style={{ marginTop: 8, fontSize: 12 }}>
-        {data.items.length} of {data.total} plans
-        {data.total > data.items.length ? ' — narrow the filter to see the rest' : ''}
-      </div>
+      <ListFooter total={data.total} shown={data.items.length} noun="plan" limit={LIMIT} />
     </>
   );
 }

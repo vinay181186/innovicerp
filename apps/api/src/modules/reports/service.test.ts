@@ -28,8 +28,8 @@ beforeAll(async () => {
 });
 
 describe('reports service', () => {
-  it('listReports returns all registered reports with stable shape', () => {
-    const result = service.listReports();
+  it('listReports returns all registered reports with stable shape', async () => {
+    const result = await service.listReports(admin);
     const slugs = result.reports.map((r) => r.slug).sort();
     expect(slugs).toEqual([
       'daily-op-log',

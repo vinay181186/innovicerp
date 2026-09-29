@@ -29,6 +29,15 @@ export const STORE_TXN_SOURCE_TYPES = [
   // to a Production Order writes NO qc_accept / grn_qc row on its last op —
   // this is the only credit that JC ever produces.
   'production_order_close',
+  // ADR-193 (0153): each store document names itself in the ledger instead of
+  // 'other' — Item Issue / its return, Tool Issue / its return, Stock Count.
+  'store_issue',
+  'store_return',
+  'tool_issue',
+  'tool_return',
+  'stock_count',
+  // ADR-193 phase 4 (0159): an in-store instrument scrapped on an approved write-off.
+  'tool_writeoff',
   'other',
 ] as const;
 export type StoreTxnSourceType = (typeof STORE_TXN_SOURCE_TYPES)[number];

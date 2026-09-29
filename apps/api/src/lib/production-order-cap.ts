@@ -39,8 +39,8 @@ export function planCoverage(planQty: number, covered: number): PlanCoverage {
  *
  *   nothing left at all → "Plan PLN-0009 is fully covered by its Production
  *                          Orders (50 of 50)."
- *   some left, not enough → "Plan PLN-0009 has only 10 left of 50 — reduce the
- *                            qty."
+ *   some left, not enough → "Order Qty (30) cannot be more than Pending (10) on
+ *                            Plan PLN-0009."
  */
 export function productionOrderCapError(
   planCode: string,
@@ -53,7 +53,7 @@ export function productionOrderCapError(
   if (pendingQty === 0) {
     return `Plan ${planCode} is fully covered by its Production Orders (${planQty} of ${planQty}).`;
   }
-  return `Plan ${planCode} has only ${pendingQty} left of ${planQty} — reduce the qty.`;
+  return `Order Qty (${qty}) cannot be more than Pending (${pendingQty}) on Plan ${planCode}.`;
 }
 
 /**

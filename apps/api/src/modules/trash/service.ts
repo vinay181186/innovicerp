@@ -1,15 +1,16 @@
-// Trash service — admin-only soft-delete recovery + permanent delete.
+// Trash service — admin-only soft-delete recovery.
 //
-// Mirror of legacy renderTrash (HTML L11309) + restoreFromTrash (L2143) +
-// permDeleteTrash (L2176) + emptyTrash (L2185). Legacy stored a `db.trash`
+// Mirror of legacy renderTrash (HTML L11309) + restoreFromTrash (L2143).
+// Legacy's permDeleteTrash / emptyTrash are deliberately NOT here: ADR-188
+// removed permanent delete from the app (CLAUDE.md §6 rule 8 — hard deletes
+// only via documented admin scripts after a backup). Legacy stored a `db.trash`
 // array of cloned records; we don't need that — every entity carries its
 // own `deleted_at` column, so trash is just a UNION ALL of soft-deleted
 // rows across a curated set of tables.
 //
-// All operations admin-only. Restore clears `deleted_at`; permanent delete
-// is the documented admin path per CLAUDE.md Rule #8.
+// All operations admin-only. Restore clears `deleted_at`.
 
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import {
   bomMasters,
   clients,
@@ -32,7 +33,12 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
-import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import type {
   ListTrashQuery,
@@ -61,47 +67,97 @@ interface EntityMeta {
 // Every entity uses a `code` column for its human identifier (SO-001,
 // IN-JC-00001, MACH-A1, …) except bom_masters which uses `bom_no`.
 const ENTITIES: readonly EntityMeta[] = [
-  { type: 'Sales Order',         table: 'sales_orders',         labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Job Work Order',      table: 'job_work_orders',      labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Job Card',            table: 'job_cards',            labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Item',                table: 'items',                labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Client',              table: 'clients',              labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Vendor',              table: 'vendors',              labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Machine',             table: 'machines',             labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Operator',            table: 'operators',            labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Purchase Request',    table: 'purchase_requests',    labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Purchase Order',      table: 'purchase_orders',      labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Goods Receipt Note',  table: 'goods_receipt_notes',  labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Delivery Challan',    table: 'delivery_challans',    labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'NC Register',         table: 'nc_register',          labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'BOM Master',          table: 'bom_masters',          labelSql: 'bom_no',   hasUpdatedBy: true },
-  { type: 'Route Card',          table: 'route_cards',          labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Cost Center',         table: 'cost_centers',         labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'QC Process',          table: 'qc_processes',         labelSql: 'code',     hasUpdatedBy: true },
-  { type: 'Production Order',    table: 'production_orders',    labelSql: 'code',     hasUpdatedBy: true },
+  { type: 'Sales Order', table: 'sales_orders', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Job Work Order', table: 'job_work_orders', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Job Card', table: 'job_cards', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Item', table: 'items', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Client', table: 'clients', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Vendor', table: 'vendors', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Machine', table: 'machines', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Operator', table: 'operators', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Purchase Request', table: 'purchase_requests', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Purchase Order', table: 'purchase_orders', labelSql: 'code', hasUpdatedBy: true },
+  {
+    type: 'Goods Receipt Note',
+    table: 'goods_receipt_notes',
+    labelSql: 'code',
+    hasUpdatedBy: true,
+  },
+  { type: 'Delivery Challan', table: 'delivery_challans', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'NC Register', table: 'nc_register', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'BOM Master', table: 'bom_masters', labelSql: 'bom_no', hasUpdatedBy: true },
+  { type: 'Route Card', table: 'route_cards', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Cost Center', table: 'cost_centers', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'QC Process', table: 'qc_processes', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Production Order', table: 'production_orders', labelSql: 'code', hasUpdatedBy: true },
 ];
 
-// Used by restore/perm-delete to look up the Drizzle table object by type.
+// Used by restore to look up the Drizzle table object by type.
 const TABLE_BY_TYPE = {
-  'Sales Order':         salesOrders,
-  'Job Work Order':      jobWorkOrders,
-  'Job Card':            jobCards,
-  'Item':                items,
-  'Client':              clients,
-  'Vendor':              vendors,
-  'Machine':             machines,
-  'Operator':            operators,
-  'Purchase Request':    purchaseRequests,
-  'Purchase Order':      purchaseOrders,
-  'Goods Receipt Note':  goodsReceiptNotes,
-  'Delivery Challan':    deliveryChallans,
-  'NC Register':         ncRegister,
-  'BOM Master':          bomMasters,
-  'Route Card':          routeCards,
-  'Cost Center':         costCenters,
-  'QC Process':          qcProcesses,
-  'Production Order':    productionOrders,
+  'Sales Order': salesOrders,
+  'Job Work Order': jobWorkOrders,
+  'Job Card': jobCards,
+  Item: items,
+  Client: clients,
+  Vendor: vendors,
+  Machine: machines,
+  Operator: operators,
+  'Purchase Request': purchaseRequests,
+  'Purchase Order': purchaseOrders,
+  'Goods Receipt Note': goodsReceiptNotes,
+  'Delivery Challan': deliveryChallans,
+  'NC Register': ncRegister,
+  'BOM Master': bomMasters,
+  'Route Card': routeCards,
+  'Cost Center': costCenters,
+  'QC Process': qcProcesses,
+  'Production Order': productionOrders,
 } as const satisfies Record<TrashEntityType, unknown>;
+
+// Screen words for the activity-log line. The type codes above stay as they
+// are (they are the API contract); only the two that break the naming
+// standard get a display name here.
+function typeLabel(type: TrashEntityType): string {
+  if (type === 'Client') return 'Customer';
+  if (type === 'Job Work Order') return 'JWSO';
+  return type;
+}
+
+// The words the Trash screen shows for the type codes that differ from them
+// (apps/web/src/modules/trash/routes/list.tsx TYPE_LABEL), so a search for
+// "Customer" finds deleted Clients.
+const TYPE_SCREEN_WORD: Partial<Record<TrashEntityType, string>> = {
+  'Job Work Order': 'Job Work Sales Order',
+  Client: 'Customer',
+  'Cost Center': 'Cost Centre',
+};
+
+/** Escape the ILIKE metacharacters so a typed "%" or "_" is matched literally
+ *  (Postgres's default LIKE escape is backslash). Local copy, as in the
+ *  activity-log service. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/** WHERE clause for the Trash search box, or empty when there is no term. */
+function searchWhere(term: string | undefined): SQL {
+  if (!term) return sql``;
+  const pattern = `%${escapeLikeTerm(term)}%`;
+  const needle = term.toLowerCase();
+  const typesByWord = ENTITIES.map((e) => e.type).filter((t) =>
+    (TYPE_SCREEN_WORD[t] ?? '').toLowerCase().includes(needle),
+  );
+  const typeWordFrag =
+    typesByWord.length > 0
+      ? sql` OR t.type IN (${sql.join(
+          typesByWord.map((t) => sql`${t}`),
+          sql`, `,
+        )})`
+      : sql``;
+  return sql`WHERE (t.label ILIKE ${pattern}
+      OR t.type ILIKE ${pattern}
+      OR t.deleted_by_name ILIKE ${pattern}${typeWordFrag})`;
+}
 
 function unionSql(companyId: string, typeFilter?: TrashEntityType): string {
   const parts = ENTITIES.filter((e) => !typeFilter || e.type === typeFilter).map(
@@ -128,18 +184,18 @@ export async function listTrash(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const baseSql = unionSql(companyId, input.type);
+    const baseSql = sql.raw(unionSql(companyId, input.type));
+    const where = searchWhere(input.search);
 
     const rowsResult = await tx.execute(
-      sql.raw(
-        `SELECT * FROM (${baseSql}) t
+      sql`SELECT * FROM (${baseSql}) t
+         ${where}
          ORDER BY t.deleted_at DESC
          LIMIT ${input.limit} OFFSET ${input.offset}`,
-      ),
     );
 
     const totalResult = await tx.execute(
-      sql.raw(`SELECT COUNT(*)::int AS c FROM (${baseSql}) t`),
+      sql`SELECT COUNT(*)::int AS c FROM (${baseSql}) t ${where}`,
     );
 
     const byTypeResult = await tx.execute(
@@ -190,7 +246,31 @@ export async function restoreFromTrash(
 
   return withUserContext(user, async (tx) => {
     const entity = ENTITIES.find((e) => e.type === input.type);
-    if (!entity) throw new ValidationError(`Unknown entity type "${input.type}"`);
+    if (!entity) throw new ValidationError('This record type cannot be restored from Trash.');
+
+    // One customer per name (the clients service rule): a deleted customer may
+    // not come back while a LIVE customer carries the same name, compared
+    // trimmed and case-insensitively — else its SOs / invoices split over two.
+    if (entity.type === 'Client') {
+      const dup = (await tx.execute(sql`
+        SELECT live.code, live.name
+        FROM public.clients gone
+        JOIN public.clients live
+          ON live.company_id = gone.company_id
+         AND live.deleted_at IS NULL
+         AND live.id <> gone.id
+         AND lower(trim(live.name)) = lower(trim(gone.name))
+        WHERE gone.id = ${input.id}::uuid
+          AND gone.company_id = ${companyId}::uuid
+        LIMIT 1
+      `)) as unknown as Array<{ code: string; name: string }>;
+      if (dup[0]) {
+        throw new ConflictError(
+          `Cannot restore: a customer named "${dup[0].name}" already exists (${dup[0].code}). ` +
+            'Rename or delete that customer first, or keep using it.',
+        );
+      }
+    }
 
     const result = await tx.execute(
       sql.raw(
@@ -203,93 +283,21 @@ export async function restoreFromTrash(
       ),
     );
     const rows = result as unknown as { id: string }[];
-    if (rows.length === 0) throw new NotFoundError(`${input.type} ${input.id} not found in trash`);
+    if (rows.length === 0)
+      throw new NotFoundError('This record is no longer in Trash. Refresh the page.');
 
     await emitActivityLog(
       tx,
       {
         action: 'RESTORE',
         entity: input.type,
-        detail: `Restored ${input.type} ${input.id}`,
+        detail: `Restored ${typeLabel(input.type)} from Trash`,
         refId: input.id,
       },
       companyId,
       user,
     );
     return { ok: true };
-  });
-}
-
-export async function permDeleteTrash(
-  input: RestoreTrashInput,
-  user: AuthContext,
-): Promise<{ ok: true }> {
-  requireAdminRole(user);
-  const companyId = requireCompany(user);
-
-  return withUserContext(user, async (tx) => {
-    const entity = ENTITIES.find((e) => e.type === input.type);
-    if (!entity) throw new ValidationError(`Unknown entity type "${input.type}"`);
-
-    // Audit BEFORE the row vanishes so the trail survives.
-    await emitActivityLog(
-      tx,
-      {
-        action: 'PERM DELETE',
-        entity: input.type,
-        detail: `Permanently deleted ${input.type} ${input.id}`,
-        refId: input.id,
-      },
-      companyId,
-      user,
-    );
-
-    const result = await tx.execute(
-      sql.raw(
-        `DELETE FROM "${entity.table}"
-         WHERE id = '${input.id}'::uuid
-           AND company_id = '${companyId}'::uuid
-           AND deleted_at IS NOT NULL
-         RETURNING id`,
-      ),
-    );
-    const rows = result as unknown as { id: string }[];
-    if (rows.length === 0) throw new NotFoundError(`${input.type} ${input.id} not found in trash`);
-
-    return { ok: true };
-  });
-}
-
-export async function emptyTrash(user: AuthContext): Promise<{ deleted: number }> {
-  requireAdminRole(user);
-  const companyId = requireCompany(user);
-
-  return withUserContext(user, async (tx) => {
-    let total = 0;
-    for (const entity of ENTITIES) {
-      const result = await tx.execute(
-        sql.raw(
-          `DELETE FROM "${entity.table}"
-           WHERE company_id = '${companyId}'::uuid
-             AND deleted_at IS NOT NULL
-           RETURNING id`,
-        ),
-      );
-      const rows = result as unknown as { id: string }[];
-      total += rows.length;
-    }
-    await emitActivityLog(
-      tx,
-      {
-        action: 'PERM DELETE',
-        entity: 'Trash',
-        detail: `Emptied trash (${total} items)`,
-        refId: null,
-      },
-      companyId,
-      user,
-    );
-    return { deleted: total };
   });
 }
 

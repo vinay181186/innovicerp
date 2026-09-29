@@ -314,7 +314,7 @@ describe('assembly job work — readiness and stock', () => {
     expect(outs.some((r) => r.itemId === parentId)).toBe(false);
 
     // Cancel puts back exactly what went out.
-    await cancelJwReturnChallan(challan.id, admin);
+    await cancelJwReturnChallan(challan.id, 'test cancel', admin);
     const ins = (
       await db
         .select()

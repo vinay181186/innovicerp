@@ -12,7 +12,7 @@
 //     shop-floor sheet); date, due, qty, item, drawing
 //     on the right. The last row of each column has no rule — the box closes it.
 //   • The operation table: Op · Operation · Plan Machine · Actual Machine ·
-//     Operator · Start · Finish · Accepted · Rejected · QC/Report · Logged By.
+//     Operator · Start · Finish · Accepted · Rejected · Logged By.
 //     Plan is jc_ops.machine_id; Actual is who made the pieces (ADR-164).
 //     "Logged By" is the SYSTEM user who booked the entries — the person
 //     accountable for the record — not the shop-floor operator, who has his
@@ -28,6 +28,7 @@ import type { Company, JcOpEnriched, JobCardListItem } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtDate } from '@/lib/date';
 import { buildDocCompany } from '@/lib/print/company';
 import { esc } from '@/lib/print/doc-print';
 import { openSheetHtmlWindow, sheetLetterheadHtml } from '@/lib/print/sheet-print';
@@ -39,12 +40,10 @@ const COLS = 6;
 // room on paper for a step added on the floor.
 const BLANK_OP_ROWS = 4;
 
-// dd-MM-yyyy with no TZ shift; null-safe (mirrors legacy fmt()). Blank, not a
-// dash, on the traveller: an empty cell is where a hand writes the date.
+// The one shared DD-MMM-YYYY format. Blank, not a dash, on the traveller: an
+// empty cell is where a hand writes the date.
 function fmt(d: string | null | undefined): string {
-  if (!d) return '';
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : d;
+  return fmtDate(d, '');
 }
 
 /** One label / value row. The rule under it runs the full column width — from
@@ -85,13 +84,12 @@ function opRow(o: JcOpEnriched): string {
     <td class="c">${fmt(o.lastLogDate)}</td>
     <td class="c b">${okQty > 0 ? okQty : ''}</td>
     <td class="c">${rej > 0 ? rej : ''}</td>
-    <td></td>
     <td>${esc(o.entryDoneBy ?? '')}</td>
   </tr>`;
 }
 
 function blankRow(seq: number): string {
-  return `<tr class="hand"><td class="c">${opSrNo(seq)}</td>${'<td></td>'.repeat(10)}</tr>`;
+  return `<tr class="hand"><td class="c">${opSrNo(seq)}</td>${'<td></td>'.repeat(9)}</tr>`;
 }
 
 // Everything the traveller needs beyond SHEET_STYLE. Sizes follow the sheet:
@@ -155,33 +153,31 @@ export function printJobCard(args: {
 
   const so = jc.sourceLink?.type === 'so' ? jc.sourceLink : null;
   const soNo = jc.sourceLink?.code ?? '';
-  // Two different line numbers, never one. `SO Line` is OUR line on the sales
+  // Two different line numbers, never one. `Ln` is OUR line on the sales
   // order; `POL` is the line number on the CUSTOMER'S purchase order, which
   // does not have to match (our line 11 can be their line 20).
   const soLine = so ? String(so.lineNo) : '';
   const pol = jc.clientPoLineNo ?? '';
   const routeCard = jc.routeCardCode
-    ? `${jc.routeCardCode}${jc.routeCardRevision != null ? ` / Rev ${jc.routeCardRevision}` : ''}`
+    ? `${jc.routeCardCode}${jc.routeCardRevision != null ? ` / ${jc.routeCardRevision}` : ''}`
     : '';
-  // The drawing is the item code with the customer's revision from the SO /
-  // JWSO line, written CODE/REV like every other document (ADR-177);
-  // items.drawing_no is not on the list row.
-  const drawing = itemCodeWithRev(jc.itemCode, jc.itemRevision);
 
   const left = [
     fact('JC No.', jc.code, { strong: true }),
-    fact('SO No.', soNo, { strong: true }),
+    fact(jc.sourceLink?.type === 'jw' ? 'JWSO No.' : 'SO No.', soNo, { strong: true }),
     fact('Ln', soLine),
     fact('POL', pol),
     fact('Item Name', jc.itemName),
-    fact('Route Card / Rev', routeCard, { last: true }),
+    fact('RC No. / Route Card Rev', routeCard, { last: true }),
   ].join('');
   const right = [
     fact('JC Date', fmt(jc.jcDate)),
     fact('Due Date', fmt(jc.dueDate)),
-    fact('Order Qty', `${jc.orderQty} pcs`, { strong: true }),
-    fact('Item Code', itemCodeWithRev(jc.itemCode, jc.itemRevision), { strong: true }),
-    fact('Drawing No. / Rev', drawing, { last: true }),
+    fact('JC Qty', `${jc.orderQty} pcs`, { strong: true }),
+    // The item code with the customer's revision from the SO / JWSO line,
+    // written CODE/REV like every other document (ADR-177). Printed ONCE: a
+    // second "CODE/REV" row used to repeat this exact value.
+    fact('Item Code', itemCodeWithRev(jc.itemCode, jc.itemRevision), { strong: true, last: true }),
   ].join('');
 
   const rows =
@@ -192,33 +188,32 @@ export function printJobCard(args: {
     <thead><tr>
       <th style="width:8mm">Op</th>
       <th>Operation</th>
-      <th style="width:17mm">Plan<br>Machine</th>
+      <th style="width:17mm">Planned<br>Machine</th>
       <th style="width:17mm">Actual<br>Machine</th>
       <th style="width:20mm">Operator</th>
-      <th style="width:16mm">Start</th>
-      <th style="width:16mm">Finish</th>
+      <th style="width:16mm">Start<br>Date</th>
+      <th style="width:16mm">End<br>Date</th>
       <th style="width:11mm">Accepted</th>
       <th style="width:13mm">Rejected</th>
-      <th style="width:20mm">QC / Report</th>
       <th style="width:22mm">Logged By</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 
-  const trace = `<div class="jsec">Material / Traceability &nbsp;·&nbsp; NCR / Rework references</div>
+  const trace = `<div class="jsec">Material / Traceability &nbsp;·&nbsp; NC / Rework References</div>
     <div class="jtrace">
       <div>${fact('Material Grade', jc.rawMaterialGradeText ?? '')}${fact('Actual Size', args.actualSize ?? '')}${fact('Heat / Lot No.', '')}</div>
-      <div>${fact('NCR No.', jc.parentNcCode ?? '')}${fact('Rework JC', '')}</div>
+      <div>${fact('NC No.', jc.parentNcCode ?? '')}</div>
     </div>`;
 
   const signs = `<div class="jsign">
-      <div>${fact('Prepared By', '')}${fact('Date', '')}</div>
-      <div>${fact('Checked / Appr.', '')}${fact('Date', '')}</div>
-      <div>${fact('QC Release', '')}${fact('Date', '')}</div>
+      <div>${fact('Prepared By', '')}${fact('Sign Date', '')}</div>
+      <div>${fact('Checked / Approved By', '')}${fact('Sign Date', '')}</div>
+      <div>${fact('QC Release', '')}${fact('Sign Date', '')}</div>
     </div>`;
 
   const foot = `<div class="jfoot">
-      <span>Job card must reference only released drawing / routing revisions. QC hold operations cannot be closed without inspector acceptance.</span>
+      <span>Use released drawing only.</span>
       <span>Page <span data-pgof>1</span></span>
     </div>`;
 

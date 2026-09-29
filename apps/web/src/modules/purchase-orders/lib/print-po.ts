@@ -21,6 +21,7 @@ import type {
 } from '@innovic/shared';
 import { COMPANY_CARD_ADDRESS_LINES, buildDocCompany } from '@/lib/print/company';
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
+import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import {
   type SheetField,
@@ -29,11 +30,10 @@ import {
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
 
-// A purchase-order line carries no unit of its own -- `purchase_order_lines`
-// has no uom column -- so the sheet prints the one the whole system assumes.
-// It was hard-coded in this file before the PO moved onto the shared sheet;
-// naming it here keeps it one value instead of two literals that can drift.
-const PO_UOM = 'NOS';
+// A purchase-order line has no uom column of its own; the detail read joins
+// the item master's unit (`uom`). NOS -- the unit the whole system assumes --
+// prints only when that is blank (a hand-typed line with no item).
+const PO_UOM_FALLBACK = 'NOS';
 
 // A SERVICE purchase order is a purchase order with `poType: 'service'` -- the
 // same table, the same screen, the same lines. It is NOT the `service_pos`
@@ -51,7 +51,7 @@ function docTypeOf(po: PurchaseOrderDetail): PrintDocType {
 // that on a printed document.
 const PO_TYPE_LABEL: Record<string, string> = {
   standard: 'Standard',
-  job_work: 'Job work',
+  job_work: 'Job Work',
   outsource: 'Outsource',
   service: 'Service',
 };
@@ -78,28 +78,36 @@ export function printPurchaseOrder(args: {
   const priceHidden = po.priceVisible === false;
   const money = (n: number): string => (priceHidden ? '—' : inrFormat(n));
 
-  const subtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
+  const uomOf = (u: string | null | undefined): string => u?.trim() || PO_UOM_FALLBACK;
+  const lineUoms = [...new Set(lines.map((l) => uomOf(l.uom)))];
+  // One unit under the quantity total when every line agrees; blank when units differ.
+  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? PO_UOM_FALLBACK) : '';
+
+  // ADR-189 — the print states the SAVED totals (the same figures the list,
+  // detail and reports show), never its own recomputation. A tax row is printed
+  // for every GST % the PO carries, which is exactly how the saved tax is
+  // worked out (subtotal × (SGST + CGST + IGST) / 100). The line sum is only a
+  // fallback for a PO whose roll-up was never stored.
+  const lineSubtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
+  const subtotal = po.subtotal ?? Number(lineSubtotal.toFixed(2));
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
 
   const sgstPct = Number(po.sgstPct) || 0;
   const cgstPct = Number(po.cgstPct) || 0;
   const igstPct = Number(po.igstPct) || 0;
-  const isIgst = po.taxType === 'igst' || (igstPct > 0 && sgstPct === 0 && cgstPct === 0);
 
   const taxRows: { label: string; value: string }[] = [];
-  let tax = 0;
-  if (isIgst) {
-    const amt = (subtotal * igstPct) / 100;
-    tax += amt;
-    if (igstPct > 0) taxRows.push({ label: `IGST @ ${igstPct}%`, value: money(amt) });
-  } else {
-    const sAmt = (subtotal * sgstPct) / 100;
-    const cAmt = (subtotal * cgstPct) / 100;
-    tax += sAmt + cAmt;
-    if (sgstPct > 0) taxRows.push({ label: `SGST @ ${sgstPct}%`, value: money(sAmt) });
-    if (cgstPct > 0) taxRows.push({ label: `CGST @ ${cgstPct}%`, value: money(cAmt) });
+  if (igstPct > 0) {
+    taxRows.push({ label: `IGST @ ${igstPct}%`, value: money((subtotal * igstPct) / 100) });
   }
-  const grand = subtotal + tax;
+  if (sgstPct > 0) {
+    taxRows.push({ label: `SGST @ ${sgstPct}%`, value: money((subtotal * sgstPct) / 100) });
+  }
+  if (cgstPct > 0) {
+    taxRows.push({ label: `CGST @ ${cgstPct}%`, value: money((subtotal * cgstPct) / 100) });
+  }
+  const tax = po.taxAmount ?? Number(((subtotal * (sgstPct + cgstPct + igstPct)) / 100).toFixed(2));
+  const grand = po.totalAmount ?? subtotal + tax;
 
   const vendorName = vendor?.name ?? po.vendorName ?? po.vendorCodeText ?? '';
   // Full postal address for the party box — line 1 plus city / state / pincode,
@@ -119,7 +127,7 @@ export function printPurchaseOrder(args: {
     companyGSTIN: company?.gstNumber ?? '',
     companyPhone: company?.phone ?? '',
     companyEmail: company?.email ?? '',
-    date: fmtDate(new Date().toISOString()),
+    date: fmtDate(todayIst()),
     currentUser: args.currentUser ?? '',
     poNo: po.code,
     poDate: fmtDate(po.poDate),
@@ -150,7 +158,7 @@ export function printPurchaseOrder(args: {
   // and same labels the challan's recipient box uses, so a vendor holding both
   // documents reads them the same way.
   const recipientFields: SheetField[] = [
-    { label: 'Code', value: vendor?.code ?? po.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Vendor Code', value: vendor?.code ?? po.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: vendorName, variant: 'name' },
     {
       label: 'Address',
@@ -173,7 +181,7 @@ export function printPurchaseOrder(args: {
   // the Order box said the same thing twice and cost four lines of the box.
   // Removed on the user's instruction, 2026-09-09.
   const documentFields: SheetField[] = [
-    { label: isSpo ? 'SPO No.' : 'PO No.', value: po.code, variant: 'mono', strong: true },
+    { label: 'PO No.', value: po.code, variant: 'mono', strong: true },
     // The type decides what happens to the material afterwards -- job work and
     // service send OUR parts out and expect them back; standard buys goods. A
     // vendor holding the paper should not have to infer which one this is.
@@ -181,16 +189,18 @@ export function printPurchaseOrder(args: {
     // The sales order behind it, resolved by the detail read from the first line
     // that carries one. Blank on a hand-raised PO, which genuinely has no SO.
     { label: 'SO No.', value: po.soCode ?? '', variant: 'mono' },
-    { label: isSpo ? 'SPO Date' : 'PO Date', value: challanDate(po.poDate), variant: 'mono' },
+    { label: 'PO Date', value: challanDate(po.poDate), variant: 'mono' },
     { label: 'Due Date', value: po.dueDate ? challanDate(po.dueDate) : '', variant: 'mono' },
-    { label: 'PR Ref.', value: po.prCodeText ?? '', variant: 'mono' },
-    { label: 'Contact person', value: po.createdByName ?? dash },
+    { label: 'PR No.', value: po.prCodeText ?? '', variant: 'mono' },
+    { label: 'Our Contact Person', value: po.createdByName ?? dash },
   ];
 
   const model: SheetPrintModel = {
     title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     columns: 'po',
+    // "Our Contact Person" already names who raised it.
+    hidePreparedBy: true,
     blocks: templatesToBlocks(doc, templates),
     data,
     // Letterhead address comes from the business card rather than the
@@ -229,7 +239,7 @@ export function printPurchaseOrder(args: {
       // the whole column drops off the sheet.
       pol: l.clientPoLineNo,
       itemName: l.itemName,
-      uom: PO_UOM,
+      uom: uomOf(l.uom),
       qty: String(l.qty),
       rate: money(Number(l.rate ?? 0)),
       amount: money(l.qty * Number(l.rate ?? 0)),
@@ -238,7 +248,7 @@ export function printPurchaseOrder(args: {
       description: l.lineRemarks,
     })),
     totalQty: String(totalQty),
-    totalUom: PO_UOM,
+    totalUom,
     // Viewers who may not see prices get the qty-only PO — the Rate and Amount
     // cells print an em dash and no money block or amount-in-words follows.
     ...(priceHidden

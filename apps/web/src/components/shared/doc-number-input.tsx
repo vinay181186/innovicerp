@@ -116,9 +116,9 @@ export function DocNumberInput({
             {state.checking ? (
               <Loader2 size={14} className="animate-spin" style={{ color: 'var(--text3)' }} />
             ) : state.error ? (
-              <X size={15} style={{ color: 'var(--red)' }} />
+              <X size={15} style={{ color: 'var(--red2)' }} />
             ) : (
-              <Check size={15} style={{ color: 'var(--green)' }} />
+              <Check size={15} style={{ color: 'var(--green2)' }} />
             )}
           </span>
         ) : null}
@@ -130,11 +130,9 @@ export function DocNumberInput({
       ) : state.error ? (
         <div className="form-error">{state.error}</div>
       ) : value.trim() === '' ? (
-        <div className="form-help">
-          Auto-filled with the next number. Edit to use your own — leave blank to auto-generate on save.
-        </div>
+        <div className="form-help">Leave blank for the next number.</div>
       ) : (
-        <div className="form-help" style={{ color: 'var(--green)' }}>✓ Available</div>
+        <div className="form-help" style={{ color: 'var(--green2)' }}>✓ Available</div>
       )}
     </div>
   );

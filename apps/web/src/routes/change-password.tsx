@@ -25,16 +25,16 @@ import { authenticatedRoute } from './_authenticated';
 
 const schema = z
   .object({
-    currentPassword: z.string().min(1, 'Enter your current password'),
-    password: z.string().min(6, 'New password must be at least 6 characters'),
+    currentPassword: z.string().min(1, 'Current password is required.'),
+    password: z.string().min(6, 'New password must be at least 6 characters.'),
     confirm: z.string(),
   })
   .refine((v) => v.password === v.confirm, {
-    message: 'New passwords do not match',
+    message: 'New password and Confirm new password do not match.',
     path: ['confirm'],
   })
   .refine((v) => v.password !== v.currentPassword, {
-    message: 'New password must be different from the current one',
+    message: 'New password must be different from Current password.',
     path: ['password'],
   });
 type Form = z.infer<typeof schema>;
@@ -59,7 +59,7 @@ function ChangePasswordPage(): React.JSX.Element {
   const onSubmit = async ({ currentPassword, password }: Form): Promise<void> => {
     setError(null);
     if (!me?.email) {
-      setError('Your session has expired — sign in again.');
+      setError('Your session has expired. Sign in again.');
       return;
     }
     // 1. Verify the current password by re-authenticating this same account.
@@ -68,7 +68,7 @@ function ChangePasswordPage(): React.JSX.Element {
       password: currentPassword,
     });
     if (reauthErr) {
-      form.setError('currentPassword', { message: 'Current password is incorrect' });
+      form.setError('currentPassword', { message: 'Current password is incorrect.' });
       return;
     }
     // 2. Set the new password on the (now freshly re-authenticated) session.

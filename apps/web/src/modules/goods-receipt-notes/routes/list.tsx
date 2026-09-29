@@ -2,7 +2,7 @@
 //
 // Rendered as one CARD per GRN, the same layout the SO Master list uses
 // (sales-orders/routes/list.tsx, reference supplied 2026-08-11): frozen header
-// band with status pills, accent bar, identity row with badges, metric strip,
+// band with the filter bar, accent bar, identity row with badges, metric strip,
 // meta line, and the GRN's lines inside an expandable panel. Replaced a
 // twelve-column table; no field was dropped in the move, only regrouped.
 //
@@ -17,17 +17,20 @@ import {
   type ListGoodsReceiptNotesQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useGoodsReceiptNote, useGoodsReceiptNotesList } from '../api';
 import { QcStatusBadge } from '../components/qc-status-badge';
+import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
 // Pagination is KEPT here (unlike SO Master): the GRN API is paginated and the
 // receipt book grows every day, so the whole list is not loaded in one go.
@@ -65,10 +68,8 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -101,7 +102,11 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -127,6 +132,22 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNotesList(query);
+  // The KPI summary has no "QC In Progress" count, so the QC-status dropdown's
+  // In Progress count reads the pager total of the same list filtered to it
+  // (same endpoint). The rows also tell each card whether a line is in QC right
+  // now — the same rule (a line with QC status 'in_progress'), so card and
+  // count always agree.
+  const { data: inProgressData } = useGoodsReceiptNotesList({
+    search: search.search,
+    qcStatus: 'in_progress',
+    limit: 200,
+    offset: 0,
+  });
+  const inProgressIds = useMemo(
+    () => new Set((inProgressData?.items ?? []).map((g) => g.id)),
+    [inProgressData],
+  );
+  const filtered = Boolean(search.search) || search.qcStatus !== undefined;
 
   // Many cards can be open at once, so this is a Set. Nothing auto-expands on
   // load: each open card fetches that GRN's detail, and expanding 25 of them on
@@ -148,6 +169,15 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   const accentFor = (grn: GoodsReceiptNoteListItem): string =>
     grn.grnStatus === 'close' ? 'var(--green)' : 'var(--amber)';
 
+  /** Card QC status: cleared once every line is inspected; "In Progress" only
+   *  when a line's QC status is 'in_progress' (the tile's rule); else pending. */
+  const qcStatusFor = (grn: GoodsReceiptNoteListItem): GrnQcStatus =>
+    grn.grnStatus === 'close'
+      ? 'completed'
+      : search.qcStatus === 'in_progress' || inProgressIds.has(grn.id)
+        ? 'in_progress'
+        : 'pending';
+
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
@@ -158,144 +188,87 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view GRNs. Ask an admin.
       </div>
     );
   }
 
   return (
     <div>
-      {/* Frozen header band — the title, the search toolbar and the status
-          pills stay put while the GRN cards scroll underneath. `#content` is
-          the app's scroll container, so `top:0` pins this band to its padding
-          box; the background must be opaque and match #content's own (`--bg`)
-          or the cards show through as they pass under it. Not bled to the
-          edges with negative margins — see the SO list for why (a mismatch
-          gives the whole app a horizontal scrollbar). */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
+      {/* THE list header (ui/layout ListHeader): title · count · Expand All ·
+          + New GRN, then the filter bar (search · QC status with counts ·
+          Clear), with the read-only "Today" tile inside the same band. */}
+      <ListHeader
+        title="GRN"
+        icon="📥"
+        count={total}
+        noun="GRN"
+        filterNote={search.qcStatus ? GRN_QC_STATUS_LABELS[search.qcStatus] : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search GRN no., PO, vendor, DC, invoice…"
+        updating={isFetching && !isLoading}
+        filters={
+          // QC status, every GRN_QC_STATUSES value, with the summary counts
+          // the old pill row + KPI strip showed folded into the labels (owner
+          // decision 2026-09-26). Same `qcStatus` search param, same query.
+          <select
+            className="innovic-select"
+            aria-label="QC status"
+            title="QC status"
+            value={search.qcStatus ?? ''}
+            onChange={(e) => {
+              const v = e.target.value as GrnQcStatus | '';
+              void navigate({
+                search: (prev) => ({ ...prev, qcStatus: v === '' ? undefined : v, page: 1 }),
+                replace: true,
+              });
+            }}
+          >
+            <option value="">{withCount('All', data?.summary?.total)}</option>
+            {GRN_QC_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {withCount(
+                  GRN_QC_STATUS_LABELS[s],
+                  qcCountFor(s, data?.summary, inProgressData?.total),
+                )}
+              </option>
+            ))}
+          </select>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, qcStatus: undefined, page: 1 }),
+            replace: true,
+          });
         }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 10,
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              📥 Goods Receipt Note (GRN)
-            </div>
-            {/* Count comes from the list response's `total` — the whole book,
-                not just the page on screen. */}
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} GRN{total === 1 ? '' : 's'}
-              {search.qcStatus ? (
-                <>
-                  {' '}
-                  · <span className="text2">{search.qcStatus.replaceAll('_', ' ')}</span> only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="Search GRN no., PO, vendor, DC, invoice…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {perms.entry ? (
-              <Link to="/goods-receipt-notes/new" className="btn btn-primary">
-                <Plus size={14} /> New GRN
-              </Link>
-            ) : null}
-          </div>
-        </div>
-
-        {/* QC-status filter as pills. Replaces the <select> it used to sit
-            beside — every GRN_QC_STATUSES value gets a pill, so nothing that
-            could be filtered before is unreachable now. Same `qcStatus` search
-            param, same query; only the control changed. */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 10,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {([null, ...GRN_QC_STATUSES] as (GrnQcStatus | null)[]).map((s) => {
-              const active = (search.qcStatus ?? null) === s;
-              return (
-                <button
-                  key={s ?? 'all'}
-                  type="button"
-                  className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{
-                    fontSize: 11,
-                    textTransform: 'capitalize',
-                    borderRadius: 999,
-                    padding: '3px 12px',
-                  }}
-                  onClick={() =>
-                    void navigate({
-                      search: (prev) => ({ ...prev, qcStatus: s ?? undefined, page: 1 }),
-                      replace: true,
-                    })
-                  }
-                >
-                  {s ? s.replaceAll('_', ' ') : 'All'}
-                </button>
-              );
-            })}
-          </div>
+        filtersActive={search.qcStatus !== undefined || searchInput !== ''}
+        tools={
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() =>
-              setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
-            }
+            className="btn btn-ghost"
+            onClick={() => setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))}
             disabled={rows.length === 0}
             title={allExpanded ? 'Hide every card’s lines' : 'Show every card’s lines'}
           >
-            {allExpanded ? 'Collapse all' : 'Expand all'}
+            {allExpanded ? 'Collapse All' : 'Expand All'}
           </button>
-        </div>
-      </div>
-
-      {data?.summary ? (
-        <GrnKpiStrip
-          summary={data.summary}
-          activeStatus={search.qcStatus ?? null}
-          onSelectStatus={(s) => {
-            void navigate({
-              search: (prev) => ({ ...prev, qcStatus: s, page: 1 }),
-              replace: true,
-            });
-          }}
-        />
-      ) : null}
+        }
+        primary={
+          perms.entry ? (
+            <Link to="/goods-receipt-notes/new" className="btn btn-primary">
+              <Plus size={14} /> New GRN
+            </Link>
+          ) : null
+        }
+      >
+        {/* Read-only context tile: the three filtering tiles (Total / QC
+            Pending / QC Cleared) moved into the QC-status dropdown's option
+            labels; "Today" has no filter behind it, so it stays here. */}
+        {data?.summary ? <GrnTodayStrip today={data.summary.today} /> : null}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
@@ -303,17 +276,16 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           Loading…
         </div>
       ) : isError ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load goods receipt notes'}
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
+          {error instanceof Error ? error.message : 'Could not load GRNs. Try again.'}
         </div>
       ) : rows.length === 0 ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
-          No GRN entries yet
+          {filtered ? 'No GRNs match.' : 'No GRNs yet.'}
         </div>
       ) : (
         rows.map((grn) => {
           const isExpanded = expandedIds.has(grn.id);
-          const closed = grn.grnStatus === 'close';
           const poRef = grn.poCode ?? grn.poCodeText;
           return (
             <div
@@ -359,9 +331,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                   {/* GRN status: 'close' once every line is fully QC-inspected,
                       else 'pending' (any line still has QC qty remaining, incl.
                       partial approval). */}
-                  <span className={`badge ${closed ? 'b-green' : 'b-amber'}`}>
-                    {closed ? 'QC Cleared' : 'QC Pending'}
-                  </span>
+                  <QcStatusBadge status={qcStatusFor(grn)} />
                   {/* Source: an NC's return-to-vendor challan (ADR-161), an OSP
                       delivery challan (ADR-080) or a purchase PO. An NC GRN
                       also carries deliveryChallanId, so NC is checked first. */}
@@ -408,7 +378,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                     cursor: 'pointer',
                   }}
                 >
-                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
+                  <div
+                    style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
+                  >
                     <QtyBox label="Received" value={grn.totalReceivedQty} />
                     <QtyBox
                       label="Accepted"
@@ -436,7 +408,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                     }}
                   >
                     <span className="text2" style={{ whiteSpace: 'nowrap' }}>
-                      {grn.grnDate}
+                      {fmtDate(grn.grnDate)}
                     </span>
                     <span>·</span>
                     {/* On an NC-return GRN poCodeText holds the NC code (no PO
@@ -451,7 +423,8 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                       <>
                         <span>·</span>
                         <span style={{ whiteSpace: 'nowrap' }}>
-                          DC <span className="text2">{grn.dcNo}</span>
+                          {grn.deliveryChallanId ? 'DC No.' : 'Vendor Challan No.'}{' '}
+                          <span className="text2">{grn.dcNo}</span>
                         </span>
                       </>
                     ) : null}
@@ -459,12 +432,16 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                       <>
                         <span>·</span>
                         <span style={{ whiteSpace: 'nowrap' }}>
-                          Inv <span className="text2">{grn.invoiceNo}</span>
+                          Vendor Invoice No. <span className="text2">{grn.invoiceNo}</span>
                         </span>
                       </>
                     ) : null}
-                    <span>·</span>
-                    <span title={grn.remarks ?? ''}>{grn.remarks || '—'}</span>
+                    {grn.remarks ? (
+                      <>
+                        <span>·</span>
+                        <span title={grn.remarks}>{grn.remarks}</span>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
@@ -480,59 +457,20 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         })
       )}
 
-      {/* Legacy L26502-26503 — plain tip line under the register. */}
-      <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-        💡 GRN creates receipt record with <b>QC Pending</b> status. Go to <b>Incoming QC</b> to
-        inspect and accept/reject. Only QC-accepted qty moves to Store inventory.
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No goods receipt notes'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      {/* Legacy L26502-26503 — the tip line under the register. */}
+      <ListFooter
+        total={total}
+        noun="goods receipt note"
+        page={currentPage}
+        pageSize={PAGE_SIZE}
+        onPage={(p) =>
+          void navigate({
+            search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+            replace: true,
+          })
+        }
+        hint="Only QC-accepted qty goes into stock."
+      />
     </div>
   );
 }
@@ -550,8 +488,8 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load GRN detail'}
+      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red2)' }}>
+        {error instanceof Error ? error.message : 'Could not load GRN detail. Try again.'}
       </div>
     );
   }
@@ -568,148 +506,139 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
       >
         <div
           style={{
-            fontSize: 10,
+            fontSize: 11,
             color: 'var(--blue)',
             fontFamily: 'var(--mono)',
             fontWeight: 700,
-            letterSpacing: '0.06em',
           }}
         >
-          ▸ LINES — {data.code}
+          Lines — {data.code}
         </div>
-        <Link
-          to="/goods-receipt-notes/$id"
-          params={{ id: data.id }}
-          style={{ fontSize: 11, color: 'var(--blue)' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          Open full detail →
-        </Link>
       </div>
-      {/* tbl-ctr — the table-alignment standard: header and data share one
-          centre line; no per-cell textAlign / td-ctr. */}
-      <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
-        <thead>
-          <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Ln</th>
-            {/* POL = the CUSTOMER's own PO line number off the SO line behind
-                this receipt line. Not our SO line number. */}
-            <th style={{ color: 'var(--purple)' }}>POL</th>
-            <th>Item Code</th>
-            <th>Item Name</th>
-            <th>Received</th>
-            <th style={{ color: 'var(--green)' }}>Accepted</th>
-            <th style={{ color: 'var(--red)' }}>Rejected</th>
-            <th>QC</th>
-            <th>QC Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.lines.length === 0 ? (
+      {/* The sheet (tbl-grid), compact because it sits inside an expanded
+          card. Codes / qty / dates one line; Item Name may wrap. */}
+      <div className="tbl-wrap">
+        <table className="innovic-table tbl-grid tbl-compact">
+          <thead>
             <tr>
-              <td colSpan={9} className="empty-state">
-                No lines
-              </td>
+              <th style={{ width: 36 }}>Ln</th>
+              {/* POL = the CUSTOMER's own PO line number off the SO line behind
+                this receipt line. Not our SO line number. */}
+              <th style={{ color: 'var(--purple)' }}>POL</th>
+              <th>Item Code</th>
+              <th className="th-left">Item Name</th>
+              <th className="th-num">Received</th>
+              <th className="th-num" style={{ color: 'var(--green2)' }}>
+                Accepted
+              </th>
+              <th className="th-num" style={{ color: 'var(--red2)' }}>
+                Rejected
+              </th>
+              <th>QC Status</th>
+              <th>QC Date</th>
             </tr>
-          ) : (
-            data.lines.map((l) => (
-              <tr key={l.id} style={{ background: 'var(--bg)' }}>
-                <td className="mono fw-700">{l.lineNo}</td>
-                {/* POL — the CUSTOMER's PO line number off the SO line behind
-                    this row; '—' when there is no sales order behind it. */}
-                <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                  {l.clientPoLineNo ?? '—'}
-                </td>
-                {/* Item code is THE main thing — strong, never the faint text3.
-                    CODE/REV (ADR-177); bare code when the line has no revision. */}
-                <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                  {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
-                </td>
-                <td
-                  style={{
-                    maxWidth: 320,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={l.itemName}
-                >
-                  {l.itemName}
-                </td>
-                <td className="mono fw-700">{l.receivedQty}</td>
-                <td className="mono fw-700" style={{ color: l.qcAcceptedQty > 0 ? 'var(--green)' : undefined }}>
-                  {l.qcAcceptedQty}
-                </td>
-                <td className="mono" style={{ color: l.qcRejectedQty > 0 ? 'var(--red)' : undefined }}>
-                  {l.qcRejectedQty}
-                </td>
-                <td>
-                  <QcStatusBadge status={l.qcStatus} />
-                </td>
-                <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                  {l.qcDate ?? '—'}
+          </thead>
+          <tbody>
+            {data.lines.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="empty-state">
+                  No lines yet.
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              data.lines.map((l) => (
+                <tr key={l.id}>
+                  <td className="mono fw-700">{l.lineNo}</td>
+                  {/* POL — the CUSTOMER's PO line number off the SO line behind
+                    this row; '—' when there is no sales order behind it. */}
+                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    {l.clientPoLineNo ?? '—'}
+                  </td>
+                  {/* Item code is THE main thing — strong, never the faint text3.
+                    CODE/REV (ADR-177); bare code when the line has no revision. */}
+                  <td
+                    className="mono fw-700"
+                    style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+                  >
+                    {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
+                  </td>
+                  <td className="td-left" title={l.itemName}>
+                    {l.itemName}
+                  </td>
+                  <td className="mono fw-700 td-num">{l.receivedQty}</td>
+                  <td
+                    className="mono fw-700 td-num"
+                    style={{ color: l.qcAcceptedQty > 0 ? 'var(--green)' : undefined }}
+                  >
+                    {l.qcAcceptedQty}
+                  </td>
+                  <td
+                    className="mono td-num"
+                    style={{ color: l.qcRejectedQty > 0 ? 'var(--red)' : undefined }}
+                  >
+                    {l.qcRejectedQty}
+                  </td>
+                  <td>
+                    <QcStatusBadge status={l.qcStatus} />
+                  </td>
+                  <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                    {fmtDate(l.qcDate)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-// PL-GRN-1b — 4-tile stat strip mirroring legacy renderGRN L26483–26488.
-// Clicking Total / QC Pending / QC Cleared filters by qcStatus. Today
-// is informational (we don't have a "filter by today's date" yet — the
-// Today tile shows the count for context only).
-function GrnKpiStrip({
-  summary,
-  activeStatus,
-  onSelectStatus,
-}: {
-  summary: { total: number; qcPending: number; qcCleared: number; today: number };
-  activeStatus: GrnQcStatus | null;
-  onSelectStatus: (next: GrnQcStatus | undefined) => void;
-}): React.JSX.Element {
+// PL-GRN-1b — legacy renderGRN L26483–26488 showed four tiles. Total / QC
+// Pending / QC Cleared filtered by qcStatus; they are now the counts in the
+// QC-status dropdown (2026-09-26 filter bar). "Today" never filtered — it is
+// context only — so it stays as a read-only tile.
+
+interface GrnSummary {
+  total: number;
+  qcPending: number;
+  qcCleared: number;
+  today: number;
+}
+
+/** "Label (N)" when a count is known, bare label otherwise. */
+function withCount(label: string, n: number | undefined): string {
+  return n === undefined ? label : `${label} (${n})`;
+}
+
+/** The count behind one QC status — the same mapping the old KPI tiles used
+ *  (QC Pending → pending, QC Cleared → completed). The summary has no
+ *  In Progress count, so that one is the pager total of the in-progress list. */
+function qcCountFor(
+  s: GrnQcStatus,
+  summary: GrnSummary | undefined,
+  inProgressTotal: number | undefined,
+): number | undefined {
+  if (s === 'in_progress') return inProgressTotal;
+  if (!summary) return undefined;
+  if (s === 'pending') return summary.qcPending;
+  if (s === 'completed') return summary.qcCleared;
+  return undefined;
+}
+
+function GrnTodayStrip({ today }: { today: number }): React.JSX.Element {
   return (
-    <div style={{ marginBottom: 12 }}>
-      <StatStrip
-        items={[
-          {
-            key: 'all',
-            label: 'Total GRNs',
-            count: summary.total,
-            color: 'var(--cyan)',
-            onClick: () => onSelectStatus(undefined),
-            active: activeStatus === null,
-          },
-          {
-            key: 'qcpending',
-            label: 'QC Pending',
-            count: summary.qcPending,
-            color: 'var(--amber)',
-            sub: '→ Go to Incoming QC',
-            onClick: () => onSelectStatus('pending'),
-            active: activeStatus === 'pending',
-          },
-          {
-            key: 'qccleared',
-            label: 'QC Cleared',
-            count: summary.qcCleared,
-            color: 'var(--green)',
-            onClick: () => onSelectStatus('completed'),
-            active: activeStatus === 'completed',
-          },
-          {
-            // Read-only total (no onClick) — legacy showed a "Today" count for
-            // context only, with no filter behind it.
-            key: 'today',
-            label: 'Today',
-            count: summary.today,
-            color: 'var(--blue)',
-          },
-        ]}
-      />
-    </div>
+    <StatStrip
+      items={[
+        {
+          // Read-only total (no onClick) — legacy showed a "Today" count for
+          // context only, with no filter behind it.
+          key: 'today',
+          label: 'Today',
+          count: today,
+          color: 'var(--blue)',
+        },
+      ]}
+    />
   );
 }

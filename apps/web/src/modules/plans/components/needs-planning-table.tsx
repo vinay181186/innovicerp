@@ -10,6 +10,7 @@
 import type { UnplannedOrderRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { SearchInput } from '@/ui/forms';
@@ -77,10 +78,18 @@ export function NeedsPlanningTable(): React.JSX.Element {
         render: (r) => r.partName ?? '—',
         title: (r) => r.partName ?? '',
       },
-      { header: 'Order Qty', width: '6%', className: 'mono fw-700', nowrap: true, key: 'orderQty' },
       {
-        header: 'Planned',
+        header: 'Order Qty',
         width: '6%',
+        align: 'right',
+        className: 'mono fw-700',
+        nowrap: true,
+        key: 'orderQty',
+      },
+      {
+        header: 'Plan Qty',
+        width: '6%',
+        align: 'right',
         className: 'mono',
         nowrap: true,
         render: (r) => (
@@ -90,6 +99,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
       {
         header: 'Pending',
         width: '6%',
+        align: 'right',
         className: 'mono fw-700',
         headColor: 'var(--red)',
         nowrap: true,
@@ -100,7 +110,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         width: '8%',
         className: 'mono',
         nowrap: true,
-        render: (r) => r.dueDate ?? '—',
+        render: (r) => fmtDate(r.dueDate),
       },
       {
         header: 'Customer',
@@ -136,7 +146,9 @@ export function NeedsPlanningTable(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load unplanned orders'}
+          message={
+            error instanceof Error ? error.message : 'Could not load unplanned orders. Try again.'
+          }
         />
       ) : (
         <DataTable
@@ -147,9 +159,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
           empty={
             <>
               <div className="empty-icon">✅</div>
-              {data && data.rows.length === 0
-                ? 'All SO lines are fully planned!'
-                : 'No SO lines match your search.'}
+              {data && data.rows.length === 0 ? 'No SO lines to plan.' : 'No SO lines match.'}
             </>
           }
           rowActionsWidth="15%"

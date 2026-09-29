@@ -1131,7 +1131,7 @@ const TIMELINE_EVENTS = [
     label: 'Sent to vendor (OSP)',
     detail: 'Heat treatment — Suryo Metallurgicals',
     code: 'IN-DC-00211',
-    color: 'var(--amber)',
+    color: 'var(--amber2)',
   },
   {
     key: 't4',
@@ -1139,7 +1139,7 @@ const TIMELINE_EVENTS = [
     label: 'Dispatched',
     detail: '120 Nos',
     code: 'IN-INV-00088',
-    color: 'var(--green)',
+    color: 'var(--green2)',
   },
 ];
 
@@ -1252,8 +1252,8 @@ function DataSection() {
                 key: 'open',
                 label: 'Open',
                 count: 18,
-                color: 'var(--amber)',
-                sub: <span style={{ color: 'var(--red)' }}>3 overdue</span>,
+                color: 'var(--amber2)',
+                sub: <span style={{ color: 'var(--red2)' }}>3 overdue</span>,
                 active: activeStat === 'open',
                 onClick: () => setActiveStat('open'),
               },
@@ -1261,7 +1261,7 @@ function DataSection() {
                 key: 'closed',
                 label: 'Closed',
                 count: 21,
-                color: 'var(--green)',
+                color: 'var(--green2)',
                 active: activeStat === 'closed',
                 onClick: () => setActiveStat('closed'),
               },
@@ -1272,8 +1272,8 @@ function DataSection() {
         <State label="StatStrip — read-only (no onClick, so no control is announced)">
           <StatStrip
             items={[
-              { key: 'a', label: 'Received', count: 120, color: 'var(--green)' },
-              { key: 'b', label: 'Balance', count: 30, color: 'var(--red)' },
+              { key: 'a', label: 'Received', count: 120, color: 'var(--green2)' },
+              { key: 'b', label: 'Balance', count: 30, color: 'var(--red2)' },
               { key: 'c', label: 'Rejected', count: 0 },
             ]}
           />
@@ -1289,10 +1289,10 @@ function DataSection() {
         <State label="KpiTiles">
           <KpiTiles
             items={[
-              { key: 'todo', label: 'To Do', value: 7, color: 'var(--amber)' },
+              { key: 'todo', label: 'To Do', value: 7, color: 'var(--amber2)' },
               { key: 'wip', label: 'In Progress', value: 3, color: 'var(--blue)', active: true },
-              { key: 'done', label: 'Completed', value: 21, color: 'var(--green)' },
-              { key: 'late', label: 'Overdue', value: 2, color: 'var(--red)' },
+              { key: 'done', label: 'Completed', value: 21, color: 'var(--green2)' },
+              { key: 'late', label: 'Overdue', value: 2, color: 'var(--red2)' },
             ]}
             onSelect={() => undefined}
           />
@@ -1314,8 +1314,8 @@ function DataSection() {
           <QtyStrip
             items={[
               { label: 'Ordered', value: 120 },
-              { label: 'Dispatched', value: 90, color: 'var(--green)' },
-              { label: 'Balance', value: 30, color: 'var(--red)' },
+              { label: 'Dispatched', value: 90, color: 'var(--green2)' },
+              { label: 'Balance', value: 30, color: 'var(--red2)' },
               { label: 'Rejected', value: 0, color: 'var(--text3)' },
             ]}
           />
@@ -2232,8 +2232,8 @@ function LayoutSection() {
             <QtyStrip
               items={[
                 { label: 'Ordered', value: 120 },
-                { label: 'Dispatched', value: 90, color: 'var(--green)' },
-                { label: 'Balance', value: 30, color: 'var(--red)' },
+                { label: 'Dispatched', value: 90, color: 'var(--green2)' },
+                { label: 'Balance', value: 30, color: 'var(--red2)' },
               ]}
             />
           }

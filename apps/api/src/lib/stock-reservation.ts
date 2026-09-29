@@ -273,7 +273,7 @@ export async function createReservation(
   const lineItemId = await readLineItemId(tx, args.soLineId);
   if (lineItemId !== null && lineItemId !== args.itemId) {
     throw new ValidationError(
-      `Cannot reserve this item against ${args.soCodeText} line ${args.lineNo} — ` +
+      `Cannot reserve this item against ${args.soCodeText} Ln ${args.lineNo} — ` +
         `that line is for a different item. Book the stock against the line that ordered it.`,
     );
   }
@@ -283,8 +283,8 @@ export async function createReservation(
     if (need !== null && args.qty > need) {
       throw new ConflictError(
         need === 0
-          ? `${args.soCodeText} line ${args.lineNo} is already fully covered by stock or dispatches — nothing more to reserve.`
-          : `${args.soCodeText} line ${args.lineNo} still needs ${need} — you asked to reserve ${args.qty}.`,
+          ? `${args.soCodeText} Ln ${args.lineNo} is already fully covered by stock or dispatches — nothing more to reserve.`
+          : `Reserve Qty (${args.qty}) cannot be more than Pending (${need}) on ${args.soCodeText} Ln ${args.lineNo}.`,
       );
     }
   }
@@ -655,7 +655,7 @@ export async function releaseReservationForClose(
     const names = shipped.map((s) => s.code).join(', ');
     throw new ConflictError(
       `Cannot reverse this close — ${r.consumedQty} of the pieces it booked to ` +
-        `${r.soCodeText} line ${r.lineNo} have already been dispatched` +
+        `${r.soCodeText} Ln ${r.lineNo} have already been dispatched` +
         `${names ? ` on ${names}` : ''}. Cancel the dispatch first.`,
     );
   }

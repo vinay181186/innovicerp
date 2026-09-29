@@ -76,12 +76,16 @@ export function OutsourceBalanceModal({
 
   const onSave = (): void => {
     setErr(null);
-    if (qty <= 0 || qty > available) {
-      setErr(`Qty must be between 1 and ${available}`);
+    if (qty <= 0) {
+      setErr('Qty to Outsource is required.');
+      return;
+    }
+    if (qty > available) {
+      setErr(`Qty to Outsource cannot be more than Available (${available}).`);
       return;
     }
     if (!vendorCode.trim()) {
-      setErr('Vendor is required');
+      setErr('Vendor is required.');
       return;
     }
     outsource.mutate(
@@ -91,7 +95,10 @@ export function OutsourceBalanceModal({
           if (jcId) void qc.invalidateQueries({ queryKey: jobCardsKeys.detail(jcId) });
           onDone(qty);
         },
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to outsource balance'),
+        onError: (e) =>
+          setErr(
+            e instanceof Error ? e.message : 'Could not outsource the pending qty. Try again.',
+          ),
       },
     );
   };
@@ -120,7 +127,7 @@ export function OutsourceBalanceModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Outsource Balance — {jcCode} Op{opSrNo(opSeq)}
+          Outsource Available Qty — {jcCode} Op {opSrNo(opSeq)}
         </div>
         <div
           style={{
@@ -136,8 +143,7 @@ export function OutsourceBalanceModal({
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
             Item: {itemCodeWithRev(itemCode, itemRevision)} · Available:{' '}
-            <b style={{ color: 'var(--amber)' }}>{available}</b> pcs. Sends the balance to a vendor
-            as a JW OSP purchase request.
+            <b style={{ color: 'var(--amber2)' }}>{available}</b> pcs. Raises an outsource PR.
           </div>
         </div>
 
@@ -146,13 +152,12 @@ export function OutsourceBalanceModal({
             <div
               className="text3"
               style={{
-                fontSize: 10,
-                textTransform: 'uppercase',
+                fontSize: 11,
                 marginBottom: 4,
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
               }}
             >
-              Qty to outsource ★
+              Qty to Outsource <span className="req">★</span>
             </div>
             <input
               type="number"
@@ -165,11 +170,8 @@ export function OutsourceBalanceModal({
             />
           </div>
           <div style={{ flex: '1 1 200px' }}>
-            <div
-              className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-            >
-              Vendor ★
+            <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+              Vendor <span className="req">★</span>
             </div>
             <SearchableSelect
               id="jcOutsourceBalanceVendor"
@@ -194,8 +196,8 @@ export function OutsourceBalanceModal({
             style={{
               marginTop: 12,
               padding: 8,
-              background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              background: 'var(--red3)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}
@@ -218,7 +220,7 @@ export function OutsourceBalanceModal({
                 <Loader2 size={14} className="inline animate-spin" /> Outsourcing…
               </>
             ) : (
-              'Outsource balance'
+              'Outsource Available'
             )}
           </button>
         </div>

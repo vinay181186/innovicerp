@@ -47,6 +47,7 @@ import type {
 } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
+import { todayIst } from '@/lib/date';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 import {
   type SheetField,
@@ -54,9 +55,11 @@ import {
   challanDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
+import { GRN_QC_STATUS_LABELS } from './grn-labels';
 
+// The same words the GRN screen shows for the QC status -- never the raw code.
 function qcLabel(status: GrnQcStatus): string {
-  return status.replaceAll('_', ' ');
+  return GRN_QC_STATUS_LABELS[status] ?? status;
 }
 
 // ── The shape this builder prints ────────────────────────────────────────────
@@ -114,7 +117,7 @@ export function printGrnDoc(args: {
   if (model.dcNo)
     documentFields.push({ label: 'Vendor Challan No.', value: model.dcNo, variant: 'mono' });
   if (model.invoiceNo)
-    documentFields.push({ label: 'Invoice No.', value: model.invoiceNo, variant: 'mono' });
+    documentFields.push({ label: 'Vendor Invoice No.', value: model.invoiceNo, variant: 'mono' });
 
   // The GRN is INWARD, so the counterparty SUPPLIED the goods -- "Vendor",
   // not "Recipient". Address / GSTIN / contact come from the same substitution
@@ -150,7 +153,7 @@ export function printGrnDoc(args: {
     data,
     company: buildDocCompany(company),
     recipient: { label: 'Vendor', fields: supplierFields },
-    document: { label: 'Document', fields: documentFields },
+    document: { label: 'GRN', fields: documentFields },
     lines: model.lines.map((l) => ({
       // CODE/REV (ADR-177); a line with no revision prints the bare code.
       itemCode: itemCodeWithRev(l.itemCode, l.itemRevision, ''),
@@ -163,15 +166,15 @@ export function printGrnDoc(args: {
       qcStatus: qcLabel(l.qcStatus),
       // The per-line DC reference has no column of its own -- it would be a
       // column of dashes on most GRNs -- so it rides under the item, labelled,
-      // and only on the lines that carry one.
-      ...(l.dcRefNo ? { description: l.dcRefNo, descLabel: 'DC No.' } : {}),
+      // and only on the lines whose reference differs from the header's.
+      ...(l.dcRefNo && l.dcRefNo !== model.dcNo ? { description: l.dcRefNo, descLabel: 'Vendor Challan No.' } : {}),
     })),
     totalQty: String(totalReceived),
     totalAccepted: String(totalAccepted),
     totalRejected: String(totalRejected),
     totalUom: '',
     // A GRN is signed by the people who counted and checked it, not by us.
-    receiverCell: 'Received by<br>Name, sign &amp; date',
+    receiverCell: 'Received By<br>Name, Sign &amp; Date',
     ...(args.testBanner ? { opts: { testBanner: true } } : {}),
   };
 
@@ -223,7 +226,7 @@ export function printGrn(args: {
     companyGSTIN: company?.gstNumber ?? '',
     companyPhone: company?.phone ?? '',
     companyEmail: company?.email ?? '',
-    date: fmtDate(new Date().toISOString().slice(0, 10)),
+    date: fmtDate(todayIst()),
     currentUser: args.currentUser ?? '',
     grnNo: grn.code,
     grnDate: fmtDate(grn.grnDate),

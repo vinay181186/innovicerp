@@ -8,6 +8,7 @@
 import type { ProductionOrderClose, ProductionOrderDetail } from '@innovic/shared';
 import { Loader2, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useReverseProductionOrderClose } from '../api';
 
@@ -15,10 +16,6 @@ interface PoCloseLedgerProps {
   po: ProductionOrderDetail;
   /** True when the user may reverse a close (same edit gate as close). */
   canReverse: boolean;
-}
-
-function fmtDate(iso: string): string {
-  return iso.slice(0, 10);
 }
 
 export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX.Element {
@@ -50,7 +47,8 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
           setOpenId(null);
           setReason('');
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Reversal failed.'),
+        onError: (e) =>
+          setError(e instanceof Error ? e.message : 'Could not reverse this close. Try again.'),
       },
     );
   };
@@ -69,7 +67,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
         <div
           role="alert"
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
             borderRadius: 6,
@@ -113,11 +111,11 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Txn Date</th>
-              <th>Txn Qty</th>
+              <th>Close Date</th>
+              <th className="th-num">Close Qty</th>
               <th>Closed By</th>
-              <th>Note</th>
-              <th>Reversal?</th>
+              <th>Remarks</th>
+              <th>Reversed</th>
               {canReverse ? <th></th> : null}
             </tr>
           </thead>
@@ -130,7 +128,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
               return (
                 <tr key={c.id}>
                   <td className="mono">{fmtDate(c.closedAt)}</td>
-                  <td className="mono fw-700" style={{ color: 'var(--text)' }}>
+                  <td className="mono fw-700 td-num" style={{ color: 'var(--text)' }}>
                     {c.isReversal ? `−${c.qty}` : c.qty}
                     {c.lostQty ? (
                       <span className="text3" style={{ fontSize: 11 }}>
@@ -150,7 +148,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
                         {reversedOriginal ? ` of ${reversedOriginal.qty}` : ''}
                       </span>
                     ) : alreadyReversed ? (
-                      <span className="badge b-grey">reversed</span>
+                      <span className="badge b-grey">Reversed</span>
                     ) : (
                       '—'
                     )}

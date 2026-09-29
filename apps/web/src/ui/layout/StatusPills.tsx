@@ -24,13 +24,15 @@
 // Presentational only: the caller owns `value`, so /__ui-kit can render every
 // state with no data fetch.
 
+import { statusText } from '@/lib/status-text';
+
 export interface StatusPillOption {
   value: string;
   label: string;
 }
 
 export interface StatusPillsProps {
-  /** Enum values (underscores render as spaces) or {value,label}. */
+  /** Enum values (shown as their Title Case label) or {value,label}. */
   options: Array<string | StatusPillOption>;
   /** null = the "All" pill. */
   value?: string | null;
@@ -76,8 +78,7 @@ export function StatusPills({
         {/* null is prepended, so "All" is always the first pill. */}
         {[null, ...options].map((o) => {
           const v = o == null ? null : typeof o === 'string' ? o : o.value;
-          const text =
-            o == null ? allLabel : typeof o === 'string' ? o.replace(/_/g, ' ') : o.label;
+          const text = o == null ? allLabel : typeof o === 'string' ? statusText(o) : o.label;
           const on = value === v;
           return (
             <button

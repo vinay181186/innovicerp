@@ -26,8 +26,11 @@ import { SECTIONS } from './nav-sections';
 // Flatten the nav once: every {to,label,icon}, longest `to` first so the base
 // match below prefers the most specific route (mirrors breadcrumbs' longest-
 // base-match).
+// Items with a query string (the department "Reports" links, /reports?group=…)
+// are skipped: they share a path with the Reports-section entry, which names
+// the tab.
 const NAV_ITEMS = SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.items))
-  .slice()
+  .filter((it) => !it.search)
   .sort((a, b) => b.to.length - a.to.length);
 
 function humanize(seg: string): string {

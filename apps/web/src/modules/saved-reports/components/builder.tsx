@@ -288,14 +288,14 @@ export function Builder(props: Props): JSX.Element {
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" htmlFor="rb-name">
-                Name<span className="req">★</span>
+                Report Name<span className="req">★</span>
               </label>
               <input
                 id="rb-name"
                 className="innovic-input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Open SOs by client"
+                placeholder="e.g. Open SOs by customer"
                 required
               />
             </div>
@@ -308,7 +308,6 @@ export function Builder(props: Props): JSX.Element {
                 className="innovic-input"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="optional"
               />
             </div>
             <div className="form-grp form-full">
@@ -357,7 +356,7 @@ export function Builder(props: Props): JSX.Element {
                   }}
                 >
                   {s.label}
-                  <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text3)' }}>
+                  <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--text3)' }}>
                     {s.group}
                   </span>
                 </button>
@@ -390,7 +389,7 @@ export function Builder(props: Props): JSX.Element {
             <div className="panel" style={{ marginBottom: 0 }}>
               <div className="panel-body">
                 <div style={ZONE_TITLE}>Available Fields</div>
-                <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>
                   Drag to right zones →
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -425,7 +424,7 @@ export function Builder(props: Props): JSX.Element {
                 <div
                   style={{
                     marginTop: 8,
-                    fontSize: 10,
+                    fontSize: 11,
                     color: 'var(--text3)',
                     display: 'flex',
                     gap: 6,
@@ -464,7 +463,7 @@ export function Builder(props: Props): JSX.Element {
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 10 }}
+                        style={{ fontSize: 11 }}
                         onClick={onAllColumns}
                       >
                         All
@@ -472,7 +471,7 @@ export function Builder(props: Props): JSX.Element {
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 10 }}
+                        style={{ fontSize: 11 }}
                         onClick={() => setColumns([])}
                       >
                         Clear
@@ -604,7 +603,7 @@ export function Builder(props: Props): JSX.Element {
                           <button
                             type="button"
                             onClick={() => removeFilter(f.field)}
-                            style={{ ...CHIP_X, color: 'var(--red)' }}
+                            style={{ ...CHIP_X, color: 'var(--red2)' }}
                             aria-label={`Remove ${fd ? fd.label : f.field} filter`}
                           >
                             ✖
@@ -710,7 +709,7 @@ export function Builder(props: Props): JSX.Element {
                         >
                           {AGG_OPTIONS.map((fn) => (
                             <option key={fn} value={fn}>
-                              {fn}
+                              {fn.charAt(0) + fn.slice(1).toLowerCase()}
                             </option>
                           ))}
                         </select>
@@ -742,7 +741,8 @@ export function Builder(props: Props): JSX.Element {
                 className="btn btn-primary"
                 disabled={saving || columns.length === 0 || !name.trim()}
               >
-                {saving ? <Loader2 className="animate-spin" /> : null}💾 {saveLabel}
+                {saving ? <Loader2 className="animate-spin" /> : null}
+                {saveLabel}
               </button>
               {onExcel ? (
                 <button

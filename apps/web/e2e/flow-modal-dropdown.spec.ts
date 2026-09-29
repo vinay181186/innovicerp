@@ -20,7 +20,7 @@ test('@modaldd client picker inside a modal renders ABOVE the overlay', async ({
   await page.getByRole('button', { name: /Add Material/i }).first().click();
   await page.waitForTimeout(1500);
 
-  const clientBox = page.getByPlaceholder(/Type client code or name/i).first();
+  const clientBox = page.getByPlaceholder(/Type customer code or name/i).first();
   // The Client field is NOT disabled — only SO/JWSO and Item cascade off it.
   expect(await clientBox.isDisabled(), 'Client picker is enabled').toBe(false);
 
@@ -56,7 +56,7 @@ test('@modaldd client picker inside a modal renders ABOVE the overlay', async ({
   expect(committed.length, 'the pick committed into the field').toBeGreaterThan(0);
 
   // And the cascade wakes up: SO/JWSO stops being disabled once a client exists.
-  const orderBox = page.getByPlaceholder(/Type SO \/ JWSO no|Pick a client first/i).first();
+  const orderBox = page.getByPlaceholder(/Type SO \/ JWSO no|Pick a customer first/i).first();
   await expect(orderBox, 'SO/JWSO enables after a client is picked').toBeEnabled({
     timeout: 15_000,
   });

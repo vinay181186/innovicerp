@@ -45,7 +45,7 @@ function Stat({
 }): React.JSX.Element {
   return (
     <div>
-      <span className="text3" style={{ fontSize: 10 }}>
+      <span className="text3" style={{ fontSize: 11 }}>
         {label}
       </span>
       <br />
@@ -70,8 +70,8 @@ function SoCostingDetailPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
+        {error instanceof Error ? error.message : 'Could not load SO costing. Try again.'}
       </div>
     );
   }
@@ -98,21 +98,26 @@ function SoCostingDetailPage(): React.JSX.Element {
           flexWrap: 'wrap',
         }}
       >
-        <Stat label="SO" value={data.soNo} color="var(--cyan)" fontSize={16} />
-        <Stat label="CUSTOMER" value={data.customer ?? '—'} />
+        <Stat label="SO No." value={data.soNo} color="var(--cyan)" fontSize={16} />
+        <Stat label="Customer" value={data.customer ?? '—'} />
         {data.costCenter ? (
           <Stat
-            label="COST CENTER"
+            label="Cost Centre"
             value={`${data.costCenter}${data.costCenterName ? ` — ${data.costCenterName}` : ''}`}
-            color="var(--teal, #0d9488)"
+            color="var(--teal)"
           />
         ) : null}
         {priceHidden ? null : (
           <>
-            <Stat label="MATERIAL" value={m2(data.grandMaterial)} color="var(--blue)" />
-            <Stat label="OUTSOURCE" value={m2(data.grandOutsource)} color="var(--amber)" />
-            <Stat label="MACHINE TIME" value={m2(data.grandMachineTime)} color="var(--cyan)" />
-            <Stat label="TOTAL" value={m2(data.grandTotal)} color="var(--green)" fontSize={16} />
+            <Stat label="Material" value={m2(data.grandMaterial)} color="var(--blue)" />
+            <Stat label="Outsource" value={m2(data.grandOutsource)} color="var(--amber)" />
+            <Stat label="Machine Time" value={m2(data.grandMachineTime)} color="var(--cyan)" />
+            <Stat
+              label="Total Cost"
+              value={m2(data.grandTotal)}
+              color="var(--green)"
+              fontSize={16}
+            />
           </>
         )}
       </div>
@@ -128,12 +133,12 @@ function SoCostingDetailPage(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-ctr">Order Qty</th>
+                <th className="th-num">Order Qty</th>
                 <th>JC / Detail</th>
                 <th>Operation</th>
                 <th>Op Type</th>
                 {priceHidden ? null : (
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Cost
                   </th>
                 )}
@@ -171,10 +176,10 @@ function LineRows({
           {itemCodeWithRev(line.itemCode, line.itemRevision)}
         </td>
         <td style={{ fontSize: 11 }}>{line.itemName}</td>
-        <td className="td-ctr mono fw-700">{line.orderQty}</td>
+        <td className="mono fw-700 td-num">{line.orderQty}</td>
         <td colSpan={3} />
         {priceHidden ? null : (
-          <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+          <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
             {m2(line.lineTotal)}
           </td>
         )}
@@ -187,10 +192,10 @@ function LineRows({
           <td />
           <td />
           <td />
-          <td colSpan={3} style={{ fontSize: 10, color: 'var(--blue)' }}>
+          <td colSpan={3} style={{ fontSize: 11, color: 'var(--blue)' }}>
             📦 Material POs
           </td>
-          <td className="td-ctr mono" style={{ fontSize: 10, color: 'var(--blue)' }}>
+          <td className="mono td-num" style={{ fontSize: 11, color: 'var(--blue)' }}>
             ₹{inrFormat(line.materialCost ?? 0)}
           </td>
         </tr>
@@ -212,16 +217,16 @@ function LineRows({
             <td />
             <td />
             <td />
-            <td className="mono" style={{ color: 'var(--cyan)', fontSize: 10 }}>
+            <td className="mono" style={{ color: 'var(--cyan)', fontSize: 11 }}>
               {op.jcNo}
             </td>
-            <td style={{ fontSize: 10 }}>
-              Op{opSrNo(op.opSeq)}: {op.operation}
+            <td style={{ fontSize: 11 }}>
+              Op {opSrNo(op.opSeq)}: {op.operation}
             </td>
-            <td className="text3" style={{ fontSize: 10 }}>
+            <td className="text3" style={{ fontSize: 11 }}>
               {typeLabel}
               {(op.machineTimeCost ?? 0) > 0 ? (
-                <span style={{ color: 'var(--amber)', fontSize: 9 }}>
+                <span style={{ color: 'var(--amber2)', fontSize: 11 }}>
                   {' '}
                   ({op.cycleTimeMin}m × {op.qty})
                 </span>
@@ -231,9 +236,11 @@ function LineRows({
                 two separately coloured spans, not a sum. Kept that way: both are
                 server-owned, so nothing is added in the browser. */}
             {priceHidden ? null : (
-              <td className="td-ctr mono" style={{ fontSize: 10 }}>
+              <td className="mono td-num" style={{ fontSize: 11 }}>
                 {(op.outsourceCost ?? 0) > 0 ? (
-                  <span style={{ color: 'var(--amber)' }}>₹{inrFormat(op.outsourceCost ?? 0)}</span>
+                  <span style={{ color: 'var(--amber2)' }}>
+                    ₹{inrFormat(op.outsourceCost ?? 0)}
+                  </span>
                 ) : null}
                 {(op.outsourceCost ?? 0) > 0 && (op.machineTimeCost ?? 0) > 0 ? ' + ' : null}
                 {(op.machineTimeCost ?? 0) > 0 ? (

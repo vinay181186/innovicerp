@@ -6,6 +6,7 @@
 // data and the DC-line lookup the receipt rows resolve their item against.
 
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 export function DcReceiptsPanel({
@@ -38,7 +39,7 @@ export function DcReceiptsPanel({
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <div style={{ fontSize: 12 }}>
                 <span className="mono">{rcpt.receiptCode}</span>{' '}
-                <span className="text3">· {rcpt.receiptDate}</span>
+                <span className="text3">· {fmtDate(rcpt.receiptDate)}</span>
                 {rcpt.vendorInvoiceText ? (
                   <span className="text3">
                     {' '}
@@ -65,9 +66,9 @@ export function DcReceiptsPanel({
                         challan line this receipt row books against. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code · Name</th>
-                    <th>Received</th>
-                    <th>Rejected</th>
-                    <th>Reject reason</th>
+                    <th className="th-num">Received</th>
+                    <th className="th-num">Rejected</th>
+                    <th>Rejection Reason</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -86,21 +87,18 @@ export function DcReceiptsPanel({
                               does not read as "IN-IT-0007/B" in the Lines table
                               and as bare "IN-IT-0007" here. */}
                           <span className="mono">
-                            {itemCodeWithRev(
-                              ll?.itemCode ?? ll?.itemCodeText,
-                              ll?.itemRevision,
-                            )}
+                            {itemCodeWithRev(ll?.itemCode ?? ll?.itemCodeText, ll?.itemRevision)}
                           </span>
-                          {ll?.itemName ?? ll?.itemNameText ? (
+                          {(ll?.itemName ?? ll?.itemNameText) ? (
                             <span className="text3" style={{ marginLeft: 6 }}>
                               {ll?.itemName ?? ll?.itemNameText}
                             </span>
                           ) : null}
                         </td>
-                        <td className="mono" style={{ color: 'var(--green2)' }}>
+                        <td className="mono td-num" style={{ color: 'var(--green2)' }}>
                           {Number(rl.receivedQty).toFixed(2)}
                         </td>
-                        <td className="mono" style={{ color: 'var(--red2)' }}>
+                        <td className="mono td-num" style={{ color: 'var(--red2)' }}>
                           {Number(rl.rejectedQty).toFixed(2)}
                         </td>
                         <td className="text3">{rl.rejectReason ?? '—'}</td>

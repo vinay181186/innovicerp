@@ -104,7 +104,7 @@ async function rulePendingQC(
   const rows = await q(
     tx,
     `SELECT g.code, g.grn_date, g.vendor_code_text,
-            COALESCE(SUM(gl.received_qty),0)::int AS qty
+            COALESCE(SUM(gl.received_qty),0)::numeric AS qty
      FROM goods_receipt_notes g
      JOIN goods_receipt_note_lines gl ON gl.goods_receipt_note_id = g.id AND gl.deleted_at IS NULL AND gl.qc_status='pending'
      WHERE g.company_id='${cid}'::uuid AND g.deleted_at IS NULL
@@ -157,7 +157,7 @@ async function ruleBomPending(
       detail: `${r['customer_name'] ?? ''} · Qty ${Number(r['qty']) || 0} · Due ${r['due_date'] ?? '—'}${dToDue < 0 ? ' (OVERDUE)' : dToDue <= 7 && dToDue >= 0 ? ` (in ${dToDue}d)` : ''}`,
       age,
       actionLabel: 'Create BOM',
-      navPage: '/bom-master',
+      navPage: '/bom-masters',
     };
   });
 }

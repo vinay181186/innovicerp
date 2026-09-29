@@ -1,8 +1,9 @@
-// AL-012 — Job cards overdue (production). Legacy line 22279-22280.
+// AL-012 — Overdue JCs (production). Legacy line 22279-22280.
 // Filter: due_date < today AND derived status NOT IN ('complete',
 // 'closed'). Joins v_jc_status because job_cards has no status column
 // per ADR-011 #2.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -10,9 +11,8 @@ export const al012JcOverdue: RegisteredAlert = {
   definition: {
     code: 'AL-012',
     dept: 'production',
-    name: 'Job cards overdue',
-    description:
-      'Job cards with due_date in the past whose derived status is open or qc_pending (not complete/closed/no_ops).',
+    name: 'Overdue JCs',
+    description: 'JCs past their Due Date whose JC Status is not Completed or Closed.',
     columns: [
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'item', label: 'Item Code', type: 'text' },
@@ -24,7 +24,7 @@ export const al012JcOverdue: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT jc.code AS jc_code, i.code AS item, jc.order_qty, jc.due_date,
+      SELECT jc.id AS nav_id, jc.code AS jc_code, i.code AS item, jc.order_qty, jc.due_date,
              COALESCE(s.computed_status, 'no_ops') AS computed_status
       FROM public.job_cards jc
       JOIN public.items i ON i.id = jc.item_id
@@ -37,6 +37,7 @@ export const al012JcOverdue: RegisteredAlert = {
       ORDER BY jc.due_date, jc.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('job-card', String(r['nav_id'])),
       jc_code: (r['jc_code'] as string) ?? '',
       item: (r['item'] as string) ?? '',
       order_qty: r['order_qty'] != null ? Number(r['order_qty']) : 0,

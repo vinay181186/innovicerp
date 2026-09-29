@@ -9816,3 +9816,665 @@ with 19 pieces counted from 10. Auto-NC codes were also unreadable
 - Open: api tests / e2e specs clean up NCs by the `NC-AUTO-` prefix and will no longer
   catch the ones they create (the suite hits PROD — do not run it until the cleanup keys
   on the test Job Cards instead).
+
+## ADR-184: A stopped Production Order covers only what it credited; upstream documents are guarded against orphaning downstream work
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Context
+
+The order-to-cash audit against ERPNext (IN-SO-00786 L9 on TEST) found quantities leaking at every
+stop. IN-PRO-00019 (order 20) credited 15, lost 5 to scrap and was short closed. Every coverage
+reader skipped short-closed orders, so plan PLN-0013 went back to Pending 20, and after a remake
+order of 5 it read Pending 15 for good. The log said "5 returned". lost_qty stayed NULL, and the
+order's Job Card and its rework child stayed open forever. Separately, a Sales Order line could be
+cut, cancelled, re-itemed or deleted with plans, orders, dispatches or invoices hanging off it, and
+emptying Trash hard-deleted a Sales Order's invoices and payments by cascade.
+
+### Decision
+
+1. **Covered rule (ERPNext: pending = qty − (WO qty − process loss)).** An order still being made
+   covers its Order Qty. An order that has stopped (`closed` or `short_closed`) covers only its
+   `credited_qty`. One SQL definition (`ORDER_COVERED_QTY_SQL`, lib/plan-order-coverage.ts) feeds
+   Covered, Pending, the create cap and migration 0145. Plan derived status: an order still open
+   reads in_production; otherwise Pending > 0 needs a new order; otherwise production_complete.
+2. **Short close** stores `lost_qty` (the NC loss on the order's card), closes the card and every
+   rework / repair descendant, and logs the true figures on the order and on the plan. It is refused
+   while finished pieces are still uncredited. Its reason must be at least 10 characters.
+3. **Plan status follows Pending both ways.** Every close, short close and close reversal goes
+   through one helper that re-opens (`jc_created` → `planned`) or re-covers (`planned` →
+   `jc_created`) the plan, with a Plan log line. A reversal that would cover the plan past Plan Qty
+   (its lost pieces are already on a remake order) is refused.
+4. **Make Fresh** is refused on a Production Order's card; Scrap plus a remake order from the plan
+   is the order-shaped route. On an order-less card the new card is seeded with the ops of the top
+   card of its chain.
+5. **Sales Order guards.** A line cannot be cut below planned / dispatched / invoiced, removed,
+   cancelled or re-itemed while plans, orders, dispatches or invoices use it. Header status
+   `closed` / `dispatched` is system-set; a manual move to draft or cancelled is refused while
+   documents use the order. Delete is refused likewise. SO edits log before → after (money excluded:
+   the log is readable by users whose prices are hidden).
+6. **Trash** never cascades: invoices → sales_orders is ON DELETE RESTRICT (0146); a Sales Order
+   with dependents is skipped; Empty Trash is set-based, multi-pass, and reports what it kept.
+
+### Alternatives considered
+
+- Keep skipping short-closed orders and subtract only never-made pieces: rejected, the same leak
+  under a different name. Credited is the only figure the ledger proves.
+- Re-open every historic plan whose closed order had losses (migration step (d)): rejected, those
+  orders were settled with the customer; only closes made after this change re-open a plan.
+
+### Consequences
+
+- PLN-0013 reads fully covered after 0145. Future losses come back as Pending automatically.
+- Deferred, from the same audit: invoice cancel / credit note / payment reversal, compulsory vehicle
+  on dispatch, customer DC print, SO progress columns, QC inspector on Op Entry, plan Cancel, the
+  stock ledger source link and write-lock, raw-material issue against a JC / order, and scrap
+  valuation (no item cost master exists). The shared contract for the first six is drafted but not
+  shipped.
+
+## ADR-185: One fact, one number, on every page
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Context
+
+After ADR-184 a cross-page audit read each screen's own API for all 38 SO lines on TEST and
+compared every figure two screens both state. It found the same fact stated differently:
+
+- **JC Qty**: the SO list / detail summed a stopped order's card at its full Order Qty (IN-SO-00786
+  L9: 25 on a 20-piece line), while the plan said 20 were covered.
+- **Direct JC Qty**: SO Planning treated a Production Order's card as "direct" unless it was the
+  plan's single `jc_id`, so the same pieces were counted on the plan and again as a direct card.
+- **Plan status**: the plan detail showed the stored status ("JC Created") while the Plans list
+  showed the derived one ("Completed"). The KPI tiles counted by stored status, so the "Completed"
+  tile did not list PLN-0013.
+- **Still to plan**: three rules. The Needs Planning tile counted lines with no plan (25), its
+  table counted order − plan qty (29 rows), SO Planning counted plans + Buy PRs + direct cards.
+- **SO Planning list** totalled open lines only (19 lines / 359), the SO list all lines (20 / 379).
+- **Reports**: the SO backlog counted a closed card's full qty as completed; the Item Tracker
+  counted a partly closed order's credited pieces both In Stock and In Production.
+
+### Decision
+
+Each fact gets ONE SQL definition in `apps/api/src/lib`, and every screen that states it reads
+that definition:
+
+| Fact | Definition | Readers |
+| --- | --- | --- |
+| JC Qty | `jcEffectiveQtySql`: a stopped order's card counts what it credited | SO list, SO detail, JC source picker, JC line balance, JW list, SO backlog report |
+| Still owed to stock | `jcOutstandingQtySql`: Order Qty − credited | Item Tracker In Production |
+| Covered / to plan | `soLineCoveredRaw` / `soLineToPlanRaw`: plans + Buy PRs + direct cards | Needs Planning tile + table, SO Planning list (same lines as its detail) |
+| Direct card | no Production Order, not a plan's `jc_id` | SO Planning (all 5 queries) |
+| Plan status | `EFFECTIVE_STATUS_SQL`: derived for route-card plans, stored otherwise | Plans list filter, KPI tiles, plan detail |
+| Covered / Pending of a plan | `PLAN_COVERED_QTY_SQL` / `PLAN_PENDING_QTY_SQL` | Plans list, plan detail |
+
+The Production Orders report gains Lost Qty and the missing 'partially_closed' filter.
+
+### Consequences
+
+- The audit (`xpage-audit.ts`, run against TEST as a read-only harness) states 842 figures across
+  34 facts with no disagreement. It is the regression check for any new screen that states one of
+  these facts.
+- Reports that state a JC's own Order Qty (JC Status Summary, JC Ageing) keep the card's literal
+  qty: that is a fact about the card, not about the order line.
+
+### ADR-185 addendum (2026-09-26): the writes follow the same rules
+
+The screens now agree; the write paths were made to refuse what the screens would otherwise have
+to explain:
+
+- **Plan create / edit** checks Plan Qty against the same "to plan" figure Needs Planning shows
+  (plans + Buy PRs + direct cards), under a lock on the SO line, and refuses a draft or cancelled
+  SO. **Dispatch** and **invoice** refuse a draft or cancelled SO too.
+- **Invoice** locks the SO lines it bills (no double billing from two invoices at once), stores the
+  item (it was always null) and bills at the SO rate; a different price is changed on the SO first.
+  **Payment** locks the invoice (no over-payment race); the mode is one of a fixed list.
+- **QC log** always names an inspector: the logged-in user when the form sends none. Old rows are
+  left alone (op_log is append-only; they stay accountable through `created_by`).
+- **Job Card edit**: the item cannot change once production is logged; a Production Order's card
+  keeps the order's qty; no card goes below what an operation has completed.
+- **Store Issue** against a JC / Production Order stores a real link (0149); a JC code that does not
+  exist is refused before stock moves.
+- **Stock ledger** rows cannot be edited or deleted (0149 trigger); corrections are opposite rows.
+- **Empty Trash** falls back to row-by-row only for a table whose set delete was blocked, so one
+  row in use no longer keeps its whole table in Trash.
+- Plan delete explains itself truthfully: a plan with order history stays.
+
+## ADR-186: Cycle time is minutes per piece; "Running" means a machine is on it now
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Context
+
+`cycle_time_min` on route card ops, plan ops and job card ops was labelled "Cycle Time (h)" on the
+Route Card and Plan screens, but "(min)" on the Job Card, the QC Process Master and every
+calculation (machine loading, job queue, production dashboard, SO costing) divided it by 60. ADR-029
+#2 and ISSUE-011 called it hours; ADR-089 called it minutes. Separately, the op status
+`in_progress` (some qty done, no open machine session) and `running` (open session) both read as
+"under way" in the same colour.
+
+### Decision
+
+1. `cycle_time_min` is **minutes per piece** everywhere. Every entry and display label reads
+   "Cycle Time (min)". The only hours shown are derived (JC Ops list cycle, "Pending Hrs").
+   No stored value or formula changed. Supersedes ADR-029 #2 and ISSUE-011's hours note.
+2. Op status words: `running` = "Running" (green) only while a machine session is open;
+   `in_progress` = "Partly Completed" (amber). Job Card / SO / task "In Progress" is unchanged.
+3. Plan, Production Order, Job Card and Op badges use one colour per state: open / pending grey or
+   blue, under way amber, finished green, stopped red or grey.
+
+### Consequence
+
+Values typed into the Route Card / Plan "hrs" box before this, and rows migrated from legacy, are
+hours read as minutes (loading and cost 60× too low for those rows). Audit PROD with a read-only
+query before any ×60 correction; no data was changed.
+
+## ADR-187: PO Tax Type "None" is NULL; JW Invoice carries a tax type; prints show the real UOM
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Decision
+
+1. A PO's Tax Type is SGST + CGST, IGST or None. None is stored as NULL, never 'none' or ''. The
+   form offers one "None" option; on edit it sends `null`, which clears the value. Migration 0147
+   folds old 'none' / '' rows into NULL.
+2. `jw_invoices.tax_type` (NULL | 'sgst_cgst' | 'igst', migration 0148) is picked on the New JW
+   Invoice form (default SGST + CGST). The print splits the stored GST into SGST n/2 + CGST n/2 or
+   IGST n. NULL rows (raised before 0148) keep the single "GST @ n%" row. Totals are unchanged.
+3. PO, Tax Invoice, JW Invoice and JW DC prints show each line's real UOM (SO line / JWSO line /
+   item master), "NOS" only when blank. The Tax Invoice print shows the customer's Client PO No.
+
+---
+
+## ADR-188: ERPNext gap round 2 — owner decisions
+
+**Date:** 2026-09-26
+**Status:** Accepted (owner decision; code on the layout-fix branch, migration 0150 not yet applied)
+
+### Context
+
+The second ERPNext comparison round found five places where the app either kept two records of
+one fact, offered two screens for one job, hard-coded a value that has a real upstream source,
+hard-deleted from inside the app, or computed a figure in the browser. The owner decided each one.
+
+### Decision
+
+1. **Design Project is THE per-SO design record; there is ONE engineer time log.** Design
+   Tracker's "Log Time" (`POST /design-tracker/:id/time`) now writes to `design_work_log`, not
+   `design_time_log`. `design_work_log.design_tracker_id` (migration 0150) records which tracker
+   the time was logged from; `design_project_id` is set to the SO's live Design Project when
+   exactly one exists (none or two → left empty, still reachable through the tracker). The
+   tracker's detail and list read their hours back from `design_work_log`; the response shape
+   (`DesignTimeLogEntry`, `totalHours`) is unchanged. Project Hours roll-ups and the design
+   reports therefore include tracker time. 0150 moves every live `design_time_log` row across
+   and soft-deletes it; the table is kept, no longer written.
+2. **SO Status and Planning are the SO-progress screens.** SO Overview is a summary that drills
+   into SO Status for one order; it is not a third progress screen.
+3. **Invoice defaults come from upstream, never a hard-coded 18 % / 45 days.** The GST % default
+   is the Sales Order's `gst_percent`; the Payment Terms default is the customer's new
+   `clients.payment_days` (Payment Days, nullable, 0..365). `GET /invoices/invoiceable/:soId`
+   returns both (`gstPercent`, `paymentDays`). The invoice-from-dispatch path loads the same
+   endpoint once the dispatch's SO is picked, so it gets the same values. Both stay editable on
+   the invoice; the invoice keeps its own `payment_terms_days`.
+4. **No permanent delete inside the app.** `POST /trash/perm-delete` and `POST /trash/empty` are
+   removed with their service code; Trash keeps list + restore. CLAUDE.md §6 rule 8 stands with
+   no exception: hard deletes only via documented admin scripts after a backup. This settles the
+   "ratify or revoke" question in ISSUES.md (Trash, rule 8 tension): revoked.
+5. **Report totals computed in the browser are accepted as display-only** — an explicit, bounded
+   exception to §6 rule 1. A total the browser adds up from rows the server already sent may be
+   shown; it is never submitted, stored, printed as a document figure, or used to gate an action.
+   Any total that is saved, printed on a document or drives a decision is computed server-side.
+
+### Consequences
+
+- 0150 must be applied to BOTH databases (test and production) before the new API is deployed
+  there: without it the Customer master reads (which select every `clients` column), the
+  invoiceable-SO load, Design Tracker Log Time and the Design Work Log list all fail on the
+  missing columns.
+- The web still needs: a Payment Days field on the Customer form, the invoice form prefilled from
+  `gstPercent` / `paymentDays`, the Trash "Delete permanently" / "Empty Trash" buttons and hooks
+  removed, and the Design Work Log marking rows that came from a Design Tracker.
+
+## ADR-189: Purchasing truth — Incoming QC is the only inspector, approval is real, an issued PO can be stopped
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Context
+
+The procure-to-stock audit ("Procure-to-Stock Audit (SO-PR-PO-GRN-Inventory) - Innovic vs ERPNext.pdf")
+found 24 code defects against ERPNext. The High ones: a GRN edit credited stock a second time for pieces
+Incoming QC had already credited; QC could be typed on the GRN form, bypassing Incoming QC, its NC and
+its job-card cascade; a GRN edit had no PO cap or lock; deleting a partly inspected GRN left its stock
+credit behind; every PO on TEST was issued without approval (manual POs were born 'open' while approval
+only ran on drafts) and PRs were converted unapproved; an issued PO could never be stopped; two
+inspectors could race on one GRN line; bought-material rejects left no record.
+
+### Decision
+
+1. **A GRN receives; Incoming QC inspects.** GRN create saves every line QC-pending and ignores QC
+   fields; GRN edit never writes QC fields and never credits stock. A line with any inspected qty is
+   frozen (qty, item, PO line) and cannot be removed; a GRN with any inspected line cannot be deleted.
+   GRN edit locks the touched PO lines and refuses received above PO qty. The GRN form shows QC read-only.
+2. **Approval is read, not bypassed.** `approval_config.po_approval` / `pr_approval` (column defaults ON
+   when a company has no row): new POs start 'draft' while PO approval is on and go through the
+   existing approve (amount ceiling, not self); a PR must be 'approved' to convert while PR approval is
+   on. A DC cannot be sent against a draft, closed or cancelled PO.
+3. **Short Close of an issued PO** (0151, `purchase_orders.short_closed_*`, all-or-none CHECK): nothing
+   received or sent → 'cancelled' and its PRs / outsourced ops released; otherwise 'closed' and every PR
+   it drew on counts only what was received (`liveOrderedQtySql`), so the rest is Pending on the PR
+   again. Refused while DC material is still at the vendor. The GRN status recompute leaves a stopped PO
+   alone.
+4. **Incoming QC locks the GRN line** it inspects, and a **bought-material reject raises an NC** with
+   no job card (0151: `nc_register.job_card_id` nullable, CHECK job card OR GRN line). Such an NC can
+   only be scrapped (closes it with who / when / cost) or returned to the vendor ('disposed'; the RTV DC
+   raised from it takes the qty off the PO line's received, so the vendor owes it again); every NC query
+   and alert now LEFT JOINs job cards so it is listed.
+5. **An approved PO that is edited commercially goes back to draft.** While PO approval is on, an edit
+   of an 'open' PO that changes lines, vendor or tax (a revision bump) clears the approval stamps and
+   sets 'draft' (logged APPROVAL_WITHDRAWN), so the amount ceiling cannot be bypassed by approving small
+   and editing big. Due date / remarks edits do not re-draft, nor does any edit once goods have moved.
+   Taking more from a PR on edit applies the same PR-approval rule as create. PRs the system raised from
+   a job-card op (`pr_type = 'jw_osp'` / `source_jc_op_id`) are exempt from PR approval — the PO made
+   from them is still approved — so the API refuses a hand-made PR that claims either field.
+
+### Consequences
+
+- On TEST all five existing POs were issued unapproved; new ones will wait for approval unless the
+  switch is turned off on the Approval Configuration screen.
+- Old rows are not rewritten: the two historical bought-material rejects (IN-GRN-00004 / 00005) keep no
+  NC.
+- A partly received PO that is short-closed keeps its outsourced-op links; the op's un-received
+  remainder is ordered on a new PO, which the multi-PO op links already allow.
+
+### Round 2 (same ADR) — one number per fact across the purchasing screens
+
+6. **One On PO / PO Pending rule** (`lib/po-pending.ts`, twin `poLinePendingQty` in shared): a PO
+   line's Pending = qty − received_qty, clamped at 0, and 0 once the PO is closed, short-closed or
+   cancelled. An item's On PO = Σ Pending over ISSUED (open / partial / qc_pending) POs, except lines
+   that cover a job-card op (our own pieces out for processing — At Vendor / in production, and their
+   GRN credits no stock) and service POs; a draft is not an order yet. Store Inventory, Item Tracker,
+   Open PO Ageing, Vendor PO Summary (Pending Value), the PO saved-report source, the SC dashboard,
+   the PO list (server `pendingQty`) and PO detail all read it. Vendor PO Summary's Total Value is the
+   saved PO total incl. GST (cancelled excluded), one row per vendor. received_qty is the stored line figure
+   (receipts minus return-to-vendor), not a fresh sum of GRN lines.
+7. **The PO print states the saved totals** (`subtotal` / `taxAmount` / `totalAmount`), with one tax
+   row per GST % the PO carries — the same formula the saved tax uses.
+8. **PO edit follows PO create**: a line added against a PR inherits the PR's SO line and job-card op,
+   the op is linked (`linkJcOpToPoLine`), the PR is marked converted; a PR the PO stops drawing on
+   reopens (Approved / Open) when no other live PO line holds it. A line that covers an outsourced op
+   cannot be dropped on edit — reject or short-close releases the op.
+9. **A balance-closed PR covers only what was ordered** on its SO line (`prCoverQtyRaw` in
+   `lib/so-line-coverage.ts`, used by the shared coverage rule and SO Planning), so the abandoned
+   remainder is To Plan again.
+10. **Store issue takes Available, not On Hand** (pieces booked for an SO are promised), needs a
+    Purpose, is on the activity log, and can be **Reversed** once with a reason (0152): an opposite
+    'in' ledger entry; the issue stays listed, marked Reversed. Manual stock adjust is on the activity
+    log with its reason. Pager totals of Store Issues and Party GRN now count under the page's filters;
+    Party GRN create is logged.
+11. **Valuation rate** ignores draft and cancelled POs. **GRN QC**: the tile, the list filter, the
+    per-GRN pending count and Incoming QC share one rule — a line waits while received − accepted −
+    rejected > 0. **DC receive page** shows Received and Rejected as separate columns, as DC detail
+    does, so "Received" means good pieces on both.
+
+### Deferred (round 2)
+
+- **Party (customer) material stays outside the stock ledger.** It is not our stock and is not valued;
+  `party_materials.stock_qty` with the Party GRN / cancel trail already accounts for it. Moving it into
+  `store_transactions` would mix owned and customer stock in every stock screen — a separate decision.
+
+---
+
+## ADR-190: ERPNext gap round 2 — Next items, server side (numbered 189 on its branch; renumbered — the purchasing-truth ADR took 189)
+
+**Date:** 2026-09-26
+**Status:** Accepted (server side only; the web is wired afterwards)
+
+### Context
+
+Round 2 of the ERPNext gap audit left ten "Next" items that each need data the browser must not
+compute or guess (CLAUDE.md §6 rule 1). This ADR lists what the API now provides. No migration:
+every item reads columns that already exist.
+
+### Decision
+
+1. **QC reject names its NC.** `POST /op-entry/qc-log` now fills the response's existing `ncs`
+   array (ADR-183: `[{ id, code, status: 'pending' }]`, empty when nothing was rejected) — the
+   same field the production-entry path already fills. No second field (`nc`) was added: one fact,
+   one name (§18).
+2. **Approvals inbox.** `GET /approvals/inbox` → `{ counts: { pr, po, logEntry }, pr[], po[],
+logEntry[] }`, rows `ApprovalInboxRow { id, code, vendorName, itemCode, itemName, qty, amount,
+createdByName, createdAt, navPage }`. Each list applies its approve endpoint's own rules, so a
+   listed row is one the caller can approve: PR — Approve on Purchase Requests, PR Status Open, not
+   self-raised; PO — write role, Approve on Purchase Orders, on `po_approvers` (admins always),
+   Draft, not self-raised, PO value within the caller's ceiling (`loadApprovalContext`, now
+   exported); log entry — pending ADR-130 time changes, manager/admin only. `amount` is null when
+   the caller's access hides prices. New non-throwing twins `hasFormAccess` (lib/access) and
+   `isWriteRole` (lib/auth) carry the same rules as their `require*` versions.
+3. **Alert drill-down rows carry `navPage`** (e.g. `/purchase-orders/<id>`), built by the new
+   shared `docNavPage(kind, id)` — the same paths the Task Board's `relatedNavPage` stores, with
+   kinds from the Related Documents `routeKind` vocabulary. It is not a column; the email digest
+   skips it.
+4. **Report row links.** A report definition may declare `rowLink: { column, route, idKey }`
+   (echoed on the run response); the row carries the id under `idKey`, which is not a column, so
+   the table and the Excel export are unchanged. Declared on: SO open backlog (`so_code` →
+   `/sales-orders/$id`), Open PO ageing (`po_code`), GRN QC log (`grn_code`), JC ageing and Daily
+   op log (`jc_code` → `/job-cards/$id`), NC register (`nc_no`).
+5. **SO totals.** `GET /sales-orders/:id` returns `totals: { subtotal, gstPercent, gstAmount,
+grandTotal }` — Σ Order Qty × Rate over every line, GST at the SO's GST %, rounded to paise
+   (the same sums the SO form shows while typing). Null when prices are hidden.
+6. **Dispatch billing.** Each customer-dispatch row (list, detail, create/cancel write-back) adds
+   `billedQty` and `billedStatus: 'none' | 'partial' | 'full'`. There is **no invoice → dispatch
+   link** — an invoice line points at the SO line — so the figure is DERIVED per SO line,
+   oldest dispatch first (dispatch date, entry time, line no), each dispatch line capped at its own
+   qty; cancelled dispatches take nothing. Named `billedQty` because the SO line already calls the
+   same fact that; `invoiceStatus` would collide with the invoice's payment status (§18).
+7. **Related documents for masters.** The existing per-module `GET /<module>/:id/related`
+   mechanism (DocumentTraceability) gains `GET /clients/:id/related` (Sales Orders, Customer
+   Dispatches — reference text, there is no dispatch detail page — and Invoices Outstanding, with
+   the amount due only for users who may see money), `GET /vendors/:id/related` (Purchase Orders,
+   Delivery Challans Out, GRNs) and `GET /items/:id/related` (Open PRs, Purchase Orders, GRNs).
+   Each section lists the newest 50 rows (`MASTER_RELATED_ROW_CAP`); its `count` is the full total.
+8. **Tasks close themselves.** `autoCloseLinkedTasks` (tasks module, re-exported from its
+   service) completes every open task whose `linked_ref_type` (case-insensitive — both `grn` and
+   `GRN` exist) and `linked_ref_id` match, inside the caller's transaction, stamping
+   `completed_by` = the user who did the action and the remark / history note
+   "Closed automatically: <document> <done>". Hooked on: QC call fully inspected (`qc_call`, the
+   jc_op id, when `qc_pending` reaches 0), GRN fully inspected (`grn`, when no line has qty left
+   to inspect), NC disposed (`nc`), PO approved (`purchase_order`). It bypasses the per-task
+   permission matrix on purpose — the inspector is rarely the assignee — and says so in the trail.
+9. **QC Call Register pending rows** add `assignedTo` — QC Command's active assignment
+   (`qc_assignments.inspector_name`), the same field name QC Command's queue uses.
+10. **BOM → SO lines.** `GET /bom-masters/:id/linked-so-lines` → `{ lines: BomLinkedSoLine[] }`
+    (salesOrderId, soCode, soDate, soStatus, salesOrderLineId, lineNo, clientPoLineNo, itemCode,
+    itemRevision, itemName, orderQty, lineStatus, dueDate) over
+    `sales_order_lines.source_bom_master_id` — the line grain of the BOM's Related Documents list.
+
+### Consequences
+
+- All shared changes are additive (new schemas, optional / defaulted fields); the web compiles
+  unchanged.
+- Tests that pin exact alert records, report rows or SO detail objects will now see the extra
+  keys (`navPage`, the report id key, `totals`) — not run here (the api suite hits PROD).
+- The web still needs: Approvals inbox page, NC link after a QC reject, alert / report row
+  links, SO totals footer from `totals`, Billed columns on Customer Dispatch, Related panels on
+  Customer / Vendor / Item, Assigned To on the QC Call Register, and the BOM's linked-SO-lines
+  table.
+
+## ADR-190 Addendum: PO-approved task auto-close removed; PO list by JWSO; Op Log JC id
+
+**Date:** 2026-09-26
+
+- **No auto-close on PO approval.** Every task linked to a PO is raised by hand from the PO
+  screens with the suggested title "Follow up on PO …" — a delivery chase, not an approval
+  request — and nothing on the task (no kind, no system-set title) tells an approval task apart.
+  Approving a PO therefore no longer closes any task. The QC call and NC hooks stay.
+- **`GET /purchase-orders?jobWorkOrderId=`** returns only job-work / service POs with a line
+  that traces to that JWSO: PO line → JC op (`source_jc_op_id`, or its source PR's
+  `source_jc_op_id`) → job card → `source_jw_line_id` → JWSO line. Used by the JW DC `?jw=`
+  landing to pre-pick the PO.
+- **Op Log rows carry `jobCardId`** beside `jcNo`, so Log No. / JC No. open the job card
+  directly.
+- **No auto-close on GRN inspection either.** A GRN-linked task comes from the GRN list
+  ("Inspect …") or the GRN detail ("Follow up on GRN …"); both write the same link and the title
+  is editable, so an inspection task cannot be told from a follow-up. Finishing Incoming QC no
+  longer closes any task. The QC call hook stays: a `qc_call` link points at one JC op with QC
+  pending (picked from the open-QC-call list), so the only work it can mean is that inspection.
+- **NC disposition closes the NC's task only when the whole NC is disposed.** A partial
+  disposition splits the remainder onto a new pending NC; the task stays open.
+
+## ADR-191: Reports live in one catalogue, reached per department — never in the menus
+
+**Date:** 2026-09-26
+**Status:** Accepted (user: "yes" to the navigation proposal after the ERPNext report study)
+
+### Context
+
+A study of ERPNext's ~150 standard reports against our data model (PDF "Innovic-vs-ERPNext - Suggested Reports by Department", 2026-09-26) proposed 63 reports across 10 departments; 28 are P1. Putting them in the header menus would make every department menu unusable. The /reports engine already existed (20 canned reports, `?group=` department mode that RAN every report on open), but its groups were a mix of departments and topics (Operations / Procurement / Inventory) and it had no access control at all — any logged-in user could run any report, money included.
+
+### Decision
+
+1. **One catalogue, three doors.** Reports are canned definitions on /reports only. Each department menu (Sales, Planning, Design, Production, Purchase, Store, Quality, Finance) gets ONE last item "Reports" → `/reports?group=<Dept>`, which shows that department's reports as cards (nothing runs until opened). The full catalogue has search, a per-user ★ My Reports row and a Recently opened row (browser storage, per user id — a convenience, not data).
+2. **`group` is the department.** Old groups renamed: Operations → Production, Procurement → Purchase, Inventory → Store. Every definition carries `dept` (an ACCESS_DEPTS key) and `showsMoney`.
+3. **One access rule, enforced on the server.** `canSeeReport(user, eff, def)` in `@innovic/shared` (lib/report-access.ts): admin / full access / auditor see all; otherwise a report is visible through its own department OR through the existing Reports grant, and a money report additionally needs a tier in that door's department that sees prices (`tierSeesPrice`). GET /reports is filtered with it; GET /reports/:slug and the Excel export return 403 before any SQL runs. The web uses the same function only to avoid offering what the server will refuse.
+4. **First batch: 22 new reports** (so-line-analysis, late-delivery, jwso-balance, unplanned-so-lines, design-hours-vs-estimate, wip-by-operation, machine-utilisation, po-line-analysis, procurement-tracker, pr-pending-to-order, vendor-performance, osp-at-vendor, stock-balance, projected-stock, reserved-stock, inspection-summary, first-pass-yield, vendor-rejection, receivable-ageing, dispatched-not-invoiced, gst-sales-register, hsn-outward-summary). New labels registered in NAMING.md §A.
+5. **Item columns follow ADR-160**: a clean `Item Code` cell plus a separate `Drawing Rev` column, because every report is also an Excel export.
+
+### Alternatives Considered
+
+- **Every report as a menu item** — rejected: 60+ items across 8 menus.
+- **Client-only access filter** — rejected in review: the browser is not a gate (CLAUDE.md §6 rule 1).
+- **Favourites in the database** — rejected for now: a per-browser convenience needs no migration on two databases; revisit if users ask for favourites to follow them across machines.
+
+### Consequences
+
+- A user who could open every report through the Reports grant but whose Reports tier cannot see prices (L1/L2) no longer sees money reports there — the same price rule every other screen follows.
+- The Production copy of SO Line Tracker drops its Line Value column so Production L2 keeps it.
+- Adding a report = one definition file + one registry line; set `group`, `dept`, `showsMoney`.
+
+## ADR-192: List pages — one filter bar; a status filter is a dropdown with counts, not tiles or capsules
+
+**Date:** 2026-09-26
+**Status:** Accepted (owner decision, asked twice the same day — supersedes the round-5 "tiles are the status filter" clean-up)
+
+### Context
+
+List pages mixed filter dropdowns with rows of clickable status tiles / capsules, often both for the same field. The owner: "we already have filter dropdowns and still there are capsules, which makes the layout odd"; date boxes were squeezed in a one-row toolbar; the select padding looked off. Offered three layouts with mock-ups, the owner picked the ERPNext-style one; when a parallel session's round-5 clean-up went the other way (tiles as the only status filter, dropdown dropped), the owner confirmed: **dropdown with counts**.
+
+### Decision
+
+- `ListHeader` (apps/web/src/ui/layout/ListHeader.tsx) is two rows. Row 1: title · count … view toggle / Export / secondary buttons → the one blue primary. Row 2 — the **filter bar**: search → `filters` (every Select / date box the same 168px) → **Clear** (`onClearFilters`, `filtersActive`).
+- A status (or type / bucket) filter is a **dropdown whose option labels carry the counts** — "All PRs (120)", "Open (40)", "Overdue (4)". No clickable tile / capsule / pill rows on list pages.
+- Read-only count strips stay only on dashboards and report pages, never on a list page beside the dropdown that repeats them.
+- Selects draw one chevron with room for it (`appearance: none`).
+
+### Consequences
+
+- Every list reads the same way; filters never wrap unevenly or clip dates.
+- Any page that re-adds status tiles as a filter breaks this ADR — use the dropdown with counts.
+
+## ADR-193: Store redesign — one stock writer, decimal stock, issue against the job
+
+**Date:** 2026-09-28
+**Status:** Accepted (phase 1a delivered; phases 1b–5 follow, see `docs/specs/STORE_REDESIGN_ADR-193.md`)
+
+### Context
+The Store Department audit (22 findings) and the owner's decisions (Q1–Q6, 2026-09-28): the store
+issues parts against the assembly SO and "Complete" only checks them (Q3); item type is chosen at
+item creation (Q2); instruments by serial number (Q4); reorder with one-click PR (Q5). Eleven modules
+each wrote ledger rows with their own lock / read / check code, and every stock quantity was an
+integer, so KGS / MTR material could not be issued as 12.5.
+
+### Decision (phase 1a)
+1. **One writer.** `lib/stock-ledger.ts postStockMove` is the only code that inserts
+   `store_transactions`: locks the item, reads In Stock / Booked / Available inside the lock, refuses a
+   fractional qty for NOS / SET, applies the caller's guard, inserts. Guards: `available` (store issue,
+   tool issue, JW DC out, adjust −), `on_hand` (dispatch, JW return — they consume their own booking),
+   `none` (credits and compensating reversals; legacy assembly until phase 3).
+2. **Decimal stock** (0153): ledger qty / before / after and `item_stock_balances.on_hand_qty` are
+   numeric(14,3); trigger and the two stock views recreated numeric. Drizzle custom type `stockQty`
+   maps numeric ↔ JS number, so no caller changes type. Stock read-outs cast `::float8`, not `::int`.
+3. **Ledger names its document**: source types store_issue, store_return, tool_issue, tool_return,
+   stock_count (item / tool issues no longer post as 'other').
+4. Tool issue, JW DC outward and manual adjust − now take **Available** stock (booked pieces refused).
+5. Dead ledger writers removed (`writeStoreTxnOnQcAccept`, `writeStoreTxnOnDcReceive`).
+
+### Alternatives considered
+- Upgrade drizzle for numeric `mode: 'number'` — rejected for now: a framework upgrade across the repo for one type.
+- Keep integer and store grams / millimetres — rejected: every screen would convert units.
+- Patch each writer in place — rejected: the drift between eleven copies is what the audit found.
+
+### Consequences
+- Verified on TEST: 11 scenario tests (NOS 2.5 refused, KGS 12.5 / 12.25 end to end, booked stock
+  refused for adjust / tool issue, new ledger source types, balances = Σ ledger) and 529 + 923
+  cross-screen figures, 0 mismatches.
+- PROD must run 0153 before test → main. Reservations stay whole numbers (finished goods).
+
+### ADR-193 phase 1b — item types + small gaps (2026-09-28)
+- **Item Type chosen at creation** (Q2, 0154): raw_material | component | assembly | consumable | tool.
+  No default — the form starts on "Choose Item Type…", the Excel import refuses a blank cell. One
+  capability map `ITEM_TYPE_RULES` (shared) holds label + behaviour flags; screens read it.
+- Type change to / from Tool / Instrument refused once stock has moved (instrument history differs);
+  other changes allowed and logged with before → after.
+- **Store reads need a view right**: Store / Inventory, ledger, item balance, Item and Tool Issue lists
+  accept any of item / issue / tool issue / GRN / plan / PR / PO / production order / job card /
+  dispatch view (wide on purpose so no planner or buyer is locked out).
+- JW DC outward / inward: `ospdc_create` entry + activity log (0 JW DC rows on either DB).
+- Activity log on Set Min Stock and Party Material create / edit / delete; Tool Issue pager total
+  follows the filter; Stock Balance report offers every item type.
+- Verified on TEST: 11 scenario tests pass (incl. non-admin manager still opens Store / Inventory);
+  541 + 927 cross-screen figures, 0 mismatches. PROD must run 0154 before test → main.
+
+### ADR-193 phase 2 — Stock Count (2026-09-28)
+- New document **Stock Count** `IN-SC-#####` (0155, ERPNext Stock Reconciliation) for opening stock and
+  periodic counts: Draft → Submitted → Posted | Cancelled. Many items per count or an Excel upload
+  (codes resolved by the server; unknown codes listed, never guessed).
+- Each line's In Stock is **snapshotted when the line is keyed** (kept while its counted qty is unchanged); **Approve** (a different user, `stockcount_create` approve)
+  posts counted − snapshot through the single stock writer (source `stock_count`), so issues made
+  after the count stay real. A count that would leave stock below what was issued since is refused
+  ("recount"); one that would leave less than is booked for SOs needs a confirmed reason.
+- A posted count is never edited or cancelled — a new count corrects it. Number under an advisory
+  lock (no duplicate IN-SC numbers).
+- Verified on TEST: 14 scenario tests (C1–C14) pass.
+
+### ADR-193 phase 3a — raw-material item + qty per piece (2026-09-28)
+- Route Card (source of truth) → Plan → Production Order / Execute → Job Card carry `raw_material_item_id`
+  + `rm_qty_per_piece` (0156) beside grade / size. Required on a JC = qty per piece × JC qty.
+- One check `lib/rm-item.ts resolveRmItem`: both or neither; the item must be Raw Material or Component
+  (ITEM_TYPE_RULES.jobMaterial). On update an omitted field keeps the saved value; only null clears.
+- SO Planning "+ Plan" (sends nothing) defaults the pair from the item's Route Card. Supplementary JC
+  copies it; rework / repair cards carry none (nothing new is cut). BOM child JCs: none.
+- Verified on TEST: 5 scenarios pass; 642 + 967 cross-screen figures, 0 mismatches.
+
+## ADR-194: Customer job-work (JWSO) chain — QC-gated receipt, a zero-value party store, and closable paperwork
+
+**Date:** 2026-09-28
+**Status:** Accepted (schema 0173 on TEST; services + UI live on TEST on the `jwso-material` branch. Migrations renumbered to 0173 + 0174 after a collision with the store-redesign 0157/0158 on `test`.)
+
+### Context
+The JWSO audit (Innovic vs ERPNext, `Job Work (JWSO) Audit - Innovic vs ERPNext.pdf`) found the
+customer-material side of the job-work chain thin: a Party GRN accepted material with no incoming QC,
+it linked to its JWSO line only by a typed line-number **text** (silently breaking the order-qty cap
+and the first-op material gate when mistyped), customer-owned material had no store of its own, and the
+downstream paperwork could not be undone — a JW invoice or a JW return challan, once issued, was
+permanent, and a JWSO line could not be closed while it still had an unmet balance. Owner decisions
+(2026-09-28): **Q6 = keep party material in a SEPARATE store at ZERO value**; **Q2 = incoming QC on a
+Party GRN is COMPULSORY**; everything else "as suggested".
+
+### Decision
+1. **Compulsory incoming QC (R2).** Every Party GRN line splits its received qty into
+   `accepted_qty` + `rejected_qty` (must sum to received; a reject reason is required when any is
+   rejected). Only the **accepted** qty enters the party store. Existing rows are grandfathered
+   (accepted = received).
+2. **Real FK to the JWSO line (R4).** `party_grn_lines.jw_line_id` replaces the typed text as the key
+   every downstream check uses; the text is kept and backfilled. The per-line cap is on **accepted**
+   qty, not received.
+3. **A separate, zero-value party store (R3, Q6).** New append-only `party_stock_ledger` — one row per
+   movement (receive / issue / consume / return / reversal, each in or out), **no value column**.
+   Customer-owned material never touches `store_transactions` (holds ADR-189). Balance = Σ ledger.
+4. **Closable paperwork.** A JW invoice can be **cancelled** (R5: `status` issued|cancelled; reverses
+   `invoiced_qty`). A JW return challan cancel is fixed to a real enum and blocked while an uncancelled
+   invoice still covers it (R10). A JWSO line can be **short-closed** (R6): status stays `closed` (the
+   shared `so_status` PG enum is NOT widened — that would leak to SO code) with
+   `short_closed_at/by` + `short_close_reason` recording the unmet balance.
+5. **Return spare customer material (R7).** `party_materials.returned_qty` + a `return` (out) ledger
+   row; capped at the party-store balance.
+6. **Roll-up on the JC (R1).** A JW-sourced Job Card shows Needed (rmQtyPerPiece × qty, from the
+   ADR-193 route-card RM) / Received / Issued / Returned / Balance from the party ledger.
+7. **Permissions (R8).** Return, invoice, cancel and short-close all reuse the existing `jw_create`
+   key — no new permission keys.
+
+### Alternatives considered
+- Widen the `so_status` enum with a `short_closed` value — rejected: it is a shared PG enum and would
+  leak into every SO code path; flag columns keep the change on the JWSO side.
+- Put party material in `store_transactions` at zero value — rejected: it is not company stock
+  (ADR-189); a separate ledger keeps the books clean and the value truly absent.
+- A new per-line "needed" table for R1 — rejected: the ADR-193 route-card RM already carries qty/piece.
+
+### Consequences
+- All changes are additive (new columns + one table in 0173; jw_return cancel columns in 0174); safe to
+  run as one batch, applied to TEST.
+- PROD must run 0173 then 0174 (after the store-redesign 0157/0158) before test → main.
+- The frozen contract now requires services to populate the new read fields (QC split, party balance,
+  invoice/line status).
+
+### ADR-193 phase 3b — Item Issue slip with lines; issue against the job (2026-09-28)
+- An Item Issue is a slip (store_issues) with lines (store_issue_lines, 0157), issued against ONE of: a Job
+  Card, an Assembly (Equipment) SO, or General / Consumable (Department required). Issued To = an Operator
+  (preferred) or a typed name.
+- Required / Issued / Returned / To Issue are DERIVED (`lib/material-requirement.ts`), never stored. Reversed
+  slips never count. Job Card: Required = RM Qty per piece × Order Qty (only the RM item is capped).
+  Assembly SO: Required = Qty per Set × Units (Σ order qty of live lines); only BOM parts may be issued.
+- More than To Issue → 409 `{ needsConfirmation, over[{ itemCode, toIssueQty, qty }] }`; posting it needs a
+  reason AND Approve on Item Issue (403 otherwise). The reason goes to the activity log.
+- Return: leftovers back, any qty up to Still Out, per line; the slip stays. Reverse: whole slip, only while
+  nothing was returned from it (else 409 "use Return"). Both lock the slip, then the items.
+- Create locks every line's item in id order, then reads To Issue under the lock; the ISS- number is
+  allocated under a per-company advisory lock (review F1 — item locks do not serialise the MAX+1).
+- Read-only Material view: `GET /material/job-cards/:id`, `GET /material/sales-orders/:id`; shown as the Job
+  Card's "Material" tab and a Material panel on the Assembly Tracker, each with "Issue from Store".
+- Names follow docs/NAMING.md: `To Issue` (not Balance — reserved/banned), `Still Out`, `Reserved`
+  (register name for booked qty), `Fitted` (register's `Consumed` means reserved qty used — different fact).
+- Deferred to 3c (by design): assembly reservations, Complete consuming issued parts (`Fitted`), M5–M9,
+  M12–M15. A closed / cancelled Assembly SO takes no more issues; a Job Card's status is not checked yet.
+- Verified on TEST: 25 scenarios pass; 695 + 1009 cross-screen figures, 0 mismatches.
+
+### ADR-193 phase 3c — reserve parts for an assembly SO; Complete only checks and fits (2026-09-28)
+- Owner decision (Q3): the store issues parts against the assembly SO; Complete only checks the parts are
+  out and adds the finished machine. Complete no longer takes component stock (0 assembly units existed on
+  TEST and PROD, so no old unit needed converting).
+- Reserve Parts (Planning entry): holds free stock for an SO's BOM parts in `assembly_part_reservations`
+  (0158) — never beyond To Issue − Reserved, never beyond Available (409 names who holds the rest). Release
+  (Planning entry + reason). "Reserved" everywhere = sales + assembly reservations (the view sums both).
+- An issue against the SO may use Available + its own reservation (`postStockMove` `allowance`); the own
+  reservation is used first and recorded on the line; a Reverse gives it back (never into a released row
+  or a closed / cancelled SO).
+- Complete: SO row locked (`FOR NO KEY UPDATE` — `FOR UPDATE` would deadlock with inserts whose foreign key
+  points at the SO). Parts short → 409 "issue from the store first"; last units with Still Out ≠ BOM need →
+  reason required; fitted rows in `assembly_unit_consumptions`; last unit releases leftover reservations.
+  Undo soft-deletes the fitted rows (parts are Still Out again) and reverses the machine credit.
+- Fitted parts cannot be Returned or the slip Reversed. An SO holding item issues or reserved parts cannot
+  be cancelled or deleted. No new reservations once every unit is assembled.
+- Tracker "can assemble" counts Still Out ÷ Qty per Set, not store stock.
+- Verified on TEST: 27 scenarios pass (+ phase 3b 25 / 25 again); 881 + 1223 cross-screen figures, 0 mismatches.
+- Not done: modules/assembly/service.test.ts + routes.test.ts still expect the old stock debit (they run on
+  PROD, so not run); a rare lock-order case when the finished item is itself issued in the same moment.
+
+### ADR-193 phase 4 — instrument register + tool issue rewrite (2026-09-28)
+- Owner decision Q4: instruments tracked one by one by Instrument Serial No.; the Store In-charge (approve
+  tier, never the person who recorded it) decides write-offs.
+- A Tool / Instrument item is bulk (qty) or `track_serial` (one `instruments` row per piece). Registering never
+  moves stock — it names a piece already received (GRN / Stock Count): In Store + At Calibration ≤ On Hand,
+  enforced inside `postStockMove` for every move of a serial item ("mark the missing one Lost or Scrapped first").
+- Tool Issue: to an Operator (or a typed name), optional Job Card, expected return. Serial tools by picking
+  instruments; overdue or failed calibration, At Calibration and a pending write-off block issue.
+- Return: Good → stock; Consumed → closed (normal wear); Damaged / Lost → write-off pending. Approve moves no
+  stock (it left at issue); Scrap of an in-store instrument → OUT `tool_writeoff`. Reject Damaged → back to
+  stock as Good; reject Lost → Still Out again. Cancel only while nothing was returned.
+- Tools cannot go out on an Item Issue (P39). Alerts AL-020 (calibration due in 7 days / overdue) and AL-021
+  (tools not returned by the expected date).
+- Names: Instrument Serial No. (plain "Serial No." is the assembly batch serial), Still Out (the register bans
+  "Outstanding" for qty).
+- Review fixes: flags re-read after the instrument lock; Mark Missing (Lost write-off, OUT 1 on approval);
+  serial correction while never issued; no future / back-dated dates that dodge calibration.
+- Verified on TEST: 31 scenarios pass; 3b 25/25 and 3c 27/27 again; 972 + 1369 cross-screen figures, 0 mismatches.
+
+### ADR-193 phase 5 — reorder level, one-click PR, consumption report (2026-09-29)
+- Owner decision Q5: Reorder Level + Reorder Qty per item; alert + one-click PR, never automatic.
+- "Min Qty" is renamed **Reorder Level** (same column, now decimal). **Below Reorder** = reorderable item type, Reorder
+  Level > 0 and Available + On PO < Reorder Level (Available leaves out reserved stock) — the same rule on Store
+  Inventory, the Reorder List, AL-019, the production dashboard and stock valuation.
+- **Reorder List** (Store): suggested PR qty = max(Reorder Qty, shortfall to the level), whole for NOS / SET; suggested
+  vendor = last live PO's active vendor (no OSP / service POs). Raise PRs → one Open PR per item through the PR
+  module's own insert (`insertPurchaseRequestTx`), so numbering, approval (ADR-189) and the activity log are the
+  same as a hand-raised PR; per-company lock; an item with an open standard PR balance is skipped. The Store row's
+  Raise PR now opens the Reorder List so there is one path.
+- Tools are reorderable (inserts and bits wear out); assemblies are not.
+- Report **Material Consumption**: Item Issue lines net of returns, reversed slips excluded, by month / item /
+  issue against / reference / department / issued to.
+- Verified on TEST: 13 scenarios pass; 3b 25/25, 3c 27/27, 4 31/31 again; 1148 + 1547 cross-screen figures, 0 mismatches.
+

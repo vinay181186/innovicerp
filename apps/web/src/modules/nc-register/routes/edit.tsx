@@ -1,6 +1,6 @@
 // NC edit route (UI-003-06). Editable only while status='pending'.
 
-import type { UpdateNcRegisterInput } from '@innovic/shared';
+import { NC_STATUS_LABELS, type UpdateNcRegisterInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -50,9 +50,8 @@ function NcRegisterEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to NC
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have edit access to NC Register. Ask an admin for L3 Editor or above in
-            QC.
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+            You do not have permission to edit this NC. Ask an admin.
           </div>
         </div>
       </div>
@@ -67,8 +66,8 @@ function NcRegisterEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'NC not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'NC not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -89,12 +88,9 @@ function NcRegisterEditPage(): React.JSX.Element {
         <div className="panel">
           <div className="panel-hdr">
             <div>
-              <div className="panel-title">
-                Cannot edit a {detail.status.replaceAll('_', ' ')} NC
-              </div>
+              <div className="panel-title">Cannot edit a {NC_STATUS_LABELS[detail.status]} NC</div>
               <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                Disposed and closed NCs are permanent records. Disposition workflow lives on the
-                detail page.
+                Only NC Raised NCs can be edited.
               </div>
             </div>
           </div>
@@ -106,51 +102,26 @@ function NcRegisterEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link
-        to="/nc-register/$id"
-        params={{ id: detail.id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to {detail.code}
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
-            >
-              {detail.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit NC
-            </div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Editable while status is <span className="mono">pending</span> — date / reason
-              category / defect description / reporter only.
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <NcRegisterForm
-            mode="edit"
-            detail={detail}
-            submitError={submitError}
-            submitLabel="Save changes"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: UpdateNcRegisterInput) => {
-              setSubmitError(null);
-              try {
-                await update.mutateAsync(values);
-                exit.leave(goBack);
-              } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
-              }
-            }}
-          />
-        </div>
-      </div>
+      <NcRegisterForm
+        mode="edit"
+        title={`Edit NC — ${detail.code}`}
+        subtitle="Only NC Date, Reason Category, Defect Description and Reported By can be changed."
+        backLabel={`Back to ${detail.code}`}
+        onBack={() => exit.leave(goBack)}
+        detail={detail}
+        submitError={submitError}
+        submitLabel="Save Changes"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: UpdateNcRegisterInput) => {
+          setSubmitError(null);
+          try {
+            await update.mutateAsync(values);
+            exit.leave(goBack);
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');
+          }
+        }}
+      />
     </div>
   );
 }

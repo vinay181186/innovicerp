@@ -77,7 +77,7 @@ export function userDisplayName(user: AuthContext): string {
  */
 export function ncCloseBlockedReason(nc: NcGateInput): string | null {
   if (nc.status === 'closed') return null;
-  if (nc.status === 'pending') return 'No disposition chosen';
+  if (nc.status === 'pending') return 'Please select a Disposition first.';
 
   const rejected = Math.round(n(nc.rejectedQty));
   const open = ncOpenQty(nc);
@@ -167,6 +167,13 @@ export async function createRecoveryJobCard(
   qty: number,
   user: AuthContext,
 ): Promise<{ id: string; code: string }> {
+  // ADR-189 — a bought-material NC has no job card and never reaches here (its
+  // dispose branch closes it first); refuse rather than build a card from none.
+  if (!nc.jobCardId) {
+    throw new ValidationError(
+      `NC ${nc.code} has no job card, so it cannot be reworked or repaired.`,
+    );
+  }
   const parentRows = await tx
     .select()
     .from(jobCards)
@@ -179,7 +186,7 @@ export async function createRecoveryJobCard(
     )
     .limit(1);
   const parent = parentRows[0];
-  if (!parent) throw new ValidationError(`Origin JC ${nc.jobCardId} not found`);
+  if (!parent) throw new ValidationError('Original Job Card not found. Refresh the page.');
   // ADR-182 — a stopped order spawns no rework / repair child: the pieces it
   // would recover belong to work that has been abandoned.
   await assertProductionOrderNotShortClosed(tx, parent.id);
@@ -207,6 +214,11 @@ export async function createRecoveryJobCard(
       rawMaterialGradeText: parent.rawMaterialGradeText,
       rawMaterialSizeId: parent.rawMaterialSizeId,
       rawMaterialSizeText: parent.rawMaterialSizeText,
+      // ADR-193 phase 3a — RM item + qty per piece, copied like grade / size.
+      // ADR-193: nothing new is cut for a rework / repair card, so it carries
+      // no raw-material requirement (the store issues nothing against it).
+      rawMaterialItemId: null,
+      rmQtyPerPiece: null,
       // The pieces already exist — nothing is cut for a recovery card, so the
       // party-material gate (ADR-103) must not hold its first op.
       clientMaterialGate: false,
@@ -220,7 +232,8 @@ export async function createRecoveryJobCard(
     })
     .returning({ id: jobCards.id, code: jobCards.code });
   const child = inserted[0];
-  if (!child) throw new ValidationError(`Failed to create ${label.toLowerCase()} job card`);
+  if (!child)
+    throw new ValidationError(`Could not create the ${label.toLowerCase()} JC. Try again.`);
   await seedRecoveryOps(tx, nc, parent.id, child.id, user);
   return child;
 }
@@ -373,7 +386,7 @@ async function loadNc(tx: DbTransaction, ncId: string, companyId: string): Promi
     )
     .limit(1);
   const nc = rows[0];
-  if (!nc) throw new NotFoundError(`NC ${ncId} not found`);
+  if (!nc) throw new NotFoundError('NC not found. Refresh the page.');
   return nc;
 }
 
@@ -384,7 +397,7 @@ function assertWithinOpen(nc: NcRow, accepted: number, rejected: number): void {
   const open = ncOpenQty(nc);
   if (accepted + rejected > open) {
     throw new ConflictError(
-      `QC of ${accepted + rejected} pcs exceeds the ${open} pcs still open on ${nc.code}`,
+      `Accepted + Rejected (${accepted + rejected}) cannot be more than Open (${open}) on ${nc.code}.`,
     );
   }
 }
@@ -504,14 +517,17 @@ export async function climbRecoveryToAncestors(
         {
           action: 'NC_RECOVERY_QC',
           entity: 'NonConformance',
-          detail: `${nc.code} — recovery climbed from ${viaCode}: +${a} cleared${f ? `, +${f} failed` : ''}`,
+          detail: `${nc.code} — recovery from ${viaCode}: ${a} Accepted${f ? `, ${f} Rejected` : ''}`,
           refId: nc.code,
         },
         companyId,
         user,
       );
     }
-    jcId = nc.jobCardId; // climb to the JC this NC was raised on
+    // climb to the JC this NC was raised on; a bought-material NC (ADR-189)
+    // has none, so the climb ends there.
+    if (!nc.jobCardId) return;
+    jcId = nc.jobCardId;
   }
 }
 
@@ -582,7 +598,7 @@ export async function onRecoveryJobCardQc(
   if (thisSeq == null || lastSeq == null || thisSeq !== lastSeq) return;
 
   if (!jc.parentNcId) {
-    throw new NotFoundError(`Recovery job card ${jc.code} has no parent NC`);
+    throw new NotFoundError(`Recovery JC ${jc.code} has no NC linked. Refresh the page.`);
   }
   const accepted = Math.max(0, Math.round(args.acceptedQty));
   const rejected = Math.max(0, Math.round(args.rejectedQty));
@@ -611,7 +627,7 @@ export async function onRecoveryJobCardQc(
     {
       action: 'NC_RECOVERY_QC',
       entity: 'NonConformance',
-      detail: `${jc.code} terminal QC: accepted ${accepted}, rejected ${rejected} — accepted climbed to the parent chain`,
+      detail: `${jc.code} Final Inspection: ${accepted} Accepted, ${rejected} Rejected; Accepted returned to the original JC.`,
       refId: jc.code,
     },
     companyId,
@@ -642,9 +658,7 @@ export async function onNcChallanReceived(
 ): Promise<void> {
   const nc = await loadNc(tx, args.ncId, companyId);
   if (nc.deliveryChallanId && nc.deliveryChallanId !== args.deliveryChallanId) {
-    throw new ConflictError(
-      `Challan ${args.deliveryChallanId} is not the return-to-vendor challan on ${nc.code}`,
-    );
+    throw new ConflictError(`This DC is not the return-to-vendor DC for ${nc.code}.`);
   }
   const received = Math.max(0, Math.round(args.receivedQty));
   if (received === 0) return;
@@ -653,8 +667,7 @@ export async function onNcChallanReceived(
   const total = already + received;
   if (total > sent) {
     throw new ConflictError(
-      `Receiving ${received} pcs would exceed the ${sent} pcs sent on ${nc.code} ` +
-        `(${already} already received)`,
+      `Received Qty (${received}) cannot be more than Pending (${sent - already}) on ${nc.code}.`,
     );
   }
   await tx
@@ -753,9 +766,7 @@ export async function onNcChallanCancelled(
 ): Promise<void> {
   const nc = await loadNc(tx, args.ncId, companyId);
   if (nc.deliveryChallanId !== args.deliveryChallanId) {
-    throw new ConflictError(
-      `Challan ${args.deliveryChallanId} is not the return-to-vendor challan on ${nc.code}`,
-    );
+    throw new ConflictError(`This DC is not the return-to-vendor DC for ${nc.code}.`);
   }
   const alreadyReceived = Math.round(n(nc.rtvReceivedQty));
   if (alreadyReceived > 0) {
@@ -852,7 +863,7 @@ export async function onNcChallanCancelled(
           action: 'PO_RECEIVED_ADJUST',
           entity: 'PurchaseOrderLine',
           detail:
-            `PO line ${before.lineNo} received_qty ${before.receivedQty} → ${after.receivedQty} ` +
+            `PO Ln ${before.lineNo} Received ${before.receivedQty} → ${after.receivedQty} ` +
             `(return-to-vendor challan for ${sent} pcs on ${nc.code} cancelled)`,
           refId: nc.code,
         },
@@ -949,7 +960,7 @@ export async function onNcReplacementQc(
             action: 'PO_RECEIVED_ADJUST',
             entity: 'PurchaseOrderLine',
             detail:
-              `PO line ${before.lineNo} received_qty ${before.receivedQty} → ${after.receivedQty} ` +
+              `PO Ln ${before.lineNo} Received ${before.receivedQty} → ${after.receivedQty} ` +
               `(${accepted} replacement accepted, ${rejected} failed on ${nc.code})`,
             refId: nc.code,
           },
@@ -975,7 +986,7 @@ export async function onNcReplacementQc(
       detail:
         `${nc.code} — ${viaText} Incoming QC: accepted ${accepted}, rejected ${rejected}; ` +
         `cleared ${ledger.cleared}/${Math.round(n(nc.rejectedQty))}, failed ${ledger.failed}` +
-        (ledger.closed ? '; CLOSED' : ''),
+        (ledger.closed ? '; Closed' : ''),
       refId: nc.code,
     },
     companyId,
@@ -986,7 +997,7 @@ export async function onNcReplacementQc(
   // climb the parent chain too — same rule as an in-house rework recovery, so a
   // return-to-vendor replacement updates every upstream JC to the original
   // parent. No-op when the NC is on the original (top) JC.
-  if (accepted > 0) {
+  if (accepted > 0 && nc.jobCardId) {
     await climbRecoveryToAncestors(
       tx,
       nc.jobCardId,

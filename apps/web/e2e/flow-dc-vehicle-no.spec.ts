@@ -78,7 +78,7 @@ test.describe('Delivery Challan — Vehicle No field', () => {
     // The route is permission-gated on ospdc_create `entry`. If the e2e login
     // lacks it the form never renders, so fail with a message that says why
     // rather than a mystery "locator not found".
-    const denied = await page.getByText(/do not have entry access/i).count();
+    const denied = await page.getByText(/do not have permission to create DCs/i).count();
     expect(
       denied,
       'the E2E login needs entry access on the OSP DC create page (ospdc_create)',
@@ -175,7 +175,7 @@ test.describe('Delivery Challan — Vehicle No field', () => {
     await page.goto('/delivery-challans', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(4000);
 
-    const noDcs = await page.getByText(/No OSP DCs yet/i).count();
+    const noDcs = await page.getByText(/No DCs yet/i).count();
     test.skip(noDcs > 0, 'No delivery challans exist to open.');
 
     // Open the first DC by its code link. Read-only navigation.
@@ -196,18 +196,18 @@ test.describe('Delivery Challan — Vehicle No field', () => {
     // ── ASSERT 6: "Vehicle No" appears as its own labelled field, separate
     //    from Transport. Challans raised before this column shipped show the
     //    em-dash placeholder — that still proves it renders.
-    const vehicleLabel = page.getByText('Vehicle No', { exact: true });
+    const vehicleLabel = page.getByText('Vehicle No.', { exact: true });
     await expect(vehicleLabel, 'the DC detail shows a Vehicle No field').toBeVisible({
       timeout: 20_000,
     });
     await expect(vehicleLabel, 'exactly one Vehicle No field').toHaveCount(1);
 
     await expect(
-      page.getByText('Transport', { exact: true }),
+      page.getByText('Transporter', { exact: true }),
       'Transport is still shown, separately',
     ).toBeVisible();
 
-    const shown = await readPair(page, 'Vehicle No');
+    const shown = await readPair(page, 'Vehicle No.');
     // eslint-disable-next-line no-console
     console.log(`>> Vehicle No on ${dcCode}: "${shown}"`);
     expect(
@@ -240,7 +240,7 @@ test.describe('Delivery Challan — Vehicle No field', () => {
     await page.waitForTimeout(3000);
 
     expect(
-      await page.getByText(/do not have entry access/i).count(),
+      await page.getByText(/do not have permission to create DCs/i).count(),
       'the E2E login needs entry access on the OSP DC create page (ospdc_create)',
     ).toBe(0);
 
@@ -335,7 +335,7 @@ test.describe('Delivery Challan — Vehicle No field', () => {
       // the reason in a red banner just above it.
       const banner = page
         .locator('div')
-        .filter({ hasText: /Cannot outsource|cannot ship|Failed to create DC|validation/i })
+        .filter({ hasText: /Cannot outsource|cannot ship|Failed to create DC|Could not save DC|validation/i })
         .last();
       const message = (await banner.innerText().catch(() => '')).trim();
       throw new Error(
@@ -354,8 +354,8 @@ test.describe('Delivery Challan — Vehicle No field', () => {
     //    navigated to, showing data re-fetched from the database.
     await page.waitForTimeout(3000);
 
-    const vehicleShown = await readPair(page, 'Vehicle No');
-    const transportShown = await readPair(page, 'Transport');
+    const vehicleShown = await readPair(page, 'Vehicle No.');
+    const transportShown = await readPair(page, 'Transporter');
     // eslint-disable-next-line no-console
     console.log(`>> read back — Transport: "${transportShown}" | Vehicle No: "${vehicleShown}"`);
 
@@ -386,11 +386,11 @@ test.describe('Delivery Challan — Vehicle No field', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(4000);
     expect(
-      await readPair(page, 'Vehicle No'),
+      await readPair(page, 'Vehicle No.'),
       'Vehicle No is still correct after a full page reload',
     ).toBe(VEHICLE_NO);
     expect(
-      await readPair(page, 'Transport'),
+      await readPair(page, 'Transporter'),
       'Transport is still correct after a full page reload',
     ).toBe(TRANSPORTER);
   });

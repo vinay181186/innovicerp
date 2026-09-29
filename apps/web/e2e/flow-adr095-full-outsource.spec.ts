@@ -62,7 +62,7 @@ test('full outsource raises exactly one PR and has no Material Source field', as
   await foPanel.getByPlaceholder(/Heat treat, Plating/i).fill(process);
   await page.waitForTimeout(500);
 
-  await page.getByRole('button', { name: /Create plan/i }).click();
+  await page.getByRole('button', { name: /Save Plan/i }).click();
   await expect(page, 'plan saved → detail page').toHaveURL(/\/plans\/[0-9a-f]{8}-/, {
     timeout: 30_000,
   });
@@ -71,9 +71,9 @@ test('full outsource raises exactly one PR and has no Material Source field', as
   console.log(`>> plan created: ${pln} (process ${process})`);
 
   // Finalize → Execute.
-  await page.getByRole('button', { name: /^Finalize$/ }).click();
+  await page.getByRole('button', { name: /^Mark Planned$/ }).click();
   await page.waitForTimeout(4000);
-  await page.getByRole('button', { name: /^Execute$/ }).click();
+  await page.getByRole('button', { name: /^(Create Job Card|Raise PR)$/ }).click();
   await page.waitForTimeout(6000);
 
   const detail = await page.locator('body').innerText();
@@ -83,9 +83,9 @@ test('full outsource raises exactly one PR and has no Material Source field', as
   // ASSERT 2 (ADR-095): JW PR created, Mat PR NOT created.
   const cell = (label: string): string =>
     (detail.match(new RegExp(`${label}\\s*\\n?\\s*([^\\n]*)`, 'i'))?.[1] ?? '').trim();
-  console.log(`>> plan detail — JW PR: "${cell('JW PR')}"   Mat PR: "${cell('Mat PR')}"`);
+  console.log(`>> plan detail — JW PR: "${cell('JW PR')}"   Mat PR: "${cell('Material PR')}"`);
   expect(cell('JW PR'), 'JW PR created').toContain('✓');
-  expect(cell('Mat PR'), 'Mat PR must NOT be created').not.toContain('✓');
+  expect(cell('Material PR'), 'Mat PR must NOT be created').not.toContain('✓');
   console.log('>> ASSERT 2 ok — plan detail shows JW PR created, Mat PR not');
 
   // ASSERT 3 (ADR-095): exactly ONE new PR. Before today this was two.

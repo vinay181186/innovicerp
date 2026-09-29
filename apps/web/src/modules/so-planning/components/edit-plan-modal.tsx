@@ -423,7 +423,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       if (finalizeAfter) await finalize.mutateAsync(plan.id);
       onSaved();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : 'Could not save Plan. Try again.');
     }
   };
 
@@ -504,19 +504,19 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       </button>
       <button
         type="button"
-        className="btn btn-success"
+        className="btn btn-primary"
         onClick={() => onSave(true)}
         disabled={update.isPending || finalize.isPending}
       >
         {update.isPending || finalize.isPending ? (
           <>
-            <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} /> …
+            <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} />{' '}
+            Saving…
           </>
         ) : (
-          // Legacy editPlan: showModalLg(title, body, onSave, 'Save Plan') →
-          // btn-success rendering `&#10003; Save Plan` (L28044). Its single save
-          // always sets status='Planned', i.e. it is this button, not Save Draft.
-          '✓ Save Plan'
+          // Legacy editPlan's single save always sets status='Planned', i.e. it
+          // is this button, not Save Draft.
+          'Save Plan'
         )}
       </button>
     </>
@@ -551,7 +551,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     >
       <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
       <div style={{ fontSize: 12, fontWeight: 700, color }}>{label}</div>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{help}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{help}</div>
     </label>
   );
 
@@ -574,7 +574,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         background: tint,
         border: `1px solid ${edge}`,
         borderRadius: 4,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
         letterSpacing: '.04em',
         whiteSpace: 'nowrap',
@@ -616,21 +616,21 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       >
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>PLAN</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Plan</span>
             <br />
             <b className="mono" style={{ color: 'var(--cyan)' }}>
               {plan.code}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO/JW</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO / JWSO</span>
             <br />
             <b className="mono">
-              {plan.soCodeText ?? '—'} L{plan.lineNo ?? '—'}
+              {plan.soCodeText ?? '—'} Ln {plan.lineNo ?? '—'}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Item</span>
             <br />
             {/* `CODE/REV` — see planItemLabel. nowrap so a short code never
                 breaks across two lines in this summary strip. */}
@@ -640,12 +640,12 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             {plan.itemName ?? plan.itemNameText ?? ''}
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO QTY</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
             <br />
             <b style={{ fontSize: 16 }}>{plan.orderQty}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 700 }}>PLAN QTY ★</span>
+            <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>Plan Qty ★</span>
             <br />
             <input
               type="number"
@@ -738,9 +738,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <div
             className="mono fw-700 text3"
             style={{
-              fontSize: 9,
-              textTransform: 'uppercase',
-              letterSpacing: '.08em',
+              fontSize: 11,
               marginBottom: 6,
             }}
           >
@@ -783,9 +781,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <div
             className="mono fw-700"
             style={{
-              fontSize: 9,
-              textTransform: 'uppercase',
-              letterSpacing: '.08em',
+              fontSize: 11,
               marginBottom: 6,
               color: 'var(--blue)',
             }}
@@ -821,7 +817,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             </div>
             <div className="form-grp" style={{ flex: '2.4 1 200px', minWidth: 0 }}>
               <label className="form-label" style={{ color: 'var(--blue)' }}>
-                Remark
+                Remarks
               </label>
               <input
                 className="innovic-input"
@@ -876,8 +872,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         {defaultOpsQuery.data.routeCardCode}
                       </span>
                       {defaultOpsQuery.data.routeCardRevision != null ? (
-                        <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 9 }}>
-                          Rev {defaultOpsQuery.data.routeCardRevision}
+                        <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 11 }}>
+                          Route Card Rev {defaultOpsQuery.data.routeCardRevision}
                         </span>
                       ) : null}
                       {autoLoadedCount != null ? (
@@ -889,7 +885,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                     </>
                   ) : (
                     <span style={{ color: 'var(--text3)' }}>
-                      Route Card: <span style={{ color: 'var(--amber)' }}>none</span> &mdash; enter
+                      Route Card: <span style={{ color: 'var(--amber2)' }}>none</span> &mdash; enter
                       the operations below
                     </span>
                   )}
@@ -921,14 +917,14 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 }}
                 onClick={() => addOp('outsource')}
               >
-                + Add OSP Op
+                + Add Outsource Op
               </button>
               <button
                 type="button"
                 className="btn btn-sm"
                 style={{
                   background: 'rgba(34,197,94,0.08)',
-                  color: 'var(--green)',
+                  color: 'var(--green2)',
                   border: '1px solid rgba(34,197,94,0.25)',
                   fontSize: 11,
                 }}
@@ -940,11 +936,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           </div>
           {ops.length === 0 ? (
             <div className="empty-state" style={{ padding: 20, textAlign: 'center' }}>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>No operations yet.</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                Use <b>+ Add Op</b> for in-house work, <b>+ Add OSP Op</b> for vendor work, or{' '}
-                <b>+ Add QC Op</b> for an inspection step.
-              </div>
+              <div style={{ fontSize: 12 }}>No operations yet.</div>
             </div>
           ) : (
             // Seven columns is more than the 1320px modal has to spare on a small
@@ -958,7 +950,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               <table className="ops-routing" style={{ minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 40, textAlign: 'center' }}>Sr No</th>
+                    <th style={{ width: 40, textAlign: 'center' }}>Op</th>
                     {/* The Group column leads because it is the first thing the
                         planner decides — what KIND of step this is (a machine
                         family, an OSP hand-off, or a QC check). Everything to the
@@ -966,8 +958,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                     <th style={{ width: 190 }}>Group</th>
                     <th style={{ width: 210 }}>Machine / Vendor</th>
                     <th style={{ minWidth: 200 }}>Operation</th>
-                    <th style={{ width: 96 }}>Cycle Time (h)</th>
-                    <th style={{ width: 132, color: 'var(--amber)' }}>OSP</th>
+                    <th style={{ width: 96 }}>Cycle Time (min)</th>
+                    <th style={{ width: 132, color: 'var(--amber2)' }}>OSP</th>
                     <th style={{ width: 48 }} />
                   </tr>
                 </thead>
@@ -984,7 +976,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             borderLeft: '3px solid var(--green)',
                           }}
                         >
-                          <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                          <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
                             {opSrNo(i + 1)}
                           </td>
                           {/* A QC step has no machine group — the badge takes the
@@ -1211,7 +1203,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: 6,
-                              fontSize: 10,
+                              fontSize: 11,
                               fontWeight: 700,
                               // Legacy L9576: amber only while ticked, else text3.
                               color: isOS ? 'var(--amber)' : 'var(--text3)',
@@ -1293,10 +1285,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           >
             📦 Full Outsource Details
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>
-            ℹ Our material will be sent to vendor. Vendor does all machining/processes and returns
-            finished parts.
-          </div>
           <datalist id="dlFOCC">
             {(costCenters.data?.items ?? []).map((c) => (
               <option key={c.id} value={c.code}>
@@ -1330,7 +1318,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 value={foRate ?? ''}
                 onChange={(e) => setFoRate(e.target.value === '' ? null : Number(e.target.value))}
                 placeholder="0.00"
-                style={{ fontSize: 14, color: 'var(--green)', fontWeight: 700 }}
+                style={{ fontSize: 14, color: 'var(--green2)', fontWeight: 700 }}
               />
             </div>
             <div className="form-grp form-full">
@@ -1388,7 +1376,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             style={{
               fontSize: 12,
               fontWeight: 700,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               marginBottom: 10,
             }}
           >
@@ -1396,7 +1384,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           </div>
           <div className="form-grid">
             <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--green)' }}>
+              <label className="form-label" style={{ color: 'var(--green2)' }}>
                 Vendor ★
               </label>
               <SearchableSelect
@@ -1455,7 +1443,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <span
             style={{
               fontSize: 11,
-              color: 'var(--red)',
+              color: 'var(--red2)',
               fontFamily: 'var(--mono)',
               fontWeight: 700,
               letterSpacing: '0.06em',
@@ -1550,13 +1538,12 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         <div
           style={{
             padding: '6px 12px',
-            fontSize: 10,
+            fontSize: 11,
             color: 'var(--text3)',
             borderTop: '1px solid var(--border)',
           }}
         >
-          📌 QC person must upload these documents during inspection. Mandatory docs will block QC
-          completion.
+          ★ Mandatory docs must be uploaded before QC can complete.
         </div>
       </div>
 
@@ -1567,7 +1554,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             padding: 8,
             borderRadius: 4,
             background: 'rgba(239,68,68,0.1)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >

@@ -30,6 +30,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
@@ -48,6 +49,17 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+// Screen words for PR status codes, for error text only (matches the web's
+// pr-labels.ts). Unknown codes fall back to Title Case.
+const PR_STATUS_LABEL: Record<string, string> = {
+  open: 'Open',
+  approved: 'Approved',
+  po_created: 'PO Created',
+  cancelled: 'Cancelled',
+};
+const prStatusLabel = (status: string): string =>
+  PR_STATUS_LABEL[status] ?? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function prDetail(
   code: string,
@@ -74,7 +86,7 @@ async function assertVendorExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Vendor ${vendorId} not found in this company`);
+    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
   }
 }
 
@@ -117,7 +129,7 @@ async function assertItemExists(
     .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Item ${itemId} not found in this company`);
+    throw new ValidationError('Selected Item was not found. Please select the Item Code again.');
   }
 }
 
@@ -175,7 +187,7 @@ async function assertJcOpExists(
     .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`JC op ${jcOpId} not found in this company`);
+    throw new ValidationError('Selected JC operation was not found. Please pick the Op again.');
   }
 }
 
@@ -196,7 +208,7 @@ async function assertSoLineExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`SO line ${soLineId} not found in this company`);
+    throw new ValidationError('Selected SO line was not found. Please pick the SO line again.');
   }
 }
 
@@ -286,10 +298,13 @@ function toPurchaseRequest(
 
 /** Quantity of this PR that sits on a LIVE purchase order: the sum of the PO
  *  lines raised from it, ignoring deleted lines, deleted POs and CANCELLED POs.
- *  Excluding cancelled POs is what makes a cancelled PO give its quantity back. */
+ *  Excluding cancelled POs is what makes a cancelled PO give its quantity back.
+ *  ADR-189: a SHORT-CLOSED PO counts only what was received on the line, so
+ *  its un-received qty goes back to the PR's Pending too. */
 function liveOrderedQtySql(prIdRef: SQLWrapper): SQL<number> {
   return sql<number>`(
-    SELECT COALESCE(SUM(pol.qty), 0)::int
+    SELECT COALESCE(SUM(CASE WHEN p2.short_closed_at IS NOT NULL
+                             THEN COALESCE(pol.received_qty, 0) ELSE pol.qty END), 0)::numeric
     FROM public.purchase_order_lines pol
     JOIN public.purchase_orders p2 ON p2.id = pol.purchase_order_id
     WHERE pol.source_pr_id = ${prIdRef}
@@ -337,7 +352,11 @@ function deriveOrderedQty(input: {
 /** Same rule as `deriveOrderedQty`, expressed in SQL so a list can filter on the
  *  balance BEFORE paging — a post-filter would make the page counts and `total`
  *  lie. `prRef` is the alias the caller gave `purchase_requests` (e.g. `pr`). */
-function orderedQtySql(prRef: { id: SQLWrapper; poId: SQLWrapper; qty: SQLWrapper }): SQL<number> {
+export function orderedQtySql(prRef: {
+  id: SQLWrapper;
+  poId: SQLWrapper;
+  qty: SQLWrapper;
+}): SQL<number> {
   return sql<number>`(CASE
     WHEN ${prRef.poId} IS NOT NULL AND ${linkedLineCountSql(prRef.id)} = 0 THEN ${prRef.qty}
     ELSE ${liveOrderedQtySql(prRef.id)}
@@ -361,7 +380,8 @@ export function deriveBalanceQty(input: {
   balanceClosed: boolean;
 }): number {
   if (input.balanceClosed) return 0;
-  return input.qty - input.orderedQty;
+  // 3 places: quantities are decimal (KGS / MTR, 0172) — no float drift.
+  return Math.round((input.qty - input.orderedQty) * 1000) / 1000;
 }
 
 /**
@@ -585,6 +605,7 @@ export async function listPurchaseRequests(
         pr.updated_at AS "updatedAt", pr.updated_by AS "updatedBy",
         pr.deleted_at AS "deletedAt",
         COALESCE(v.name, vt.name) AS "vendorName",
+        COALESCE(v.code, vt.code) AS "vendorCode",
         i.code AS "itemCode",
         -- The customer's drawing revision, read live off the SO line this PR was
         -- raised against, through the SAME sol join the SO code below already
@@ -748,6 +769,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),
     vendorName: (r['vendorName'] as string | null) ?? null,
+    vendorCode: (r['vendorCode'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
     itemRevision: (r['itemRevision'] as string | null) ?? null,
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
@@ -868,7 +890,7 @@ export async function getPurchaseRequest(
       )
       .limit(1);
     const found = rows[0];
-    if (!found) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!found) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     const orderedQty = deriveOrderedQty({
       qty: found.row.qty,
       poId: found.row.poId,
@@ -898,125 +920,148 @@ export async function getPurchaseRequest(
 export async function createPurchaseRequest(
   input: CreatePurchaseRequestInput,
   user: AuthContext,
+  /** Set only by server code raising an OSP PR for a JC op (never by a route). */
+  opts: { systemRaised?: boolean } = {},
 ): Promise<PurchaseRequest> {
   // Raising a PR is an entry right — L2 Data Entry and above.
   await requireFormAccess(user, 'pr_create', 'entry');
   const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => insertPurchaseRequestTx(tx, input, user, companyId, opts));
+}
 
-  return withUserContext(user, async (tx) => {
-    // T23: blank code → auto-generate the next IN-PR-#####. OSP callers pass an
-    // explicit IN-JWPR- code, which is honoured; only the standalone PR form
-    // leaves it blank. nextSeriesCode is prefix-scoped so the series don't mix.
-    const code = input.code?.trim() || (await nextSeriesCode(tx, 'pr', companyId, 'IN-PR-'));
-    // Code uniqueness within company
-    const dup = await tx
-      .select({ id: purchaseRequests.id })
-      .from(purchaseRequests)
-      .where(
-        and(
-          eq(purchaseRequests.companyId, companyId),
-          eq(purchaseRequests.code, code),
-          isNull(purchaseRequests.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (dup.length > 0) {
-      throw new ConflictError(`Purchase request code "${code}" already exists`);
-    }
+/** The whole create, inside the caller's transaction — numbering, checks,
+ *  insert (status 'open'), op stamp, activity log. createPurchaseRequest and
+ *  the Store Reorder List (ADR-193 phase 5) both go through here, so a PR
+ *  raised in bulk is identical to one raised by hand. Access is the caller's. */
+export async function insertPurchaseRequestTx(
+  tx: DbTransaction,
+  input: CreatePurchaseRequestInput,
+  user: AuthContext,
+  companyId: string,
+  opts: { systemRaised?: boolean } = {},
+): Promise<PurchaseRequest> {
+  // T23: blank code → auto-generate the next IN-PR-#####. OSP callers pass an
+  // explicit IN-JWPR- code, which is honoured; only the standalone PR form
+  // leaves it blank. nextSeriesCode is prefix-scoped so the series don't mix.
+  const code = input.code?.trim() || (await nextSeriesCode(tx, 'pr', companyId, 'IN-PR-'));
+  // Code uniqueness within company
+  const dup = await tx
+    .select({ id: purchaseRequests.id })
+    .from(purchaseRequests)
+    .where(
+      and(
+        eq(purchaseRequests.companyId, companyId),
+        eq(purchaseRequests.code, code),
+        isNull(purchaseRequests.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (dup.length > 0) {
+    throw new ConflictError(`PR No. "${code}" already exists.`);
+  }
 
-    if (input.vendorId) await assertVendorExists(tx, input.vendorId, companyId);
-    if (input.itemId) await assertItemExists(tx, input.itemId, companyId);
-    if (input.sourceJcOpId) await assertJcOpExists(tx, input.sourceJcOpId, companyId);
-    if (input.sourceSoLineId) await assertSoLineExists(tx, input.sourceSoLineId, companyId);
+  if (input.vendorId) await assertVendorExists(tx, input.vendorId, companyId);
+  if (input.itemId) await assertItemExists(tx, input.itemId, companyId);
+  // ADR-189 — an OSP PR (type 'jw_osp' / a JC-op link) is raised by the
+  // system when an outsource op needs a vendor, and skips PR approval; a
+  // hand-made PR may not claim to be one. The form never sends either.
+  if (!opts.systemRaised && (input.prType === 'jw_osp' || input.sourceJcOpId)) {
+    throw new ValidationError(
+      'A Job Work OSP request is raised by the system from its Job Card operation, not by hand.',
+    );
+  }
+  if (input.sourceJcOpId) await assertJcOpExists(tx, input.sourceJcOpId, companyId);
+  if (input.sourceSoLineId) await assertSoLineExists(tx, input.sourceSoLineId, companyId);
 
-    // Back-stop for a caller that sends only the typed code: if it names a real
-    // master item, stamp the link. An off-master code still saves as free text.
-    const resolvedItemId =
-      input.itemId ??
-      (input.itemCodeText ? await resolveItemIdByCode(tx, input.itemCodeText, companyId) : null);
+  // Back-stop for a caller that sends only the typed code: if it names a real
+  // master item, stamp the link. An off-master code still saves as free text.
+  const resolvedItemId =
+    input.itemId ??
+    (input.itemCodeText ? await resolveItemIdByCode(tx, input.itemCodeText, companyId) : null);
+  // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+  await assertLineQtysFitUom(tx, companyId, [{ itemId: resolvedItemId, qty: input.qty }], 'PR Qty');
 
-    // When the caller links an item but sends no name (a PR raised from a rework
-    // child job card carries the id + code but a blank name snapshot), stamp the
-    // master's name so the PR — and the PO raised from it — shows the item and
-    // its Create button is not stuck disabled on an empty name.
-    const resolvedItemName =
-      input.itemName?.trim() ||
-      (resolvedItemId ? await resolveItemNameById(tx, resolvedItemId, companyId) : null);
+  // When the caller links an item but sends no name (a PR raised from a rework
+  // child job card carries the id + code but a blank name snapshot), stamp the
+  // master's name so the PR — and the PO raised from it — shows the item and
+  // its Create button is not stuck disabled on an empty name.
+  const resolvedItemName =
+    input.itemName?.trim() ||
+    (resolvedItemId ? await resolveItemNameById(tx, resolvedItemId, companyId) : null);
 
-    const inserted = await tx
-      .insert(purchaseRequests)
-      .values({
-        companyId,
-        code,
-        prDate: input.prDate,
-        // A new PR is ALWAYS born 'open'. Any status on the payload is
-        // ignored, matching updatePurchaseRequest (which omits status
-        // entirely): it advances only through approve / reject / create-PO.
-        // Picking it at creation let a PR be born 'approved' with no
-        // approvedBy/approvedAt behind it, or born 'po_created' and never
-        // convertible. The create form no longer offers the field.
-        status: 'open',
-        prType: input.prType ?? (input.sourceJcOpId ? 'jw_osp' : 'standard'),
-        vendorId: input.vendorId ?? null,
-        vendorCodeText: input.vendorCodeText ?? null,
-        itemId: resolvedItemId,
-        itemCodeText: input.itemCodeText ?? null,
-        itemName: resolvedItemName,
-        qty: input.qty,
-        estCost: estCostToString(input.estCost),
-        requiredDate: input.requiredDate ?? null,
-        sourceJcOpId: input.sourceJcOpId ?? null,
-        sourceSoLineId: input.sourceSoLineId ?? null,
-        operation: input.operation ?? null,
-        remarks: input.remarks ?? null,
-        createdBy: user.id,
+  const inserted = await tx
+    .insert(purchaseRequests)
+    .values({
+      companyId,
+      code,
+      prDate: input.prDate,
+      // A new PR is ALWAYS born 'open'. Any status on the payload is
+      // ignored, matching updatePurchaseRequest (which omits status
+      // entirely): it advances only through approve / reject / create-PO.
+      // Picking it at creation let a PR be born 'approved' with no
+      // approvedBy/approvedAt behind it, or born 'po_created' and never
+      // convertible. The create form no longer offers the field.
+      status: 'open',
+      prType: input.prType ?? (input.sourceJcOpId ? 'jw_osp' : 'standard'),
+      vendorId: input.vendorId ?? null,
+      vendorCodeText: input.vendorCodeText ?? null,
+      itemId: resolvedItemId,
+      itemCodeText: input.itemCodeText ?? null,
+      itemName: resolvedItemName,
+      qty: input.qty,
+      estCost: estCostToString(input.estCost),
+      requiredDate: input.requiredDate ?? null,
+      sourceJcOpId: input.sourceJcOpId ?? null,
+      sourceSoLineId: input.sourceSoLineId ?? null,
+      operation: input.operation ?? null,
+      remarks: input.remarks ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const row = inserted[0]!;
+
+  // Legacy createPR write-back — HTML L6207-08:
+  //   op.outsourceStatus='PR Raised'; op.outsourcePRNo=prNo;
+  // When a PR is raised from an outsource JC op, stamp the source op so the
+  // JC Ops board (jc-ops/service.ts joins pr ON pr.id = op.outsource_pr_id)
+  // surfaces the raised PR. This is ATOMIC with the insert above — same tx —
+  // so a committed PR is never left without its op stamped (the parity bug
+  // this fixes). 'PR Raised' maps to the 'pr_raised' OUTSOURCE_STATUSES
+  // member; legacy `op.outsourcePRNo` maps to our outsource_pr_id FK.
+  // The op's existence/company was already asserted above (assertJcOpExists).
+  if (input.sourceJcOpId) {
+    await tx
+      .update(jcOps)
+      .set({
+        outsourcePrId: row.id,
+        outsourceStatus: 'pr_raised',
+        updatedAt: new Date(),
         updatedBy: user.id,
       })
-      .returning();
-    const row = inserted[0]!;
+      .where(
+        and(
+          eq(jcOps.id, input.sourceJcOpId),
+          eq(jcOps.companyId, companyId),
+          isNull(jcOps.deletedAt),
+        ),
+      );
+  }
 
-    // Legacy createPR write-back — HTML L6207-08:
-    //   op.outsourceStatus='PR Raised'; op.outsourcePRNo=prNo;
-    // When a PR is raised from an outsource JC op, stamp the source op so the
-    // JC Ops board (jc-ops/service.ts joins pr ON pr.id = op.outsource_pr_id)
-    // surfaces the raised PR. This is ATOMIC with the insert above — same tx —
-    // so a committed PR is never left without its op stamped (the parity bug
-    // this fixes). 'PR Raised' maps to the 'pr_raised' OUTSOURCE_STATUSES
-    // member; legacy `op.outsourcePRNo` maps to our outsource_pr_id FK.
-    // The op's existence/company was already asserted above (assertJcOpExists).
-    if (input.sourceJcOpId) {
-      await tx
-        .update(jcOps)
-        .set({
-          outsourcePrId: row.id,
-          outsourceStatus: 'pr_raised',
-          updatedAt: new Date(),
-          updatedBy: user.id,
-        })
-        .where(
-          and(
-            eq(jcOps.id, input.sourceJcOpId),
-            eq(jcOps.companyId, companyId),
-            isNull(jcOps.deletedAt),
-          ),
-        );
-    }
-
-    await emitActivityLog(
-      tx,
-      {
-        action: 'CREATE',
-        entity: 'PurchaseRequest',
-        detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
-        refId: row.code,
-      },
-      companyId,
-      user,
-    );
-    // A PR born a moment ago has no PO line pointing at it and no header po_id,
-    // so its ordered quantity is 0 by construction — no query needed.
-    return toPurchaseRequest(row, 0);
-  });
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'PurchaseRequest',
+      detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+      refId: row.code,
+    },
+    companyId,
+    user,
+  );
+  // A PR born a moment ago has no PO line pointing at it and no header po_id,
+  // so its ordered quantity is 0 by construction — no query needed.
+  return toPurchaseRequest(row, 0);
 }
 
 export async function updatePurchaseRequest(
@@ -1042,7 +1087,7 @@ export async function updatePurchaseRequest(
       )
       .limit(1);
     if (existing.length === 0) {
-      throw new NotFoundError(`Purchase request ${id} not found`);
+      throw new NotFoundError('PR not found. It may have been moved to Trash.');
     }
     // A PR with quantity on a LIVE purchase order is locked — no further edits.
     //
@@ -1053,9 +1098,7 @@ export async function updatePurchaseRequest(
     // any live quantity stays locked exactly as before.
     const orderedQty = await loadOrderedQty(tx, existing[0]!);
     if (orderedQty > 0) {
-      throw new ConflictError(
-        `Purchase request ${existing[0]!.code} is linked to a PO and cannot be edited`,
-      );
+      throw new ConflictError(`Cannot edit PR ${existing[0]!.code}: it is linked to a PO.`);
     }
 
     if (input.vendorId !== undefined && input.vendorId !== null) {
@@ -1091,6 +1134,18 @@ export async function updatePurchaseRequest(
     if (input.itemCodeText !== undefined) updates['itemCodeText'] = input.itemCodeText ?? null;
     if (input.itemName !== undefined) updates['itemName'] = input.itemName ?? null;
     if (input.qty !== undefined) updates['qty'] = input.qty;
+    // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+    await assertLineQtysFitUom(
+      tx,
+      companyId,
+      [
+        {
+          itemId: 'itemId' in updates ? (updates['itemId'] as string | null) : existing[0]!.itemId,
+          qty: input.qty ?? existing[0]!.qty,
+        },
+      ],
+      'PR Qty',
+    );
     // Money in, same rule as money out: a caller who cannot SEE the estimated
     // cost cannot SET it either — their payload's estCost is ignored and the
     // stored figure stands. `priceOff` makes "can do the job but must not see
@@ -1099,7 +1154,14 @@ export async function updatePurchaseRequest(
       updates['estCost'] = estCostToString(input.estCost);
     }
     if (input.requiredDate !== undefined) updates['requiredDate'] = input.requiredDate ?? null;
-    if (input.sourceJcOpId !== undefined) updates['sourceJcOpId'] = input.sourceJcOpId ?? null;
+    // ADR-189 — the JC-op link is written only by the system when an outsource
+    // op raises its PR (such a PR skips PR approval), so it is never set by hand.
+    if (
+      input.sourceJcOpId !== undefined &&
+      (input.sourceJcOpId ?? null) !== (existing[0]!.sourceJcOpId ?? null)
+    ) {
+      throw new ValidationError('The Job Card operation link of a PR is set by the system only.');
+    }
     if (input.sourceSoLineId !== undefined)
       updates['sourceSoLineId'] = input.sourceSoLineId ?? null;
     if (input.operation !== undefined) updates['operation'] = input.operation ?? null;
@@ -1159,11 +1221,11 @@ export async function approvePurchaseRequest(
       )
       .limit(1);
     const pr = existing[0];
-    if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     // Only a pre-approval PR ('open') can be approved.
     if (pr.status !== 'open') {
       throw new ValidationError(
-        `PR ${pr.code} is ${pr.status}; only open purchase requests can be approved`,
+        `Cannot approve PR ${pr.code}: it is ${prStatusLabel(pr.status)}. Only Open PRs can be approved.`,
       );
     }
 
@@ -1193,7 +1255,7 @@ export async function approvePurchaseRequest(
       {
         action: 'APPROVE',
         entity: 'PurchaseRequest',
-        detail: `${row.code} approved by ${user.email ?? user.id}`,
+        detail: `${row.code} approved by ${user.fullName || user.email}`,
         refId: row.code,
       },
       companyId,
@@ -1213,7 +1275,7 @@ export async function rejectPurchaseRequest(
   const companyId = requireCompany(user);
 
   if (!reason || !reason.trim()) {
-    throw new ValidationError('Rejection reason is required');
+    throw new ValidationError('Reason is required to Reject.');
   }
   const trimmedReason = reason.trim();
 
@@ -1230,7 +1292,7 @@ export async function rejectPurchaseRequest(
       )
       .limit(1);
     const pr = existing[0];
-    if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     // Quantity already on a LIVE purchase order carries the procurement
     // obligation on that PO; a cancelled PR is terminal. Same change as the edit
     // guard: this asks how much is actually on order instead of reading the
@@ -1239,7 +1301,9 @@ export async function rejectPurchaseRequest(
     const orderedQty = await loadOrderedQty(tx, pr);
     if (orderedQty > 0 || pr.status === 'cancelled') {
       throw new ValidationError(
-        `PR ${pr.code} is ${pr.status}; only open or approved purchase requests can be rejected`,
+        orderedQty > 0
+          ? `Cannot reject PR ${pr.code}: a PO has already been placed against it.`
+          : `Cannot reject PR ${pr.code}: it is ${prStatusLabel(pr.status)}. Only Open or Approved PRs can be rejected.`,
       );
     }
 
@@ -1280,7 +1344,7 @@ export async function rejectPurchaseRequest(
         entity: 'PurchaseRequest',
         detail:
           `${row.code} rejected: ${trimmedReason}` +
-          (released > 0 ? ` — JC operation released (retype/remove now allowed)` : ''),
+          (released > 0 ? ` — JC operation freed; it can now be changed or removed` : ''),
         refId: row.code,
       },
       companyId,
@@ -1318,7 +1382,7 @@ export async function closePurchaseRequestBalance(
 
   const trimmedReason = input.reason.trim();
   if (!trimmedReason) {
-    throw new ValidationError('A reason is required to close the balance');
+    throw new ValidationError('Reason is required to Short Close.');
   }
 
   return withUserContext(user, async (tx) => {
@@ -1331,15 +1395,15 @@ export async function closePurchaseRequestBalance(
       .where(and(eq(purchaseRequests.id, id), eq(purchaseRequests.companyId, companyId)))
       .limit(1);
     const pr = existing[0];
-    if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     if (pr.deletedAt !== null) {
-      throw new ValidationError(`PR ${pr.code} has been deleted; its balance cannot be closed`);
+      throw new ValidationError(`PR ${pr.code} is in Trash. It cannot be Short Closed.`);
     }
     if (pr.status === 'cancelled') {
-      throw new ValidationError(`PR ${pr.code} is cancelled; it has no balance to close`);
+      throw new ValidationError(`PR ${pr.code} is Cancelled. It cannot be Short Closed.`);
     }
     if (pr.balanceClosedAt !== null) {
-      throw new ValidationError(`PR ${pr.code} already has its balance closed`);
+      throw new ValidationError(`PR ${pr.code} is already Short Closed.`);
     }
 
     const orderedQty = await loadOrderedQty(tx, pr);
@@ -1352,13 +1416,13 @@ export async function closePurchaseRequestBalance(
     // not). The user is sent to that button by name.
     if (orderedQty <= 0) {
       throw new ValidationError(
-        `PR ${pr.code} has nothing on order — use Reject to cancel the whole request, not Close Balance`,
+        `Nothing is ordered on PR ${pr.code} yet. Use Reject to cancel the whole PR.`,
       );
     }
     // Fully ordered (or over-ordered): closing would change nothing.
     if (balanceQty <= 0) {
       throw new ValidationError(
-        `PR ${pr.code} has nothing left to order (${orderedQty} of ${pr.qty} already ordered); there is no balance to close`,
+        `PR ${pr.code} has no Pending Qty (${orderedQty} of ${pr.qty} already ordered). Nothing to Short Close.`,
       );
     }
 
@@ -1385,7 +1449,7 @@ export async function closePurchaseRequestBalance(
       {
         action: 'BALANCE_CLOSE',
         entity: 'PurchaseRequest',
-        detail: `${row.code} balance closed — ${balanceQty} of ${row.qty} abandoned: ${trimmedReason}`,
+        detail: `${row.code} Short Closed — ${balanceQty} of ${row.qty} not ordered: ${trimmedReason}`,
         refId: row.code,
       },
       companyId,
@@ -1462,14 +1526,14 @@ export async function softDeletePurchaseRequest(
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`Purchase request ${id} not found`);
+      throw new NotFoundError('PR not found. It may have been moved to Trash.');
     }
     // Block deletion when a PO has been generated — that PO carries the
     // procurement obligation. Cancel the PR instead (status='cancelled') if
     // needed; deletion is for mistakes pre-PO only.
     if (row.poId !== null) {
       throw new ConflictError(
-        `Purchase request ${id} has a linked purchase order — cancel instead of delete`,
+        `Cannot delete PR ${row.code}: a PO is linked. Cancel the PR instead.`,
       );
     }
     await tx
@@ -1539,7 +1603,7 @@ export async function getPurchaseRequestRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!header) throw new NotFoundError('PR not found. It may have been moved to Trash.');
 
     // ── Upstream: vendor (source supplier) ─────────────────────────────────
     const vendorRows = header.vendorId

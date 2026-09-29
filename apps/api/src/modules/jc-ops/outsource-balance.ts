@@ -31,7 +31,8 @@ function requireCompany(user: AuthContext): string {
 
 // Plain ISO date — matches the codebase's zoneless `date` columns.
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  // TODAY IN IST — the UTC date is still yesterday between 00:00 and 05:30 IST.
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 export interface OutsourceOpBalanceResult {
@@ -64,7 +65,7 @@ export async function outsourceOpBalance(
       .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
       .limit(1);
     const op = opRows[0];
-    if (!op) throw new NotFoundError(`JC operation ${jcOpId} not found`);
+    if (!op) throw new NotFoundError('Operation not found. Refresh the page.');
 
     // ADR-182 — the dual-lane action raises a jw_osp purchase request and
     // stamps a vendor on the op, so it is a write like any other: refused once
@@ -92,9 +93,7 @@ export async function outsourceOpBalance(
       )
       .limit(1);
     if (running.length > 0) {
-      throw new ValidationError(
-        'Stop the running machine session before outsourcing this operation — finish or stop the in-house run, then outsource the remaining balance.',
-      );
+      throw new ValidationError('Stop Operation first, then outsource the Pending qty.');
     }
 
     // `available` from the calc-engine view — the qty cleared for this op that
@@ -107,7 +106,7 @@ export async function outsourceOpBalance(
     const available = Number(statusRows[0]?.available ?? 0);
     if (qty <= 0 || qty > available) {
       throw new ValidationError(
-        `Cannot outsource ${qty} — only ${available} available on this operation.`,
+        `Outsource Qty (${qty}) cannot be more than Pending (${available}) on this operation.`,
       );
     }
 
@@ -125,7 +124,8 @@ export async function outsourceOpBalance(
       )
       .limit(1);
     const vendor = vRows[0];
-    if (!vendor) throw new ValidationError(`Vendor "${vendorCode}" not found in this company`);
+    if (!vendor)
+      throw new ValidationError(`Vendor "${vendorCode}" not found. Pick it again from the list.`);
 
     // JC + item for the PR line.
     const jcRows = await tx
@@ -135,7 +135,7 @@ export async function outsourceOpBalance(
       .where(and(eq(jobCards.id, op.jobCardId), eq(jobCards.companyId, companyId)))
       .limit(1);
     const jc = jcRows[0];
-    if (!jc) throw new NotFoundError(`Job card for op ${jcOpId} not found`);
+    if (!jc) throw new NotFoundError('Job Card not found. Refresh the page.');
 
     // Stamp the outsource vendor on the op (createPurchaseRequest below stamps
     // outsourceStatus/outsourcePrId but not the vendor).
@@ -177,6 +177,7 @@ export async function outsourceOpBalance(
       sourceJcOpId: jcOpId,
     },
     user,
+    { systemRaised: true },
   );
 
   return { prId: pr.id, prCode: pr.code };

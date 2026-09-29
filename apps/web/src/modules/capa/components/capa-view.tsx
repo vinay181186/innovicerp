@@ -14,25 +14,30 @@ import {
   CAPA_RC_METHODS,
   CAPA_STATUSES,
   CAPA_TYPES,
+  NC_REASON_CATEGORY_LABELS,
   type CapaRecord,
   type CreateCapaInput,
   type UpdateCapaInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { todayLocal } from '@/lib/date';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { StatStrip } from '@/components/shared/stat-strip';
+import { ListHeader } from '@/ui/layout';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useNcRegisterList } from '@/modules/nc-register/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useUsersList } from '@/modules/users/api';
 import { useCapaList, useCreateCapa, useNextCapaCode, useUpdateCapa } from '../api';
 
+// App status colours: Open / Verified (waiting for the next step) = blue,
+// In Progress = amber, Closed = green.
 function statusColor(s: string): string {
-  if (s === 'Open') return 'var(--amber)';
-  if (s === 'In Progress') return 'var(--blue)';
-  if (s === 'Verified') return 'var(--purple)';
+  if (s === 'Open') return 'var(--blue)';
+  if (s === 'In Progress') return 'var(--amber)';
+  if (s === 'Verified') return 'var(--blue)';
   if (s === 'Closed') return 'var(--green)';
   return 'var(--text3)';
 }
@@ -45,6 +50,9 @@ type ModalState =
 export function CapaView(props: {
   title?: string;
   initialSearch?: string | undefined;
+  /** Open the CAPA named by initialSearch in its 5-step edit (not read-only) —
+   *  used right after "Create CAPA" on an NC so the user lands on the work. */
+  openForEdit?: boolean | undefined;
 }): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useCapaList();
   const { data: eff } = useMyAccess();
@@ -59,8 +67,22 @@ export function CapaView(props: {
   const [term, setTerm] = useState(() => props.initialSearch ?? '');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data]);
   const counters = data?.counters;
+
+  // A link that names one CAPA (NC chip, Global Search) opens that CAPA, not
+  // just the filtered list. Once, when the list first arrives.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (autoOpened.current || !props.initialSearch || items.length === 0) return;
+    const want = props.initialSearch.trim().toLowerCase();
+    const hit = items.find((c) => c.code.toLowerCase() === want);
+    // A just-created CAPA may not be in the cached list yet — wait for the
+    // refetch before giving up.
+    if (!hit && isFetching) return;
+    autoOpened.current = true;
+    if (hit) setModal({ kind: 'edit', capa: hit, readOnly: !props.openForEdit });
+  }, [items, isFetching, props.initialSearch, props.openForEdit]);
   const overdue = items.filter((c) => c.overdue);
 
   const filtered = useMemo(() => {
@@ -76,40 +98,56 @@ export function CapaView(props: {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        {props.title ? (
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            {props.title}
-          </div>
-        ) : (
-          <div />
-        )}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" />
-            </span>
-          ) : null}
-          {canCreate ? (
+      <ListHeader
+        title={props.title ?? 'CAPA'}
+        icon="🛡"
+        count={data ? filtered.length : undefined}
+        noun="CAPA"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search CAPA no., NC no., problem, JC, responsible…"
+        updating={isFetching && !isLoading}
+        primary={
+          canCreate ? (
             <button
               type="button"
               className="btn btn-primary"
-              style={{ background: 'var(--purple)' }}
               onClick={() => setModal({ kind: 'new' })}
             >
               ➕ New CAPA
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      >
+        {/* Counter cards — one strip */}
+        {counters ? (
+          <StatStrip
+            items={[
+              { key: 'total', label: 'Total', count: counters.total, color: 'var(--purple2)' },
+              { key: 'open', label: 'Open', count: counters.open, color: 'var(--blue)' },
+              {
+                key: 'inProgress',
+                label: 'In Progress',
+                count: counters.inProgress,
+                color: 'var(--amber2)',
+              },
+              {
+                key: 'verified',
+                label: 'Verified',
+                count: counters.verified,
+                color: 'var(--blue)',
+              },
+              { key: 'closed', label: 'Closed', count: counters.closed, color: 'var(--green2)' },
+              {
+                key: 'effectiveness',
+                label: 'Effectiveness',
+                count: `${counters.effectivenessPct}%`,
+                color: 'var(--green2)',
+              },
+            ]}
+          />
+        ) : null}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -119,8 +157,8 @@ export function CapaView(props: {
         </div>
       ) : isError || !data ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load CAPA'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Could not load CAPA. Try again.'}
           </div>
         </div>
       ) : (
@@ -140,44 +178,19 @@ export function CapaView(props: {
               }}
             >
               <span style={{ fontSize: 16 }}>⚠️</span>
-              <b style={{ color: 'var(--amber)' }}>{overdue.length} CAPA(s) overdue!</b>{' '}
-              {overdue.map((c) => c.code).join(', ')}
+              <b style={{ color: 'var(--amber2)' }}>{overdue.length} CAPAs overdue</b>
             </div>
           ) : null}
 
-          {/* Counter cards */}
-          {counters ? (
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-              <Card label="Total" value={counters.total} color="var(--purple)" />
-              <Card label="Open" value={counters.open} color="var(--amber)" />
-              <Card label="In Progress" value={counters.inProgress} color="var(--blue)" />
-              <Card label="Verified" value={counters.verified} color="var(--purple)" />
-              <Card label="Closed" value={counters.closed} color="var(--green)" />
-              <Card
-                label="Effectiveness"
-                value={`${counters.effectivenessPct}%`}
-                color="var(--green)"
-              />
-            </div>
-          ) : null}
-
-          <input
-            className="innovic-input"
-            style={{ minWidth: 220, fontSize: 13 }}
-            placeholder="🔍 Search CAPA, NC, problem..."
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-          />
-
-          <div className="panel" style={{ marginTop: 10 }}>
+          <div className="panel">
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     <th>CAPA No.</th>
                     <th>CAPA Type</th>
                     <th>CAPA Date</th>
-                    <th>NC Ref</th>
+                    <th>NC No.</th>
                     <th>Problem</th>
                     <th>Root Cause</th>
                     <th>Responsible</th>
@@ -190,37 +203,30 @@ export function CapaView(props: {
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="empty-state">
-                        No CAPAs created yet. Create from NC Register or click + New CAPA.
+                        {term.trim() ? 'No CAPAs match.' : 'No CAPAs yet.'}
                       </td>
                     </tr>
                   ) : (
                     filtered.map((c) => (
                       <tr
                         key={c.id}
-                        style={c.overdue ? { borderLeft: '3px solid var(--red)' } : undefined}
+                        style={{
+                          cursor: 'pointer',
+                          ...(c.overdue ? { borderLeft: '3px solid var(--red)' } : {}),
+                        }}
+                        onClick={() => setModal({ kind: 'edit', capa: c, readOnly: true })}
+                        title={`Open CAPA ${c.code}`}
                       >
                         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                           {c.code}
                         </td>
                         <td>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '2px 6px',
-                              borderRadius: 3,
-                              color: c.type === 'Corrective' ? 'var(--red)' : 'var(--blue)',
-                              background:
-                                c.type === 'Corrective'
-                                  ? 'rgba(220,38,38,0.1)'
-                                  : 'rgba(37,99,235,0.1)',
-                            }}
-                          >
+                          <span className={`badge ${c.type === 'Corrective' ? 'b-red' : 'b-blue'}`}>
                             {c.type}
                           </span>
                         </td>
-                        <td style={{ fontSize: 11 }}>{c.capaDate}</td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--red)' }}>
+                        <td style={{ fontSize: 11 }}>{fmtDate(c.capaDate)}</td>
+                        <td className="mono" style={{ fontSize: 11, color: 'var(--red2)' }}>
                           {c.ncRefs.join(', ')}
                         </td>
                         <td
@@ -245,13 +251,7 @@ export function CapaView(props: {
                           }}
                           title={c.rootCause ?? ''}
                         >
-                          {c.rootCause ? (
-                            c.rootCause
-                          ) : (
-                            <span className="text3" style={{ fontStyle: 'italic' }}>
-                              Pending…
-                            </span>
-                          )}
+                          {c.rootCause ? c.rootCause : <span className="text3">—</span>}
                         </td>
                         <td style={{ fontSize: 12, fontWeight: 600 }}>{c.responsible ?? '—'}</td>
                         <td
@@ -261,7 +261,7 @@ export function CapaView(props: {
                             fontWeight: c.overdue ? 700 : 400,
                           }}
                         >
-                          {c.targetDate ?? '—'}
+                          {fmtDate(c.targetDate)}
                           {c.overdue ? ' ⚠' : ''}
                         </td>
                         <td>
@@ -269,24 +269,16 @@ export function CapaView(props: {
                             {c.status}
                           </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: 3 }}>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              style={{ fontSize: 10 }}
-                              onClick={() => setModal({ kind: 'edit', capa: c, readOnly: true })}
-                            >
-                              👁
-                            </button>
                             {canEdit && c.status !== 'Closed' ? (
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-sm"
-                                style={{ fontSize: 10 }}
+                                style={{ fontSize: 11 }}
                                 onClick={() => setModal({ kind: 'edit', capa: c, readOnly: false })}
                               >
-                                ✏
+                                ✏ Edit
                               </button>
                             ) : null}
                             {c.status !== 'Closed' ? (
@@ -315,7 +307,13 @@ export function CapaView(props: {
       )}
 
       {modal.kind === 'new' ? (
-        <NewCapaModal capas={items} onClose={() => setModal({ kind: 'none' })} />
+        <NewCapaModal
+          capas={items}
+          onClose={() => setModal({ kind: 'none' })}
+          // The CAPA's real work (root cause, actions…) is in the 5-step edit —
+          // open it straight after save instead of dropping the user on the list.
+          onCreated={(capa) => setModal({ kind: 'edit', capa, readOnly: false })}
+        />
       ) : null}
       {modal.kind === 'edit' ? (
         <EditCapaModal
@@ -324,19 +322,6 @@ export function CapaView(props: {
           onClose={() => setModal({ kind: 'none' })}
         />
       ) : null}
-    </div>
-  );
-}
-
-function Card(props: { label: string; value: number | string; color: string }): React.JSX.Element {
-  return (
-    <div className="panel" style={{ minWidth: 90, padding: 12, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 10 }}>
-        {props.label}
-      </div>
-      <div className="mono fw-700" style={{ fontSize: 22, color: props.color }}>
-        {props.value}
-      </div>
     </div>
   );
 }
@@ -381,9 +366,11 @@ function Overlay(props: {
 function NewCapaModal({
   capas,
   onClose,
+  onCreated,
 }: {
   capas: CapaRecord[];
   onClose: () => void;
+  onCreated: (capa: CapaRecord) => void;
 }): React.JSX.Element {
   const create = useCreateCapa();
   const nextCode = useNextCapaCode();
@@ -402,7 +389,7 @@ function NewCapaModal({
   );
 
   const [type, setType] = useState<(typeof CAPA_TYPES)[number]>('Corrective');
-  const [capaDate, setCapaDate] = useState(todayLocal());
+  const [capaDate, setCapaDate] = useState(todayIst());
   const [ncRef, setNcRef] = useState('');
   const [jcNo, setJcNo] = useState('');
   const [soNo, setSoNo] = useState('');
@@ -426,7 +413,7 @@ function NewCapaModal({
   async function submit(): Promise<void> {
     setErr(null);
     if (!problem.trim()) {
-      setErr('Describe the problem.');
+      setErr('Problem Description is required.');
       return;
     }
     const input: CreateCapaInput = {
@@ -441,15 +428,15 @@ function NewCapaModal({
       ...(operation.trim() ? { operation: operation.trim() } : {}),
     };
     try {
-      await create.mutateAsync(input);
-      onClose();
+      const created = await create.mutateAsync(input);
+      onCreated(created);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Create failed');
+      setErr(e instanceof Error ? e.message : 'Could not save CAPA. Try again.');
     }
   }
 
   return (
-    <Overlay title="➕ New CAPA" onClose={onClose}>
+    <Overlay title="New CAPA" onClose={onClose}>
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label">CAPA No.</label>
@@ -460,7 +447,7 @@ function NewCapaModal({
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">CAPA Type ★</label>
+          <label className="form-label">CAPA Type</label>
           <select
             className="innovic-select"
             value={type}
@@ -491,18 +478,27 @@ function NewCapaModal({
             <option value="">{ncQuery.isLoading ? 'Loading NCs…' : '— None —'}</option>
             {availableNcs.map((nc) => (
               <option key={nc.id} value={nc.code}>
-                {nc.code} — {nc.reasonCategory} — {nc.jcCode ?? ''}
+                {nc.code} — {NC_REASON_CATEGORY_LABELS[nc.reasonCategory]} — {nc.jcCode ?? ''}
               </option>
             ))}
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label">JC No. / SO No.</label>
+          <label className="form-label">JC No.</label>
           <input
             className="innovic-input"
             value={jcNo}
             onChange={(e) => setJcNo(e.target.value)}
-            placeholder="JC or SO number"
+            placeholder="Fills from NC"
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label">SO No.</label>
+          <input
+            className="innovic-input"
+            value={soNo}
+            onChange={(e) => setSoNo(e.target.value)}
+            placeholder="Fills from NC"
           />
         </div>
         <div className="form-grp">
@@ -518,7 +514,9 @@ function NewCapaModal({
           </select>
         </div>
         <div className="form-grp form-full">
-          <label className="form-label">Problem Description ★</label>
+          <label className="form-label">
+            Problem Description<span className="req">★</span>
+          </label>
           <textarea
             className="innovic-input"
             rows={3}
@@ -529,7 +527,7 @@ function NewCapaModal({
         </div>
       </div>
       {err ? (
-        <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
           {err}
         </div>
       ) : null}
@@ -543,7 +541,7 @@ function NewCapaModal({
           disabled={create.isPending}
           onClick={() => void submit()}
         >
-          {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Create CAPA
+          {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save CAPA
         </button>
       </div>
     </Overlay>
@@ -560,7 +558,8 @@ function EditCapaModal({
   onClose: () => void;
 }): React.JSX.Element {
   const update = useUpdateCapa();
-  // Responsible is a select of operators + active users (legacy L22862).
+  // Responsible and Verified By are one select of operators + active users
+  // (legacy L22862).
   const operatorsQuery = useOperatorsList({ limit: 200, offset: 0, isActive: true });
   const usersQuery = useUsersList({ limit: 200, offset: 0, isActive: true });
   const responsibleOptions = useMemo(() => {
@@ -599,7 +598,7 @@ function EditCapaModal({
       await update.mutateAsync({ id: capa.id, input: f });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Update failed');
+      setErr(e instanceof Error ? e.message : 'Could not save CAPA. Try again.');
     }
   }
 
@@ -617,39 +616,45 @@ function EditCapaModal({
   );
 
   return (
-    <Overlay
-      title={`${readOnly ? '👁' : '✏'} CAPA — ${capa.code} (5-Step Process)`}
-      onClose={onClose}
-    >
+    <Overlay title={`CAPA ${capa.code}`} onClose={onClose}>
       <div
         style={{
-          background: 'rgba(124,58,237,0.06)',
-          border: '1px solid rgba(124,58,237,0.2)',
+          background: 'var(--bg3)',
+          border: '1px solid var(--border)',
           padding: 10,
           borderRadius: 8,
           marginBottom: 14,
           fontSize: 12,
+          display: 'flex',
+          gap: 16,
+          flexWrap: 'wrap',
+          alignItems: 'center',
         }}
       >
-        <b style={{ color: 'var(--purple)' }}>{capa.code}</b> |{' '}
-        <span
-          style={{
-            fontSize: 10,
-            padding: '2px 6px',
-            borderRadius: 3,
-            color: capa.type === 'Corrective' ? 'var(--red)' : 'var(--blue)',
-            background: capa.type === 'Corrective' ? 'rgba(220,38,38,0.1)' : 'rgba(37,99,235,0.1)',
-          }}
-        >
+        <span className={`badge ${capa.type === 'Corrective' ? 'b-red' : 'b-blue'}`}>
           {capa.type}
-        </span>{' '}
-        | NC: {capa.ncRefs.join(', ') || '—'} | JC: {capa.jcNo ?? '—'} | POL:{' '}
+        </span>
+        <span>
+          <span className="text3">NC No.</span>{' '}
+          <b className="mono">{capa.ncRefs.join(', ') || '—'}</b>
+        </span>
+        <span>
+          <span className="text3">JC No.</span> <b className="mono">{capa.jcNo ?? '—'}</b>
+        </span>
         {/* POL — the CUSTOMER's own purchase-order line number off the SO line
             behind this CAPA. Read-only; it is typed only on the Sales Order. */}
-        <b className="mono" style={{ color: 'var(--purple)' }}>
-          {capa.clientPoLineNo ?? '—'}
-        </b>{' '}
-        | Item: {itemCodeWithRev(capa.itemCode, capa.itemRevision)}
+        <span>
+          <span className="text3">POL</span>{' '}
+          <b className="mono" style={{ color: 'var(--purple)' }}>
+            {capa.clientPoLineNo ?? '—'}
+          </b>
+        </span>
+        <span>
+          <span className="text3">Item Code</span>{' '}
+          <b className="td-code" style={{ color: 'var(--text)' }}>
+            {itemCodeWithRev(capa.itemCode, capa.itemRevision)}
+          </b>
+        </span>
       </div>
 
       <fieldset disabled={readOnly} style={{ border: 'none', padding: 0, margin: 0 }}>
@@ -735,12 +740,21 @@ function EditCapaModal({
           <div className="form-grid" style={{ marginTop: 6 }}>
             <div className="form-grp">
               <label className="form-label">Verified By</label>
-              <input
-                className="innovic-input"
+              <select
+                className="innovic-select"
                 value={f.verifiedBy ?? ''}
                 onChange={(e) => set('verifiedBy', e.target.value)}
-                placeholder="QC Head / Manager"
-              />
+              >
+                <option value="">— Select —</option>
+                {f.verifiedBy && !responsibleOptions.includes(f.verifiedBy) ? (
+                  <option value={f.verifiedBy}>{f.verifiedBy}</option>
+                ) : null}
+                {responsibleOptions.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="form-grp">
               <label className="form-label">Verification Date</label>
@@ -804,7 +818,7 @@ function EditCapaModal({
       </fieldset>
 
       {err ? (
-        <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
           {err}
         </div>
       ) : null}
@@ -819,7 +833,7 @@ function EditCapaModal({
             disabled={update.isPending}
             onClick={() => void submit()}
           >
-            {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save CAPA
+            {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save Changes
           </button>
         ) : null}
       </div>

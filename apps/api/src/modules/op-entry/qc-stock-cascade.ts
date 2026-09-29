@@ -17,9 +17,10 @@
 
 import { opSrNo } from '@innovic/shared';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { jcOps, jobCards, storeTransactions } from '../../db/schema';
+import { jcOps, jobCards } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { isProductionOrderLinkedJc } from '../../lib/production-order-link';
+import { postStockMove } from '../../lib/stock-ledger';
 
 /**
  * Recovery-child stock guard (ADR-069: finished stock is credited exactly ONCE
@@ -164,41 +165,25 @@ export async function tryApplyQcStockCascade(
   // 'out' row (jw-returns/service.ts), so the pair balances the same way
   // qc_accept and dispatch do on the sales side.
 
-  // Lock the items row to serialise concurrent stock writes on the same item.
-  // Same pattern as GRN cascade (goods-receipt-notes/cascades.ts:170).
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-
-  // Read current on-hand from v_item_stock; default to 0 when no prior txns.
-  const balanceRows = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${ctx.companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
-  const stockAfter = stockBefore + ctx.acceptedQty;
-
-  const inserted = await tx
-    .insert(storeTransactions)
-    .values({
-      companyId: ctx.companyId,
-      txnDate: ctx.txnDate,
-      itemId,
-      txnType: 'in',
-      qty: ctx.acceptedQty,
-      sourceType: 'qc_accept',
-      // display rule — see opSrNo in @innovic/shared
-      sourceRef: `${ctx.jcCode} Op #${opSrNo(ctx.opSeq)}`,
-      stockBefore,
-      stockAfter,
-      remarks: `QC accept · last op · ${ctx.acceptedQty} pcs`,
-      createdBy: user.id,
-    })
-    .returning({ id: storeTransactions.id });
+  const moved = await postStockMove(tx, {
+    companyId: ctx.companyId,
+    itemId,
+    txnType: 'in',
+    qty: ctx.acceptedQty,
+    sourceType: 'qc_accept',
+    // display rule — see opSrNo in @innovic/shared
+    sourceRef: `${ctx.jcCode} Op #${opSrNo(ctx.opSeq)}`,
+    remarks: `QC accept · last op · ${ctx.acceptedQty} pcs`,
+    txnDate: ctx.txnDate,
+    userId: user.id,
+    itemCodeText: null,
+    guard: 'none',
+  });
 
   return {
     fired: true,
-    storeTransactionId: inserted[0]!.id,
-    stockBefore,
-    stockAfter,
+    storeTransactionId: moved.id,
+    stockBefore: moved.stockBefore,
+    stockAfter: moved.stockAfter,
   };
 }

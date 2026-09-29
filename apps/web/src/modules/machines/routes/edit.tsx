@@ -36,7 +36,7 @@ function MachineNewPage(): React.JSX.Element {
         () => void navigate({ to: '/machines/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create machine');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Machine. Try again.');
     }
   };
 
@@ -44,7 +44,7 @@ function MachineNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <Link to="/machines" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Machine Master
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="panel">
         <div className="panel-hdr">
@@ -85,7 +85,7 @@ function MachineEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/machines/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update machine');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Machine. Try again.');
     }
   };
 
@@ -106,8 +106,8 @@ function MachineEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Machine not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Machine not found.'}
           </div>
         </div>
       </div>
@@ -123,7 +123,7 @@ function MachineEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to machine
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="panel">
         <div className="panel-hdr">

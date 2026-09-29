@@ -33,6 +33,13 @@ interface Props {
   onOpenEntry: (target: OpEntryModalTarget) => void;
 }
 
+// Op Type as the user reads it — never the raw code.
+const OP_TYPE_LABEL: Record<string, string> = {
+  process: 'In-house',
+  outsource: 'Outsource',
+  qc: 'QC',
+};
+
 /** What the row's button should say, or null when this operation has no action
  *  the operator can perform right now.
  *
@@ -49,7 +56,8 @@ interface Props {
  *      on click.
  *    • Start vs Log is a SESSION question, not a status one: `activeRunningOpId`
  *      is the running_ops row holding this op right now, or null. Something
- *      running → ✚ Log (add production to it); nothing running → ▶ Start.
+ *      running → ✓ Complete (add production to it); nothing running →
+ *      ▶ Start Operation.
  *      They are branches of one chain, so exactly one can ever render.
  *
  *  QC diverges from the Job Card page on purpose. There, 🔬 QC sends the
@@ -72,14 +80,14 @@ function rowAction(
   // form, so the button and the form it opens can never disagree.
   if (op.opType === 'qc' || op.qcRequired) {
     if (!canQcSubmit || op.qcPending <= 0) return null;
-    return { label: `✔ QC (${op.qcPending})`, mode: 'complete', primary: true };
+    return { label: `🔬 Inspect (${op.qcPending})`, mode: 'complete', primary: true };
   }
 
   if (!canOpEntry) return null;
   if (op.available <= 0 || op.computedStatus === 'qc_pending') return null;
   return op.activeRunningOpId !== null
-    ? { label: '✚ Log', mode: 'complete', primary: true }
-    : { label: '▶ Start', mode: 'start', primary: false };
+    ? { label: '✓ Complete', mode: 'complete', primary: true }
+    : { label: '▶ Start Operation', mode: 'start', primary: false };
 }
 
 export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props): React.JSX.Element {
@@ -101,8 +109,12 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
             <th>Planned Machine</th>
             <th>Actual Machine</th>
             <th>Op Type</th>
-            <th style={{ color: 'var(--green)' }}>Completed</th>
-            <th style={{ color: 'var(--amber)' }}>Pending</th>
+            <th className="th-num" style={{ color: 'var(--green2)' }}>
+              Completed
+            </th>
+            <th className="th-num" style={{ color: 'var(--amber2)' }}>
+              Available
+            </th>
             <th>Op Status</th>
             <th>Action</th>
           </tr>
@@ -138,12 +150,12 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                     {op.reworkPendingQty > 0 ? (
                       <span
                         style={{
-                          color: 'var(--amber)',
-                          fontSize: 9,
+                          color: 'var(--amber2)',
+                          fontSize: 11,
                           fontWeight: 700,
                           marginLeft: 3,
                         }}
-                        title="Clears when the NC is closed (NC Register → Close Rework)"
+                        title="Clears when the NC is closed."
                       >
                         ♻{op.reworkPendingQty}
                       </span>
@@ -174,8 +186,8 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       />
                     )}
                   </td>
-                  <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    {op.opType}
+                  <td className="text3" style={{ fontSize: 11 }}>
+                    {OP_TYPE_LABEL[op.opType] ?? op.opType}
                   </td>
                   {/* Completed count. A QC / qc_required step records its
                       throughput as qc_accepted_qty (via `qc` logs), NOT as
@@ -185,15 +197,15 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       passed every piece read as "0 completed"
                       (IN-JC-26-00093 Op2). Show the accepted count there, with
                       a red ✗ marker for any rejected. */}
-                  <td className="green mono fw-700">
+                  <td className="green mono fw-700 td-num">
                     {op.opType === 'qc' || op.qcRequired ? (
                       <>
                         {op.qcAcceptedQty}
                         {op.qcRejectedQty > 0 ? (
                           <span
                             style={{
-                              color: 'var(--red)',
-                              fontSize: 9,
+                              color: 'var(--red2)',
+                              fontSize: 11,
                               fontWeight: 700,
                               marginLeft: 3,
                             }}
@@ -207,24 +219,18 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       op.completedQty
                     )}
                   </td>
-                  <td>
-                    {/* pending_qty (0087), not `available`. On a QC op
-                        `available` is input − op_log completes, and a QC op
-                        never gets a complete log — so this column printed the
-                        whole batch (50 on IN-JC-26-00085 Op2) against an op
-                        that had already inspected every piece. */}
+                  <td className="td-num">
+                    {/* Available = what can be worked on this op right now —
+                        the same number the By Machine view, Machine Loading and
+                        Job Queue show. A qc-bearing op never gets a `complete`
+                        log, so `available` there is the whole batch; its
+                        workable qty is qcPending (what the Inspect button uses). */}
                     <span className="mono fw-700 amber" style={{ fontSize: 15 }}>
-                      {op.pendingQty}
+                      {op.opType === 'qc' || op.qcRequired ? op.qcPending : op.available}
                     </span>
                   </td>
                   <td>
-                    {op.computedStatus === 'running' ? (
-                      <span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 12 }}>
-                        ▶ Running
-                      </span>
-                    ) : (
-                      <JcOpStatusBadge status={op.computedStatus} />
-                    )}
+                    <JcOpStatusBadge status={op.computedStatus} />
                   </td>
                   {/* The button is wrapped so pressing it does not also fire the
                       row's own click. The host still selects the row from

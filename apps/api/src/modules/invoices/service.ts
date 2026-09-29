@@ -10,6 +10,7 @@ import type {
   InvoiceLineRow,
   InvoicePaymentRow,
   InvoiceRow,
+  InvoiceTaxType,
   InvoiceableLine,
   InvoiceableSoResponse,
   ListInvoicesResponse,
@@ -17,9 +18,11 @@ import type {
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
   clients,
+  companies,
   invoiceLines,
   invoicePayments,
   invoices,
+  items,
   salesOrderLines,
   salesOrders,
 } from '../../db/schema';
@@ -34,6 +37,8 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
+import { DEFAULT_PAYMENT_TERMS_DAYS } from './constants';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -50,9 +55,41 @@ function isOverdue(status: string, dueDate: string | null): boolean {
   return status !== 'paid' && !!dueDate && dueDate < todayStr();
 }
 
+/** The GST state code is the first two digits of a GSTIN. Null when blank. */
+function gstStateCode(gstin: string | null | undefined): string | null {
+  const m = (gstin ?? '').trim().match(/^(\d{2})/);
+  return m ? m[1]! : null;
+}
+
+/** Our home GST state (Gujarat) — the rule used before the company GSTIN was
+ *  read, and the one the invoice print falls back to for an invoice with no
+ *  Tax Type. Used only when the company GSTIN is blank. */
+const HOME_GST_STATE_CODE = '24';
+
+/** Default Tax Type for a new invoice — the ONE rule for the create form's
+ *  default and the saved invoice: IGST when the customer's GSTIN state differs
+ *  from ours, else SGST + CGST. "Ours" is the company GSTIN's state, or the
+ *  home state ('24') when the company GSTIN is blank. A customer with no
+ *  GSTIN defaults to SGST + CGST. */
+function defaultTaxType(clientGst: string | null, companyGst: string | null): InvoiceTaxType {
+  const c = gstStateCode(clientGst);
+  const own = gstStateCode(companyGst) ?? HOME_GST_STATE_CODE;
+  return c && c !== own ? 'igst' : 'sgst_cgst';
+}
+
+async function companyGstNumber(tx: DbTransaction, companyId: string): Promise<string | null> {
+  const rows = await tx
+    .select({ gstNumber: companies.gstNumber })
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .limit(1);
+  return rows[0]?.gstNumber ?? null;
+}
+
 function rowToInvoice(r: typeof invoices.$inferSelect): InvoiceRow {
   const grandTotal = n(r.grandTotal);
   const totalPaid = n(r.totalPaid);
+  const totalTds = n(r.totalTds);
   return {
     id: r.id,
     code: r.code,
@@ -65,7 +102,9 @@ function rowToInvoice(r: typeof invoices.$inferSelect): InvoiceRow {
     gstAmount: n(r.gstAmount),
     grandTotal,
     totalPaid,
-    balance: grandTotal - totalPaid,
+    totalTds,
+    // Outstanding Amount — TDS / short amounts count toward settling.
+    balance: grandTotal - totalPaid - totalTds,
     status: r.status,
     dueDate: r.dueDate,
     overdue: isOverdue(r.status, r.dueDate),
@@ -82,6 +121,7 @@ function hideInvoiceRowMoney<
     gstAmount: number | null;
     grandTotal: number | null;
     totalPaid: number | null;
+    totalTds: number | null;
     balance: number | null;
   },
 >(r: T): T {
@@ -92,6 +132,7 @@ function hideInvoiceRowMoney<
     gstAmount: null,
     grandTotal: null,
     totalPaid: null,
+    totalTds: null,
     balance: null,
   };
 }
@@ -102,7 +143,7 @@ function hideInvoiceDetailMoney(d: InvoiceDetail): InvoiceDetail {
     // Also STATE it: the reader must not have to infer 'hidden' from the null.
     priceVisible: false,
     lines: d.lines.map((l) => ({ ...l, rate: null, lineAmount: null })),
-    payments: d.payments.map((p) => ({ ...p, amount: null })),
+    payments: d.payments.map((p) => ({ ...p, amount: null, tdsAmount: null })),
   };
 }
 
@@ -127,9 +168,13 @@ export async function listInvoices(user: AuthContext): Promise<ListInvoicesRespo
       partialCount: 0,
       paidCount: 0,
     };
+    // TDS / short amounts settle invoices without being money received, so
+    // they come off Outstanding Amount but are not added to Total Received.
+    let settledTds = 0;
     for (const inv of list) {
       summary.totalInvoiced += inv.grandTotal ?? 0;
       summary.totalReceived += inv.totalPaid ?? 0;
+      settledTds += inv.totalTds ?? 0;
       if (inv.overdue) {
         summary.overdueAmount += inv.balance ?? 0;
         summary.overdueCount += 1;
@@ -138,7 +183,7 @@ export async function listInvoices(user: AuthContext): Promise<ListInvoicesRespo
       else if (inv.status === 'partial') summary.partialCount += 1;
       else if (inv.status === 'paid') summary.paidCount += 1;
     }
-    summary.outstanding = summary.totalInvoiced - summary.totalReceived;
+    summary.outstanding = summary.totalInvoiced - summary.totalReceived - settledTds;
 
     if (!showMoney) {
       return {
@@ -168,7 +213,7 @@ async function getInvoiceInternal(
     .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)))
     .limit(1);
   const inv = rows[0];
-  if (!inv) throw new NotFoundError(`Invoice ${id} not found`);
+  if (!inv) throw new NotFoundError('Invoice not found. Refresh the page.');
 
   // An invoice is a legal document: line code/name are FROZEN at invoice time
   // in the snapshot columns (item_code_text / item_name). We read them directly
@@ -199,11 +244,15 @@ async function getInvoiceInternal(
       // off the SAME SO line as the revision above. Not our SO line number.
       // Null when this invoice line has no SO line behind it.
       clientPoLineNo: salesOrderLines.clientPoLineNo,
+      // Unit for the printed UOM column: the SO line's (what the customer
+      // ordered in), else the item master's. Display only, not frozen.
+      uom: sql<string | null>`COALESCE(${salesOrderLines.uom}::text, ${items.uom}::text)`,
     })
     .from(invoiceLines)
     // LEFT, never inner: invoice_lines.sales_order_line_id is nullable, and a
     // line with no SO behind it must still come back — with a null revision.
     .leftJoin(salesOrderLines, eq(salesOrderLines.id, invoiceLines.salesOrderLineId))
+    .leftJoin(items, eq(items.id, invoiceLines.itemId))
     .where(and(eq(invoiceLines.invoiceId, id), isNull(invoiceLines.deletedAt)))
     .orderBy(asc(invoiceLines.lineNo));
   const lines: InvoiceLineRow[] = lineRows.map((l) => ({
@@ -212,6 +261,7 @@ async function getInvoiceInternal(
     itemCode: l.itemCodeText,
     itemRevision: l.itemRevision ?? null,
     clientPoLineNo: l.clientPoLineNo ?? null,
+    uom: l.uom ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemNameText,
     qty: l.qty,
@@ -228,17 +278,27 @@ async function getInvoiceInternal(
     id: p.id,
     paymentDate: p.paymentDate,
     amount: n(p.amount),
+    tdsAmount: n(p.tdsAmount),
     mode: p.mode,
     refNo: p.refNo,
     notes: p.notes,
   }));
+
+  // The customer's PO number off the SO this invoice bills, for the print.
+  const soRows = await tx
+    .select({ clientPoNo: salesOrders.clientPoNo })
+    .from(salesOrders)
+    .where(eq(salesOrders.id, inv.salesOrderId))
+    .limit(1);
 
   return {
     ...rowToInvoice(inv),
     clientCode: inv.clientCodeText,
     clientGst: inv.clientGstText,
     paymentTermsDays: inv.paymentTermsDays,
+    taxType: inv.taxType === 'sgst_cgst' || inv.taxType === 'igst' ? inv.taxType : null,
     remarks: inv.remarks,
+    clientPoNo: soRows[0]?.clientPoNo ?? null,
     lines,
     payments,
   };
@@ -277,10 +337,12 @@ export async function getInvoiceRelated(
         clientId: invoices.clientId,
       })
       .from(invoices)
-      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)))
+      .where(
+        and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)),
+      )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Invoice ${id} not found`);
+    if (!header) throw new NotFoundError('Invoice not found. Refresh the page.');
 
     // ── Upstream: sales order this invoice bills against ────────────────────
     const soRows = header.salesOrderId
@@ -325,7 +387,16 @@ export async function getInvoiceRelated(
       '📄',
       'sales-order',
       so
-        ? [{ id: so.id, code: so.code, status: so.status, date: toIsoDate(so.date), linkId: null, label: null }]
+        ? [
+            {
+              id: so.id,
+              code: so.code,
+              status: so.status,
+              date: toIsoDate(so.date),
+              linkId: null,
+              label: null,
+            },
+          ]
         : [],
     );
     const clientSection = section(
@@ -334,7 +405,16 @@ export async function getInvoiceRelated(
       '👤',
       'client',
       client
-        ? [{ id: client.id, code: client.code, status: null, date: null, linkId: null, label: client.name }]
+        ? [
+            {
+              id: client.id,
+              code: client.code,
+              status: null,
+              date: null,
+              linkId: null,
+              label: client.name,
+            },
+          ]
         : [],
     );
 
@@ -435,21 +515,33 @@ export async function getInvoiceableSo(
         code: salesOrders.code,
         customer: salesOrders.customerName,
         clientGst: clients.gstNumber,
+        gstPercent: salesOrders.gstPercent,
+        paymentDays: clients.paymentDays,
       })
       .from(salesOrders)
       .leftJoin(clients, eq(clients.id, salesOrders.clientId))
       .where(
-        and(eq(salesOrders.id, soId), eq(salesOrders.companyId, companyId), isNull(salesOrders.deletedAt)),
+        and(
+          eq(salesOrders.id, soId),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+    if (!so) throw new NotFoundError('SO not found. Refresh the page.');
     const lines = await loadInvoiceableLines(tx, companyId, soId);
+    const ownGst = await companyGstNumber(tx, companyId);
     return {
       salesOrderId: so.id,
       soCode: so.code,
       customer: so.customer,
       clientGst: so.clientGst ?? null,
+      // ADR-188: the invoice form's defaults come from upstream — GST % from
+      // the SO, Payment Terms from the customer's Payment Days.
+      gstPercent: n(so.gstPercent),
+      paymentDays: so.paymentDays ?? null,
+      taxType: defaultTaxType(so.clientGst ?? null, ownGst),
       lines,
     };
   });
@@ -488,11 +580,14 @@ export async function createInvoice(
       .select({
         id: salesOrders.id,
         code: salesOrders.code,
+        status: salesOrders.status,
         customer: salesOrders.customerName,
         clientId: salesOrders.clientId,
         clientCode: clients.code,
         clientName: clients.name,
         clientGst: clients.gstNumber,
+        soGstPercent: salesOrders.gstPercent,
+        clientPaymentDays: clients.paymentDays,
       })
       .from(salesOrders)
       .leftJoin(clients, eq(clients.id, salesOrders.clientId))
@@ -505,28 +600,76 @@ export async function createInvoice(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${input.salesOrderId} not found`);
+    if (!so) throw new NotFoundError('SO not found. Refresh the page.');
+    // ADR-185 — a draft or cancelled order is not billed.
+    assertSoAcceptsWork(so.status, so.code, 'it cannot be invoiced');
+    // One invoice lists an SO line once: the To Invoice check below is per
+    // line, so a repeated line would bill the same pieces twice.
+    const seenLines = new Set<string>();
+    for (const l of input.lines) {
+      if (seenLines.has(l.salesOrderLineId)) {
+        throw new ValidationError(
+          'The same SO line is listed twice on this invoice. List it once.',
+        );
+      }
+      seenLines.add(l.salesOrderLineId);
+    }
+
+    // ADR-185 — lock the SO lines being billed BEFORE reading what is left to
+    // invoice (the dispatch path locks the same rows), so two invoices raised
+    // at once cannot both pass the check and bill the same pieces twice. The
+    // same read gives each line's item (stored on the invoice line) and the
+    // SO rate the invoice must bill at.
+    const lockedLines = (await tx.execute(sql`
+      SELECT id, item_id, rate FROM public.sales_order_lines
+      WHERE sales_order_id = ${so.id}::uuid AND company_id = ${companyId}::uuid
+        AND deleted_at IS NULL
+        AND id IN (${sql.join(
+          input.lines.map((l) => sql`${l.salesOrderLineId}::uuid`),
+          sql`, `,
+        )})
+      ORDER BY id
+      FOR UPDATE
+    `)) as unknown as Array<{ id: string; item_id: string | null; rate: string | number | null }>;
+    const lockedById = new Map(lockedLines.map((r) => [r.id, r]));
 
     // Validate qty <= available (dispatched − invoiced) per line, in-tx.
     const availLines = await loadInvoiceableLines(tx, companyId, input.salesOrderId);
     const byLine = new Map(availLines.map((l) => [l.salesOrderLineId, l]));
     for (const l of input.lines) {
       const a = byLine.get(l.salesOrderLineId);
-      if (!a) throw new ValidationError(`Line ${l.salesOrderLineId} does not belong to SO ${so.code}`);
+      if (!a) throw new ValidationError(`This line is not on SO ${so.code}. Please reload the SO.`);
       if (l.qty > a.availableQty) {
         throw new ConflictError(
-          `${a.itemName}: only ${a.availableQty} available to invoice (dispatched − invoiced); requested ${l.qty}`,
+          `Ln ${a.lineNo} (${a.itemCode ?? a.itemName}): Qty (${l.qty}) cannot be more than To Invoice (${a.availableQty}).`,
+        );
+      }
+      // ADR-185 — the invoice bills at the SO rate. A different price is a
+      // change to the order, made (and logged) on the Sales Order first.
+      const soRate = n(lockedById.get(l.salesOrderLineId)?.rate ?? null);
+      if (soRate > 0 && Math.abs(l.rate - soRate) > 0.005) {
+        throw new ValidationError(
+          `Ln ${a.lineNo} (${a.itemCode ?? a.itemName}): Rate (${l.rate}) must be the SO rate (${soRate}). Change it on the Sales Order first.`,
         );
       }
     }
 
+    // Defaults are decided here, not in the browser (CLAUDE.md rule 1): GST %
+    // from the SO, Payment Terms from the client's Payment Days (ADR-188).
+    const gstPercent = input.gstPercent ?? n(so.soGstPercent);
+    const paymentTermsDays =
+      input.paymentTermsDays ?? so.clientPaymentDays ?? DEFAULT_PAYMENT_TERMS_DAYS;
+    // Tax Type: as chosen, else IGST / SGST + CGST from the GSTIN states.
+    const taxType =
+      input.taxType ?? defaultTaxType(so.clientGst ?? null, await companyGstNumber(tx, companyId));
+
     const lineAmounts = input.lines.map((l) => l.qty * l.rate);
     const subtotal = lineAmounts.reduce((s, v) => s + v, 0);
-    const gstAmount = Math.round((subtotal * input.gstPercent) / 100 * 100) / 100;
+    const gstAmount = Math.round(((subtotal * gstPercent) / 100) * 100) / 100;
     const grand = subtotal + gstAmount;
 
     const due = new Date(input.invoiceDate);
-    due.setDate(due.getDate() + input.paymentTermsDays);
+    due.setDate(due.getDate() + paymentTermsDays);
     const dueDate = due.toISOString().slice(0, 10);
 
     const code = await nextInvoiceCode(tx, companyId);
@@ -543,11 +686,12 @@ export async function createInvoice(
         clientCodeText: so.clientCode ?? null,
         clientGstText: so.clientGst ?? null,
         subtotal: String(subtotal),
-        gstPercent: String(input.gstPercent),
+        gstPercent: String(gstPercent),
         gstAmount: String(gstAmount),
         grandTotal: String(grand),
         totalPaid: '0',
-        paymentTermsDays: input.paymentTermsDays,
+        taxType,
+        paymentTermsDays,
         dueDate,
         status: 'unpaid',
         remarks: input.remarks ?? null,
@@ -565,7 +709,8 @@ export async function createInvoice(
         companyId,
         invoiceId: header.id,
         lineNo: lineNo++,
-        itemId: null,
+        // ADR-185 — the item is stored (it was always null), read off the SO line.
+        itemId: lockedById.get(l.salesOrderLineId)?.item_id ?? null,
         itemCodeText: a.itemCode,
         itemName: a.itemName,
         qty: l.qty,
@@ -608,17 +753,34 @@ export async function addPayment(
       .select()
       .from(invoices)
       .where(
-        and(eq(invoices.id, invoiceId), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)),
+        and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.companyId, companyId),
+          isNull(invoices.deletedAt),
+        ),
       )
-      .limit(1);
+      .limit(1)
+      // ADR-185 — lock the invoice: two payments entered at once must not both
+      // read the same balance and over-pay it.
+      .for('update');
     const inv = rows[0];
-    if (!inv) throw new NotFoundError(`Invoice ${invoiceId} not found`);
+    if (!inv) throw new NotFoundError('Invoice not found. Refresh the page.');
 
     const grand = n(inv.grandTotal);
     const paid = n(inv.totalPaid);
-    const balance = grand - paid;
-    if (input.amount > balance + 0.01) {
-      throw new ConflictError(`Amount ₹${input.amount} exceeds balance ₹${balance.toFixed(2)}`);
+    const tds = n(inv.totalTds);
+    const balance = grand - paid - tds;
+    const tdsAmount = input.tdsAmount ?? 0;
+    if (input.amount <= 0 && tdsAmount <= 0) {
+      throw new ValidationError('Enter an Amount or a TDS / Short Amount.');
+    }
+    const settles = input.amount + tdsAmount;
+    if (settles > balance + 0.01) {
+      throw new ConflictError(
+        tdsAmount > 0
+          ? `Amount (₹${input.amount}) + TDS / Short Amount (₹${tdsAmount}) cannot be more than Outstanding Amount (₹${balance.toFixed(2)}).`
+          : `Amount (₹${input.amount}) cannot be more than Outstanding Amount (₹${balance.toFixed(2)}).`,
+      );
     }
 
     await tx.insert(invoicePayments).values({
@@ -626,6 +788,7 @@ export async function addPayment(
       invoiceId,
       paymentDate: input.paymentDate,
       amount: String(input.amount),
+      tdsAmount: String(tdsAmount),
       mode: input.mode,
       refNo: input.refNo ?? null,
       notes: input.notes ?? null,
@@ -634,10 +797,19 @@ export async function addPayment(
     });
 
     const newPaid = paid + input.amount;
-    const newStatus = newPaid >= grand - 0.01 ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+    const newTds = tds + tdsAmount;
+    // Paid once money received + TDS / short amount cover the invoice.
+    const settled = newPaid + newTds;
+    const newStatus = settled >= grand - 0.01 ? 'paid' : settled > 0 ? 'partial' : 'unpaid';
     await tx
       .update(invoices)
-      .set({ totalPaid: String(newPaid), status: newStatus, updatedBy: user.id, updatedAt: new Date() })
+      .set({
+        totalPaid: String(newPaid),
+        totalTds: String(newTds),
+        status: newStatus,
+        updatedBy: user.id,
+        updatedAt: new Date(),
+      })
       .where(eq(invoices.id, invoiceId));
 
     await emitActivityLog(
@@ -645,7 +817,9 @@ export async function addPayment(
       {
         action: 'PAYMENT',
         entity: 'Invoice',
-        detail: `${inv.code} — ₹${input.amount.toFixed(0)} via ${input.mode}`,
+        detail:
+          `${inv.code} — ₹${input.amount.toFixed(0)} via ${input.mode}` +
+          (tdsAmount > 0 ? ` + TDS / short ₹${tdsAmount.toFixed(0)}` : ''),
         refId: inv.code,
       },
       companyId,

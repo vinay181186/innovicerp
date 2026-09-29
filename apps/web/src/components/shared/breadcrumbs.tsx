@@ -15,7 +15,8 @@
 // buildCrumbs' longest-base match must stay in sync with open-tabs-bar.tsx's
 // own `resolve()` (audit/02 §D.9) — same nav data, same rule, two callers.
 
-import { Link, useLocation } from '@tanstack/react-router';
+import { Link, useLocation, useMatches } from '@tanstack/react-router';
+import '@/routes/static-data';
 import { Breadcrumbs as BreadcrumbsView, type Crumb } from '@/ui/navigation';
 import { SECTIONS } from './nav-sections';
 
@@ -31,6 +32,9 @@ function buildCrumbs(pathname: string): Crumb[] {
   for (const sec of SECTIONS) {
     for (const grp of sec.groups) {
       for (const it of grp.items) {
+        // Query-specific aliases (a department's "Reports" link) share their
+        // path with the Reports-section entry; that entry names the crumb.
+        if (it.search) continue;
         const base = it.to.split('?')[0] ?? it.to;
         if (pathname === base || pathname.startsWith(base + '/')) {
           if (!best || base.length > best.base.length) {
@@ -62,6 +66,14 @@ function buildCrumbs(pathname: string): Crumb[] {
 
 export function Breadcrumbs(): React.JSX.Element | null {
   const { pathname } = useLocation();
+  // A route flagged `staticData: { ownCrumbs: true }` prints its own trail
+  // (the Reports pages: Reports › <Dept> › <Report>, ADR-191); the generic
+  // "Home › Reports › Detail" above it would be a second one. See
+  // routes/static-data.ts.
+  const ownCrumbs = useMatches({
+    select: (matches) => matches.some((m) => m.staticData.ownCrumbs === true),
+  });
+  if (ownCrumbs) return null;
   const crumbs = buildCrumbs(pathname);
 
   return (

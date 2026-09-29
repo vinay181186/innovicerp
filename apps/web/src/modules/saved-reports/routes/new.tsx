@@ -43,9 +43,7 @@ function SavedReportNewPage() {
       },
       {
         onSuccess: (created) => {
-          exit.leave(
-            () => void navigate({ to: '/saved-reports/$id', params: { id: created.id } }),
-          );
+          exit.leave(() => void navigate({ to: '/saved-reports/$id', params: { id: created.id } }));
         },
         onError: (e) => setSaveError(e instanceof Error ? e.message : String(e)),
       },
@@ -57,7 +55,7 @@ function SavedReportNewPage() {
       {exit.dialog}
       {/* Legacy header — renderReportBuilder L17554-59 */}
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📄 Excel Report Builder</div>
+        <div className="section-hdr m-0">New Saved Report</div>
         <div className="flex items-center gap-2">
           <Link to="/saved-reports" className="btn btn-sm btn-ghost">
             ← Saved Reports
@@ -74,11 +72,22 @@ function SavedReportNewPage() {
       ) : sourcesQ.isError || !sourcesQ.data ? (
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">Failed to load source catalog</div>
+            <div className="panel-title">Could not load report sources. Try again.</div>
           </div>
           <div className="panel-body">
             <div className="empty-state">
-              {sourcesQ.error instanceof Error ? sourcesQ.error.message : 'Unknown error'}
+              {sourcesQ.error instanceof Error ? sourcesQ.error.message : 'Try again.'}
+            </div>
+          </div>
+        </div>
+      ) : sourcesQ.data.sources.length === 0 ? (
+        // Sources are offered only for pages the user may view (server rule).
+        <div className="panel">
+          <div className="panel-body">
+            <div className="empty-state">
+              Your access does not open any of the report data sources (Sales Orders, Purchase
+              Orders, Job Cards, Item Master, NC Register). Ask an admin to give you View on one of
+              those pages in Access Control.
             </div>
           </div>
         </div>
@@ -97,7 +106,7 @@ function SavedReportNewPage() {
           excelLoading={excelLoading}
           saving={createMutation.isPending}
           saveError={saveError}
-          saveLabel="Save report"
+          saveLabel="Save Report"
         />
       )}
     </div>

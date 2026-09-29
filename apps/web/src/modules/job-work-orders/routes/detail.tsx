@@ -1,28 +1,51 @@
 // JW detail page (UI-003-04).
 
-import type { JobWorkOrderDetail, JobWorkOrderLine, JwDocumentFile } from '@innovic/shared';
+import {
+  type JobWorkOrderDetail,
+  type JobWorkOrderLine,
+  type JwDocumentFile,
+  SO_DOC_CATEGORY_LABELS,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
+import { inrFormat } from '@/lib/print/doc-print';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useDeleteJwDocument, useJwDocuments } from '@/modules/jwso-documents/api';
+import {
+  uploadJwDocFile,
+  useCreateJwDocument,
+  useDeleteJwDocument,
+  useJwDocuments,
+} from '@/modules/jwso-documents/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { useJobWorkOrder, useSoftDeleteJobWorkOrder } from '../api';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
+import { ShortCloseJwLineModal } from '../components/short-close-jw-line-modal';
+
+/** `uploadFailed` — set by New / Edit JWSO when the JWSO saved but a picked
+ *  Client PO / Email Reference file did not upload; names the file(s) for the
+ *  red banner. */
+const detailSearchSchema = z.object({ uploadFailed: z.string().optional() });
 
 export const jobWorkOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'job-work-orders/$id',
+  validateSearch: detailSearchSchema,
   component: JobWorkOrderDetailPage,
 });
 
 function JobWorkOrderDetailPage(): React.JSX.Element {
   const { id } = jobWorkOrderDetailRoute.useParams();
+  const { uploadFailed } = jobWorkOrderDetailRoute.useSearch();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useJobWorkOrder(id);
   const { data: me } = useSession();
@@ -30,6 +53,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'jw_create');
   const softDelete = useSoftDeleteJobWorkOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // R6 (ADR-194): the line the Short-close dialog is asking about, or null.
+  const [shortCloseLine, setShortCloseLine] = useState<JobWorkOrderLine | null>(null);
   // The line drawing the user asked to look at, or null when nothing is open.
   // The click only records WHICH file; FilePreviewModal fetches and shows it
   // inside the app, so a look never becomes a silent download (the same slot the
@@ -39,7 +64,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   if (isLoading) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading job-work order…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading JWSO…
       </div>
     );
   }
@@ -52,8 +77,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Job-work order not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'JWSO not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -62,24 +87,59 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 
   // Hide-page: VIEW removed for JWSO Master → no-access panel, not the detail.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(detail.id, {
-      onSuccess: () => {
-        void navigate({ to: '/job-work-orders', replace: true });
-      },
-    });
+  // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
+  // shows a failure inside the dialog.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(detail.id);
+    setConfirmDelete(false);
+    void navigate({ to: '/job-work-orders', replace: true });
   };
 
   // Access matrix (jw_create) replaces the old admin/manager role flags.
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
+  // R6 (ADR-194) #4: short-close hits requireFormAccess(...,'approve') on the
+  // server, so the UI must require edit AND approve — same pair as delete —
+  // otherwise an edit-only user sees the button and gets a 403.
+  const canShortCloseAction = perms.edit && perms.approve;
+
+  // Next steps — each opens the downstream create screen with this JWSO
+  // already picked (`?jw=<jwsoId>`). Gates mirror the target screens: Party
+  // GRN is party_create entry; JW DC and JW Invoice are admin/manager there.
+  const canReceive = effectiveFormPerms(eff, 'party_create').entry;
+  const canJwWrite = me?.role === 'admin' || me?.role === 'manager';
+  const goReceive = (): void =>
+    void navigate({ to: '/party-grn', search: { tab: 'receive', jw: detail.id } });
+  // `jw` is read by the JW DC screen (owned by another module). The assertion
+  // keeps this compiling whether or not that route's search type lists `jw`
+  // yet; the param still travels in the URL either way.
+  const goJwDc = (): void =>
+    void navigate({
+      to: '/jw-dc',
+      search: { tab: 'outward', jw: detail.id } as { tab: 'outward' },
+    });
+  const goJwInvoice = (): void =>
+    void navigate({ to: '/invoices', search: { tab: 'jw', jw: detail.id } });
+  // The most likely next step is the one real button; the other two sit in the
+  // Actions menu. Material still short → receive it; every line dispatched →
+  // bill it; otherwise the job is in work → JW DC.
+  const materialShort =
+    Number(detail.clientMaterialQty ?? 0) > 0
+      ? detail.partyReceivedQty < Number(detail.clientMaterialQty ?? 0)
+      : detail.partyReceivedQty === 0;
+  const allDispatched =
+    detail.lines.length > 0 && detail.lines.every((l) => l.returnedQty >= l.orderQty);
+  const nextSteps = [
+    { key: 'receive', label: 'Receive Material', allowed: canReceive, go: goReceive },
+    { key: 'jwdc', label: 'JW DC', allowed: canJwWrite, go: goJwDc },
+    { key: 'invoice', label: 'JW Invoice', allowed: canJwWrite, go: goJwInvoice },
+  ];
+  const primaryKey = materialShort ? 'receive' : allDispatched ? 'invoice' : 'jwdc';
+  const primaryStep =
+    nextSteps.find((n) => n.key === primaryKey && n.allowed) ?? nextSteps.find((n) => n.allowed);
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   // Client material is header-level (migration 0053).
@@ -96,26 +156,23 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/job-work-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to JWSO Master
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="td-code" style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 700 }}>
-              {detail.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              {detail.customerName ?? 'Untitled customer'}
-              <SoStatusBadge status={detail.status} />
-              <JwMaterialStatusBadge receivedQty={partyReceivedTotal} expectedQty={clientMatTotal} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+      {/* DetailHeader layout: Back link, code + status badges, customer name.
+          One visible action (Edit) and the rest in the Actions menu, Delete
+          last. Delete still asks before moving the JWSO to Trash. */}
+      <DetailHeader
+        backLabel="Back to JWSO Master"
+        backTo="/job-work-orders"
+        renderLink={(p) => <Link {...p} />}
+        code={detail.code}
+        name={detail.customerName ?? 'Untitled customer'}
+        badges={
+          <>
+            <SoStatusBadge status={detail.status} />
+            <JwMaterialStatusBadge receivedQty={partyReceivedTotal} expectedQty={clientMatTotal} />
+          </>
+        }
+        actions={
+          <>
             {canEdit ? (
               <Link
                 to="/job-work-orders/$id/edit"
@@ -125,82 +182,86 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+            {primaryStep ? (
+              <button type="button" className="btn btn-primary btn-sm" onClick={primaryStep.go}>
+                {primaryStep.label}
+              </button>
             ) : null}
-          </div>
-        </div>
-        <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete job-work order.'}
-            </div>
-          ) : null}
-          <DetailGrid detail={detail} />
-        </div>
-      </div>
+            <ActionMenu
+              items={[
+                ...nextSteps
+                  .filter((n) => n.key !== primaryStep?.key)
+                  .map((n) => ({ label: n.label, hidden: !n.allowed, onClick: n.go })),
+                {
+                  label: 'Delete',
+                  danger: true,
+                  hidden: !canDelete,
+                  onClick: () => setConfirmDelete(true),
+                },
+              ]}
+            />
+          </>
+        }
+      >
+        <DetailGrid detail={detail} />
+      </DetailHeader>
+
+      {uploadFailed ? (
+        <Banner
+          tone="error"
+          role="alert"
+          title="PO document not attached — retry"
+          onDismiss={() =>
+            void navigate({
+              to: '/job-work-orders/$id',
+              params: { id: detail.id },
+              search: {},
+              replace: true,
+            })
+          }
+        >
+          JWSO {detail.code} was saved, but the {uploadFailed} did not upload. Upload it again with
+          the Upload button in the Documents panel below.
+        </Banner>
+      ) : null}
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Move JWSO ${detail.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
+
+      {shortCloseLine ? (
+        <ShortCloseJwLineModal
+          jwId={detail.id}
+          line={shortCloseLine}
+          onClose={() => setShortCloseLine(null)}
+        />
+      ) : null}
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>Line items ({detail.lines.length})</div>
+          <div className="panel-title" style={{ color: 'var(--blue)' }}>
+            Line Items ({detail.lines.length})
+          </div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
+            Total Qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
             {!priceHidden && lineValueTotal > 0 ? (
               <>
-                {' '}· value <b style={{ color: 'var(--green2, var(--green))' }}>₹{lineValueTotal.toFixed(2)}</b>
+                {' '}
+                · Value{' '}
+                <b style={{ color: 'var(--green2, var(--green))' }}>₹{inrFormat(lineValueTotal)}</b>
               </>
             ) : null}
             {clientMatTotal > 0 ? (
               <>
                 {' '}
-                · client material{' '}
+                · Customer Material{' '}
                 <b style={{ color: 'var(--text)' }}>
                   {partyReceivedTotal}/{clientMatTotal}
                 </b>
@@ -218,28 +279,51 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <th>Item</th>
                 <th>Material</th>
                 <th>Drawing</th>
-                <th>Order Qty</th>
+                <th className="th-num">Order Qty</th>
                 <th>UOM</th>
                 {priceHidden ? null : (
                   <>
-                    <th style={{ color: 'var(--green)' }}>Rate ₹</th>
-                    <th style={{ color: 'var(--green)' }}>Amount</th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                      Rate (₹)
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                      Amount
+                    </th>
                   </>
                 )}
                 <th>Due Date</th>
                 <th>JWSO Status</th>
+                {canShortCloseAction ? <th className="td-ctr">Actions</th> : null}
               </tr>
             </thead>
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={priceHidden ? 8 : 10} className="empty-state">
-                    No lines on this JW yet.
+                  <td
+                    colSpan={
+                      priceHidden
+                        ? canShortCloseAction
+                          ? 9
+                          : 8
+                        : canShortCloseAction
+                          ? 11
+                          : 10
+                    }
+                    className="empty-state"
+                  >
+                    No lines yet.
                   </td>
                 </tr>
               ) : (
                 detail.lines.map((l) => (
-                  <LineRow key={l.id} line={l} priceHidden={priceHidden} onPreview={setLinePreview} />
+                  <LineRow
+                    key={l.id}
+                    line={l}
+                    priceHidden={priceHidden}
+                    onPreview={setLinePreview}
+                    canShortClose={canShortCloseAction}
+                    onShortClose={() => setShortCloseLine(l)}
+                  />
                 ))
               )}
             </tbody>
@@ -247,7 +331,13 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <JwDocumentsPanel jwId={detail.id} canDelete={me?.role !== 'viewer'} />
+      <JwDocumentsPanel
+        jwId={detail.id}
+        jwCode={detail.code}
+        companyId={me?.companyId ?? null}
+        canUpload={me?.role !== 'viewer' && (perms.entry || perms.edit)}
+        canDelete={me?.role !== 'viewer'}
+      />
 
       <RelatedDocsTabs module="job-work-orders" id={detail.id} />
 
@@ -265,11 +355,51 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 }
 
 /** Client PO / other documents attached to the JWSO (#8). Reflects the upload
- *  made from the JWSO form; clicking a file PREVIEWS it inside the app. */
-function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JSX.Element {
+ *  made from the JWSO form; clicking a file PREVIEWS it inside the app. Upload
+ *  here attaches (or re-attaches, after a failed upload on save) a Client PO or
+ *  Email Reference without opening the edit form. */
+function JwDocumentsPanel(props: {
+  jwId: string;
+  jwCode: string;
+  companyId: string | null;
+  canUpload: boolean;
+  canDelete: boolean;
+}): React.JSX.Element {
   const { data, isLoading } = useJwDocuments(props.jwId);
   const del = useDeleteJwDocument();
+  const createDoc = useCreateJwDocument();
   const files = data?.files ?? [];
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploadKind, setUploadKind] = useState<'po-docs' | 'email_reference'>('po-docs');
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+
+  async function onPick(file: File): Promise<void> {
+    if (!props.companyId) {
+      setUploadErr('Could not upload file. Sign in again and retry.');
+      return;
+    }
+    setUploading(true);
+    setUploadErr(null);
+    try {
+      const storagePath = await uploadJwDocFile(file, props.companyId);
+      await createDoc.mutateAsync({
+        jobWorkOrderId: props.jwId,
+        jwCodeText: props.jwCode,
+        category: uploadKind,
+        docType: uploadKind === 'po-docs' ? 'Client PO' : 'Email Reference',
+        fileName: file.name,
+        storagePath,
+        fileSize: file.size,
+        fileType: file.type || undefined,
+      });
+    } catch (e) {
+      setUploadErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
 
   // The file currently being previewed. Was `window.open(signedUrl)`, which let
   // the browser decide — and Chrome's "Download PDFs instead of automatically
@@ -298,10 +428,44 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
     <div className="panel">
       <div className="panel-hdr">
         <div className="panel-title">Documents ({files.length})</div>
-        <span className="text3" style={{ fontSize: 11 }}>
-          Uploaded from the JWSO form (Client PO No.)
-        </span>
+        {props.canUpload ? (
+          <div style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
+            <select
+              className="innovic-select"
+              aria-label="Document type to upload"
+              value={uploadKind}
+              onChange={(e) => setUploadKind(e.target.value as 'po-docs' | 'email_reference')}
+              disabled={uploading}
+            >
+              <option value="po-docs">Client PO</option>
+              <option value="email_reference">Email Reference</option>
+            </select>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? <Loader2 className="inline h-3 w-3 animate-spin" /> : null}
+              {uploading ? 'Uploading…' : 'Upload'}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onPick(f);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
+      {uploadErr ? (
+        <Banner tone="error" role="alert" onDismiss={() => setUploadErr(null)}>
+          {uploadErr}
+        </Banner>
+      ) : null}
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
@@ -310,26 +474,32 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
               <th>Document Type</th>
               <th>Category</th>
               <th>Uploaded By</th>
-              <th>Size</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="empty-state">
+                <td colSpan={5} className="empty-state">
                   <Loader2 className="inline h-4 w-4 animate-spin" /> Loading documents…
                 </td>
               </tr>
             ) : files.length === 0 ? (
               <tr>
-                <td colSpan={6} className="empty-state">
-                  No documents yet. Upload a Client PO from the JWSO form.
+                <td colSpan={5} className="empty-state">
+                  No documents yet. Upload a Client PO with the Upload button above.
                 </td>
               </tr>
             ) : (
               files.map((f) => (
-                <DocRow key={f.id} file={f} canDelete={props.canDelete} onView={onView} onDelete={(id) => del.mutate(id)} deleting={del.isPending} />
+                <DocRow
+                  key={f.id}
+                  file={f}
+                  canDelete={props.canDelete}
+                  onView={onView}
+                  onDelete={(id) => del.mutate(id)}
+                  deleting={del.isPending}
+                />
               ))
             )}
           </tbody>
@@ -364,7 +534,6 @@ function DocRow(props: {
   deleting: boolean;
 }): React.JSX.Element {
   const { file: f } = props;
-  const sizeKb = f.fileSize != null ? `${(f.fileSize / 1024).toFixed(0)} KB` : '—';
   return (
     <tr>
       <td>
@@ -377,10 +546,15 @@ function DocRow(props: {
           📎 {f.fileName}
         </button>
       </td>
-      <td className="text3" style={{ fontSize: 11 }}>{f.docType ?? '—'}</td>
-      <td className="mono" style={{ fontSize: 11 }}>{f.category}</td>
-      <td className="text3" style={{ fontSize: 11 }}>{f.uploadedByText ?? '—'}</td>
-      <td className="mono" style={{ fontSize: 11 }}>{sizeKb}</td>
+      <td className="text3" style={{ fontSize: 11 }}>
+        {f.docType ?? '—'}
+      </td>
+      <td style={{ fontSize: 11 }}>
+        {(SO_DOC_CATEGORY_LABELS as Record<string, string>)[f.category] ?? f.category}
+      </td>
+      <td className="text3" style={{ fontSize: 11 }}>
+        {f.uploadedByText ?? '—'}
+      </td>
       <td>
         {props.canDelete ? (
           <button
@@ -402,12 +576,25 @@ function LineRow(props: {
   line: JobWorkOrderLine;
   priceHidden: boolean;
   onPreview: (storagePath: string) => void;
+  canShortClose: boolean;
+  onShortClose: () => void;
 }): React.JSX.Element {
-  const { line: l, priceHidden, onPreview } = props;
+  const { line: l, priceHidden, onPreview, canShortClose, onShortClose } = props;
   const drawingFilePath = l.drawingFilePath ?? null;
+  // R6 (ADR-194): an OPEN line with an unmet balance can be short-closed; a line
+  // already short-closed shows the badge and offers no action.
+  const shortClosed = Boolean(l.shortClosedAt);
+  const canOfferShortClose =
+    canShortClose &&
+    !shortClosed &&
+    l.status !== 'closed' &&
+    l.status !== 'cancelled' &&
+    l.returnedQty < l.orderQty;
   return (
     <tr>
-      <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
+      <td className="mono" style={{ color: 'var(--blue)' }}>
+        {l.lineNo}
+      </td>
       {/* Thumbnail · CODE/REV · part name, the same badge the Sales Order detail
           uses. The Rev is the client's drawing revision typed on this JWSO line,
           and it travels with the code (the badge formats it via itemCodeWithRev). */}
@@ -444,22 +631,60 @@ function LineRow(props: {
           ) : null}
         </div>
       </td>
-      <td className="mono">{l.orderQty}</td>
+      <td className="mono td-num">{l.orderQty}</td>
       <td>{l.uom}</td>
       {priceHidden ? null : (
         <>
-          <td className="mono" style={{ color: 'var(--green)' }}>{Number(l.rate ?? 0).toFixed(2)}</td>
-          <td className="mono fw-700" style={{ color: 'var(--green)' }}>
-            {(l.orderQty * Number(l.rate ?? 0)).toFixed(2)}
+          <td className="mono td-num" style={{ color: 'var(--green2)' }}>
+            {Number(l.rate ?? 0).toFixed(2)}
+          </td>
+          <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
+            {inrFormat(l.orderQty * Number(l.rate ?? 0))}
           </td>
         </>
       )}
       <td className="text2" style={{ fontSize: 11 }}>
-        {l.dueDate ?? '—'}
+        {fmtDate(l.dueDate)}
       </td>
       <td>
-        <SoStatusBadge status={l.status} />
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center' }}>
+          <SoStatusBadge status={l.status} />
+          {shortClosed ? (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: '2px 6px',
+                borderRadius: 4,
+                color: 'var(--amber2)',
+                background: 'rgba(245,158,11,0.12)',
+              }}
+              title={l.shortCloseReason ? `Short-closed: ${l.shortCloseReason}` : 'Short-closed'}
+            >
+              Short-closed
+            </span>
+          ) : null}
+        </div>
       </td>
+      {canShortClose ? (
+        <td className="td-ctr">
+          {canOfferShortClose ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--amber2)', fontSize: 11 }}
+              onClick={onShortClose}
+              title="Close this line with its balance left unmet"
+            >
+              Short Close
+            </button>
+          ) : (
+            <span className="text3" style={{ fontSize: 11 }}>
+              —
+            </span>
+          )}
+        </td>
+      ) : null}
     </tr>
   );
 }
@@ -483,7 +708,7 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
   };
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
-      <StripItem label="JWSO Date" value={<span className="mono">{detail.jwDate}</span>} />
+      <StripItem label="JWSO Date" value={<span className="mono">{fmtDate(detail.jwDate)}</span>} />
       <StripItem
         label="Client PO No."
         value={
@@ -496,8 +721,7 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
           )
         }
       />
-      <StripItem label="JWSO Status" value={<SoStatusBadge status={detail.status} />} />
-      <StripItem label="🟢 Customer Material" value={detail.clientMaterial ?? '—'} />
+      <StripItem label="Customer Material" value={detail.clientMaterial ?? '—'} />
       <StripItem label="Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
       <div style={{ flex: '1 1 240px', minWidth: 200 }}>
         <span className="form-label">Remarks</span>

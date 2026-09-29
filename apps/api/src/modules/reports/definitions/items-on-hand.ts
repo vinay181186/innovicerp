@@ -12,8 +12,9 @@ export const itemsOnHandReport: RegisteredReport = {
     slug: 'items-on-hand',
     title: 'Items + on-hand stock',
     description:
-      'Items master joined to `v_item_stock` for current on-hand qty. Items with no ledger history show 0. Useful for the daily stock-check.',
-    group: 'Inventory',
+      'Every item in Item Master with its current on-hand qty. Items with no stock movement show 0. Useful for the daily stock-check.',
+    group: 'Store',
+    dept: 'store',
     filters: [],
     columns: [
       { key: 'code', label: 'Item Code', type: 'text' },
@@ -32,7 +33,7 @@ export const itemsOnHandReport: RegisteredReport = {
         i.item_type,
         i.uom,
         i.material,
-        COALESCE(s.on_hand_qty, 0)::int AS on_hand_qty
+        COALESCE(s.on_hand_qty, 0)::float8 AS on_hand_qty
       FROM public.items i
       LEFT JOIN public.v_item_stock s
         ON s.item_id = i.id AND s.company_id = i.company_id

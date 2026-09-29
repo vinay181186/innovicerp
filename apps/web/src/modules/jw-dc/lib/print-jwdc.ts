@@ -34,6 +34,10 @@ export function printJwDc(args: {
   const recipientName = vendor?.name ?? dc.vendorNameText ?? dc.vendorCodeText ?? '';
   const recipientAddress = vendor?.addressLine1 ?? '';
   const vehicleNo = dc.vehicleNo ?? '';
+  // UOM off the items master for each line; NOS only when a line has none.
+  const uomOf = (u: string | null | undefined): string => u?.trim() || 'NOS';
+  const lineUoms = [...new Set(dc.lines.map((l) => uomOf(l.uom)))];
+  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? 'NOS') : '';
   const purpose = [...new Set(dc.lines.map((l) => l.processText).filter(Boolean))].join(', ');
 
   const data: Record<string, string> = {
@@ -58,7 +62,7 @@ export function printJwDc(args: {
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
   ].filter(Boolean);
   const recipientFields: SheetField[] = [
-    { label: 'Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Vendor Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: recipientName, variant: 'name' },
     {
       label: 'Address',
@@ -87,8 +91,8 @@ export function printJwDc(args: {
     blocks: templatesToBlocks('JW DC', templates),
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Recipient', fields: recipientFields },
-    document: { label: 'Document', fields: documentFields },
+    recipient: { label: 'Vendor', fields: recipientFields },
+    document: { label: 'Challan', fields: documentFields },
     lines: dc.lines.map((l) => ({
       // Live join first, snapshot second — exactly what the detail table above
       // shows. The snapshot `itemCodeText` falls back to the item NAME when the
@@ -104,16 +108,14 @@ export function printJwDc(args: {
       // layout has a Remarks column, so the process it names prints there —
       // still on the vendor's copy, and no longer glued to the part name.
       remarks: l.processText,
-      // Legacy hardcodes NOS on the printed DC line too (L24614) and the JW DC
-      // line carries no uom, so this is faithful — not the ISSUE-158 pattern.
-      uom: 'NOS',
+      uom: uomOf(l.uom),
       // HSN lives on the item master and the JW DC line does not carry it, so
       // the column prints blank.
       hsn: null,
       qty: l.sentQty.toFixed(2),
     })),
     totalQty: totalQty.toFixed(2),
-    totalUom: 'NOS',
+    totalUom,
   };
 
   return openSheetPrintWindow(model);

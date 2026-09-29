@@ -27,7 +27,7 @@ test('T33 job queue Start', async ({ page }: { page: Page }) => {
   await page.goto('/job-queue', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
   const starts = await page.getByText(/▶ Start/).count();
-  const logs = await page.getByText(/✚ Log Op/).count();
+  const logs = await page.getByText(/✓ Complete/).count();
   log(starts > 0, 'T33 job queue offers Start for not-started ops', `starts=${starts} logs=${logs}`);
 });
 

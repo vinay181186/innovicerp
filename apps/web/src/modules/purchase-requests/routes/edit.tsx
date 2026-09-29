@@ -3,16 +3,30 @@
 import type { CreatePurchaseRequestInput, UpdatePurchaseRequestInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useItem } from '@/modules/items/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
 import { useCreatePurchaseRequest, usePurchaseRequest, useUpdatePurchaseRequest } from '../api';
-import { PurchaseRequestForm } from '../components/purchase-request-form';
+import { PrStatusBadge } from '../components/pr-status-badge';
+import type { PrFormValues } from '../components/pr-form-values';
+import { type PrKeepValues, PurchaseRequestForm } from '../components/purchase-request-form';
+
+// "Raise PR" links (Store Inventory low-stock row, Item Master detail) open this
+// page with the item — and, from Store Inventory, the shortfall qty — already
+// filled. Both stay editable. A qty of 0 (nothing short) keeps the form default.
+const newPrSearchSchema = z.object({
+  itemId: z.string().uuid().optional(),
+  qty: z.coerce.number().nonnegative().optional().catch(undefined),
+});
 
 export const purchaseRequestNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'purchase-requests/new',
+  validateSearch: newPrSearchSchema,
   component: PurchaseRequestNewPage,
 });
 
@@ -37,20 +51,63 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   const goBack = useCallback(() => void navigate({ to: '/purchase-requests' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
 
+  const { itemId, qty } = purchaseRequestNewRoute.useSearch();
+  const itemQ = useItem(itemId);
+  // Save & New: bumping `formKey` remounts a blank form; `keep` seeds it.
+  const [formKey, setFormKey] = useState(0);
+  const [keep, setKeep] = useState<PrKeepValues | null>(null);
+  const [savedCode, setSavedCode] = useState<{ id: string; code: string } | null>(null);
+
+  const initialValues = useMemo<Partial<PrFormValues>>(() => {
+    if (keep) {
+      return {
+        prDate: keep.prDate,
+        prType: keep.prType,
+        ...(keep.vendorId ? { vendorId: keep.vendorId } : {}),
+      };
+    }
+    const it = itemQ.data;
+    return {
+      ...(it ? { itemId: it.id, itemCodeText: it.code, itemName: it.name } : {}),
+      ...(qty !== undefined && qty > 0 ? { qty } : {}),
+    };
+  }, [keep, itemQ.data, qty]);
+
+  const onSaveAndNew = async (
+    values: CreatePurchaseRequestInput,
+    next: PrKeepValues,
+  ): Promise<void> => {
+    setSubmitError(null);
+    try {
+      const created = await create.mutateAsync(values);
+      setSavedCode({ id: created.id, code: created.code });
+      setKeep(next);
+      setFormKey((k) => k + 1);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Could not save PR. Try again.');
+    }
+  };
+
   const onSubmit = async (values: CreatePurchaseRequestInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
       exit.leave(
         () =>
-          void navigate({ to: '/purchase-requests/$id', params: { id: created.id }, replace: true }),
+          void navigate({
+            to: '/purchase-requests/$id',
+            params: { id: created.id },
+            replace: true,
+          }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create purchase request');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save PR. Try again.');
     }
   };
 
-  if (accessLoading) {
+  // Wait for a linked item only on the first form — so its code and name are
+  // in the defaults the form opens with, not patched in after.
+  if (accessLoading || (itemId && itemQ.isLoading && !keep)) {
     return (
       <div>
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase request…
@@ -67,9 +124,8 @@ function PurchaseRequestNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to Purchase Requests
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have create access to Purchase Requests. Ask an admin for L2 Data Entry or
-            above in Purchase.
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+            You do not have permission to create a PR. Ask an admin.
           </div>
         </div>
       </div>
@@ -79,27 +135,28 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link to="/purchase-requests" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Purchase Requests
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">📝 New Purchase Request</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Procurement intent — pick a vendor + item, set qty + cost.
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <PurchaseRequestForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      {savedCode ? (
+        <Banner tone="success" onDismiss={() => setSavedCode(null)}>
+          Saved{' '}
+          <Link to="/purchase-requests/$id" params={{ id: savedCode.id }} className="td-code">
+            {savedCode.code}
+          </Link>{' '}
+          — this is a new blank PR with the same PR Date, PR Type and Vendor.
+        </Banner>
+      ) : null}
+      <PurchaseRequestForm
+        key={formKey}
+        mode="create"
+        initialValues={initialValues}
+        initialVendorLabel={keep?.vendorLabel}
+        onSaveAndNew={onSaveAndNew}
+        title="New Purchase Request"
+        backLabel="Back to Purchase Requests"
+        onBack={goBack}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }
@@ -130,7 +187,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
         () => void navigate({ to: '/purchase-requests/$id', params: { id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update purchase request');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save PR. Try again.');
     }
   };
 
@@ -151,9 +208,8 @@ function PurchaseRequestEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to PR
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have edit access to Purchase Requests. Ask an admin for L3 Editor or above
-            in Purchase.
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+            You do not have permission to edit a PR. Ask an admin.
           </div>
         </div>
       </div>
@@ -169,8 +225,8 @@ function PurchaseRequestEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Purchase request not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'PR not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -188,7 +244,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            This purchase request is linked to a PO and can no longer be edited.
+            This PR is on a PO and can no longer be edited.
             {detail.poId ? (
               <>
                 {' '}
@@ -211,38 +267,22 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link
-        to="/purchase-requests/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to PR
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
-            >
-              {detail.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit Purchase Request
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <PurchaseRequestForm
-            mode="edit"
-            detail={detail}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      <PurchaseRequestForm
+        mode="edit"
+        title="Edit Purchase Request"
+        subtitle={
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+            <span className="td-code">{detail.code}</span>
+            <PrStatusBadge status={detail.status} />
+          </span>
+        }
+        backLabel="Back to PR"
+        onBack={goBack}
+        detail={detail}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import type { ListInvoicesResponse } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -21,6 +22,13 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useInvoiceList } from '../api';
 
+/** Invoice status → the words the user reads; the stored codes are unchanged. */
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  unpaid: 'Unpaid',
+  partial: 'Partly Paid',
+  paid: 'Paid',
+};
+
 // Deep-link seed for Global Search: `?tab=jw&search=IN-JI-26-0001` opens the
 // JW tab with its box pre-filled. Read ONCE into local state — tab clicks and
 // typing stay local. The SO Invoices tab has no search box of its own, so
@@ -28,6 +36,9 @@ import { useInvoiceList } from '../api';
 const searchSchema = z.object({
   tab: z.enum(['so', 'jw']).optional(),
   search: z.string().optional(),
+  // `?tab=jw&jw=<jwsoId>` — the JWSO detail's "JW Invoice" button: opens the
+  // New JW Invoice form with that JWSO already picked.
+  jw: z.string().optional(),
 });
 
 export const invoiceListRoute = createRoute({
@@ -41,29 +52,17 @@ type InvoiceListRow = ListInvoicesResponse['invoices'][number];
 
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
 
-// Mirror of legacy fmt() (L1484): '' → '—', else dd Mon yy (en-IN).
-const fmt = (d: string | null | undefined): string => {
-  if (!d) return '—';
-  try {
-    return new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: '2-digit',
-    });
-  } catch {
-    return d;
-  }
-};
-
 const TABS = [
-  { key: 'so', label: '🧾 SO Invoices' },
-  { key: 'jw', label: '🔧 JW Invoices (Labour)' },
+  { key: 'so', label: 'SO Invoices' },
+  { key: 'jw', label: 'JW Invoices (Labour)' },
 ];
 
 function InvoiceListPage(): React.JSX.Element {
   const routeSearch = invoiceListRoute.useSearch();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
+  const [tab, setTab] = useState<'so' | 'jw'>(
+    () => routeSearch.tab ?? (routeSearch.jw ? 'jw' : 'so'),
+  );
   const { data, isLoading, isFetching, isError, error } = useInvoiceList();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
@@ -85,7 +84,11 @@ function InvoiceListPage(): React.JSX.Element {
         {tabs}
         {/* key: a new ?search landing while already on this page remounts the
             view so it re-seeds; nothing else changes the key. */}
-        <JwInvoiceView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
+        <JwInvoiceView
+          key={`${routeSearch.search ?? ''}|${routeSearch.jw ?? ''}`}
+          initialSearch={routeSearch.search}
+          initialJwId={routeSearch.jw}
+        />
       </div>
     );
   }
@@ -111,11 +114,11 @@ function InvoiceListPage(): React.JSX.Element {
                 key: 'invoiced',
                 label: 'Total Invoiced',
                 count: inr(s.totalInvoiced ?? 0),
-                color: 'var(--green)',
+                color: 'var(--green2)',
               },
               {
                 key: 'received',
-                label: 'Total Received',
+                label: 'Paid Amount',
                 count: inr(s.totalReceived ?? 0),
                 color: 'var(--cyan)',
               },
@@ -123,19 +126,25 @@ function InvoiceListPage(): React.JSX.Element {
                 key: 'outstanding',
                 label: 'Outstanding',
                 count: inr(s.outstanding ?? 0),
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
               },
               {
                 key: 'overdue',
                 label: 'Overdue',
                 count: inr(s.overdueAmount ?? 0),
-                color: 'var(--red)',
-                sub: <span style={{ color: 'var(--red)' }}>{s.overdueCount} inv</span>,
+                color: 'var(--red2)',
+                sub: <span style={{ color: 'var(--red2)' }}>{s.overdueCount} inv</span>,
               },
             ]),
-        { key: 'unpaid', label: 'Unpaid', count: s.unpaidCount, color: 'var(--red)' },
-        { key: 'partial', label: 'Partial', count: s.partialCount, color: 'var(--amber)' },
-        { key: 'paid', label: 'Paid', count: s.paidCount, color: 'var(--green)' },
+        { key: 'unpaid', label: 'Unpaid', count: s.unpaidCount, color: 'var(--red2)', sub: 'inv' },
+        {
+          key: 'partial',
+          label: 'Partly Paid',
+          count: s.partialCount,
+          color: 'var(--amber2)',
+          sub: 'inv',
+        },
+        { key: 'paid', label: 'Paid', count: s.paidCount, color: 'var(--green2)', sub: 'inv' },
       ]
     : [];
 
@@ -154,7 +163,7 @@ function InvoiceListPage(): React.JSX.Element {
           className: 'mono fw-700',
           nowrap: true,
           render: (inv) => (
-            <span style={{ color: 'var(--green)' }}>{inr(inv.grandTotal ?? 0)}</span>
+            <span style={{ color: 'var(--green2)' }}>{inr(inv.grandTotal ?? 0)}</span>
           ),
         },
         {
@@ -166,7 +175,7 @@ function InvoiceListPage(): React.JSX.Element {
           render: (inv) => <span style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</span>,
         },
         {
-          header: 'Balance',
+          header: 'Outstanding',
           width: '9%',
           align: 'right',
           className: 'mono fw-700',
@@ -180,13 +189,6 @@ function InvoiceListPage(): React.JSX.Element {
       ];
 
   const columns: DataTableColumn<InvoiceListRow>[] = [
-    {
-      header: 'Sr No',
-      width: '5%',
-      className: 'text3',
-      nowrap: true,
-      render: (_inv, i) => i + 1,
-    },
     {
       header: 'Invoice No.',
       width: priceHidden ? '15%' : '12%',
@@ -208,7 +210,7 @@ function InvoiceListPage(): React.JSX.Element {
       header: 'Invoice Date',
       width: priceHidden ? '11%' : '8%',
       nowrap: true,
-      render: (inv) => fmt(inv.invoiceDate),
+      render: (inv) => fmtDate(inv.invoiceDate),
     },
     {
       header: 'SO No.',
@@ -219,7 +221,7 @@ function InvoiceListPage(): React.JSX.Element {
     },
     {
       header: 'Customer',
-      width: priceHidden ? '26%' : '12%',
+      width: priceHidden ? '31%' : '17%',
       align: 'left',
       className: 'fw-700',
       ellipsis: true,
@@ -242,12 +244,12 @@ function InvoiceListPage(): React.JSX.Element {
           {/* kind="invoice", not "doc": the generic map paints unpaid amber and
               partial blue, which disagreed with the detail page's own colours
               for the SAME invoice. One status, one colour, both screens. */}
-          <StatusBadge kind="invoice" status={inv.status} />
-          {inv.overdue ? (
-            <span className="fw-700" style={{ fontSize: 'var(--fs-xs)', color: 'var(--red)' }}>
-              ⚠ OVERDUE
-            </span>
-          ) : null}
+          <StatusBadge
+            kind="invoice"
+            status={inv.status}
+            label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
+          />
+          {inv.overdue ? <span className="badge b-red">Overdue</span> : null}
         </span>
       ),
     },
@@ -257,7 +259,7 @@ function InvoiceListPage(): React.JSX.Element {
       nowrap: true,
       render: (inv) => (
         <span style={{ color: inv.overdue ? 'var(--red)' : 'var(--text3)' }}>
-          {fmt(inv.dueDate)}
+          {fmtDate(inv.dueDate)}
         </span>
       ),
     },
@@ -267,7 +269,6 @@ function InvoiceListPage(): React.JSX.Element {
     <div>
       {tabs}
       <ListHeader
-        icon="📄"
         title="Invoices"
         count={data ? data.invoices.length : undefined}
         noun="invoice"
@@ -286,7 +287,7 @@ function InvoiceListPage(): React.JSX.Element {
       {isError || (!isLoading && !data) ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load'}
+          message={error instanceof Error ? error.message : 'Could not load invoices. Try again.'}
         />
       ) : (
         <>
@@ -297,24 +298,21 @@ function InvoiceListPage(): React.JSX.Element {
               loading={isLoading}
               rowKey={(inv) => inv.id}
               onRowClick={(inv) => openInvoice(inv.id)}
-              empty="No invoices yet. Click + New Invoice."
+              empty="No Invoices yet."
               rowActions={(inv) => (
                 <RowActions
-                  // View is a ROUTE, so it stays a real link — ctrl-click /
-                  // middle-click / "open in new tab" keep working, as they did
-                  // on the legacy screen. An onView button silently lost that.
-                  viewTo={`/invoices/${inv.id}`}
-                  renderLink={(p) => <Link {...p} />}
+                  // Row click opens the invoice (ERPNext list); the Invoice
+                  // No. stays a real link for ctrl-click / new tab.
                   extra={
                     perms.entry && inv.status !== 'paid' ? (
                       <Link
                         to="/invoices/$id"
                         params={{ id: inv.id }}
                         className="btn btn-ghost btn-sm"
-                        title="Add payment"
-                        style={{ color: 'var(--green)' }}
+                        title="Add Payment"
+                        style={{ color: 'var(--green2)' }}
                       >
-                        💳 Pay
+                        💳 Add Payment
                       </Link>
                     ) : null
                   }
@@ -322,13 +320,7 @@ function InvoiceListPage(): React.JSX.Element {
               )}
             />
           </div>
-          {data ? (
-            <ListFooter
-              total={data.invoices.length}
-              noun="invoice"
-              hint="Click a row to open the invoice · 💳 Pay opens the same page at its payments panel."
-            />
-          ) : null}
+          {data ? <ListFooter total={data.invoices.length} noun="invoice" /> : null}
         </>
       )}
     </div>

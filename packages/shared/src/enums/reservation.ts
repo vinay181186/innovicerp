@@ -41,9 +41,16 @@ export const RESERVATION_SOURCES = [
 ] as const;
 export type ReservationSource = (typeof RESERVATION_SOURCES)[number];
 
-export const RESERVATION_SOURCE_LABEL: Record<ReservationSource, string> = {
+/** Read-only superset for "where is this stock reserved?" lists (ADR-193 3c):
+ *  'assembly' = parts held for an assembly SO (assembly_part_reservations).
+ *  Never accepted by a sales-reservation write. */
+export const RESERVATION_DETAIL_SOURCES = [...RESERVATION_SOURCES, 'assembly'] as const;
+export type ReservationDetailSource = (typeof RESERVATION_DETAIL_SOURCES)[number];
+
+export const RESERVATION_SOURCE_LABEL: Record<ReservationDetailSource, string> = {
   auto_production: 'Auto (production)',
   manual: 'Manual',
+  assembly: 'Assembly',
 };
 
 export const RESERVATION_STATUS_LABEL: Record<ReservationStatus, string> = {

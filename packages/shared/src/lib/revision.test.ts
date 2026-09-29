@@ -57,7 +57,7 @@ describe('revisionGoesBackwards', () => {
   });
   it('writes the sentence with normalized values', () => {
     expect(revisionBackwardsMessage(2, 'b', 'a')).toBe(
-      'Line 2: Rev cannot go back from B to A — a revision only moves forward',
+      'Ln 2: Drawing revision cannot go back from B to A.',
     );
   });
 });

@@ -41,9 +41,13 @@ import { z } from 'zod';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
+import { ListHeader, PageState } from '@/ui/layout';
 import { useExecutePlan, usePlan } from '@/modules/plans/api';
+import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import {
   soPlanningKeys,
   usePlanningSoDetail,
@@ -87,30 +91,31 @@ const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
   jc_created: 'JC Created',
   pr_created: 'PR Created',
   in_production: 'In Production',
-  complete: 'Complete',
+  complete: 'Completed',
   cancelled: 'Cancelled',
 };
 
 const PLAN_STATUS_COLOR: Record<PlanStatus, string> = {
-  in_planning: 'var(--amber)',
+  // Same colour per state as <StatusBadge kind="plan"> (wave 2).
+  in_planning: 'var(--text3)',
   planned: 'var(--blue)',
   jc_created: 'var(--cyan)',
-  pr_created: 'var(--purple)',
-  in_production: 'var(--cyan)',
+  pr_created: 'var(--cyan)',
+  in_production: 'var(--amber)',
   complete: 'var(--green)',
   cancelled: 'var(--text3)',
 };
 
 const DERIVED_STATUS_COLOR: Record<PlanDerivedStatus, string> = {
-  route_card_pending: 'var(--amber)',
+  route_card_pending: 'var(--text3)',
   gen_production_order: 'var(--blue)',
-  in_production: 'var(--cyan)',
+  in_production: 'var(--amber)',
   production_complete: 'var(--green)',
 };
 
 const ORDER_STATUS_LABEL: Record<PlanningSoListItem['planningStatus'], string> = {
   fully_planned: 'Fully Planned',
-  partial: 'Partial',
+  partial: 'Partly Planned',
   unplanned: 'Unplanned',
 };
 
@@ -183,7 +188,7 @@ function lineStatusOf(line: PlanningLine): {
           ? 'In Planning'
           : 'Fully Planned'
       : line.plans.length > 0 || hasDirectJc
-        ? `Partial (${line.remaining} left)`
+        ? `Partly Planned (${line.remaining} pending)`
         : 'Unplanned';
   const color =
     line.remaining <= 0
@@ -272,11 +277,7 @@ function PlanningWorkflowPage(): JSX.Element {
   // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
   // only while access is still loading — don't block then.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
@@ -292,45 +293,36 @@ function PlanningWorkflowPage(): JSX.Element {
         />
       ) : (
         <>
-          {/* ── Level 1 header: title · SO | JWSO toggle · search ── */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-              marginBottom: 14,
+          {/* ── Level 1 header: the ONE list header (ui/layout ListHeader) —
+              title · count, then the filter bar: client-side search · SO /
+              JWSO source dropdown · Clear. ── */}
+          <ListHeader
+            title="SO/JWSO Planning"
+            icon="📋"
+            count={soList.data ? visibleSos.length : undefined}
+            noun={src === 'jw' ? 'JWSO' : 'SO'}
+            search={soSearch}
+            onSearch={setSoSearch}
+            searchPlaceholder="Search SO / JWSO No., customer, item code or name, due date, status…"
+            updating={soList.isFetching && !soList.isLoading}
+            filters={
+              <select
+                className="innovic-select"
+                aria-label="Order source"
+                title="Order source"
+                value={src}
+                onChange={(e) => setSrc(e.target.value === 'jw' ? 'jw' : 'so')}
+              >
+                <option value="so">SO</option>
+                <option value="jw">JWSO</option>
+              </select>
+            }
+            onClearFilters={() => {
+              setSoSearch('');
+              if (src !== 'so') setSrc('so');
             }}
-          >
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              SO / JWSO Planning
-            </div>
-            <span style={{ flex: 1 }} />
-            <div style={{ display: 'flex', gap: 4 }}>
-              {(
-                [
-                  { key: 'so', label: 'SO' },
-                  { key: 'jw', label: 'JWSO' },
-                ] as { key: Source; label: string }[]
-              ).map((tb) => (
-                <button
-                  key={tb.key}
-                  type="button"
-                  className={`btn btn-sm ${src === tb.key ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setSrc(tb.key)}
-                >
-                  {tb.label}
-                </button>
-              ))}
-            </div>
-            <input
-              className="innovic-input"
-              style={{ width: 300 }}
-              placeholder="Search order no, customer, item, part name…"
-              value={soSearch}
-              onChange={(e) => setSoSearch(e.target.value)}
-            />
-          </div>
+            filtersActive={soSearch !== '' || src !== 'so'}
+          />
 
           <OrderList
             src={src}
@@ -388,7 +380,7 @@ function OrderList({
       { header: 'Due Date', accessorKey: 'dueDate' },
       { header: 'Lines', accessorKey: 'totalLines' },
       { header: 'Order Qty', accessorKey: 'totalQty' },
-      { header: 'Planned Qty', accessorKey: 'totalPlannedQty' },
+      { header: 'Plan Qty', accessorKey: 'totalPlannedQty' },
       { header: '% Planned', accessorKey: 'planningPct' },
       { header: 'Plan Status', accessorKey: 'planningStatus' },
     ],
@@ -407,7 +399,7 @@ function OrderList({
   return (
     <div className="panel">
       <div className="tbl-wrap">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <SortableHead table={table} />
           <tbody>
             {loading ? (
@@ -422,7 +414,7 @@ function OrderList({
                 <td
                   colSpan={columns.length}
                   className="empty-state"
-                  style={{ color: 'var(--red)' }}
+                  style={{ color: 'var(--red2)' }}
                 >
                   {error}
                 </td>
@@ -443,7 +435,7 @@ function OrderList({
                     style={{ cursor: 'pointer' }}
                     title="Open this order's lines"
                   >
-                    <td className="td-code">
+                    <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                         {so.source === 'jw' ? <JwChip /> : null}
                         <span
@@ -454,23 +446,16 @@ function OrderList({
                         </span>
                       </span>
                     </td>
-                    <td
-                      style={{
-                        maxWidth: 260,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                      title={so.customerName ?? undefined}
-                    >
-                      {so.customerName ?? '—'}
-                    </td>
+                    <td title={so.customerName ?? undefined}>{so.customerName ?? '—'}</td>
                     <td>
-                      <span className="badge b-grey">{so.soType.replaceAll('_', ' ')}</span>
+                      <span className="badge b-grey">{soTypeLabel(so.soType)}</span>
                     </td>
-                    <td className="mono">{so.dueDate ?? '—'}</td>
-                    <td className="mono">{so.totalLines}</td>
-                    <td className="mono fw-700">{so.totalQty}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(so.dueDate)}
+                    </td>
+                    <td className="mono td-num">{so.totalLines}</td>
+                    <td className="mono fw-700 td-num">{so.totalQty}</td>
+                    <td className="mono fw-700 td-num" style={{ color: 'var(--cyan)' }}>
                       {so.totalPlannedQty}
                     </td>
                     <td>
@@ -499,58 +484,39 @@ function OrderList({
 /** Fixed-layout column widths (percent, sum 100). The table is `table-layout:
  *  fixed` at 100% width so it can never grow a horizontal scrollbar; long
  *  text wraps inside its column instead. */
-// ADR-180 columns: Physical / Reserved / Available are three different numbers
-// and each gets its own column, with the wording the whole app now uses.
-// PHYSICAL = on the shelf · RESERVED = promised but still on the shelf ·
-// AVAILABLE = Physical − Reserved.
+// ADR-180: Available = Physical − Reserved. Physical and the two Reserved
+// figures sit in the Available cell's tooltip (and "n reserved here" under it)
+// rather than three more columns — the planner needs them only when allocating.
 const LINE_COLS: { key: string; label: string; width: number; title?: string }[] = [
   { key: 'line', label: 'Ln', width: 3 },
-  { key: 'item', label: 'Item Code', width: 9 },
-  { key: 'name', label: 'Item Name', width: 9 },
-  { key: 'orderQty', label: 'Order Qty', width: 4 },
-  {
-    key: 'dispatched',
-    label: 'Dispatched',
-    width: 5,
-    title: 'Already shipped to the customer against this line',
-  },
-  {
-    key: 'physical',
-    label: 'Physical',
-    width: 4,
-    title: 'On the shelf for this item — reserved or not. Reserving never changes it.',
-  },
-  {
-    key: 'reservedAll',
-    label: 'Reserved (all lines)',
-    width: 5,
-    title: 'Promised to every SO line for this item, still on the shelf',
-  },
-  {
-    key: 'reservedLine',
-    label: 'Reserved (this line)',
-    width: 5,
-    title: 'Booked to this SO line',
-  },
+  { key: 'item', label: 'Item Code', width: 11 },
+  { key: 'name', label: 'Item Name', width: 11 },
+  { key: 'orderQty', label: 'Order Qty', width: 5 },
   {
     key: 'available',
     label: 'Available',
-    width: 4,
-    title: 'Physical − Reserved: free stock anyone may still be promised',
+    width: 6,
+    title: 'Physical − Reserved: free stock. Hover a number for Physical and Reserved.',
   },
   {
     key: 'balance',
-    label: 'Balance to Plan',
-    width: 5,
-    title: 'Order qty − dispatched − reserved to this line: what still has to be made or bought',
+    label: 'Pending to Plan',
+    width: 6,
+    title:
+      'Order − Planned − direct Job Cards: still to plan. The same number + Plan / + PR use. Hover a number for Balance (Order − Dispatched − Reserved).',
   },
-  { key: 'planned', label: 'Planned', width: 4 },
-  { key: 'inProd', label: 'In Prod', width: 4 },
-  { key: 'remaining', label: 'Pending', width: 5 },
-  { key: 'due', label: 'Due Date', width: 5 },
-  { key: 'status', label: 'Plan Status', width: 6 },
-  { key: 'plans', label: 'Plans', width: 15 },
-  { key: 'action', label: 'Action', width: 8 },
+  { key: 'planned', label: 'Plan Qty', width: 5 },
+  { key: 'inProd', label: 'In Production', width: 5 },
+  {
+    key: 'dispatched',
+    label: 'Dispatched',
+    width: 6,
+    title: 'Already shipped to the customer against this line',
+  },
+  { key: 'due', label: 'Due Date', width: 6 },
+  { key: 'status', label: 'Plan Status', width: 7 },
+  { key: 'plans', label: 'Plans', width: 19 },
+  { key: 'action', label: 'Action', width: 10 },
 ];
 
 /** A cell that may hold long text: wraps inside its fixed column instead of
@@ -566,10 +532,7 @@ function HeaderField({
 }): JSX.Element {
   return (
     <div style={{ minWidth: 0 }}>
-      <div
-        className="mono text3"
-        style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '.08em' }}
-      >
+      <div className="mono text3" style={{ fontSize: 11 }}>
         {label}
       </div>
       <div style={{ fontSize: 13 }}>{children}</div>
@@ -604,6 +567,21 @@ function OrderDetail({
     reservedQty: number;
     availableQty: number;
   } | null>(null);
+  // The plan just saved by "+ Plan" and its next step. A route-card plan's
+  // only way on is a Production Order, so the page offers it right here
+  // instead of the box just closing (the planner used to go to Production
+  // Orders → New and find the plan again).
+  const [savedPlan, setSavedPlan] = useState<{
+    id: string;
+    code: string;
+    where: string;
+    derivedStatus: PlanDerivedStatus | null;
+    itemId: string | null;
+    itemCode: string;
+    itemName: string;
+  } | null>(null);
+  const { data: eff } = useMyAccess();
+  const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
 
   const backBtn = (
     <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
@@ -625,8 +603,10 @@ function OrderDetail({
     return (
       <>
         <div style={{ marginBottom: 14 }}>{backBtn}</div>
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
-          {detail.error instanceof Error ? detail.error.message : 'Failed to load order'}
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          {detail.error instanceof Error
+            ? detail.error.message
+            : 'Could not load order. Try again.'}
         </div>
       </>
     );
@@ -668,19 +648,37 @@ function OrderDetail({
         <HeaderField label={so.source === 'jw' ? 'JWSO No.' : 'SO No.'}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             {so.source === 'jw' ? <JwChip /> : null}
-            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {so.soCode}
-            </span>
+            {/* The order number opens the order itself — SO Master detail, or
+                the JWSO detail for a JWSO. */}
+            {so.source === 'jw' ? (
+              <Link
+                to="/job-work-orders/$id"
+                params={{ id: soId }}
+                className="td-code"
+                title="Open the JWSO"
+              >
+                {so.soCode}
+              </Link>
+            ) : (
+              <Link
+                to="/sales-orders/$id"
+                params={{ id: soId }}
+                className="td-code"
+                title="Open the SO"
+              >
+                {so.soCode}
+              </Link>
+            )}
           </span>
         </HeaderField>
         <HeaderField label="Customer">
           <span className="fw-700">{so.customerName ?? '—'}</span>
         </HeaderField>
         <HeaderField label={so.source === 'jw' ? 'JWSO Type' : 'SO Type'}>
-          <span className="badge b-grey">{so.soType.replaceAll('_', ' ')}</span>
+          <span className="badge b-grey">{soTypeLabel(so.soType)}</span>
         </HeaderField>
         <HeaderField label="Due Date">
-          <span className="mono">{so.dueDate ?? '—'}</span>
+          <span className="mono">{fmtDate(so.dueDate)}</span>
         </HeaderField>
         <HeaderField label="Client PO No.">
           <span className="mono">{so.clientPoNo ?? '—'}</span>
@@ -704,7 +702,7 @@ function OrderDetail({
             borderColor: 'var(--green)',
           }}
         >
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green2)' }}>
             ✓ {stockNote.what}
           </span>
           <span className="text3" style={{ fontSize: 11 }}>
@@ -717,7 +715,7 @@ function OrderDetail({
               {stockNote.reservedQty}
             </b>{' '}
             · Available{' '}
-            <b className="mono" style={{ color: 'var(--green)' }}>
+            <b className="mono" style={{ color: 'var(--green2)' }}>
               {stockNote.availableQty}
             </b>
           </span>
@@ -732,19 +730,67 @@ function OrderDetail({
         </div>
       ) : null}
 
+      {savedPlan ? (
+        <Banner
+          tone="success"
+          title={
+            <>
+              ✓ Plan <span className="mono">{savedPlan.code}</span> saved for {savedPlan.where}
+            </>
+          }
+          onDismiss={() => setSavedPlan(null)}
+        >
+          {savedPlan.derivedStatus === 'route_card_pending' ? (
+            <>
+              Next: this item has no Route Card yet — make the Route Card, then raise the Production
+              Order for this plan.{' '}
+              <Link
+                to="/route-cards/new"
+                search={
+                  savedPlan.itemId
+                    ? {
+                        itemId: savedPlan.itemId,
+                        itemCode: savedPlan.itemCode,
+                        itemName: savedPlan.itemName,
+                      }
+                    : {}
+                }
+                className="fw-700"
+                style={{ color: 'var(--blue)' }}
+              >
+                New Route Card →
+              </Link>
+            </>
+          ) : canProductionOrder ? (
+            <>
+              Next: raise the Production Order for this plan.{' '}
+              <Link
+                to="/production-orders/new"
+                search={{ planId: savedPlan.id, planCode: savedPlan.code }}
+                className="btn btn-primary btn-sm"
+                style={{ marginLeft: 6 }}
+              >
+                Create Production Order →
+              </Link>
+            </>
+          ) : (
+            'Next: a Production Order for this plan (you do not have access to raise one).'
+          )}
+        </Banner>
+      ) : null}
+
       {/* ── Every line, one table ── */}
       <div className="panel">
         {so.lines.length === 0 ? (
           <div className="empty-state">This order has no lines.</div>
         ) : (
-          // `tbl-wrap` so the ADR-180 stock columns (Physical / Reserved /
-          // Available / Balance to Plan) scroll sideways on a narrow screen
-          // instead of crushing every number into two lines. On a normal wide
-          // screen the sheet still fills the panel exactly as before.
+          // `tbl-wrap` so the sheet scrolls sideways on a narrow screen instead
+          // of crushing every number into two lines. On a normal wide screen
+          // the sheet still fills the panel exactly as before.
           <div className="tbl-wrap">
             <table
               className="innovic-table"
-              style={{ tableLayout: 'fixed', width: '100%', minWidth: 1500, margin: 0 }}
+              style={{ tableLayout: 'fixed', width: '100%', minWidth: 1200, margin: 0 }}
             >
               <colgroup>
                 {LINE_COLS.map((c) => (
@@ -778,7 +824,7 @@ function OrderDetail({
                           {itemCodeWithRev(line.itemCode, line.itemRevision, '')}
                         </span>
                         {line.clientPoLineNo ? (
-                          <div className="mono" style={{ fontSize: 9, color: 'var(--purple)' }}>
+                          <div className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
                             POL {line.clientPoLineNo}
                           </div>
                         ) : null}
@@ -787,7 +833,7 @@ function OrderDetail({
                         <div style={{ marginTop: 2 }}>
                           <span
                             className={`badge ${line.itemProcurementType === 'buy' ? 'b-amber' : 'b-grey'}`}
-                            style={{ fontSize: 9, padding: '0 6px' }}
+                            style={{ fontSize: 11, padding: '0 6px' }}
                             title={
                               line.itemProcurementType === 'buy'
                                 ? 'Bought-in item — raise a purchase request'
@@ -802,45 +848,29 @@ function OrderDetail({
                         {line.itemName ?? '—'}
                       </td>
                       <td className="mono fw-700">{line.orderQty}</td>
-                      {/* ADR-180 stock block. Physical never moves when stock is
-                        reserved — only a dispatch/issue changes it. */}
-                      <td
-                        className="mono"
-                        style={{ color: line.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
-                      >
-                        {line.dispatchedQty}
-                      </td>
-                      <td
-                        className="mono fw-700"
-                        style={{ color: line.physicalQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}
-                      >
-                        {line.physicalQty}
-                      </td>
-                      <td
-                        className="mono"
-                        style={{
-                          color: line.totalReservedQty > 0 ? 'var(--purple)' : 'var(--text3)',
-                        }}
-                      >
-                        {line.totalReservedQty}
-                      </td>
-                      <td
-                        className="mono fw-700"
-                        style={{ color: line.reservedQty > 0 ? 'var(--purple)' : 'var(--text3)' }}
-                      >
-                        {line.reservedQty}
-                      </td>
+                      {/* ADR-180: Physical never moves when stock is reserved —
+                        only a dispatch/issue changes it. */}
                       <td
                         className="mono fw-700"
                         style={{ color: line.availableQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+                        title={`Physical ${line.physicalQty} · Reserved (all lines) ${line.totalReservedQty} · Reserved (this line) ${line.reservedQty}`}
                       >
                         {line.availableQty}
+                        {line.reservedQty > 0 ? (
+                          <div
+                            className="mono"
+                            style={{ fontSize: 11, fontWeight: 400, color: 'var(--purple)' }}
+                          >
+                            {line.reservedQty} reserved here
+                          </div>
+                        ) : null}
                       </td>
                       <td
                         className="mono fw-700"
-                        style={{ color: line.balanceToPlan > 0 ? 'var(--amber)' : 'var(--green)' }}
+                        style={{ color: line.remaining > 0 ? 'var(--amber)' : 'var(--green)' }}
+                        title={`Balance (Order − Dispatched − Reserved) ${line.balanceToPlan}`}
                       >
-                        {line.balanceToPlan}
+                        {line.remaining}
                       </td>
                       <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                         {line.totalPlanned}
@@ -852,17 +882,17 @@ function OrderDetail({
                         {line.directJcQty}
                       </td>
                       <td
-                        className="mono fw-700"
-                        style={{ color: line.remaining > 0 ? 'var(--amber)' : 'var(--green)' }}
+                        className="mono"
+                        style={{ color: line.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
                       >
-                        {line.remaining}
+                        {line.dispatchedQty}
                       </td>
-                      <td className="mono">{line.dueDate ?? '—'}</td>
+                      <td className="mono">{fmtDate(line.dueDate)}</td>
                       <td style={wrapCell}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: status.color }}>
                           {status.label}
                         </span>
-                        <div className="mono text3" style={{ fontSize: 9 }}>
+                        <div className="mono text3" style={{ fontSize: 11 }}>
                           {status.pct}%
                         </div>
                       </td>
@@ -888,7 +918,7 @@ function OrderDetail({
                               executePlan.isError && executePlan.variables === p.id
                                 ? executePlan.error instanceof Error
                                   ? executePlan.error.message
-                                  : 'Execute failed'
+                                  : 'Could not create the Job Card / PR. Try again.'
                                 : null
                             }
                             onViewJc={() => {
@@ -923,7 +953,7 @@ function OrderDetail({
                               In Production (no plan)
                             </span>
                             <span className="text2">{line.directJcQty} pcs</span>
-                            <span className="mono text3" style={{ fontSize: 10 }}>
+                            <span className="mono text3" style={{ fontSize: 11 }}>
                               {line.directJcCodes.join(', ')}
                             </span>
                           </div>
@@ -971,12 +1001,12 @@ function OrderDetail({
                             </button>
                           ) : null}
                           {/* ADR-171: a BUY line is purchased, not planned. SO
-                            lines get + PR; a JWSO line is the client's own
+                            lines get + PR; a JWSO line is the customer's own
                             material and is never bought in. */}
                           {line.itemProcurementType === 'buy' ? (
                             so.source === 'jw' ? (
-                              <span className="text3" style={{ fontSize: 10 }}>
-                                Buy item — client material
+                              <span className="text3" style={{ fontSize: 11 }}>
+                                Buy item — Customer material
                               </span>
                             ) : line.remaining > 0 && perms.entry ? (
                               <button
@@ -1007,11 +1037,11 @@ function OrderDetail({
                             <button
                               type="button"
                               className="btn btn-ghost btn-sm"
-                              style={{ color: 'var(--amber)', fontWeight: 700 }}
+                              style={{ color: 'var(--amber2)', fontWeight: 700 }}
                               disabled={allocateCap(lineFacts(so.soCode, line)) <= 0}
                               title={
                                 allocateCap(lineFacts(so.soCode, line)) > 0
-                                  ? `Reserve up to ${allocateCap(lineFacts(so.soCode, line))} pcs of free stock to this line`
+                                  ? `Allocate up to ${allocateCap(lineFacts(so.soCode, line))} pcs of free stock to this line`
                                   : 'Nothing can be allocated to this line right now'
                               }
                               onClick={() =>
@@ -1053,9 +1083,19 @@ function OrderDetail({
               so={so}
               line={targetLine}
               onClose={() => setModal({ kind: 'none' })}
-              onCreated={() => {
+              onCreated={(plan) => {
                 // The plan is complete as saved (route-card flow) — no edit
-                // modal to chain into. Close and refresh the lines.
+                // modal to chain into. Close, refresh the lines and offer the
+                // next step (Create Production Order →) in a banner.
+                setSavedPlan({
+                  id: plan.id,
+                  code: plan.code,
+                  where: `${so.soCode} Ln ${targetLine.lineNo}`,
+                  derivedStatus: plan.derivedStatus ?? null,
+                  itemId: plan.itemId ?? null,
+                  itemCode: plan.itemCodeText ?? '',
+                  itemName: plan.itemNameText ?? '',
+                });
                 setModal({ kind: 'none' });
                 refresh();
               }}
@@ -1096,7 +1136,7 @@ function OrderDetail({
               onDone={(result) => {
                 setModal({ kind: 'none' });
                 setStockNote({
-                  what: `Allocated ${result.qtyMoved} pcs to line ${targetLine.lineNo}`,
+                  what: `Allocated ${result.qtyMoved} pcs to Ln ${targetLine.lineNo}`,
                   physicalQty: result.physicalQty,
                   reservedQty: result.reservedQty,
                   availableQty: result.availableQty,
@@ -1118,7 +1158,7 @@ function OrderDetail({
               onDone={(result) => {
                 setModal({ kind: 'none' });
                 setStockNote({
-                  what: `Released ${result.qtyMoved} pcs from line ${targetLine.lineNo}`,
+                  what: `Released ${result.qtyMoved} pcs from Ln ${targetLine.lineNo}`,
                   physicalQty: result.physicalQty,
                   reservedQty: result.reservedQty,
                   availableQty: result.availableQty,
@@ -1183,7 +1223,11 @@ function SearchResults({
   const failed = details.filter((d) => d.isError);
   const firstError = failed[0]?.error;
   const failedMsg =
-    firstError instanceof Error ? firstError.message : failed.length > 0 ? 'Failed to load SO' : '';
+    firstError instanceof Error
+      ? firstError.message
+      : failed.length > 0
+        ? 'Could not load SO. Try again.'
+        : '';
 
   const groups = capped.flatMap((so, i) => {
     const data = details[i]?.data;
@@ -1231,7 +1275,7 @@ function SearchResults({
         </div>
       ) : null}
       {failed.length > 0 ? (
-        <div className="empty-state" style={{ color: 'var(--red)', padding: 12 }}>
+        <div className="empty-state" style={{ color: 'var(--red2)', padding: 12 }}>
           Could not load {failed.length} of {capped.length} orders — {failedMsg}
         </div>
       ) : null}
@@ -1298,7 +1342,7 @@ function SearchResults({
                     </td>
                     <td style={wrapCell}>{line.itemName ?? '—'}</td>
                     <td className="mono fw-700">{line.orderQty}</td>
-                    <td className="mono">{line.dueDate ?? '—'}</td>
+                    <td className="mono">{fmtDate(line.dueDate)}</td>
                     <td style={wrapCell}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: status.color }}>
                         {status.label}
@@ -1348,7 +1392,7 @@ function PrChip({ pr }: { pr: PlanningLine['prs'][number] }): JSX.Element {
       <span className="text2">
         PR · <b>{pr.qty} pcs</b>
       </span>
-      <span style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 10 }}>
+      <span style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 11 }}>
         {pr.status === 'po_created' && pr.poCode ? (
           <>
             PO <span className="mono">{pr.poCode}</span>
@@ -1414,8 +1458,12 @@ function PlanChip({
   const isDP = plan.planType === 'direct_purchase';
   const isFO = plan.planType === 'full_outsource';
   const typeIcon = isDP ? '🛒' : isFO ? '📦' : '🏭';
-  const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Mfg';
+  const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Make';
   const isRouteCard = plan.opsSource === 'route_card';
+  // Raising a Production Order is its own permission (prodorder_create), not
+  // this page's plan_create — the same gate the Plans list uses.
+  const { data: eff } = useMyAccess();
+  const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
   const statusLabel =
     isRouteCard && plan.derivedStatus
       ? PLAN_DERIVED_STATUS_LABEL[plan.derivedStatus]
@@ -1427,11 +1475,11 @@ function PlanChip({
   // Schedule / raw material / remark ride along as a tooltip so the chip stays
   // one line; the Plans page shows them in full.
   const tip = [
-    plan.plannedStartDate ? `Start: ${plan.plannedStartDate}` : null,
-    plan.plannedEndDate ? `End: ${plan.plannedEndDate}` : null,
+    plan.plannedStartDate ? `Start: ${fmtDate(plan.plannedStartDate)}` : null,
+    plan.plannedEndDate ? `End: ${fmtDate(plan.plannedEndDate)}` : null,
     plan.rawMaterialGradeText ? `Grade: ${plan.rawMaterialGradeText}` : null,
     plan.rawMaterialSizeText ? `Size: ${plan.rawMaterialSizeText}` : null,
-    plan.remarks ? `Remark: ${plan.remarks}` : null,
+    plan.remarks ? `Remarks: ${plan.remarks}` : null,
   ]
     .filter((s): s is string => s !== null)
     .join('\n');
@@ -1460,14 +1508,14 @@ function PlanChip({
         {typeLabel} · <b>{plan.planQty} pcs</b>
       </span>
       {!isRouteCard && !isDP && !isFO && plan.opsCount > 0 ? (
-        <span className="text3" style={{ fontSize: 9 }}>
+        <span className="text3" style={{ fontSize: 11 }}>
           ({plan.opsCount} ops{plan.hasOutsourceOp ? ', 🏭 outsrc' : ''})
         </span>
       ) : null}
       {isFO && plan.foVendorCodeText ? (
-        <span style={{ fontSize: 9, color: 'var(--purple)' }}>→ {plan.foVendorCodeText}</span>
+        <span style={{ fontSize: 11, color: 'var(--purple)' }}>→ {plan.foVendorCodeText}</span>
       ) : null}
-      <span style={{ fontWeight: 700, color: stColor, fontSize: 10 }}>{statusLabel}</span>
+      <span style={{ fontWeight: 700, color: stColor, fontSize: 11 }}>{statusLabel}</span>
 
       {/* Route-card plan: the Production Order (once raised) is the way on. */}
       {isRouteCard && plan.productionOrderId && plan.productionOrderCode ? (
@@ -1475,10 +1523,25 @@ function PlanChip({
           to="/production-orders/$id"
           params={{ id: plan.productionOrderId }}
           className="mono fw-700"
-          style={{ fontSize: 10, color: 'var(--blue)' }}
+          style={{ fontSize: 11, color: 'var(--blue)' }}
           title="Open the Production Order"
         >
           {plan.productionOrderCode}
+        </Link>
+      ) : null}
+
+      {/* Route-card plan ready for its Production Order (ADR-185 derived
+          status 'gen_production_order' = "RC Created"): the next step, same
+          link + gate as the Plans list's Action column. */}
+      {isRouteCard && plan.derivedStatus === 'gen_production_order' && canProductionOrder ? (
+        <Link
+          to="/production-orders/new"
+          search={{ planId: plan.id, planCode: plan.code }}
+          className="btn btn-primary btn-sm"
+          style={{ fontSize: 11 }}
+          title="Raise the Production Order for this plan"
+        >
+          + Production Order
         </Link>
       ) : null}
 
@@ -1487,7 +1550,7 @@ function PlanChip({
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700 }}
+          style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}
           onClick={onEdit}
         >
           ✏ Edit
@@ -1498,25 +1561,27 @@ function PlanChip({
           <button
             type="button"
             className={`btn btn-sm ${executeError ? 'btn-danger' : 'btn-success'}`}
-            style={{ fontSize: 10, fontWeight: 700, opacity: isExecuting ? 0.7 : 1 }}
+            style={{ fontSize: 11, fontWeight: 700, opacity: isExecuting ? 0.7 : 1 }}
             disabled={isExecuting}
             title={executeError ?? undefined}
             onClick={onExecute}
           >
             {isExecuting ? (
               <>
-                <Loader2 size={11} className="inline-block animate-spin" /> Executing…
+                <Loader2 size={11} className="inline-block animate-spin" /> Creating…
               </>
             ) : executeError ? (
               '⚠ Retry'
+            ) : isDP || isFO ? (
+              '⚡ Raise PR'
             ) : (
-              '⚡ Execute'
+              '⚡ Create JC'
             )}
           </button>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 11 }}
             disabled={isExecuting}
             onClick={onEdit}
             title="Edit plan"
@@ -1526,7 +1591,7 @@ function PlanChip({
         </>
       ) : null}
       {plan.planStatus === 'pr_created' ? (
-        <span className="mono" style={{ color: 'var(--purple)', fontSize: 10, fontWeight: 700 }}>
+        <span className="mono" style={{ color: 'var(--purple)', fontSize: 11, fontWeight: 700 }}>
           PR:
           <PrLink
             id={plan.foPrId ?? plan.dpPrId}
@@ -1534,8 +1599,8 @@ function PlanChip({
             color="var(--purple)"
           />
           {plan.foMatPrCode ? (
-            <span style={{ color: 'var(--amber)', marginLeft: 4 }}>
-              Mat:
+            <span style={{ color: 'var(--amber2)', marginLeft: 4 }}>
+              Material:
               <PrLink id={plan.foMatPrId} code={plan.foMatPrCode} color="var(--amber)" />
             </span>
           ) : null}
@@ -1546,7 +1611,7 @@ function PlanChip({
           className="mono"
           style={{
             color: 'var(--purple)',
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 700,
             display: 'inline-flex',
             gap: 3,
@@ -1571,7 +1636,7 @@ function PlanChip({
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ fontSize: 10, color: 'var(--cyan)' }}
+          style={{ fontSize: 11, color: 'var(--cyan)' }}
           onClick={onViewJc}
           title="Open the Job Card"
         >

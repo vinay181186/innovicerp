@@ -45,9 +45,8 @@ function QcProcessNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to QC Process Master
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have create access to QC Process Master. Ask an admin for L2 Data Entry or
-            above in QC.
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+            ⛔ You do not have permission to add a QC Process. Ask an admin.
           </div>
         </div>
       </div>
@@ -64,16 +63,13 @@ function QcProcessNewPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div>
             <div className="panel-title">⚙ Add QC Process</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Master record for QC inspection processes — reusable across Route Cards and Job Cards.
-            </div>
           </div>
         </div>
         <div className="panel-body">
           <QcProcessForm
             mode="create"
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save QC Process"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateQcProcessInput) => {
               setSubmitError(null);
@@ -83,7 +79,9 @@ function QcProcessNewPage(): React.JSX.Element {
                   () => void navigate({ to: '/qc-processes/$id', params: { id: created.id } }),
                 );
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to create QC process.');
+                setSubmitError(
+                  e instanceof Error ? e.message : 'Could not save QC Process. Try again.',
+                );
               }
             }}
           />

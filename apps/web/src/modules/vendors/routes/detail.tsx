@@ -23,6 +23,7 @@ import type { Vendor } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -67,7 +68,7 @@ function VendorDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Vendor not found'}
+          message={error instanceof Error ? error.message : 'Vendor not found. Refresh the page.'}
         />
       </div>
     );
@@ -88,6 +89,9 @@ function VendorDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'vendor_create');
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
+  // "New PO" raises a purchase order to this vendor — gated on the PO's own
+  // entry right, the same gate /purchase-orders/from-pr enforces.
+  const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
@@ -100,7 +104,7 @@ function VendorDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete vendor.'
+      : 'Could not delete Vendor. Try again.'
     : null;
 
   return (
@@ -114,6 +118,17 @@ function VendorDetailPage(): React.JSX.Element {
         badges={<StatusBadge kind="active" status={String(vendor.isActive)} />}
         actions={
           <>
+            {/* The one next step on a vendor: buy from them. Opens the PO form
+                with this vendor already in the Vendor box. */}
+            {canCreatePo ? (
+              <Link
+                to="/purchase-orders/from-pr"
+                search={{ vendorId: vendor.id }}
+                className="btn btn-primary btn-sm"
+              >
+                <Icon name="plus" size={13} /> New PO
+              </Link>
+            ) : null}
             {canEdit ? (
               <Link
                 to="/vendors/$id/edit"
@@ -139,12 +154,16 @@ function VendorDetailPage(): React.JSX.Element {
         <VendorFacts vendor={vendor} />
       </DetailHeader>
 
+      {/* Purchase Orders, Delivery Challans Out and GRNs for this vendor
+          (ADR-190). Hides when empty. */}
+      <RelatedDocsPanel module="vendors" id={vendor.id} />
+
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete vendor ${vendor.code}?`}
-          message={`${vendor.name} will be removed from the Vendor Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move Vendor ${vendor.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}
@@ -158,7 +177,7 @@ function VendorFacts(props: { vendor: Vendor }): React.JSX.Element {
   const { vendor } = props;
   return (
     <ReadGrid>
-      <ReadField label="Contact person" size="lg" value={vendor.contactPerson} />
+      <ReadField label="Contact Person" size="lg" value={vendor.contactPerson} />
       <ReadField label="Email" size="lg" value={vendor.email} />
 
       <ReadField
@@ -167,13 +186,13 @@ function VendorFacts(props: { vendor: Vendor }): React.JSX.Element {
         value={vendor.rating ? <StatusBadge kind="rating" status={vendor.rating} /> : null}
       />
       <ReadField label="Phone" size="md" mono value={vendor.phone} />
-      <ReadField label="GST number" size="md" mono value={vendor.gstNumber} />
+      <ReadField label="GST No." size="md" mono value={vendor.gstNumber} />
 
       <ReadField label="City" size="lg" value={vendor.city} />
       <ReadField label="State" size="md" value={vendor.state} />
       <ReadField label="Pincode" size="xs" mono value={vendor.pincode} />
 
-      <ReadField label="Materials supplied" size="full" pre value={vendor.materialsSupplied} />
+      <ReadField label="Materials Supplied" size="full" pre value={vendor.materialsSupplied} />
       <ReadField label="Address" size="full" pre value={vendor.addressLine1} />
     </ReadGrid>
   );

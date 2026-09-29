@@ -75,15 +75,17 @@ export function AssignModal({
       });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Assign failed');
+      setErr(e instanceof Error ? e.message : 'Could not assign inspector. Try again.');
     }
   }
 
   return (
-    <Overlay title={`👤 Assign Inspector — ${row.jcCode} Op${opSrNo(row.opSeq)}`} onClose={onClose}>
+    <Overlay title={`Assign Inspector — ${row.jcCode} Op ${opSrNo(row.opSeq)}`} onClose={onClose}>
       <div className="form-grid">
         <div className="form-grp form-full">
-          <label className="form-label">Assign to Inspector ★</label>
+          <label className="form-label">
+            Assign to Inspector<span className="req">★</span>
+          </label>
           <select
             className="innovic-select"
             value={inspectorUserId}
@@ -108,7 +110,7 @@ export function AssignModal({
         </div>
       </div>
       {err ? (
-        <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
           {err}
         </div>
       ) : null}

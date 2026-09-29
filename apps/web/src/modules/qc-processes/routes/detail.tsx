@@ -95,7 +95,7 @@ function QcProcessDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'QC process not found'}
+          message={error instanceof Error ? error.message : 'QC Process not found.'}
         />
       </div>
     );
@@ -121,7 +121,7 @@ function QcProcessDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete QC process.'
+      : 'Could not delete QC Process. Try again.'
     : null;
 
   return (
@@ -162,10 +162,10 @@ function QcProcessDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete QC process ${data.code}?`}
-          message="It will be removed from the QC Process Master and from the QC operation pickers."
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move QC Process ${data.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}

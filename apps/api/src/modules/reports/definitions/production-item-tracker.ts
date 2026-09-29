@@ -12,6 +12,7 @@ export const productionItemTrackerReport: RegisteredReport = {
     ...itemTrackerReport.definition,
     slug: 'production-item-tracker',
     group: 'Production',
+    dept: 'production',
   },
   run: itemTrackerReport.run,
 };

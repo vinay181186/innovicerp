@@ -48,8 +48,10 @@ import type {
   JobWorkOrderListItem,
   ListJobWorkOrdersQuery,
   ListJobWorkOrdersResponse,
+  ShortCloseJobWorkOrderLineInput,
   UpdateJobWorkOrderInput,
 } from './schema';
+import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -77,7 +79,7 @@ async function assertClientExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Client ${clientId} not found in this company`);
+    throw new ValidationError('Selected Customer was not found. Please select the Customer again.');
   }
   return rows[0]!.name;
 }
@@ -155,9 +157,7 @@ async function assertItemIdsExist(
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = unique.filter((id) => !found.has(id));
-    throw new ValidationError(`Item id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('Item not found. Please select the Item Code again.');
   }
 }
 
@@ -170,7 +170,7 @@ function resolveLineItemRefs(
   }
   const code = line.itemCodeText?.trim();
   if (!code) {
-    throw new ValidationError('itemId or itemCodeText is required');
+    throw new ValidationError('Item Code is required.');
   }
   const found = resolved.get(code);
   return found ? { itemId: found, itemCodeText: null } : { itemId: null, itemCodeText: code };
@@ -179,7 +179,7 @@ function resolveLineItemRefs(
 function assignLineNos(lines: JobWorkOrderLineInput[], startFrom: number): number[] {
   const provided = lines.filter((l) => l.lineNo !== undefined);
   if (provided.length > 0 && provided.length !== lines.length) {
-    throw new ValidationError('Provide lineNo on every line or none');
+    throw new ValidationError('Ln is required on every row, or leave all blank.');
   }
   if (provided.length === 0) {
     return lines.map((_, i) => startFrom + i);
@@ -189,7 +189,7 @@ function assignLineNos(lines: JobWorkOrderLineInput[], startFrom: number): numbe
   for (const l of lines) {
     const n = l.lineNo!;
     if (seen.has(n)) {
-      throw new ValidationError(`Duplicate lineNo ${n} within input`);
+      throw new ValidationError(`Ln ${n} is used twice. Each row needs its own Ln.`);
     }
     seen.add(n);
     out.push(n);
@@ -313,7 +313,7 @@ export async function listJobWorkOrders(
         GROUP BY job_work_order_id
       ) agg ON agg.job_work_order_id = jw.id
       LEFT JOIN (
-        SELECT l.job_work_order_id, SUM(jc.order_qty) AS jc_qty
+        SELECT l.job_work_order_id, SUM(${jcEffectiveQtySql('jc')}) AS jc_qty
         FROM public.job_cards jc
         JOIN public.job_work_order_lines l
           ON l.id = jc.source_jw_line_id AND l.deleted_at IS NULL
@@ -401,7 +401,7 @@ export async function getJobWorkOrder(id: string, user: AuthContext): Promise<Jo
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Job work order ${id} not found`);
+    if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
     const lineRows = await tx
       .select()
@@ -467,7 +467,7 @@ export async function getJobWorkOrderRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Job work order ${id} not found`);
+    if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
     // JW lines drive the job-card / plan joins and the upstream item link.
     const lineRows = await tx
@@ -648,6 +648,81 @@ export async function getJobWorkOrderRelated(
   });
 }
 
+// R6 (ADR-194) — short-close ONE JWSO line.
+//
+// The customer will not send (or take back) the rest of a line's order, so it is
+// closed with the balance (order qty − returned qty) left unmet. The shared
+// so_status enum is NOT widened: status becomes 'closed' exactly like a normal
+// close, and three flag columns record that the close was short and why.
+// Closing a line with a shortfall is a department-admin decision, so it takes
+// the edit AND approve pair on jw_create (no new permission key).
+export async function shortCloseJobWorkOrderLine(
+  lineId: string,
+  input: ShortCloseJobWorkOrderLineInput,
+  user: AuthContext,
+): Promise<JobWorkOrderDetail> {
+  requireWriteRole(user);
+  await requireFormAccess(user, 'jw_create', 'edit');
+  await requireFormAccess(user, 'jw_create', 'approve');
+  const companyId = requireCompany(user);
+  const userId = user.id;
+  const reason = input.reason.trim();
+  if (!reason) throw new ValidationError('Reason is required to short-close a JWSO line.');
+
+  const jobWorkOrderId = await withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(jobWorkOrderLines)
+      .where(
+        and(
+          eq(jobWorkOrderLines.id, lineId),
+          eq(jobWorkOrderLines.companyId, companyId),
+          isNull(jobWorkOrderLines.deletedAt),
+        ),
+      )
+      .limit(1);
+    const line = rows[0];
+    if (!line) throw new NotFoundError('JWSO line not found. Refresh the page.');
+    if (line.status === 'closed') {
+      throw new ConflictError('This JWSO line is already closed.');
+    }
+
+    const updated = await tx
+      .update(jobWorkOrderLines)
+      .set({
+        status: 'closed',
+        shortClosedAt: new Date(),
+        shortClosedBy: userId,
+        shortCloseReason: reason,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
+      .where(eq(jobWorkOrderLines.id, line.id))
+      .returning();
+    const row = updated[0];
+    if (!row) throw new ConflictError('Could not short-close the JWSO line. Try again.');
+
+    const shortfall = Math.max(0, row.orderQty - row.returnedQty);
+    await emitActivityLog(
+      tx,
+      {
+        action: 'SHORT_CLOSE',
+        entity: 'JobWorkOrderLine',
+        detail: `Ln ${row.lineNo} short-closed (${shortfall} unmet): ${reason}`,
+        refId: row.id,
+      },
+      companyId,
+      user,
+    );
+
+    return row.jobWorkOrderId;
+  });
+
+  // Return the whole JWSO detail so the caller re-renders the order with the
+  // line now closed — the shape the JWSO detail screen already consumes.
+  return getJobWorkOrder(jobWorkOrderId, user);
+}
+
 function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
   return {
     id: row.id,
@@ -707,6 +782,16 @@ function toJobWorkOrderLine(
     rate: row.rate,
     dueDate: row.dueDate,
     status: row.status,
+    // R6 (ADR-194): short-close markers — set when a line was closed with an
+    // unmet balance. Status stays 'closed'; these record the shortfall + reason.
+    shortClosedAt:
+      row.shortClosedAt instanceof Date
+        ? row.shortClosedAt.toISOString()
+        : row.shortClosedAt
+          ? String(row.shortClosedAt)
+          : null,
+    shortClosedBy: row.shortClosedBy,
+    shortCloseReason: row.shortCloseReason,
     sourceBomMasterId: row.sourceBomMasterId,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
@@ -753,7 +838,7 @@ export async function createJobWorkOrder(
         )
         .limit(1);
       if (dup.length > 0) {
-        throw new ConflictError(`Job work order code "${code}" already exists`);
+        throw new ConflictError(`JWSO No. "${code}" already exists.`);
       }
 
       // Client master link is enforced by the create schema (route boundary).
@@ -903,7 +988,7 @@ export async function updateJobWorkOrder(
       )
       .limit(1);
     const existingHdr = existingHdrRows[0];
-    if (!existingHdr) throw new NotFoundError(`Job work order ${id} not found`);
+    if (!existingHdr) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;
@@ -1156,7 +1241,7 @@ export async function softDeleteJobWorkOrder(id: string, user: AuthContext): Pro
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`Job work order ${id} not found`);
+      throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
     }
     const now = new Date();
     await tx

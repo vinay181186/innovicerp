@@ -19,6 +19,7 @@ export const ncSummaryByReasonReport: RegisteredReport = {
     description:
       'NCs grouped by reason category — count, rejected qty, and a per-disposition breakdown (Rework / Scrap / Use As Is / RTV / Make Fresh) with a TOTAL row. Useful for the QC review meeting.',
     group: 'Quality',
+    dept: 'qc',
     filters: [
       { key: 'fromDate', label: 'NC Date From', kind: 'date' },
       { key: 'toDate', label: 'NC Date To', kind: 'date' },

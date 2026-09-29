@@ -6,6 +6,7 @@
 // Numbering: DSN-NNNN.
 
 import { z } from 'zod';
+import { DESIGN_HOURS_MAX_PER_ENTRY } from './design-project';
 
 export const DESIGN_TRACKER_STATUSES = [
   'Pending',
@@ -64,7 +65,7 @@ export const designTrackerSchema = z.object({
 export type DesignTracker = z.infer<typeof designTrackerSchema>;
 
 export const designTrackerListItemSchema = designTrackerSchema.extend({
-  /** Σ hours from design_time_log for this design. */
+  /** Σ hours from design_work_log rows logged against this design (ADR-188). */
   totalHours: z.number(),
 });
 export type DesignTrackerListItem = z.infer<typeof designTrackerListItemSchema>;
@@ -77,6 +78,9 @@ export const designTimeLogEntrySchema = z.object({
   workerText: z.string(),
   description: z.string().nullable(),
   createdAt: z.string(),
+  /** Only on the create response: the engineer's total booked hours for that
+   *  log date including this entry (same rule as the Design Work Log). */
+  dayTotalHours: z.number().optional(),
 });
 export type DesignTimeLogEntry = z.infer<typeof designTimeLogEntrySchema>;
 
@@ -84,6 +88,10 @@ export type DesignTimeLogEntry = z.infer<typeof designTimeLogEntrySchema>;
 
 export const createDesignTrackerInputSchema = z.object({
   salesOrderId: z.string().uuid(),
+  /** The SO line (POL + CODE/REV) the design is for. Its item is stored on
+   *  the design. Omitted = old behaviour (the SO's first line, one design per
+   *  SO). */
+  salesOrderLineId: z.string().uuid().optional(),
   designer: z.string().trim().min(1).max(120),
   estimatedHours: z.coerce.number().nonnegative().optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -106,7 +114,10 @@ export type UpdateDesignTrackerInput = z.infer<typeof updateDesignTrackerInputSc
 
 export const logDesignTimeInputSchema = z.object({
   logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  hours: z.coerce.number().positive(),
+  hours: z.coerce
+    .number()
+    .positive()
+    .max(DESIGN_HOURS_MAX_PER_ENTRY, `Hours cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`),
   workerText: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional(),
 });

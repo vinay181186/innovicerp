@@ -75,7 +75,7 @@ export function printOspDc(args: {
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
   ].filter(Boolean);
   const recipientFields: SheetField[] = [
-    { label: 'Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Vendor Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: recipientName, variant: 'name' },
     {
       label: 'Address',
@@ -88,9 +88,10 @@ export function printOspDc(args: {
   const documentFields: SheetField[] = [
     { label: 'DC No.', value: dc.code, variant: 'mono' },
     { label: 'DC Date', value: challanDate(dc.dcDate), variant: 'mono' },
-    // Live SO code first, snapshot text second. Both are null on every
-    // production challan today, so this normally prints as a blank rule.
-    { label: 'SO No.', value: dc.soCode ?? dc.soRefText ?? '', variant: 'mono' },
+    // Live SO code first, snapshot text second. Printed only when present.
+    ...(dc.soCode || dc.soRefText
+      ? [{ label: 'SO No.', value: dc.soCode ?? dc.soRefText ?? '', variant: 'mono' } as const]
+      : []),
     { label: 'PO No.', value: linkedPo, variant: 'mono' },
     // NO "Drawing Rev" field. It used to print here, beside the SO and PO
     // numbers, and was removed on the user's instruction (2026-09-11): the
@@ -113,8 +114,8 @@ export function printOspDc(args: {
     blocks,
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Recipient', fields: recipientFields },
-    document: { label: 'Document', fields: documentFields },
+    recipient: { label: 'Vendor', fields: recipientFields },
+    document: { label: 'Challan', fields: documentFields },
     lines: dc.lines.map((l) => ({
       // LIVE master code/name first, issue-time snapshot only as the fallback.
       // itemCodeText is filled with the item NAME when the source line had no
@@ -132,10 +133,10 @@ export function printOspDc(args: {
       // HSN lives on the item master and the challan line does not carry it,
       // so the column prints blank. Only 3 of 46 items have one today anyway.
       hsn: null,
-      qty: Number(l.qty).toFixed(2),
+      qty: String(Number(Number(l.qty).toFixed(2))),
       remarks: l.dcRemarks,
     })),
-    totalQty: totalQty.toFixed(2),
+    totalQty: String(Number(totalQty.toFixed(2))),
     totalUom: uoms.length === 1 ? (uoms[0] ?? '') : '',
   };
 

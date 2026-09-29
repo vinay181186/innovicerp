@@ -56,15 +56,14 @@ function RouteCardNewPage(): React.JSX.Element {
       });
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: created.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to create route card.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');
     }
   };
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to Route Cards. Ask an admin for L2 Data Entry or above in
-        Design.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to create Route Cards. Ask an admin.
       </div>
     );
   }
@@ -83,6 +82,9 @@ function RouteCardNewPage(): React.JSX.Element {
           rawMaterialGradeText: null,
           rawMaterialSizeId: null,
           rawMaterialSizeText: null,
+          rawMaterialItemId: null,
+          rawMaterialItemCode: null,
+          rmQtyPerPiece: '',
           notes: '',
           planType: 'manufacture',
         }}
@@ -91,6 +93,7 @@ function RouteCardNewPage(): React.JSX.Element {
         submitting={create.isPending}
         submitError={submitError}
         onCancel={() => exit.leave(goBack)}
+        onBack={goBack}
       />
     </>
   );

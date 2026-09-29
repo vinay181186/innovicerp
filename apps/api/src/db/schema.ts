@@ -37,6 +37,7 @@ import {
   type AnyPgColumn,
   boolean,
   check,
+  customType,
   date,
   index,
   integer,
@@ -52,6 +53,35 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+
+/** ADR-193 — a stock quantity: numeric(14,3) in Postgres (KGS / MTR can be
+ *  12.5), a plain JS number in code. drizzle 0.36 returns numeric as a string;
+ *  this type converts at the driver edge so every caller keeps `number`.
+ *  Whole-number units (NOS / SET) are enforced by lib/stock-ledger.ts. */
+/** ADR-193 phase 3a — raw material per piece: numeric(14,4) ↔ JS number. */
+const rmPerPiece = customType<{ data: number; driverData: string | number }>({
+  dataType() {
+    return 'numeric(14, 4)';
+  },
+  fromDriver(v) {
+    return Number(v);
+  },
+  toDriver(v) {
+    return String(v);
+  },
+});
+
+const stockQty = customType<{ data: number; driverData: string | number }>({
+  dataType() {
+    return 'numeric(14, 3)';
+  },
+  fromDriver(v) {
+    return Number(v);
+  },
+  toDriver(v) {
+    return String(v);
+  },
+});
 
 export const userRoleEnum = pgEnum('user_role', USER_ROLES);
 export const uomEnum = pgEnum('uom', UOMS);
@@ -216,15 +246,20 @@ export const items = pgTable(
     // ADR-171 (migration 0134): 'make' | 'buy'. Buy items skip plan / route
     // card / Production Order — the Planning line raises a PR instead.
     procurementType: text('procurement_type').notNull().default('make'),
+    // ADR-193 phase 4 (0159): Tool / Instrument items only — one register row
+    // (instruments) per piece. Locked once ledger rows or instruments exist.
+    trackSerial: boolean('track_serial').notNull().default(false),
     hsnCode: text('hsn_code'),
     drawingFilePath: text('drawing_file_path'),
     /** Product image (migration 0136) — storage path of the 3D render in the
      *  private bucket under `<companyId>/item-images/…`. A product picture, not
      *  a controlled drawing: shown as a thumbnail next to code · name. */
     imagePath: text('image_path'),
-    /** PL-SI-1 (migration 0028) — low-stock alert threshold per item.
-     *  Drives the "Low Stock" tile + per-row red tint on Store/Inventory. */
-    minStockQty: integer('min_stock_qty').notNull().default(0),
+    /** Reorder Level (PL-SI-1 0028; numeric since 0160, ADR-193 phase 5).
+     *  Below Reorder = Available + On PO < this, when > 0. */
+    minStockQty: stockQty('min_stock_qty').notNull().default(0),
+    /** Reorder Qty (0160) — how much one reorder buys; 0 = buy the shortfall. */
+    reorderQty: stockQty('reorder_qty').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -283,6 +318,9 @@ export const clients = pgTable(
     city: text('city'),
     state: text('state'),
     pincode: text('pincode'),
+    // Payment Days (ADR-188): days allowed to pay an invoice; the default for a
+    // new invoice's Payment Terms. Null = not set. DB check 0..365 (0150).
+    paymentDays: integer('payment_days'),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -820,6 +858,12 @@ export const routeCards = pgTable(
       onDelete: 'set null',
     }),
     rawMaterialSizeText: text('raw_material_size_text'),
+    // ADR-193 phase 3a (0156): raw-material ITEM + qty per piece (Route Card is
+    // the source; Plan / Job Card keep a snapshot).
+    rawMaterialItemId: uuid('raw_material_item_id').references((): AnyPgColumn => items.id, {
+      onDelete: 'set null',
+    }),
+    rmQtyPerPiece: rmPerPiece('rm_qty_per_piece'),
     notes: text('notes'),
     // How this item is normally made — the same three-way choice SO Planning
     // asks per plan (migration 0123). The card is the natural home for the
@@ -836,6 +880,10 @@ export const routeCards = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'route_cards_rm_qty_per_piece_check',
+      sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,
+    ),
     uniqueIndex('route_cards_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -1025,6 +1073,12 @@ export const jobCards = pgTable(
       onDelete: 'set null',
     }),
     rawMaterialSizeText: text('raw_material_size_text'),
+    // ADR-193 phase 3a (0156): raw-material ITEM + qty per piece (Route Card is
+    // the source; Plan / Job Card keep a snapshot).
+    rawMaterialItemId: uuid('raw_material_item_id').references((): AnyPgColumn => items.id, {
+      onDelete: 'set null',
+    }),
+    rmQtyPerPiece: rmPerPiece('rm_qty_per_piece'),
     // ADR-182 (migration 0143). The size the store really had / really cut,
     // typed on the Production Order that built this card and copied down here
     // so the traveller prints what was cut, not only what was planned. Free
@@ -1041,6 +1095,13 @@ export const jobCards = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'job_cards_rm_qty_per_piece_check',
+      sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,
+    ),
+    index('job_cards_rm_item_idx')
+      .on(t.rawMaterialItemId)
+      .where(sql`${t.deletedAt} is null and ${t.rawMaterialItemId} is not null`),
     uniqueIndex('job_cards_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -1750,6 +1811,12 @@ export const jobWorkOrderLines = pgTable(
     invoicedQty: integer('invoiced_qty').notNull().default(0),
     dueDate: date('due_date'),
     status: soStatusEnum('status').notNull().default('open'),
+    // R6 (ADR-194): short-close a line — closed with a recorded shortfall.
+    // status stays 'closed' (the shared so_status enum is NOT widened); these
+    // flag columns record that the close left an unmet balance and why.
+    shortClosedAt: timestamp('short_closed_at', { withTimezone: true }),
+    shortClosedBy: uuid('short_closed_by').references(() => users.id),
+    shortCloseReason: text('short_close_reason'),
     // BOM-8 for job work (migration 0086): when set, the BOM cascade spawns a
     // child Job Card per component and readiness becomes weakest-component
     // rather than this line's own output. A BOM containing a `purchase`
@@ -1819,7 +1886,8 @@ export const purchaseRequests = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name'),
-    qty: integer('qty').notNull(),
+    // Decimal (KGS / MTR) — 0172; NOS / SET stay whole by the API rule.
+    qty: stockQty('qty').notNull(),
     estCost: numeric('est_cost', { precision: 12, scale: 2 }).notNull().default('0'),
     requiredDate: date('required_date'),
     sourceJcOpId: uuid('source_jc_op_id').references((): AnyPgColumn => jcOps.id, {
@@ -1938,6 +2006,10 @@ export const purchaseOrders = pgTable(
     rejectedBy: uuid('rejected_by').references(() => users.id),
     rejectedAt: timestamp('rejected_at', { withTimezone: true }),
     rejectionReason: text('rejection_reason'),
+    // ADR-189 (0151) — who stopped an issued PO, when and why (all or none).
+    shortClosedAt: timestamp('short_closed_at', { withTimezone: true }),
+    shortClosedBy: uuid('short_closed_by').references(() => users.id),
+    shortCloseReason: text('short_close_reason'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -1950,6 +2022,13 @@ export const purchaseOrders = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    // ADR-189 (0151) — who / when / why of a short close, all or none.
+    check(
+      'purchase_orders_short_close_all_or_none',
+      sql`(${t.shortClosedAt} is null and ${t.shortClosedBy} is null and ${t.shortCloseReason} is null)
+        or (${t.shortClosedAt} is not null and ${t.shortClosedBy} is not null
+            and length(btrim(${t.shortCloseReason})) > 0)`,
+    ),
     uniqueIndex('purchase_orders_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -1990,9 +2069,10 @@ export const purchaseOrderLines = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name').notNull(),
-    qty: integer('qty').notNull(),
+    // Decimal (KGS / MTR) — 0172; NOS / SET stay whole by the API rule.
+    qty: stockQty('qty').notNull(),
     rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
-    receivedQty: integer('received_qty').notNull().default(0),
+    receivedQty: stockQty('received_qty').notNull().default(0),
     dueDate: date('due_date'),
     sourceSoLineId: uuid('source_so_line_id').references(() => salesOrderLines.id, {
       onDelete: 'set null',
@@ -2039,7 +2119,7 @@ export const purchaseOrderLines = pgTable(
     check(
       'purchase_order_lines_received_qty_check',
       // Allow up to 10% over-receipt (legitimate vendor over-shipments).
-      sql`${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty} + (${t.qty} * 0.1)::int`,
+      sql`${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty} * 1.1`,
     ),
     pgPolicy('purchase_order_lines_company_read', {
       for: 'select',
@@ -2201,11 +2281,12 @@ export const goodsReceiptNoteLines = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name').notNull(),
-    receivedQty: integer('received_qty').notNull(),
+    // Decimal (KGS / MTR) — 0172.
+    receivedQty: stockQty('received_qty').notNull(),
     dcRefNo: text('dc_ref_no'),
     qcStatus: grnQcStatusEnum('qc_status').notNull().default('pending'),
-    qcAcceptedQty: integer('qc_accepted_qty').notNull().default(0),
-    qcRejectedQty: integer('qc_rejected_qty').notNull().default(0),
+    qcAcceptedQty: stockQty('qc_accepted_qty').notNull().default(0),
+    qcRejectedQty: stockQty('qc_rejected_qty').notNull().default(0),
     qcDate: date('qc_date'),
     qcRemarks: text('qc_remarks'),
     qcInspectedBy: uuid('qc_inspected_by').references(() => users.id),
@@ -2282,11 +2363,11 @@ export const storeTransactions = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     txnType: storeTxnTypeEnum('txn_type').notNull(),
-    qty: integer('qty').notNull(),
+    qty: stockQty('qty').notNull(),
     sourceType: storeTxnSourceTypeEnum('source_type').notNull(),
     sourceRef: text('source_ref').notNull(),
-    stockBefore: integer('stock_before').notNull(),
-    stockAfter: integer('stock_after').notNull(),
+    stockBefore: stockQty('stock_before').notNull(),
+    stockAfter: stockQty('stock_after').notNull(),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -2419,7 +2500,7 @@ export const itemStockBalances = pgTable(
     itemId: uuid('item_id')
       .notNull()
       .references(() => items.id, { onDelete: 'cascade' }),
-    onHandQty: integer('on_hand_qty').notNull().default(0),
+    onHandQty: stockQty('on_hand_qty').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -2450,9 +2531,7 @@ export const ncRegister = pgTable(
       .references(() => companies.id),
     code: text('code').notNull(),
     ncDate: date('nc_date').notNull(),
-    jobCardId: uuid('job_card_id')
-      .notNull()
-      .references((): AnyPgColumn => jobCards.id),
+    jobCardId: uuid('job_card_id').references((): AnyPgColumn => jobCards.id),
     jcOpId: uuid('jc_op_id').references((): AnyPgColumn => jcOps.id, {
       onDelete: 'set null',
     }),
@@ -2527,6 +2606,11 @@ export const ncRegister = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    // ADR-189 (0151) — a bought-material NC has no job card but a GRN line.
+    check(
+      'nc_register_job_card_or_grn_line',
+      sql`${t.jobCardId} is not null or ${t.grnLineId} is not null`,
+    ),
     uniqueIndex('nc_register_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -3262,6 +3346,12 @@ export const plans = pgTable(
       onDelete: 'set null',
     }),
     rawMaterialSizeText: text('raw_material_size_text'),
+    // ADR-193 phase 3a (0156): raw-material ITEM + qty per piece (Route Card is
+    // the source; Plan / Job Card keep a snapshot).
+    rawMaterialItemId: uuid('raw_material_item_id').references((): AnyPgColumn => items.id, {
+      onDelete: 'set null',
+    }),
+    rmQtyPerPiece: rmPerPiece('rm_qty_per_piece'),
 
     bomMasterId: uuid('bom_master_id').references((): AnyPgColumn => bomMasters.id, {
       onDelete: 'set null',
@@ -3311,6 +3401,10 @@ export const plans = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'plans_rm_qty_per_piece_check',
+      sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,
+    ),
     uniqueIndex('plans_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -3558,17 +3652,24 @@ export const toolIssues = pgTable(
     expectedReturnDate: date('expected_return_date'),
     itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
     itemCodeText: text('item_code_text'),
-    itemName: text('item_name').notNull(),
-    qty: integer('qty').notNull(),
+    itemName: text('item_name'),
+    qty: stockQty('qty').notNull(),
     issuedTo: text('issued_to').notNull(),
+    // ADR-193 phase 4 (0159): the Operator picked (issuedTo keeps the name).
+    issuedToOperatorId: uuid('issued_to_operator_id').references(() => operators.id, {
+      onDelete: 'set null',
+    }),
+    jobCardId: uuid('job_card_id').references(() => jobCards.id, { onDelete: 'set null' }),
     refType: text('ref_type'),
     refNo: text('ref_no'),
     purpose: text('purpose'),
     remarks: text('remarks'),
+    // issued | partial | returned | cancelled. Good / Damaged / Lost / Consumed
+    // totals are derived from tool_issue_returns (0159 dropped the running totals).
     returnStatus: text('return_status').notNull().default('issued'),
-    returnGoodQty: integer('return_good_qty').notNull().default(0),
-    returnDamagedQty: integer('return_damaged_qty').notNull().default(0),
-    returnConsumedQty: integer('return_consumed_qty').notNull().default(0),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
       { onDelete: 'set null' },
@@ -3618,10 +3719,11 @@ export const toolIssueReturns = pgTable(
       .notNull()
       .references((): AnyPgColumn => toolIssues.id, { onDelete: 'cascade' }),
     returnDate: date('return_date').notNull(),
-    returnedBy: text('returned_by'),
-    goodQty: integer('good_qty').notNull().default(0),
-    damagedQty: integer('damaged_qty').notNull().default(0),
-    consumedQty: integer('consumed_qty').notNull().default(0),
+    goodQty: stockQty('good_qty').notNull().default(0),
+    damagedQty: stockQty('damaged_qty').notNull().default(0),
+    lostQty: stockQty('lost_qty').notNull().default(0),
+    consumedQty: stockQty('consumed_qty').notNull().default(0),
+    reason: text('reason'),
     remarks: text('remarks'),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
@@ -3655,29 +3757,290 @@ export const toolIssueReturns = pgTable(
   ],
 ).enableRLS();
 
+// ─── ADR-193 phase 4 (migration 0159) — instrument register ──────────────
+// One row per serial piece of a Tool / Instrument item with track_serial.
+// Registering never moves stock: In Store + At Calibration ≤ On Hand (the
+// serial cover in lib/stock-ledger.ts postStockMove holds it afterwards).
+export const instruments = pgTable(
+  'instruments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    serialNo: text('serial_no').notNull(),
+    status: text('status').notNull().default('in_store'),
+    calibrationIntervalDays: integer('calibration_interval_days'),
+    lastCalibratedOn: date('last_calibrated_on'),
+    calibrationDueOn: date('calibration_due_on'),
+    location: text('location'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      'instruments_status_check',
+      sql`${t.status} IN ('in_store', 'issued', 'at_calibration', 'lost', 'scrapped')`,
+    ),
+    check('instruments_calibration_interval_days_check', sql`${t.calibrationIntervalDays} > 0`),
+    check('instruments_serial_not_blank', sql`length(btrim(${t.serialNo})) > 0`),
+    uniqueIndex('instruments_item_serial_uniq')
+      .on(t.companyId, t.itemId, sql`lower(${t.serialNo})`)
+      .where(sql`${t.deletedAt} is null`),
+    index('instruments_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('instruments_company_due_idx')
+      .on(t.companyId, t.calibrationDueOn)
+      .where(sql`${t.deletedAt} is null AND ${t.status} NOT IN ('lost', 'scrapped')`),
+    pgPolicy('instruments_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const instrumentCalibrations = pgTable(
+  'instrument_calibrations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    instrumentId: uuid('instrument_id')
+      .notNull()
+      .references(() => instruments.id),
+    calibratedOn: date('calibrated_on').notNull(),
+    result: text('result').notNull(),
+    certificateNo: text('certificate_no'),
+    agency: text('agency'),
+    nextDueOn: date('next_due_on'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('instrument_calibrations_result_check', sql`${t.result} IN ('pass', 'fail')`),
+    index('instrument_calibrations_instrument_idx')
+      .on(t.instrumentId, t.calibratedOn)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('instrument_calibrations_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// Which instruments went out on a Tool Issue, and how each came back.
+export const toolIssueInstruments = pgTable(
+  'tool_issue_instruments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    toolIssueId: uuid('tool_issue_id')
+      .notNull()
+      .references(() => toolIssues.id, { onDelete: 'cascade' }),
+    instrumentId: uuid('instrument_id')
+      .notNull()
+      .references(() => instruments.id),
+    returnedOn: date('returned_on'),
+    returnCondition: text('return_condition'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      'tool_issue_instruments_return_condition_check',
+      sql`${t.returnCondition} IN ('good', 'damaged', 'lost')`,
+    ),
+    uniqueIndex('tool_issue_instruments_issue_instrument_uniq').on(t.toolIssueId, t.instrumentId),
+    index('tool_issue_instruments_instrument_idx')
+      .on(t.instrumentId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('tool_issue_instruments_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// Damaged / Lost on a return, or Scrap of an in-store instrument, waiting for
+// the Store In-charge (approve tier, not the recorder). Only an approved Scrap
+// moves stock ('tool_writeoff' out); the rest already left at issue.
+export const toolWriteoffs = pgTable(
+  'tool_writeoffs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    instrumentId: uuid('instrument_id').references(() => instruments.id),
+    toolIssueId: uuid('tool_issue_id').references(() => toolIssues.id),
+    toolIssueReturnId: uuid('tool_issue_return_id').references(() => toolIssueReturns.id),
+    kind: text('kind').notNull(),
+    qty: stockQty('qty').notNull(),
+    reason: text('reason').notNull(),
+    status: text('status').notNull().default('pending'),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionRemarks: text('decision_remarks'),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('tool_writeoffs_kind_check', sql`${t.kind} IN ('damaged', 'lost', 'scrap')`),
+    check('tool_writeoffs_qty_check', sql`${t.qty} > 0`),
+    check('tool_writeoffs_reason_check', sql`length(btrim(${t.reason})) > 0`),
+    check('tool_writeoffs_status_check', sql`${t.status} IN ('pending', 'approved', 'rejected')`),
+    index('tool_writeoffs_pending_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null AND ${t.status} = 'pending'`),
+    index('tool_writeoffs_issue_idx')
+      .on(t.toolIssueId)
+      .where(sql`${t.deletedAt} is null`),
+    index('tool_writeoffs_instrument_idx')
+      .on(t.instrumentId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('tool_writeoffs_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── PL-II-1 (migration 0028) — store_issues ──────────────────────────────
 // Daily-use consumable register (legacy renderIssueRegister HTML L23874).
 // Write cascades into store_transactions (existing append-only ledger);
 // item.stockQty decrements via the same service helper used by GRN.
 
-export const storeIssues = pgTable(
-  'store_issues',
+// ADR-193 phase 2 (0155) — Stock Count: opening stock + periodic physical
+// counts (ERPNext Stock Reconciliation). Submit snapshots each line's system
+// qty; approve (another user) posts counted − snapshot via lib/stock-ledger.
+export const stockCounts = pgTable(
+  'stock_counts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     companyId: uuid('company_id')
       .notNull()
       .references(() => companies.id),
     code: text('code').notNull(),
-    issueDate: date('issue_date').notNull(),
-    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
-    itemCodeText: text('item_code_text'),
-    itemName: text('item_name').notNull(),
-    qty: integer('qty').notNull(),
-    issuedTo: text('issued_to').notNull(),
-    refType: text('ref_type'),
-    refNo: text('ref_no'),
-    purpose: text('purpose'),
+    countDate: date('count_date').notNull(),
+    purpose: text('purpose').notNull(),
+    status: text('status').notNull().default('draft'),
     remarks: text('remarks'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    submittedBy: uuid('submitted_by').references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvedBy: uuid('approved_by').references(() => users.id),
+    approvalReason: text('approval_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('stock_counts_purpose_check', sql`${t.purpose} IN ('opening', 'periodic')`),
+    check(
+      'stock_counts_status_check',
+      sql`${t.status} IN ('draft', 'submitted', 'posted', 'cancelled')`,
+    ),
+    check(
+      'stock_counts_posted_has_approver',
+      sql`${t.status} <> 'posted' OR (${t.approvedAt} IS NOT NULL AND ${t.approvedBy} IS NOT NULL)`,
+    ),
+    check(
+      'stock_counts_cancel_has_reason',
+      sql`${t.status} <> 'cancelled' OR (${t.cancelledAt} IS NOT NULL AND length(btrim(coalesce(${t.cancelReason}, ''))) > 0)`,
+    ),
+    uniqueIndex('stock_counts_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('stock_counts_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('stock_counts_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const stockCountLines = pgTable(
+  'stock_count_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    stockCountId: uuid('stock_count_id')
+      .notNull()
+      .references(() => stockCounts.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemCodeText: text('item_code_text').notNull(),
+    countedQty: stockQty('counted_qty').notNull(),
+    systemQtyAtCount: stockQty('system_qty_at_count'),
+    reason: text('reason'),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
       { onDelete: 'set null' },
@@ -3693,6 +4056,96 @@ export const storeIssues = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check('stock_count_lines_counted_qty_check', sql`${t.countedQty} >= 0`),
+    uniqueIndex('stock_count_lines_count_item_uniq')
+      .on(t.stockCountId, t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('stock_count_lines_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('stock_count_lines_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const storeIssues = pgTable(
+  'store_issues',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    issueDate: date('issue_date').notNull(),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text'),
+    // ADR-193 phase 3b (0157): item_name / qty (and item_id, item_code_text,
+    // store_transaction_id) are the pre-slip single-item columns — nullable,
+    // no longer written; the items now live in store_issue_lines.
+    itemName: text('item_name'),
+    qty: integer('qty'),
+    issuedTo: text('issued_to').notNull(),
+    refType: text('ref_type'),
+    refNo: text('ref_no'),
+    purpose: text('purpose'),
+    remarks: text('remarks'),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    // ADR-185 (migration 0149) — the Job Card / Production Order the material
+    // was issued against, as a real link (ref_no stays as typed). Set on issue
+    // when the reference names a card or an order; null for other purposes.
+    jobCardId: uuid('job_card_id').references((): AnyPgColumn => jobCards.id, {
+      onDelete: 'set null',
+    }),
+    productionOrderId: uuid('production_order_id').references(
+      (): AnyPgColumn => productionOrders.id,
+      { onDelete: 'set null' },
+    ),
+    // ADR-193 phase 3b (0157) — what the slip was issued against, and to whom.
+    issueAgainst: text('issue_against').notNull().default('general'),
+    salesOrderId: uuid('sales_order_id').references((): AnyPgColumn => salesOrders.id, {
+      onDelete: 'set null',
+    }),
+    issuedToOperatorId: uuid('issued_to_operator_id').references((): AnyPgColumn => operators.id, {
+      onDelete: 'set null',
+    }),
+    department: text('department'),
+    // ADR-189 (migration 0152) — reversal by an opposite 'in' ledger entry;
+    // all-or-none CHECK on who / when / why.
+    reversedAt: timestamp('reversed_at', { withTimezone: true }),
+    reversedBy: uuid('reversed_by').references(() => users.id),
+    reversalReason: text('reversal_reason'),
+    reversalStoreTransactionId: uuid('reversal_store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      'store_issues_issue_against_check',
+      sql`${t.issueAgainst} IN ('job_card', 'assembly_so', 'general')`,
+    ),
+    check(
+      'store_issues_reversal_all_or_none',
+      sql`(${t.reversedAt} is null and ${t.reversedBy} is null and ${t.reversalReason} is null)
+        or (${t.reversedAt} is not null and ${t.reversedBy} is not null
+            and length(btrim(${t.reversalReason})) > 0)`,
+    ),
     uniqueIndex('store_issues_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -3712,6 +4165,211 @@ export const storeIssues = pgTable(
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ADR-193 phase 3b (migration 0157) — the items of an Item Issue slip, one row
+// per item, each linked to the ledger line it posted.
+export const storeIssueLines = pgTable(
+  'store_issue_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    issueId: uuid('issue_id')
+      .notNull()
+      .references(() => storeIssues.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemCodeText: text('item_code_text').notNull(),
+    qty: stockQty('qty').notNull(),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    // ADR-193 3c (0158): this SO's own assembly reservation used by the line;
+    // given back to the reservation when the slip is Reversed.
+    reservedUsedQty: stockQty('reserved_used_qty').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('store_issue_lines_qty_check', sql`${t.qty} > 0`),
+    check('store_issue_lines_reserved_used_check', sql`${t.reservedUsedQty} >= 0`),
+    index('store_issue_lines_issue_idx')
+      .on(t.issueId)
+      .where(sql`${t.deletedAt} is null`),
+    index('store_issue_lines_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('store_issue_lines_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ADR-193 phase 3b (migration 0157) — leftovers put back against an issue line
+// (any qty up to what is still unused), each with its 'in' ledger line.
+export const storeIssueReturns = pgTable(
+  'store_issue_returns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    issueLineId: uuid('issue_line_id')
+      .notNull()
+      .references(() => storeIssueLines.id, { onDelete: 'cascade' }),
+    returnDate: date('return_date').notNull(),
+    qty: stockQty('qty').notNull(),
+    reason: text('reason').notNull(),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('store_issue_returns_qty_check', sql`${t.qty} > 0`),
+    check('store_issue_returns_reason_check', sql`length(btrim(${t.reason})) > 0`),
+    index('store_issue_returns_line_idx')
+      .on(t.issueLineId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('store_issue_returns_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ADR-193 phase 3c (migration 0158) — free stock held for an assembly
+// (Equipment) SO's BOM parts. Separate from so_stock_reservations (integer,
+// per SO line, read by dispatch / PRO close — P27). v_item_stock_availability
+// counts both kinds as Reserved.
+export const assemblyPartReservations = pgTable(
+  'assembly_part_reservations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id),
+    soCodeText: text('so_code_text').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    qty: stockQty('qty').notNull(),
+    consumedQty: stockQty('consumed_qty').notNull().default(0),
+    releasedQty: stockQty('released_qty').notNull().default(0),
+    status: text('status').notNull().default('active'),
+    releaseReason: text('release_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('assembly_part_reservations_qty_check', sql`${t.qty} > 0`),
+    check('assembly_part_reservations_consumed_qty_check', sql`${t.consumedQty} >= 0`),
+    check('assembly_part_reservations_released_qty_check', sql`${t.releasedQty} >= 0`),
+    check(
+      'assembly_part_reservations_settled_check',
+      sql`${t.consumedQty} + ${t.releasedQty} <= ${t.qty}`,
+    ),
+    check(
+      'assembly_part_reservations_status_check',
+      sql`${t.status} IN ('active', 'partially_consumed', 'consumed', 'released')`,
+    ),
+    index('assembly_part_reservations_so_idx')
+      .on(t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('assembly_part_reservations_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('assembly_part_reservations_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ADR-193 phase 3c (migration 0158) — parts FITTED into an assembled unit by
+// Complete. No ledger row: the parts left the store when they were issued.
+// Undo of the unit soft-deletes its rows (the parts are Still Out again).
+export const assemblyUnitConsumptions = pgTable(
+  'assembly_unit_consumptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    assemblyUnitId: uuid('assembly_unit_id')
+      .notNull()
+      .references(() => assemblyUnits.id),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    qty: stockQty('qty').notNull(),
+    varianceReason: text('variance_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('assembly_unit_consumptions_qty_check', sql`${t.qty} > 0`),
+    index('assembly_unit_consumptions_unit_idx')
+      .on(t.assemblyUnitId)
+      .where(sql`${t.deletedAt} is null`),
+    index('assembly_unit_consumptions_so_item_idx')
+      .on(t.salesOrderId, t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('assembly_unit_consumptions_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
     }),
   ],
 ).enableRLS();
@@ -3742,6 +4400,8 @@ export const partyMaterials = pgTable(
     stockQty: integer('stock_qty').notNull().default(0),
     issuedQty: integer('issued_qty').notNull().default(0),
     receivedQty: integer('received_qty').notNull().default(0),
+    // R7 (ADR-194): spare customer material returned to the customer.
+    returnedQty: integer('returned_qty').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -3855,6 +4515,16 @@ export const partyGrnLines = pgTable(
     partyMaterialName: text('party_material_name'),
     receivedQty: integer('received_qty').notNull(),
     jwLineNoText: text('jw_line_no_text'),
+    // R4 (ADR-194): real FK to the JWSO line (replaces the typed line-no text).
+    jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    // R2 (ADR-194): compulsory incoming QC — only accepted qty enters the party store.
+    acceptedQty: integer('accepted_qty').notNull().default(0),
+    rejectedQty: integer('rejected_qty').notNull().default(0),
+    rejectReason: text('reject_reason'),
+    qcBy: uuid('qc_by').references(() => users.id),
+    qcAt: timestamp('qc_at', { withTimezone: true }),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -3873,12 +4543,80 @@ export const partyGrnLines = pgTable(
     index('party_grn_lines_material_idx')
       .on(t.partyMaterialId)
       .where(sql`${t.deletedAt} is null`),
+    index('party_grn_lines_jw_line_idx')
+      .on(t.jwLineId)
+      .where(sql`${t.deletedAt} is null AND ${t.jwLineId} is not null`),
     pgPolicy('party_grn_lines_company_read', {
       for: 'select',
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
     pgPolicy('party_grn_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Party Store (migration 0173, ADR-194) — separate zero-value ledger ────
+// Q6 decision: customer-supplied (party) material is kept in a SEPARATE store
+// at ZERO value — it is never company stock (ADR-189) and never touches
+// store_transactions. Every movement is one append-only row here:
+//   receive  (in)  — accepted qty from a Party GRN line enters the party store
+//   issue    (out) — client material issued to a Job Card
+//   consume  (out) — booked as consumed against production
+//   return   (out) — spare material returned to the customer
+//   reversal (in/out) — compensating entry that undoes a prior movement
+// No value column: party material carries no rupee value on our books.
+
+export const partyStockLedger = pgTable(
+  'party_stock_ledger',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    partyMaterialId: uuid('party_material_id')
+      .notNull()
+      .references((): AnyPgColumn => partyMaterials.id),
+    jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    movement: text('movement').notNull(),
+    direction: text('direction').notNull(),
+    qty: integer('qty').notNull(),
+    balanceAfter: integer('balance_after').notNull(),
+    sourceDocType: text('source_doc_type').notNull(),
+    sourceDocId: uuid('source_doc_id'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('party_stock_ledger_material_idx')
+      .on(t.partyMaterialId)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_stock_ledger_jw_line_idx')
+      .on(t.jwLineId)
+      .where(sql`${t.deletedAt} is null AND ${t.jwLineId} is not null`),
+    check('party_stock_ledger_movement_check', sql`${t.movement} IN ('receive','issue','consume','return','reversal')`),
+    check('party_stock_ledger_direction_check', sql`${t.direction} IN ('in','out')`),
+    check('party_stock_ledger_qty_positive', sql`${t.qty} > 0`),
+    pgPolicy('party_stock_ledger_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('party_stock_ledger_manager_write', {
       for: 'all',
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
@@ -3976,6 +4714,10 @@ export const jwReturnChallans = pgTable(
     transport: text('transport'),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
+    // R10 (ADR-194, migration 0174): cancel audit trail, symmetric with jw_invoices.
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4036,7 +4778,15 @@ export const jwInvoices = pgTable(
     gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
     gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     totalAmount: numeric('total_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    // 'sgst_cgst' | 'igst' (same codes as purchase_orders.tax_type), migration
+    // 0148. NULL on rows raised before it: those print a single GST row.
+    taxType: text('tax_type'),
     remarks: text('remarks'),
+    // R5 (ADR-194): a JW Invoice can be cancelled. 'issued' | 'cancelled'.
+    status: text('status').notNull().default('issued'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4146,8 +4896,9 @@ export const jwDcOutwardLines = pgTable(
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
     processText: text('process_text'),
-    poQty: integer('po_qty').notNull().default(0),
-    sentQty: integer('sent_qty').notNull(),
+    // Decimal (KGS / MTR) — 0172.
+    poQty: stockQty('po_qty').notNull().default(0),
+    sentQty: stockQty('sent_qty').notNull(),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
       { onDelete: 'set null' },
@@ -4199,6 +4950,12 @@ export const jwDcInward = pgTable(
     vendorChallanNo: text('vendor_challan_no'),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
+    // The QC-pending GRN raised for this receipt (0172, ADR-189 — Incoming QC is
+    // the only inspector). NULL on receipts made before 0172.
+    goodsReceiptNoteId: uuid('goods_receipt_note_id').references(
+      (): AnyPgColumn => goodsReceiptNotes.id,
+      { onDelete: 'set null' },
+    ),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4250,10 +5007,12 @@ export const jwDcInwardLines = pgTable(
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
     processText: text('process_text'),
-    sentQty: integer('sent_qty').notNull().default(0),
-    receivedQty: integer('received_qty').notNull(),
-    okQty: integer('ok_qty').notNull().default(0),
-    rejectedQty: integer('rejected_qty').notNull().default(0),
+    // Decimal (KGS / MTR) — 0172. From 0172 a receipt goes to Incoming QC on a
+    // GRN, so new rows carry ok / rejected 0 / 0 (CHECK ok + rejected <= received).
+    sentQty: stockQty('sent_qty').notNull().default(0),
+    receivedQty: stockQty('received_qty').notNull(),
+    okQty: stockQty('ok_qty').notNull().default(0),
+    rejectedQty: stockQty('rejected_qty').notNull().default(0),
     remarks: text('remarks'),
     storeTransactionId: uuid('store_transaction_id').references(
       (): AnyPgColumn => storeTransactions.id,
@@ -4575,6 +5334,11 @@ export const designWorkLog = pgTable(
     designProjectId: uuid('design_project_id').references((): AnyPgColumn => designProjects.id, {
       onDelete: 'set null',
     }),
+    // ADR-188: a row logged from a Design Tracker entry ("Log Time") keeps the
+    // tracker it came from. Null for rows entered on the Design Work Log itself.
+    designTrackerId: uuid('design_tracker_id').references((): AnyPgColumn => designTracker.id, {
+      onDelete: 'set null',
+    }),
     taskText: text('task_text'),
     category: text('category').notNull().default('Design'),
     hours: numeric('hours', { precision: 6, scale: 2 }).notNull(),
@@ -4598,6 +5362,9 @@ export const designWorkLog = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('design_work_log_project_idx')
       .on(t.designProjectId)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_work_log_tracker_idx')
+      .on(t.designTrackerId)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('design_work_log_company_read', {
       for: 'select',
@@ -4728,9 +5495,11 @@ export const invoices = pgTable(
       .references(() => companies.id),
     code: text('code').notNull(),
     invoiceDate: date('invoice_date').notNull(),
+    // ADR-184 (migration 0146): RESTRICT, was CASCADE — permanently deleting
+    // an SO must never take its invoices with it.
     salesOrderId: uuid('sales_order_id')
       .notNull()
-      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+      .references(() => salesOrders.id, { onDelete: 'restrict' }),
     soCodeText: text('so_code_text'),
     // Client snapshot (migration 0050) — invoice prints from these even if the
     // client master later changes. clientId for the live link.
@@ -4743,6 +5512,12 @@ export const invoices = pgTable(
     gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     grandTotal: numeric('grand_total', { precision: 14, scale: 2 }).notNull().default('0'),
     totalPaid: numeric('total_paid', { precision: 14, scale: 2 }).notNull().default('0'),
+    // Σ invoice_payments.tds_amount (migration 0171) — TDS / short amount the
+    // customer deducted; counts toward settling. Outstanding = grand − paid − tds.
+    totalTds: numeric('total_tds', { precision: 14, scale: 2 }).notNull().default('0'),
+    // 'sgst_cgst' | 'igst' (same codes as jw_invoices.tax_type), migration
+    // 0171. NULL on invoices raised before it: those print as they always did.
+    taxType: text('tax_type'),
     paymentTermsDays: integer('payment_terms_days').notNull().default(45),
     dueDate: date('due_date'),
     status: invoiceStatusEnum('status').notNull().default('unpaid'),
@@ -4850,6 +5625,9 @@ export const invoicePayments = pgTable(
       .references(() => invoices.id, { onDelete: 'cascade' }),
     paymentDate: date('payment_date').notNull(),
     amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    // TDS / short amount the customer deducted on this payment (migration
+    // 0171). Counts toward settling the invoice; never part of `amount`.
+    tdsAmount: numeric('tds_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     mode: text('mode').notNull().default('NEFT'),
     refNo: text('ref_no'),
     notes: text('notes'),

@@ -8,6 +8,7 @@
 
 import type { OpMachineOutput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
+import { fmtDate } from '@/lib/date';
 
 interface Props {
   rows: OpMachineOutput[];
@@ -24,9 +25,9 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
         <thead>
           <tr>
             <th>Machine</th>
-            <th>Entries</th>
-            <th>Completed</th>
-            <th>Rejected</th>
+            <th className="th-num">Entries</th>
+            <th className="th-num">Completed</th>
+            <th className="th-num">Rejected</th>
             <th>From</th>
             <th>To</th>
           </tr>
@@ -55,22 +56,22 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
                       {r.machineName ?? '—'}
                     </div>
                   </td>
-                  <td className="mono" style={{ fontSize: 11 }}>
+                  <td className="mono td-num" style={{ fontSize: 11 }}>
                     {r.entryCount}
                   </td>
-                  <td>
-                    <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--green)' }}>
+                  <td className="td-num">
+                    <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--green2)' }}>
                       {r.completedQty}
                     </span>
                   </td>
-                  <td className="mono" style={{ color: 'var(--red)' }}>
+                  <td className="mono td-num" style={{ color: 'var(--red2)' }}>
                     {r.rejectQty || ''}
                   </td>
                   <td className="mono" style={{ fontSize: 11 }}>
-                    {r.firstLogDate}
+                    {fmtDate(r.firstLogDate)}
                   </td>
                   <td className="mono" style={{ fontSize: 11 }}>
-                    {r.lastLogDate}
+                    {fmtDate(r.lastLogDate)}
                   </td>
                 </tr>
               ))}
@@ -79,12 +80,12 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
                   Total
                 </td>
                 <td />
-                <td>
+                <td className="td-num">
                   <span className="mono fw-700" style={{ fontSize: 15 }}>
                     {totalQty}
                   </span>
                 </td>
-                <td className="mono fw-700" style={{ color: 'var(--red)' }}>
+                <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
                   {totalReject || ''}
                 </td>
                 <td />

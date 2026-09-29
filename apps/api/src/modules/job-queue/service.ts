@@ -229,9 +229,7 @@ export async function reorderMachineQueue(
         AND deleted_at IS NULL
     `)) as unknown as Array<{ id: string }>;
     if (opRows.length !== input.jcOpIds.length) {
-      throw new ConflictError(
-        `One or more jc_op ids are not on machine ${machineId} (or already deleted).`,
-      );
+      throw new ConflictError('The queue changed on another screen. Refresh and try again.');
     }
 
     // Assign queue_position 1..N

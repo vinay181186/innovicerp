@@ -2,7 +2,11 @@
 // Per docs/PARITY/so-planning.md.
 
 import { z } from 'zod';
-import { RESERVATION_SOURCES, RESERVATION_STATUSES } from '../enums/reservation';
+import {
+  RESERVATION_DETAIL_SOURCES,
+  RESERVATION_SOURCES,
+  RESERVATION_STATUSES,
+} from '../enums/reservation';
 import {
   planDerivedStatusSchema,
   planOpsSourceSchema,
@@ -25,7 +29,8 @@ export const planningSoListItemSchema = z.object({
   dueDate: z.string().nullable(),
   totalLines: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
-  totalPlannedQty: z.number().int().nonnegative(),
+  // Includes a Buy line's PR qty — decimal on KGS / MTR since 0172.
+  totalPlannedQty: z.number().nonnegative(),
   /** 0–100. Math: round(totalPlannedQty / totalQty × 100). */
   planningPct: z.number().int().min(0).max(100),
   /** 'fully_planned' (>= 100%), 'partial' (0 < pct < 100), 'unplanned' (0%). */
@@ -104,13 +109,14 @@ export const planningLineSchema = z.object({
    *  against this line and `prQty` (their live qty, cancelled excluded) counts
    *  towards `totalPlanned` / `remaining`. Defaults keep older API builds valid. */
   itemProcurementType: itemProcurementTypeSchema.default('make'),
-  prQty: z.number().int().nonnegative().default(0),
+  // PR qty is decimal on KGS / MTR since 0172 (max 3 places).
+  prQty: z.number().nonnegative().default(0),
   prs: z
     .array(
       z.object({
         id: z.string().uuid(),
         code: z.string(),
-        qty: z.number().int().nonnegative(),
+        qty: z.number().nonnegative(),
         status: z.enum(PR_STATUSES),
         /** PO raised from this PR, when any (code only — for the chip). */
         poCode: z.string().nullable().default(null),
@@ -119,7 +125,7 @@ export const planningLineSchema = z.object({
     .default([]),
   plans: z.array(planningPlanSummarySchema),
   /** Sum of all non-cancelled plan_qty for this SO line. */
-  totalPlanned: z.number().int().nonnegative(),
+  totalPlanned: z.number().nonnegative(),
   /**
    * Qty covered by Job Cards created directly against this SO line WITHOUT a
    * plan (sourceSoLineId set, not referenced by any plan.jcId). These are real
@@ -130,7 +136,7 @@ export const planningLineSchema = z.object({
   /** Codes of those plan-less Job Cards, for the "In Production (no plan)" indicator. */
   directJcCodes: z.array(z.string()),
   /** max(0, orderQty - totalPlanned - directJcQty). */
-  remaining: z.number().int().nonnegative(),
+  remaining: z.number().nonnegative(),
   /** AVAILABLE stock for this line's item = physical − total active reserved
    *  (ADR-180). Kept under its old name because its MEANING is unchanged — it
    *  has always answered "how much may I still use" — only the arithmetic
@@ -292,9 +298,10 @@ export const reservationDetailSchema = z.object({
   id: z.string().uuid(),
   itemId: z.string().uuid(),
   itemCode: z.string().nullable(),
-  soLineId: z.string().uuid(),
+  /** Null for an assembly reservation (held for the whole SO, not a line). */
+  soLineId: z.string().uuid().nullable(),
   soCodeText: z.string(),
-  lineNo: z.number().int(),
+  lineNo: z.number().int().nullable(),
   customerName: z.string().nullable(),
   itemRevision: z.string().nullable(),
   /** The customer's PO line number (`POL`) for the SO line this row traces back
@@ -302,11 +309,12 @@ export const reservationDetailSchema = z.object({
    *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
    *  Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
-  qty: z.number().int().nonnegative(),
-  consumedQty: z.number().int().nonnegative(),
-  releasedQty: z.number().int().nonnegative(),
-  remainingQty: z.number().int().nonnegative(),
-  source: z.enum(RESERVATION_SOURCES),
+  // Assembly reservations may hold decimals (a cable in MTR).
+  qty: z.number().nonnegative(),
+  consumedQty: z.number().nonnegative(),
+  releasedQty: z.number().nonnegative(),
+  remainingQty: z.number().nonnegative(),
+  source: z.enum(RESERVATION_DETAIL_SOURCES),
   status: z.enum(RESERVATION_STATUSES),
   productionOrderId: z.string().uuid().nullable(),
   productionOrderCode: z.string().nullable(),
@@ -336,7 +344,7 @@ export type ListReservationsQuery = z.infer<typeof listReservationsQuerySchema>;
 
 export const listReservationsResponseSchema = z.object({
   rows: z.array(reservationDetailSchema),
-  totalReserved: z.number().int().nonnegative(),
+  totalReserved: z.number().nonnegative(),
 });
 export type ListReservationsResponse = z.infer<typeof listReservationsResponseSchema>;
 

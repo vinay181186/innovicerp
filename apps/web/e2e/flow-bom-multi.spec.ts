@@ -271,7 +271,7 @@ test('@bommulti 02 — equipment SO, BOM attaches itself', async ({ page }) => {
 
   await page.locator('select.innovic-select').first().selectOption('equipment');
   await page.waitForTimeout(2500);
-  await pickByPlaceholder(page, /Type client code or name/i, CLIENT_CODE, CLIENT_MATCH);
+  await pickByPlaceholder(page, /Type customer code or name/i, CLIENT_CODE, CLIENT_MATCH);
   await page.getByPlaceholder(/Client PO reference/i).fill(TAG);
   await page.locator('input[name="lines.0.itemCodeText"]').fill(PARENT);
   await page.waitForTimeout(2500);
@@ -372,7 +372,7 @@ test('@bommulti 04 — route + execute the manufacture plans into job cards', as
     // already finalized and simply needed executing.
     const edit = await planCardButton(page, p.code, /Edit/i);
     if ((await edit.count()) === 0) {
-      const ready = await planCardButton(page, p.code, /Execute/i);
+      const ready = await planCardButton(page, p.code, /Create JC|Raise PR/);
       if ((await ready.count()) > 0) {
         log(`${p.code} is already Planned — executing straight away`);
         await ready.click();
@@ -400,7 +400,7 @@ test('@bommulti 04 — route + execute the manufacture plans into job cards', as
     const saveErr = await bannerText(page);
     if (saveErr) log(`Save Plan on ${p.code} said: "${saveErr}"`);
 
-    const exec = await planCardButton(page, p.code, /Execute/i);
+    const exec = await planCardButton(page, p.code, /Create JC|Raise PR/);
     if ((await exec.count()) === 0) {
       record({ step: '04', doc: 'Job Card', code: p.code, qty: '—', status: 'BLOCKED', note: `no Execute after Save Plan: ${await bannerText(page)}` });
       continue;
@@ -459,7 +459,7 @@ test('@bommulti 05 — JOB CARD EDIT: qty, add op, remove op', async ({ page }) 
     return out;
   };
   const save = async (): Promise<string> => {
-    await page.getByRole('button', { name: /Save Job Card/i }).click();
+    await page.getByRole('button', { name: /Save Changes/i }).click();
     await page.waitForTimeout(5000);
     return bannerText(page);
   };
@@ -560,7 +560,7 @@ test('@bommulti 06 — produce and QC both manufacture children', async ({ page 
       await page.waitForTimeout(1500);
       await page.getByRole('spinbutton').first().fill(String(qty || 1));
       await page.getByPlaceholder(/Operator name/i).fill('E2E Auto').catch(() => {});
-      await page.getByRole('button', { name: /Submit completion/i }).click();
+      await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
       await page.waitForTimeout(4000);
     }
     const qcOp = page.getByText('DIR', { exact: true }).first();
@@ -568,7 +568,7 @@ test('@bommulti 06 — produce and QC both manufacture children', async ({ page 
       await qcOp.click();
       await page.waitForTimeout(1800);
       await page.getByRole('spinbutton').first().fill(String(qty || 1));
-      await page.getByRole('button', { name: /Submit QC inspection/i }).click();
+      await page.getByRole('button', { name: /Submit Inspection/i }).click();
       await page.waitForTimeout(4500);
     }
     const txt = await page.locator('body').innerText();
@@ -612,7 +612,7 @@ test('@bommulti 07 — execute the buy + outsource plans into PRs', async ({ pag
       const saveErr = await bannerText(page);
       if (saveErr) log(`Save Plan on ${p.code} (${p.kind}) said: "${saveErr}"`);
     }
-    const exec = await planCardButton(page, p.code, /Execute/i);
+    const exec = await planCardButton(page, p.code, /Create JC|Raise PR/);
     if ((await exec.count()) > 0) {
       await exec.click();
       await page.waitForTimeout(7000);
@@ -720,7 +720,7 @@ test('@bommulti 09 — dispatch what the assembly can actually ship', async ({ p
     return;
   }
   await dqty.fill(String(SO_QTY));
-  await page.getByRole('button', { name: /Create Dispatch/i }).click();
+  await page.getByRole('button', { name: /Save Dispatch/i }).click();
   await page.waitForTimeout(5000);
   state.dspCode = (await codesOnPage(page, /DSP-\d+/))[0] ?? '';
   record({
@@ -763,7 +763,7 @@ test('@bommulti 10 — invoice', async ({ page }) => {
       break;
     }
   }
-  await page.getByRole('button', { name: /Create Invoice/i }).click();
+  await page.getByRole('button', { name: /Save Invoice/i }).click();
   await page.waitForTimeout(5000);
   state.invCode = (await codesOnPage(page, /INV-\d+/))[0] ?? '';
   record({

@@ -30,7 +30,7 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await page.waitForTimeout(1200);
   await page.getByRole('spinbutton').first().fill(String(INHOUSE));
   await page.getByPlaceholder(/Operator name/i).fill('C6 Auto').catch(() => {});
-  await page.getByRole('button', { name: /Submit completion/i }).click();
+  await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
   await page.waitForTimeout(3000);
   log('op-log Turning (in-house)', `${INHOUSE} of ${QTY} (partial)`);
   await snap(page, 'c6', '01-partial');
@@ -43,7 +43,7 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await page.waitForTimeout(1800);
   // Turning's Outsource balance (the row whose OPERATION is Turning)
   const turnRow = page.locator('table tbody tr', { hasText: 'Turning' }).first();
-  await turnRow.getByRole('button', { name: /Outsource balance/i }).click();
+  await turnRow.getByRole('button', { name: /Outsource Available/i }).click();
   await page.waitForTimeout(1200);
   const bqty = page.locator('input[type="number"]').first();
   const bval = await bqty.inputValue().catch(() => '');
@@ -51,7 +51,7 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   const vcode = await page.locator('#outsource-balance-vendors option').first().getAttribute('value').catch(() => '');
   await page.getByPlaceholder('Vendor code').fill(vcode || '');
   await snap(page, 'c6', '02-balance');
-  await page.getByRole('button', { name: 'Outsource balance', exact: true }).click();
+  await page.getByRole('button', { name: 'Outsource Available', exact: true }).click();
   await page.waitForTimeout(3500);
 
   // 4 — PR → JW PO
@@ -65,12 +65,15 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await page.waitForTimeout(800);
   await page.getByRole('button', { name: /Create PO from Selected/i }).first().click();
   await page.waitForTimeout(1800);
-  await page.locator('select').filter({ has: page.locator('option', { hasText: /Select vendor/i }) }).first().selectOption({ index: 1 }).catch(() => {});
+  // Vendor is a type-to-search picker: type a code prefix, take the first vendor offered.
+  await page.locator('#osp-po-vendor').click().catch(() => {});
+  await page.locator('#osp-po-vendor').fill('VND').catch(() => {});
+  await page.getByRole('option').first().click({ timeout: 15_000 }).catch(() => {});
   await page.locator('input[type="number"]').last().fill('5').catch(() => {});
   const po = 'IN-JWPO-7' + String(Date.now()).slice(-4);
   await page.getByPlaceholder(/IN-JWPO-/i).first().fill(po).catch(() => {});
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /Create JW PO/i }).click();
+  await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(3500);
   log('IN-JWPO', po);
 
@@ -93,7 +96,7 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await page.locator('table tbody tr', { hasText: dcNo }).first().getByRole('link', { name: /Receive/i }).click();
   await page.waitForTimeout(2200);
   await page.locator('input[type="number"]').first().fill(String(BAL));
-  await page.getByRole('button', { name: /Record receipt/i }).click();
+  await page.getByRole('button', { name: /Save Receipt/i }).click();
   await page.waitForTimeout(3500);
   log('receive', `${BAL} received`);
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
@@ -102,7 +105,7 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await qcRow.getByRole('link', { name: /Inspect/i }).click();
   await page.waitForTimeout(2000);
   await page.locator('input[type="number"]').first().fill(String(BAL));
-  await page.getByRole('button', { name: /Submit QC/i }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await page.waitForTimeout(3000);
   log('OSP QC', `accepted ${BAL} → Turning done = ${INHOUSE}+${BAL} = ${QTY} (recombine)`);
   await snap(page, 'c6', '03-recombine');
@@ -113,7 +116,7 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await page.waitForTimeout(1200);
   await page.getByRole('spinbutton').first().fill(String(QTY)).catch(() => {});
   await page.getByPlaceholder(/Operator name/i).fill('C6 Auto').catch(() => {});
-  await page.getByRole('button', { name: /Submit completion/i }).click().catch(() => {});
+  await page.getByRole('button', { name: /^✓\s*Complete$/ }).click().catch(() => {});
   await page.waitForTimeout(3000);
   log('op-log Milling', `${QTY} (sees recombined input)`);
 
@@ -121,7 +124,7 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await page.getByText('DIR', { exact: true }).first().click().catch(() => {});
   await page.waitForTimeout(1500);
   await page.getByRole('spinbutton').first().fill(String(QTY)).catch(() => {});
-  await page.getByRole('button', { name: /Submit QC inspection/i }).click().catch(() => {});
+  await page.getByRole('button', { name: /Submit Inspection/i }).click().catch(() => {});
   await page.waitForTimeout(3000);
   log('terminal QC', `accepted ${QTY}`);
   await snap(page, 'c6', '04-qc-done');

@@ -32,21 +32,24 @@
 // poId only.
 
 import type { CreateDeliveryChallanInput, DcSendableLine, Uom } from '@innovic/shared';
-import { poSendsMaterialOut } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { poSendsMaterialOut, UOMS } from '@innovic/shared';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Truck } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { type ExitConfirm, useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { useCreateNcDc, useNcRegister } from '@/modules/nc-register/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreateDeliveryChallan, useDcSendable, useEligibleRtvNcs } from '../api';
 
 // poId only. An existing ?poId= link keeps working untouched and preselects the
@@ -70,9 +73,19 @@ export const deliveryChallanNewRoute = createRoute({
 type DcSource = 'po' | 'nc';
 
 // Button text + icons mirror the GRN unified form's TYPE_META style.
-const SOURCE_META: Record<DcSource, { label: string; icon: string }> = {
-  po: { label: 'Against PO', icon: '📦' },
-  nc: { label: 'Against NC', icon: '🧾' },
+/** PO status → the words the user reads; the stored codes are unchanged. */
+const PO_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  open: 'Open',
+  partial: 'Partly Received',
+  qc_pending: 'QC Pending',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
+};
+
+const SOURCE_META: Record<DcSource, { label: string }> = {
+  po: { label: 'Against PO' },
+  nc: { label: 'Against NC' },
 };
 
 function DeliveryChallanNewPage(): React.JSX.Element {
@@ -90,31 +103,48 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   // Against PO so the original flow is unchanged.
   const [source, setSource] = useState<DcSource>('po');
 
+  // Save lives in the sticky header, but the save handler belongs to whichever
+  // form body is mounted (none while a picker is showing). The body reports its
+  // state here and keeps `submitRef` pointed at its own save.
+  const [save, setSave] = useState<DcSaveState>(NO_SAVE);
+  const submitRef = useRef<() => void>(() => {});
+  const saveCtl = useMemo<DcSaveCtl>(() => ({ setState: setSave, submitRef }), []);
+  const runSave = useCallback(() => submitRef.current(), []);
+  useSaveShortcut(runSave, save.canSave && !save.saving);
+
   return (
     <div>
       {exit.dialog}
-      <div className="section-hdr" style={{ marginBottom: 8 }}>
-        📦 OSP Delivery Challan &amp; Outward
-      </div>
-
-      <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Delivery Challans
-      </Link>
+      <PageHeader
+        sticky
+        title="New OSP Delivery Challan"
+        backLabel="Back to Delivery Challans"
+        onBack={goBack}
+        dirty={save.dirty}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={runSave}
+              disabled={!save.canSave || save.saving}
+            >
+              {save.saving ? <Loader2 size={13} className="animate-spin" /> : null}
+              {save.saving ? 'Saving…' : 'Save DC'}
+            </button>
+          </>
+        }
+      />
 
       <div className="panel" style={{ padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', marginBottom: 4 }}>
-          ➕ Create OSP Delivery Challan
-        </div>
-        <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
-          Ship against a purchase order that sends material out (Job Work / Service), or return
-          rejected material to a vendor against a disposed NC.
-        </div>
-
         {/* ▸ DC AGAINST — a compact dropdown (Against PO / Against NC). State,
             not navigation; switching unmounts the other side below. */}
         <div className="form-grp" style={{ maxWidth: 220, marginBottom: 14 }}>
           <label className="form-label" htmlFor="dc-source">
-            DC against
+            DC Against
           </label>
           <select
             id="dc-source"
@@ -124,7 +154,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           >
             {(['po', 'nc'] as const).map((s) => (
               <option key={s} value={s}>
-                {SOURCE_META[s].icon} {SOURCE_META[s].label}
+                {SOURCE_META[s].label}
               </option>
             ))}
           </select>
@@ -132,13 +162,36 @@ function DeliveryChallanNewPage(): React.JSX.Element {
 
         {/* Switching source unmounts the other side, dropping its picks/drafts. */}
         {source === 'po' ? (
-          <PoDcSection {...(initialPoId ? { initialPoId } : {})} exit={exit} goBack={goBack} />
+          <PoDcSection {...(initialPoId ? { initialPoId } : {})} exit={exit} saveCtl={saveCtl} />
         ) : (
-          <NcDcSection exit={exit} goBack={goBack} />
+          <NcDcSection exit={exit} saveCtl={saveCtl} />
         )}
       </div>
     </div>
   );
+}
+
+// ─── Header Save wiring ──────────────────────────────────────────────────────
+interface DcSaveState {
+  canSave: boolean;
+  saving: boolean;
+  dirty: boolean;
+}
+const NO_SAVE: DcSaveState = { canSave: false, saving: false, dirty: false };
+interface DcSaveCtl {
+  setState: (s: DcSaveState) => void;
+  submitRef: React.MutableRefObject<() => void>;
+}
+
+/** A form body reports its Save state to the page header while mounted, and
+ *  clears it on unmount (back to a picker, or the other source). */
+function useReportSave(ctl: DcSaveCtl, s: DcSaveState): void {
+  const { canSave, saving, dirty } = s;
+  const { setState } = ctl;
+  useEffect(() => {
+    setState({ canSave, saving, dirty });
+  }, [setState, canSave, saving, dirty]);
+  useEffect(() => () => setState(NO_SAVE), [setState]);
 }
 
 // ═══ Against PO ═══════════════════════════════════════════════════════════════
@@ -170,6 +223,11 @@ interface LineDraft {
 
 /** The most this line may go out on, all rules considered. The PO quantity is
  *  a ceiling the server also enforces; the sendable preview is usually lower. */
+/** A PO line's item unit as a challan unit; NOS when unknown (as on the print). */
+function toUom(u: string | null | undefined): Uom {
+  return (UOMS as readonly string[]).includes(u ?? '') ? (u as Uom) : 'NOS';
+}
+
 function maxSendNow(cap: DcSendableLine | undefined, poLineQty: number): number {
   return cap ? Math.min(cap.maxSendNow, poLineQty) : poLineQty;
 }
@@ -208,11 +266,11 @@ function sendNowIssue(
 function PoDcSection({
   initialPoId,
   exit,
-  goBack,
+  saveCtl,
 }: {
   initialPoId?: string;
   exit: ExitConfirm;
-  goBack: () => void;
+  saveCtl: DcSaveCtl;
 }): React.JSX.Element {
   // The chosen PO. Preselected from ?poId= (the deep link), else null → picker.
   const [poId, setPoId] = useState<string | null>(initialPoId ?? null);
@@ -227,7 +285,7 @@ function PoDcSection({
       poId={poId}
       onChangePo={() => setPoId(null)}
       exit={exit}
-      goBack={goBack}
+      saveCtl={saveCtl}
     />
   );
 }
@@ -278,8 +336,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
   return (
     <>
       <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
-        The challan ships against a purchase order that sends material out (Job Work / Service).
-        Pick one and its lines load into the challan.
+        Pick a PO — its lines load below.
       </div>
 
       <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
@@ -300,11 +357,11 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase orders…
         </div>
       ) : isError ? (
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
-          Could not load purchase orders.
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          Could not load POs. Try again.
         </div>
       ) : eligible.length === 0 ? (
-        <div className="empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="empty-state" style={{ color: 'var(--amber2)' }}>
           No Job Work / Service PO is open for dispatch
           {search.trim() ? ' for this search' : ''}. Raise or issue one first.
         </div>
@@ -313,13 +370,13 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           <table className="innovic-table" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th>PO No. / NC No.</th>
-                <th>Raised Date</th>
+                <th>PO No.</th>
+                <th>PO Date</th>
                 <th>Vendor</th>
                 <th>PO Type</th>
                 <th>PO Status</th>
-                <th>Lines</th>
-                <th className="td-ctr">Sent / Order Qty</th>
+                <th className="th-num">Lines</th>
+                <th className="th-num">Sent / Order Qty</th>
                 <th style={{ width: 110 }} />
               </tr>
             </thead>
@@ -329,17 +386,19 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                   <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
                     {p.code}
                   </td>
-                  <td className="mono">{p.poDate}</td>
+                  <td className="mono">{fmtDate(p.poDate)}</td>
                   <td>{p.vendorName ?? p.vendorCodeText ?? '—'}</td>
                   <td style={{ color: 'var(--purple)' }}>
                     {p.poType === 'service' ? 'Service' : 'Job Work'}
                   </td>
-                  <td className="mono">{p.status}</td>
-                  <td className="mono">{p.lineCount}</td>
+                  <td className="mono">
+                    {PO_STATUS_LABEL[p.status] ?? p.status.replaceAll('_', ' ')}
+                  </td>
+                  <td className="mono td-num">{p.lineCount}</td>
                   {/* Amber once something has gone out: this PO is part-way
                       through, and the challan being raised is a balance one. */}
                   <td
-                    className="mono td-ctr"
+                    className="mono td-num"
                     style={{ color: p.dcSentQty > 0 ? 'var(--amber)' : undefined }}
                   >
                     {p.dcSentQty} / {p.totalQty}
@@ -348,7 +407,6 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      style={{ fontSize: 11 }}
                       onClick={() => onSelect(p.id)}
                     >
                       Select
@@ -368,12 +426,12 @@ function PoDcFormBody({
   poId,
   onChangePo,
   exit,
-  goBack,
+  saveCtl,
 }: {
   poId: string;
   onChangePo: () => void;
   exit: ExitConfirm;
-  goBack: () => void;
+  saveCtl: DcSaveCtl;
 }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: po, isLoading: poLoading, isError: poError } = usePurchaseOrder(poId);
@@ -389,7 +447,7 @@ function PoDcFormBody({
 
   const [code, setCode] = useState('');
   const [codeValid, setCodeValid] = useState(false);
-  const [dcDate, setDcDate] = useState(todayLocal());
+  const [dcDate, setDcDate] = useState(todayIst());
   const [transport, setTransport] = useState('');
   // Vehicle number is kept apart from the transporter NAME (`transport`) — the
   // OSP DC print and the gate register need the two separately.
@@ -410,7 +468,10 @@ function PoDcFormBody({
         itemRevision: l.itemRevision,
         clientPoLineNo: l.clientPoLineNo,
         itemNameText: l.itemName ?? null,
-        uom: 'NOS',
+        // The PO line's item unit (items.uom, read on the PO detail), so a 25 KGS
+        // bar lot is challaned as KGS — not NOS. A line with no item (or an
+        // unknown unit) falls back to NOS, as the print already does.
+        uom: toUom(l.uom),
         poLineQty: Number(l.qty ?? 0),
         shipQty: '',
         materialText: '',
@@ -447,10 +508,31 @@ function PoDcFormBody({
     [po, dcDate, codeValid, lineDrafts, capByLine],
   );
 
+  const dirty =
+    code !== '' ||
+    transport !== '' ||
+    vehicleNo !== '' ||
+    lineDrafts.some((l) => l.shipQty !== '' || l.materialText !== '' || l.dcRemarks !== '');
+  useReportSave(saveCtl, { canSave: perms.entry && canSubmit, saving: submitting, dirty });
+
+  // FLOW HELPER (frontend only): put each line's "Can send now" figure into
+  // its Send Now box. Lines whose allowance is not known yet, or is 0, stay
+  // blank. Every box stays editable; nothing is filled until this is clicked.
+  const fillAllPending = (): void => {
+    setLineDrafts((prev) =>
+      prev.map((l) => {
+        const cap = capByLine.get(l.purchaseOrderLineId);
+        if (!cap) return l;
+        const max = maxSendNow(cap, l.poLineQty);
+        return { ...l, shipQty: max > 0 ? String(max) : '' };
+      }),
+    );
+  };
+
   if (!perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)' }}>
-        ⛔ You do not have entry access to create an OSP delivery challan.
+      <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+        You do not have permission to create DCs. Ask an admin.
       </div>
     );
   }
@@ -465,8 +547,8 @@ function PoDcFormBody({
 
   if (poError || !po) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
-        Could not load PO.
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
+        Could not load PO. Try again.
       </div>
     );
   }
@@ -513,14 +595,22 @@ function PoDcFormBody({
       const created = await create.mutateAsync(input);
       exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id: created.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to create DC.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save DC. Try again.');
     } finally {
       setSubmitting(false);
     }
   };
+  // The page header's Save (and Ctrl+S) run this body's save.
+  saveCtl.submitRef.current = () => void onSubmit();
 
   return (
     <>
+      {/* Save error right under the header's Save. */}
+      {submitError ? (
+        <Banner tone="error" role="alert">
+          {submitError}
+        </Banner>
+      ) : null}
       <div
         style={{
           background: 'var(--bg)',
@@ -538,26 +628,24 @@ function PoDcFormBody({
           }}
         >
           <div>
-            {/* Reads "PO No / NC No" because this same summary slot carries the
-                NC number on the Against-NC form. */}
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO No / NC No</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>PO No.</span>
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {po.code}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>VENDOR</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Vendor</span>
             <br />
             <b>{po.vendorName ?? po.vendorCodeText ?? '—'}</b>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PROCESS</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Process</span>
             <br />
             <b style={{ color: 'var(--purple)' }}>{po.remarks || ''}</b>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>LINES</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Lines</span>
             <br />
             <b>{po.lines.length}</b>
           </div>
@@ -567,26 +655,26 @@ function PoDcFormBody({
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ marginTop: 10, fontSize: 11 }}
+          style={{ marginTop: 10 }}
           onClick={onChangePo}
         >
           <ArrowLeft size={12} /> Choose a different PO
         </button>
       </div>
 
-      <div className="form-grid-3">
-        <DocNumberInput
-          type="delivery_challan"
-          value={code}
-          onChange={setCode}
-          required
-          id="dc-code"
-          onValidityChange={setCodeValid}
-        />
-        <div className="form-grp">
-          <label className="form-label" htmlFor="dc-date">
-            DC Date<span className="req">★</span>
-          </label>
+      {/* 12-column grid: DC No. · DC Date · Transporter · Vehicle No. (3 + 3 + 4 + 2). */}
+      <FormGrid>
+        <div className="f-sm">
+          <DocNumberInput
+            type="delivery_challan"
+            value={code}
+            onChange={setCode}
+            required
+            id="dc-code"
+            onValidityChange={setCodeValid}
+          />
+        </div>
+        <FormField label="DC Date" required size="sm" htmlFor="dc-date">
           <input
             id="dc-date"
             type="date"
@@ -595,23 +683,17 @@ function PoDcFormBody({
             onChange={(e) => setDcDate(e.target.value)}
             required
           />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="dc-transport">
-            Transporter
-          </label>
+        </FormField>
+        <FormField label="Transporter" size="md" htmlFor="dc-transport">
           <input
             id="dc-transport"
             className="innovic-input"
             value={transport}
             onChange={(e) => setTransport(e.target.value)}
-            placeholder="Transport name"
+            placeholder="Transporter name"
           />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="dc-vehicle-no">
-            Vehicle No
-          </label>
+        </FormField>
+        <FormField label="Vehicle No." size="xs" htmlFor="dc-vehicle-no">
           <input
             id="dc-vehicle-no"
             className="innovic-input"
@@ -619,21 +701,27 @@ function PoDcFormBody({
             onChange={(e) => setVehicleNo(e.target.value)}
             placeholder="GJ-01-AB-1234"
           />
-        </div>
-      </div>
+        </FormField>
+      </FormGrid>
 
       <div
         style={{
-          fontSize: 11,
-          color: 'var(--blue)',
-          fontFamily: 'var(--mono)',
-          fontWeight: 700,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-          margin: '14px 0 6px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          margin: 'var(--sp-3) 0 var(--sp-2)',
         }}
       >
-        Items to Send
+        <h2 className="panel-title">Items to Send</h2>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={fillAllPending}
+          disabled={!sendable}
+          title="Put each line's “Can send now” quantity into its Send Now box"
+        >
+          Fill all pending
+        </button>
       </div>
       <div className="tbl-wrap" style={{ marginBottom: 14 }}>
         <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed' }}>
@@ -645,10 +733,15 @@ function PoDcFormBody({
               <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
               <th style={{ width: '14%' }}>Item Code</th>
               <th style={{ width: '20%' }}>Item Name</th>
-              <th style={{ width: '8%' }}>PO Qty</th>
-              <th style={{ width: '12%', color: 'var(--green)' }}>Send Now ★</th>
+              <th className="th-num" style={{ width: '8%' }}>
+                PO Qty
+              </th>
+              <th style={{ width: '6%' }}>UOM</th>
+              <th className="th-num" style={{ width: '12%', color: 'var(--green2)' }}>
+                Send Now<span className="req">★</span>
+              </th>
               <th style={{ width: '16%' }}>Material</th>
-              <th style={{ width: '20%' }}>Remarks</th>
+              <th style={{ width: '14%' }}>Remarks</th>
             </tr>
           </thead>
           <tbody>
@@ -677,12 +770,17 @@ function PoDcFormBody({
                     {/* CODE/REV while raising the challan, so this screen agrees
                         with the saved challan and its printout instead of showing
                         a bare code that gains a revision the moment it is saved. */}
-                    <td className="mono" style={{ color: 'var(--purple)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    <td
+                      className="mono"
+                      style={{ color: 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap' }}
+                    >
                       {itemCodeWithRev(l.itemCodeText, l.itemRevision)}
                     </td>
                     <td>{l.itemNameText}</td>
-                    <td className="mono">{l.poLineQty}</td>
-                    <td>
+                    <td className="mono td-num">{l.poLineQty}</td>
+                    {/* Read-only: the unit comes from the PO line's item. */}
+                    <td className="mono">{l.uom}</td>
+                    <td className="td-num">
                       <input
                         type="number"
                         step="1"
@@ -710,7 +808,7 @@ function PoDcFormBody({
                       {cap ? (
                         <div
                           style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             marginTop: 3,
                             color: done
                               ? 'var(--green)'
@@ -772,7 +870,7 @@ function PoDcFormBody({
                   user staring at a zero with no explanation. */}
                   {issue || blocked ? (
                     <tr>
-                      <td colSpan={8} style={{ padding: '0 8px 8px' }}>
+                      <td colSpan={9} style={{ padding: '0 8px 8px' }}>
                         <div
                           style={{
                             color: issue ? 'var(--red)' : done ? 'var(--text2)' : 'var(--amber)',
@@ -804,38 +902,6 @@ function PoDcFormBody({
           </tbody>
         </table>
       </div>
-
-      {submitError ? (
-        <div
-          style={{
-            color: 'var(--red)',
-            background: 'var(--red3)',
-            border: '1px solid #fca5a5',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
-          {submitError}
-        </div>
-      ) : null}
-
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button
-          type="button"
-          className="btn btn-success"
-          style={{ fontSize: 14, padding: '10px 24px' }}
-          onClick={() => void onSubmit()}
-          disabled={!canSubmit || submitting}
-        >
-          {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-          {submitting ? 'Creating…' : '✔ Save DC'}
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-          Cancel
-        </button>
-      </div>
     </>
   );
 }
@@ -851,10 +917,10 @@ function PoDcFormBody({
 
 function NcDcSection({
   exit,
-  goBack,
+  saveCtl,
 }: {
   exit: ExitConfirm;
-  goBack: () => void;
+  saveCtl: DcSaveCtl;
 }): React.JSX.Element {
   const [ncId, setNcId] = useState<string | null>(null);
 
@@ -867,7 +933,7 @@ function NcDcSection({
       ncId={ncId}
       onChangeNc={() => setNcId(null)}
       exit={exit}
-      goBack={goBack}
+      saveCtl={saveCtl}
     />
   );
 }
@@ -896,8 +962,7 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
   return (
     <>
       <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
-        Return rejected material to a vendor. Only NCs disposed as “Return to Vendor” with no
-        challan yet are shown. The challan returns the NC’s full rejected quantity.
+        Shows NCs set to Return to Vendor with no challan yet.
       </div>
 
       <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
@@ -918,11 +983,11 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
           <Loader2 className="inline h-4 w-4 animate-spin" /> Loading NCs…
         </div>
       ) : isError ? (
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
-          Could not load NCs.
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          Could not load NCs. Try again.
         </div>
       ) : eligible.length === 0 ? (
-        <div className="empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="empty-state" style={{ color: 'var(--amber2)' }}>
           No NC is awaiting a return-to-vendor challan
           {search.trim() ? ' for this search' : ''}. Dispose an NC as “Return to Vendor” first.
         </div>
@@ -931,12 +996,12 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
           <table className="innovic-table" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th>NC No</th>
+                <th>NC No.</th>
                 {/* POL = the CUSTOMER's own PO line number off the SO line
                     behind the job card this NC was raised on. */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code · Name</th>
-                <th>Qty to return</th>
+                <th className="th-num">Qty to Return</th>
                 <th style={{ width: 110 }} />
               </tr>
             </thead>
@@ -957,14 +1022,13 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
                       {n.itemName ?? n.itemNameText ?? '—'}
                     </div>
                   </td>
-                  <td className="mono" style={{ color: 'var(--red)' }}>
+                  <td className="mono td-num" style={{ color: 'var(--red2)' }}>
                     {Number(n.rejectedQty)}
                   </td>
                   <td>
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      style={{ fontSize: 11 }}
                       onClick={() => onSelect(n.id)}
                     >
                       Select
@@ -984,12 +1048,12 @@ function NcDcFormBody({
   ncId,
   onChangeNc,
   exit,
-  goBack,
+  saveCtl,
 }: {
   ncId: string;
   onChangeNc: () => void;
   exit: ExitConfirm;
-  goBack: () => void;
+  saveCtl: DcSaveCtl;
 }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: eff } = useMyAccess();
@@ -1006,7 +1070,7 @@ function NcDcFormBody({
 
   // Only what createNcDcInputSchema takes: dcDate, vendor, transport, vehicleNo,
   // remarks. No lines, no qty — the server derives the line from the NC.
-  const [dcDate, setDcDate] = useState(todayLocal());
+  const [dcDate, setDcDate] = useState(todayIst());
   const [vendorId, setVendorId] = useState<string | null>(null);
   // The picker's label is "CODE — Name"; the challan stores the code text next to
   // the id (the DC's ADR-015 pair), so the code is peeled off here.
@@ -1017,11 +1081,42 @@ function NcDcFormBody({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // The goods go back to the vendor they came from, so the NC's source vendor
+  // (the GRN's supplier, or the outsource PO's vendor) is filled in once the NC
+  // loads. It stays editable — the user may pick another vendor.
+  const sourceVendorId = nc?.sourceVendorId ?? null;
+  const sourceVendorCode = nc?.sourceVendorCode ?? '';
+  const seededVendorRef = useRef(false);
+  useEffect(() => {
+    if (seededVendorRef.current || !sourceVendorId || !sourceVendorCode) return;
+    seededVendorRef.current = true;
+    setVendorId(sourceVendorId);
+    setVendorCodeText(sourceVendorCode);
+  }, [sourceVendorId, sourceVendorCode]);
+  const sourceVendorLabel = sourceVendorId
+    ? [nc?.sourceVendorCode, nc?.sourceVendorName].filter(Boolean).join(' — ')
+    : '';
+
+  // Guard against reaching this form for an NC that is not (or no longer)
+  // eligible — the server enforces the same predicate, but saying it here avoids
+  // a confusing rejection after the vendor has been picked. Computed before the
+  // early returns (reading `nc?.`) so the header Save state can be reported.
+  const alreadyHasChallan = Boolean(nc?.deliveryChallanId);
+  const isEligible =
+    nc?.disposition === 'return_to_vendor' && nc.status === 'disposed' && !alreadyHasChallan;
+  const canSubmit = isEligible && dcDate !== '' && vendorId != null && vendorCodeText !== '';
+  // The pre-filled source vendor is not the user's typing — only a change is.
+  const dirty =
+    vendorId !== (sourceVendorCode ? sourceVendorId : null) ||
+    transport !== '' ||
+    vehicleNo !== '' ||
+    remarks !== '';
+  useReportSave(saveCtl, { canSave: canCreateDc && canSubmit, saving: submitting, dirty });
+
   if (!canCreateDc) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)' }}>
-        ⛔ You do not have access to create a return-to-vendor challan (needs NC dispose edit and
-        OSP DC entry).
+      <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+        You do not have permission to create a return DC. Ask an admin.
       </div>
     );
   }
@@ -1036,21 +1131,11 @@ function NcDcFormBody({
 
   if (isError || !nc) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
-        Could not load NC.
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
+        Could not load NC. Try again.
       </div>
     );
   }
-
-  // Guard against reaching this form for an NC that is not (or no longer)
-  // eligible — the server enforces the same predicate, but saying it here avoids
-  // a confusing rejection after the vendor has been picked.
-  const alreadyHasChallan = Boolean(nc.deliveryChallanId);
-  const isEligible =
-    nc.disposition === 'return_to_vendor' && nc.status === 'disposed' && !alreadyHasChallan;
-
-  // A plain const (not a hook) so it can read the guaranteed-loaded `nc`.
-  const canSubmit = isEligible && dcDate !== '' && vendorId != null && vendorCodeText !== '';
 
   const onSubmit = async (): Promise<void> => {
     setSubmitError(null);
@@ -1070,14 +1155,15 @@ function NcDcFormBody({
         vehicleNo: vehicleNo.trim() || null,
         remarks: remarks.trim() || null,
       });
-      exit.leave(() =>
-        void navigate({
-          to: '/delivery-challans/$id',
-          params: { id: created.deliveryChallanId },
-        }),
+      exit.leave(
+        () =>
+          void navigate({
+            to: '/delivery-challans/$id',
+            params: { id: created.deliveryChallanId },
+          }),
       );
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to create DC.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save DC. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -1085,9 +1171,17 @@ function NcDcFormBody({
 
   const itemCode = itemCodeWithRev(nc.itemCode ?? nc.itemCodeText, nc.itemRevision);
   const itemName = nc.itemName ?? nc.itemNameText ?? '—';
+  // The page header's Save (and Ctrl+S) run this body's save.
+  saveCtl.submitRef.current = () => void onSubmit();
 
   return (
     <>
+      {/* Save error right under the header's Save. */}
+      {submitError ? (
+        <Banner tone="error" role="alert">
+          {submitError}
+        </Banner>
+      ) : null}
       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', marginBottom: 12 }}>
         <Truck size={14} style={{ verticalAlign: -2 }} /> Create Return-to-Vendor Challan
       </div>
@@ -1111,7 +1205,7 @@ function NcDcFormBody({
           }}
         >
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO No / NC No</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>NC No.</span>
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {nc.code}
@@ -1120,14 +1214,14 @@ function NcDcFormBody({
           {/* POL — the customer's own PO line number off the SO line behind
               this NC's job card. */}
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>POL</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>POL</span>
             <br />
             <b className="mono fw-700" style={{ color: 'var(--purple)' }}>
               {nc.clientPoLineNo ?? '—'}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>ITEM</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Item</span>
             <br />
             <b className="mono fw-700" style={{ color: 'var(--text)' }}>
               {itemCode}
@@ -1137,9 +1231,9 @@ function NcDcFormBody({
             </div>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>QTY TO RETURN</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Qty to Return</span>
             <br />
-            <b className="mono" style={{ color: 'var(--red)' }}>
+            <b className="mono" style={{ color: 'var(--red2)' }}>
               {Number(nc.rejectedQty)} pcs
             </b>
           </div>
@@ -1148,7 +1242,7 @@ function NcDcFormBody({
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ marginTop: 10, fontSize: 11 }}
+          style={{ marginTop: 10 }}
           onClick={onChangeNc}
         >
           <ArrowLeft size={12} /> Choose a different NC
@@ -1158,7 +1252,7 @@ function NcDcFormBody({
       {!isEligible ? (
         <div
           style={{
-            color: 'var(--amber)',
+            color: 'var(--amber2)',
             background: 'var(--amber3)',
             border: '1px solid var(--amber)',
             borderRadius: 6,
@@ -1173,11 +1267,20 @@ function NcDcFormBody({
         </div>
       ) : null}
 
-      <div className="form-grid-3">
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncdc-date">
-            DC Date<span className="req">★</span>
-          </label>
+      {/* 12-column grid, party first: Vendor · DC Date · Transporter ·
+          Vehicle No (4 + 3 + 3 + 2), then Remarks (full). */}
+      <FormGrid>
+        <VendorPicker
+          id="ncdc-vendor"
+          className="form-grp f-md"
+          value={vendorId}
+          initialLabel={sourceVendorLabel}
+          onChange={(id, label) => {
+            setVendorId(id);
+            setVendorCodeText(id ? (label.split(' — ')[0] ?? label) : '');
+          }}
+        />
+        <FormField label="DC Date" required size="sm" htmlFor="ncdc-date">
           <input
             id="ncdc-date"
             type="date"
@@ -1186,32 +1289,18 @@ function NcDcFormBody({
             onChange={(e) => setDcDate(e.target.value)}
             required
           />
-        </div>
-        <VendorPicker
-          id="ncdc-vendor"
-          value={vendorId}
-          onChange={(id, label) => {
-            setVendorId(id);
-            setVendorCodeText(id ? (label.split(' — ')[0] ?? label) : '');
-          }}
-        />
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncdc-transport">
-            Transporter
-          </label>
+        </FormField>
+        <FormField label="Transporter" size="sm" htmlFor="ncdc-transport">
           <input
             id="ncdc-transport"
             className="innovic-input"
             maxLength={200}
             value={transport}
             onChange={(e) => setTransport(e.target.value)}
-            placeholder="Transport name"
+            placeholder="Transporter name"
           />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncdc-vehicle-no">
-            Vehicle No
-          </label>
+        </FormField>
+        <FormField label="Vehicle No." size="xs" htmlFor="ncdc-vehicle-no">
           <input
             id="ncdc-vehicle-no"
             className="innovic-input"
@@ -1220,11 +1309,8 @@ function NcDcFormBody({
             onChange={(e) => setVehicleNo(e.target.value)}
             placeholder="GJ-01-AB-1234"
           />
-        </div>
-        <div className="form-grp" style={{ gridColumn: '1 / -1' }}>
-          <label className="form-label" htmlFor="ncdc-remarks">
-            Remarks
-          </label>
+        </FormField>
+        <FormField label="Remarks" size="full" htmlFor="ncdc-remarks">
           <textarea
             id="ncdc-remarks"
             className="innovic-textarea"
@@ -1234,40 +1320,8 @@ function NcDcFormBody({
             onChange={(e) => setRemarks(e.target.value)}
             placeholder="optional"
           />
-        </div>
-      </div>
-
-      {submitError ? (
-        <div
-          style={{
-            color: 'var(--red)',
-            background: 'var(--red3)',
-            border: '1px solid #fca5a5',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            margin: '10px 0',
-          }}
-        >
-          {submitError}
-        </div>
-      ) : null}
-
-      <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
-        <button
-          type="button"
-          className="btn btn-success"
-          style={{ fontSize: 14, padding: '10px 24px' }}
-          onClick={() => void onSubmit()}
-          disabled={!canSubmit || submitting}
-        >
-          {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-          {submitting ? 'Creating…' : '✔ Save DC'}
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-          Cancel
-        </button>
-      </div>
+        </FormField>
+      </FormGrid>
     </>
   );
 }

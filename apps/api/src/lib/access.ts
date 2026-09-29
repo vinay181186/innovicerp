@@ -39,6 +39,14 @@ const ACTION_VERB: Record<AccessAction, string> = {
   approve: 'approve records in',
 };
 
+// The tick-box names on the Access Control screen, for the refusal message.
+const ACTION_TICK: Record<AccessAction, string> = {
+  view: 'View',
+  entry: 'Entry',
+  edit: 'Edit',
+  approve: 'Approve',
+};
+
 function formLabel(formKey: AccessFormKey): string {
   return ACCESS_FORMS.find((f) => f.key === formKey)?.label ?? formKey;
 }
@@ -77,7 +85,7 @@ export async function requireFormAccess(
 
   throw new AuthorizationError(
     `Your access does not let you ${ACTION_VERB[action]} ${formLabel(formKey)}. ` +
-      `Ask an admin to raise your tier for this department, or to tick ${action} ` +
+      `Ask an admin to raise your tier for this department, or to tick ${ACTION_TICK[action]} ` +
       `on ${formLabel(formKey)} in Access Control.`,
   );
 }
@@ -116,6 +124,39 @@ export async function requireAnyFormAccess(
   }
   const [formKey, action] = pairs[0]!;
   await requireFormAccess(user, formKey, action);
+}
+
+/** ADR-193 — who may READ store stock screens (inventory, ledger, issue
+ *  registers): anyone whose work depends on what is in the store. Wide on
+ *  purpose (paper test P24): a planner or buyer must not be locked out. */
+export const STORE_VIEW_FORMS: ReadonlyArray<readonly [AccessFormKey, AccessAction]> = [
+  ['item_create', 'view'],
+  ['issue_create', 'view'],
+  ['toolissue_create', 'view'],
+  ['grn_create', 'view'],
+  ['plan_create', 'view'],
+  ['pr_create', 'view'],
+  ['po_create', 'view'],
+  ['prodorder_create', 'view'],
+  ['jc_create', 'view'],
+  ['dispatch_create', 'view'],
+  ['party_create', 'view'],
+  ['ospdc_create', 'view'],
+  ['qc_incoming', 'view'],
+  ['bom_create', 'view'],
+];
+
+/** The non-throwing twin of requireFormAccess, for READ paths that must list
+ *  only what the caller could act on (the approvals inbox, ADR-190). Same
+ *  rule: admins pass, everyone else by the effective matrix. */
+export async function hasFormAccess(
+  user: AuthContext,
+  formKey: AccessFormKey,
+  action: AccessAction,
+): Promise<boolean> {
+  if (user.role === 'admin') return true;
+  const eff = await getMyAccess(user);
+  return effectiveFormPerms(eff, formKey)[action];
 }
 
 export async function canSeeFormPrice(user: AuthContext, formKey: AccessFormKey): Promise<boolean> {

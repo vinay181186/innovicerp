@@ -25,16 +25,18 @@
 import type { ListDeliveryChallansQuery } from '@innovic/shared';
 import { DC_STATUSES, type DcStatus } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
+import { Loader2, Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
 import { useDeliveryChallansList } from '../api';
 import { DcCard } from '../components/dc-card';
+import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { printDispatchRegister } from '../lib/print-dispatch-register';
 import { OspAtVendorRegister } from '@/modules/osp-wip/components/osp-at-vendor-register';
 
@@ -62,7 +64,11 @@ function DeliveryChallansListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already trims to it.
+    setSearchInput((prev) =>
+      prev.trim() === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -103,7 +109,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
     if (!data) return;
     const bits: string[] = [];
     if (search.search) bits.push(`search "${search.search}"`);
-    if (search.status) bits.push(search.status.replaceAll('_', ' '));
+    if (search.status) bits.push(DC_STATUS_LABEL[search.status]);
     bits.push(`page ${currentPage} of ${totalPages}`);
     // The builder RETURNS false when the popup was blocked — it does not throw.
     // Catching only the throw meant a blocked print did nothing at all and said
@@ -129,8 +135,8 @@ function DeliveryChallansListPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view DCs. Ask an admin.
       </div>
     );
   }
@@ -169,7 +175,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
               marginBottom: -1,
             }}
           >
-            {t === 'outward' ? '🚛 Outward DC' : '🚚 At-Vendor Register'}
+            {t === 'outward' ? 'Outward DC' : 'At-Vendor Register'}
           </button>
         ))}
       </div>
@@ -178,132 +184,101 @@ function DeliveryChallansListPage(): React.JSX.Element {
         <OspAtVendorRegister />
       ) : (
         <>
-          {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + count + filters + Print/New and the count strip stay pinned while
-          the cards scroll underneath. `#content` is the scroll container, so top:0
-          pins this to its padding box; the background must be opaque var(--bg) or
-          cards show through as they pass under. Not bled to the edges — that would
-          give the app a horizontal scrollbar. */}
-          <div
-            style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 20,
-              background: 'var(--bg)',
-              paddingBottom: 8,
-              marginBottom: 10,
-              borderBottom: '1px solid var(--border)',
+          {/* THE list header (ui/layout ListHeader): title · count · Print
+              Register · + New DC, then the filter bar (search · status ·
+              Clear), with the read-only totals strip pinned inside the band. */}
+          <ListHeader
+            title="OSP Outward DC"
+            icon="🚛"
+            count={total}
+            noun="DC"
+            filterNote={search.status ? DC_STATUS_LABEL[search.status] : undefined}
+            search={searchInput}
+            onSearch={setSearchInput}
+            searchPlaceholder="Search DC, PO / NC, vendor…"
+            updating={isFetching && !isLoading}
+            filters={
+              <select
+                className="innovic-select"
+                aria-label="DC status"
+                title="DC status"
+                value={search.status ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value as DcStatus | '';
+                  void navigate({
+                    search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                    replace: true,
+                  });
+                }}
+              >
+                <option value="">All statuses</option>
+                {DC_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {DC_STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            }
+            onClearFilters={() => {
+              setSearchInput('');
+              void navigate({
+                search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+                replace: true,
+              });
             }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                marginBottom: 10,
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div className="section-hdr" style={{ marginBottom: 0 }}>
-                  🚛 OSP / JW Outward DC
-                </div>
-                <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-                  {total} DC{total === 1 ? '' : 's'}
-                  {search.status ? (
-                    <>
-                      {' '}
-                      · <span className="text2">{search.status}</span> only
-                    </>
-                  ) : null}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <input
-                  className="innovic-input"
-                  placeholder="🔍 Search DC, PO / NC, vendor..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  style={{ width: 240, fontSize: 12 }}
-                />
-                <select
-                  className="innovic-select"
-                  value={search.status ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value as DcStatus | '';
-                    void navigate({
-                      search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                      replace: true,
-                    });
-                  }}
-                  style={{ width: 160, fontSize: 12 }}
-                >
-                  <option value="">All statuses</option>
-                  {DC_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s.replaceAll('_', ' ')}
-                    </option>
-                  ))}
-                </select>
-                {isFetching && !isLoading ? (
-                  <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                    <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-                  </span>
-                ) : null}
+            filtersActive={search.status !== undefined || searchInput !== ''}
+            tools={
+              <>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
-                  style={{ fontSize: 12 }}
+                  className="btn btn-ghost"
                   onClick={onPrintRegister}
                   disabled={isLoading || !data}
-                  title="Print the dispatch register for the current filter/page"
+                  title="Print the DC register for the current filter/page"
                 >
                   <Printer size={14} /> Print Register
                 </button>
-                {/* A DC is always issued against a PO, but the button lands on the
-                OSP Delivery Challan & Outward form itself — the form asks for the
-                PO. Sending the user to the PO list first made them hunt for a row
-                with a "Create DC" action before they ever saw the DC form. */}
-                {perms.entry ? (
-                  <Link to="/delivery-challans/new" className="btn btn-primary">
-                    <Plus size={14} /> New DC (via PO)
-                  </Link>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Read-only totals, not filters — no onClick, so each cell renders as a
-            <div> instead of a button that does nothing. Rendered with zeros
-            while the first page loads so the list below does not jump. */}
+              </>
+            }
+            primary={
+              // A DC is always issued against a PO, but the button lands on the
+              // OSP Delivery Challan & Outward form itself — the form asks for
+              // the PO.
+              perms.entry ? (
+                <Link to="/delivery-challans/new" className="btn btn-primary">
+                  <Plus size={14} /> New DC (via PO)
+                </Link>
+              ) : null
+            }
+          >
+            {/* Read-only totals, not filters — no onClick, so each cell renders
+                as a <div>. Zeros while the first page loads so nothing jumps. */}
             <StatStrip
               items={[
                 {
                   key: 'dispatched',
-                  label: 'Total Dispatched',
+                  label: 'Total Sent to Vendor',
                   count: (data?.summary?.totalDispatched ?? 0).toLocaleString('en-IN', {
                     maximumFractionDigits: 2,
                   }),
-                  color: 'var(--red)',
                   sub: 'pieces',
                   title: 'Total quantity sent out on the DCs matching this filter',
                 },
                 {
                   key: 'entries',
-                  label: 'Dispatch Entries',
+                  label: 'DC Lines',
                   count: data?.summary?.entryCount ?? 0,
-                  title: 'Number of DC lines in this filter',
                 },
                 {
                   key: 'items',
-                  label: 'Items Dispatched',
+                  label: 'Items Sent',
                   count: data?.summary?.itemCount ?? 0,
                   color: 'var(--cyan)',
                   title: 'Distinct items sent out in this filter',
                 },
               ]}
             />
-          </div>
+          </ListHeader>
 
           {isLoading ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
@@ -311,68 +286,29 @@ function DeliveryChallansListPage(): React.JSX.Element {
               Loading…
             </div>
           ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load DCs'}
+            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load DCs. Try again.'}
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No OSP DCs yet — issue one from a PO detail page.
+              {search.search || search.status ? 'No DCs match.' : 'No DCs yet.'}
             </div>
           ) : (
             rows.map((dc) => <DcCard key={dc.id} dc={dc} />)
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 8,
-              fontSize: 12,
-              color: 'var(--text3)',
-            }}
-          >
-            <span>
-              {total === 0
-                ? 'No DCs'
-                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage <= 1}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-                Page {currentPage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage >= totalPages}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                Next <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-            💡 Click a card to open the DC · <b>+ Receive</b> books material back from the vendor.
-          </div>
+          <ListFooter
+            total={total}
+            noun="DC"
+            page={currentPage}
+            pageSize={PAGE_SIZE}
+            onPage={(p) =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+                replace: true,
+              })
+            }
+          />
         </>
       )}
     </div>

@@ -25,7 +25,7 @@ export function DashboardTilesGrid() {
       <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4 text-sm">
         <div className="inline-flex items-center gap-2 text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          {error instanceof Error ? error.message : 'Failed to load dashboard KPIs'}
+          {error instanceof Error ? error.message : 'Could not load dashboard figures. Try again.'}
         </div>
       </div>
     );

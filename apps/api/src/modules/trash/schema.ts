@@ -39,6 +39,10 @@ export type TrashListItem = z.infer<typeof trashListItemSchema>;
 
 export const listTrashQuerySchema = z.object({
   type: trashEntityTypeSchema.optional(),
+  // Matches the document code / name, the document type (code or screen
+  // word) and the deleted-by name. Applied inside the query, so total and
+  // paging count only the matching rows.
+  search: z.string().trim().max(100).optional(),
   limit: z.coerce.number().int().positive().max(500).default(100),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

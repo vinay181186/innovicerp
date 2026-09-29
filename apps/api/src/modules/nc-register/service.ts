@@ -12,6 +12,8 @@ import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
 import {
   type DocumentTraceability,
   type RelatedDoc,
+  NC_DISPOSITION_LABELS,
+  NC_STATUS_LABELS,
   opSrNo,
   withDocRevision,
 } from '@innovic/shared';
@@ -28,6 +30,7 @@ import {
   salesOrderLines,
   users,
   vendors,
+  goodsReceiptNoteLines,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
@@ -40,9 +43,11 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { autoCloseLinkedTasks } from '../tasks/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
-import { type DisposeNcContext, disposeNcCascade, resolveNcSource } from './cascades';
+import { type DisposeNcContext, disposeNcCascade, nextNcCode, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
 import type {
   CloseNcReworkInput,
@@ -70,7 +75,7 @@ function ncDetail(
   rejectedQty: string,
 ): string {
   const item = itemCodeText && itemCodeText.length > 0 ? itemCodeText : '—';
-  return `${code} — ${item} qty=${rejectedQty}`;
+  return `${code} — ${item}, ${rejectedQty} pcs`;
 }
 
 // ─── FK validation helpers ────────────────────────────────────────────────
@@ -79,9 +84,9 @@ async function assertJobCardExists(
   tx: DbTransaction,
   jobCardId: string,
   companyId: string,
-): Promise<void> {
+): Promise<{ itemId: string }> {
   const rows = await tx
-    .select({ id: jobCards.id })
+    .select({ id: jobCards.id, itemId: jobCards.itemId })
     .from(jobCards)
     .where(
       and(
@@ -92,22 +97,32 @@ async function assertJobCardExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Job card ${jobCardId} not found in this company`);
+    throw new ValidationError('Job Card not found. Pick it again.');
   }
+  return { itemId: rows[0]!.itemId };
 }
 
 async function assertJcOpExists(
   tx: DbTransaction,
   jcOpId: string,
   companyId: string,
+  jobCardId: string,
 ): Promise<void> {
+  // The operation must belong to THIS JC — not just to the company.
   const rows = await tx
     .select({ id: jcOps.id })
     .from(jcOps)
-    .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
+    .where(
+      and(
+        eq(jcOps.id, jcOpId),
+        eq(jcOps.jobCardId, jobCardId),
+        eq(jcOps.companyId, companyId),
+        isNull(jcOps.deletedAt),
+      ),
+    )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`JC op ${jcOpId} not found in this company`);
+    throw new ValidationError('Operation not found on this JC. Pick it again.');
   }
 }
 
@@ -122,7 +137,7 @@ async function assertItemExists(
     .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Item ${itemId} not found in this company`);
+    throw new ValidationError('Item not found. Pick the Item Code from Item Master.');
   }
 }
 
@@ -732,7 +747,7 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     )
     .limit(1);
   const found = rows[0];
-  if (!found) throw new NotFoundError(`NC ${id} not found`);
+  if (!found) throw new NotFoundError('NC not found. It may have been moved to Trash.');
   const row = found.nc;
   const linkedCapaCode = await lookupLinkedCapaCode(tx, companyId, row.code);
   // Material source (Tier A, WI3): resolve the vendor/PO/GRN the rejected pieces
@@ -813,7 +828,7 @@ export async function getNcRegisterRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`NC ${id} not found`);
+    if (!header) throw new NotFoundError('NC not found. It may have been moved to Trash.');
 
     const ncPick = {
       id: ncRegister.id,
@@ -1034,7 +1049,7 @@ export async function getNcRegisterRelated(
             row(jc.id, jc.code, jc.closedAt ? 'closed' : 'open', jc.date, {
               // display rule — see opSrNo in @innovic/shared
               ...(header.jcOpId && header.opSeq != null
-                ? { label: `Op${opSrNo(header.opSeq)}` }
+                ? { label: `Op ${opSrNo(header.opSeq)}` }
                 : {}),
             }),
           ]
@@ -1200,27 +1215,43 @@ export async function createNcRegister(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const dup = await tx
-      .select({ id: ncRegister.id })
-      .from(ncRegister)
-      .where(
-        and(
-          eq(ncRegister.companyId, companyId),
-          eq(ncRegister.code, input.code),
-          isNull(ncRegister.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (dup.length > 0) {
-      throw new ConflictError(`NC code "${input.code}" already exists`);
+    // NC No. blank → the server assigns the next number in the series (same
+    // advisory-locked helper the auto-NC path uses). A typed code keeps the
+    // duplicate check.
+    let code: string;
+    if (input.code) {
+      code = input.code;
+      const dup = await tx
+        .select({ id: ncRegister.id })
+        .from(ncRegister)
+        .where(
+          and(
+            eq(ncRegister.companyId, companyId),
+            eq(ncRegister.code, code),
+            isNull(ncRegister.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (dup.length > 0) {
+        throw new ConflictError(`NC code "${code}" already exists`);
+      }
+    } else {
+      code = await nextNcCode(tx, companyId);
     }
 
-    await assertJobCardExists(tx, input.jobCardId, companyId);
+    const jc = await assertJobCardExists(tx, input.jobCardId, companyId);
+    // The NC's part IS the JC's part — an NC saying JC-A with part B would
+    // mis-book the rejection. The form locks Item to the JC; enforce it here.
+    if (input.itemId !== jc.itemId) {
+      throw new ValidationError(
+        'Item Code must be the Job Card’s item. Pick the JC again — the item fills from it.',
+      );
+    }
     // ADR-182 — no new non-conformance may be raised on a short-closed
     // Production Order's Job Card; the work it would describe cannot happen.
     await assertProductionOrderNotShortClosed(tx, input.jobCardId);
     await assertItemExists(tx, input.itemId, companyId);
-    if (input.jcOpId) await assertJcOpExists(tx, input.jcOpId, companyId);
+    if (input.jcOpId) await assertJcOpExists(tx, input.jcOpId, companyId, input.jobCardId);
 
     // Snapshot itemCodeText from the items row so the durable text matches the
     // master at creation time. Same pattern as legacy auto-NC capture.
@@ -1230,7 +1261,7 @@ export async function createNcRegister(
       .insert(ncRegister)
       .values({
         companyId,
-        code: input.code,
+        code,
         ncDate: input.ncDate,
         jobCardId: input.jobCardId,
         jcOpId: input.jcOpId ?? null,
@@ -1294,11 +1325,11 @@ export async function updateNcRegister(
       )
       .limit(1);
     if (existing.length === 0) {
-      throw new NotFoundError(`NC ${id} not found`);
+      throw new NotFoundError('NC not found. It may have been moved to Trash.');
     }
     if (existing[0]!.status !== 'pending') {
       throw new ConflictError(
-        `NC ${id} is ${existing[0]!.status} — only pending NCs can be edited (use disposition workflow for closed NCs)`,
+        `This NC is ${labelOf(NC_STATUS_LABELS, existing[0]!.status)}. Only NC Raised NCs can be edited.`,
       );
     }
 
@@ -1365,18 +1396,19 @@ export async function disposeNcRegister(
     // side-effect (child card, supplementary JC, sibling, scrap cost).
     const parts: string[] = [];
     if (result.remainderNcCode) parts.push(`remainder ${result.remainderNcCode}`);
-    if (result.childJcCode) parts.push(`${input.action} JC ${result.childJcCode}`);
+    if (result.childJcCode)
+      parts.push(`${labelOf(NC_DISPOSITION_LABELS, input.action)} JC ${result.childJcCode}`);
     if (input.action === 'make_fresh' && result.newJcCode)
       parts.push(`supplementary JC ${result.newJcCode}`);
     if (input.action === 'scrap' && input.scrapCost !== undefined)
-      parts.push(`scrapCost=${input.scrapCost}`);
+      parts.push(`Scrap Cost ${input.scrapCost}`);
     const sideEffect = parts.length > 0 ? `; ${parts.join('; ')}` : '';
     await emitActivityLog(
       tx,
       {
         action: 'NC_DISPOSE',
         entity: 'NonConformance',
-        detail: `${nc.code} — ${input.action.toUpperCase()} qty=${result.qty}${sideEffect}`,
+        detail: `${nc.code} — Disposition ${labelOf(NC_DISPOSITION_LABELS, input.action)}, ${result.qty} pcs${sideEffect}`,
         refId: nc.code,
       },
       companyId,
@@ -1409,6 +1441,17 @@ export async function disposeNcRegister(
           refId: result.newJcCode,
         },
         companyId,
+        user,
+      );
+    }
+    // ADR-190 — the "Dispose NC-…" task raised against this NC closes itself,
+    // but only when the WHOLE NC was disposed. A partial disposition splits
+    // the rest onto a NEW pending NC; the job is not done, so the task stays
+    // open (it still points at this NC, whose detail links the remainder).
+    if (!result.remainderNcId) {
+      await autoCloseLinkedTasks(
+        tx,
+        { companyId, refTypes: ['nc'], refId: id, doneLabel: `NC ${nc.code} disposed` },
         user,
       );
     }
@@ -1466,9 +1509,9 @@ export async function closeNc(
         action: 'NC_CLOSE',
         entity: 'NonConformance',
         detail:
-          `${after.code} — CLOSED${opts.via ? ` (${opts.via})` : ''} ` +
-          `qty=${after.rejectedQty} cleared=${after.clearedQty} failed=${after.failedQty}` +
-          (done != null ? ` reworkDone=${done}` : ''),
+          `${after.code} — Closed${opts.via ? ` (${opts.via})` : ''}: ` +
+          `${after.rejectedQty} pcs, ${after.clearedQty} cleared, ${after.failedQty} failed` +
+          (done != null ? `, ${done} Rework Completed` : ''),
         refId: after.code,
       },
       companyId,
@@ -1489,9 +1532,7 @@ export async function closeNcRework(
   const companyId = requireCompany(user);
   const nc = await withUserContext(user, (tx) => readNc(tx, id, companyId));
   if (nc.disposition !== 'rework' && nc.disposition !== 'repair') {
-    throw new ConflictError(
-      `NC ${nc.code} is not on a rework path (disposition=${nc.disposition ?? 'null'})`,
-    );
+    throw new ConflictError(`NC ${nc.code} is not set to Rework. Change its disposition first.`);
   }
   return closeNc(id, user, { reworkDoneQty: input.reworkDoneQty, via: 'rework' });
 }
@@ -1504,7 +1545,7 @@ export async function closeNcReturnToVendor(id: string, user: AuthContext): Prom
   const nc = await withUserContext(user, (tx) => readNc(tx, id, companyId));
   if (nc.disposition !== 'return_to_vendor') {
     throw new ConflictError(
-      `NC ${nc.code} is not on a return-to-vendor path (disposition=${nc.disposition ?? 'null'})`,
+      `NC ${nc.code} is not set to Return to Vendor. Change its disposition first.`,
     );
   }
   return closeNc(id, user, { via: 'return to vendor' });
@@ -1587,19 +1628,19 @@ export async function createNcDc(
       )
       .limit(1);
     const nc = ncRows[0];
-    if (!nc) throw new NotFoundError(`NC ${id} not found`);
+    if (!nc) throw new NotFoundError('NC not found. It may have been moved to Trash.');
     if (nc.disposition !== 'return_to_vendor') {
       throw new ConflictError(
-        `NC ${nc.code} is not on a return-to-vendor path (disposition=${nc.disposition ?? 'null'})`,
+        `NC ${nc.code} is not set to Return to Vendor. Change its disposition first.`,
       );
     }
     if (nc.status !== 'disposed') {
       throw new ConflictError(
-        `NC ${nc.code} is ${nc.status} — a challan can only be raised while it is disposed`,
+        `NC ${nc.code} is ${labelOf(NC_STATUS_LABELS, nc.status)}. A DC can only be raised while it is Disposed.`,
       );
     }
     if (nc.deliveryChallanId) {
-      throw new ConflictError(`NC ${nc.code} already has a return-to-vendor challan`);
+      throw new ConflictError(`NC ${nc.code} already has a return-to-vendor DC.`);
     }
 
     if (input.vendorId) {
@@ -1614,7 +1655,8 @@ export async function createNcDc(
           ),
         )
         .limit(1);
-      if (v.length === 0) throw new ValidationError(`Vendor ${input.vendorId} not found`);
+      if (v.length === 0)
+        throw new ValidationError('Vendor not found. Pick it again from the list.');
     }
 
     // WI4: default the return vendor FK from the NC's ACTUAL source (GRN vendor,
@@ -1630,11 +1672,14 @@ export async function createNcDc(
 
     // The parent card supplies the SO line; the item master the uom the line
     // needs; the origin op tells us whether a PO line is involved.
-    const jcRows = await tx
-      .select({ sourceSoLineId: jobCards.sourceSoLineId })
-      .from(jobCards)
-      .where(and(eq(jobCards.id, nc.jobCardId), eq(jobCards.companyId, companyId)))
-      .limit(1);
+    // ADR-189 — a bought-material NC has no card, hence no SO line.
+    const jcRows = nc.jobCardId
+      ? await tx
+          .select({ sourceSoLineId: jobCards.sourceSoLineId })
+          .from(jobCards)
+          .where(and(eq(jobCards.id, nc.jobCardId), eq(jobCards.companyId, companyId)))
+          .limit(1)
+      : [];
     const itemRows = await tx
       .select({ code: items.code, name: items.name, uom: items.uom })
       .from(items)
@@ -1649,10 +1694,20 @@ export async function createNcDc(
           .limit(1)
       : [];
     const origin = originRows[0];
-    const poLineId =
+    let poLineId =
       origin && (origin.opType === 'outsource' || origin.outsourcePoLineId)
         ? (origin.outsourcePoLineId ?? null)
         : null;
+    // ADR-189 — a bought-material NC has no op; its PO line is the one the
+    // rejected GRN line was received against.
+    if (!poLineId && !nc.jobCardId && nc.grnLineId) {
+      const gl = await tx
+        .select({ poLineId: goodsReceiptNoteLines.purchaseOrderLineId })
+        .from(goodsReceiptNoteLines)
+        .where(eq(goodsReceiptNoteLines.id, nc.grnLineId))
+        .limit(1);
+      poLineId = gl[0]?.poLineId ?? null;
+    }
 
     const qty = Math.round(Number(nc.rejectedQty));
     const code = await nextNcDcCode(tx, companyId);
@@ -1682,7 +1737,7 @@ export async function createNcDc(
       })
       .returning({ id: deliveryChallans.id, code: deliveryChallans.code });
     const dc = insertedDc[0];
-    if (!dc) throw new ValidationError('Failed to create the return-to-vendor challan');
+    if (!dc) throw new ValidationError('Could not create the return-to-vendor DC. Try again.');
 
     await tx.insert(deliveryChallanLines).values({
       companyId,
@@ -1750,7 +1805,7 @@ export async function createNcDc(
             action: 'PO_RECEIVED_ADJUST',
             entity: 'PurchaseOrderLine',
             detail:
-              `PO line ${before.lineNo} received_qty ${before.receivedQty} → ${after.receivedQty} ` +
+              `PO Ln ${before.lineNo} Received ${before.receivedQty} → ${after.receivedQty} ` +
               `(${qty} returned to vendor on ${dc.code} for ${nc.code})`,
             refId: nc.code,
           },
@@ -1822,11 +1877,11 @@ export async function softDeleteNcRegister(id: string, user: AuthContext): Promi
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`NC ${id} not found`);
+      throw new NotFoundError('NC not found. It may have been moved to Trash.');
     }
     if (row.status !== 'pending') {
       throw new ConflictError(
-        `NC ${id} is ${row.status} — disposed/closed NCs are permanent records and cannot be deleted`,
+        `NC ${row.code} is ${labelOf(NC_STATUS_LABELS, row.status)} and cannot be deleted.`,
       );
     }
     await tx

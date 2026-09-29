@@ -15,7 +15,7 @@ import { Link } from '@tanstack/react-router';
 // moves.
 export function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Element | null {
   if (!jc.recoveryKind) return null;
-  const kind = jc.recoveryKind === 'repair' ? 'REPAIR' : 'REWORK';
+  const kind = jc.recoveryKind === 'repair' ? 'Repair' : 'Rework';
   // display rule — see opSrNo in @innovic/shared
   const opN = jc.originOpSeq != null ? fmtOpSrNo(jc.originOpSeq) : '?';
   // Both ids are nullable in the contract; a code with no id renders as text
@@ -34,18 +34,15 @@ export function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Eleme
   ) : (
     <span className="td-code">{jc.parentNcCode ?? '—'}</span>
   );
-  // Source context of the rejected work (Tier A). Derived on read from the
-  // parent NC: which op + machine produced the rejects and how many. Any field
-  // may be null (older cards, or a source NC that lacks the fact) — those
-  // segments are simply dropped so the sentence never shows a bare "—".
-  const verb = jc.recoveryKind === 'repair' ? 'Repairing' : 'Reworking';
-  const qtyText =
-    jc.parentRejectedQty != null ? `${jc.parentRejectedQty} rejected` : 'rejected pieces';
-  const sourceParts = [
-    `Op ${opN}`,
-    jc.parentOpName ?? undefined,
-    jc.parentMachineCode ?? undefined,
-  ].filter((p): p is string => Boolean(p));
+  // Where the rejects came from, from the parent NC. Any part may be null —
+  // those parts are dropped, never shown as a bare "—".
+  const sourceAt = [jc.parentOpName, jc.parentMachineCode].filter(Boolean).join(' / ');
+  const sourceLine = [
+    jc.parentRejectedQty != null ? `${jc.parentRejectedQty} rejected` : null,
+    sourceAt ? `at ${sourceAt}` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <div
       style={{
@@ -70,14 +67,10 @@ export function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Eleme
       >
         <span>♻ {kind} of</span>
         {parent}
-        <span>· Op {opN} · NC</span>
-        {nc}
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
-        {verb} {qtyText} from {sourceParts.join(' · ')}.
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
-        Recovered pieces return to the parent&apos;s Op {opN} after this card&apos;s final QC.
+        <span>
+          (NC {nc}, Op {opN}) — returns to Op {opN} after final QC.
+        </span>
+        {sourceLine ? <span>· {sourceLine}</span> : null}
       </div>
     </div>
   );

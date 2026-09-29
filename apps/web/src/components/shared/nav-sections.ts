@@ -15,6 +15,12 @@ export interface NavItem {
   // Items without a formKey are always shown to anyone who can see the section,
   // exactly as before. Wired for Purchase first; add keys to widen it.
   formKey?: AccessFormKey;
+  // Query string for the link, e.g. { group: 'Sales' } on a department's
+  // "Reports" link → /reports?group=Sales. An item with `search` matches the
+  // current page only when the URL carries the same values (see
+  // navItemMatches); the breadcrumbs and open-page tabs skip such items, so
+  // /reports is always named by the plain Reports-section entry.
+  search?: Record<string, string>;
 }
 
 export interface NavSubGroup {
@@ -58,10 +64,14 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/planning', label: 'SO/JWSO Planning', icon: '📋', formKey: 'plan_create' },
           { to: '/so-overview', label: 'SO Overview', icon: '📊' },
-          { to: '/so-status', label: 'SO Status Review', icon: '📊' },
+          { to: '/so-status', label: 'SO Status Detail', icon: '📊' },
           { to: '/assemblies', label: 'Assembly Tracker', icon: '📦' },
           { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
         ],
+      },
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Planning' }, label: 'Reports', icon: '📊' }],
       },
     ],
   },
@@ -90,6 +100,10 @@ export const SECTIONS: readonly NavSection[] = [
       },
       // Pending SO Value (a price-gated revenue report) is filed under the
       // Reports section, not a Sales menu item — see the Reports block below.
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Sales' }, label: 'Reports', icon: '📊' }],
+      },
     ],
   },
   {
@@ -102,9 +116,11 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
-          { to: '/goods-receipt-notes', label: 'GRN (Goods Receipt)', icon: '📥', formKey: 'grn_create' },
+          { to: '/goods-receipt-notes', label: 'GRN', icon: '📥', formKey: 'grn_create' },
           { to: '/issue-register', label: 'Item Issue Register', icon: '📋', formKey: 'issue_create' },
-          { to: '/party-grn', label: 'Party Material', icon: '📥', formKey: 'party_create' },
+          { to: '/stock-counts', label: 'Stock Count', icon: '🧮', formKey: 'stockcount_create' },
+          { to: '/instruments', label: 'Instrument Register', icon: '📏', formKey: 'toolissue_create' },
+          { to: '/party-grn', label: 'Party GRN', icon: '📥', formKey: 'party_create' },
         ],
       },
       {
@@ -116,7 +132,12 @@ export const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Report',
-        items: [{ to: '/store-inventory', label: 'Store / Inventory', icon: '📦' }],
+        items: [
+          { to: '/store-inventory', label: 'Store Inventory', icon: '📦' },
+          { to: '/reorder-list', label: 'Reorder List', icon: '🔁' },
+          { to: '/party-stock-ledger', label: 'Party Stock Ledger', icon: '📒', formKey: 'party_create' },
+          { to: '/reports', search: { group: 'Store' }, label: 'Reports', icon: '📊' },
+        ],
       },
     ],
   },
@@ -133,10 +154,10 @@ export const SECTIONS: readonly NavSection[] = [
           // In the order the work flows (user, 2026-09-19): a Production
           // Order is raised first (ADR-170: Plan + Route Card + Target Date →
           // JC), then the shop floor books against it, then it is closed.
-          { to: '/production-orders/new', label: 'Create Production Order', icon: '🏭', formKey: 'prodorder_create' },
+          { to: '/production-orders/new', label: 'New Production Order', icon: '🏭', formKey: 'prodorder_create' },
           { to: '/op-entry', label: 'Op Entry', icon: '✚', formKey: 'op_entry' },
           { to: '/jc-ops', label: 'JC Operations', icon: '⨯', formKey: 'jc_create' },
-          { to: '/daily-report', label: 'Daily Report', icon: '📊' },
+          { to: '/daily-report', label: 'Daily Production Report', icon: '📊' },
           { to: '/production-orders/close', label: 'Close Production Order', icon: '🔒', formKey: 'prodorder_create' },
         ],
       },
@@ -144,10 +165,9 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Master',
         items: [
           // In the order the work flows: a plan becomes a Production Order,
-          // which becomes a Job Card. Plans also stays under Planning under its
-          // own name; here it is worded for what Production does with the
-          // list — pick the plans that are ready to run.
-          { to: '/plans', label: 'Plans Available for Production', icon: '📋', formKey: 'plan_create' },
+          // which becomes a Job Card. Plans also stays under Planning; one
+          // screen, one name (wording clean-up 2026-09-26).
+          { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
           { to: '/production-orders', label: 'Production Orders', icon: '🏭', formKey: 'prodorder_create' },
           { to: '/job-cards', label: 'Job Cards', icon: '▭', formKey: 'jc_create' },
           { to: '/machines', label: 'Machine Master', icon: '⚙', formKey: 'machine_create' },
@@ -162,7 +182,8 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/op-entry/running', label: 'Live Operations', icon: '🔴' },
           { to: '/job-queue', label: 'Job Queue', icon: '⬛' },
           { to: '/machine-loading', label: 'Machine Loading', icon: '▣' },
-          { to: '/production-schedule', label: 'Production Schedule (Gantt)', icon: '📅' },
+          { to: '/production-schedule', label: 'Production Schedule', icon: '📅' },
+          { to: '/reports', search: { group: 'Production' }, label: 'Reports', icon: '📊' },
         ],
       },
     ],
@@ -178,11 +199,20 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/design-projects', label: 'Design Projects', icon: '📋', formKey: 'dsnproj_create' },
           { to: '/design-issues', label: 'Design Issues', icon: '⚠', formKey: 'dsnissue_create' },
-          { to: '/design-work-log', label: 'Daily Work Log', icon: '⏱', formKey: 'dsnworklog_create' },
+          { to: '/design-work-log', label: 'Design Work Log', icon: '⏱', formKey: 'dsnworklog_create' },
           { to: '/bom-masters', label: 'BOM Master', icon: '📦', formKey: 'bom_create' },
           { to: '/design-tracker', label: 'Design Tracker', icon: '🎨', formKey: 'design_create' },
-          { to: '/route-cards', label: 'Route Cards', icon: '🗒', formKey: 'routecard_create' },
+          {
+            to: '/route-cards',
+            label: 'Route Card Master',
+            icon: '🗒',
+            formKey: 'routecard_create',
+          },
         ],
+      },
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Design' }, label: 'Reports', icon: '📊' }],
       },
     ],
   },
@@ -195,7 +225,7 @@ export const SECTIONS: readonly NavSection[] = [
       {
         items: [
           { to: '/qc-call-register', label: 'QC Call Register', icon: '📋', formKey: 'qc_submit' },
-          { to: '/qc-command', label: 'QC Command Center', icon: '🔬', formKey: 'qc_submit' },
+          { to: '/qc-command', label: 'QC Center', icon: '🔬', formKey: 'qc_submit' },
           { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬', formKey: 'qc_incoming' },
           { to: '/qc-docs', label: 'QC Documents', icon: '🗃', formKey: 'qcdocs_upload' },
           { to: '/nc-register', label: 'NC Register', icon: '⚠️', formKey: 'nc_dispose' },
@@ -207,6 +237,10 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/qc-processes', label: 'QC Process Master', icon: '⚙', formKey: 'qcprocess_create' },
           { to: '/tpi-masters', label: 'TPI Master', icon: '🔍', formKey: 'tpimaster_create' },
         ],
+      },
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Quality' }, label: 'Reports', icon: '📊' }],
       },
     ],
   },
@@ -233,6 +267,10 @@ export const SECTIONS: readonly NavSection[] = [
       },
       // Supply Chain Dashboard (a price-gated PO/GRN report) is filed under the
       // Reports section, not a Purchase menu item — see the Reports block below.
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Purchase' }, label: 'Reports', icon: '📊' }],
+      },
     ],
   },
   {
@@ -270,6 +308,7 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/so-costing', label: 'SO Costing', icon: '💰' },
           { to: '/stock-valuation', label: 'Stock Valuation', icon: '📦' },
+          { to: '/reports', search: { group: 'Finance' }, label: 'Reports', icon: '📊' },
         ],
       },
     ],
@@ -309,8 +348,8 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/users', label: 'User Management', icon: '👥' },
           { to: '/access-control', label: 'Access Control', icon: '🔒' },
-          { to: '/approval-config', label: 'Approval Configuration', icon: '⚖' },
-          // The rules live next door in Approval Configuration; this is the
+          { to: '/approval-config', label: 'Approval Rules', icon: '⚖' },
+          // The rules live next door in Approval Rules; this is the
           // queue of things waiting on a manager (ADR-130).
           { to: '/approvals', label: 'Approvals', icon: '✅' },
           { to: '/print-templates', label: 'Print Templates', icon: '📄' },
@@ -344,6 +383,22 @@ const SECTION_ORDER: readonly string[] = [
 export const ORDERED_SECTIONS: readonly NavSection[] = [...SECTIONS].sort(
   (a, b) => SECTION_ORDER.indexOf(a.key) - SECTION_ORDER.indexOf(b.key),
 );
+
+/** Does this nav item point at the page the user is on? A plain item matches
+ *  its path and anything under it (/job-cards → /job-cards/123). An item with
+ *  `search` matches only its exact path AND the same query values, so the
+ *  eight department "Reports" links (/reports?group=…) light up one at a time. */
+export function navItemMatches(
+  it: NavItem,
+  pathname: string,
+  search: Record<string, unknown> | undefined,
+): boolean {
+  if (it.search) {
+    if (pathname !== it.to) return false;
+    return Object.entries(it.search).every(([k, v]) => String(search?.[k] ?? '') === v);
+  }
+  return pathname === it.to || pathname.startsWith(it.to + '/');
+}
 
 export function initials(email: string | undefined): string {
   if (!email) return '??';

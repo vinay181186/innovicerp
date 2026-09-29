@@ -1,6 +1,6 @@
 // Supply Chain Dashboard — mirror of legacy renderSCDashboard L16790.
 //
-// Cards (PO counts + value totals + GRN today/total) + vendor summary +
+// Summary strip (PO counts + value totals + GRN today/total) + vendor summary +
 // SO summary + complete PO summary (tax-included) + recent GRN + pending
 // PO lines. Read-only.
 
@@ -10,8 +10,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ListHeader } from '@/ui/layout';
 
 export const scDashboardRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -29,7 +32,7 @@ function inr(n: number | null): string {
 // column is a lower-snake enum, so map it back to legacy's labels.
 function statusBadge(s: string): { cls: string; label: string } {
   if (s === 'closed') return { cls: 'b-green', label: 'Closed' };
-  if (s === 'partial') return { cls: 'b-amber', label: 'Partial' };
+  if (s === 'partial') return { cls: 'b-amber', label: 'Partly Received' };
   if (s === 'qc_pending') return { cls: 'b-amber', label: 'QC Pending' };
   if (s === 'cancelled') return { cls: 'b-grey', label: 'Cancelled' };
   return { cls: 'b-blue', label: 'Open' };
@@ -103,8 +106,10 @@ function ScDashboardPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
+        {error instanceof Error
+          ? error.message
+          : 'Could not load Supply Chain Dashboard. Try again.'}
       </div>
     );
   }
@@ -118,53 +123,88 @@ function ScDashboardPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📊 Supply Chain Dashboard
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <Link to="/purchase-orders" className="btn btn-ghost btn-sm">
-            🛒 PO Master
-          </Link>
-          <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm">
-            📥 GRN
-          </Link>
-          <Link to="/store-inventory" className="btn btn-ghost btn-sm">
-            🏬 Store
-          </Link>
-          <Link to="/vendors" className="btn btn-ghost btn-sm">
-            🏭 Vendors
-          </Link>
-        </div>
-      </div>
-
-      {/* Summary Cards — legacy's .stat-grid (L17011). Legacy shows 4 tiles
-          derived by browser-side reduce over its full in-memory PO array;
-          ours are 9 server-computed, uncapped figures off `summary`. Tiles
-          kept as-is (they are correct and legacy's are not reproducible from
-          the payload — see report), rendered in legacy's tile vocabulary. */}
-      <div className="stat-grid">
-        <Card label="OPEN POs" value={data.summary.openPos} accent="" />
-        <Card label="PARTIAL POs" value={data.summary.partialPos} accent="amber" />
-        <Card label="CLOSED POs" value={data.summary.closedPos} accent="green" />
-        <Card label="CANCELLED" value={data.summary.cancelledPos} accent="red" />
-        {priceHidden ? null : (
+      <ListHeader
+        title="Supply Chain Dashboard"
+        icon="🔗"
+        count={filteredPending.length}
+        noun="pending PO line"
+        tools={
           <>
-            <Card label="ORDER VAL" value={`₹${inr(data.summary.totalOrderVal)}`} accent="cyan" />
-            <Card label="RECEIVED VAL" value={`₹${inr(data.summary.totalRecvVal)}`} accent="green" />
-            <Card label="PENDING VAL" value={`₹${inr(data.summary.pendingVal)}`} accent="amber" />
+            <Link to="/purchase-orders" className="btn btn-ghost btn-sm">
+              🛒 PO Master
+            </Link>
+            <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm">
+              📥 GRN
+            </Link>
+            <Link to="/store-inventory" className="btn btn-ghost btn-sm">
+              🏬 Store
+            </Link>
+            <Link to="/vendors" className="btn btn-ghost btn-sm">
+              🏭 Vendors
+            </Link>
           </>
-        )}
-        <Card label="GRN TOTAL" value={data.summary.grnCount} accent="cyan" />
-        <Card label="GRN TODAY" value={data.summary.todayGrn} accent="green" />
-      </div>
+        }
+      >
+        {/* Summary — 9 server-computed, uncapped figures off `summary`, as one
+            strip (money tiles dropped when prices are hidden). */}
+        <StatStrip
+          items={[
+            { key: 'open', label: 'Open POs', count: data.summary.openPos, color: 'var(--blue)' },
+            {
+              key: 'partial',
+              label: 'Partly Received POs',
+              count: data.summary.partialPos,
+              color: 'var(--amber2)',
+            },
+            {
+              key: 'closed',
+              label: 'Closed POs',
+              count: data.summary.closedPos,
+              color: 'var(--green2)',
+            },
+            {
+              key: 'cancelled',
+              label: 'Cancelled POs',
+              count: data.summary.cancelledPos,
+              color: 'var(--text3)',
+            },
+            ...(priceHidden
+              ? []
+              : [
+                  {
+                    key: 'orderVal',
+                    label: 'Order Value',
+                    count: `₹${inr(data.summary.totalOrderVal)}`,
+                    color: 'var(--cyan)',
+                  },
+                  {
+                    key: 'recvVal',
+                    label: 'Received Value',
+                    count: `₹${inr(data.summary.totalRecvVal)}`,
+                    color: 'var(--green2)',
+                  },
+                  {
+                    key: 'pendVal',
+                    label: 'Pending Value',
+                    count: `₹${inr(data.summary.pendingVal)}`,
+                    color: 'var(--amber2)',
+                  },
+                ]),
+            {
+              key: 'grns',
+              label: 'Total GRNs',
+              count: data.summary.grnCount,
+              color: 'var(--cyan)',
+            },
+            {
+              key: 'grnsToday',
+              label: 'GRNs Today',
+              count: data.summary.todayGrn,
+              color: 'var(--green2)',
+            },
+          ]}
+        />
+      </ListHeader>
 
       {/* ═══ PENDING PO TRACKER with Filters (legacy L17030 — first panel
           under the tiles, ahead of the vendor/SO/purchase summaries) ═══ */}
@@ -176,7 +216,7 @@ function ScDashboardPage(): React.JSX.Element {
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--red)', fontSize: 11 }}
+                style={{ color: 'var(--red2)', fontSize: 11 }}
                 onClick={clearFilters}
               >
                 ✕ Clear Filters
@@ -220,18 +260,19 @@ function ScDashboardPage(): React.JSX.Element {
             width={120}
           />
           <div style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
-            {isFiltered ? <span style={{ color: 'var(--amber)' }}>Filtered: </span> : null}
+            {isFiltered ? <span style={{ color: 'var(--amber2)' }}>Filtered: </span> : null}
             {filteredPending.length} line{filteredPending.length !== 1 ? 's' : ''} · Pending Qty:{' '}
-            <span style={{ color: 'var(--red)' }}>{fltPendQty}</span>
+            <span style={{ color: 'var(--red2)' }}>{fltPendQty}</span>
             {priceHidden ? null : (
               <>
-                {' '}· Pend Value: <span style={{ color: 'var(--amber)' }}>₹{inr(fltPendVal)}</span>
+                {' '}
+                · Pending Value: <span style={{ color: 'var(--amber2)' }}>₹{inr(fltPendVal)}</span>
               </>
             )}
           </div>
         </div>
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>PO No.</th>
@@ -241,13 +282,19 @@ function ScDashboardPage(): React.JSX.Element {
                 <th>SO / JWSO No.</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-ctr">Order Qty</th>
-                <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-                <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
+                <th className="th-num">Order Qty</th>
+                <th className="th-num" style={{ color: 'var(--green2)' }}>
+                  Received
+                </th>
+                <th className="th-num" style={{ color: 'var(--red2)' }}>
+                  Pending
+                </th>
                 {priceHidden ? null : (
                   <>
-                    <th>Rate</th>
-                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+                    <th className="th-num">Rate</th>
+                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                      Pending Value
+                    </th>
                   </>
                 )}
                 <th>PO Status</th>
@@ -257,7 +304,7 @@ function ScDashboardPage(): React.JSX.Element {
               {filteredPending.length === 0 ? (
                 <tr>
                   <td colSpan={priceHidden ? 11 : 13} className="empty-state">
-                    No pending PO lines{isFiltered ? ' (try clearing filters)' : ''}
+                    {isFiltered ? 'No pending PO lines match.' : 'No pending PO lines.'}
                   </td>
                 </tr>
               ) : (
@@ -275,36 +322,39 @@ function ScDashboardPage(): React.JSX.Element {
                           {p.poNo}
                         </Link>
                       </td>
-                      <td className="td-ctr mono" style={{ fontSize: 11 }}>
+                      <td className="mono" style={{ fontSize: 11 }}>
                         {p.lineNo}
                       </td>
-                      <td style={{ fontSize: 11 }}>{p.poDate}</td>
+                      <td style={{ fontSize: 11 }}>{fmtDate(p.poDate)}</td>
                       <td className="fw-700" style={{ fontSize: 12 }}>
                         {p.vendorName ?? p.vendorCode ?? '—'}
                       </td>
                       <td className="text2" style={{ fontSize: 11 }}>
                         {p.soCode ?? '—'}
                       </td>
-                      <td className="td-code" style={{ color: 'var(--purple)' }}>
+                      <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                         {itemCodeWithRev(p.itemCode, p.itemRevision)}
                       </td>
                       <td style={{ fontSize: 12 }}>{p.itemName ?? '—'}</td>
-                      <td className="td-ctr mono fw-700">{p.qty}</td>
-                      <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                      <td className="td-num mono fw-700">{p.qty}</td>
+                      <td
+                        className="td-num mono"
+                        style={{ color: 'var(--green2)', fontWeight: 700 }}
+                      >
                         {p.receivedQty}
                       </td>
                       <td
-                        className="td-ctr mono fw-700"
-                        style={{ color: 'var(--red)', fontSize: 14 }}
+                        className="td-num mono fw-700"
+                        style={{ color: 'var(--red2)', fontSize: 14 }}
                       >
                         {p.pendingQty}
                       </td>
                       {priceHidden ? null : (
                         <>
-                          <td className="td-ctr mono" style={{ fontSize: 11 }}>
+                          <td className="td-num mono" style={{ fontSize: 11 }}>
                             {p.rate ? `₹${p.rate.toFixed(2)}` : '—'}
                           </td>
-                          <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                          <td className="td-num mono fw-700" style={{ color: 'var(--amber2)' }}>
                             {(p.pendingVal ?? 0) > 0 ? `₹${inr(p.pendingVal)}` : '—'}
                           </td>
                         </>
@@ -325,25 +375,31 @@ function ScDashboardPage(): React.JSX.Element {
       <Section
         title="🏭 Vendor-wise Open PO Summary"
         meta={
-          <span className="mono" style={{ fontSize: 12, color: 'var(--amber)' }}>
+          <span className="mono" style={{ fontSize: 12, color: 'var(--amber2)' }}>
             {data.byVendor.length} vendors with open POs
           </span>
         }
       >
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               <th>Vendor Name</th>
-              <th>Code</th>
-              <th className="td-ctr">PO Lines</th>
-              <th className="td-ctr">Items</th>
-              <th className="td-ctr">Order Qty</th>
-              <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending Qty</th>
+              <th>Vendor Code</th>
+              <th className="th-num">PO Lines</th>
+              <th className="th-num">Items</th>
+              <th className="th-num">Order Qty</th>
+              <th className="th-num" style={{ color: 'var(--green2)' }}>
+                Received
+              </th>
+              <th className="th-num" style={{ color: 'var(--red2)' }}>
+                Pending Qty
+              </th>
               {priceHidden ? null : (
                 <>
-                  <th className="td-ctr">Order Value</th>
-                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+                  <th className="th-num">Order Value</th>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                    Pending Value
+                  </th>
                 </>
               )}
             </tr>
@@ -351,28 +407,36 @@ function ScDashboardPage(): React.JSX.Element {
           <tbody>
             {data.byVendor.length === 0 ? (
               <tr>
-                <td colSpan={priceHidden ? 7 : 9} className="empty-state">No open POs</td>
+                <td colSpan={priceHidden ? 7 : 9} className="empty-state">
+                  No open POs
+                </td>
               </tr>
             ) : (
               data.byVendor.map((v) => {
                 const pendQty = v.totalQty - v.receivedQty;
                 return (
-                  <tr key={(v.vendorId ?? v.vendorCode ?? 'unknown')}>
+                  <tr key={v.vendorId ?? v.vendorCode ?? 'unknown'}>
                     <td className="fw-700">{v.vendorName ?? v.vendorCode ?? '—'}</td>
-                    <td className="td-code" style={{ fontSize: 11 }}>{v.vendorCode ?? '—'}</td>
-                    <td className="td-ctr mono">{v.lines}</td>
-                    <td className="td-ctr" style={{ fontSize: 11 }}>{v.uniqueItems}</td>
-                    <td className="td-ctr mono fw-700">{v.totalQty}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                    <td className="td-code" style={{ fontSize: 11 }}>
+                      {v.vendorCode ?? '—'}
+                    </td>
+                    <td className="td-num mono">{v.lines}</td>
+                    <td className="td-num" style={{ fontSize: 11 }}>
+                      {v.uniqueItems}
+                    </td>
+                    <td className="td-num mono fw-700">{v.totalQty}</td>
+                    <td className="td-num mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
                       {v.receivedQty}
                     </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--red)', fontWeight: 700 }}>
+                    <td className="td-num mono" style={{ color: 'var(--red2)', fontWeight: 700 }}>
                       {pendQty}
                     </td>
                     {priceHidden ? null : (
                       <>
-                        <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(v.totalVal)}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                        <td className="td-num mono" style={{ fontSize: 11 }}>
+                          ₹{inr(v.totalVal)}
+                        </td>
+                        <td className="td-num mono fw-700" style={{ color: 'var(--amber2)' }}>
                           ₹{inr(v.pendingVal)}
                         </td>
                       </>
@@ -394,19 +458,25 @@ function ScDashboardPage(): React.JSX.Element {
           </span>
         }
       >
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               <th>SO / JWSO No.</th>
-              <th className="td-ctr">PO Lines</th>
-              <th className="td-ctr">Vendors</th>
-              <th className="td-ctr">Order Qty</th>
-              <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending Qty</th>
+              <th className="th-num">PO Lines</th>
+              <th className="th-num">Vendors</th>
+              <th className="th-num">Order Qty</th>
+              <th className="th-num" style={{ color: 'var(--green2)' }}>
+                Received
+              </th>
+              <th className="th-num" style={{ color: 'var(--red2)' }}>
+                Pending Qty
+              </th>
               {priceHidden ? null : (
                 <>
-                  <th className="td-ctr">Order Value</th>
-                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+                  <th className="th-num">Order Value</th>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                    Pending Value
+                  </th>
                 </>
               )}
             </tr>
@@ -414,27 +484,33 @@ function ScDashboardPage(): React.JSX.Element {
           <tbody>
             {data.bySo.length === 0 ? (
               <tr>
-                <td colSpan={priceHidden ? 6 : 8} className="empty-state">No open POs</td>
+                <td colSpan={priceHidden ? 6 : 8} className="empty-state">
+                  No open POs
+                </td>
               </tr>
             ) : (
               data.bySo.map((s) => {
                 const pendQty = s.totalQty - s.receivedQty;
                 return (
                   <tr key={s.soRefId ?? '_unlinked_'}>
-                    <td>{s.soCode ?? <span className="text3">No SO/JW linked</span>}</td>
-                    <td className="td-ctr mono">{s.lines}</td>
-                    <td className="td-ctr" style={{ fontSize: 11 }}>{s.uniqueVendors}</td>
-                    <td className="td-ctr mono fw-700">{s.totalQty}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                    <td>{s.soCode ?? <span className="text3">No SO / JWSO linked</span>}</td>
+                    <td className="td-num mono">{s.lines}</td>
+                    <td className="td-num" style={{ fontSize: 11 }}>
+                      {s.uniqueVendors}
+                    </td>
+                    <td className="td-num mono fw-700">{s.totalQty}</td>
+                    <td className="td-num mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
                       {s.receivedQty}
                     </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--red)', fontWeight: 700 }}>
+                    <td className="td-num mono" style={{ color: 'var(--red2)', fontWeight: 700 }}>
                       {pendQty}
                     </td>
                     {priceHidden ? null : (
                       <>
-                        <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(s.totalVal)}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                        <td className="td-num mono" style={{ fontSize: 11 }}>
+                          ₹{inr(s.totalVal)}
+                        </td>
+                        <td className="td-num mono fw-700" style={{ color: 'var(--amber2)' }}>
                           ₹{inr(s.pendingVal)}
                         </td>
                       </>
@@ -451,37 +527,46 @@ function ScDashboardPage(): React.JSX.Element {
       <Section
         title="📦 Complete Purchase Summary"
         meta={
-          <span className="mono" style={{ fontSize: 12, color: 'var(--green)' }}>
-            {data.poSummary.length} POs{priceHidden ? '' : ` · Grand Total: ₹${inr(grandOrderTotal)}`}
+          <span className="mono" style={{ fontSize: 12, color: 'var(--green2)' }}>
+            {data.poSummary.length} POs
+            {priceHidden ? '' : ` · Grand Total: ₹${inr(grandOrderTotal)}`}
           </span>
         }
       >
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               <th>PO No.</th>
               <th>PO Date</th>
               <th>Vendor</th>
               <th>SO / JWSO No.</th>
-              <th className="td-ctr">Lines</th>
-              <th className="td-ctr">Order Qty</th>
-              <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
+              <th className="th-num">Lines</th>
+              <th className="th-num">Order Qty</th>
+              <th className="th-num" style={{ color: 'var(--green2)' }}>
+                Received
+              </th>
+              <th className="th-num" style={{ color: 'var(--red2)' }}>
+                Pending
+              </th>
               {priceHidden ? null : (
                 <>
-                  <th className="td-ctr">Subtotal</th>
-                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>Tax</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>Grand Total</th>
+                  <th className="th-num">Subtotal</th>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                    Tax
+                  </th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    Grand Total
+                  </th>
                 </>
               )}
-              <th className="td-ctr">GRNs</th>
+              <th className="th-num">GRNs</th>
               <th>PO Status</th>
             </tr>
           </thead>
           <tbody>
             {data.poSummary.length === 0 ? (
               <tr>
-                <td colSpan={priceHidden ? 10 : 13} className="empty-state">No purchase orders</td>
+                <td colSpan={priceHidden ? 10 : 13} className="empty-state">No POs yet.</td>
               </tr>
             ) : (
               data.poSummary.map((g) => {
@@ -499,32 +584,42 @@ function ScDashboardPage(): React.JSX.Element {
                         {g.poNo}
                       </Link>
                     </td>
-                    <td style={{ fontSize: 11 }}>{g.poDate}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDate(g.poDate)}</td>
                     <td className="fw-700">{g.vendorName ?? g.vendorCode ?? '—'}</td>
-                    <td className="text2" style={{ fontSize: 11 }}>{g.soCode ?? '—'}</td>
-                    <td className="td-ctr mono">{g.lines}</td>
-                    <td className="td-ctr mono fw-700">{g.totalQty}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                    <td className="text2" style={{ fontSize: 11 }}>
+                      {g.soCode ?? '—'}
+                    </td>
+                    <td className="td-num mono">{g.lines}</td>
+                    <td className="td-num mono fw-700">{g.totalQty}</td>
+                    <td className="td-num mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
                       {g.receivedQty}
                     </td>
                     <td
-                      className="td-ctr mono"
-                      style={{ color: pendQty > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}
+                      className="td-num mono"
+                      style={{
+                        color: pendQty > 0 ? 'var(--red)' : 'var(--green)',
+                        fontWeight: 700,
+                      }}
                     >
                       {pendQty}
                     </td>
                     {priceHidden ? null : (
                       <>
-                        <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(g.totalVal)}</td>
-                        <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--amber)' }}>
+                        <td className="td-num mono" style={{ fontSize: 11 }}>
+                          ₹{inr(g.totalVal)}
+                        </td>
+                        <td
+                          className="td-num mono"
+                          style={{ fontSize: 11, color: 'var(--amber2)' }}
+                        >
                           ₹{inr(g.taxAmount)}
                         </td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                        <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
                           ₹{inr(g.grandTotal)}
                         </td>
                       </>
                     )}
-                    <td className="td-ctr">{g.grnCount}</td>
+                    <td className="td-num">{g.grnCount}</td>
                     <td>
                       <span className={`badge ${sb.cls}`}>{sb.label}</span>
                     </td>
@@ -547,7 +642,7 @@ function ScDashboardPage(): React.JSX.Element {
           </Link>
         }
       >
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               <th>GRN No.</th>
@@ -559,13 +654,13 @@ function ScDashboardPage(): React.JSX.Element {
           <tbody>
             {data.recentGrn.length === 0 ? (
               <tr>
-                <td colSpan={4} className="empty-state">No GRN entries yet</td>
+                <td colSpan={4} className="empty-state">No GRNs yet.</td>
               </tr>
             ) : (
               data.recentGrn.map((g) => (
                 <tr key={g.grnNo}>
                   <td className="td-code cyan">{g.grnNo}</td>
-                  <td style={{ fontSize: 11 }}>{g.grnDate}</td>
+                  <td style={{ fontSize: 11 }}>{fmtDate(g.grnDate)}</td>
                   <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
                     {g.poNo ?? 'Manual'}
                   </td>
@@ -580,22 +675,25 @@ function ScDashboardPage(): React.JSX.Element {
   );
 }
 
-// Legacy's stat-card (L17012) — the accent is the 2px top bar from the
-// variant class, not the value colour. `accent=''` is legacy's un-accented
-// tile: it defines only cyan/amber/green/red, so a "blue" tile renders bare.
-function Card({
-  label,
-  value,
-  accent,
+// Legacy pairs every panel-title on this page with a right-hand meta note or
+// button in the same .panel-hdr (L17074, L17086, L17098, L17110). There is no
+// .panel-meta class — legacy inline-styles a .mono span.
+function Section({
+  title,
+  meta,
+  children,
 }: {
-  label: string;
-  value: string | number;
-  accent: '' | 'cyan' | 'amber' | 'green' | 'red';
+  title: string;
+  meta?: React.ReactNode;
+  children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div className={accent ? `stat-card ${accent}` : 'stat-card'}>
-      <div className="stat-label">{label}</div>
-      <div className="stat-val">{value}</div>
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel-hdr">
+        <span className="panel-title">{title}</span>
+        {meta}
+      </div>
+      <div className="tbl-wrap">{children}</div>
     </div>
   );
 }
@@ -635,29 +733,6 @@ function FilterInput({
         onChange={(e) => onChange(e.target.value)}
         style={{ fontSize: 12, padding: '4px 8px', width }}
       />
-    </div>
-  );
-}
-
-// Legacy pairs every panel-title on this page with a right-hand meta note or
-// button in the same .panel-hdr (L17074, L17086, L17098, L17110). There is no
-// .panel-meta class — legacy inline-styles a .mono span.
-function Section({
-  title,
-  meta,
-  children,
-}: {
-  title: string;
-  meta?: React.ReactNode;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ marginBottom: 16 }}>
-      <div className="panel-hdr">
-        <span className="panel-title">{title}</span>
-        {meta}
-      </div>
-      <div className="tbl-wrap">{children}</div>
     </div>
   );
 }

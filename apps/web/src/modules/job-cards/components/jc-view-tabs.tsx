@@ -1,12 +1,13 @@
 // Job Card VIEW page — the bottom tab bar (2026-09-18 mockup):
-//   Documents & Quality | Remarks | Related Records | History
+//   Documents & Quality | Related Records | History
 //
-//   Documents & Quality  cards for what this card actually has: the drawing
-//                        (opens the shared preview), each QC document (opens
+//   Documents & Quality  cards for what this card actually has: each QC
+//                        document (opens
 //                        the file), open QC calls (→ QC Call Register on this
 //                        card), NCs (→ NC register on this card). No card for
 //                        a thing that does not exist; no "Manage Documents".
-//   Remarks              the card's own remarks text.
+//                        No Drawing card: the header's Drawing row + thumbnail
+//                        already open the drawing (Round 5, one way in).
 //   Related Records      the shared Related Documents panel, as before.
 //   History              the completion-log feed (op_log ∪ NC ∪ dispositions ∪
 //                        OSP), as before — server-merged, real total.
@@ -18,14 +19,19 @@ import type {
   JobCardListItem,
   JobCardStatusExtras,
 } from '@innovic/shared';
-import { fmtOpSrNo } from '@innovic/shared';
+import {
+  fmtOpSrNo,
+  NC_DISPOSITION_LABELS,
+  NC_REASON_CATEGORY_LABELS,
+  SHIFT_LABELS,
+} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { JcMaterialPanel } from '@/modules/material/components/jc-material-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { drawingViewUrl } from '@/lib/drawing-url';
 import { fmtJcDate } from '../lib/fmt-jc-date';
-import type { JcDrawingRef } from './jc-view-summary';
 
 // ─── Completion-log feed (History tab) ──────────────────────────────────────
 
@@ -34,11 +40,17 @@ import type { JcDrawingRef } from './jc-view-summary';
 // snake_case, so the keys are remapped.
 const DISPOSITION_ICON: Record<string, { icon: string; color: string }> = {
   rework: { icon: '♻', color: 'var(--cyan)' },
-  scrap: { icon: '🗑', color: 'var(--red)' },
-  use_as_is: { icon: '✅', color: 'var(--green)' },
+  scrap: { icon: '🗑', color: 'var(--red2)' },
+  use_as_is: { icon: '✅', color: 'var(--green2)' },
   return_to_vendor: { icon: '📦', color: 'var(--purple)' },
   make_fresh: { icon: '📦', color: 'var(--purple)' },
 };
+
+// Codes on the feed (shift, disposition, NC reason) read through the shared
+// label maps; an unknown code falls back to itself.
+function labelOf(map: Record<string, string>, code: string): string {
+  return map[code] ?? code;
+}
 
 // One rendered feed row. Kept presentation-only: the server owns the merge,
 // order and total; this maps a structured event → legacy's icon/colour/title.
@@ -72,16 +84,18 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       e.logType === 'start'
         ? `on ${machineLabel} by ${operator}`
         : e.logType === 'qc'
-          ? `+${e.qty ?? 0} accepted${(e.rejectQty ?? 0) > 0 ? `, ${e.rejectQty} rejected` : ''} — ${operator}`
-          : `+${e.qty ?? 0} pcs — ${operator}`;
+          ? [(e.rejectQty ?? 0) > 0 ? `${e.rejectQty} rejected` : '', operator]
+              .filter(Boolean)
+              .join(' — ')
+          : operator;
     return {
       id: e.id,
       date: e.date,
       time: e.time,
       icon: e.logType === 'start' ? '▶' : e.logType === 'qc' ? '🔬' : '✔',
       color: e.logType === 'start' ? 'var(--amber)' : 'var(--green)',
-      title: `Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}: ${e.operation ?? '?'} — ${label}`,
-      detail: `${detail}${e.shift ? ` • ${e.shift}` : ''}`,
+      title: `Op ${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}: ${e.operation ?? '?'} — ${label}`,
+      detail: [detail, e.shift ? labelOf(SHIFT_LABELS, e.shift) : ''].filter(Boolean).join(' • '),
       remarks: e.remarks ?? '',
       qtyKind: e.logType === 'start' ? 'none' : e.logType === 'qc' ? 'qc' : 'complete',
       qty: e.qty ?? 0,
@@ -90,15 +104,15 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
   if (e.kind === 'nc') {
     const detail =
       `${e.rejectedQty ?? 0} pcs rejected — ${e.reason ?? ''}` +
-      (e.disposition ? ` • Disposition: ${e.disposition}` : '') +
+      (e.disposition ? ` • Disposition: ${labelOf(NC_DISPOSITION_LABELS, e.disposition)}` : '') +
       (e.operatorText ? ` • Operator: ${e.operatorText}` : '');
     return {
       id: e.id,
       date: e.date,
       time: e.time,
       icon: '❌',
-      color: 'var(--red)',
-      title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ?? 'NC'} at Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}`,
+      color: 'var(--red2)',
+      title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ? labelOf(NC_REASON_CATEGORY_LABELS, e.reasonCategory) : 'NC'} at Op ${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}`,
       detail,
       remarks: '',
       qtyKind: 'nc',
@@ -110,7 +124,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
     const detail =
       `${e.rejectedQty ?? 0} pcs` +
       (e.disposition === 'rework'
-        ? ` → back to Op${e.reworkOpSeq != null ? fmtOpSrNo(e.reworkOpSeq) : '?'}`
+        ? ` → back to Op ${e.reworkOpSeq != null ? fmtOpSrNo(e.reworkOpSeq) : '?'}`
         : '') +
       (e.dispositionBy ? ` • By: ${e.dispositionBy}` : '');
     return {
@@ -119,7 +133,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       time: e.time,
       icon: d.icon,
       color: d.color,
-      title: `${e.ncNo ?? 'NC'} Disposed: ${e.disposition ?? ''}`,
+      title: `${e.ncNo ?? 'NC'} Disposed: ${e.disposition ? labelOf(NC_DISPOSITION_LABELS, e.disposition) : ''}`,
       detail,
       remarks: '',
       qtyKind: 'none',
@@ -134,7 +148,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
     icon: '📋',
     color: 'var(--blue)',
     title: `${e.ospCategory ?? ''}: ${e.detail ?? ''}`,
-    detail: 'Auto-generated for OSP process',
+    detail: '',
     remarks: '',
     qtyKind: 'none',
     qty: null,
@@ -174,7 +188,7 @@ function HistoryFeed({
     <div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>
         {eventDays.truncated
-          ? `showing latest ${eventDays.shown} of ${eventDays.total} entries`
+          ? `Showing latest ${eventDays.shown} of ${eventDays.total} entries`
           : `${eventDays.total} entries`}
       </div>
       <div
@@ -188,7 +202,7 @@ function HistoryFeed({
       >
         {eventDays.total === 0 ? (
           <div className="empty-state" style={{ padding: 16 }}>
-            No log entries yet
+            No entries yet.
           </div>
         ) : (
           eventDays.days.map((day) => (
@@ -232,29 +246,31 @@ function HistoryFeed({
                         {e.title}
                       </span>
                       {e.time ? (
-                        <span className="mono" style={{ fontSize: 10, color: 'var(--text3)' }}>
+                        <span className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
                           {e.time}
                         </span>
                       ) : null}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 1 }}>
-                      {e.detail}
-                      {e.remarks ? (
-                        <>
-                          {' • '}
-                          <i>{e.remarks}</i>
-                        </>
-                      ) : null}
-                    </div>
+                    {e.detail || e.remarks ? (
+                      <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 1 }}>
+                        {e.detail}
+                        {e.remarks ? (
+                          <>
+                            {e.detail ? ' • ' : ''}
+                            <i>{e.remarks}</i>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   {e.qtyKind !== 'none' ? (
                     <div className="mono fw-700" style={{ fontSize: 13, flexShrink: 0 }}>
                       {e.qtyKind === 'qc' ? (
                         `+${e.qty}`
                       ) : e.qtyKind === 'nc' ? (
-                        <span style={{ color: 'var(--red)' }}>-{e.qty}</span>
+                        <span style={{ color: 'var(--red2)' }}>-{e.qty}</span>
                       ) : (
-                        <b style={{ color: 'var(--green)' }}>+{e.qty}</b>
+                        <b style={{ color: 'var(--green2)' }}>+{e.qty}</b>
                       )}
                     </div>
                   ) : null}
@@ -379,15 +395,11 @@ function DocumentsTab({
   jc,
   ops,
   extras,
-  drawing,
-  onOpenDrawing,
   stopped,
 }: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
   extras: JobCardStatusExtras | undefined;
-  drawing: JcDrawingRef | null;
-  onOpenDrawing: () => void;
   stopped: boolean;
 }): React.JSX.Element {
   const { data: eff } = useMyAccess();
@@ -400,7 +412,7 @@ function DocumentsTab({
   const canNc = effectiveFormPerms(eff, 'nc_dispose').view;
 
   // QC Calls = the QC operations with pieces waiting to be inspected right now
-  // (qcPending > 0) — the same condition that shows 🔬 QC Call (n) on the op
+  // (qcPending > 0) — the same condition that shows 🔬 Inspect (n) on the op
   // card. The enriched op carries no qc_call_date, so this is calls OPEN, not
   // calls ever raised. Pieces waiting go on the sub-line.
   const qcOps = ops.filter((o) => o.opType === 'qc');
@@ -421,20 +433,10 @@ function DocumentsTab({
     );
   };
 
-  const nothing = !drawing && qcDocs.length === 0 && qcOps.length === 0 && ncEvents.length === 0;
+  const nothing = qcDocs.length === 0 && qcOps.length === 0 && ncEvents.length === 0;
 
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-      {drawing ? (
-        <DocCard
-          icon="📐"
-          iconBg="var(--green3)"
-          title="Drawing"
-          sub={drawing.label}
-          onClick={onOpenDrawing}
-          hint={`📄 ${drawing.fileName} — open it to view`}
-        />
-      ) : null}
       {qcDocs.map((d) => (
         <DocCard
           key={d.id}
@@ -454,7 +456,7 @@ function DocumentsTab({
           sub={
             openQcCalls.length > 0
               ? `${openQcCalls.length} open · ${qcPendingPcs} pcs waiting`
-              : 'none open'
+              : 'None open'
           }
           hint={
             stopped
@@ -484,7 +486,7 @@ function DocumentsTab({
       ) : null}
       {nothing ? (
         <div className="empty-state" style={{ padding: 16, width: '100%' }}>
-          No drawing, QC document, QC call or NC on this job card yet
+          No QC document, QC call or NC on this job card yet.
         </div>
       ) : null}
     </div>
@@ -493,11 +495,12 @@ function DocumentsTab({
 
 // ─── The tab bar ─────────────────────────────────────────────────────────────
 
-type Tab = 'docs' | 'remarks' | 'related' | 'history';
+type Tab = 'docs' | 'material' | 'related' | 'history';
 
 const TABS: ReadonlyArray<{ key: Tab; label: string }> = [
   { key: 'docs', label: 'Documents & Quality' },
-  { key: 'remarks', label: 'Remarks' },
+  // ADR-193 3b — Required / Issued / Returned / Balance of the card's material.
+  { key: 'material', label: 'Material' },
   { key: 'related', label: 'Related Records' },
   { key: 'history', label: 'History' },
 ];
@@ -506,15 +509,11 @@ export function JcViewTabs({
   jc,
   ops,
   extras,
-  drawing,
-  onOpenDrawing,
   stopped = false,
 }: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
   extras: JobCardStatusExtras | undefined;
-  drawing: JcDrawingRef | null;
-  onOpenDrawing: () => void;
   // ADR-182 — a short-closed Production Order freezes its Job Card. The
   // Documents tab keeps the QC Calls / NC Report cards visible (they are the
   // record of what happened) but drops their register links so the user is
@@ -563,24 +562,9 @@ export function JcViewTabs({
       </div>
       <div className="panel-body">
         {tab === 'docs' ? (
-          <DocumentsTab
-            jc={jc}
-            ops={ops}
-            extras={extras}
-            drawing={drawing}
-            onOpenDrawing={onOpenDrawing}
-            stopped={stopped}
-          />
-        ) : tab === 'remarks' ? (
-          jc.remarks ? (
-            <div style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-              {jc.remarks}
-            </div>
-          ) : (
-            <div className="empty-state" style={{ padding: 16 }}>
-              No remarks on this job card
-            </div>
-          )
+          <DocumentsTab jc={jc} ops={ops} extras={extras} stopped={stopped} />
+        ) : tab === 'material' ? (
+          <JcMaterialPanel jobCardId={jc.id} stopped={stopped} />
         ) : tab === 'related' ? (
           <RelatedDocsPanel module="job-cards" id={jc.id} />
         ) : (

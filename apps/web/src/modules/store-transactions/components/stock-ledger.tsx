@@ -19,31 +19,16 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/date';
+import { StatStrip } from '@/ui/data';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useStoreTransactionsList } from '../api';
+import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 import { TxnTypeBadge } from './txn-type-badge';
 
 const PAGE_SIZE = 50;
-
-function KpiTile({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number | string;
-  color?: string;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
-      <div className="mono fw-700" style={{ fontSize: 22, ...(color ? { color } : {}) }}>
-        {value}
-      </div>
-    </div>
-  );
-}
 
 export function StockLedger(): React.JSX.Element {
   const [searchInput, setSearchInput] = useState('');
@@ -80,16 +65,23 @@ export function StockLedger(): React.JSX.Element {
   const columns = useMemo<ColumnDef<StoreTransactionListItem>[]>(
     () => [
       {
-        header: 'Txn Date',
+        header: 'Date',
         accessorKey: 'txnDate',
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.txnDate}</span>,
+        cell: ({ row }) => (
+          <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+            {fmtDate(row.original.txnDate)}
+          </span>
+        ),
       },
       {
         header: 'Item Code',
         id: 'item',
         accessorFn: (r) => r.itemCode ?? r.itemCodeText ?? '',
         cell: ({ row }) => (
-          <span style={{ fontWeight: 700, color: 'var(--purple)', fontSize: 12 }}>
+          <span
+            className="mono fw-700"
+            style={{ color: 'var(--text)', fontSize: 12, whiteSpace: 'nowrap' }}
+          >
             {row.original.itemCode ?? row.original.itemCodeText ?? ''}
           </span>
         ),
@@ -100,21 +92,25 @@ export function StockLedger(): React.JSX.Element {
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.itemName ?? ''}</span>,
       },
       {
-        header: 'Txn Type',
+        header: 'Type',
         accessorKey: 'txnType',
         cell: ({ row }) => <TxnTypeBadge type={row.original.txnType} />,
       },
       {
-        header: 'Txn Qty',
+        header: 'Qty',
         accessorKey: 'qty',
-        meta: { tdClass: 'td-ctr' },
+        meta: { tdClass: 'td-num', thClass: 'th-num' },
         cell: ({ row }) => {
           const t = row.original.txnType;
           return (
             <span
               className="mono fw-700"
               style={
-                t === 'in' ? { color: 'var(--green)' } : t === 'out' ? { color: 'var(--red)' } : undefined
+                t === 'in'
+                  ? { color: 'var(--green2)' }
+                  : t === 'out'
+                    ? { color: 'var(--red2)' }
+                    : undefined
               }
             >
               {t === 'in' ? '+' : t === 'out' ? '-' : ''}
@@ -128,7 +124,7 @@ export function StockLedger(): React.JSX.Element {
         accessorKey: 'sourceType',
         cell: ({ row }) => (
           <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 600 }}>
-            {row.original.sourceType.replaceAll('_', ' ').toUpperCase()}
+            {STORE_TXN_SOURCE_LABELS[row.original.sourceType]}
           </span>
         ),
       },
@@ -136,36 +132,26 @@ export function StockLedger(): React.JSX.Element {
         header: 'Ref No.',
         accessorKey: 'sourceRef',
         meta: { tdClass: 'mono' },
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.sourceRef}</span>,
+        cell: ({ row }) => (
+          <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{row.original.sourceRef}</span>
+        ),
       },
       {
         header: 'Remarks',
         accessorKey: 'remarks',
         cell: ({ row }) => (
-          <span
-            className="text3"
-            title={row.original.remarks ?? ''}
-            style={{
-              display: 'inline-block',
-              maxWidth: 250,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              verticalAlign: 'bottom',
-              fontSize: 11,
-            }}
-          >
+          <span className="text3" title={row.original.remarks ?? ''} style={{ fontSize: 11 }}>
             {row.original.remarks ?? ''}
           </span>
         ),
       },
       {
-        header: 'Stock before → after',
+        header: 'Stock Before → After',
         id: 'stockAfter',
         accessorFn: (r) => r.stockAfter,
-        meta: { tdClass: 'mono' },
+        meta: { tdClass: 'mono td-num', thClass: 'th-num' },
         cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>
+          <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
             {row.original.stockBefore} → <b>{row.original.stockAfter}</b>
           </span>
         ),
@@ -189,101 +175,116 @@ export function StockLedger(): React.JSX.Element {
 
   return (
     <div>
-      {data?.summary ? (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-          <KpiTile label="Transactions" value={data.summary.txnCount} color="var(--cyan)" />
-          <KpiTile label="Total IN" value={`+${data.summary.totalIn}`} color="var(--green)" />
-          <KpiTile label="Total OUT" value={`-${data.summary.totalOut}`} color="var(--red)" />
-          <KpiTile
-            label="Net"
-            value={`${data.summary.net >= 0 ? '+' : ''}${data.summary.net}`}
-            color={data.summary.net >= 0 ? 'var(--green)' : 'var(--red)'}
+      {/* THE list header (ui/layout ListHeader): title · count, then the filter
+          bar (search · Type / Source · Clear), with the movement counts pinned
+          inside the same band. */}
+      <ListHeader
+        title="Stock Ledger"
+        icon="📦"
+        count={data ? total : undefined}
+        noun="movement"
+        filterNote={
+          [
+            txnType ? STORE_TXN_TYPE_LABELS[txnType] : null,
+            sourceType ? STORE_TXN_SOURCE_LABELS[sourceType] : null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || undefined
+        }
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search item, source ref, remarks…"
+        updating={isFetching && !isLoading}
+        filters={
+          <>
+            <select
+              className="innovic-select"
+              aria-label="Movement type"
+              title="Movement type"
+              value={txnType ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as StoreTxnType | '';
+                setTxnType(v === '' ? undefined : v);
+                setPage(1);
+              }}
+            >
+              <option value="">All Types</option>
+              {STORE_TXN_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {STORE_TXN_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+            <select
+              className="innovic-select"
+              aria-label="Source"
+              title="Source"
+              value={sourceType ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as StoreTxnSourceType | '';
+                setSourceType(v === '' ? undefined : v);
+                setPage(1);
+              }}
+            >
+              <option value="">All Sources</option>
+              {STORE_TXN_SOURCE_TYPES.map((s) => (
+                <option key={s} value={s}>
+                  {STORE_TXN_SOURCE_LABELS[s]}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          setTxnType(undefined);
+          setSourceType(undefined);
+          setPage(1);
+        }}
+        filtersActive={txnType !== undefined || sourceType !== undefined || searchInput !== ''}
+      >
+        {data?.summary ? (
+          <StatStrip
+            items={[
+              {
+                key: 'movements',
+                label: 'Movements',
+                count: data.summary.txnCount,
+                color: 'var(--cyan)',
+              },
+              // In / Out / Net only mean something for ONE item — across items
+              // they would add kg, Nos and m together.
+              ...(data.summary.itemCount === 1
+                ? [
+                    {
+                      key: 'in',
+                      label: 'Total In',
+                      count: `+${data.summary.totalIn}`,
+                      color: 'var(--green2)',
+                    },
+                    {
+                      key: 'out',
+                      label: 'Total Out',
+                      count: `-${data.summary.totalOut}`,
+                      color: 'var(--red2)',
+                    },
+                    {
+                      key: 'net',
+                      label: 'Net',
+                      count: `${data.summary.net >= 0 ? '+' : ''}${data.summary.net}`,
+                      color: data.summary.net >= 0 ? 'var(--green2)' : 'var(--red2)',
+                    },
+                  ]
+                : []),
+              { key: 'items', label: 'Items', count: data.summary.itemCount },
+            ]}
           />
-          <KpiTile label="Items" value={data.summary.itemCount} />
-        </div>
-      ) : null}
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div>
-          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Search</label>
-          <br />
-          <input
-            className="innovic-input"
-            style={{ fontSize: 12, width: 220 }}
-            placeholder="🔍 Search item, source ref, remarks..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-          />
-        </div>
-        <div>
-          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Txn Type</label>
-          <br />
-          <select
-            className="innovic-select"
-            style={{ fontSize: 12, width: 110 }}
-            value={txnType ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as StoreTxnType | '';
-              setTxnType(v === '' ? undefined : v);
-              setPage(1);
-            }}
-          >
-            <option value="">All</option>
-            {STORE_TXN_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Source</label>
-          <br />
-          <select
-            className="innovic-select"
-            style={{ fontSize: 12, width: 150 }}
-            value={sourceType ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as StoreTxnSourceType | '';
-              setSourceType(v === '' ? undefined : v);
-              setPage(1);
-            }}
-          >
-            <option value="">All sources</option>
-            {STORE_TXN_SOURCE_TYPES.map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: 11 }}
-          onClick={() => {
-            setSearchInput('');
-            setTxnType(undefined);
-            setSourceType(undefined);
-            setPage(1);
-          }}
-        >
-          ↻ Clear
-        </button>
-        {isFetching && !isLoading ? (
-          <span
-            className="text3"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11 }}
-          >
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Updating…
-          </span>
         ) : null}
-      </div>
+      </ListHeader>
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
@@ -296,7 +297,11 @@ export function StockLedger(): React.JSX.Element {
                         onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                         style={canSort ? { cursor: 'pointer', userSelect: 'none' } : undefined}
                         aria-sort={
-                          sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined
+                          sorted === 'asc'
+                            ? 'ascending'
+                            : sorted === 'desc'
+                              ? 'descending'
+                              : undefined
                         }
                       >
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -305,7 +310,7 @@ export function StockLedger(): React.JSX.Element {
                             <span
                               aria-hidden
                               style={{
-                                fontSize: 9,
+                                fontSize: 11,
                                 opacity: sorted ? 1 : 0.3,
                                 color: sorted ? 'var(--cyan)' : 'inherit',
                               }}
@@ -325,22 +330,25 @@ export function StockLedger(): React.JSX.Element {
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading store transactions…
+                    Loading stock movements…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
-                    <span style={{ color: 'var(--red)' }}>
-                      {error instanceof Error ? error.message : 'Failed to load store transactions'}
+                    <span style={{ color: 'var(--red2)' }}>
+                      {error instanceof Error
+                        ? error.message
+                        : 'Could not load stock movements. Try again.'}
                     </span>
                   </td>
                 </tr>
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
-                    No stock movements found. Transactions are auto-recorded from GRN, Issues,
-                    Dispatch, OSP DC.
+                    {search || txnType || sourceType
+                      ? 'No stock movements match.'
+                      : 'No stock movements yet.'}
                   </td>
                 </tr>
               ) : (
@@ -359,47 +367,13 @@ export function StockLedger(): React.JSX.Element {
         </div>
       </div>
 
-      <div
-        className="text3"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          fontSize: 11,
-          marginTop: 6,
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No store transactions'
-            : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            <ChevronLeft size={12} />
-            Prev
-          </button>
-          <span className="text2">
-            Page {page} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            Next
-            <ChevronRight size={12} />
-          </button>
-        </div>
-      </div>
+      <ListFooter
+        total={total}
+        noun="stock movement"
+        page={page}
+        pageSize={PAGE_SIZE}
+        onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+      />
     </div>
   );
 }

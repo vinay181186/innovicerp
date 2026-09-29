@@ -3,8 +3,8 @@
 // Header: RC No (auto on create), Item picker (one active RC per item),
 // optional notes, revision indicator.
 //
-// Op editor: per-row Machine / Operation / Cycle(h) / Program /
-// Tool fields + Add Op / Add OSP Op / Add QC Op buttons. Mirrors legacy
+// Op editor: per-row Machine / Operation / Cycle (min per piece) / Program /
+// Tool fields + Add Op / Add Outsource Op / Add QC Op buttons. Mirrors legacy
 // rcOpsHtml (L10208), which is the single op renderer shared by BOTH
 // legacy entry points — addRouteCard() (L6939, via _rcCheckExisting
 // L6994) and editRouteCard() (L10169, direct call at L10198). That
@@ -14,15 +14,16 @@ import type {
   CreateRouteCardOpInput,
   Machine,
   RouteCard,
+  RouteCardDetail,
   RouteCardPlanType,
   Vendor,
 } from '@innovic/shared';
 import { opSrNo, qcAfterOutsourceError } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { RmItemFields, rmItemToInput } from '@/components/shared/rm-item-fields';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { usePlansList } from '@/modules/plans/api';
@@ -33,7 +34,11 @@ import {
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList } from '@/modules/vendors/api';
-import { useNextRouteCardCode, useRouteCardsList } from '../api';
+import { Panel } from '@/ui/data';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { useFetchRouteCard, useNextRouteCardCode, useRouteCardsList } from '../api';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
 
@@ -48,7 +53,7 @@ export interface RouteCardFormOpDraft {
   machineCodeText: string; // displayed value; also stored as fallback
   operation: string;
   opType: RouteCardOpType;
-  cycleTimeMin: string; // legacy unit: HOURS
+  cycleTimeMin: string; // MINUTES per piece
   program: string;
   toolNo: string;
   toolDetails: string;
@@ -72,6 +77,10 @@ export interface RouteCardFormHeaderDraft {
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  // ADR-193 phase 3a: the RM ITEM + qty per piece (Required on the JC).
+  rawMaterialItemId: string | null;
+  rawMaterialItemCode: string | null;
+  rmQtyPerPiece: string;
   notes: string;
   // How this item is normally made — the same three-way choice SO Planning
   // asks per plan, recorded once on the card as the default.
@@ -91,6 +100,51 @@ interface RouteCardFormProps {
   submitting: boolean;
   submitError: string | null;
   onCancel: () => void;
+  /** Header Back — a plain navigation, so the router's exit guard asks first. */
+  onBack?: () => void;
+}
+
+/** A saved card's operations as editable form rows — used by the edit page to
+ *  open a card, and by "Copy ops from Route Card…" on create. One mapping, so
+ *  a copied row and an edited row can never disagree. */
+export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpDraft[] {
+  return ops.map((op) => ({
+    // Group is display-only; the form reads it back off the machine master
+    // once the machines list has loaded.
+    machineGroupId: null,
+    machineId: op.machineId ?? '',
+    machineCodeText: op.machineCode ?? op.machineCodeText ?? '',
+    operation: op.operation,
+    opType: op.opType,
+    // Legacy: `${op.cycleTime||''}` — a stored 0 renders blank, same as a
+    // freshly added row. Keeps create/edit identical (ISSUE-099).
+    cycleTimeMin: Number(op.cycleTimeMin) ? String(Number(op.cycleTimeMin)) : '',
+    program: op.program ?? '',
+    toolNo: op.toolNo ?? '',
+    toolDetails: op.toolDetails ?? '',
+    qcRequired: op.qcRequired,
+    ospVendorId: op.ospVendorId ?? '',
+    ospVendorCodeText: op.ospVendorCode ?? op.ospVendorCodeText ?? '',
+    ospLeadDays: op.ospLeadDays != null ? String(op.ospLeadDays) : '',
+  }));
+}
+
+/** A row counts as typed when ANY field the user fills is filled — not just
+ *  the operation name — so a copy never silently drops a picked machine, a
+ *  cycle time, a vendor, a program or a tool. */
+function isOpRowTyped(o: RouteCardFormOpDraft): boolean {
+  return [
+    o.operation,
+    o.machineId,
+    o.machineCodeText,
+    o.cycleTimeMin,
+    o.program,
+    o.toolNo,
+    o.toolDetails,
+    o.ospVendorId,
+    o.ospVendorCodeText,
+    o.ospLeadDays,
+  ].some((v) => v.trim() !== '');
 }
 
 export function emptyProcessOp(): RouteCardFormOpDraft {
@@ -100,8 +154,8 @@ export function emptyProcessOp(): RouteCardFormOpDraft {
     machineCodeText: '',
     operation: '',
     opType: 'process',
-    // Legacy renders `${op.cycleTime||''}` with a "hrs" placeholder (L10216 /
-    // L10240) — a blank cell, not a literal 0. opsToInput coerces '' → 0.
+    // Legacy renders `${op.cycleTime||''}` as a blank cell (L10216 /
+    // L10240), not a literal 0. opsToInput coerces '' → 0.
     cycleTimeMin: '',
     program: '',
     toolNo: '',
@@ -140,6 +194,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     submitting,
     submitError,
     onCancel,
+    onBack,
   } = props;
   const [header, setHeader] = useState<RouteCardFormHeaderDraft>(initialHeader);
   const [ops, setOps] = useState<RouteCardFormOpDraft[]>(initialOps);
@@ -202,21 +257,69 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       itemCodeText: it?.code ?? '',
       itemName: it?.name ?? '',
     });
-    setDupDismissed(false); // a new pick gets a fresh warning
   };
 
-  // "This item already has a route card" banner (user, 2026-09-22). On create,
-  // the moment an item is picked we look up its existing route cards and say
-  // so at the top of the form, naming them, so a second card is never made by
-  // accident. The × only hides the banner — creating another card is still
-  // allowed (revisions vs. a fresh card is the planner's call).
-  const [dupDismissed, setDupDismissed] = useState(false);
+  // "This item already has a route card" (user, 2026-09-22; hardened by the
+  // 2026-09-28 form audit). On create, the moment an item is picked we look up
+  // its route cards. The server ALWAYS refuses a second card for an item, so
+  // the form is blocked instead of warned: the operations table is hidden,
+  // Save is off, and the banner offers "Open RC-xxxx to add a revision" —
+  // nobody types ten ops only to lose them to a refusal on Save.
   const { data: existingForItem } = useRouteCardsList(
     { itemId: header.itemId, limit: 5, offset: 0 },
     { enabled: mode === 'create' && Boolean(header.itemId) },
   );
   const existingCards = mode === 'create' && header.itemId ? (existingForItem?.items ?? []) : [];
-  const showDupBanner = existingCards.length > 0 && !dupDismissed;
+  const blockingCard = existingCards[0] ?? null;
+
+  // "Copy ops from Route Card…" (round-2 "Next" item, 2026-09-26). On create,
+  // pick any existing card and its operations are copied into this form as
+  // ordinary editable rows — a similar part's routing, not re-typed by hand.
+  // The copy is a one-time fill: nothing links the two cards afterwards.
+  const [copySearch, setCopySearch] = useState('');
+  const [copyFromId, setCopyFromId] = useState<string | null>(null);
+  const [copiedFrom, setCopiedFrom] = useState<{ id: string; label: string } | null>(null);
+  const { data: copyList, isFetching: copyListFetching } = useRouteCardsList(
+    { ...(copySearch.trim() ? { search: copySearch.trim() } : {}), limit: 20, offset: 0 },
+    { enabled: mode === 'create' },
+  );
+  const fetchRouteCard = useFetchRouteCard();
+  // The picker's choice waiting on "replace what you typed?" — set only when
+  // the form already holds typed rows.
+  const [pendingCopy, setPendingCopy] = useState<RouteCardDetail | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  // The latest pick, so a slow fetch for an earlier pick is dropped.
+  const copyPickRef = useRef<string | null>(null);
+  // Read inside the async handler after the fetch, so it sees the rows as
+  // they are THEN, not as they were when the pick was made.
+  const opsRef = useRef(ops);
+  opsRef.current = ops;
+  const applyCopy = (detail: RouteCardDetail): void => {
+    setOps(detailOpsToDrafts(detail.ops));
+    setCopiedFrom({ id: detail.id, label: `${detail.code} Rev ${detail.currentRevision}` });
+    setCopyFromId(detail.id);
+  };
+  const onPickCopySource = async (id: string | null): Promise<void> => {
+    copyPickRef.current = id;
+    setCopyError(null);
+    setCopyFromId(id);
+    if (!id || id === copiedFrom?.id) return;
+    let detail: RouteCardDetail;
+    try {
+      detail = await fetchRouteCard(id);
+    } catch (e) {
+      if (copyPickRef.current !== id) return;
+      setCopyError(e instanceof Error ? e.message : 'Could not load that route card.');
+      setCopyFromId(copiedFrom?.id ?? null);
+      return;
+    }
+    if (copyPickRef.current !== id) return;
+    if (opsRef.current.some(isOpRowTyped)) {
+      setPendingCopy(detail);
+      return;
+    }
+    applyCopy(detail);
+  };
 
   // Raw material prefilled from the item's latest PLAN, on create only.
   //
@@ -235,7 +338,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     !header.rawMaterialGradeId &&
     !header.rawMaterialGradeText &&
     !header.rawMaterialSizeId &&
-    !header.rawMaterialSizeText;
+    !header.rawMaterialSizeText &&
+    !header.rawMaterialItemId;
   const { data: plansForItem } = usePlansList(
     { search: header.itemCodeText, limit: 50, offset: 0 },
     { enabled: mode === 'create' && rmBlank && Boolean(header.itemId && header.itemCodeText) },
@@ -251,7 +355,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         (pl.rawMaterialGradeId ||
           pl.rawMaterialGradeText ||
           pl.rawMaterialSizeId ||
-          pl.rawMaterialSizeText),
+          pl.rawMaterialSizeText ||
+          pl.rawMaterialItemId),
     );
     if (!source) return;
     setHeader((prev) => ({
@@ -260,6 +365,9 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       rawMaterialGradeText: source.rawMaterialGradeText,
       rawMaterialSizeId: source.rawMaterialSizeId,
       rawMaterialSizeText: source.rawMaterialSizeText,
+      rawMaterialItemId: source.rawMaterialItemId,
+      rawMaterialItemCode: source.rawMaterialItemCode,
+      rmQtyPerPiece: source.rmQtyPerPiece != null ? String(source.rmQtyPerPiece) : '',
     }));
     setRmPrefillFrom(source.code);
   }, [plansForItem, header.itemId, rmBlank, mode]);
@@ -339,27 +447,35 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   const removeOp = (idx: number): void => setOps((prev) => prev.filter((_, i) => i !== idx));
 
   const validationError = useMemo<string | null>(() => {
-    if (!header.itemId) return 'Pick an item code from the master list';
-    if (ops.length === 0) return 'Add at least one operation';
+    if (!header.itemId) return 'Item Code is required.';
+    if (blockingCard) {
+      return `Item ${header.itemCodeText} already has Route Card ${blockingCard.code} — open it to add a revision.`;
+    }
+    if (ops.length === 0) return 'Add at least one operation.';
     for (let i = 0; i < ops.length; i++) {
       const o = ops[i]!;
       // Messages name the op as the table shows it (10, 20, 30) — see opSrNo.
       const sr = opSrNo(i + 1);
-      if (!o.operation.trim()) return `Op ${sr}: operation name is required`;
-      if (o.opType === 'process' && !o.machineId && !o.machineCodeText.trim()) {
-        return `Op ${sr}: process steps need a machine`;
+      if (!o.operation.trim()) return `Op ${sr}: Operation is required.`;
+      // Master-only (2026-09-28 audit): a typed machine that is not in the
+      // Machine Master was saved as text only, so loading and costing never
+      // saw the op. An old row holding such text must be re-picked.
+      if (o.opType === 'process' && !o.machineId) {
+        return o.machineCodeText.trim()
+          ? `Op ${sr}: Machine "${o.machineCodeText.trim()}" is not in the Machine Master — pick one from the list.`
+          : `Op ${sr}: Machine is required.`;
       }
       if (o.opType === 'outsource' && !o.ospVendorId && !o.ospVendorCodeText.trim()) {
-        return `Op ${sr}: outsource steps need a vendor`;
+        return `Op ${sr}: Vendor is required.`;
       }
       const cycle = Number(o.cycleTimeMin);
       if (!Number.isFinite(cycle) || cycle < 0) {
-        return `Op ${sr}: cycle time must be a non-negative number`;
+        return `Op ${sr}: Cycle Time (min) cannot be less than 0.`;
       }
       if (o.ospLeadDays.trim()) {
         const lead = Number(o.ospLeadDays);
         if (!Number.isInteger(lead) || lead < 0) {
-          return `Op ${sr}: lead days must be a non-negative integer`;
+          return `Op ${sr}: Lead Days must be a whole number, 0 or more.`;
         }
       }
     }
@@ -373,17 +489,22 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     );
     if (seqError) return seqError;
     return null;
-  }, [header, ops]);
+  }, [header, ops, blockingCard]);
 
-  const submit = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault();
-    if (validationError) return;
+  const save = async (): Promise<void> => {
+    if (validationError || submitting) return;
     await onSubmit(
       header,
       ops,
       mode === 'edit' && revisionNote.trim() ? revisionNote.trim() : null,
     );
   };
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    await save();
+  };
+  // Ctrl+S runs the same Save as the header button (no-op while it is disabled).
+  useSaveShortcut(() => void save(), !submitting);
 
   // One Plan Type card. Lifted from SO Planning's typeBtn so the two screens
   // draw the same control; a <label> so the whole tile is the click target.
@@ -412,118 +533,134 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       >
         <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
         <div style={{ fontSize: 12, fontWeight: 700, color }}>{label}</div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>{help}</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{help}</div>
       </label>
     );
   };
 
   return (
     <form onSubmit={(e) => void submit(e)}>
-      {showDupBanner ? (
-        <div
-          role="alert"
-          style={{
-            color: 'var(--amber2)',
-            background: 'var(--amber3)',
-            border: '1px solid var(--amber)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <span style={{ flex: 1 }}>
-            ⚠ A route card already exists for item <b className="mono">{header.itemCodeText}</b>:{' '}
-            {existingCards.map((rc, i) => (
-              <span key={rc.id}>
-                {i > 0 ? ', ' : ''}
-                <Link to="/route-cards/$id" params={{ id: rc.id }} className="mono fw-700">
-                  {rc.code}
-                </Link>
-              </span>
-            ))}
-            {existingForItem && existingForItem.total > existingCards.length
-              ? ` and ${existingForItem.total - existingCards.length} more`
-              : ''}
-            . Check it before creating another.
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setDupDismissed(true)}
-            title="Dismiss"
-            aria-label="Dismiss"
-            style={{ padding: '2px 6px' }}
-          >
-            <X size={14} />
-          </button>
+      <PageHeader
+        sticky
+        title={mode === 'create' ? 'New Route Card' : `Edit Route Card — ${routeCard?.code ?? ''}`}
+        backLabel="Back"
+        onBack={onBack ?? onCancel}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={onCancel}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={Boolean(validationError) || submitting}
+              title={validationError ?? undefined}
+            >
+              {submitting ? 'Saving…' : mode === 'create' ? 'Save Route Card' : 'Save Changes'}
+            </button>
+          </>
+        }
+      />
+      {/* Why Save is disabled / why it failed — right under the header, where
+          the Save button is, instead of at the foot of the form. */}
+      {validationError ? (
+        <div className="form-error" style={{ marginBottom: 'var(--sp-2)' }}>
+          {validationError}
         </div>
       ) : null}
-      {/* SO-Planning left-accent card composition: a cyan identity stripe + the
-          --bg3 banded header (panel-hdr) reused across every block of the form. */}
-      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
-        <div className="panel-hdr">
-          <div className="panel-title">
-            {mode === 'create' ? '➕ New Route Card' : `Edit Route Card — ${routeCard?.code ?? ''}`}
+      {submitError ? (
+        <Banner tone="error" role="alert">
+          {submitError}
+        </Banner>
+      ) : null}
+      {blockingCard ? (
+        <Banner
+          tone="warn"
+          role="alert"
+          accent
+          title={
+            <>
+              Item <span className="mono">{header.itemCodeText}</span> already has Route Card{' '}
+              <span className="mono">{blockingCard.code}</span>
+            </>
+          }
+        >
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', flexWrap: 'wrap' }}
+          >
+            <span style={{ flex: 1 }}>
+              An item has one Route Card. Changes to its operations are saved as a new revision of
+              that card, not as a second card.
+            </span>
+            <Link
+              to="/route-cards/$id/edit"
+              params={{ id: blockingCard.id }}
+              className="btn btn-primary btn-sm"
+            >
+              Open {blockingCard.code} to add a revision
+            </Link>
           </div>
-        </div>
-        <div className="panel-body">
-          {/* 3-up header row: RC No. · Item Code · Item Name on one line, so the
-              name reads right beside the code and the header stays compact. The
-              wide blocks below (Plan Type, Raw material, Notes) still span the row. */}
-          <div className="form-grid-3">
-            <div className="form-grp">
-              <span className="form-label">RC No.</span>
-              <input
-                className="innovic-input"
-                value={header.code}
-                onChange={(e) => setHeader({ ...header, code: e.target.value })}
-                placeholder={mode === 'create' ? 'IN-RC-NNNNN (auto if blank)' : ''}
-                style={{ maxWidth: '18ch' }}
-              />
-            </div>
-            <div className="form-grp">
-              <span className="form-label">
-                Item Code<span className="req">★</span>
-              </span>
-              {/* The same master-only picker Create SO uses (SearchableSelect),
-                  not a free-text datalist: it lists "CODE — Name", shows the code
-                  in the field once picked, and only lets a real master item be
-                  chosen — so an off-master typo can no longer sit in the box
-                  looking accepted. */}
-              <SearchableSelect
-                id="rc-item"
-                value={header.itemId || null}
-                onChange={onPickItem}
-                onSearch={setItemSearch}
-                loading={itemsFetching}
-                options={(itemsList?.items ?? []).map((i) => ({
-                  id: i.id,
-                  code: i.code,
-                  name: i.name,
-                }))}
-                placeholder="🔍 Search item code or name…"
-                valueLabel={header.itemCodeText || undefined}
-                selectedLabel={(o) => o.code ?? o.name}
-              />
-            </div>
-            <div className="form-grp">
-              {/* Item Name — read-only, auto-filled from the picked item, sitting
-                  right beside Item Code (the format Create SO shows). It mirrors
-                  the master; you pick the item by code, the name follows. */}
-              <span className="form-label">Item Name</span>
-              <input
-                className="innovic-input"
-                value={header.itemName}
-                readOnly
-                placeholder="—"
-                style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
-              />
-            </div>
-            {/* Plan Type — the same choice SO Planning asks for every plan,
+        </Banner>
+      ) : null}
+      {/* Plain panels (the old inline cyan / amber left stripes were not theme
+          classes). Header fields sit on the 12-column grid, sized by content. */}
+      <Panel title="Route Card Details">
+        <FormGrid>
+          <FormField label="RC No." size="sm">
+            <input
+              className="innovic-input"
+              value={header.code}
+              onChange={(e) => setHeader({ ...header, code: e.target.value })}
+              placeholder={mode === 'create' ? 'IN-RC-NNNNN (auto if blank)' : ''}
+            />
+          </FormField>
+          <FormField label="Item Code" required size="sm">
+            {/* The same master-only picker Create SO uses (SearchableSelect),
+                not a free-text datalist: it lists "CODE — Name", shows the code
+                in the field once picked, and only lets a real master item be
+                chosen — so an off-master typo can no longer sit in the box
+                looking accepted. */}
+            <SearchableSelect
+              id="rc-item"
+              value={header.itemId || null}
+              onChange={onPickItem}
+              onSearch={setItemSearch}
+              loading={itemsFetching}
+              options={(itemsList?.items ?? []).map((i) => ({
+                id: i.id,
+                code: i.code,
+                name: i.name,
+              }))}
+              placeholder="🔍 Search item code or name…"
+              valueLabel={header.itemCodeText || undefined}
+              selectedLabel={(o) => o.code ?? o.name}
+            />
+          </FormField>
+          {/* Item Name — read-only, auto-filled from the picked item, sitting
+              right beside Item Code (the format Create SO shows). It mirrors
+              the master; you pick the item by code, the name follows. On edit
+              it gives 2/12 to the Route Card Rev indicator. */}
+          <FormField label="Item Name" size={mode === 'edit' && routeCard ? 'md' : 'lg'}>
+            <input
+              className="innovic-input"
+              value={header.itemName}
+              readOnly
+              placeholder="—"
+              style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
+            />
+          </FormField>
+          {mode === 'edit' && routeCard ? (
+            <FormField label="Route Card Rev" size="xs">
+              <div
+                className="mono fw-700"
+                style={{ color: 'var(--amber2)', paddingTop: 7, fontSize: 14 }}
+              >
+                {routeCard.currentRevision} →{' '}
+                <span style={{ color: 'var(--green2)' }}>{routeCard.currentRevision + 1}</span>
+              </div>
+            </FormField>
+          ) : null}
+          {/* Plan Type — the same choice SO Planning asks for every plan,
                 recorded once here as the item's default. Same cards, same
                 colours, so the planner recognises it. `assembly` is not offered:
                 it needs a BOM behind an order line and is decided at planning.
@@ -531,146 +668,176 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 item is flagged Source = Buy on the Item Master and the Planning
                 line raises a PR. An existing card that already holds it still
                 renders (read-only chip below) and saves unchanged. */}
-            <div className="form-full">
-              <span
-                className="form-label"
-                style={{ fontWeight: 700, display: 'block', marginBottom: 6 }}
-              >
-                Plan Type<span className="req">★</span>
-              </span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {planTypeCard(
-                  'manufacture',
-                  '🏭',
-                  'Manufacture',
-                  'Job Card + Operations',
-                  'var(--cyan)',
-                  'rgba(34,211,238,0.08)',
-                )}
-                {planTypeCard(
-                  'full_outsource',
-                  '📦',
-                  'Full Outsource',
-                  'Our material, vendor does all',
-                  'var(--purple)',
-                  'rgba(124,58,237,0.08)',
-                )}
-              </div>
-              {header.planType === 'direct_purchase' ? (
-                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
-                  <span className="badge b-grey">🛒 Direct Purchase</span>{' '}
-                  <span className="text3">
-                    (legacy — set the item&apos;s Source to Buy instead)
-                  </span>
-                </div>
-              ) : null}
+          <div className="f-full">
+            <span
+              className="form-label"
+              style={{ fontWeight: 700, display: 'block', marginBottom: 6 }}
+            >
+              Plan Type<span className="req">★</span>
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {planTypeCard(
+                'manufacture',
+                '🏭',
+                'Manufacture',
+                'Job Card + Operations',
+                'var(--cyan)',
+                'var(--cyan3)',
+              )}
+              {planTypeCard(
+                'full_outsource',
+                '📦',
+                'Full Outsource',
+                'Our material, vendor does all',
+                'var(--purple)',
+                'var(--purple3)',
+              )}
             </div>
-            {/* Raw material — Grade + Size under one bracket, both optional
-                (no ★ on either). Same two pickers Planning and the Job Card
-                form use, so the route card names the same stock they do. */}
-            <div className="form-full">
-              <RawMaterialGroup>
-                <div className="form-grp">
-                  <label className="form-label">Grade</label>
-                  <MaterialGradePicker
-                    valueId={header.rawMaterialGradeId}
-                    valueText={header.rawMaterialGradeText}
-                    onChange={(id, text) =>
-                      setHeader((prev) => ({
-                        ...prev,
-                        rawMaterialGradeId: id,
-                        rawMaterialGradeText: text,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">Size</label>
-                  <MaterialSizePicker
-                    valueId={header.rawMaterialSizeId}
-                    valueText={header.rawMaterialSizeText}
-                    onChange={(id, text) =>
-                      setHeader((prev) => ({
-                        ...prev,
-                        rawMaterialSizeId: id,
-                        rawMaterialSizeText: text,
-                      }))
-                    }
-                  />
-                </div>
-                {rmPrefillFrom ? (
-                  <div
-                    className="text3"
-                    style={{ gridColumn: '1 / -1', fontSize: 10.5, marginTop: 2 }}
-                  >
-                    Prefilled from plan{' '}
-                    <b className="mono" style={{ color: 'var(--text)' }}>
-                      {rmPrefillFrom}
-                    </b>{' '}
-                    — change it if the routing calls for something else.
-                  </div>
-                ) : null}
-              </RawMaterialGroup>
-            </div>
-            <div className="form-grp form-full">
-              <span className="form-label">Notes</span>
-              <input
-                className="innovic-input"
-                value={header.notes}
-                onChange={(e) => setHeader({ ...header, notes: e.target.value })}
-                placeholder="Optional manufacturing notes…"
-              />
-            </div>
-            {mode === 'edit' && routeCard ? (
-              <div className="form-grp">
-                <span className="form-label">Route Card Rev</span>
-                <div
-                  className="mono fw-700"
-                  style={{ color: 'var(--amber)', paddingTop: 7, fontSize: 14 }}
-                >
-                  Route Card Rev {routeCard.currentRevision} →{' '}
-                  <span style={{ color: 'var(--green)' }}>Rev {routeCard.currentRevision + 1}</span>
-                </div>
+            {header.planType === 'direct_purchase' ? (
+              <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
+                <span className="badge b-grey">🛒 Buy</span>{' '}
+                <span className="text3">
+                  Old setting — set the item&apos;s Source to Buy instead.
+                </span>
               </div>
             ) : null}
           </div>
-        </div>
-      </div>
-
-      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
-        <div className="panel-hdr">
-          <div className="panel-title">⚙️ Route Sequence ({ops.length})</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('process')}>
-              <Plus size={13} /> Add Op
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{
-                background: 'rgba(124,58,237,0.08)',
-                color: 'var(--purple)',
-                border: '1px solid rgba(124,58,237,0.25)',
-              }}
-              onClick={() => addOp('outsource')}
-            >
-              <Plus size={13} /> Add OSP Op
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{
-                background: 'rgba(34,197,94,0.08)',
-                color: 'var(--green)',
-                border: '1px solid rgba(34,197,94,0.25)',
-              }}
-              onClick={() => addOp('qc')}
-            >
-              <Plus size={13} /> Add QC Op
-            </button>
+          {/* Raw material — Grade + Size under one bracket, both optional
+                (no ★ on either). Same two pickers Planning and the Job Card
+                form use, so the route card names the same stock they do. */}
+          <div className="f-full">
+            <RawMaterialGroup>
+              <div className="form-grp">
+                <label className="form-label">RM Grade</label>
+                <MaterialGradePicker
+                  valueId={header.rawMaterialGradeId}
+                  valueText={header.rawMaterialGradeText}
+                  onChange={(id, text) =>
+                    setHeader((prev) => ({
+                      ...prev,
+                      rawMaterialGradeId: id,
+                      rawMaterialGradeText: text,
+                    }))
+                  }
+                />
+              </div>
+              <div className="form-grp">
+                <label className="form-label">RM Size</label>
+                <MaterialSizePicker
+                  valueId={header.rawMaterialSizeId}
+                  valueText={header.rawMaterialSizeText}
+                  onChange={(id, text) =>
+                    setHeader((prev) => ({
+                      ...prev,
+                      rawMaterialSizeId: id,
+                      rawMaterialSizeText: text,
+                    }))
+                  }
+                />
+              </div>
+              <RmItemFields
+                value={{
+                  rawMaterialItemId: header.rawMaterialItemId,
+                  rawMaterialItemCode: header.rawMaterialItemCode,
+                  rmQtyPerPiece: header.rmQtyPerPiece,
+                }}
+                onChange={(v) => setHeader((prev) => ({ ...prev, ...v }))}
+              />
+              {rmPrefillFrom ? (
+                <div className="text3" style={{ gridColumn: '1 / -1', fontSize: 11, marginTop: 2 }}>
+                  Prefilled from plan{' '}
+                  <b className="mono" style={{ color: 'var(--text)' }}>
+                    {rmPrefillFrom}
+                  </b>{' '}
+                  — change it if the routing calls for something else.
+                </div>
+              ) : null}
+            </RawMaterialGroup>
           </div>
-        </div>
-        <div className="tbl-wrap">
+          <FormField label="Notes" size="full">
+            <input
+              className="innovic-input"
+              value={header.notes}
+              onChange={(e) => setHeader({ ...header, notes: e.target.value })}
+              placeholder="Optional manufacturing notes…"
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
+
+      {blockingCard ? null : (
+        <Panel
+          title={`Operation Sequence (${ops.length})`}
+          bodyPadding="none"
+          bodyClassName="tbl-wrap"
+          actions={
+            <>
+              {mode === 'create' ? (
+                <div
+                  style={{ minWidth: 240 }}
+                  title="Copy another card's operations into this form"
+                >
+                  <SearchableSelect
+                    id="rc-copy-from"
+                    value={copyFromId}
+                    onChange={(id) => void onPickCopySource(id)}
+                    onSearch={setCopySearch}
+                    loading={copyListFetching}
+                    options={(copyList?.items ?? []).map((rc) => ({
+                      id: rc.id,
+                      code: rc.code,
+                      name: [rc.itemCode, rc.itemName].filter(Boolean).join(' — ') || '—',
+                    }))}
+                    placeholder="Copy ops from Route Card…"
+                    emptyText="No route cards"
+                    selectedLabel={(o) => o.code ?? o.name}
+                  />
+                </div>
+              ) : null}
+              {copyError ? (
+                <span className="text2" role="alert" style={{ fontSize: 11, color: 'var(--red2)' }}>
+                  {copyError}
+                </span>
+              ) : null}
+              {copiedFrom && mode === 'create' ? (
+                <span className="text2" style={{ fontSize: 11 }}>
+                  Copied from <span className="mono fw-700">{copiedFrom.label}</span> — edit freely
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => addOp('process')}
+              >
+                <Plus size={13} /> Add Op
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: 'var(--purple3)',
+                  color: 'var(--purple)',
+                  border: '1px solid var(--purple)',
+                }}
+                onClick={() => addOp('outsource')}
+              >
+                <Plus size={13} /> Add Outsource Op
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: 'var(--green3)',
+                  color: 'var(--green2)',
+                  border: '1px solid var(--green)',
+                }}
+                onClick={() => addOp('qc')}
+              >
+                <Plus size={13} /> Add QC Op
+              </button>
+            </>
+          }
+        >
           <table className="innovic-table">
             <thead>
               <tr>
@@ -682,12 +849,19 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                     the same fact invited rows whose Type disagreed with their
                     machine. */}
                 <th style={{ width: 140 }}>Group</th>
-                <th style={{ width: 150 }}>Machine / Vendor ★</th>
-                <th>Operation ★</th>
-                <th className="text3" style={{ width: 90 }}>
-                  Cycle Time (h)
+                <th style={{ width: 150 }}>
+                  Machine / Vendor<span className="req">★</span>
                 </th>
-                <th style={{ width: 90 }}>Program / Lead</th>
+                <th>
+                  Operation<span className="req">★</span>
+                </th>
+                <th className="th-num text3" style={{ width: 90 }}>
+                  Cycle Time (min)
+                </th>
+                <th style={{ width: 90 }}>Program No.</th>
+                <th className="th-num" style={{ width: 70 }}>
+                  Lead Days
+                </th>
                 <th className="cyan" style={{ width: 90 }}>
                   Tool No.
                 </th>
@@ -698,9 +872,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             <tbody>
               {ops.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
-                    No operations yet — click <strong>+ Add Op</strong> / <strong>+ QC Step</strong>{' '}
-                    / <strong>+ OSP Step</strong>.
+                  <td colSpan={10} className="empty-state">
+                    No operations yet.
                   </td>
                 </tr>
               ) : (
@@ -722,41 +895,38 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               )}
             </tbody>
           </table>
-        </div>
-      </div>
+        </Panel>
+      )}
 
       {mode === 'edit' ? (
-        <div className="panel" style={{ borderLeft: '3px solid var(--amber)' }}>
-          <div className="panel-hdr">
-            <div className="panel-title">📋 Revision Note</div>
-          </div>
-          <div className="panel-body">
-            <textarea
-              className="innovic-textarea"
-              rows={2}
-              value={revisionNote}
-              onChange={(e) => setRevisionNote(e.target.value)}
-              placeholder="Auto-generated diff note will be used if blank. Override here for ECO numbers etc."
-            />
-          </div>
-        </div>
+        <Panel title="Revision Note">
+          <textarea
+            className="innovic-textarea"
+            rows={2}
+            value={revisionNote}
+            onChange={(e) => setRevisionNote(e.target.value)}
+            placeholder="Optional — auto-filled if blank"
+          />
+        </Panel>
       ) : null}
 
-      {validationError ? <div className="form-error">{validationError}</div> : null}
-      {submitError ? <div className="form-error">{submitError}</div> : null}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <button type="button" className="btn btn-ghost" onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={Boolean(validationError) || submitting}
-        >
-          {submitting ? 'Saving…' : '✓ Save Route Card'}
-        </button>
-      </div>
+      {pendingCopy ? (
+        <ConfirmDialog
+          title={`Copy operations from ${pendingCopy.code}?`}
+          message={`Replace the ${ops.length} operation(s) on this form with the ${pendingCopy.ops.length} from ${pendingCopy.code} Rev ${pendingCopy.currentRevision}?`}
+          confirmLabel="Replace operations"
+          tone="primary"
+          onConfirm={() => {
+            applyCopy(pendingCopy);
+            setPendingCopy(null);
+          }}
+          onCancel={() => {
+            setPendingCopy(null);
+            copyPickRef.current = copiedFrom?.id ?? null;
+            setCopyFromId(copiedFrom?.id ?? null);
+          }}
+        />
+      ) : null}
     </form>
   );
 }
@@ -796,11 +966,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
     ? (machineGroupCodeById.get(op.machineGroupId) ?? null)
     : null;
   const rowBg =
-    op.opType === 'qc'
-      ? 'rgba(34,197,94,0.06)'
-      : op.opType === 'outsource'
-        ? 'rgba(124,58,237,0.06)'
-        : undefined;
+    op.opType === 'qc' ? 'var(--green3)' : op.opType === 'outsource' ? 'var(--purple3)' : undefined;
   const accent =
     op.opType === 'qc'
       ? 'var(--green)'
@@ -810,28 +976,28 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   const machineLabel = op.machineId
     ? machinesList.find((m) => m.id === op.machineId)?.name
     : op.machineCodeText.trim()
-      ? '⚠ not in master'
+      ? `⚠ "${op.machineCodeText.trim()}" is not in the master — pick again`
       : null;
   // Warning only — the vendor NAME is shown in the picker field itself (CODE — Name).
-  const vendorLabel = !op.ospVendorId && op.ospVendorCodeText.trim() ? '⚠ not in master' : null;
+  const vendorLabel = !op.ospVendorId && op.ospVendorCodeText.trim() ? '⚠ Not in master' : null;
   return (
     <tr style={{ background: rowBg }}>
-      <td className="td-ctr mono fw-700" style={{ color: accent }}>
+      <td className="mono fw-700" style={{ color: accent }}>
         {opSrNo(idx + 1)}
       </td>
       <td>
         {op.opType === 'qc' ? (
-          <span className="badge b-green" style={{ fontSize: 10 }}>
+          <span className="badge b-green" style={{ fontSize: 11 }}>
             🔬 QC
           </span>
         ) : op.opType === 'outsource' ? (
           <span
             className="badge"
             style={{
-              fontSize: 10,
+              fontSize: 11,
               color: 'var(--purple)',
-              background: 'rgba(124,58,237,0.12)',
-              border: '1px solid rgba(124,58,237,0.3)',
+              background: 'var(--purple3)',
+              border: '1px solid var(--purple)',
             }}
           >
             🏭 OSP
@@ -875,34 +1041,38 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
               selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
             />
             {vendorLabel ? (
-              <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
+              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                 {vendorLabel}
               </div>
             ) : null}
           </>
         ) : op.opType === 'qc' ? (
-          <span className="badge b-green" style={{ fontSize: 10 }}>
+          <span className="badge b-green" style={{ fontSize: 11 }}>
             QC
           </span>
         ) : (
           <>
-            <input
-              className="innovic-input"
-              list={`rc-machines-dl-${idx}`}
-              value={op.machineCodeText}
-              onChange={(e) => onMachineChange(e.target.value)}
-              placeholder={op.machineGroupId ? '🔍 Machine in group' : '🔍 Machine code'}
-              style={{ fontSize: 12 }}
+            {/* Master-only machine picker (2026-09-28 audit), like the Group and
+                Vendor boxes: a machine not in the Machine Master cannot be
+                picked, so loading and costing always see the op. */}
+            <SearchableSelect
+              id={`rc-mach-${idx}`}
+              value={op.machineId || null}
+              onChange={(id) =>
+                onMachineChange(id ? (machinesList.find((m) => m.id === id)?.code ?? '') : '')
+              }
+              options={rowMachines.map((m) => ({ id: m.id, code: m.code, name: m.name }))}
+              placeholder={op.machineGroupId ? '🔍 Machine in group' : '🔍 Machine'}
+              emptyText="No machine in the master"
+              valueLabel={
+                op.machineId
+                  ? (machinesList.find((m) => m.id === op.machineId)?.code ?? op.machineCodeText)
+                  : undefined
+              }
+              selectedLabel={(o) => o.code ?? o.name}
             />
-            <datalist id={`rc-machines-dl-${idx}`}>
-              {rowMachines.map((m) => (
-                <option key={m.id} value={m.code}>
-                  {m.name}
-                </option>
-              ))}
-            </datalist>
             {machineLabel ? (
-              <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
+              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                 {machineLabel}
               </div>
             ) : null}
@@ -926,11 +1096,10 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             placeholder={
               op.opType === 'outsource' ? 'Coating / Painting / HT…' : 'od turn, mill, drill…'
             }
-            style={{ fontSize: 12 }}
           />
         )}
       </td>
-      <td>
+      <td className="td-num">
         <input
           type="number"
           min="0"
@@ -938,11 +1107,24 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           className="innovic-input"
           value={op.cycleTimeMin}
           onChange={(e) => onChange({ cycleTimeMin: e.target.value })}
-          placeholder="hrs"
-          style={{ textAlign: 'right' }}
+          placeholder="min"
         />
       </td>
+      {/* Program No. is for in-house / QC rows; Lead Days for OSP rows only. */}
       <td>
+        {op.opType === 'outsource' ? (
+          <span className="text3">—</span>
+        ) : (
+          <input
+            className="innovic-input"
+            value={op.program}
+            onChange={(e) => onChange({ program: e.target.value })}
+            placeholder="PRG-001"
+            style={{ color: 'var(--blue)' }}
+          />
+        )}
+      </td>
+      <td className="td-num">
         {op.opType === 'outsource' ? (
           <input
             type="number"
@@ -952,17 +1134,9 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             value={op.ospLeadDays}
             onChange={(e) => onChange({ ospLeadDays: e.target.value })}
             placeholder="days"
-            style={{ textAlign: 'right' }}
-            title="Lead time in days"
           />
         ) : (
-          <input
-            className="innovic-input"
-            value={op.program}
-            onChange={(e) => onChange({ program: e.target.value })}
-            placeholder="PRG-001"
-            style={{ fontSize: 12, color: 'var(--blue)' }}
-          />
+          <span className="text3">—</span>
         )}
       </td>
       <td>
@@ -971,7 +1145,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           value={op.toolNo}
           onChange={(e) => onChange({ toolNo: e.target.value })}
           placeholder="T01"
-          style={{ fontSize: 12, color: 'var(--cyan)' }}
+          style={{ color: 'var(--cyan)' }}
         />
       </td>
       <td>
@@ -980,7 +1154,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           value={op.toolDetails}
           onChange={(e) => onChange({ toolDetails: e.target.value })}
           placeholder="Setup notes…"
-          style={{ fontSize: 12, color: 'var(--text2)' }}
+          style={{ color: 'var(--text2)' }}
         />
       </td>
       <td>
@@ -1005,12 +1179,15 @@ export function rawMaterialToInput(header: RouteCardFormHeaderDraft): {
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  rawMaterialItemId: string | null;
+  rmQtyPerPiece: number | null;
 } {
   return {
     rawMaterialGradeId: header.rawMaterialGradeId,
     rawMaterialGradeText: header.rawMaterialGradeText,
     rawMaterialSizeId: header.rawMaterialSizeId,
     rawMaterialSizeText: header.rawMaterialSizeText,
+    ...rmItemToInput(header),
   };
 }
 

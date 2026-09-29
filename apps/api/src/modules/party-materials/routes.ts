@@ -1,6 +1,7 @@
 import {
   createPartyMaterialInputSchema,
   listPartyMaterialsQuerySchema,
+  returnPartyMaterialInputSchema,
   updatePartyMaterialInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
@@ -49,5 +50,13 @@ export async function partyMaterialsRoutes(app: FastifyInstance): Promise<void> 
     await service.softDeletePartyMaterial(id, req.user);
     reply.code(204);
     return null;
+  });
+
+  // R7 (ADR-194): return spare customer material to the customer.
+  app.post('/party-materials/:id/return', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParam.parse(req.params);
+    const input = returnPartyMaterialInputSchema.parse(req.body);
+    return service.returnPartyMaterial(id, input, req.user);
   });
 }

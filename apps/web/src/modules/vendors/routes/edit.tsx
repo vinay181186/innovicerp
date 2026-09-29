@@ -42,15 +42,15 @@ function VendorNewPage(): React.JSX.Element {
         () => void navigate({ to: '/vendors/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create vendor');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Vendor. Try again.');
     }
   };
 
   if (!perms.entry) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
-          ⛔ You do not have entry access to create a vendor.
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
+          You do not have permission to create Vendors. Ask an admin.
         </div>
       </div>
     );
@@ -65,10 +65,7 @@ function VendorNewPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">+ New Vendor</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Create a master record for a supplier.
-            </div>
+            <div className="panel-title">New Vendor</div>
           </div>
         </div>
         <div className="panel-body">
@@ -108,15 +105,15 @@ function VendorEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/vendors/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update vendor');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Vendor. Try again.');
     }
   };
 
   if (!perms.edit) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
-          ⛔ You do not have edit access to change a vendor.
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
+          You do not have permission to edit Vendors. Ask an admin.
         </div>
       </div>
     );
@@ -139,8 +136,8 @@ function VendorEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Vendor not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Vendor not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -156,14 +153,14 @@ function VendorEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to vendor
+        <ArrowLeft size={14} /> Back to Vendor
       </Link>
       <div className="panel">
         <div className="panel-hdr">
           <div>
             <div
               className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
+              style={{ color: 'var(--text)', fontSize: 14, fontWeight: 700 }}
             >
               {vendor.code}
             </div>

@@ -34,7 +34,6 @@ import {
   jcOpPoLines,
   jcOps,
   jobCards,
-  storeTransactions,
 } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 
@@ -228,55 +227,6 @@ export async function applyReceiveToJcOp(args: ReceiveCascadeArgs): Promise<Rece
     fullyReceived,
     statusChanged,
   };
-}
-
-export interface DcReceiveStockTxnArgs {
-  tx: DbTransaction;
-  companyId: string;
-  adminUserId: string;
-  receiptCode: string;
-  receiptDate: string;
-  dcLineNo: number;
-  itemId: string | null;
-  /** Good qty received (rejected qty doesn't return to stock — it goes to NC). */
-  qty: number;
-}
-
-export async function writeStoreTxnOnDcReceive(
-  args: DcReceiveStockTxnArgs,
-): Promise<string | null> {
-  const { tx, companyId, adminUserId, receiptCode, receiptDate, dcLineNo, itemId, qty } = args;
-  if (!itemId) return null; // free-text item, no stock tracking
-  if (qty <= 0) return null;
-
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-
-  const balanceRows = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
-  const stockAfter = stockBefore + qty;
-
-  const inserted = await tx
-    .insert(storeTransactions)
-    .values({
-      companyId,
-      txnDate: receiptDate,
-      itemId,
-      txnType: 'in',
-      qty,
-      sourceType: 'jw_in',
-      sourceRef: `${receiptCode} / ln ${dcLineNo}`,
-      stockBefore,
-      stockAfter,
-      remarks: `JW DC receive · ${qty} pcs`,
-      createdBy: adminUserId,
-    })
-    .returning({ id: storeTransactions.id });
-
-  return inserted[0]?.id ?? null;
 }
 
 // Helper for the service: check whether ALL outward lines of a DC are now

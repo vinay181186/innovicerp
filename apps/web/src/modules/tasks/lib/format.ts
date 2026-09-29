@@ -1,57 +1,24 @@
-// Task Board display helpers — date formats the approved board uses
-// (dd-MMM-yyyy for dates, dd-MMM HH:mm IST for "Last Update"), the
-// priority / status colour ladders, and the Related-To → page map.
-// lib/date.ts has no dd-MMM formatter (it only deals in YYYY-MM-DD), so the
-// two formatters live here, scoped to this module.
+// Task Board display helpers — date formats (thin wrappers over the one web
+// display format in lib/date.ts: DD-MMM-YYYY, date + time as DD-MMM-YYYY HH:mm
+// IST), the priority / status colour ladders, and the Related-To → page map.
 
 import type { TaskPriority, TaskRelatedType, TaskRow, TaskStatus } from '@innovic/shared';
 import { TASK_STATUS_LABELS } from '@innovic/shared';
+import { fmtDate, fmtDateTime } from '@/lib/date';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** `2026-09-22` → `22-Sep-2026`. Anything that is not a plain calendar date
- *  is returned as-is; null/blank → `—`. */
+/** `2026-09-22` → `22-Sep-2026`; null/blank → `—`. */
 export function fmtTaskDate(d: string | null | undefined): string {
-  if (!d) return '—';
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
-  if (!m?.[1] || !m[2] || !m[3]) return d;
-  const mon = MONTHS[Number(m[2]) - 1];
-  return mon ? `${m[3]}-${mon}-${m[1]}` : d;
+  return fmtDate(d);
 }
 
-/** ISO timestamp → `21-Sep 16:10` in IST (the "Last Update" column). */
+/** ISO timestamp → `21-Sep-2026 16:10` IST (the "Last Update" column). */
 export function fmtTaskDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(d);
-  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')}-${get('month')} ${get('hour')}:${get('minute')}`;
+  return fmtDateTime(iso);
 }
 
 /** ISO timestamp → `21-Sep-2026 16:10` IST (detail facts + timeline). */
 export function fmtTaskDateTimeFull(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(d);
-  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')}-${get('month')}-${get('year')} ${get('hour')}:${get('minute')}`;
+  return fmtDateTime(iso);
 }
 
 /** A `datetime-local` value (`2026-09-22T09:30`) → ISO with the browser's
@@ -85,17 +52,28 @@ export function priorityColor(p: TaskPriority): string {
   return 'var(--text3)';
 }
 
+/** THE one status colour map (strip, badge, widget). To Do waits = grey,
+ *  In Progress under way = amber, Completed green, Cancelled grey, Overdue red.
+ *  `cls` is the badge class; `color` is the matching token for a strip tile. */
+export const TASK_STATUS_TONE: Record<TaskStatus | 'overdue', { cls: string; color: string }> = {
+  todo: { cls: 'badge b-grey', color: 'var(--text2)' },
+  in_progress: { cls: 'badge b-amber', color: 'var(--amber2)' },
+  completed: { cls: 'badge b-green', color: 'var(--green2)' },
+  cancelled: { cls: 'badge b-grey', color: 'var(--text2)' },
+  overdue: { cls: 'badge b-red', color: 'var(--red2)' },
+};
+
 /** Status pill — the badge class + label. Overdue is derived, never stored,
- *  so an open task past its date shows OVERDUE while its status stays. */
+ *  so an open task past its date shows Overdue while its status stays. */
 export function statusPill(t: Pick<TaskRow, 'status' | 'isOverdue'>): {
   cls: string;
   label: string;
 } {
-  if (t.status === 'completed') return { cls: 'badge b-green', label: 'Completed' };
-  if (t.status === 'cancelled') return { cls: 'badge b-grey', label: 'Cancelled' };
-  if (t.isOverdue) return { cls: 'badge b-red', label: 'Overdue' };
-  if (t.status === 'in_progress') return { cls: 'badge b-amber', label: 'In Progress' };
-  return { cls: 'badge b-blue', label: TASK_STATUS_LABELS[t.status as TaskStatus] };
+  if (t.status === 'completed') return { cls: TASK_STATUS_TONE.completed.cls, label: 'Completed' };
+  if (t.status === 'cancelled') return { cls: TASK_STATUS_TONE.cancelled.cls, label: 'Cancelled' };
+  if (t.isOverdue) return { cls: TASK_STATUS_TONE.overdue.cls, label: 'Overdue' };
+  const s = t.status as TaskStatus;
+  return { cls: TASK_STATUS_TONE[s].cls, label: TASK_STATUS_LABELS[s] };
 }
 
 export function isOpenTask(t: Pick<TaskRow, 'status'>): boolean {

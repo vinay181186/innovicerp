@@ -8,6 +8,7 @@
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { savedReports, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { runAdHoc } from './runner';
 import type {
@@ -29,8 +30,19 @@ const requireCompany = (user: AuthContext): string => {
 
 const isManager = (user: AuthContext): boolean => user.role === 'admin' || user.role === 'manager';
 
-export function listSources(): ListSourcesResponse {
-  return { sources: listSourceDescriptors() };
+// A data source is offered only to users who may VIEW its department page
+// (Sales Orders, Purchase Orders, Job Cards, Item Master, NC Register) —
+// checked on list, save, preview and run, never only in the browser.
+async function canUseSource(user: AuthContext, sourceKey: string): Promise<boolean> {
+  const src = getSource(sourceKey);
+  if (!src) return false;
+  return hasFormAccess(user, src.viewForm, 'view');
+}
+
+export async function listSources(user: AuthContext): Promise<ListSourcesResponse> {
+  const all = listSourceDescriptors();
+  const allowed = await Promise.all(all.map((d) => canUseSource(user, d.sourceKey)));
+  return { sources: all.filter((_, i) => allowed[i]) };
 }
 
 function rowToSavedReport(
@@ -123,9 +135,9 @@ export async function getSavedReport(id: string, user: AuthContext): Promise<Sav
       .limit(1);
 
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Saved report ${id} not found`);
+    if (!row) throw new NotFoundError('Saved report not found. Refresh the page.');
     if (row.ownerId !== user.id && !row.isShared && !isManager(user)) {
-      throw new NotFoundError(`Saved report ${id} not found`);
+      throw new NotFoundError('Saved report not found. Refresh the page.');
     }
     return rowToSavedReport(
       row as typeof savedReports.$inferSelect & { ownerEmail: string | null },
@@ -133,9 +145,16 @@ export async function getSavedReport(id: string, user: AuthContext): Promise<Sav
   });
 }
 
-function assertSourceExists(sourceKey: string): void {
-  if (!getSource(sourceKey)) {
+async function assertSourceUsable(sourceKey: string, user: AuthContext): Promise<void> {
+  const src = getSource(sourceKey);
+  if (!src) {
     throw new NotFoundError(`Source "${sourceKey}" not found`);
+  }
+  if (!(await canUseSource(user, sourceKey))) {
+    throw new AuthorizationError(
+      `Your access does not let you open ${src.descriptor.label}, so you cannot build or run ` +
+        'a report on it. Ask an admin to give you View on that page in Access Control.',
+    );
   }
 }
 
@@ -147,7 +166,7 @@ export async function createSavedReport(
   if (input.spec.sourceKey !== input.sourceKey) {
     throw new ConflictError('spec.sourceKey must match input.sourceKey');
   }
-  assertSourceExists(input.sourceKey);
+  await assertSourceUsable(input.sourceKey, user);
 
   return withUserContext(user, async (tx) => {
     const dup = await tx
@@ -210,7 +229,7 @@ export async function updateSavedReport(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Saved report ${id} not found`);
+    if (!existing) throw new NotFoundError('Saved report not found. Refresh the page.');
     assertCanWrite(existing, user);
 
     const nextSourceKey = input.sourceKey ?? existing.sourceKey;
@@ -220,7 +239,7 @@ export async function updateSavedReport(
     if (nextSpec.sourceKey !== nextSourceKey) {
       throw new ConflictError('spec.sourceKey must match the report sourceKey');
     }
-    assertSourceExists(nextSourceKey);
+    await assertSourceUsable(nextSourceKey, user);
 
     if (input.name && input.name !== existing.name) {
       const dup = await tx
@@ -278,7 +297,7 @@ export async function softDeleteSavedReport(id: string, user: AuthContext): Prom
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Saved report ${id} not found`);
+    if (!existing) throw new NotFoundError('Saved report not found. Refresh the page.');
     assertCanWrite(existing, user);
 
     await tx
@@ -290,6 +309,8 @@ export async function softDeleteSavedReport(id: string, user: AuthContext): Prom
 
 export async function runSavedReport(id: string, user: AuthContext): Promise<RunAdHocResponse> {
   const report = await getSavedReport(id, user);
+  // A shared report is run with the RUNNER's rights, not the owner's.
+  await assertSourceUsable(report.sourceKey, user);
   return withUserContext(user, async (tx) => {
     const result = await runAdHoc(report.spec, { tx, companyId: report.companyId });
     return {
@@ -312,7 +333,7 @@ export async function previewAdHocSpec(
   user: AuthContext,
 ): Promise<RunAdHocResponse> {
   const companyId = requireCompany(user);
-  assertSourceExists(spec.sourceKey);
+  await assertSourceUsable(spec.sourceKey, user);
   const parsed = adHocSpecSchema.parse(spec);
   return withUserContext(user, async (tx) => {
     const result = await runAdHoc(parsed, { tx, companyId });

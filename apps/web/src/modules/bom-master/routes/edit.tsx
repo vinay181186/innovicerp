@@ -67,15 +67,14 @@ function BomMasterEditPage(): React.JSX.Element {
       });
       exit.leave(() => void navigate({ to: '/bom-masters/$id', params: { id: updated.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to save BOM revision.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save BOM. Try again.');
     }
   };
 
   if (eff && !perms.edit) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have edit access to BOM Master. Ask an admin for L2 Data Entry or above in
-        Design.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to edit BOMs. Ask an admin.
       </div>
     );
   }
@@ -96,7 +95,7 @@ function BomMasterEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'BOM not found.'}
           </div>
         </div>

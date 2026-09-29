@@ -6,6 +6,7 @@
 import type { TaskUserOption } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { roleLabel } from '@/lib/role-label';
 
 export function UserPicker({
   users,
@@ -33,7 +34,7 @@ export function UserPicker({
       )
       .map((u) => ({
         id: u.id,
-        name: u.role ? `${u.name} (${u.role})` : u.name,
+        name: u.role ? `${u.name} (${roleLabel(u.role)})` : u.name,
         searchText: u.mainDept,
       }));
   }, [users, term, excludeId]);
@@ -42,7 +43,11 @@ export function UserPicker({
     <SearchableSelect
       value={value}
       valueLabel={
-        current ? (current.role ? `${current.name} (${current.role})` : current.name) : undefined
+        current
+          ? current.role
+            ? `${current.name} (${roleLabel(current.role)})`
+            : current.name
+          : undefined
       }
       options={options}
       onSearch={setTerm}

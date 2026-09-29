@@ -13,13 +13,16 @@ import {
   unknownTemplateVars,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { format } from 'date-fns';
 import { Loader2, Pencil, Printer } from 'lucide-react';
 import { Fragment, useMemo, useRef, useState } from 'react';
+import { fmtDate } from '@/lib/date';
+import { COMPANY_PAN } from '@/lib/print/doc-print';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import type { SheetField } from '@/lib/print/sheet-print';
 import { useSession } from '@/lib/session';
+import { statusText } from '@/lib/status-text';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { usePrintTemplates, useRestorePrintTemplateDefault, useSavePrintTemplate } from '../api';
 import { RevisionsModal } from '../components/revisions-modal';
 import {
@@ -77,10 +80,8 @@ function lastEditLabel(t: EffectivePrintTemplate): string {
   if (!t.isCustomised) return 'Factory default';
   const who = t.lastEditedBy ?? '?';
   if (!t.lastEditedAt) return `Edited by ${who}`;
-  const d = new Date(t.lastEditedAt);
-  return Number.isNaN(d.getTime())
-    ? `Edited by ${who}`
-    : `Edited by ${who} on ${format(d, 'dd-MM-yyyy')}`;
+  const d = fmtDate(t.lastEditedAt, '');
+  return d ? `Edited by ${who} on ${d}` : `Edited by ${who}`;
 }
 
 function PrintTemplatesPage(): React.JSX.Element {
@@ -92,6 +93,14 @@ function PrintTemplatesPage(): React.JSX.Element {
   const [draft, setDraft] = useState('');
   const [revisionsKey, setRevisionsKey] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // The one pending "are you sure?" — the app ConfirmDialog, never window.confirm.
+  const [asking, setAsking] = useState<{
+    title: string;
+    message?: string;
+    confirmLabel: string;
+    tone?: 'danger' | 'primary';
+    run: () => void;
+  } | null>(null);
 
   const { data, isLoading, isError } = usePrintTemplates({ enabled: isAdmin });
   const save = useSavePrintTemplate();
@@ -165,23 +174,34 @@ function PrintTemplatesPage(): React.JSX.Element {
     setEditingKey(null);
     setDraft('');
   }
-  function commitSave(): void {
+  function doSave(): void {
     if (!editingKey) return;
-    if (unknownVars.length > 0) {
-      const ok = window.confirm(
-        `Unknown variable(s): ${unknownVars.map((v) => `{${v}}`).join(', ')}\n\nThese will print as blank. Save anyway?`,
-      );
-      if (!ok) return;
-    }
     save.mutate(
       { key: editingKey, content: draft },
       { onSuccess: () => cancelEdit() },
     );
   }
+  function commitSave(): void {
+    if (!editingKey) return;
+    if (unknownVars.length > 0) {
+      setAsking({
+        title: 'Save with unknown variables?',
+        message: `${unknownVars.map((v) => `{${v}}`).join(', ')} will print as blank.`,
+        confirmLabel: 'Save Anyway',
+        tone: 'primary',
+        run: doSave,
+      });
+      return;
+    }
+    doSave();
+  }
   function resetBlock(key: string): void {
     if (editingKey) return;
-    if (!window.confirm('Reset this block to the factory default?')) return;
-    restore.mutate(key);
+    setAsking({
+      title: 'Reset this block to the factory default?',
+      confirmLabel: 'Reset',
+      run: () => restore.mutate(key),
+    });
   }
   function insertVar(v: string): void {
     const ta = taRef.current;
@@ -292,9 +312,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                 gap: 6,
               }}
             >
-              <div className="text2" style={{ fontSize: 10 }}>
-                <b>Tip:</b> Click variables on the right panel to insert at cursor.
-              </div>
+              <div />
               <div style={{ display: 'flex', gap: 6 }}>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={cancelEdit}>
                   Cancel
@@ -381,7 +399,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                 {t.isCustomised ? (
                   <span
                     onClick={() => resetBlock(t.templateKey)}
-                    style={{ cursor: 'pointer', color: 'var(--red)', textDecoration: 'underline' }}
+                    style={{ cursor: 'pointer', color: 'var(--red2)', textDecoration: 'underline' }}
                   >
                     ↺ Reset to default
                   </span>
@@ -397,7 +415,7 @@ function PrintTemplatesPage(): React.JSX.Element {
   return (
     <div>
       <div className="section-hdr" style={{ marginBottom: 8 }}>
-        📄 Print Templates — WYSIWYG Editor
+        Print Templates
       </div>
       <div
         className="text3"
@@ -410,11 +428,7 @@ function PrintTemplatesPage(): React.JSX.Element {
           borderRadius: 6,
         }}
       >
-        <b style={{ color: 'var(--sig-info)' }}>How this works:</b> The document below shows how your
-        printed output will look (with sample data). <b>Click any highlighted section</b> to edit it.
-        Use variables like <span className="mono">{'{poNo}'}</span> from the right panel to insert real
-        data automatically. Changes apply to next print immediately. Last 5 versions are kept for
-        rollback.
+        Click a section to edit; click a variable to insert it.
       </div>
 
       {/* Doc selector + actions */}
@@ -441,8 +455,17 @@ function PrintTemplatesPage(): React.JSX.Element {
                 key={d}
                 type="button"
                 onClick={() => {
-                  if (editingKey && !window.confirm('Discard the unsaved edit and switch document?'))
+                  if (editingKey) {
+                    setAsking({
+                      title: 'Discard the unsaved edit and switch document?',
+                      confirmLabel: 'Discard',
+                      run: () => {
+                        cancelEdit();
+                        setDoc(d);
+                      },
+                    });
                     return;
+                  }
                   cancelEdit();
                   setDoc(d);
                 }}
@@ -487,8 +510,8 @@ function PrintTemplatesPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            Failed to load print templates.
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            Could not load print templates. Try again.
           </div>
         </div>
       ) : (
@@ -539,7 +562,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                         </div>
                         <div style={{ fontSize: 10 }}>
                           <b>GSTIN:</b> {sample.companyGSTIN} &nbsp;&middot;&nbsp; <b>PAN:</b>{' '}
-                          AQKPM4121A
+                          {COMPANY_PAN}
                         </div>
                       </div>
                     </div>
@@ -754,7 +777,9 @@ function PrintTemplatesPage(): React.JSX.Element {
                         >
                           {sample.totalQty}
                         </td>
-                        <td style={{ ...poCell, textAlign: 'center', fontWeight: 700 }}>NOS</td>
+                        <td style={{ ...poCell, textAlign: 'center', fontWeight: 700 }}>
+                          {PO_SAMPLE_LINES[0]?.uom ?? 'NOS'}
+                        </td>
                         <td style={{ ...poCell, borderRight: 'none' }} />
                       </tr>
                       {(
@@ -1052,7 +1077,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               {l.qcRejectedQty}
                             </td>
                             <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                              {l.qcStatus.replaceAll('_', ' ')}
+                              {statusText(l.qcStatus)}
                             </td>
                           </tr>
                         ))}
@@ -1201,12 +1226,7 @@ function PrintTemplatesPage(): React.JSX.Element {
           <div style={{ position: 'sticky', top: 14 }}>
             <div className="panel" style={{ padding: 14 }}>
               <div className="fw-700" style={{ fontSize: 12, marginBottom: 6 }}>
-                📋 Available Variables
-              </div>
-              <div className="text3" style={{ fontSize: 10, marginBottom: 10, lineHeight: 1.5 }}>
-                {editingKey
-                  ? 'Click any variable to insert at cursor in the editor below.'
-                  : 'Click a section in the document to start editing, then variables become clickable.'}
+                Available Variables
               </div>
               {/* Legacy .pt-vars-panel / .pt-var-chip (L191-193) are not in our
                   theme — computed styles mirrored inline against our tokens. */}
@@ -1248,26 +1268,25 @@ function PrintTemplatesPage(): React.JSX.Element {
                 ))}
               </div>
             </div>
-            <div className="panel text2" style={{ padding: 14, marginTop: 10, fontSize: 10, lineHeight: 1.6 }}>
-              <div className="fw-700" style={{ fontSize: 11, marginBottom: 6 }}>
-                💡 Quick Tips
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                <b>✎</b> Click a block to edit inline
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                <b>💾</b> Save commits the change
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                <b>🖨</b> Test Print uses sample data
-              </div>
-              <div>
-                <b>↺</b> Reset to default reverts to factory text
-              </div>
-            </div>
           </div>
         </div>
       )}
+
+      {asking ? (
+        <ConfirmDialog
+          title={asking.title}
+          message={asking.message}
+          confirmLabel={asking.confirmLabel}
+          tone={asking.tone ?? 'danger'}
+          onConfirm={() => {
+            const run = asking.run;
+            setAsking(null);
+            run();
+          }}
+          onCancel={() => setAsking(null)}
+          elevated={false}
+        />
+      ) : null}
 
       {revisionsKey ? (
         <RevisionsModal

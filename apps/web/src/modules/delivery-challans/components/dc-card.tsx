@@ -13,6 +13,7 @@
 import type { DeliveryChallanListItem } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { DcStatusBadge } from './dc-status-badge';
+import { fmtDate } from '@/lib/date';
 
 /** Accent bar: amber still out at the vendor, green once it has come back,
  *  grey cancelled — the same meaning DcStatusBadge carries. */
@@ -53,10 +54,8 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -97,7 +96,7 @@ function PoChip({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Element {
     return (
       <span
         className="badge b-amber"
-        title="Snapshot text — no PO linked. Will mismatch if the PO is renumbered."
+        title="PO No. typed by hand — not linked to a PO"
         style={{ fontSize: 11 }}
       >
         {dc.poCodeText}*
@@ -167,26 +166,12 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
                 to="/delivery-challans/$id/receive"
                 params={{ id: dc.id }}
                 className="btn btn-success btn-sm"
-                style={{ fontSize: 10 }}
+                style={{ fontSize: 11 }}
                 title="Receive material back from the vendor"
               >
                 + Receive
               </Link>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10 }}
-                disabled
-                title={
-                  dc.status === 'received'
-                    ? 'Already received back in full'
-                    : 'This DC was cancelled'
-                }
-              >
-                + Receive
-              </button>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -203,7 +188,11 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
           }}
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <QtyBox label="Sent" value={Number(dc.totalQty).toFixed(2)} />
+            {/* Whole pieces print whole (12, not 12.00); a real fraction keeps ≤2dp. */}
+            <QtyBox
+              label="Sent"
+              value={Number(dc.totalQty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+            />
             {/* lineCount was already fetched and already printed on the register
                 (lib/print-dispatch-register.ts) but never shown on screen. */}
             <QtyBox label="Lines" value={dc.lineCount} bordered />
@@ -219,7 +208,7 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
               flexWrap: 'wrap',
             }}
           >
-            <span className="text2">{dc.dcDate}</span>
+            <span className="text2">{fmtDate(dc.dcDate)}</span>
             <span>·</span>
             <span>
               SO <span className="text2">{dc.soCode ?? dc.soRefText ?? '—'}</span>
@@ -241,7 +230,7 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
               <>
                 <span>·</span>
                 <span>
-                  Rev <span className="text2">{dc.soLineRevision}</span>
+                  Drawing Rev <span className="text2">{dc.soLineRevision}</span>
                 </span>
               </>
             ) : null}

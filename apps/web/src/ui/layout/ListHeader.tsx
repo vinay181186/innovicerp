@@ -4,16 +4,21 @@
 // DocCard list → ListFooter. ~97 screens hand-roll this band today; none may
 // keep their own copy after migration.
 //
-// Anatomy (design-ref/components/layout/ListHeader.jsx):
+// Anatomy — TWO rows, ERPNext style (owner decision 2026-09-26: "we already
+// have filter dropdowns and still there are capsules, which makes the layout
+// odd"):
 //   sticky band on --bg
-//   ├─ left  : .section-hdr title (module emoji first) + "N vendors · open only"
-//   └─ right : search → tools (filters / Export) → ⟳ Updating… → primary action
-//   children : the StatStrip or StatusPills row, inside the sticky band
+//   ├─ row 1 left  : .section-hdr title (module emoji first) + "N vendors · open only"
+//   ├─ row 1 right : tools (view toggle / Export / secondary buttons) → ⟳ Updating… → primary
+//   └─ row 2       : FILTER BAR — search → `filters` (every filter the same
+//                    width) → Clear
+//   children : anything else that belongs in the band (rare; NOT status
+//              capsules — a status filter is a dropdown in `filters` whose
+//              option labels carry the counts, e.g. "Open (40)").
 //
 // The search box is the shared SearchInput by default; a list with its own
 // search control (debounced, server-driven, multi-field) passes `searchSlot`
-// instead. Filter selects always come in through `tools` — this component never
-// owns a filter.
+// instead. Filter selects / date boxes go in `filters`, buttons in `tools`.
 //
 // The band itself (sticky rule, title row, children slot) is HeaderBand, shared
 // with PageHeader so a list header and a form header cannot drift apart.
@@ -42,8 +47,16 @@ export interface ListHeaderProps {
   searchSlot?: ReactNode | undefined;
   /** Shows the "⟳ Updating…" note while a background refetch runs. */
   updating?: boolean | undefined;
-  /** Extra toolbar controls (filter Selects, Export) — placed after search. */
+  /** Title-row controls: view toggle, Export, secondary buttons. NOT filters. */
   tools?: ReactNode | undefined;
+  /** Filter-bar controls after the search box: Selects and date boxes. Each
+   *  gets the same width (`.list-filterbar` in innovic-theme.css). */
+  filters?: ReactNode | undefined;
+  /** Shows "Clear" at the end of the filter bar; called to reset every filter
+   *  (and the search). Pass it whenever the page has filters. */
+  onClearFilters?: (() => void) | undefined;
+  /** Enables Clear only while something is filtered. Default: enabled. */
+  filtersActive?: boolean | undefined;
   /** Primary action button — always last, always btn-primary. */
   primary?: ReactNode | undefined;
   sticky?: boolean | undefined;
@@ -64,11 +77,20 @@ export function ListHeader({
   searchSlot,
   updating = false,
   tools,
+  filters,
+  onClearFilters,
+  filtersActive = true,
   primary,
   sticky = true,
   children,
 }: ListHeaderProps): React.JSX.Element {
   const plural = nounPlural ?? `${noun}s`;
+  const searchBox =
+    searchSlot ??
+    (onSearch ? (
+      <SearchInput value={search} onChange={onSearch} placeholder={searchPlaceholder} />
+    ) : null);
+  const hasBar = searchBox != null || filters != null || onClearFilters != null;
   return (
     <HeaderBand
       title={title}
@@ -90,10 +112,6 @@ export function ListHeader({
       }
       actions={
         <>
-          {searchSlot ??
-            (onSearch ? (
-              <SearchInput value={search} onChange={onSearch} placeholder={searchPlaceholder} />
-            ) : null)}
           {tools}
           {updating ? (
             <span
@@ -107,6 +125,22 @@ export function ListHeader({
         </>
       }
     >
+      {hasBar ? (
+        <div className="list-filterbar" role="search">
+          {searchBox}
+          {filters}
+          {onClearFilters ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={onClearFilters}
+              disabled={!filtersActive}
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {children}
     </HeaderBand>
   );

@@ -9,6 +9,7 @@ import {
   RouteCardForm,
   type RouteCardFormHeaderDraft,
   type RouteCardFormOpDraft,
+  detailOpsToDrafts,
   opsToInput,
   rawMaterialToInput,
 } from '../components/route-card-form';
@@ -34,26 +35,7 @@ function RouteCardEditPage(): React.JSX.Element {
   const exit = useExitConfirm({ onExit: goBack });
 
   const initialOps = useMemo<RouteCardFormOpDraft[]>(
-    () =>
-      (detail?.ops ?? []).map((op) => ({
-        // Group is display-only; the form reads it back off the machine master
-        // once the machines list has loaded.
-        machineGroupId: null,
-        machineId: op.machineId ?? '',
-        machineCodeText: op.machineCode ?? op.machineCodeText ?? '',
-        operation: op.operation,
-        opType: op.opType,
-        // Legacy: `${op.cycleTime||''}` — a stored 0 renders blank, same as a
-        // freshly added row. Keeps create/edit identical (ISSUE-099).
-        cycleTimeMin: Number(op.cycleTimeMin) ? String(Number(op.cycleTimeMin)) : '',
-        program: op.program ?? '',
-        toolNo: op.toolNo ?? '',
-        toolDetails: op.toolDetails ?? '',
-        qcRequired: op.qcRequired,
-        ospVendorId: op.ospVendorId ?? '',
-        ospVendorCodeText: op.ospVendorCode ?? op.ospVendorCodeText ?? '',
-        ospLeadDays: op.ospLeadDays != null ? String(op.ospLeadDays) : '',
-      })),
+    () => detailOpsToDrafts(detail?.ops ?? []),
     [detail],
   );
 
@@ -75,15 +57,14 @@ function RouteCardEditPage(): React.JSX.Element {
       });
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: updated.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to save route card revision.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');
     }
   };
 
   if (eff && !perms.edit) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have edit access to Route Cards. Ask an admin for L2 Data Entry or above in
-        Design.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to edit Route Cards. Ask an admin.
       </div>
     );
   }
@@ -104,8 +85,8 @@ function RouteCardEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Route card not found.'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Route Card not found.'}
           </div>
         </div>
       </div>
@@ -127,6 +108,9 @@ function RouteCardEditPage(): React.JSX.Element {
           rawMaterialGradeText: detail.rawMaterialGradeText,
           rawMaterialSizeId: detail.rawMaterialSizeId,
           rawMaterialSizeText: detail.rawMaterialSizeText,
+          rawMaterialItemId: detail.rawMaterialItemId,
+          rawMaterialItemCode: detail.rawMaterialItemCode,
+          rmQtyPerPiece: detail.rmQtyPerPiece != null ? String(detail.rmQtyPerPiece) : '',
           notes: detail.notes ?? '',
           planType:
             detail.planType === 'full_outsource' || detail.planType === 'direct_purchase'
@@ -138,6 +122,7 @@ function RouteCardEditPage(): React.JSX.Element {
         submitting={update.isPending}
         submitError={submitError}
         onCancel={() => exit.leave(goBack)}
+        onBack={goBack}
       />
     </>
   );

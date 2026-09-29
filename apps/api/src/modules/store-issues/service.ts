@@ -1,287 +1,388 @@
-// Store Issues service (PL-II-1).
+// Item Issue service — ADR-193 phase 3b (spec §11).
 //
-// Daily-use consumable register. Mirrors legacy renderIssueRegister + addIssue
-// (HTML L23874 / L23914). Numbering: ISS-NNNNN, generated server-side via
-// MAX(code) + 1 inside the same tx for atomicity.
+// An Item Issue is a SLIP (store_issues header) with LINES (store_issue_lines),
+// issued against a Job Card, an Assembly (Equipment) SO, or for General use.
 //
-// Write cascades into store_transactions (`txn_type='out'`,
-// `source_type='other'`, source_ref=`<code> · <itemCode>`). The
-// item_stock_balances trigger auto-updates per-item on-hand.
+//   create   issue_create entry — every line leaves Available stock through the
+//            single stock writer ('out', source 'store_issue'); a JC / Assembly
+//            SO line over its To Issue needs confirmation (guard.ts)
+//   returns  issue_create entry — leftovers put back ('in', source
+//            'store_return'), any qty up to what is still out on the line
+//   reverse  issue_create edit — the whole slip put back, only while nothing
+//            was returned from it (ADR-189: an opposite ledger entry, never an
+//            edit of the 'out')
 //
-// Validation:
-//   - qty > 0 (DB CHECK enforces this too)
-//   - item exists, not soft-deleted
-//   - qty <= current on-hand (from v_item_stock)
+// ADR-193 3c — against an assembly SO a line may also use the SO's own
+// reservation, and Return / Reverse are capped by its Still Out (assembly.ts).
+//
+// Numbering: ISS-NNNNN by MAX+1 inside the tx, AFTER the items are locked.
+// Reads (list / one slip) live in read.ts.
 
-import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm';
-import type {
-  CreateStoreIssueInput,
-  ListStoreIssuesQuery,
-  ListStoreIssuesResponse,
-  StoreIssue,
-  StoreIssueListItem,
+import {
+  ITEM_TYPE_RULES,
+  ISSUE_AGAINST_LABELS,
+  STORE_ISSUE_REVERSE_REASON_MIN,
+  type CreateStoreIssueInput,
+  type IssueAgainst,
+  type ReturnStoreIssueInput,
+  type ReverseStoreIssueInput,
+  type StoreIssueDetail,
 } from '@innovic/shared';
-import { items, storeIssues, storeTransactions } from '../../db/schema';
+import { eq, sql } from 'drizzle-orm';
+import { storeIssueLines, storeIssueReturns, storeIssues } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
+import { emitActivityLog } from '../activity-log/service';
 import {
-  AuthorizationError,
-  ConflictError,
-  NotFoundError,
-  ValidationError,
-} from '../../lib/errors';
+  assertReturnWithinStillOut,
+  assertReverseWithinStillOut,
+  checkAssemblyAllowance,
+  giveBackLineReservations,
+  useOwnReservation,
+} from './assembly';
+import { enforceOverToIssue, resolveTargetAndCap } from './guard';
+import { lockSlip, nextStoreIssueCode, readSlipLines, resolveIssuedTo, today } from './slip';
+import { readStoreIssueDetail, requireCompany } from './read';
 
-function requireCompany(user: AuthContext): string {
-  if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
-  return user.companyId;
-}
+export { getStoreIssue, listStoreIssues } from './read';
 
-function dateLike(v: unknown): string {
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  return String(v);
-}
-
-function tsLike(v: unknown): string {
-  if (v instanceof Date) return v.toISOString();
-  return String(v);
-}
-
-const CODE_PREFIX = 'ISS-';
-const CODE_PAD = 5;
-
-async function nextStoreIssueCode(
-  tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
-  companyId: string,
-): Promise<string> {
-  // MAX of trailing digit suffix on existing codes for this company. Lives
-  // inside the same tx as the insert so concurrent inserts cant collide
-  // (followed by the uniqueIndex CHECK as a backstop).
-  const rows = (await tx.execute(sql`
-    SELECT COALESCE(
-      MAX(NULLIF(regexp_replace(code, '^${sql.raw(CODE_PREFIX)}', ''), '')::int),
-      0
-    ) + 1 AS next_num
-    FROM public.store_issues
-    WHERE company_id = ${companyId}::uuid
-      AND code LIKE ${`${CODE_PREFIX}%`}
-      AND code ~ ${`^${CODE_PREFIX}\\d+$`}
-  `)) as unknown as Array<{ next_num: number }>;
-  const next = Number(rows[0]?.next_num ?? 1);
-  return `${CODE_PREFIX}${String(next).padStart(CODE_PAD, '0')}`;
-}
+const isReturnableType = (t: string): boolean =>
+  (ITEM_TYPE_RULES as Record<string, { returnable: boolean } | undefined>)[t]?.returnable === true;
 
 export async function getNextStoreIssueCode(user: AuthContext): Promise<{ code: string }> {
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const code = await nextStoreIssueCode(tx, companyId);
-    return { code };
-  });
-}
-
-export async function listStoreIssues(
-  input: ListStoreIssuesQuery,
-  user: AuthContext,
-): Promise<ListStoreIssuesResponse> {
-  const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
-    const searchFrag = term
-      ? sql`AND (
-          si.code ILIKE ${term}
-          OR si.item_code_text ILIKE ${term}
-          OR si.item_name ILIKE ${term}
-          OR si.issued_to ILIKE ${term}
-          OR si.ref_no ILIKE ${term}
-        )`
-      : sql``;
-    const itemFrag = input.itemId ? sql`AND si.item_id = ${input.itemId}::uuid` : sql``;
-    const fromFrag = input.fromDate ? sql`AND si.issue_date >= ${input.fromDate}::date` : sql``;
-    const toFrag = input.toDate ? sql`AND si.issue_date <= ${input.toDate}::date` : sql``;
-
-    const result = await tx.execute(sql`
-      SELECT
-        si.id, si.company_id AS "companyId", si.code,
-        si.issue_date AS "issueDate",
-        si.item_id AS "itemId",
-        si.item_code_text AS "itemCodeText",
-        si.item_name AS "itemName",
-        si.qty,
-        si.issued_to AS "issuedTo",
-        si.ref_type AS "refType",
-        si.ref_no AS "refNo",
-        si.purpose,
-        si.remarks,
-        si.store_transaction_id AS "storeTransactionId",
-        si.created_at AS "createdAt", si.created_by AS "createdBy",
-        si.updated_at AS "updatedAt", si.updated_by AS "updatedBy",
-        si.deleted_at AS "deletedAt",
-        i.code AS "itemCode",
-        u.full_name AS "issuedByName"
-      FROM public.store_issues si
-      LEFT JOIN public.items i ON i.id = si.item_id AND i.deleted_at IS NULL
-      LEFT JOIN public.users u ON u.id = si.created_by
-      WHERE si.company_id = ${companyId}::uuid
-        AND si.deleted_at IS NULL
-        ${searchFrag}
-        ${itemFrag}
-        ${fromFrag}
-        ${toFrag}
-      ORDER BY si.issue_date DESC, si.code DESC
-      LIMIT ${input.limit} OFFSET ${input.offset}
-    `);
-
-    const conditions = [eq(storeIssues.companyId, companyId), isNull(storeIssues.deletedAt)];
-    if (input.itemId) conditions.push(eq(storeIssues.itemId, input.itemId));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(storeIssues)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
-
-    const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
-    return { items: itemsOut, total, limit: input.limit, offset: input.offset };
-  });
-}
-
-function toListItem(r: Record<string, unknown>): StoreIssueListItem {
-  return {
-    id: r['id'] as string,
-    companyId: r['companyId'] as string,
-    code: r['code'] as string,
-    issueDate: dateLike(r['issueDate']),
-    itemId: (r['itemId'] as string | null) ?? null,
-    itemCodeText: (r['itemCodeText'] as string | null) ?? null,
-    itemName: String(r['itemName'] ?? ''),
-    qty: Number(r['qty'] ?? 0),
-    issuedTo: String(r['issuedTo'] ?? ''),
-    refType: (r['refType'] as string | null) ?? null,
-    refNo: (r['refNo'] as string | null) ?? null,
-    purpose: (r['purpose'] as string | null) ?? null,
-    remarks: (r['remarks'] as string | null) ?? null,
-    storeTransactionId: (r['storeTransactionId'] as string | null) ?? null,
-    createdAt: tsLike(r['createdAt']),
-    createdBy: r['createdBy'] as string,
-    updatedAt: tsLike(r['updatedAt']),
-    updatedBy: r['updatedBy'] as string,
-    deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
-    itemCode: (r['itemCode'] as string | null) ?? null,
-    issuedByName: (r['issuedByName'] as string | null) ?? null,
-  };
+  return withUserContext(user, async (tx) => ({ code: await nextStoreIssueCode(tx, companyId) }));
 }
 
 export async function createStoreIssue(
   input: CreateStoreIssueInput,
   user: AuthContext,
-): Promise<StoreIssue> {
-  // This endpoint had NO permission check at all — only the company-id check
-  // below — so any logged-in account could post a stock issue and deduct
-  // on-hand. Issuing material is `entry`, so L2 Data Entry and above may; an
-  // L1 Viewer and an L4 Approver may not.
+): Promise<StoreIssueDetail> {
   await requireFormAccess(user, 'issue_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
 
   return withUserContext(user, async (tx) => {
-    // 1) Load + lock the item row.
-    const itemRows = await tx
-      .select({ id: items.id, code: items.code, name: items.name })
-      .from(items)
-      .where(
-        and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
-      )
-      .limit(1);
-    const itm = itemRows[0];
-    if (!itm) throw new NotFoundError(`Item ${input.itemId} not found`);
-
-    // 2) Lock the items row for the duration of the tx so concurrent
-    //    issues cant double-spend stock.
-    await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itm.id}::uuid FOR UPDATE`);
-
-    // 3) Read current on-hand and validate qty.
-    const balRows = (await tx.execute(sql`
-      SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-      FROM public.v_item_stock
-      WHERE company_id = ${companyId}::uuid AND item_id = ${itm.id}::uuid
-    `)) as unknown as Array<{ on_hand: number }>;
-    const stockBefore = Number(balRows[0]?.on_hand ?? 0);
-    if (input.qty > stockBefore) {
-      throw new ConflictError(
-        `Insufficient stock for ${itm.code}: available ${stockBefore}, requested ${input.qty}`,
+    // 1) Every item must be live in this company.
+    const itemIds = input.lines.map((l) => l.itemId);
+    const live = (await tx.execute(sql`
+      SELECT id, code, item_type::text AS item_type FROM public.items
+      WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+        AND id = ANY(${sql.param(itemIds)}::uuid[])
+    `)) as unknown as Array<{ id: string; code: string; item_type: string }>;
+    if (live.length !== new Set(itemIds).size) {
+      throw new NotFoundError(
+        'An Item on this issue was not found. Please select the Item Code again.',
       );
     }
-    const stockAfter = stockBefore - input.qty;
+    // P39 (ADR-193 phase 4): a tool goes out on the Tool Issue register, where
+    // it is expected back — never on an Item Issue slip.
+    const tool = live.find((r) => isReturnableType(r.item_type));
+    if (tool) {
+      throw new ValidationError(
+        `${tool.code} is a Tool / Instrument — issue it from the Tool Issue register`,
+      );
+    }
 
-    // 4) Allocate the next code.
+    // 2) Lock every item in id order (no deadlock between two slips), BEFORE
+    //    the To Issue read (review F1: the item locks do NOT cover the code —
+    //    two slips of different items would read the same MAX; see below).
+    const itemCodes = new Map<string, string>();
+    for (const id of [...itemIds].sort()) {
+      const it = await lockItemForStock(tx, companyId, id);
+      itemCodes.set(id, it.code);
+    }
+
+    // 3) Target + To Issue cap (409 needsConfirmation / approve-tier override).
+    const { target, over } = await resolveTargetAndCap(tx, companyId, input, itemCodes);
+    const confirmed = await enforceOverToIssue(user, over, input.confirmReason);
+    const { operatorId, issuedTo } = await resolveIssuedTo(tx, companyId, input);
+    // ADR-193 3c — an assembly-SO line may also take this SO's own reservation
+    // (M12: over that, 409 names who holds the rest). Checked before posting.
+    const soId = input.issueAgainst === 'assembly_so' ? target.salesOrderId : null;
+    const own = soId
+      ? await checkAssemblyAllowance(tx, companyId, soId, input.lines, itemCodes)
+      : null;
+
+    // One ISS- number at a time per company (same pattern as stock counts).
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${'store_issue_code:' + companyId}))`,
+    );
     const code = await nextStoreIssueCode(tx, companyId);
+    const purpose = input.purpose.trim();
+    const remarks = input.remarks?.trim() || null;
 
-    // 5) Emit the store_transactions row first (so we can FK it back to
-    //    store_issues.store_transaction_id).
-    const stRows = await tx
-      .insert(storeTransactions)
-      .values({
-        companyId,
-        txnDate: input.issueDate,
-        itemId: itm.id,
-        itemCodeText: itm.code,
-        txnType: 'out',
-        qty: input.qty,
-        sourceType: 'other',
-        sourceRef: `${code} · ${itm.code}`,
-        stockBefore,
-        stockAfter,
-        remarks: `Item Issue · to ${input.issuedTo}${input.purpose ? ` · ${input.purpose}` : ''}`,
-        createdBy: userId,
-      })
-      .returning({ id: storeTransactions.id });
-    const storeTxnId = stRows[0]?.id ?? null;
-
-    // 6) Insert the store_issue.
     const inserted = await tx
       .insert(storeIssues)
       .values({
         companyId,
         code,
         issueDate: input.issueDate,
-        itemId: itm.id,
-        itemCodeText: itm.code,
-        itemName: itm.name,
-        qty: input.qty,
-        issuedTo: input.issuedTo,
-        refType: input.refType ?? null,
-        refNo: input.refNo ?? null,
-        purpose: input.purpose ?? null,
-        remarks: input.remarks ?? null,
-        storeTransactionId: storeTxnId,
+        issueAgainst: input.issueAgainst,
+        jobCardId: target.jobCardId,
+        productionOrderId: target.productionOrderId,
+        salesOrderId: target.salesOrderId,
+        issuedToOperatorId: operatorId,
+        issuedTo,
+        department: target.department,
+        purpose,
+        remarks,
         createdBy: userId,
         updatedBy: userId,
       })
-      .returning();
-    const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to insert store issue');
+      .returning({ id: storeIssues.id });
+    const issueId = inserted[0]?.id;
+    if (!issueId) throw new ValidationError('Could not save the Item Issue. Try again.');
 
-    return {
-      id: row.id,
-      companyId: row.companyId,
-      code: row.code,
-      issueDate: dateLike(row.issueDate),
-      itemId: row.itemId,
-      itemCodeText: row.itemCodeText,
-      itemName: row.itemName,
-      qty: row.qty,
-      issuedTo: row.issuedTo,
-      refType: row.refType,
-      refNo: row.refNo,
-      purpose: row.purpose,
-      remarks: row.remarks,
-      storeTransactionId: row.storeTransactionId,
-      createdAt: tsLike(row.createdAt),
-      createdBy: row.createdBy,
-      updatedAt: tsLike(row.updatedAt),
-      updatedBy: row.updatedBy,
-      deletedAt: row.deletedAt != null ? tsLike(row.deletedAt) : null,
-    };
+    // 4) One ledger 'out' + one line per item, in the order keyed.
+    const moved: string[] = [];
+    for (const [idx, l] of input.lines.entries()) {
+      const itemCode = itemCodes.get(l.itemId) ?? '';
+      const mv = await postStockMove(tx, {
+        companyId,
+        itemId: l.itemId,
+        txnType: 'out',
+        qty: l.qty,
+        sourceType: 'store_issue',
+        sourceRef: `${code} · ${itemCode}`,
+        remarks: `Item Issue · ${target.label} · to ${issuedTo} · ${purpose}`,
+        txnDate: input.issueDate,
+        userId,
+        itemCodeText: itemCode,
+        guard: 'available',
+        allowance: own?.get(l.itemId) ?? 0,
+        qtyLabel: 'Issue Qty',
+      });
+      const lineRows = await tx
+        .insert(storeIssueLines)
+        .values({
+          companyId,
+          issueId,
+          lineNo: idx + 1,
+          itemId: l.itemId,
+          itemCodeText: itemCode,
+          qty: roundQty(l.qty),
+          storeTransactionId: mv.id,
+          createdBy: userId,
+          updatedBy: userId,
+        })
+        .returning({ id: storeIssueLines.id });
+      if (soId && own?.get(l.itemId)) {
+        await useOwnReservation(
+          tx,
+          { companyId, soId, itemId: l.itemId, qty: roundQty(l.qty), userId },
+          lineRows[0]!.id,
+        );
+      }
+      moved.push(`${itemCode} × ${roundQty(l.qty)} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'ISSUE',
+        entity: 'Store Issue',
+        detail:
+          `${code} · ${target.label} · to ${issuedTo} — ${purpose}: ${moved.join(', ')}` +
+          (confirmed ? `. More than To Issue, confirmed: ${confirmed}` : ''),
+        refId: code,
+      },
+      companyId,
+      user,
+    );
+
+    return readStoreIssueDetail(tx, companyId, issueId);
   });
 }
 
-void asc;
-void desc;
+export async function returnStoreIssue(
+  id: string,
+  input: ReturnStoreIssueInput,
+  user: AuthContext,
+): Promise<StoreIssueDetail> {
+  await requireFormAccess(user, 'issue_create', 'entry');
+  const companyId = requireCompany(user);
+  const reason = input.reason.trim();
+  return withUserContext(user, async (tx) => {
+    const iss = await lockSlip(tx, companyId, id);
+    if (iss.reversedAt) {
+      throw new ConflictError(`${iss.code} is reversed — nothing is left to return.`);
+    }
+    const { lines, returned } = await readSlipLines(tx, iss.id);
+    const byId = new Map(lines.map((l) => [l.id, l]));
+
+    // Same line keyed twice → one return of the sum.
+    const want = new Map<string, number>();
+    for (const r of input.lines) {
+      if (!byId.has(r.issueLineId)) {
+        throw new ValidationError(
+          `A returned line is not on ${iss.code}. Reload the slip and try again.`,
+        );
+      }
+      want.set(r.issueLineId, roundQty((want.get(r.issueLineId) ?? 0) + r.qty));
+    }
+    for (const [lineId, qty] of want) {
+      const line = byId.get(lineId)!;
+      const out = roundQty(line.qty - (returned.get(lineId) ?? 0));
+      if (qty > out) {
+        throw new ConflictError(
+          `${line.itemCodeText}: Return Qty (${qty}) cannot be more than what is still out on ${iss.code} (${out}).`,
+          { itemCode: line.itemCodeText, qty, outstanding: out },
+        );
+      }
+    }
+
+    // P34 — fitted parts cannot come back (SO-level Still Out cap).
+    if (iss.issueAgainst === 'assembly_so' && iss.salesOrderId) {
+      await assertReturnWithinStillOut(
+        tx,
+        companyId,
+        iss.salesOrderId,
+        [...want].map(([lineId, qty]) => {
+          const line = byId.get(lineId)!;
+          return { itemId: line.itemId, itemCode: line.itemCodeText, qty };
+        }),
+      );
+    }
+
+    const date = today();
+    const done: string[] = [];
+    const order = [...want.keys()].sort((a, b) =>
+      byId.get(a)!.itemId.localeCompare(byId.get(b)!.itemId),
+    );
+    for (const lineId of order) {
+      const line = byId.get(lineId)!;
+      const qty = want.get(lineId)!;
+      const mv = await postStockMove(tx, {
+        companyId,
+        itemId: line.itemId,
+        txnType: 'in',
+        qty,
+        sourceType: 'store_return',
+        sourceRef: `${iss.code} return · ${line.itemCodeText}`,
+        remarks: `Item Issue return · ${reason}`,
+        txnDate: date,
+        userId: user.id,
+        itemCodeText: line.itemCodeText,
+        guard: 'none',
+        qtyLabel: 'Return Qty',
+      });
+      await tx.insert(storeIssueReturns).values({
+        companyId,
+        issueLineId: line.id,
+        returnDate: date,
+        qty,
+        reason,
+        storeTransactionId: mv.id,
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
+      done.push(`${line.itemCodeText} × ${qty} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'RETURN',
+        entity: 'Store Issue',
+        detail: `${iss.code} returned ${done.join(', ')}. Reason: ${reason}`,
+        refId: iss.code,
+      },
+      companyId,
+      user,
+    );
+    return readStoreIssueDetail(tx, companyId, iss.id);
+  });
+}
+
+/**
+ * ADR-189 — undo a whole slip by OPPOSITE ledger entries ('in' of each line),
+ * never by editing the 'out'. Stays on the register, stamped who / when / why.
+ * Only while nothing was returned from it — after a Return, use Return.
+ */
+export async function reverseStoreIssue(
+  id: string,
+  input: ReverseStoreIssueInput,
+  user: AuthContext,
+): Promise<StoreIssueDetail> {
+  await requireFormAccess(user, 'issue_create', 'edit');
+  const companyId = requireCompany(user);
+  const reason = input.reason.trim();
+  if (reason.length < STORE_ISSUE_REVERSE_REASON_MIN) {
+    throw new ValidationError(
+      `Give a reason for the reversal (at least ${STORE_ISSUE_REVERSE_REASON_MIN} characters).`,
+    );
+  }
+  return withUserContext(user, async (tx) => {
+    const iss = await lockSlip(tx, companyId, id);
+    if (iss.reversedAt) throw new ConflictError(`${iss.code} is already reversed.`);
+    const { lines, returned } = await readSlipLines(tx, iss.id);
+    if ([...returned.values()].some((q) => q > 0)) {
+      throw new ConflictError(
+        `${iss.code}: part of it was already returned, so the slip cannot be reversed — use Return for what is still out.`,
+      );
+    }
+    if (lines.length === 0) {
+      throw new ConflictError(`${iss.code} has no items on it, so there is no stock to put back.`);
+    }
+    const assemblySoId =
+      iss.issueAgainst === 'assembly_so' && iss.salesOrderId ? iss.salesOrderId : null;
+    if (assemblySoId) {
+      await assertReverseWithinStillOut(tx, companyId, assemblySoId, iss.code, lines);
+    }
+
+    const date = today();
+    const done: string[] = [];
+    const byLine = new Map<string, string>();
+    for (const line of [...lines].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
+      const mv = await postStockMove(tx, {
+        companyId,
+        itemId: line.itemId,
+        txnType: 'in',
+        qty: line.qty,
+        sourceType: 'store_return',
+        sourceRef: `${iss.code} reversal · ${line.itemCodeText}`,
+        remarks: `Item Issue reversed · ${reason}`,
+        txnDate: date,
+        userId: user.id,
+        itemCodeText: line.itemCodeText,
+        guard: 'none',
+      });
+      byLine.set(line.id, mv.id);
+      done.push(`${line.itemCodeText} × ${line.qty} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
+    }
+    const firstTxnId = byLine.get(lines[0]!.id) ?? null;
+    // ADR-193 3c — what the slip used of the SO's reservation is held again.
+    if (assemblySoId) {
+      await giveBackLineReservations(tx, { companyId, soId: assemblySoId, userId: user.id }, lines);
+    }
+
+    const now = new Date();
+    await tx
+      .update(storeIssues)
+      .set({
+        reversedAt: now,
+        reversedBy: user.id,
+        reversalReason: reason,
+        reversalStoreTransactionId: firstTxnId,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(storeIssues.id, iss.id));
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'REVERSE',
+        entity: 'Store Issue',
+        detail: `${iss.code} (${ISSUE_AGAINST_LABELS[iss.issueAgainst as IssueAgainst] ?? iss.issueAgainst}) put back ${done.join(', ')}. Reason: ${reason}`,
+        refId: iss.code,
+      },
+      companyId,
+      user,
+    );
+    return readStoreIssueDetail(tx, companyId, iss.id);
+  });
+}

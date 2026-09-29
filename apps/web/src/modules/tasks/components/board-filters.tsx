@@ -1,12 +1,16 @@
 // Task Board chrome above the table (ADR-176): the tab strip (Inbox / Outbox /
-// My To-Do / All Tasks) and the filter strip (search 2fr + Status + Priority +
-// Person + Due Date; All Tasks adds Assigned By + Department). Presentational —
-// the board route owns every value and hands the setters down.
+// My To-Do / All Tasks) and the filter selects (Status + Priority +
+// Person + Due Date; All Tasks adds Assigned By + Department; search is the board ListHeader's). Presentational —
+// the board route owns every value and hands the setters down. The Status and
+// Due Date options carry the view's counts ("To Do (4)", "Overdue (2)") — they
+// replaced the clickable KPI strip (owner decision 2026-09-26: a filter is a
+// dropdown, not a row of capsules).
 
 import type {
   TaskDueFilter,
   TaskPriority,
   TaskStatus,
+  TaskStatusCounts,
   TaskUserOption,
   TaskView,
 } from '@innovic/shared';
@@ -28,7 +32,10 @@ const DUE_OPTIONS: { value: TaskDueFilter | ''; label: string }[] = [
   { value: 'overdue', label: 'Overdue' },
 ];
 
-const selectStyle: React.CSSProperties = { fontSize: 12, minWidth: 0 };
+/** "To Do (4)" — the count only where the server sends one for that choice. */
+function withCount(label: string, n: number | undefined): string {
+  return n == null ? label : `${label} (${n})`;
+}
 
 export function TaskTabs({
   tabs,
@@ -111,7 +118,7 @@ export function TaskFilters({
   users,
   departments,
   values,
-  onSearch,
+  counts,
   onStatus,
   onPriority,
   onPerson,
@@ -123,7 +130,8 @@ export function TaskFilters({
   users: TaskUserOption[];
   departments: string[];
   values: BoardFilterValues;
-  onSearch: (v: string) => void;
+  /** Per-status counts over the selected view (before row filters). */
+  counts?: TaskStatusCounts | undefined;
   onStatus: (v: TaskStatus | '') => void;
   onPriority: (v: TaskPriority | '') => void;
   onPerson: (v: string) => void;
@@ -136,41 +144,32 @@ export function TaskFilters({
       {u.name}
     </option>
   ));
+  // The filter selects only — they sit in the board ListHeader's filter bar,
+  // after the header's own search box (which owns the search term). The bar
+  // sizes every select, so none carries a width of its own.
+  const statusCount = (v: TaskStatus | ''): number | undefined =>
+    v === 'todo' || v === 'in_progress' || v === 'completed' ? counts?.[v] : undefined;
   return (
-    <div
-      className="panel"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(200px, 2fr) repeat(auto-fit, minmax(140px, 1fr))',
-        gap: 8,
-        padding: 10,
-        marginBottom: 10,
-      }}
-    >
-      <input
-        className="innovic-input"
-        placeholder="Search Task No., title, related document…"
-        value={values.searchInput}
-        onChange={(e) => onSearch(e.target.value)}
-        style={{ fontSize: 12 }}
-      />
+    <>
       <select
         className="innovic-select"
+        aria-label="Status"
+        title="Status"
         value={values.status}
         onChange={(e) => onStatus(e.target.value as TaskStatus | '')}
-        style={selectStyle}
       >
         {STATUS_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
-            {o.label}
+            {withCount(o.label, statusCount(o.value))}
           </option>
         ))}
       </select>
       <select
         className="innovic-select"
+        aria-label="Priority"
+        title="Priority"
         value={values.priority}
         onChange={(e) => onPriority(e.target.value as TaskPriority | '')}
-        style={selectStyle}
       >
         <option value="">All Priority</option>
         {TASK_PRIORITIES.map((p) => (
@@ -184,7 +183,6 @@ export function TaskFilters({
           className="innovic-select"
           value={values.person}
           onChange={(e) => onPerson(e.target.value)}
-          style={selectStyle}
         >
           <option value="">{PERSON_LABEL[view]}: All</option>
           {userOptions}
@@ -196,7 +194,6 @@ export function TaskFilters({
             className="innovic-select"
             value={values.assignedBy}
             onChange={(e) => onAssignedBy(e.target.value)}
-            style={selectStyle}
           >
             <option value="">Assigned By: All</option>
             {userOptions}
@@ -205,7 +202,6 @@ export function TaskFilters({
             className="innovic-select"
             value={values.dept}
             onChange={(e) => onDept(e.target.value)}
-            style={selectStyle}
           >
             <option value="">Department: All</option>
             {departments.map((d) => (
@@ -218,16 +214,17 @@ export function TaskFilters({
       ) : null}
       <select
         className="innovic-select"
+        aria-label="Due date"
+        title="Due date"
         value={values.due}
         onChange={(e) => onDue(e.target.value as TaskDueFilter | '')}
-        style={selectStyle}
       >
         {DUE_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
-            {o.label}
+            {withCount(o.label, o.value === 'overdue' ? counts?.overdue : undefined)}
           </option>
         ))}
       </select>
-    </div>
+    </>
   );
 }

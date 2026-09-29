@@ -5,16 +5,19 @@
 // and the four write callbacks down here. One file instead of two 250-line
 // copies that would drift apart on the first fix.
 //
-// Styling follows the `styling` skill: tbl-wrap + innovic-table (no-wrap cells +
-// side scroll for free), ONE StatStrip row for the counts (which double as the
-// Active/Inactive filter), clickable rows, and a scrolling list — masters do not
-// paginate.
+// Styling follows the `styling` skill: <ListHeader> band, the ruled sheet
+// (.innovic-table.tbl-grid — codes on one line, descriptions wrap), an
+// All / Active / Inactive dropdown in the filter bar whose labels carry the
+// counts (owner's filter-bar decision 2026-09-26 — it replaced the clickable
+// count strip), clickable rows, and a scrolling list — masters do not paginate.
 
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { ConfirmDialog } from '@/ui/feedback';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 
 /** The subset of MaterialGrade / MaterialSize this table renders. Both shared
  *  types are structurally assignable to it. */
@@ -56,6 +59,8 @@ export interface MaterialMasterPanelProps {
   onDownloadTemplate: () => void;
   /** Parses + posts the whole sheet in ONE request; resolves to the status line. */
   onImportFile: (file: File) => Promise<string>;
+  /** The page's Grade | Size tab strip, drawn inside the one header band. */
+  tabs?: React.ReactNode;
 }
 
 type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: MaterialMasterRow };
@@ -80,6 +85,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
     deleting,
     onDownloadTemplate,
     onImportFile,
+    tabs,
   } = props;
 
   // Tier-driven, per department (rawmat_create sits in Production). Add/Import =
@@ -92,12 +98,16 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
 
   const [status, setStatus] = useState<StatusFilter>('all');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
+  // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
+  const [trashRow, setTrashRow] = useState<MaterialMasterRow | null>(null);
 
   const activeCount = rows.filter((r) => r.isActive).length;
   const inactiveCount = rows.length - activeCount;
   const visible = useMemo(
     () =>
-      status === 'all' ? rows : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
+      status === 'all'
+        ? rows
+        : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
     [rows, status],
   );
 
@@ -113,7 +123,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
     try {
       setImportMsg(await onImportFile(file));
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not import the file. Try again.');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -122,65 +132,51 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          marginBottom: 12,
-          gap: 8,
+      {/* THE list header (2026-09-26 list standard): title · count … + Add;
+          filter bar: search · status (counts in the labels) · Clear; the
+          Grade | Size tabs in the band. */}
+      <ListHeader
+        title="Raw Material Master"
+        icon="▬"
+        count={total}
+        noun={noun.toLowerCase()}
+        filterNote={status === 'all' ? undefined : status}
+        search={searchInput}
+        onSearch={onSearchInput}
+        searchPlaceholder={searchPlaceholder}
+        updating={isFetching && !isLoading}
+        filters={
+          <Select
+            aria-label={`${noun} Status`}
+            title={`${noun} Status`}
+            value={status}
+            options={[
+              { value: 'all', label: `All ${noun}s (${rows.length})` },
+              { value: 'active', label: `Active (${activeCount})` },
+              { value: 'inactive', label: `Inactive (${inactiveCount})` },
+            ]}
+            onChange={(e) => setStatus(e.target.value as StatusFilter)}
+          />
+        }
+        onClearFilters={() => {
+          onSearchInput('');
+          setStatus('all');
         }}
+        filtersActive={searchInput.trim() !== '' || status !== 'all'}
+        primary={
+          canAdd ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModal({ kind: 'new' })}
+            >
+              <Plus size={14} /> Add {noun}
+            </button>
+          ) : null
+        }
       >
-        <input
-          className="innovic-input"
-          placeholder={searchPlaceholder}
-          value={searchInput}
-          onChange={(e) => onSearchInput(e.target.value)}
-          style={{ width: 260, fontSize: 12 }}
-        />
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
-        ) : null}
-        {canAdd ? (
-          <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: 'new' })}>
-            <Plus size={14} /> Add {noun}
-          </button>
-        ) : null}
-      </div>
-
-      {/* Counts + the Active/Inactive filter in ONE strip (styling skill Rule 3). */}
-      <div style={{ marginBottom: 12 }}>
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: `All ${noun}s`,
-              count: rows.length,
-              color: 'var(--cyan)',
-              active: status === 'all',
-              onClick: () => setStatus('all'),
-            },
-            {
-              key: 'active',
-              label: 'Active',
-              count: activeCount,
-              color: 'var(--green)',
-              active: status === 'active',
-              onClick: () => setStatus('active'),
-            },
-            {
-              key: 'inactive',
-              label: 'Inactive',
-              count: inactiveCount,
-              color: 'var(--amber)',
-              active: status === 'inactive',
-              onClick: () => setStatus('inactive'),
-            },
-          ]}
-        />
-      </div>
+        {tabs}
+      </ListHeader>
 
       {importMsg ? (
         <div className="panel" style={{ marginBottom: 12 }}>
@@ -189,7 +185,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ marginLeft: 8, fontSize: 10 }}
+              style={{ marginLeft: 8, fontSize: 11 }}
               onClick={() => setImportMsg(null)}
             >
               ✕
@@ -200,7 +196,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Code</th>
@@ -219,16 +215,18 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={5} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={5} className="empty-state" style={{ color: 'var(--red2)' }}>
                     {error instanceof Error
                       ? error.message
-                      : `Failed to load material ${noun.toLowerCase()}s`}
+                      : `Could not load material ${noun.toLowerCase()}s. Try again.`}
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="empty-state">
-                    No {noun.toLowerCase()}s — click <strong>+ Add {noun}</strong> to begin
+                    {rows.length === 0 && !searchInput.trim()
+                      ? `No ${noun}s yet.`
+                      : `No ${noun}s match.`}
                   </td>
                 </tr>
               ) : (
@@ -238,25 +236,13 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                     onClick={canEdit ? () => setModal({ kind: 'edit', row }) : undefined}
                     style={canEdit ? { cursor: 'pointer' } : undefined}
                   >
-                    <td className="td-code" style={{ color: 'var(--cyan)' }}>
+                    <td className="td-code" style={{ color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
                       {row.code}
                     </td>
                     <td className="fw-700">{row.name}</td>
-                    {/* Long free text — clip with an ellipsis, full value on hover. */}
-                    <td className="text2" style={{ fontSize: 12 }}>
-                      <span
-                        style={{
-                          maxWidth: 340,
-                          display: 'inline-block',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          verticalAlign: 'bottom',
-                        }}
-                        title={row.description ?? ''}
-                      >
-                        {row.description || '—'}
-                      </span>
+                    {/* Long free text WRAPS inside its column (sheet rule). */}
+                    <td className="text2" style={{ fontSize: 12, textAlign: 'left' }}>
+                      {row.description || '—'}
                     </td>
                     <td>
                       <span className={`badge ${row.isActive ? 'b-green' : 'b-grey'}`}>
@@ -266,10 +252,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                     <td>
                       {/* Stop once on the wrapper so an action never also fires
                           the row's own open-for-edit click. */}
-                      <div
-                        style={{ display: 'flex', gap: 4 }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
                         {canEdit ? (
                           <button
                             type="button"
@@ -284,13 +267,9 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                             type="button"
                             className="btn btn-danger btn-sm"
                             disabled={deleting}
-                            onClick={() => {
-                              if (confirm(`Move ${noun.toLowerCase()} "${row.name}" to Trash?`)) {
-                                onDelete(row);
-                              }
-                            }}
+                            onClick={() => setTrashRow(row)}
                           >
-                            Del
+                            Delete
                           </button>
                         ) : null}
                       </div>
@@ -305,60 +284,60 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
 
       {/* Masters scroll, they do not paginate — one fetch, no Prev/Next. The
           count line says which of the two happened so a capped list can never
-          look complete. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 6,
-          gap: 12,
-          fontSize: 11,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {canEdit ? `💡 Click a row to edit that ${noun.toLowerCase()}.` : ''}
-        </span>
-        <span>
-          {total > rows.length
-            ? `Showing first ${rows.length} of ${total} — refine with search`
-            : `Showing all ${total} ${noun.toLowerCase()}${total === 1 ? '' : 's'}`}
-        </span>
-      </div>
+          look complete. Excel template + import sit under it; import creates
+          rows, so it follows the create (entry) right. */}
+      <ListFooter
+        total={total}
+        shown={visible.length}
+        noun={noun.toLowerCase()}
+        limit={total > rows.length ? rows.length : undefined}
+        actions={
+          canAdd ? (
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 11 }}
+                onClick={onDownloadTemplate}
+              >
+                ⬇ Download Excel Template
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 11 }}
+                disabled={importing}
+                onClick={() => fileRef.current?.click()}
+              >
+                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '⬆'} Import from
+                Excel
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleFile(f);
+                }}
+              />
+            </>
+          ) : undefined
+        }
+      />
 
-      {/* Excel template + import sit below the table (mirror of the Operator
-          Master). Import creates rows, so it follows the create (entry) right. */}
-      {canAdd ? (
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            onClick={onDownloadTemplate}
-          >
-            ⬇ Download Excel Template
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            disabled={importing}
-            onClick={() => fileRef.current?.click()}
-          >
-            {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '⬆'} Import from Excel
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleFile(f);
-            }}
-          />
-        </div>
+      {trashRow ? (
+        <ConfirmDialog
+          title={`Move ${noun} ${trashRow.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          onConfirm={() => {
+            onDelete(trashRow);
+            setTrashRow(null);
+          }}
+          onCancel={() => setTrashRow(null)}
+        />
       ) : null}
 
       {modal.kind !== 'none' ? (
@@ -430,7 +409,7 @@ function MaterialRowModal({
       );
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : `Could not save ${noun}. Try again.`);
     }
   }
 
@@ -467,9 +446,7 @@ function MaterialRowModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
-          <span className="panel-title">
-            {row ? `✏ Edit ${noun}` : `＋ Add ${noun}`}
-          </span>
+          <span className="panel-title">{row ? `Edit ${noun}` : `Add ${noun}`}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             ✕
           </button>
@@ -516,7 +493,7 @@ function MaterialRowModal({
             </div>
           </div>
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
               {err}
             </div>
           ) : null}
@@ -530,7 +507,8 @@ function MaterialRowModal({
               disabled={saving}
               onClick={() => void submit()}
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{' '}
+              {row ? 'Save Changes' : `Save ${noun}`}
             </button>
           </div>
         </div>

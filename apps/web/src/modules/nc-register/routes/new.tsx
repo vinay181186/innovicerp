@@ -49,7 +49,7 @@ function NcRegisterNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/nc-register' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
-  // Tier-driven, per department (QC). The ❌ Report NC button is hidden from
+  // Tier-driven, per department (QC). The ⚠️ Report NC button is hidden from
   // anyone without entry rights, but this screen had no gate of its own —
   // typing the URL still handed over the form (an L1 Viewer, an L4 Approver).
   const { data: eff, isLoading: accessLoading } = useMyAccess();
@@ -94,9 +94,8 @@ function NcRegisterNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to NC Register
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have create access to NC Register. Ask an admin for L2 Data Entry or above
-            in QC.
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+            You do not have permission to report an NC. Ask an admin.
           </div>
         </div>
       </div>
@@ -106,39 +105,25 @@ function NcRegisterNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link to="/nc-register" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to NC Register
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">❌ Report Non-Conformance</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Status starts as <span className="mono">pending</span> until disposition.
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <NcRegisterForm
-            mode="create"
-            initial={seed}
-            submitError={submitError}
-            submitLabel="Save"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: CreateNcRegisterInput) => {
-              setSubmitError(null);
-              try {
-                const created = await create.mutateAsync(values);
-                exit.leave(
-                  () => void navigate({ to: '/nc-register/$id', params: { id: created.id } }),
-                );
-              } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to report NC.');
-              }
-            }}
-          />
-        </div>
-      </div>
+      <NcRegisterForm
+        mode="create"
+        title="⚠️ Report Non-Conformance"
+        backLabel="Back to NC Register"
+        onBack={() => exit.leave(goBack)}
+        initial={seed}
+        submitError={submitError}
+        submitLabel="Save NC"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: CreateNcRegisterInput) => {
+          setSubmitError(null);
+          try {
+            const created = await create.mutateAsync(values);
+            exit.leave(() => void navigate({ to: '/nc-register/$id', params: { id: created.id } }));
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');
+          }
+        }}
+      />
     </div>
   );
 }

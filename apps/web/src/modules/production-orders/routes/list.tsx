@@ -1,6 +1,7 @@
 // Production Orders master (ADR-170). SO Master List is THE style reference:
-// frozen header band (title + count + search + New), ONE StatStrip row whose
-// tiles filter (Pending = open, All, Closed, Short Closed), a react-table grid with
+// <ListHeader> band (title + count + New; filter bar: search + a Status
+// dropdown whose labels carry the counts — All, Open, Closed, Short Closed —
+// + Clear; owner's filter-bar decision 2026-09-26), a react-table grid with
 // SortableHead, clickable rows, document codes in strong mono.
 //
 // Search is server-side (`?search=` matches PO code, plan code, POL, item code
@@ -30,10 +31,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SortableHead } from '@/components/shared/sortable-head';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useProductionOrdersList } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
 
@@ -66,25 +69,6 @@ export const productionOrdersListRoute = createRoute({
   component: ProductionOrdersListPage,
 });
 
-/** Long free text: clip with an ellipsis, keep the whole value on hover. */
-function Clip({ text, max = 220 }: { text: string | null; max?: number }): React.JSX.Element {
-  return (
-    <span
-      style={{
-        maxWidth: max,
-        display: 'inline-block',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        verticalAlign: 'bottom',
-      }}
-      title={text ?? ''}
-    >
-      {text ?? '—'}
-    </span>
-  );
-}
-
 function ProductionOrdersListPage(): React.JSX.Element {
   const search = productionOrdersListRoute.useSearch();
   const navigate = productionOrdersListRoute.useNavigate();
@@ -94,7 +78,11 @@ function ProductionOrdersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -132,13 +120,19 @@ function ProductionOrdersListPage(): React.JSX.Element {
     },
     [navigate],
   );
-  const toggleStatus = (s: ProductionOrderStatus) => () =>
-    setStatusFilter(search.status === s ? undefined : s);
+  const clearFilters = (): void => {
+    setSearchInput('');
+    void navigate({
+      search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+      replace: true,
+    });
+  };
+  const filtersActive = searchInput.trim() !== '' || search.status != null;
 
   const columns = useMemo<ColumnDef<ProductionOrderListItem>[]>(
     () => [
       {
-        header: 'Production Order No',
+        header: 'Production Order No.',
         accessorKey: 'code',
         meta: { tdClass: 'td-code' },
         cell: ({ row }) => (
@@ -154,15 +148,13 @@ function ProductionOrdersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'PRO create date',
+        header: 'Production Order Date',
         accessorKey: 'createdAt',
         meta: { tdClass: 'mono' },
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>{row.original.createdAt.slice(0, 10)}</span>
-        ),
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{fmtDate(row.original.createdAt)}</span>,
       },
       {
-        header: 'Plan',
+        header: 'Plan No.',
         accessorKey: 'planCodeText',
         meta: { tdClass: 'mono' },
         cell: ({ row }) => (
@@ -218,18 +210,18 @@ function ProductionOrdersListPage(): React.JSX.Element {
         header: 'Item Name',
         accessorKey: 'itemNameText',
         meta: { tdClass: 'text2' },
-        cell: ({ row }) => <Clip text={row.original.itemNameText} />,
+        cell: ({ row }) => row.original.itemNameText ?? '—',
       },
       {
         header: 'Order Qty',
         accessorKey: 'orderQty',
-        meta: { tdClass: 'mono fw-700' },
+        meta: { tdClass: 'mono fw-700 td-num', thClass: 'th-num' },
       },
       {
         header: 'Customer Dispatch Date',
         accessorKey: 'targetDate',
         meta: { tdClass: 'mono' },
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.targetDate}</span>,
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{fmtDate(row.original.targetDate)}</span>,
       },
       {
         header: 'JC No.',
@@ -250,7 +242,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
       {
         header: 'Completed',
         accessorKey: 'jcFinishedQty',
-        meta: { tdClass: 'mono fw-700' },
+        meta: { tdClass: 'mono fw-700 td-num', thClass: 'th-num' },
         cell: ({ row }) => (
           <span
             style={{
@@ -272,12 +264,12 @@ function ProductionOrdersListPage(): React.JSX.Element {
         cell: ({ row }) => <PoStatusBadge status={row.original.status} />,
       },
       {
-        header: 'Closed on',
+        header: 'Close Date',
         accessorKey: 'closedAt',
         meta: { tdClass: 'mono' },
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.closedAt ? row.original.closedAt.slice(0, 10) : '—'}
+            {fmtDate(row.original.closedAt)}
           </span>
         ),
       },
@@ -300,8 +292,8 @@ function ProductionOrdersListPage(): React.JSX.Element {
   // after every hook so the early return never trips rules-of-hooks.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Production Orders. Ask an admin.
       </div>
     );
   }
@@ -310,116 +302,63 @@ function ProductionOrdersListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* Frozen header band — title + count + search + New PO + the count strip
-          stay pinned; the table scrolls under them. Same shape as the PR list. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 10,
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              🏭 Production Orders
-            </div>
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} order{total === 1 ? '' : 's'}
-              {search.status ? (
-                <>
-                  {' '}
-                  ·{' '}
-                  <span className="text2">
-                    {search.status === 'open'
-                      ? 'pending'
-                      : PRODUCTION_ORDER_STATUS_LABEL[search.status].toLowerCase()}
-                  </span>{' '}
-                  only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="🔍 Search production order no, plan, POL, item, JC, SO…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 260, fontSize: 12 }}
-            />
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {perms.entry ? (
-              <Link to="/production-orders/new" className="btn btn-primary">
-                <Plus size={14} /> Create Production Order
-              </Link>
-            ) : null}
-          </div>
-        </div>
-
-        <StatStrip
-          items={[
-            {
-              key: 'open',
-              label: 'Pending',
-              count: openCount,
-              color: 'var(--amber)',
-              active: search.status === 'open',
-              onClick: toggleStatus('open'),
-              title: 'Open Production Orders — Job Card in progress or waiting to be closed',
-            },
-            {
-              key: 'all',
-              label: 'All',
-              count: allCount,
-              color: 'var(--cyan)',
-              active: search.status === undefined,
-              onClick: () => setStatusFilter(undefined),
-              title: 'Clear the status filter',
-            },
-            {
-              key: 'closed',
-              label: 'Closed',
-              count: closedCount,
-              color: 'var(--green)',
-              active: search.status === 'closed',
-              onClick: toggleStatus('closed'),
-              title: 'Closed — stock credited with the finished qty',
-            },
-            {
-              key: 'short_closed',
-              label: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
-              count: shortClosedCount,
-              color: 'var(--red)',
-              active: search.status === 'short_closed',
-              onClick: toggleStatus('short_closed'),
-              title:
-                'Short Closed — stopped at some stage; no further work on the order or its Job Card, and the un-produced qty went back to the plan',
-            },
-          ]}
-        />
-      </div>
+      {/* Frozen header band — title + count + New PO + the filter bar stay
+          pinned; the table scrolls under them. */}
+      <ListHeader
+        title="Production Orders"
+        icon="🏭"
+        count={total}
+        noun="order"
+        filterNote={search.status ? PRODUCTION_ORDER_STATUS_LABEL[search.status] : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search Production Order No., plan, POL, item, JC, SO…"
+        updating={isFetching && !isLoading}
+        onClearFilters={clearFilters}
+        filtersActive={filtersActive}
+        filters={
+          <Select
+            aria-label="Production Order Status"
+            title="Production Order Status"
+            value={search.status ?? ''}
+            options={[
+              { value: '', label: `All (${allCount})` },
+              { value: 'open', label: `Open (${openCount})` },
+              { value: 'closed', label: `Closed (${closedCount})` },
+              {
+                value: 'short_closed',
+                label: `${PRODUCTION_ORDER_STATUS_LABEL.short_closed} (${shortClosedCount})`,
+              },
+              // Partly Closed never had a tile; it stays reachable only through
+              // a link that already carries it, so the box can still show it.
+              ...(search.status === 'partially_closed'
+                ? [
+                    {
+                      value: 'partially_closed',
+                      label: PRODUCTION_ORDER_STATUS_LABEL.partially_closed,
+                    },
+                  ]
+                : []),
+            ]}
+            onChange={(e) =>
+              setStatusFilter(
+                e.target.value === '' ? undefined : (e.target.value as ProductionOrderStatus),
+              )
+            }
+          />
+        }
+        primary={
+          perms.entry ? (
+            <Link to="/production-orders/new" className="btn btn-primary">
+              <Plus size={14} /> New Production Order
+            </Link>
+          ) : null
+        }
+      />
 
       <div className="panel">
         <div className="tbl-wrap tbl-frozen">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <SortableHead table={table} />
             <tbody>
               {isLoading ? (
@@ -434,17 +373,19 @@ function ProductionOrdersListPage(): React.JSX.Element {
                   <td
                     colSpan={columns.length}
                     className="empty-state"
-                    style={{ color: 'var(--red)' }}
+                    style={{ color: 'var(--red2)' }}
                   >
-                    {error instanceof Error ? error.message : 'Failed to load production orders'}
+                    {error instanceof Error
+                      ? error.message
+                      : 'Could not load Production Orders. Try again.'}
                   </td>
                 </tr>
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
                     {search.search || search.status
-                      ? 'No production orders match.'
-                      : 'No production orders yet — Production → Entry → Create Production Order.'}
+                      ? 'No Production Orders match.'
+                      : 'No Production Orders yet.'}
                   </td>
                 </tr>
               ) : (
@@ -460,7 +401,17 @@ function ProductionOrdersListPage(): React.JSX.Element {
                     style={{ cursor: 'pointer' }}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
+                      <td
+                        key={cell.id}
+                        className={cell.column.columnDef.meta?.tdClass}
+                        // Sheet rule: codes, dates and qty stay on one line;
+                        // only the item name may wrap.
+                        style={
+                          cell.column.id === 'itemNameText'
+                            ? { textAlign: 'left' }
+                            : { whiteSpace: 'nowrap' }
+                        }
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -472,16 +423,9 @@ function ProductionOrdersListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-        {total === 0
-          ? 'No production orders'
-          : total > LIST_LIMIT
-            ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-            : `Showing all ${total} order${total === 1 ? '' : 's'}`}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-        💡 Click a row to open it.
-      </div>
+      {isLoading || isError ? null : (
+        <ListFooter total={total} noun="production order" limit={LIST_LIMIT} />
+      )}
     </div>
   );
 }

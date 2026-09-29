@@ -77,6 +77,9 @@ import {
 } from './history';
 
 export { listRelatedOptions } from './related-options';
+// Other modules close linked tasks through this (ADR-190) — never by writing
+// the tasks table themselves.
+export { autoCloseLinkedTasks } from './auto-close';
 
 // ── Shared loaders ────────────────────────────────────────────────────────
 
@@ -134,7 +137,7 @@ async function loadVisibleTask(
     .where(and(eq(tasks.id, id), eq(tasks.companyId, companyId), isNull(tasks.deletedAt)))
     .limit(1);
   const t = rows[0];
-  if (!t || !canViewTask(t, user)) throw new NotFoundError(`Task ${id} not found`);
+  if (!t || !canViewTask(t, user)) throw new NotFoundError('Task not found. Refresh the page.');
   return t;
 }
 

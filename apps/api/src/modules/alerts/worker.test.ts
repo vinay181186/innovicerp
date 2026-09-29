@@ -82,7 +82,7 @@ describe('alerts worker — digestWindowStart', () => {
 });
 
 describe('alerts worker — renderDigestHtml', () => {
-  it('renders code + name + table rows + overflow notice when records exceed cap', () => {
+  it('renders name + labelled headers + table rows + overflow notice when records exceed cap', () => {
     const records: ReadonlyArray<Record<string, string | number | null>> = Array.from(
       { length: 60 },
       (_, i) => ({ so: `SO-${i + 1}`, qty: i }),
@@ -91,16 +91,36 @@ describe('alerts worker — renderDigestHtml', () => {
       userName: 'Test User',
       code: 'AL-005',
       alertName: 'SO Overdue',
+      columns: [
+        { key: 'so', label: 'SO No.' },
+        { key: 'qty', label: 'Order Qty' },
+      ],
+      alertsUrl: 'https://erp.example/alerts',
       records,
     });
-    expect(html).toContain('AL-005');
+    expect(html).not.toContain('AL-005');
     expect(html).toContain('SO Overdue');
+    expect(html).toContain('>SO No.</th>');
+    expect(html).toContain('>Order Qty</th>');
+    expect(html).toContain('href="https://erp.example/alerts"');
     expect(html).toContain('Test User');
     expect(html).toContain('SO-1<');
     expect(html).toContain('SO-50<');
     expect(html).not.toContain('SO-51<');
     expect(html).toContain('and 10 more');
-    expect(html).toContain('60 items');
+    expect(html).toContain('60 items need attention');
+  });
+
+  it('says "1 item needs attention" and shows status labels, not codes', () => {
+    const html = renderDigestHtml({
+      userName: 'Test User',
+      code: 'AL-008',
+      alertName: 'GRN QC Pending',
+      records: [{ grn_code: 'GRN-1', qc_status: 'in_progress' }],
+    });
+    expect(html).toContain('1 item needs attention');
+    expect(html).toContain('>QC In Progress</td>');
+    expect(html).not.toContain('in_progress');
   });
 
   it('HTML-escapes user name, alert name, and record values', () => {

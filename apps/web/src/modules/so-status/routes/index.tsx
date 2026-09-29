@@ -3,42 +3,50 @@
 // dot, line count, customer, BOM-Pending tag, Qty/Done/progress) and a right
 // detail pane (the shared SoStatusDetailView). Reuses GET /so-overview for the
 // left list; the right pane fetches GET /so-status/$id on selection.
+// The selected SO lives in the URL (`?so=<id>`) so refresh and Back keep it.
 
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { z } from 'zod';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { SearchInput } from '@/ui/forms';
 import { useSoOverview } from '../../so-overview/api';
 import { SoStatusDetailView } from '../components/so-status-detail';
 
 export const soStatusIndexRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'so-status',
+  validateSearch: z.object({ so: z.string().optional() }),
   component: SoStatusIndexPage,
 });
 
 // Map our richer overallStatus → legacy left-card dot colour
-// (green=complete, amber=blocked, red=delayed, cyan/blue=in progress, grey=none).
+// (green=complete, red=blocked/delayed, blue=on track, amber=under way, grey=none).
 function dotColor(status: string, hasWork: boolean): string {
   switch (status) {
     case 'completed':
       return 'var(--green)';
     case 'blocked':
-      return 'var(--amber)';
     case 'delayed':
       return 'var(--red)';
     case 'on_track':
+      return 'var(--blue)';
     case 'in_progress':
-      return 'var(--cyan)';
+      return 'var(--amber)';
     default:
-      return hasWork ? 'var(--cyan)' : 'var(--text3)';
+      return hasWork ? 'var(--amber)' : 'var(--text3)';
   }
 }
 
 function SoStatusIndexPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { so: selectedId } = soStatusIndexRoute.useSearch();
+  const navigate = soStatusIndexRoute.useNavigate();
+  const selectSo = (id: string): void => {
+    void navigate({ search: (prev) => ({ ...prev, so: id }), replace: true });
+  };
   const { data, isLoading, isError, error } = useSoOverview({});
 
   // The left pane holds every SO the overview returns (one fetch, no paging),
@@ -72,8 +80,8 @@ function SoStatusIndexPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)', padding: 24 }}>
-        {error instanceof Error ? error.message : 'Failed to load SO list'}
+      <div className="empty-state" style={{ color: 'var(--red2)', padding: 24 }}>
+        {error instanceof Error ? error.message : 'Could not load SO list. Try again.'}
       </div>
     );
   }
@@ -117,21 +125,18 @@ function SoStatusIndexPage(): React.JSX.Element {
             className="text3"
             style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', marginBottom: 6 }}
           >
-            SELECT SO / WO
+            Select SO
           </div>
-          <input
-            className="innovic-input"
-            style={{ width: '100%', fontSize: 12 }}
-            placeholder="🔍 Search SO, customer, client PO, status…"
+          <SearchInput
+            width="full"
+            placeholder="Search SO, customer, Client PO No., status…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={setSearch}
           />
         </div>
         {filtered.length === 0 ? (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 12 }}>
-            {data.rows.length === 0
-              ? 'No SOs found. Add SOs in SO Master.'
-              : 'No SOs match your search.'}
+            {data.rows.length === 0 ? 'No SOs yet.' : 'No SOs match.'}
           </div>
         ) : (
           filtered.map((r) => {
@@ -141,7 +146,7 @@ function SoStatusIndexPage(): React.JSX.Element {
             return (
               <div
                 key={r.id}
-                onClick={() => setSelectedId(r.id)}
+                onClick={() => selectSo(r.id)}
                 style={{
                   padding: '10px 14px',
                   cursor: 'pointer',
@@ -172,7 +177,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                   <span
                     className="text3"
                     style={{
-                      fontSize: 10,
+                      fontSize: 11,
                       background: 'var(--bg4)',
                       padding: '1px 5px',
                       borderRadius: 3,
@@ -195,17 +200,17 @@ function SoStatusIndexPage(): React.JSX.Element {
                 </div>
                 {bomPending ? (
                   <div
-                    style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700, marginTop: 2 }}
+                    style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700, marginTop: 2 }}
                   >
                     ⚠ BOM Pending
                   </div>
                 ) : null}
                 <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
-                  <span className="text3" style={{ fontSize: 10 }}>
-                    Qty: <b>{r.totalRequiredQty}</b>
+                  <span className="text3" style={{ fontSize: 11 }}>
+                    Order Qty: <b>{r.totalRequiredQty}</b>
                   </span>
-                  <span className="text3" style={{ fontSize: 10 }}>
-                    Done: <b style={{ color: 'var(--green)' }}>{r.totalDoneQty}</b>
+                  <span className="text3" style={{ fontSize: 11 }}>
+                    Completed: <b style={{ color: 'var(--green2)' }}>{r.totalDoneQty}</b>
                   </span>
                   <div
                     style={{
@@ -225,7 +230,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                       }}
                     />
                   </div>
-                  <span className="text3" style={{ fontSize: 10 }}>
+                  <span className="text3" style={{ fontSize: 11 }}>
                     {r.overallPct}%
                   </span>
                 </div>

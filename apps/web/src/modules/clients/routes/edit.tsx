@@ -40,15 +40,14 @@ function ClientNewPage(): React.JSX.Element {
         () => void navigate({ to: '/clients/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create client');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Customer. Try again.');
     }
   };
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to Client Master. Ask an admin for L2 Data Entry or above
-        in Sales.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to create Customers. Ask an admin.
       </div>
     );
   }
@@ -56,27 +55,16 @@ function ClientNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link to="/clients" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Client Master
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">New Client</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Create a master record for a customer.
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <ClientForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      <ClientForm
+        mode="create"
+        header={{
+          title: 'New Customer',
+          backLabel: 'Back to Customer Master',
+        }}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }
@@ -102,15 +90,14 @@ function ClientEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/clients/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update client');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');
     }
   };
 
   if (eff && !perms.edit) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have edit access to Client Master. Ask an admin for L2 Data Entry or above in
-        Sales.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to edit Customers. Ask an admin.
       </div>
     );
   }
@@ -118,7 +105,7 @@ function ClientEditPage(): React.JSX.Element {
   if (isLoading) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading client…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading customer…
       </div>
     );
   }
@@ -132,8 +119,8 @@ function ClientEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Client not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Customer not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -143,38 +130,22 @@ function ClientEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link
-        to="/clients/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to client
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
-            >
-              {client.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit Client — {client.name}
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <ClientForm
-            mode="edit"
-            client={client}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      <ClientForm
+        mode="edit"
+        header={{
+          title: 'Edit Customer',
+          subtitle: (
+            <>
+              <span className="td-code">{client.code}</span> · {client.name}
+            </>
+          ),
+          backLabel: 'Back to Customer',
+        }}
+        client={client}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }

@@ -13,13 +13,13 @@ import { authErrorMessage } from './auth-error-message';
 import { rootRoute } from './__root';
 
 const emailSchema = z.object({
-  email: z.string().email('Please enter a valid email'),
+  email: z.string().email('Enter a valid email.'),
 });
 type EmailForm = z.infer<typeof emailSchema>;
 
 const passwordSchema = z.object({
-  email: z.string().email('Please enter a valid email'),
-  password: z.string().min(6, 'Password is at least 6 characters'),
+  email: z.string().email('Enter a valid email.'),
+  password: z.string().min(6, 'Password must be at least 6 characters.'),
 });
 type PasswordForm = z.infer<typeof passwordSchema>;
 
@@ -66,17 +66,8 @@ function LoginPage() {
           {/* Worded so it never confirms that an account exists for the address — the API
               answers the same way either way, and so must we. */}
           <p className="text-sm text-muted-foreground">
-            If an account exists for{' '}
-            <span className="font-medium text-foreground">{sent.email}</span>, a reset link is on
-            its way. Check your inbox (and spam), then click it to choose a new password.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            The link is valid for {RESET_LINK_VALID_MINUTES} minutes and works once. Check Spam if
-            you don&rsquo;t see it.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Some mail scanners can expire one-time links before you click. Ask an admin to set your
-            password directly if it keeps failing.
+            If <span className="font-medium text-foreground">{sent.email}</span> has an account, a
+            reset link is on its way (valid {RESET_LINK_VALID_MINUTES} min). Check Spam.
           </p>
           <Button variant="ghost" size="sm" onClick={() => setSent(null)}>
             Use a different email
@@ -87,9 +78,7 @@ function LoginPage() {
   }
 
   const subtitle =
-    mode === 'reset'
-      ? "Enter your email and we'll send you a link to reset your password."
-      : 'Enter your email and password.';
+    mode === 'reset' ? "Enter your email and we'll send you a link to reset your password." : null;
 
   return (
     <main className="container max-w-md py-16">
@@ -98,7 +87,7 @@ function LoginPage() {
           <h1 className="text-2xl font-semibold tracking-tight">
             {mode === 'reset' ? 'Reset your password' : 'Sign in to Innovic ERP'}
           </h1>
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
+          {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
         </div>
 
         {resetDone && mode === 'password' ? (
@@ -185,13 +174,11 @@ function ResetRequestForm(props: {
     } catch (err) {
       if (err instanceof ApiError) {
         props.onError(
-          err.code === 'network_error'
-            ? 'Could not reach the server. Please try again.'
-            : err.message,
+          err.code === 'network_error' ? 'Could not reach the server. Try again.' : err.message,
         );
         return;
       }
-      props.onError('That request could not be completed. Please try again.');
+      props.onError('Could not send the reset link. Try again.');
       return;
     }
     props.onSent(email);

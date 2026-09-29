@@ -18,20 +18,23 @@
 // listbox (1000) so the QC By dropdown still shows on top, and below the
 // ExitConfirmDialog (600) so the question sits over the form it asks about.
 
-import type { IncomingQcPendingRow } from '@innovic/shared';
+import { type IncomingQcPendingRow, opSrNo } from '@innovic/shared';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { IncomingQcInspectForm } from './incoming-qc-inspect-form';
+import { IncomingQcInspectForm, type IncomingRaisedNc } from './incoming-qc-inspect-form';
 
 export function IncomingQcInspectModal({
   o,
   onClose,
+  onNcRaised,
 }: {
   o: IncomingQcPendingRow;
   onClose: () => void;
+  /** A reject raised an NC — the host shows "NC … raised — Dispose now →". */
+  onNcRaised?: ((nc: IncomingRaisedNc) => void) | undefined;
 }): React.JSX.Element {
   // Whether anything has been typed or attached — reported up by the form.
   // Decides if closing asks first.
@@ -158,6 +161,12 @@ export function IncomingQcInspectModal({
                 · {o.itemName}
               </span>
             ) : null}
+            {o.jcCode ? (
+              <span className="text2" style={{ fontWeight: 600 }}>
+                {' '}
+                · {o.jcCode} Op {o.opSeq != null ? opSrNo(o.opSeq) : ''}
+              </span>
+            ) : null}
           </div>
           <button
             type="button"
@@ -176,7 +185,10 @@ export function IncomingQcInspectModal({
             onCancel={requestClose}
             // Close once the entry has actually landed. The form has already
             // reset itself and the queue refetches behind the box.
-            onDone={onClose}
+            onDone={(nc) => {
+              if (nc) onNcRaised?.(nc);
+              onClose();
+            }}
             onDirtyChange={setDirty}
           />
         ) : eff ? (
@@ -185,7 +197,7 @@ export function IncomingQcInspectModal({
              shown while access is still loading, or every inspector would see
              it flash. */
           <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
-            Your access lets you view this queue but not record an inspection.
+            You do not have permission to inspect this GRN line. Ask an admin.
           </div>
         ) : null}
       </div>

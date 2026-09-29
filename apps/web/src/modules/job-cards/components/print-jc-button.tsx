@@ -43,11 +43,7 @@ export function PrintJcButton({
     if (!pending || printedRef.current) return;
     if (opsQuery.isError) {
       setPending(false);
-      window.alert(
-        opsQuery.error instanceof Error
-          ? `Could not load operations: ${opsQuery.error.message}`
-          : 'Could not load operations for this Job Card.',
-      );
+      window.alert('Could not load operations for this Job Card. Try again.');
       return;
     }
     if (!opsQuery.data) return; // still loading
@@ -61,7 +57,7 @@ export function PrintJcButton({
       actualSize: order?.actualSize ?? null,
     });
     if (!ok) window.alert('Allow popups to print.');
-  }, [pending, opsQuery.data, opsQuery.isError, opsQuery.error, jc, company, order, orderLoading]);
+  }, [pending, opsQuery.data, opsQuery.isError, jc, company, order, orderLoading]);
 
   const onClick = (e: React.MouseEvent): void => {
     e.stopPropagation();

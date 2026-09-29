@@ -42,8 +42,9 @@ export const incomingQcPendingRowSchema = z.object({
    *  the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
-  receivedQty: z.number().int(),
-  pendingQty: z.number().int(),
+  // Decimal on KGS / MTR receipts (0172) — up to 3 places, like the GRN line.
+  receivedQty: z.number(),
+  pendingQty: z.number(),
   waitDays: z.number().int().nonnegative(),
 });
 export type IncomingQcPendingRow = z.infer<typeof incomingQcPendingRowSchema>;
@@ -74,9 +75,9 @@ export const incomingQcCompletedRowSchema = z.object({
    *  the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
-  receivedQty: z.number().int(),
-  acceptedQty: z.number().int(),
-  rejectedQty: z.number().int(),
+  receivedQty: z.number(),
+  acceptedQty: z.number(),
+  rejectedQty: z.number(),
   disposition: incomingQcDispositionSchema,
   /** ISO timestamp the QC was recorded (for time-ordering the completed feed). */
   qcAt: z.string().nullable(),
@@ -92,16 +93,16 @@ export type IncomingQcCompletedRow = z.infer<typeof incomingQcCompletedRowSchema
 
 export const incomingQcMetricsSchema = z.object({
   grnsWaiting: z.number().int().nonnegative(),
-  pendingQty: z.number().int().nonnegative(),
+  pendingQty: z.number().nonnegative(),
   avgWaitDays: z.number().nonnegative(),
   oldestDays: z.number().int().nonnegative(),
   oldestGrnNo: z.string().nullable(),
   // Σ over pending GRN lines of pendingQty × po_lines.rate (legacy "Value in
   // QC", HTML L23839). Money stuck waiting for inspection.
   valueInQc: z.number().nonnegative().nullable(), // NULL when prices hidden
-  todayAcceptedQty: z.number().int().nonnegative(),
+  todayAcceptedQty: z.number().nonnegative(),
   todayAcceptedGrns: z.number().int().nonnegative(),
-  todayRejectedQty: z.number().int().nonnegative(),
+  todayRejectedQty: z.number().nonnegative(),
 });
 export type IncomingQcMetrics = z.infer<typeof incomingQcMetricsSchema>;
 
@@ -118,8 +119,9 @@ export type IncomingQcResponse = z.infer<typeof incomingQcResponseSchema>;
 // single line so an inline form can't disturb the rest of the GRN.
 export const submitIncomingQcInputSchema = z
   .object({
-    acceptedQty: z.number().int().nonnegative(),
-    rejectedQty: z.number().int().nonnegative(),
+    // Decimal on KGS / MTR receipts (0172): max 3 places, same as the GRN line.
+    acceptedQty: z.number().nonnegative().multipleOf(0.001),
+    rejectedQty: z.number().nonnegative().multipleOf(0.001),
     /** Mandatory — who did the QC. Kept as a NAME even now that the field is a
      *  dropdown: a completed inspection is a record of who signed it off on the
      *  day, and it must not change if that person is later renamed or removed. */

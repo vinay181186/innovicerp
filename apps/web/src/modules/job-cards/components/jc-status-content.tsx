@@ -98,8 +98,8 @@ function JcStatusEditContent({ id }: { id: string }): React.JSX.Element {
   }
   if (isError || modelError || !jc || !model) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Job card not found'}
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
+        {error instanceof Error ? error.message : 'Job Card not found.'}
       </div>
     );
   }
@@ -448,7 +448,7 @@ function JcStatusEditForm({
     });
     // Never leave the new line hidden behind a collapsed section.
     setDetailOpen(true);
-    const kindLabel = kind === 'qc' ? 'QC' : kind === 'outsource' ? 'OSP' : 'machining';
+    const kindLabel = kind === 'qc' ? 'QC' : kind === 'outsource' ? 'Outsource' : 'Machining';
     const need =
       kind === 'qc'
         ? 'pick the QC process'
@@ -457,7 +457,7 @@ function JcStatusEditForm({
           : 'pick a machine and operation name';
     setFlashIdx(newPos - 1);
     scrollToNewOp.current = true;
-    setAddNote(`✅ Op line #${newPos} (${kindLabel}) added below — now ${need}, then Save.`);
+    setAddNote(`Op ${fmtOpSrNo(newPos)} (${kindLabel}) added — ${need}, then Save.`);
   };
 
   const submitting = update.isPending;
@@ -522,7 +522,7 @@ function JcStatusEditForm({
       void queryClient.invalidateQueries({ queryKey: opEntryKeys.all });
       exit.leave(goBack);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');
     }
   };
 
@@ -659,8 +659,6 @@ function JcStatusEditForm({
             fontSize: 11,
             color: 'var(--cyan)',
             fontWeight: 700,
-            letterSpacing: '.08em',
-            textTransform: 'uppercase',
             marginBottom: 8,
             padding: 0,
           }}
@@ -678,7 +676,7 @@ function JcStatusEditForm({
           <button
             type="button"
             className="btn btn-sm"
-            style={{ color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)' }}
+            style={{ color: 'var(--green2)', border: '1px solid rgba(34,197,94,0.3)' }}
             onClick={() => addOp('qc')}
           >
             + Add QC Op
@@ -686,10 +684,10 @@ function JcStatusEditForm({
           <button
             type="button"
             className="btn btn-sm"
-            style={{ color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' }}
+            style={{ color: 'var(--amber2)', border: '1px solid rgba(245,158,11,0.4)' }}
             onClick={() => addOp('outsource')}
           >
-            + Add OSP Op
+            + Add Outsource Op
           </button>
         </div>
       </div>
@@ -697,7 +695,7 @@ function JcStatusEditForm({
         <div
           role="status"
           style={{
-            color: 'var(--green)',
+            color: 'var(--green2)',
             background: 'rgba(34,197,94,0.08)',
             border: '1px solid rgba(34,197,94,0.3)',
             borderRadius: 6,
@@ -714,7 +712,7 @@ function JcStatusEditForm({
         <div
           role="alert"
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
             borderRadius: 6,
@@ -730,9 +728,7 @@ function JcStatusEditForm({
         <div style={{ marginBottom: 16 }}>
           {ops.length === 0 ? (
             <div className="panel">
-              <div className="empty-state">
-                No operations — click “+ Add Op”, “+ Add QC Op”, or “+ Add OSP Op”.
-              </div>
+              <div className="empty-state">No operations yet.</div>
             </div>
           ) : (
             ops.map((o, i) => {
@@ -789,9 +785,9 @@ function JcStatusEditForm({
       {error ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--red)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,
@@ -805,7 +801,7 @@ function JcStatusEditForm({
       {balanceNote ? (
         <div
           style={{
-            color: 'var(--green)',
+            color: 'var(--green2)',
             background: 'rgba(34,197,94,0.08)',
             border: '1px solid rgba(34,197,94,0.3)',
             borderRadius: 6,
@@ -834,9 +830,8 @@ function JcStatusEditForm({
             const idx = balanceOpIdx;
             const op = ops[idx];
             if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
-            setBalanceNote(
-              `Outsourced ${qtyDone} pc(s) from Op${fmtOpSrNo(idx + 1)} — JW OSP purchase request raised.`,
-            );
+            const seq = (op?.id ? enrichedById.get(op.id)?.opSeq : undefined) ?? idx + 1;
+            setBalanceNote(`Outsource PR raised for ${qtyDone} pcs (Op ${fmtOpSrNo(seq)}).`);
             setBalanceOpIdx(null);
           }}
         />
@@ -848,11 +843,17 @@ function JcStatusEditForm({
         </Link>
         <button
           type="button"
-          className="btn btn-success"
+          className="btn btn-primary"
           disabled={submitting}
           onClick={() => void onSave()}
         >
-          {submitting ? <Loader2 size={13} className="animate-spin" /> : null} ✓ Save Job Card
+          {submitting ? (
+            <>
+              <Loader2 size={13} className="animate-spin" /> Saving…
+            </>
+          ) : (
+            'Save Changes'
+          )}
         </button>
       </div>
     </div>

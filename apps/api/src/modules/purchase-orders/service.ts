@@ -40,6 +40,8 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
+import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import {
   AuthorizationError,
   ConflictError,
@@ -57,7 +59,8 @@ import {
   poCodePrefix,
   withDocRevision,
 } from '@innovic/shared';
-import type { DocumentTraceability } from '@innovic/shared';
+import type { DocumentTraceability, ShortClosePurchaseOrderInput } from '@innovic/shared';
+import { PO_SHORT_CLOSE_REASON_MIN } from '@innovic/shared';
 import type {
   CreatePurchaseOrderFromPrInput,
   CreatePurchaseOrderInput,
@@ -75,6 +78,19 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+// Screen words for PO status codes, for error text only (matches the web's
+// po-labels.ts). Unknown codes fall back to Title Case.
+const PO_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  open: 'Open',
+  partial: 'Partly Received',
+  qc_pending: 'QC Pending',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
+};
+const poStatusLabel = (status: string): string =>
+  PO_STATUS_LABEL[status] ?? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function poDetail(code: string, vendorCodeText: string | null | undefined): string {
   return vendorCodeText ? `${code} — ${vendorCodeText}` : code;
@@ -110,12 +126,12 @@ function assertPrCanTakeAnotherPo(
 ): void {
   if (balance.balanceClosed) {
     throw new ConflictError(
-      `PR ${pr.code} has had its remaining balance closed — nothing further can be ordered against it`,
+      `PR ${pr.code} is Short Closed. Nothing more can be ordered against it.`,
     );
   }
   if (balance.balanceQty <= 0) {
     throw new ConflictError(
-      `PR ${pr.code} has nothing left to order (${balance.orderedQty} of ${pr.qty} already on a purchase order)`,
+      `PR ${pr.code} has no Pending Qty (${balance.orderedQty} of ${pr.qty} already on a PO).`,
     );
   }
 }
@@ -130,10 +146,11 @@ function assertPrQtyWithinBalance(
   askedQty: number,
   lineCount: number,
 ): void {
-  if (askedQty > balanceQty) {
-    const asks = lineCount > 1 ? `these ${lineCount} lines ask` : 'this line asks';
+  // 3 places — decimal quantities (0172) must not trip on 0.1 + 0.2 drift.
+  if (Math.round(askedQty * 1000) / 1000 > balanceQty) {
+    const onLines = lineCount > 1 ? ` (across ${lineCount} lines)` : '';
     throw new ValidationError(
-      `PR ${pr.code} has ${balanceQty} left to order; ${asks} for ${askedQty}.`,
+      `Qty (${askedQty})${onLines} cannot be more than Pending Qty (${balanceQty}) on PR ${pr.code}.`,
     );
   }
 }
@@ -210,7 +227,8 @@ async function assertLinesWithinPrBalances(
     );
   const prById = new Map(prRows.map((r) => [r.id, r]));
   for (const prId of prIds) {
-    if (!prById.has(prId)) throw new NotFoundError(`Purchase request ${prId} not found`);
+    if (!prById.has(prId))
+      throw new NotFoundError('PR not found. It may have been moved to Trash.');
   }
 
   // What THIS purchase order already contributes to each PR's ordered quantity.
@@ -236,15 +254,18 @@ async function assertLinesWithinPrBalances(
 
   // One round trip for every PR on the form — not one per PR.
   const balances = await loadPrBalances(tx, prRows);
+  const switches = await readApprovalSwitches(tx, companyId);
   for (const pr of prRows) {
     if (pr.status === 'cancelled') {
-      throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
+      throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
     }
     const balance = balances.get(pr.id)!;
     const mine = mineByPr.get(pr.id) ?? 0;
     const asked = askedByPr.get(pr.id) ?? 0;
     // Neutral or a reduction — nothing new is being taken, so nothing to refuse.
     if (asked <= mine) continue;
+    // ADR-189 review — taking MORE from a PR on edit is a conversion too.
+    assertPrConvertible(pr, switches);
     // Everything below is measured EXCLUDING this PO's own lines, so the
     // refusals read the same way they do on the create paths.
     assertPrCanTakeAnotherPo(pr, {
@@ -271,7 +292,7 @@ async function assertVendorExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Vendor ${vendorId} not found in this company`);
+    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
   }
 }
 
@@ -287,9 +308,7 @@ async function assertItemIdsExist(
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = unique.filter((id) => !found.has(id));
-    throw new ValidationError(`Item id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('Item not found. Please select the Item Code again.');
   }
 }
 
@@ -319,7 +338,7 @@ function resolveLineItemRefs(
   }
   const code = line.itemCodeText?.trim();
   if (!code) {
-    throw new ValidationError('itemId or itemCodeText is required');
+    throw new ValidationError('Item Code is required.');
   }
   const found = resolved.get(code);
   return found ? { itemId: found, itemCodeText: null } : { itemId: null, itemCodeText: code };
@@ -328,7 +347,7 @@ function resolveLineItemRefs(
 function assignLineNos(lines: PurchaseOrderLineInput[], startFrom: number): number[] {
   const provided = lines.filter((l) => l.lineNo !== undefined);
   if (provided.length > 0 && provided.length !== lines.length) {
-    throw new ValidationError('Provide lineNo on every line or none');
+    throw new ValidationError('Ln is required on every row, or leave all blank.');
   }
   if (provided.length === 0) {
     return lines.map((_, i) => startFrom + i);
@@ -338,7 +357,7 @@ function assignLineNos(lines: PurchaseOrderLineInput[], startFrom: number): numb
   for (const l of lines) {
     const n = l.lineNo!;
     if (seen.has(n)) {
-      throw new ValidationError(`Duplicate lineNo ${n} within input`);
+      throw new ValidationError(`Ln ${n} is used twice. Each row needs its own Ln.`);
     }
     seen.add(n);
     out.push(n);
@@ -445,6 +464,41 @@ function escapeLikeTerm(raw: string): string {
   return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
+// ADR-189 — the company's approval switches (approval_config). A company with
+// no row takes the column defaults, which are ON: approval is the safe default,
+// switched off deliberately on the Approval Configuration screen. Read inside
+// the caller's transaction.
+async function readApprovalSwitches(
+  tx: DbTransaction,
+  companyId: string,
+): Promise<{ poApproval: boolean; prApproval: boolean }> {
+  const rows = await tx
+    .select({ poApproval: approvalConfig.poApproval, prApproval: approvalConfig.prApproval })
+    .from(approvalConfig)
+    .where(and(eq(approvalConfig.companyId, companyId), isNull(approvalConfig.deletedAt)))
+    .limit(1);
+  return { poApproval: rows[0]?.poApproval ?? true, prApproval: rows[0]?.prApproval ?? true };
+}
+
+/** ADR-189 — only an approved PR may become a PO while PR approval is on.
+ *  A PR the SYSTEM raised from a job-card op (outsourced routing: pr_type
+ *  'jw_osp' / source_jc_op_id) is exempt: nobody asked for it by hand, and the
+ *  PO raised from it still goes through PO approval. */
+function assertPrConvertible(
+  pr: { code: string; status: string; prType?: string | null; sourceJcOpId?: string | null },
+  switches: { prApproval: boolean },
+): void {
+  if (pr.status === 'cancelled') {
+    throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
+  }
+  const machineRaised = pr.prType === 'jw_osp' || Boolean(pr.sourceJcOpId);
+  if (switches.prApproval && pr.status === 'open' && !machineRaised) {
+    throw new ConflictError(
+      `Cannot create a PO from PR ${pr.code}: it is not approved yet. Approve the PR first.`,
+    );
+  }
+}
+
 export async function listPurchaseOrders(
   input: ListPurchaseOrdersQuery,
   user: AuthContext,
@@ -501,6 +555,28 @@ export async function listPurchaseOrders(
     const vendorFrag = input.vendorId ? sql`AND po.vendor_id = ${input.vendorId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND po.po_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND po.po_date <= ${input.toDate}::date` : sql``;
+    // ADR-190 addendum — `?jobWorkOrderId=`: only the job-work / service POs
+    // that carry work for that JWSO. A PO line reaches the JWSO through the JC
+    // op it sends out (pol.source_jc_op_id, or the source PR's
+    // source_jc_op_id) → jc_ops.job_card_id → job_cards.source_jw_line_id →
+    // job_work_order_lines.job_work_order_id. There is no direct PO → JWSO link.
+    const jwFrag = input.jobWorkOrderId
+      ? sql`AND po.po_type IN ('job_work', 'service')
+          AND EXISTS (
+            SELECT 1
+            FROM public.purchase_order_lines jpol
+            LEFT JOIN public.purchase_requests jpr
+              ON jpr.id = jpol.source_pr_id AND jpr.deleted_at IS NULL
+            JOIN public.jc_ops jop
+              ON jop.id = COALESCE(jpol.source_jc_op_id, jpr.source_jc_op_id)
+            JOIN public.job_cards jjc ON jjc.id = jop.job_card_id AND jjc.deleted_at IS NULL
+            JOIN public.job_work_order_lines jjwl
+              ON jjwl.id = jjc.source_jw_line_id AND jjwl.deleted_at IS NULL
+            WHERE jpol.purchase_order_id = po.id
+              AND jpol.deleted_at IS NULL
+              AND jjwl.job_work_order_id = ${input.jobWorkOrderId}::uuid
+          )`
+      : sql``;
 
     const result = await tx.execute(sql`
       SELECT
@@ -520,15 +596,21 @@ export async function listPurchaseOrders(
         po.approval_remarks AS "approvalRemarks",
         po.rejected_by AS "rejectedBy", po.rejected_at AS "rejectedAt",
         po.rejection_reason AS "rejectionReason", po.remarks,
+        po.short_closed_at AS "shortClosedAt", po.short_closed_by AS "shortClosedBy",
+        po.short_close_reason AS "shortCloseReason",
         po.created_at AS "createdAt", po.created_by AS "createdBy",
         po.updated_at AS "updatedAt", po.updated_by AS "updatedBy",
         po.deleted_at AS "deletedAt",
         v.name AS "vendorName",
         cu.full_name AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
-        COALESCE(line_agg.total_qty, 0)::int   AS "totalQty",
-        COALESCE(line_agg.received_qty, 0)::int AS "receivedQty",
-        COALESCE(dc_agg.sent_qty, 0)::int      AS "dcSentQty"
+        COALESCE(line_agg.total_qty, 0)::float8   AS "totalQty",
+        COALESCE(line_agg.received_qty, 0)::float8 AS "receivedQty",
+        -- ADR-189 — the one Pending rule (lib/po-pending.ts): per line, clamped,
+        -- and nothing once the PO is closed / short-closed / cancelled.
+        (CASE WHEN po.status IN ('draft', 'open', 'partial', 'qc_pending')
+              THEN COALESCE(line_agg.pending_qty, 0) ELSE 0 END)::float8 AS "pendingQty",
+        COALESCE(dc_agg.sent_qty, 0)::float8      AS "dcSentQty"
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.users cu ON cu.id = po.created_by
@@ -536,24 +618,23 @@ export async function listPurchaseOrders(
         SELECT purchase_order_id,
                COUNT(*) AS line_count,
                SUM(qty) AS total_qty,
-               SUM(received_qty) AS received_qty
+               SUM(received_qty) AS received_qty,
+               SUM(GREATEST(0, qty - COALESCE(received_qty, 0))) AS pending_qty
         FROM public.purchase_order_lines
         WHERE deleted_at IS NULL
         GROUP BY purchase_order_id
       ) line_agg ON line_agg.purchase_order_id = po.id
-      -- What has already gone OUT on challans against this PO's lines — every
-      -- non-cancelled DC, the same population sumSentQtyByPoLine counts for the
-      -- per-line sendable check — so the +New DC picker can drop a PO whose
-      -- lines are all fully sent without asking the sendable route per PO.
+      -- What has already gone OUT against this PO's lines — the ONE sent
+      -- figure (OSP DCs + JW DC Outwards, lib/po-line-sent.ts) the per-line
+      -- sendable check uses — so the +New DC picker can drop a PO whose lines
+      -- are all fully sent without asking the sendable route per PO.
+      -- One GROUP BY over the two challan line tables, joined once (not a
+      -- correlated sum per PO line).
       LEFT JOIN (
-        SELECT pl.purchase_order_id, SUM(dl.qty) AS sent_qty
-        FROM public.delivery_challan_lines dl
-        JOIN public.delivery_challans dc ON dc.id = dl.delivery_challan_id
-        JOIN public.purchase_order_lines pl ON pl.id = dl.purchase_order_line_id
-        WHERE dl.deleted_at IS NULL
-          AND dc.deleted_at IS NULL
-          AND dc.status != 'cancelled'
-          AND pl.deleted_at IS NULL
+        SELECT pl.purchase_order_id, SUM(ls.sent) AS sent_qty
+        FROM ${poLineSentGroupedSql(companyId)} ls
+        JOIN public.purchase_order_lines pl
+          ON pl.id = ls.purchase_order_line_id AND pl.deleted_at IS NULL
         GROUP BY pl.purchase_order_id
       ) dc_agg ON dc_agg.purchase_order_id = po.id
       WHERE po.company_id = ${companyId}::uuid
@@ -564,6 +645,7 @@ export async function listPurchaseOrders(
         ${vendorFrag}
         ${fromFrag}
         ${toFrag}
+        ${jwFrag}
       ORDER BY po.po_date DESC, po.code DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
@@ -589,6 +671,7 @@ export async function listPurchaseOrders(
         ${vendorFrag}
         ${fromFrag}
         ${toFrag}
+        ${jwFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
@@ -625,6 +708,9 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     rejectedBy: (r['rejectedBy'] as string | null) ?? null,
     rejectedAt: maybeTsLike(r['rejectedAt']),
     rejectionReason: (r['rejectionReason'] as string | null) ?? null,
+    shortClosedAt: maybeTsLike(r['shortClosedAt']),
+    shortClosedBy: (r['shortClosedBy'] as string | null) ?? null,
+    shortCloseReason: (r['shortCloseReason'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
@@ -636,6 +722,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     receivedQty: Number(r['receivedQty'] ?? 0),
+    pendingQty: Number(r['pendingQty'] ?? 0),
     dcSentQty: Number(r['dcSentQty'] ?? 0),
   };
 }
@@ -660,7 +747,7 @@ export async function getPurchaseOrder(
       )
       .limit(1);
     const headerRow = headerRows[0];
-    if (!headerRow) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!headerRow) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
     const lineRows = await tx
       .select({
@@ -684,6 +771,9 @@ export async function getPurchaseOrder(
         // to a job-work order, not to a customer PO, so it has no client PO
         // line number to offer -- an OSP line sourced that way stays null.
         clientPoLineNo: salesOrderLines.clientPoLineNo,
+        // The item's unit off the master, for the printed UOM column. A PO line
+        // stores none of its own; null on a hand-typed line with no item.
+        uom: sql<string | null>`${items.uom}::text`,
         sourcePrCode: purchaseRequests.code,
       })
       .from(purchaseOrderLines)
@@ -737,7 +827,14 @@ export async function getPurchaseOrder(
 
     const header = toPurchaseOrder(headerRow.row);
     const lines = lineRows.map((r) =>
-      toPurchaseOrderLine(r.row, r.itemCode, r.sourcePrCode, r.itemRevision, r.clientPoLineNo),
+      toPurchaseOrderLine(
+        r.row,
+        r.itemCode,
+        r.sourcePrCode,
+        r.itemRevision,
+        r.clientPoLineNo,
+        r.uom,
+      ),
     );
     return {
       ...(showMoney ? header : hidePoHeaderMoney(header)),
@@ -774,6 +871,9 @@ function toPurchaseOrder(row: typeof purchaseOrders.$inferSelect): PurchaseOrder
     rejectedBy: row.rejectedBy,
     rejectedAt: maybeTsLike(row.rejectedAt),
     rejectionReason: row.rejectionReason,
+    shortClosedAt: maybeTsLike(row.shortClosedAt),
+    shortClosedBy: row.shortClosedBy ?? null,
+    shortCloseReason: row.shortCloseReason ?? null,
     remarks: row.remarks,
     // A bare purchase_orders row carries no join, so there is no creator NAME
     // to report here -- only the uuid in createdBy. The list and detail reads
@@ -806,6 +906,8 @@ function toPurchaseOrderLine(
    *  sourced from a job-work order), and on the write-back paths that return a
    *  freshly inserted row without the join. */
   clientPoLineNo: string | null = null,
+  /** items.uom joined on item_id -- detail read only, null elsewhere. */
+  uom: string | null = null,
 ): PurchaseOrderLine {
   return {
     id: row.id,
@@ -817,6 +919,7 @@ function toPurchaseOrderLine(
     itemCode,
     itemRevision,
     clientPoLineNo,
+    uom,
     itemName: row.itemName,
     qty: row.qty,
     rate: row.rate,
@@ -916,6 +1019,8 @@ export async function createPurchaseOrder(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // ADR-189 — approval switches, read once for the whole create.
+    const switches = await readApprovalSwitches(tx, companyId);
     // The PO type decides WHICH SERIES numbers this order, so it is resolved
     // before the code. Same expression (and same default) the insert below
     // writes to the po_type column — the two must never drift apart, or a PO
@@ -985,10 +1090,8 @@ export async function createPurchaseOrder(
       const prById = new Map(prRows.map((r) => [r.id, r]));
       for (const prId of distinctPrIds) {
         const pr = prById.get(prId);
-        if (!pr) throw new NotFoundError(`Purchase request ${prId} not found`);
-        if (pr.status === 'cancelled') {
-          throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
-        }
+        if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
+        assertPrConvertible(pr, switches);
         sourcePrs.push(pr);
       }
       // What this PO asks of each PR, summed over its own lines.
@@ -1033,8 +1136,10 @@ export async function createPurchaseOrder(
     // 'draft' whenever Approval Configuration had PO approval on. That branch
     // was already unreachable: the shared schema defaults `status` to 'draft',
     // so `!input.header.status` was never true and the config was never read.
-    // Opening straight at 'open' is now the deliberate rule, not an accident.
-    const headerStatus = 'open' as const;
+    // ADR-189 supersedes that: the switch IS read now. With PO approval on (the
+    // default) a new PO is born 'draft' and goes through approvePurchaseOrder
+    // (amount ceiling, not self); with it off it opens straight away.
+    const headerStatus = switches.poApproval ? ('draft' as const) : ('open' as const);
     const totals = computePoTotals(
       input.lines,
       input.header.sgstPct ?? 0,
@@ -1116,6 +1221,8 @@ export async function createPurchaseOrder(
         updatedBy: user.id,
       };
     });
+    // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+    await assertLineQtysFitUom(tx, companyId, lineValues);
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineValues).returning();
 
     // Advance every linked outsource op, exactly as the from-PR path does at
@@ -1507,7 +1614,7 @@ export async function updatePurchaseOrder(
       )
       .limit(1);
     const existingHdr = existingHdrRows[0];
-    if (!existingHdr) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!existingHdr) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
     // The lines as they stand BEFORE this save. Loaded here, once, because both
     // the goods-movement lock below and the revision check further down compare
@@ -1541,7 +1648,7 @@ export async function updatePurchaseOrder(
     const lockReason = goodsDoc
       ? `already has goods moved against it (${goodsDoc})`
       : existingHdr.status === 'cancelled'
-        ? 'is cancelled'
+        ? 'is Cancelled'
         : null;
     if (lockReason !== null) {
       const h0 = input.header;
@@ -1550,17 +1657,17 @@ export async function updatePurchaseOrder(
         input.lines !== undefined &&
         (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))
       ) {
-        lockedChanges.push('lines / rates');
+        lockedChanges.push('Lines / Rates');
       }
       if (h0.vendorId !== undefined && (h0.vendorId ?? null) !== existingHdr.vendorId) {
-        lockedChanges.push('vendor');
+        lockedChanges.push('Vendor');
       }
       if (h0.poType !== undefined && h0.poType !== existingHdr.poType)
-        lockedChanges.push('PO type');
+        lockedChanges.push('PO Type');
       if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate)
-        lockedChanges.push('PO date');
+        lockedChanges.push('PO Date');
       if (h0.taxType !== undefined && (h0.taxType ?? null) !== existingHdr.taxType) {
-        lockedChanges.push('tax type');
+        lockedChanges.push('Tax Type');
       }
       for (const [label, next, current] of [
         ['SGST %', h0.sgstPct, existingHdr.sgstPct],
@@ -1571,9 +1678,8 @@ export async function updatePurchaseOrder(
       }
       if (lockedChanges.length > 0) {
         throw new ValidationError(
-          `PO ${existingHdr.code} ${lockReason}, so ${lockedChanges.join(', ')} ` +
-            `can no longer be changed. Raise a new PO for the difference. ` +
-            `Due date, remarks and the PR reference can still be edited.`,
+          `Cannot change ${lockedChanges.join(', ')} on PO ${existingHdr.code}: it ${lockReason}. ` +
+            `Raise a new PO for the difference. Due Date, Remarks and PR No. can still be edited.`,
         );
       }
     }
@@ -1629,6 +1735,45 @@ export async function updatePurchaseOrder(
     );
     const newCode = bumpRevision ? bumpDocRevision(oldCode) : oldCode;
     if (bumpRevision) updates['code'] = newCode;
+
+    // ADR-189 review — an approved PO whose COMMERCIAL terms change (lines,
+    // vendor, tax) goes back to draft for re-approval while PO approval is on:
+    // otherwise approving 10k and then editing to 10 lakh bypasses the ceiling.
+    // The edit form always posts the lines, so a line change is judged on what
+    // was bought (items / qty / rate / lines added or dropped), never on due
+    // date or remarks. A PO with goods already moved is left alone: its
+    // commercial fields are locked above, and re-drafting it would strand
+    // receipts on a draft.
+    const commercialChange =
+      bumpRevision &&
+      !goodsDoc &&
+      ((input.lines !== undefined &&
+        (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))) ||
+        (h.vendorId !== undefined && (h.vendorId ?? null) !== (existingHdr.vendorId ?? null)) ||
+        (showMoney &&
+          ((h.sgstPct !== undefined && pctToString(h.sgstPct) !== existingHdr.sgstPct) ||
+            (h.cgstPct !== undefined && pctToString(h.cgstPct) !== existingHdr.cgstPct) ||
+            (h.igstPct !== undefined && pctToString(h.igstPct) !== existingHdr.igstPct))));
+    if (commercialChange && existingHdr.status === 'open') {
+      const switches = await readApprovalSwitches(tx, companyId);
+      if (switches.poApproval) {
+        updates['status'] = 'draft';
+        updates['approvedBy'] = null;
+        updates['approvedAt'] = null;
+        updates['approvalRemarks'] = `Re-approval needed: edited to ${newCode}`;
+        await emitActivityLog(
+          tx,
+          {
+            action: 'APPROVAL_WITHDRAWN',
+            entity: 'Purchase Order',
+            detail: `${oldCode} → ${newCode}: items / qty / rate / vendor / tax changed after approval; back to Draft for re-approval`,
+            refId: newCode,
+          },
+          companyId,
+          user,
+        );
+      }
+    }
 
     await tx.update(purchaseOrders).set(updates).where(eq(purchaseOrders.id, id));
 
@@ -1715,7 +1860,13 @@ async function mergeLines(
   showMoney: boolean,
 ): Promise<void> {
   const existing = await tx
-    .select({ id: purchaseOrderLines.id, lineNo: purchaseOrderLines.lineNo })
+    .select({
+      id: purchaseOrderLines.id,
+      lineNo: purchaseOrderLines.lineNo,
+      itemId: purchaseOrderLines.itemId,
+      sourcePrId: purchaseOrderLines.sourcePrId,
+      sourceJcOpId: purchaseOrderLines.sourceJcOpId,
+    })
     .from(purchaseOrderLines)
     .where(
       and(
@@ -1746,6 +1897,16 @@ async function mergeLines(
   }
 
   const absentIds = existing.map((e) => e.id).filter((eid) => !seenInputIds.has(eid));
+  // ADR-189 — a line that covers an outsourced job-card op cannot simply be
+  // dropped on edit: the op would keep pointing at a deleted line and wait for
+  // it forever. Rejecting or short-closing the PO releases the op properly.
+  const droppedOsp = existing.find((e) => absentIds.includes(e.id) && e.sourceJcOpId);
+  if (droppedOsp) {
+    throw new ConflictError(
+      `Line ${droppedOsp.lineNo} covers an outsourced Job Card operation and cannot be removed here. ` +
+        'Reject the PO (draft) or Short Close it to release the operation.',
+    );
+  }
   if (absentIds.length > 0) {
     await tx
       .update(purchaseOrderLines)
@@ -1762,7 +1923,15 @@ async function mergeLines(
       lineUpdate['itemCodeText'] = refs.itemCodeText;
     }
     if (u.data.itemName !== undefined) lineUpdate['itemName'] = u.data.itemName;
-    if (u.data.qty !== undefined) lineUpdate['qty'] = u.data.qty;
+    if (u.data.qty !== undefined) {
+      // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+      const itemIdNow =
+        'itemId' in lineUpdate
+          ? (lineUpdate['itemId'] as string | null)
+          : (existingById.get(u.id)?.itemId ?? null);
+      await assertLineQtysFitUom(tx, companyId, [{ itemId: itemIdNow, qty: u.data.qty }]);
+      lineUpdate['qty'] = u.data.qty;
+    }
     if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = rateToString(u.data);
     // received_qty is mutated by the GRN cascade only (T-036c). The form
     // never re-writes it; ignore even if the caller sends one.
@@ -1770,16 +1939,38 @@ async function mergeLines(
     if (u.data.sourceSoLineId !== undefined)
       lineUpdate['sourceSoLineId'] = u.data.sourceSoLineId ?? null;
     if (u.data.sourceJcOpId !== undefined) lineUpdate['sourceJcOpId'] = u.data.sourceJcOpId ?? null;
-    // The line's PR link is editable like any other field on the line. NOTE:
-    // moving or clearing it does NOT unlink the PR it used to point at (the PR
-    // keeps its po_id / 'po_created' status) — unlinking on removal is a
-    // separate decision, deliberately not taken here.
+    // The line's PR link is editable like any other field on the line. Moving
+    // or clearing it is squared up below (ADR-189): the new PR is marked
+    // converted, and the old one reopens once no live PO line holds it.
     if (u.data.sourcePrId !== undefined) lineUpdate['sourcePrId'] = u.data.sourcePrId ?? null;
     if (u.data.ramRemark !== undefined) lineUpdate['ramRemark'] = u.data.ramRemark ?? null;
     if (u.data.lineRemarks !== undefined) lineUpdate['lineRemarks'] = u.data.lineRemarks ?? null;
 
     await tx.update(purchaseOrderLines).set(lineUpdate).where(eq(purchaseOrderLines.id, u.id));
   }
+
+  // ADR-189 — PO edit follows PO create: a line added against a PR inherits the
+  // PR's SO line and job-card op (unless named), the op is linked to the new
+  // PO line, and the PR is marked converted. Same helpers as create.
+  const newPrIds = [...new Set(toInsert.flatMap((l) => (l.sourcePrId ? [l.sourcePrId] : [])))];
+  const prLinkRows =
+    newPrIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: purchaseRequests.id,
+            sourceJcOpId: purchaseRequests.sourceJcOpId,
+            sourceSoLineId: purchaseRequests.sourceSoLineId,
+          })
+          .from(purchaseRequests)
+          .where(
+            and(
+              inArray(purchaseRequests.id, newPrIds),
+              eq(purchaseRequests.companyId, companyId),
+              isNull(purchaseRequests.deletedAt),
+            ),
+          );
+  const prLinkById = new Map(prLinkRows.map((r) => [r.id, r]));
 
   if (toInsert.length > 0) {
     const survivingMax = existing
@@ -1800,8 +1991,12 @@ async function mergeLines(
         rate: rateToString(l),
         receivedQty: l.receivedQty ?? 0,
         dueDate: l.dueDate ?? null,
-        sourceSoLineId: l.sourceSoLineId ?? null,
-        sourceJcOpId: l.sourceJcOpId ?? null,
+        sourceSoLineId:
+          l.sourceSoLineId ??
+          (l.sourcePrId ? (prLinkById.get(l.sourcePrId)?.sourceSoLineId ?? null) : null),
+        sourceJcOpId:
+          l.sourceJcOpId ??
+          (l.sourcePrId ? (prLinkById.get(l.sourcePrId)?.sourceJcOpId ?? null) : null),
         sourcePrId: l.sourcePrId ?? null,
         ramRemark: l.ramRemark ?? null,
         lineRemarks: l.lineRemarks ?? null,
@@ -1809,7 +2004,85 @@ async function mergeLines(
         updatedBy: user.id,
       };
     });
-    await tx.insert(purchaseOrderLines).values(values);
+    // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+    await assertLineQtysFitUom(tx, companyId, values);
+    const insertedLines = await tx.insert(purchaseOrderLines).values(values).returning();
+    for (const line of insertedLines) {
+      if (!line.sourceJcOpId) continue;
+      await linkJcOpToPoLine(tx, {
+        companyId,
+        jcOpId: line.sourceJcOpId,
+        purchaseOrderLineId: line.id,
+        qty: line.qty,
+        userId: user.id,
+      });
+    }
+  }
+
+  // PRs this save NEWLY draws on → converted (first PO stamp kept). Lines that
+  // keep their PR are not re-stamped (the form posts every line's PR on every
+  // save), and a cancelled PO never re-claims the PRs its cancel released.
+  const hdr = await tx
+    .select({ status: purchaseOrders.status })
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.id, purchaseOrderId))
+    .limit(1);
+  const poCancelled = hdr[0]?.status === 'cancelled';
+  const nowPrIds = new Set<string>(newPrIds);
+  for (const u of toUpdate) {
+    const before = existingById.get(u.id)?.sourcePrId ?? null;
+    if (u.data.sourcePrId && u.data.sourcePrId !== before) nowPrIds.add(u.data.sourcePrId);
+  }
+  for (const prId of poCancelled ? [] : nowPrIds) {
+    await tx
+      .update(purchaseRequests)
+      .set({ ...firstPoStamp(purchaseOrderId), status: 'po_created', updatedBy: user.id })
+      .where(
+        and(
+          eq(purchaseRequests.id, prId),
+          eq(purchaseRequests.companyId, companyId),
+          sql`${purchaseRequests.status} <> 'cancelled'`,
+        ),
+      );
+  }
+
+  // PRs this PO no longer draws on (line dropped or re-pointed) → back to
+  // Approved / Open when no other live PO line holds them, as a rejected PO's are.
+  const lostPrIds = new Set<string>();
+  for (const e of existing) {
+    if (!e.sourcePrId) continue;
+    const upd = toUpdate.find((u) => u.id === e.id);
+    // Not sent → unchanged; sent (a null clears it) → compare. (The web form
+    // omits an empty PR, so today only an API caller clears one.)
+    const stillHere = upd
+      ? upd.data.sourcePrId === undefined || upd.data.sourcePrId === e.sourcePrId
+      : false;
+    if (!stillHere && !nowPrIds.has(e.sourcePrId)) lostPrIds.add(e.sourcePrId);
+  }
+  for (const prId of lostPrIds) {
+    const holder = await tx
+      .select({ id: purchaseOrderLines.id })
+      .from(purchaseOrderLines)
+      .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderLines.purchaseOrderId))
+      .where(
+        and(
+          eq(purchaseOrderLines.sourcePrId, prId),
+          isNull(purchaseOrderLines.deletedAt),
+          isNull(purchaseOrders.deletedAt),
+          sql`${purchaseOrders.status} <> 'cancelled'`,
+        ),
+      )
+      .limit(1);
+    if (holder[0]) continue;
+    await tx
+      .update(purchaseRequests)
+      .set({
+        status: sql`CASE WHEN ${purchaseRequests.approvedAt} IS NOT NULL THEN 'approved' ELSE 'open' END::pr_status`,
+        poId: sql`CASE WHEN ${purchaseRequests.poId} = ${purchaseOrderId}::uuid THEN NULL ELSE ${purchaseRequests.poId} END`,
+        poCreatedAt: sql`CASE WHEN ${purchaseRequests.poId} = ${purchaseOrderId}::uuid THEN NULL ELSE ${purchaseRequests.poCreatedAt} END`,
+        updatedBy: user.id,
+      })
+      .where(and(eq(purchaseRequests.id, prId), eq(purchaseRequests.status, 'po_created')));
   }
 }
 
@@ -1844,7 +2117,7 @@ export async function softDeletePurchaseOrder(
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`Purchase order ${id} not found`);
+      throw new NotFoundError('PO not found. It may have been moved to Trash.');
     }
     // G9a: a PO with goods moved against it cannot simply vanish — the
     // challan / receipt would point at nothing. Cancelled challans do not
@@ -1852,7 +2125,7 @@ export async function softDeletePurchaseOrder(
     const liveDoc = await poLiveGoodsDoc(tx, companyId, id);
     if (liveDoc) {
       throw new ConflictError(
-        `PO ${row.code} has goods moved against it (${liveDoc}); cancel that document first`,
+        `Cannot delete PO ${row.code}: goods have moved against it (${liveDoc}). Cancel that document first.`,
       );
     }
     const now = new Date();
@@ -2155,7 +2428,7 @@ async function releaseJcOpsForCancelledPo(
       {
         action: 'UPDATE',
         entity: 'PurchaseRequest',
-        detail: `${pr.code} back to ${backTo} — its only purchase order ${po.code} was cancelled`,
+        detail: `${pr.code} back to ${backTo === 'approved' ? 'Approved' : 'Open'} — PO ${po.code} was cancelled`,
         refId: pr.code,
       },
       companyId,
@@ -2196,10 +2469,9 @@ export async function createPurchaseOrderFromPr(
       )
       .limit(1);
     const pr = prRows[0];
-    if (!pr) throw new NotFoundError(`Purchase request ${input.prId} not found`);
-    if (pr.status === 'cancelled') {
-      throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
-    }
+    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
+    const switches = await readApprovalSwitches(tx, companyId);
+    assertPrConvertible(pr, switches);
     // Quantity, not a boolean (ADR-152 phase 2): a PR is convertible for as
     // long as it has balance left, so a PR for 100 already covered for 10 can
     // be converted again for the other 90.
@@ -2263,7 +2535,7 @@ export async function createPurchaseOrderFromPr(
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Purchase order code "${code}" already exists`);
+      throw new ConflictError(`PO No. "${code}" already exists.`);
     }
 
     // Stored totals from the single PR-derived line (qty × est cost) + header tax.
@@ -2291,7 +2563,8 @@ export async function createPurchaseOrderFromPr(
         // resolveItemRefs' "a real link beats carried text" rule.
         vendorId: overrideVendorId ?? pr.vendorId,
         vendorCodeText: overrideVendorId ? overrideVendorCode : pr.vendorCodeText,
-        status: 'open', // PRs only convert to open POs (skip draft state)
+        // ADR-189 — draft while PO approval is on, like every other new PO.
+        status: switches.poApproval ? ('draft' as const) : ('open' as const),
         dueDate: input.header.dueDate ?? pr.requiredDate ?? null,
         taxType: input.header.taxType ?? null,
         sgstPct: pctToString(input.header.sgstPct ?? 0),
@@ -2436,7 +2709,7 @@ interface ApprovalContext {
   approvalCeiling: number;
 }
 
-async function loadApprovalContext(
+export async function loadApprovalContext(
   tx: DbTransaction,
   companyId: string,
   userId: string,
@@ -2472,7 +2745,7 @@ async function loadApprovalContext(
 }
 
 /** Σ(qty × rate) over a PO's active lines — no tax (legacy `tVal` L21727). */
-async function sumPoLineValue(tx: DbTransaction, purchaseOrderId: string): Promise<number> {
+export async function sumPoLineValue(tx: DbTransaction, purchaseOrderId: string): Promise<number> {
   const lines = await tx
     .select({ qty: purchaseOrderLines.qty, rate: purchaseOrderLines.rate })
     .from(purchaseOrderLines)
@@ -2503,7 +2776,7 @@ async function getPurchaseOrderInternal(
     )
     .limit(1);
   const row = rows[0];
-  if (!row) throw new NotFoundError(`Purchase order ${id} not found`);
+  if (!row) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
   const lineRows = await tx
     .select({ row: purchaseOrderLines, sourcePrCode: purchaseRequests.code })
@@ -2547,7 +2820,7 @@ export async function approvePurchaseOrder(
     );
     if (!isApprover) {
       throw new AuthorizationError(
-        'You are not authorized to approve POs. Ask an admin to add you to the approvers list.',
+        'You do not have permission to approve POs. Ask an admin to add you to the approvers list.',
       );
     }
 
@@ -2563,9 +2836,11 @@ export async function approvePurchaseOrder(
       )
       .limit(1);
     const po = existing[0];
-    if (!po) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!po) throw new NotFoundError('PO not found. It may have been moved to Trash.');
     if (po.status !== 'draft') {
-      throw new ValidationError(`PO ${po.code} is ${po.status}; only draft POs can be approved`);
+      throw new ValidationError(
+        `Cannot approve PO ${po.code}: it is ${poStatusLabel(po.status)}. Only Draft POs can be approved.`,
+      );
     }
 
     // Segregation of duty (0100): the raiser cannot sign off their own PO.
@@ -2600,12 +2875,19 @@ export async function approvePurchaseOrder(
         action: 'APPROVE',
         entity: 'Purchase Order',
         detail:
-          po.code + ' approved by ' + (user.email ?? user.id) + (remarks ? ' — ' + remarks : ''),
+          po.code +
+          ' approved by ' +
+          (user.fullName || user.email) +
+          (remarks ? ' — ' + remarks : ''),
         refId: po.code,
       },
       companyId,
       user,
     );
+
+    // ADR-190 addendum — no task auto-close here: a PO-linked task is usually a
+    // delivery follow-up ("Follow up on PO …"), not an approval request, and
+    // nothing on the task tells the two apart.
 
     return getPurchaseOrderInternal(tx, id, companyId);
   });
@@ -2622,13 +2904,13 @@ export async function rejectPurchaseOrder(
   const companyId = requireCompany(user);
 
   if (!reason || !reason.trim()) {
-    throw new ValidationError('Rejection reason is required');
+    throw new ValidationError('Reason is required to Reject.');
   }
 
   return withUserContext(user, async (tx) => {
     const { isApprover } = await loadApprovalContext(tx, companyId, user.id, user.role);
     if (!isApprover) {
-      throw new AuthorizationError('You are not authorized to reject POs.');
+      throw new AuthorizationError('You do not have permission to reject POs. Ask an admin.');
     }
 
     const existing = await tx
@@ -2643,9 +2925,11 @@ export async function rejectPurchaseOrder(
       )
       .limit(1);
     const po = existing[0];
-    if (!po) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!po) throw new NotFoundError('PO not found. It may have been moved to Trash.');
     if (po.status !== 'draft') {
-      throw new ValidationError(`PO ${po.code} is ${po.status}; only draft POs can be rejected`);
+      throw new ValidationError(
+        `Cannot reject PO ${po.code}: it is ${poStatusLabel(po.status)}. Only Draft POs can be rejected.`,
+      );
     }
 
     // Segregation of duty (0100) — the other half of approve. Rejecting is a
@@ -2680,6 +2964,129 @@ export async function rejectPurchaseOrder(
       user,
     );
 
+    return getPurchaseOrderInternal(tx, id, companyId);
+  });
+}
+
+/**
+ * ADR-189 — stop an ISSUED Purchase Order (ERPNext: Close / Cancel a PO).
+ *
+ *  - Nothing received and nothing sent to the vendor → 'cancelled': it holds
+ *    nothing, so its PRs and outsourced ops are handed back exactly as a
+ *    rejected draft's are (releaseJcOpsForCancelledPo).
+ *  - Part received → 'closed' short: the stamps (who / when / why) make every
+ *    PR it drew on count only what was RECEIVED on the line
+ *    (purchase-requests liveOrderedQtySql), so the un-received qty is Pending
+ *    on the PR again and can be ordered elsewhere.
+ *
+ * Refused while material sent on a DC is still at the vendor (it has to come
+ * back or be written off first), and for a draft (Reject it instead) or a PO
+ * that is already closed / cancelled. The status recompute leaves a stopped PO
+ * alone (goods-receipt-notes/cascades.ts recalcPoHeaderStatus).
+ */
+export async function shortClosePurchaseOrder(
+  id: string,
+  input: ShortClosePurchaseOrderInput,
+  user: AuthContext,
+): Promise<PurchaseOrderDetail> {
+  requireWriteRole(user);
+  // Undoing an approved commitment is a sign-off, like Reject (review).
+  await requireFormAccess(user, 'po_create', 'approve');
+  const companyId = requireCompany(user);
+  const reason = input.reason.trim();
+  // The route's schema checks this too; the service is the guard for every
+  // other caller (imports, scripts), so it checks again.
+  if (reason.length < PO_SHORT_CLOSE_REASON_MIN) {
+    throw new ValidationError(
+      `Give a reason for the short close (at least ${PO_SHORT_CLOSE_REASON_MIN} characters).`,
+    );
+  }
+
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          eq(purchaseOrders.companyId, companyId),
+          isNull(purchaseOrders.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    const po = rows[0];
+    if (!po) throw new NotFoundError('PO not found. It may have been moved to Trash.');
+    if (po.status === 'draft') {
+      throw new ValidationError(`PO ${po.code} is a Draft — Reject it instead.`);
+    }
+    if (po.status === 'closed' || po.status === 'cancelled') {
+      throw new ConflictError(`PO ${po.code} is already ${poStatusLabel(po.status)}.`);
+    }
+
+    // Per PO line: ordered, received, and material sent OUT — the ONE sent
+    // figure, OSP DCs + JW DC Outwards (lib/po-line-sent.ts; a return-to-vendor
+    // NC challan is not "sent on the PO" — its pieces are accounted by their
+    // NC) — less what came BACK (lib/po-line-sent.ts: ordinary GRNs, plus JW DC
+    // Inwards made before 0172, which raised no GRN). Decimal: no ::int, so
+    // 0.4 KGS still at the vendor is not rounded away.
+    const lines = (await tx.execute(sql`
+      SELECT pol.line_no, pol.qty,
+        COALESCE(pol.received_qty, 0)::float8 AS received,
+        GREATEST(
+          ${sql.raw(poLineSentRaw('pol.id'))} - ${sql.raw(poLineBackRaw('pol.id'))},
+          0)::float8 AS at_vendor,
+        ${sql.raw(poLineSentRaw('pol.id'))}::float8 AS sent
+      FROM public.purchase_order_lines pol
+      WHERE pol.purchase_order_id = ${id}::uuid AND pol.deleted_at IS NULL
+      ORDER BY pol.line_no
+    `)) as unknown as Array<{
+      line_no: number;
+      qty: number;
+      received: number;
+      at_vendor: number;
+      sent: number;
+    }>;
+    const atVendor = lines.find((l) => Number(l.at_vendor) > 0);
+    if (atVendor) {
+      throw new ConflictError(
+        `PO ${po.code} line ${atVendor.line_no}: ${atVendor.at_vendor} sent on a DC are still at the vendor. Receive them back (or record the loss) before closing the PO.`,
+      );
+    }
+    const ordered = lines.reduce((a, l) => a + Number(l.qty), 0);
+    const received = lines.reduce((a, l) => a + Number(l.received), 0);
+    const sent = lines.reduce((a, l) => a + Number(l.sent), 0);
+
+    const now = new Date();
+    const stopWholly = received === 0 && sent === 0;
+    await tx
+      .update(purchaseOrders)
+      .set({
+        status: stopWholly ? 'cancelled' : 'closed',
+        shortClosedAt: now,
+        shortClosedBy: user.id,
+        shortCloseReason: reason,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(purchaseOrders.id, id));
+    if (stopWholly) {
+      await releaseJcOpsForCancelledPo(tx, companyId, { id: po.id, code: po.code }, user);
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'SHORT_CLOSE',
+        entity: 'Purchase Order',
+        detail: stopWholly
+          ? `${po.code} cancelled — nothing received (ordered ${ordered}); PRs released. Reason: ${reason}`
+          : `${po.code} short closed — received ${received} of ${ordered}; ${ordered - received} returned to its PRs as Pending. Reason: ${reason}`,
+        refId: po.code,
+      },
+      companyId,
+      user,
+    );
     return getPurchaseOrderInternal(tx, id, companyId);
   });
 }
@@ -2746,7 +3153,7 @@ export async function createPurchaseOrderFromPrBatch(
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Purchase order code "${code}" already exists`);
+      throw new ConflictError(`PO No. "${code}" already exists.`);
     }
 
     // Load all PRs.
@@ -2761,13 +3168,12 @@ export async function createPurchaseOrderFromPrBatch(
         ),
       );
     if (prRows.length !== input.prIds.length) {
-      throw new NotFoundError('Some PR IDs not found in this company');
+      throw new NotFoundError(
+        'Some selected PRs no longer exist. Refresh the list and select again.',
+      );
     }
-    for (const pr of prRows) {
-      if (pr.status === 'cancelled') {
-        throw new ConflictError(`PR ${pr.code} is cancelled — cannot convert`);
-      }
-    }
+    const switches = await readApprovalSwitches(tx, companyId);
+    for (const pr of prRows) assertPrConvertible(pr, switches);
 
     // Sort PRs by created_at so line_no ordering is stable.
     const sortedPrs = [...prRows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -2823,7 +3229,8 @@ export async function createPurchaseOrderFromPrBatch(
             : 'standard',
         vendorId: input.vendorId,
         vendorCodeText,
-        status: 'open',
+        // ADR-189 — draft while PO approval is on.
+        status: switches.poApproval ? ('draft' as const) : ('open' as const),
         dueDate: input.header.dueDate ?? null,
         taxType: input.header.taxType ?? null,
         sgstPct: String(input.header.sgstPct ?? 0),
@@ -2911,7 +3318,7 @@ export async function createPurchaseOrderFromPrBatch(
       {
         action: 'CREATE',
         entity: 'PurchaseOrder',
-        detail: `${header.code} (JWPO-OSP) — ${sortedPrs.length} lines to ${vendorRow?.name ?? input.vendorId}`,
+        detail: `${header.code} (Job Work PO) — ${sortedPrs.length} lines to ${vendorRow?.name ?? 'Vendor'}`,
         refId: header.code,
       },
       companyId,
@@ -2990,7 +3397,7 @@ export async function getPurchaseOrderRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (!header) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
     // Upstream: vendor (source supplier).
     const vendorRows = header.vendorId

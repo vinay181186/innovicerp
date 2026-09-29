@@ -7,10 +7,17 @@
 // under the server's closure gate. The legacy in-route rework row (one with
 // `reworkOpSeq`) keeps its old "Close rework" button.
 
-import { type DisposeNcResult, type NcRegister, opSrNo } from '@innovic/shared';
+import {
+  type DisposeNcResult,
+  NC_REASON_CATEGORY_LABELS,
+  type NcRegister,
+  opSrNo,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -69,7 +76,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // dropdown (legacy `_disposeNC` renders every op of the JC, HTML L22637) and
   // resolves the human JC code.
   const { data: jcOps } = useJcOpsEnriched(
-    { jobCardId: detail?.jobCardId },
+    { jobCardId: detail?.jobCardId ?? undefined },
     { enabled: Boolean(detail?.jobCardId) },
   );
 
@@ -101,8 +108,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'NC not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'NC not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -115,8 +122,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !effectiveFormPerms(eff, 'nc_dispose').view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view this NC. Ask an admin.
       </div>
     );
   }
@@ -175,28 +182,32 @@ function NcRegisterDetailPage(): React.JSX.Element {
     setCapaError(null);
     const operation = detail.operationText ?? detail.qcOperationText;
     try {
-      await createCapa.mutateAsync({
+      const created = await createCapa.mutateAsync({
         type: 'Corrective',
         ncRefs: [detail.code],
         ...(jcCode ? { jcNo: jcCode } : {}),
         ...(detail.soCodeText ? { soNo: detail.soCodeText } : {}),
         ...(detail.itemCodeText ? { itemCode: detail.itemCodeText } : {}),
         ...(operation ? { operation } : {}),
-        problem: detail.reason ?? detail.reasonCategory.replaceAll('_', ' '),
+        problem: detail.reason ?? NC_REASON_CATEGORY_LABELS[detail.reasonCategory],
         department: 'QC',
       });
-      void navigate({ to: '/nc-register' });
+      // Land on the new CAPA's 5-step edit, not the bare NC list.
+      void navigate({
+        to: '/nc-register',
+        search: { tab: 'capa', capa: created.code, capaEdit: true },
+      });
     } catch (e) {
-      setCapaError(e instanceof Error ? e.message : 'Failed to create CAPA.');
+      setCapaError(e instanceof Error ? e.message : 'Could not create CAPA. Try again.');
     }
   };
 
-  const onDelete = (): void => {
-    softDelete.mutate(detail.id, {
-      onSuccess: () => {
-        void navigate({ to: '/nc-register', replace: true });
-      },
-    });
+  // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
+  // shows a rejection in the dialog instead of closing it.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(detail.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/nc-register', replace: true });
   };
 
   const onCloseRework = async (): Promise<void> => {
@@ -207,7 +218,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       );
       setReworkDoneQty('');
     } catch (e) {
-      setCloseError(e instanceof Error ? e.message : 'Failed to close rework.');
+      setCloseError(e instanceof Error ? e.message : 'Could not close rework. Try again.');
     }
   };
 
@@ -218,7 +229,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
     try {
       await closeNc.mutateAsync();
     } catch (e) {
-      setCloseError(e instanceof Error ? e.message : 'Failed to close the NC.');
+      setCloseError(e instanceof Error ? e.message : 'Could not close the NC. Try again.');
     }
   };
 
@@ -241,15 +252,11 @@ function NcRegisterDetailPage(): React.JSX.Element {
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              {detail.itemName ??
-                detail.itemNameText ??
-                detail.itemCode ??
-                detail.itemCodeText ??
-                'Untitled item'}
               <NcStatusBadge status={detail.status} />
               {detail.linkedCapaCode ? (
                 <Link
                   to="/nc-register"
+                  search={{ tab: 'capa', capa: detail.linkedCapaCode }}
                   className="mono"
                   style={{
                     fontSize: 12,
@@ -257,7 +264,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                     fontWeight: 700,
                     textDecoration: 'none',
                   }}
-                  title="Open linked CAPA"
+                  title={`Open CAPA ${detail.linkedCapaCode}`}
                 >
                   🛡 {detail.linkedCapaCode}
                 </Link>
@@ -287,14 +294,14 @@ function NcRegisterDetailPage(): React.JSX.Element {
             {isReworkDisposed && canEdit ? (
               <>
                 <span className="text3" style={{ fontSize: 11 }}>
-                  Rework done qty
+                  Rework Completed Qty
                 </span>
                 <input
                   type="number"
                   min={0}
                   step="0.01"
                   className="innovic-input"
-                  placeholder="(opt)"
+                  placeholder="Optional"
                   value={reworkDoneQty === '' ? '' : reworkDoneQty}
                   onChange={(e) =>
                     setReworkDoneQty(e.target.value === '' ? '' : Number(e.target.value))
@@ -312,18 +319,14 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   ) : (
                     <CheckCircle2 size={13} />
                   )}
-                  Close rework
+                  Close Rework
                 </button>
               </>
             ) : null}
             {showClose ? (
               <>
                 {detail.closeBlockedReason ? (
-                  <span
-                    className="text3"
-                    style={{ fontSize: 11, maxWidth: 360 }}
-                    title={detail.closeBlockedReason}
-                  >
+                  <span className="text3" style={{ fontSize: 11, maxWidth: 360 }}>
                     {detail.closeBlockedReason}
                   </span>
                 ) : null}
@@ -332,10 +335,6 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   className="btn btn-success btn-sm"
                   onClick={() => void onClose()}
                   disabled={closeNc.isPending || detail.closeBlockedReason != null}
-                  title={
-                    detail.closeBlockedReason ??
-                    'Every rejected piece is accounted for — close this NC'
-                  }
                 >
                   {closeNc.isPending ? (
                     <Loader2 size={13} className="animate-spin" />
@@ -363,69 +362,29 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 Create CAPA
               </button>
             ) : null}
-            {canEdit ? (
+            {canEdit && isPending ? (
               <Link
                 to="/nc-register/$id/edit"
                 params={{ id: detail.id }}
                 className="btn btn-ghost btn-sm"
-                style={!isPending ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
-                title={!isPending ? 'Cannot edit disposed/closed NCs' : undefined}
               >
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12 }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={!isPending}
-                  title={!isPending ? 'Disposed/closed NCs are permanent' : undefined}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+            {canDelete && isPending ? (
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={13} /> Delete
+              </button>
             ) : null}
           </div>
         </div>
         <div className="panel-body">
-          {softDelete.isError || closeError || capaError ? (
+          {closeError || capaError ? (
             <div style={{ marginBottom: 10 }}>
-              {softDelete.isError ? (
-                <Note tone="red">
-                  {softDelete.error instanceof Error
-                    ? softDelete.error.message
-                    : 'Failed to delete NC.'}
-                </Note>
-              ) : null}
               {closeError ? <Note tone="red">{closeError}</Note> : null}
               {capaError ? <Note tone="red">{capaError}</Note> : null}
             </div>
@@ -446,29 +405,29 @@ function NcRegisterDetailPage(): React.JSX.Element {
               key: 'rejected',
               label: 'Rejected',
               count: Number(detail.rejectedQty),
-              color: 'var(--red)',
-              sub: 'pcs this NC covers',
+              color: 'var(--red2)',
+              title: 'Pieces this NC covers',
             },
             {
               key: 'cleared',
               label: 'Cleared',
               count: Number(detail.clearedQty),
-              color: 'var(--green)',
-              sub: 'QC-accepted after recovery',
+              color: 'var(--green2)',
+              title: 'Accepted at QC after recovery',
             },
             {
               key: 'failed',
-              label: 'Failed',
+              label: 'Rejected Again',
               count: Number(detail.failedQty),
-              color: 'var(--amber)',
-              sub: 'QC-rejected again',
+              color: 'var(--amber2)',
+              title: 'Rejected at QC after recovery',
             },
             {
               key: 'open',
               label: 'Open',
               count: ncOpenQty(detail),
               color: 'var(--blue)',
-              sub: 'rejected − cleared − failed',
+              title: 'Rejected − Cleared − Rejected Again',
             },
             ...(isRtv
               ? [
@@ -477,14 +436,14 @@ function NcRegisterDetailPage(): React.JSX.Element {
                     label: 'Sent',
                     count: Number(detail.rtvSentQty),
                     color: 'var(--blue)',
-                    sub: 'on the return challan',
+                    title: 'Sent on the return DC',
                   },
                   {
                     key: 'received',
                     label: 'Received',
                     count: Number(detail.rtvReceivedQty),
                     color: 'var(--cyan)',
-                    sub: 'back from the vendor',
+                    title: 'Received back from the vendor',
                   },
                 ]
               : []),
@@ -500,7 +459,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             createDc.isError
               ? createDc.error instanceof Error
                 ? createDc.error.message
-                : 'Failed to create the delivery challan'
+                : 'Could not save DC. Try again.'
               : null
           }
           onSubmit={async (input) => {
@@ -514,7 +473,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       ) : null}
       {createDc.isSuccess && detail.deliveryChallanId ? (
         <Note tone="green">
-          Return challan issued:{' '}
+          DC saved:{' '}
           <Link
             to="/delivery-challans/$id"
             params={{ id: detail.deliveryChallanId }}
@@ -528,10 +487,21 @@ function NcRegisterDetailPage(): React.JSX.Element {
 
       <RelatedDocsPanel module="nc-register" id={detail.id} />
 
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Move NC ${detail.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
+
       {showDispose ? (
         <DisposeNcPanel
           nc={detail}
-          jcCode={jcCode}
+          canApprove={ncPerms.approve}
           jcOps={reworkOpOptions}
           canSeePrice={ncPerms.price}
           pending={dispose.isPending}
@@ -539,7 +509,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             dispose.isError
               ? dispose.error instanceof Error
                 ? dispose.error.message
-                : 'Failed to dispose NC'
+                : 'Could not save disposition. Try again.'
               : null
           }
           result={disposeResult}
@@ -588,20 +558,14 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
           flexWrap: 'wrap',
         }}
       >
-        <CtxField label="NC NO.">
-          <b className="red">{detail.code}</b>
+        <CtxField label="NC Date">
+          <b>{fmtDate(detail.ncDate)}</b>
         </CtxField>
-        <CtxField label="NC DATE">
-          <b>{detail.ncDate}</b>
-        </CtxField>
-        <CtxField label="JC NO.">
+        <CtxField label="JC No.">
           <b className="cyan">{jcCode ?? '—'}</b>
         </CtxField>
-        <CtxField label="SO NO.">
+        <CtxField label="SO No.">
           <b>{detail.soCodeText ?? '—'}</b>
-        </CtxField>
-        <CtxField label="NC STATUS">
-          <NcStatusBadge status={detail.status} />
         </CtxField>
       </div>
       <div className="form-grid" style={{ fontSize: 12, marginBottom: 12 }}>
@@ -645,14 +609,14 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
               ) : null}
             </InlinePair>
             {detail.sourcePoCode ? (
-              <InlinePair label="Source PO:">
+              <InlinePair label="Source PO No.:">
                 <span className="td-code" style={{ color: 'var(--text)' }}>
                   {detail.sourcePoCode}
                 </span>
               </InlinePair>
             ) : null}
             {detail.sourceGrnCode ? (
-              <InlinePair label="Source GRN:">
+              <InlinePair label="Source GRN No.:">
                 <span className="td-code" style={{ color: 'var(--text)' }}>
                   {detail.sourceGrnCode}
                 </span>
@@ -660,24 +624,21 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
             ) : null}
           </>
         ) : isReworkDisp ? (
-          <InlinePair label="Rework Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
+          <InlinePair label="Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
         ) : (
           <InlinePair label="Operation:">
             {/* Op numbers show in tens (display rule, see opSrNo). */}
-            {detail.opSeq != null ? `Op${opSrNo(detail.opSeq)}` : ''}
+            {detail.opSeq != null ? `Op ${opSrNo(detail.opSeq)}` : ''}
             {detail.opSeq != null && operation ? ' — ' : ''}
             {operation ?? (detail.opSeq == null ? '—' : '')}
           </InlinePair>
         )}
-        <InlinePair label="Rejected:">
-          <span className="red">{Number(detail.rejectedQty)} pcs</span>
-        </InlinePair>
         <InlinePair label="Operator:">{detail.operatorText ?? '—'}</InlinePair>
         <InlinePair label="Reported By:">{detail.reportedByText ?? '—'}</InlinePair>
         <InlinePair label="Reason Category:">
-          {detail.reasonCategory.replaceAll('_', ' ')}
+          {NC_REASON_CATEGORY_LABELS[detail.reasonCategory]}
         </InlinePair>
-        <InlinePair label="Reason:">{detail.reason ?? '—'}</InlinePair>
+        <InlinePair label="Defect Description:">{detail.reason ?? '—'}</InlinePair>
         {detail.timeLogged ? (
           <div className="form-full">
             <span className="text3">⏰ Time Logged:</span> <b>{detail.timeLogged}</b>
@@ -703,25 +664,22 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
         marginBottom: 10,
       }}
     >
-      <div className="fw-700" style={{ fontSize: 11, marginBottom: 6 }}>
-        DISPOSITION
-      </div>
       <div className="form-grid" style={{ fontSize: 12 }}>
-        <InlinePair label="Action:">
+        <InlinePair label="Disposition:">
           <NcDispositionBadge disposition={detail.disposition} />
         </InlinePair>
-        <InlinePair label="Disposition Date:">{detail.dispositionDate ?? '—'}</InlinePair>
+        <InlinePair label="Disposition Date:">{fmtDate(detail.dispositionDate)}</InlinePair>
         <InlinePair label="Disposed By:">{detail.dispositionByText ?? ''}</InlinePair>
         {/* Legacy in-route rework only — a new rework raises a child JC
             (linked below) and never sets rework_op_seq. */}
         {detail.reworkOpSeq != null ? (
-          <InlinePair label="Rework Op:">Op{opSrNo(detail.reworkOpSeq)}</InlinePair>
+          <InlinePair label="Rework Op:">Op {opSrNo(detail.reworkOpSeq)}</InlinePair>
         ) : null}
         {/* Not in legacy `_viewNC`, but legacy's LIST row shows "♻ n/m done"
             (HTML L22536) and our close-rework flow captures it. Kept. */}
         {detail.disposition === 'rework' && detail.reworkDoneQty ? (
           <InlinePair label="Rework Completed:">
-            {Number(detail.reworkDoneQty)}/{Number(detail.rejectedQty)} done
+            {Number(detail.reworkDoneQty)} of {Number(detail.rejectedQty)}
           </InlinePair>
         ) : null}
         {detail.disposition === 'scrap' && Number(detail.scrapCost) > 0 ? (
@@ -757,7 +715,7 @@ function InlinePair(props: { label: string; children: React.ReactNode }): React.
 function CtxField(props: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div>
-      <span className="text3" style={{ fontSize: 10 }}>
+      <span className="text3" style={{ fontSize: 11 }}>
         {props.label}
       </span>
       <br />

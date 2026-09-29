@@ -23,6 +23,9 @@ export const itemSchema = z.object({
   /** ADR-171: 'make' (planned & produced) | 'buy' (purchased finished — the
    *  Planning line offers "+ PR" instead of "+ Plan"). Default 'make'. */
   procurementType: itemProcurementTypeSchema.default('make'),
+  /** ADR-193 phase 4 — Tool / Instrument items only: one register row per
+   *  piece (Serial No., calibration). Locked once stock or instruments exist. */
+  trackSerial: z.boolean().default(false),
   hsnCode: z.string().max(16).nullable(),
   /** Legacy item-level drawing (ADR-032). The drawing now lives on the SO/JWSO line
    *  (user decision 2026-09-21); this stays readable for old items only. */
@@ -54,8 +57,11 @@ export const createItemInputSchema = z.object({
   revision: z.string().min(1).max(8).default('A'),
   material: z.string().max(64).optional(),
   uom: uomSchema.default('NOS'),
-  itemType: itemTypeSchema.default('component'),
+  // ADR-193 / owner decision Q2: chosen when the item is created — no default.
+  itemType: z.enum(ITEM_TYPES, { errorMap: () => ({ message: 'Choose the Item Type' }) }),
   procurementType: itemProcurementTypeSchema.default('make'),
+  /** Tool / Instrument only (server refuses it on any other type). */
+  trackSerial: z.boolean().optional(),
   hsnCode: z.string().max(16).optional(),
   drawingFilePath: z.string().optional(),
   /** null clears the image on update. */

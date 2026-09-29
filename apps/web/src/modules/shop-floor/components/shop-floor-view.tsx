@@ -14,6 +14,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate, fmtDateAndTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useStopOp } from '@/modules/op-entry/api';
@@ -40,7 +41,8 @@ export function ShopFloorView(): React.JSX.Element {
       { id: stopRow.row.runningOpId, ...input },
       {
         onSuccess: () => setStopRow(null),
-        onError: (e) => setStopError(e instanceof Error ? e.message : 'Stop failed'),
+        onError: (e) =>
+          setStopError(e instanceof Error ? e.message : 'Could not stop operation. Try again.'),
       },
     );
   }
@@ -51,7 +53,7 @@ export function ShopFloorView(): React.JSX.Element {
     <div>
       <div className="mb-3 flex items-center justify-end gap-3 flex-wrap">
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <span style={{ fontSize: 14, color: 'var(--amber)', fontWeight: 700 }}>
+          <span style={{ fontSize: 14, color: 'var(--amber2)', fontWeight: 700 }}>
             {total} operation{total !== 1 ? 's' : ''} currently running
           </span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refetch()}>
@@ -97,7 +99,7 @@ export function ShopFloorView(): React.JSX.Element {
             </div>
             <div
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 color: m.runningCount > 0 ? 'var(--amber)' : 'var(--text3)',
               }}
             >
@@ -118,8 +120,8 @@ export function ShopFloorView(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load shop floor. Try again.'}
             </div>
           </div>
         </div>
@@ -127,10 +129,10 @@ export function ShopFloorView(): React.JSX.Element {
         <div className="panel">
           <div className="empty-state" style={{ padding: 56 }}>
             <div className="empty-icon">🏭</div>
-            <b>No operations currently running</b>
+            <b>No operations running.</b>
             <br />
             <span className="text3" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
-              Use Op Entry → ▶ Start to begin tracking jobs
+              Use Op Entry → ▶ Start Operation to begin.
             </span>
           </div>
         </div>
@@ -152,7 +154,7 @@ export function ShopFloorView(): React.JSX.Element {
                 <span className="text3" style={{ fontSize: 12 }}>
                   {m.machineName ?? ''}
                 </span>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>⚫ IDLE</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>⚫ Idle</span>
               </div>
             </div>
           ) : (
@@ -171,17 +173,17 @@ export function ShopFloorView(): React.JSX.Element {
                   borderBottom: '1px solid var(--amber2)',
                 }}
               >
-                <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--amber)' }}>
+                <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--amber2)' }}>
                   {m.machineCode}
                 </span>
-                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
                   {m.machineName ?? ''}
                 </div>
                 <span className="text2" style={{ fontSize: 12 }}>
                   {m.machineName ?? ''} · {m.machineType ?? ''}
                 </span>
-                <span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 12 }}>
-                  ▶ {m.runningCount} RUNNING
+                <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 12 }}>
+                  ▶ {m.runningCount} Running
                 </span>
               </div>
               <div className="tbl-wrap">
@@ -197,11 +199,11 @@ export function ShopFloorView(): React.JSX.Element {
                       <th>Item Code</th>
                       <th>Item Name</th>
                       <th>SO No.</th>
-                      <th className="td-ctr">Order Qty</th>
-                      <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                      <th className="td-ctr">JC Qty</th>
+                      <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                         Completed
                       </th>
-                      <th className="td-ctr" style={{ color: 'var(--red)' }}>
+                      <th className="td-ctr" style={{ color: 'var(--amber2)' }}>
                         Pending
                       </th>
                       <th>Priority</th>
@@ -244,7 +246,7 @@ export function ShopFloorView(): React.JSX.Element {
                             m.machineCode.trim().toLowerCase() ? (
                             <div
                               className="text3"
-                              style={{ fontSize: 10, fontWeight: 400, whiteSpace: 'nowrap' }}
+                              style={{ fontSize: 11, fontWeight: 400, whiteSpace: 'nowrap' }}
                               title={`Planned for ${r.plannedMachineCode}, running on ${m.machineCode}`}
                             >
                               planned <span className="mono">{r.plannedMachineCode}</span>
@@ -255,7 +257,10 @@ export function ShopFloorView(): React.JSX.Element {
                         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                           {r.clientPoLineNo ?? '—'}
                         </td>
-                        <td className="td-code" style={{ color: 'var(--purple)' }}>
+                        <td
+                          className="mono fw-700"
+                          style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+                        >
                           {itemCodeWithRev(r.itemCode, r.itemRevision)}
                         </td>
                         <td>{r.itemName ?? '—'}</td>
@@ -264,7 +269,7 @@ export function ShopFloorView(): React.JSX.Element {
                         </td>
                         <td className="td-ctr mono">{r.orderQty}</td>
                         <td className="td-ctr green mono fw-700">{r.doneQty}</td>
-                        <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                        <td className="td-ctr mono" style={{ color: 'var(--amber2)' }}>
                           {r.pendingQty}
                         </td>
                         <td>
@@ -274,11 +279,11 @@ export function ShopFloorView(): React.JSX.Element {
                           </span>
                         </td>
                         <td className="text2" style={{ fontSize: 11 }}>
-                          {r.dueDate ?? '—'}
+                          {fmtDate(r.dueDate)}
                         </td>
                         <td className="fw-700 amber">{r.operatorName ?? '—'}</td>
                         <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {r.startDate} {r.startTime}
+                          {fmtDateAndTime(r.startDate, r.startTime)}
                         </td>
                         {/* Legacy L10327 renders an empty <td> when !canEdit(). */}
                         <td>
@@ -292,7 +297,7 @@ export function ShopFloorView(): React.JSX.Element {
                                 setStopRow({ row: r, machineCode: m.machineCode });
                               }}
                             >
-                              ■ Stop
+                              ■ Stop Operation
                             </button>
                           ) : null}
                         </td>

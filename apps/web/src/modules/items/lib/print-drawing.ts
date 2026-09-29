@@ -57,7 +57,7 @@ export async function printItemDrawing(args: {
     : `<img src="${esc(url)}" alt="Drawing ${esc(titleLine)}" style="display:block;margin:0 auto;max-width:100%;max-height:80vh;border:1px solid #e5e7eb;border-radius:4px" />`;
 
   const body = `
-    <div class="doc-title"><h1>DRAWING — ${esc(item.drawingNo ?? item.code)}</h1><span class="print-meta">${esc(titleLine)}</span></div>
+    <div class="doc-title"><h1>Drawing ${esc(item.drawingNo ?? item.code)}</h1><span class="print-meta">${esc(item.name)}</span></div>
     <div style="text-align:center">${embed}</div>`;
 
   return printWindow({ title: `Drawing ${item.drawingNo ?? item.code}`, body, company });

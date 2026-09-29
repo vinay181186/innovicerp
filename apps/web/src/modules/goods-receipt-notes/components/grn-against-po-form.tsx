@@ -16,12 +16,16 @@
 // its create mode is no longer reached.
 
 import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut } from '@innovic/shared';
-import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { todayLocal } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { todayIst } from '@/lib/date';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
+import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
+import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
+import { GrnLinesTable } from './grn-lines-table';
 
 interface LineDraft {
   purchaseOrderLineId: string;
@@ -35,6 +39,8 @@ interface LineDraft {
   /** The CUSTOMER's PO line number off the SO line behind this PO line. */
   clientPoLineNo: string | null;
   itemName: string;
+  /** The item's unit (items.uom, off the PO detail), shown beside the qty. */
+  uom: string | null;
   poQty: number;
   receivedSoFar: number;
   balance: number;
@@ -45,11 +51,10 @@ interface LineDraft {
   error: string | null;
 }
 
-export interface GrnAgainstPoFormProps {
+export interface GrnAgainstPoFormProps extends GrnTypeFormShellProps {
   initialPurchaseOrderId?: string;
   onSubmit: (values: CreateGoodsReceiptNoteInput) => Promise<void>;
   submitError: string | null;
-  onCancel: () => void;
 }
 
 /** One line's Receive Now check. Null = fine. */
@@ -57,9 +62,12 @@ function lineQtyError(raw: string, balance: number): string | null {
   const t = raw.trim();
   if (t === '') return null; // blank = 0 = skipped on submit
   const n = Number(t);
-  if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Whole number only.';
-  if (n < 0) return 'Min 0.';
-  if (n > balance) return `Cannot exceed balance of ${balance}.`;
+  // Decimal for KGS / MTR, up to 3 places (0172); the server still refuses a
+  // fraction for a NOS / SET item, naming the item and its unit.
+  if (!Number.isFinite(n)) return 'Enter a number.';
+  if (Math.abs(Math.round(n * 1000) - n * 1000) > 1e-6) return 'Up to 3 decimal places only.';
+  if (n < 0) return 'Receive Now cannot be less than 0.';
+  if (n > balance) return `Receive Now cannot be more than Pending (${balance}).`;
   return null;
 }
 
@@ -67,9 +75,10 @@ export function GrnAgainstPoForm({
   initialPurchaseOrderId,
   onSubmit,
   submitError,
-  onCancel,
+  typeField,
+  onStatusChange,
 }: GrnAgainstPoFormProps): React.JSX.Element {
-  const [grnDate, setGrnDate] = useState(todayLocal());
+  const [grnDate, setGrnDate] = useState(todayIst());
   const [poId, setPoId] = useState<string | null>(initialPurchaseOrderId ?? null);
   const [poSearch, setPoSearch] = useState('');
   const [invoiceNo, setInvoiceNo] = useState('');
@@ -78,6 +87,8 @@ export function GrnAgainstPoForm({
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Any hand edit to the loaded lines — only feeds the "Not saved" pill.
+  const [linesTouched, setLinesTouched] = useState(false);
 
   // Eligible POs. The list API takes ONE status per call, so approved =
   // open + partial is two calls merged (same shape jw-dc/routes/list.tsx uses
@@ -113,10 +124,10 @@ export function GrnAgainstPoForm({
   const poIneligible = useMemo((): string | null => {
     if (!po) return null;
     if (poSendsMaterialOut(po.poType)) {
-      return 'This PO sends material out to the vendor — receive it on the "Against JWPO / DC" tab.';
+      return 'This is a Job Work PO. Choose GRN Type "Against JW PO / DC".';
     }
     if (po.status !== 'open' && po.status !== 'partial') {
-      return `This PO is ${po.status.replaceAll('_', ' ')} — only approved (open / partial) POs can be received.`;
+      return `This PO is ${poStatusLabel(po.status)} — only approved (Open / Partly Received) POs can be received.`;
     }
     return null;
   }, [po]);
@@ -134,7 +145,7 @@ export function GrnAgainstPoForm({
     setLines(
       po.lines
         .map((l): LineDraft | null => {
-          const balance = l.qty - l.receivedQty;
+          const balance = Math.round((l.qty - l.receivedQty) * 1000) / 1000;
           if (balance <= 0) return null;
           return {
             purchaseOrderLineId: l.id,
@@ -145,6 +156,7 @@ export function GrnAgainstPoForm({
             itemRevision: l.itemRevision,
             clientPoLineNo: l.clientPoLineNo,
             itemName: l.itemName,
+            uom: l.uom,
             poQty: l.qty,
             receivedSoFar: l.receivedQty,
             balance,
@@ -171,6 +183,7 @@ export function GrnAgainstPoForm({
   }, [poId, poOptions, po]);
 
   const patchLine = (idx: number, patch: Partial<LineDraft>): void => {
+    setLinesTouched(true);
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   };
 
@@ -178,11 +191,11 @@ export function GrnAgainstPoForm({
     e.preventDefault();
     setFormError(null);
     if (!grnDate) {
-      setFormError('Date is required.');
+      setFormError('GRN Date is required.');
       return;
     }
     if (!po) {
-      setFormError('Pick a purchase order.');
+      setFormError('Purchase Order is required.');
       return;
     }
     if (poIneligible) {
@@ -225,7 +238,8 @@ export function GrnAgainstPoForm({
         qcStatus: 'pending' as const,
         qcAcceptedQty: 0,
         qcRejectedQty: 0,
-        ...(l.dcRefNo.trim() ? { dcRefNo: l.dcRefNo.trim() } : {}),
+        // A line with no Vendor Challan No. of its own takes the header's.
+        ...(l.dcRefNo.trim() || dcNo.trim() ? { dcRefNo: l.dcRefNo.trim() || dcNo.trim() } : {}),
         ...(l.remarks.trim() ? { remarks: l.remarks.trim() } : {}),
       })),
     };
@@ -240,262 +254,143 @@ export function GrnAgainstPoForm({
 
   const listLoading = openPos.isFetching || partialPos.isFetching;
 
+  // Report to the shell so its header Save / "Not saved" pill stay truthful.
+  const dirty =
+    poId !== (initialPurchaseOrderId ?? null) ||
+    invoiceNo !== '' ||
+    dcNo !== '' ||
+    remarks !== '' ||
+    linesTouched;
+  const blocked = poIneligible !== null;
+  useEffect(() => {
+    onStatusChange({ submitting, blocked, dirty });
+  }, [onStatusChange, submitting, blocked, dirty]);
+
+  const errorText = formError ?? submitError;
+
   return (
-    <form onSubmit={(e) => void handleSubmit(e)}>
-      {/* Header row 1 — GRN Date · Purchase Order (wide) · Vendor (from the PO). */}
-      <div className="form-grid-4" style={{ marginBottom: 12 }}>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="grnDate">
-            GRN Date<span className="req">★</span>
-          </label>
-          <input
-            id="grnDate"
-            type="date"
-            className="innovic-input"
-            value={grnDate}
-            onChange={(e) => setGrnDate(e.target.value)}
+    <form id={GRN_CREATE_FORM_ID} onSubmit={(e) => void handleSubmit(e)}>
+      {/* Validation summary right under the header, where Save is. */}
+      {errorText ? (
+        <Banner tone="error" role="alert">
+          {errorText}
+        </Banner>
+      ) : null}
+
+      <Panel title="GRN Details">
+        <FormGrid>
+          {/* Row 1 — GRN Type · GRN Date · Purchase Order (3 + 3 + 6); GRN Date
+              sits second on all three GRN types. */}
+          {typeField}
+          <FormField label="GRN Date" required size="sm" htmlFor="grnDate">
+            <input
+              id="grnDate"
+              type="date"
+              className="innovic-input"
+              value={grnDate}
+              onChange={(e) => setGrnDate(e.target.value)}
+              required
+            />
+          </FormField>
+          <FormField
+            label="Purchase Order"
             required
-          />
-        </div>
-        <div className="form-grp form-span-2">
-          <label className="form-label" htmlFor="purchaseOrderId">
-            Purchase Order<span className="req">★</span>
-          </label>
-          <SearchableSelect
-            id="purchaseOrderId"
-            value={poId}
-            onChange={setPoId}
-            options={poOptions}
-            onSearch={setPoSearch}
-            loading={listLoading}
-            placeholder="🔍 Type PO number or vendor…"
-            valueLabel={poValueLabel}
-            emptyText="No approved purchase POs with pending lines match"
-          />
-          {poIneligible ? <div className="form-error">{poIneligible}</div> : null}
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="vendor">
-            Vendor
-          </label>
-          <input
-            id="vendor"
-            className="innovic-input"
-            readOnly
-            value={vendorLabel}
-            placeholder="— from the PO —"
-            tabIndex={-1}
-          />
-        </div>
-      </div>
-
-      {/* Header row 2 — Invoice No. · Vendor Challan No. · Remarks (wide). */}
-      <div className="form-grid-4" style={{ marginBottom: 16 }}>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="invoiceNo">
-            Invoice No.
-          </label>
-          <input
-            id="invoiceNo"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Vendor invoice"
-            value={invoiceNo}
-            onChange={(e) => setInvoiceNo(e.target.value)}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="dcNo">
-            Vendor Challan No.
-          </label>
-          <input
-            id="dcNo"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Delivery challan"
-            value={dcNo}
-            onChange={(e) => setDcNo(e.target.value)}
-          />
-        </div>
-        <div className="form-grp form-span-2">
-          <label className="form-label" htmlFor="remarks">
-            Remarks
-          </label>
-          <input
-            id="remarks"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Notes"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div
-        className="form-label"
-        style={{ fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}
-      >
-        Line items — pending on this PO
-      </div>
-
-      {/* Same shape as the SO form's line table: fixed layout, % widths. */}
-      <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-        <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 960 }}>
-          <thead>
-            <tr>
-              <th style={{ width: '4%' }}>Ln</th>
-              {/* POL = the CUSTOMER's own PO line number off the SO line behind
-                  this PO line. Widths below still total 100. */}
-              <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
-              <th style={{ width: '14%' }}>Item Code</th>
-              <th style={{ width: '17%' }}>Item Name</th>
-              <th style={{ width: '7%' }}>PO Qty</th>
-              <th style={{ width: '8%' }}>Received so far</th>
-              <th style={{ width: '7%' }}>Pending</th>
-              <th style={{ width: '10%' }}>
-                Receive Now<span className="req">★</span>
-              </th>
-              <th style={{ width: '12%' }}>DC No.</th>
-              <th style={{ width: '12%' }}>Remarks</th>
-              <th style={{ width: '4%' }} />
-            </tr>
-          </thead>
-          <tbody>
-            {lines.length === 0 ? (
-              <tr>
-                <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
-                  {!poId
-                    ? 'Pick a purchase order to load its pending lines.'
-                    : !po
-                      ? 'Loading PO lines…'
-                      : 'Every line on this PO is fully received — nothing left to book in.'}
-                </td>
-              </tr>
-            ) : (
-              lines.map((l, idx) => (
-                <tr key={l.purchaseOrderLineId}>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
-                    {idx + 1}
-                  </td>
-                  {/* POL — the customer's PO line number; '—' when this line has
-                      no sales order behind it (a stock buy). */}
-                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                    {l.clientPoLineNo ?? '—'}
-                  </td>
-                  <td
-                    className="mono fw-700"
-                    style={{
-                      color: 'var(--text)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={itemCodeWithRev(l.itemCodeDisplay, l.itemRevision)}
-                  >
-                    {itemCodeWithRev(l.itemCodeDisplay, l.itemRevision)}
-                  </td>
-                  <td
-                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                    title={l.itemName}
-                  >
-                    {l.itemName}
-                  </td>
-                  <td className="mono">{l.poQty}</td>
-                  <td className="mono">{l.receivedSoFar}</td>
-                  <td className="mono fw-700">{l.balance}</td>
-                  <td>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      max={l.balance}
-                      step={1}
-                      className="innovic-input"
-                      style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }}
-                      value={l.receiveNow}
-                      onChange={(e) =>
-                        patchLine(idx, {
-                          receiveNow: e.target.value,
-                          error: lineQtyError(e.target.value, l.balance),
-                        })
-                      }
-                      aria-label={`Receive now, line ${idx + 1}`}
-                    />
-                    {l.error ? <div className="form-error">{l.error}</div> : null}
-                  </td>
-                  <td>
-                    <input
-                      className="innovic-input"
-                      autoComplete="off"
-                      value={l.dcRefNo}
-                      onChange={(e) => patchLine(idx, { dcRefNo: e.target.value })}
-                      aria-label={`DC ref, line ${idx + 1}`}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      className="innovic-input"
-                      autoComplete="off"
-                      value={l.remarks}
-                      onChange={(e) => patchLine(idx, { remarks: e.target.value })}
-                      aria-label={`Remarks, line ${idx + 1}`}
-                    />
-                  </td>
-                  <td>
-                    {/* Removes the line from THIS GRN only; the PO is untouched. */}
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      style={{
-                        background: 'transparent',
-                        color: 'var(--red)',
-                        border: '1px solid var(--red)',
-                        padding: '3px 8px',
-                      }}
-                      onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))}
-                      aria-label={`Remove line ${idx + 1}`}
-                    >
-                      Del
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        {formError || submitError ? (
-          <div
-            style={{
-              color: 'var(--red)',
-              background: 'var(--red3)',
-              border: '1px solid var(--red)',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
+            size="lg"
+            htmlFor="purchaseOrderId"
+            error={poIneligible}
           >
-            {formError ?? submitError}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          <button type="button" className="btn btn-ghost" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="btn btn-success"
-            disabled={submitting || poIneligible !== null}
-          >
-            {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            ✓ Create GRN
-          </button>
-        </div>
-      </div>
+            <SearchableSelect
+              id="purchaseOrderId"
+              value={poId}
+              onChange={setPoId}
+              options={poOptions}
+              onSearch={setPoSearch}
+              loading={listLoading}
+              placeholder="🔍 Type PO number or vendor…"
+              valueLabel={poValueLabel}
+              emptyText="No open POs with pending qty."
+            />
+          </FormField>
+
+          {/* Row 2 — Vendor (from the PO) · Vendor Invoice No. · Vendor Challan No. (6 + 3 + 3). */}
+          <FormField label="Vendor" size="lg" htmlFor="vendor">
+            <input
+              id="vendor"
+              className="innovic-input"
+              readOnly
+              value={vendorLabel}
+              placeholder="— from the PO —"
+              tabIndex={-1}
+            />
+          </FormField>
+          <FormField label="Vendor Invoice No." size="sm" htmlFor="invoiceNo">
+            <input
+              id="invoiceNo"
+              className="innovic-input"
+              autoComplete="off"
+              value={invoiceNo}
+              onChange={(e) => setInvoiceNo(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Vendor Challan No." size="sm" htmlFor="dcNo">
+            <input
+              id="dcNo"
+              className="innovic-input"
+              autoComplete="off"
+              value={dcNo}
+              onChange={(e) => setDcNo(e.target.value)}
+            />
+          </FormField>
+
+          {/* Row 3 — Remarks (full). */}
+          <FormField label="Remarks" size="full" htmlFor="remarks">
+            <textarea
+              id="remarks"
+              className="innovic-textarea"
+              rows={2}
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
+
+      <Panel title="Line Items" bodyPadding="none">
+        <GrnLinesTable
+          rows={lines.map((l) => ({
+            key: l.purchaseOrderLineId,
+            clientPoLineNo: l.clientPoLineNo,
+            itemCode: l.itemCodeDisplay,
+            itemRevision: l.itemRevision,
+            itemName: l.itemName,
+            uom: l.uom,
+            qty: l.poQty,
+            receivedSoFar: l.receivedSoFar,
+            balance: l.balance,
+            receiveNow: l.receiveNow,
+            remarks: l.remarks,
+            error: l.error,
+          }))}
+          decimal
+          qtyLabel="Qty"
+          emptyText={
+            !poId
+              ? 'Pick a purchase order to load its pending lines.'
+              : !po
+                ? 'Loading PO lines…'
+                : 'Every line on this PO is fully received.'
+          }
+          onReceiveNow={(idx, v) => {
+            const l = lines[idx];
+            if (l) patchLine(idx, { receiveNow: v, error: lineQtyError(v, l.balance) });
+          }}
+          onRemarks={(idx, v) => patchLine(idx, { remarks: v })}
+          onRemove={(idx) => {
+            setLinesTouched(true);
+            setLines((prev) => prev.filter((_, i) => i !== idx));
+          }}
+        />
+      </Panel>
     </form>
   );
 }

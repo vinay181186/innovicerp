@@ -4,7 +4,7 @@
 // per receipt. Each line increments party_materials.stock_qty + received_qty.
 // Mirrors legacy renderPartyGRN + addPartyGRN (HTML L24251 / L24298).
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePartyGrnInput,
   ListPartyGrnQuery,
@@ -24,6 +24,7 @@ import {
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -137,21 +138,18 @@ export async function listPartyGrn(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(partyGrn.companyId, companyId), isNull(partyGrn.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(partyGrn)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
-
-    // Summary (3 tiles) across ALL non-deleted party_grn for the company.
-    const today = new Date().toISOString().slice(0, 10);
+    // Total + summary follow the same filters as the rows (search box included),
+    // so the count beside the title and the pager agree with what is listed.
+    // "Today" is the IST calendar day, not UTC (UTC was yesterday before 05:30).
     const sumRows = (await tx.execute(sql`
       SELECT
         COUNT(*)::int AS total_grns,
         COALESCE(SUM(agg.total_received), 0)::int AS total_received,
-        COUNT(*) FILTER (WHERE pg.grn_date = ${today}::date)::int AS today_count
+        COUNT(*) FILTER (
+          WHERE pg.grn_date = (now() AT TIME ZONE 'Asia/Kolkata')::date
+        )::int AS today_count
       FROM public.party_grn pg
+      LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT SUM(received_qty)::int AS total_received
         FROM public.party_grn_lines pgl
@@ -159,8 +157,14 @@ export async function listPartyGrn(
       ) agg ON true
       WHERE pg.company_id = ${companyId}::uuid
         AND pg.deleted_at IS NULL
+        ${searchFrag}
+        ${jwFrag}
+        ${clientFrag}
+        ${fromFrag}
+        ${toFrag}
     `)) as unknown as Array<Record<string, unknown>>;
     const sum = sumRows[0] ?? {};
+    const total = Number(sum['total_grns'] ?? 0);
     const summary = {
       totalGrns: Number(sum['total_grns'] ?? 0),
       totalReceived: Number(sum['total_received'] ?? 0),
@@ -224,7 +228,7 @@ export async function getPartyGrnDetail(id: string, user: AuthContext): Promise<
       LIMIT 1
     `);
     const hRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
-    if (!hRow) throw new NotFoundError(`Party GRN ${id} not found`);
+    if (!hRow) throw new NotFoundError('Party GRN not found. Refresh the page.');
 
     const lineRows = await tx
       .select()
@@ -261,6 +265,13 @@ function rowToLine(row: typeof partyGrnLines.$inferSelect): PartyGrnLine {
     partyMaterialName: row.partyMaterialName,
     receivedQty: row.receivedQty,
     jwLineNoText: row.jwLineNoText,
+    // R2 + R4 (ADR-194): real FK to the JWSO line + incoming-QC split.
+    jwLineId: row.jwLineId,
+    acceptedQty: row.acceptedQty,
+    rejectedQty: row.rejectedQty,
+    rejectReason: row.rejectReason,
+    qcBy: row.qcBy,
+    qcAt: row.qcAt != null ? tsLike(row.qcAt) : null,
     remarks: row.remarks,
     createdAt: tsLike(row.createdAt),
     createdBy: row.createdBy,
@@ -282,7 +293,7 @@ export async function createPartyGrn(
   const companyId = requireCompany(user);
   const userId = user.id;
   if (input.lines.length === 0) {
-    throw new ValidationError('At least one line is required');
+    throw new ValidationError('Add at least one row.');
   }
 
   return withUserContext(user, async (tx) => {
@@ -304,7 +315,7 @@ export async function createPartyGrn(
       )
       .limit(1);
     const jw = jwRows[0];
-    if (!jw) throw new NotFoundError(`Job Work Order ${input.jobWorkOrderId} not found`);
+    if (!jw) throw new NotFoundError('Selected JWSO was not found. Please select the JWSO again.');
 
     // 2) Validate all party materials exist + lock for stock update
     const materialIds = Array.from(new Set(input.lines.map((l) => l.partyMaterialId)));
@@ -326,7 +337,7 @@ export async function createPartyGrn(
     const pmById = new Map(pmRows.map((p) => [p.id, p]));
     for (const id of materialIds) {
       if (!pmById.has(id)) {
-        throw new NotFoundError(`Party material ${id} not found`);
+        throw new NotFoundError('Selected Party Material was not found. Please select it again.');
       }
     }
 
@@ -356,13 +367,14 @@ export async function createPartyGrn(
       })
       .returning();
     const header = headerInserted[0];
-    if (!header) throw new ValidationError('Failed to insert party GRN header');
+    if (!header) throw new ValidationError('Could not save Party GRN. Try again.');
 
     // 4b) Over-receipt guard: cumulative received per JW line (matched by the
     // line number) must not exceed that line's order qty. Lines with no line
     // number are not attributable to a part, so they are not capped here.
     const jwLines = await tx
       .select({
+        id: jobWorkOrderLines.id,
         lineNo: jobWorkOrderLines.lineNo,
         orderQty: jobWorkOrderLines.orderQty,
         partName: jobWorkOrderLines.partName,
@@ -375,6 +387,7 @@ export async function createPartyGrn(
       jwLines.map((l) => [
         String(l.lineNo),
         {
+          id: l.id,
           orderQty: Number(l.orderQty),
           partName: l.partName,
           itemId: l.itemId,
@@ -382,25 +395,36 @@ export async function createPartyGrn(
         },
       ]),
     );
-    const existingRows = (await tx.execute(sql`
-      SELECT pgl.jw_line_no_text AS "lineNoText",
-             COALESCE(SUM(pgl.received_qty), 0)::int AS "received"
+    // Cumulative RECEIVED per JW line (the ADR-102 over-receipt guard), keyed by
+    // the typed line-no text so it matches how a line is picked on the form.
+    // R3 (ADR-194): received qty is NOT capped against order qty any more.
+    // Once incoming QC can reject, a customer legitimately re-sends replacements
+    // for rejected pieces, so cumulative RECEIVED may exceed order qty. Only the
+    // ACCEPTED qty — what actually becomes party stock — is capped below.
+    //
+    // R2 (ADR-194): cumulative ACCEPTED per JW line — only accepted qty may
+    // enter the party store, and Σ accepted across all GRNs for a line must not
+    // exceed that line's order qty. Keyed by the real jw_line_id backfilled by
+    // migration 0173 (and now written on every new line).
+    const acceptedRows = (await tx.execute(sql`
+      SELECT pgl.jw_line_id AS "jwLineId",
+             COALESCE(SUM(pgl.accepted_qty), 0)::int AS "accepted"
       FROM public.party_grn pg
       JOIN public.party_grn_lines pgl ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
       WHERE pg.job_work_order_id = ${jw.id}::uuid AND pg.deleted_at IS NULL
-      GROUP BY pgl.jw_line_no_text
-    `)) as unknown as Array<{ lineNoText: string | null; received: number }>;
-    const receivedByLineNo = new Map<string, number>();
-    for (const r of existingRows) {
-      if (r.lineNoText != null)
-        receivedByLineNo.set(String(r.lineNoText).trim(), Number(r.received));
+        AND pgl.jw_line_id IS NOT NULL
+      GROUP BY pgl.jw_line_id
+    `)) as unknown as Array<{ jwLineId: string | null; accepted: number }>;
+    const acceptedByLineId = new Map<string, number>();
+    for (const r of acceptedRows) {
+      if (r.jwLineId != null) acceptedByLineId.set(String(r.jwLineId), Number(r.accepted));
     }
 
     // 5) Insert lines + update per-material totals
     for (const [idx, ln] of input.lines.entries()) {
       const pm = pmById.get(ln.partyMaterialId);
       if (!pm) {
-        throw new NotFoundError(`Party material ${ln.partyMaterialId} not found`);
+        throw new NotFoundError('Selected Party Material was not found. Please select it again.');
       }
 
       // ADR-102: the JWSO line is mandatory and must be a real line on THIS
@@ -410,15 +434,15 @@ export async function createPartyGrn(
       const lnKey = String(ln.jwLineNoText ?? '').trim();
       if (!lnKey) {
         throw new ValidationError(
-          `Line ${idx + 1}: pick which JWSO line this material is for. ` +
-            `${jw.code} has line(s) ${jwLines.map((l) => l.lineNo).join(', ')}.`,
+          `Row #${idx + 1}: pick which JWSO Ln this material is for. ` +
+            `${jw.code} has Ln ${jwLines.map((l) => l.lineNo).join(', ')}.`,
         );
       }
       const jwLine = lineByNo.get(lnKey);
       if (!jwLine) {
         throw new ValidationError(
-          `Line ${idx + 1}: ${jw.code} has no line ${lnKey}. ` +
-            `Available line(s): ${jwLines.map((l) => l.lineNo).join(', ')}.`,
+          `Row #${idx + 1}: ${jw.code} has no Ln ${lnKey}. ` +
+            `Its Ln: ${jwLines.map((l) => l.lineNo).join(', ')}.`,
         );
       }
       const { orderQty, partName, itemId: lineItemId, itemCodeText: lineItemCode } = jwLine;
@@ -430,9 +454,9 @@ export async function createPartyGrn(
       // the real part shows none received.
       if (pm.itemId != null && lineItemId != null && pm.itemId !== lineItemId) {
         throw new ValidationError(
-          `Line ${idx + 1}: ${pm.code} is "${pm.name}"` +
-            `${pm.itemCodeText ? ` (item ${pm.itemCodeText})` : ''}, but ${jw.code} line ${lnKey} is ` +
-            `"${partName}"${lineItemCode ? ` (item ${lineItemCode})` : ''}. ` +
+          `Row #${idx + 1}: ${pm.code} is "${pm.name}"` +
+            `${pm.itemCodeText ? ` (Item Code ${pm.itemCodeText})` : ''}, but ${jw.code} Ln ${lnKey} is ` +
+            `"${partName}"${lineItemCode ? ` (Item Code ${lineItemCode})` : ''}. ` +
             `Pick the material for this part, or pick the line this material belongs to.`,
         );
       }
@@ -441,27 +465,28 @@ export async function createPartyGrn(
       // against a different customer's order.
       if (pm.clientId != null && jw.clientId != null && pm.clientId !== jw.clientId) {
         throw new ValidationError(
-          `Line ${idx + 1}: ${pm.code} belongs to a different client than ${jw.code}. ` +
-            `Party material can only be received against its own client's order.`,
+          `Row #${idx + 1}: ${pm.code} belongs to another Customer than ${jw.code}. ` +
+            `Party Material can only be received against its own Customer's order.`,
         );
       }
 
-      // Block receiving more than the line's order qty (cumulative across all
-      // GRNs for this JW, including earlier lines in this same receipt).
+      // R2 (ADR-194): the ACCEPTED qty is what actually enters the party store,
+      // so it — not the received qty — is capped against the line's order qty.
+      const jwLineId = jwLine.id;
       {
-        const already = receivedByLineNo.get(lnKey) ?? 0;
-        const remaining = Math.max(0, orderQty - already);
-        if (ln.receivedQty > remaining) {
-          const part = partName ? `${partName} (line ${lnKey})` : `Line ${lnKey}`;
+        const alreadyAccepted = acceptedByLineId.get(jwLineId) ?? 0;
+        const acceptRemaining = Math.max(0, orderQty - alreadyAccepted);
+        if (ln.acceptedQty > acceptRemaining) {
+          const part = partName ? `${partName} (Ln ${lnKey})` : `Ln ${lnKey}`;
           const note =
-            already > 0
-              ? `Ordered ${orderQty}, already received ${already}, so only ${remaining} more can be received.`
-              : `Ordered ${orderQty}, so at most ${orderQty} can be received.`;
+            alreadyAccepted > 0
+              ? ` — Order Qty ${orderQty}, already Accepted ${alreadyAccepted}.`
+              : ` — Order Qty ${orderQty}.`;
           throw new ValidationError(
-            `${part}: you entered ${ln.receivedQty}, but ${note} Please reduce the quantity.`,
+            `${part}: Accepted (${ln.acceptedQty}) cannot be more than Pending (${acceptRemaining})${note} Please reduce the Accepted Qty.`,
           );
         }
-        receivedByLineNo.set(lnKey, already + ln.receivedQty);
+        acceptedByLineId.set(jwLineId, alreadyAccepted + ln.acceptedQty);
       }
 
       await tx.insert(partyGrnLines).values({
@@ -473,24 +498,60 @@ export async function createPartyGrn(
         partyMaterialName: pm.name,
         receivedQty: ln.receivedQty,
         jwLineNoText: ln.jwLineNoText ?? null,
+        // R4 (ADR-194): the resolved FK to the JWSO line.
+        jwLineId,
+        // R2 (ADR-194): compulsory incoming QC — split + who/when.
+        acceptedQty: ln.acceptedQty,
+        rejectedQty: ln.rejectedQty,
+        rejectReason: ln.rejectReason ?? null,
+        qcBy: userId,
+        qcAt: new Date(),
         remarks: ln.remarks ?? null,
         createdBy: userId,
         updatedBy: userId,
       });
 
-      await tx
-        .update(partyMaterials)
-        .set({
-          stockQty: pm.stockQty + ln.receivedQty,
-          receivedQty: pm.receivedQty + ln.receivedQty,
-          updatedAt: new Date(),
-          updatedBy: userId,
-        })
-        .where(eq(partyMaterials.id, pm.id));
-      // Update local cache so subsequent same-id lines accumulate
-      pm.stockQty += ln.receivedQty;
-      pm.receivedQty += ln.receivedQty;
+      // R2 + R3 (ADR-194): only the ACCEPTED qty becomes party stock. The ledger
+      // writer owns stock_qty (the running balance); this service bumps the
+      // received_qty lifetime counter by the accepted qty alongside it.
+      if (ln.acceptedQty > 0) {
+        await postPartyStockMove(tx, {
+          companyId,
+          partyMaterialId: pm.id,
+          jwLineId,
+          movement: 'receive',
+          direction: 'in',
+          qty: ln.acceptedQty,
+          sourceDocType: 'party_grn',
+          sourceDocId: header.id,
+          remarks: `${header.code} · ${pm.code} accepted at incoming QC`,
+          userId,
+          qtyLabel: 'Accepted Qty',
+        });
+        await tx
+          .update(partyMaterials)
+          .set({
+            receivedQty: sql`${partyMaterials.receivedQty} + ${ln.acceptedQty}`,
+            updatedAt: new Date(),
+            updatedBy: userId,
+          })
+          .where(eq(partyMaterials.id, pm.id));
+      }
     }
+
+    // ADR-189 — a customer-material receipt is on the activity log like every
+    // other receipt (cancel already was).
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'Party GRN',
+        detail: `${header.code} · ${input.lines.length} line(s), ${input.lines.reduce((a, l) => a + l.receivedQty, 0)} pcs against ${header.jwCodeText ?? ''}`,
+        refId: header.code,
+      },
+      companyId,
+      user,
+    );
 
     return rowToPartyGrn(header);
   });
@@ -521,7 +582,7 @@ export async function cancelPartyGrn(
   await requireFormAccess(user, 'party_create', 'approve');
   const companyId = requireCompany(user);
   const trimmed = (reason ?? '').trim();
-  if (!trimmed) throw new ValidationError('A reason is required to cancel a Party GRN');
+  if (!trimmed) throw new ValidationError('Reason is required to cancel a Party GRN.');
 
   return withUserContext(user, async (tx) => {
     const headRows = await tx
@@ -532,7 +593,7 @@ export async function cancelPartyGrn(
       )
       .limit(1);
     const head = headRows[0];
-    if (!head) throw new NotFoundError(`Party GRN ${id} not found`);
+    if (!head) throw new NotFoundError('Party GRN not found. Refresh the page.');
 
     const lines = await tx
       .select({
@@ -540,20 +601,24 @@ export async function cancelPartyGrn(
         partyMaterialId: partyGrnLines.partyMaterialId,
         partyMaterialCodeText: partyGrnLines.partyMaterialCodeText,
         receivedQty: partyGrnLines.receivedQty,
+        // R2 (ADR-194): only the ACCEPTED qty ever entered the party store, so
+        // that — not the received qty — is what a cancel takes back out.
+        acceptedQty: partyGrnLines.acceptedQty,
       })
       .from(partyGrnLines)
       .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)));
 
     // Net qty to reverse per material (a receipt may repeat the same code).
+    // Reversal works off ACCEPTED qty — the rejected portion never became stock.
     const byMaterial = new Map<string, { code: string; qty: number }>();
     let reversedQty = 0;
     for (const l of lines) {
-      reversedQty += l.receivedQty;
+      reversedQty += l.acceptedQty;
       if (l.partyMaterialId == null) continue; // master row deleted — nothing to credit back
       const prev = byMaterial.get(l.partyMaterialId);
       byMaterial.set(l.partyMaterialId, {
         code: l.partyMaterialCodeText,
-        qty: (prev?.qty ?? 0) + l.receivedQty,
+        qty: (prev?.qty ?? 0) + l.acceptedQty,
       });
     }
 
@@ -574,18 +639,34 @@ export async function cancelPartyGrn(
       if (pm.stockQty - qty < 0) {
         throw new ValidationError(
           `Cannot cancel ${head.code}: it received ${qty} of ${code}, but only ${pm.stockQty} ` +
-            `are still on hand — the rest has been issued to production. Reverse the material ` +
-            `issue first, then cancel this GRN.`,
+            `are still in stock — the rest has been issued to production. Cancel the Party Material ` +
+            `Issue first, then cancel this GRN.`,
         );
       }
     }
 
     const now = new Date();
     for (const [materialId, { qty }] of byMaterial) {
+      if (qty > 0) {
+        // R3 (ADR-194): the ledger writer takes the accepted qty back out of the
+        // party store (a compensating 'reversal' row) and lowers the balance.
+        await postPartyStockMove(tx, {
+          companyId,
+          partyMaterialId: materialId,
+          movement: 'reversal',
+          direction: 'out',
+          qty,
+          sourceDocType: 'party_grn',
+          sourceDocId: id,
+          remarks: `${head.code} cancelled: ${trimmed}`,
+          userId: user.id,
+          qtyLabel: 'Reversal Qty',
+        });
+      }
+      // Lower the received_qty lifetime counter alongside the balance.
       await tx
         .update(partyMaterials)
         .set({
-          stockQty: sql`${partyMaterials.stockQty} - ${qty}`,
           receivedQty: sql`GREATEST(${partyMaterials.receivedQty} - ${qty}, 0)`,
           updatedAt: now,
           updatedBy: user.id,

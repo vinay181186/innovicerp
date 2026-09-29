@@ -5,10 +5,12 @@
 // No. slid out of view. Same three bands as sales-orders/routes/list.tsx and the
 // JWSO port: accent bar + identity band, metric strip + meta line, line items.
 
-import type { CustomerDispatchRegisterRow } from '@innovic/shared';
+import type { CustomerDispatchRegisterRow, CustomerDispatchRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { PrintDcButton } from './print-dc-button';
 
 /** One dispatch document plus the register rows that belong to it. */
 export type DispatchGroup = {
@@ -47,18 +49,34 @@ function QtyBox({
         borderLeft: bordered ? '1px solid var(--border)' : undefined,
       }}
     >
-      <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>
+      <div
+        className="mono fw-700"
+        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
+      >
         {value}
       </div>
       <div
         className="mono"
-        style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+        style={{
+          fontSize: 11,
+          color: 'var(--text3)',
+        }}
       >
         {label}
       </div>
     </div>
   );
 }
+
+/** ADR-190 — how far the dispatch is invoiced. Labels per docs/NAMING.md. */
+const BILLED_BADGE: Record<
+  NonNullable<CustomerDispatchRow['billedStatus']>,
+  { label: string; className: string }
+> = {
+  none: { label: 'To Bill', className: 'badge b-amber' },
+  partial: { label: 'Part Billed', className: 'badge b-blue' },
+  full: { label: 'Billed', className: 'badge b-green' },
+};
 
 /** Left accent bar. Only two states exist for a dispatch: it happened (green —
  *  the same "done" green the status badge uses) or it was reversed (grey). */
@@ -68,6 +86,8 @@ function accentFor(g: DispatchGroup): string {
 
 export function DispatchCard(props: {
   g: DispatchGroup;
+  /** Undefined while the dispatch list loads — no badge, Invoice stays shown. */
+  billedStatus?: CustomerDispatchRow['billedStatus'];
   isOpen: boolean;
   canCancel: boolean;
   cancelPending: boolean;
@@ -78,7 +98,10 @@ export function DispatchCard(props: {
   const cancelled = g.status === 'cancelled';
 
   return (
-    <div className="panel" style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}>
+    <div
+      className="panel"
+      style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
+    >
       {/* Accent bar — green dispatched, grey cancelled. */}
       <div style={{ width: 4, flexShrink: 0, background: accentFor(g) }} />
       {/* A cancelled dispatch was reversed, so its card is dimmed — the same
@@ -100,27 +123,47 @@ export function DispatchCard(props: {
           <span style={{ color: 'var(--text3)', display: 'inline-flex' }} aria-hidden>
             {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </span>
-          {/* Not a link — customer dispatches have no detail route; the card's
-              own expand IS the detail. Kept in --cyan, this module's existing
-              identity colour (JC No. and the KPI tile use it too). */}
-          <span className="td-code" style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}>
+          {/* Opens the dispatch record (DC preview + Print DC). Kept in --cyan,
+              this module's existing identity colour (JC No. and the KPI tile
+              use it too). */}
+          <Link
+            to="/customer-dispatches/$id"
+            params={{ id: g.dispatchId }}
+            className="td-code"
+            style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}
+            onClick={(e) => e.stopPropagation()}
+          >
             {g.code}
+          </Link>
+          <span className="fw-700" style={{ fontSize: 13 }}>
+            {g.customer ?? '—'}
           </span>
-          <span className="fw-700" style={{ fontSize: 13 }}>{g.customer ?? '—'}</span>
-          <span className={`badge ${cancelled ? 'b-grey' : 'b-green'}`}>{g.status}</span>
+          {cancelled ? <span className="badge b-grey">Cancelled</span> : null}
+          {!cancelled && props.billedStatus ? (
+            <span className={BILLED_BADGE[props.billedStatus].className}>
+              {BILLED_BADGE[props.billedStatus].label}
+            </span>
+          ) : null}
           <span style={{ flex: 1 }} />
           {/* Stop the row-toggle when clicking an action button. */}
           {!cancelled ? (
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-              <Link
-                to="/invoices/new"
-                search={{ dispatchId: g.dispatchId }}
-                className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--green)' }}
-                title="Raise an invoice against this dispatch"
-              >
-                🧾 Invoice
-              </Link>
+            <div
+              style={{ display: 'flex', gap: 4, alignItems: 'center' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <PrintDcButton dispatchId={g.dispatchId} />
+              {/* Fully invoiced — nothing left to bill, so no Invoice button. */}
+              {props.billedStatus === 'full' ? null : (
+                <Link
+                  to="/invoices/new"
+                  search={{ dispatchId: g.dispatchId }}
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: 'var(--green2)' }}
+                  title="Raise an invoice against this dispatch"
+                >
+                  🧾 Invoice
+                </Link>
+              )}
               {props.canCancel ? (
                 <button
                   type="button"
@@ -148,14 +191,21 @@ export function DispatchCard(props: {
           }}
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <QtyBox label="Total Qty" value={`-${g.totalQty}`} color="var(--red)" />
+            <QtyBox label="Total Qty" value={g.totalQty} color="var(--green2)" />
             <QtyBox label="Lines" value={g.lines.length} bordered />
           </div>
           <div
             className="mono"
-            style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+            style={{
+              fontSize: 11,
+              color: 'var(--text3)',
+              display: 'flex',
+              gap: 6,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+            }}
           >
-            <span className="text2">{g.date}</span>
+            <span className="text2">{fmtDate(g.date)}</span>
             <span>·</span>
             <span>
               SO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{g.soNo ?? '—'}</span>
@@ -185,51 +235,55 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
     <div style={{ padding: '8px 12px 8px 36px' }}>
       <div
         style={{
-          fontSize: 10,
+          fontSize: 11,
           color: 'var(--blue)',
           fontFamily: 'var(--mono)',
           fontWeight: 700,
-          letterSpacing: '0.06em',
           marginBottom: 6,
         }}
       >
-        ▸ DISPATCHED ITEMS — {g.code}
+        Items
       </div>
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Ln</th>
             <th>JC No.</th>
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
-            <th className="td-ctr" style={{ color: 'var(--red)' }}>Dispatch Qty</th>
+            <th className="th-num" style={{ color: 'var(--green2)' }}>
+              Dispatch Qty
+            </th>
             <th className="td-ctr">UOM</th>
-            <th className="td-ctr">Stock B→A</th>
+            <th className="th-num">Stock Before → After</th>
           </tr>
         </thead>
         <tbody>
           {g.lines.map((l, i) => (
             <tr key={`${l.dispatchId}-${i}`} style={{ background: 'var(--bg)' }}>
-              <td className="td-ctr mono">{i + 1}</td>
               <td className="td-code" style={{ color: 'var(--cyan)', fontSize: 11 }}>
                 {l.jcNo ?? <span style={{ color: 'var(--text3)' }}>—</span>}
               </td>
-              <td className="mono" style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
+              <td
+                className="mono"
+                style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}
+              >
                 {l.clientPoLineNo ?? '—'}
               </td>
               {/* Code carries the customer's drawing revision — "IN-IT-0007/B"
                   — read off the SO line this piece shipped against. A line with
                   no SO behind it keeps the bare code. */}
-              <td className="td-code" style={{ color: 'var(--purple)' }}>
+              <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                 {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
               </td>
               <td className="fw-700">{l.itemName}</td>
-              <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>-{l.qty}</td>
+              <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
+                {l.qty}
+              </td>
               <td className="td-ctr">
                 <span className="badge b-grey">{l.uom ?? 'NOS'}</span>
               </td>
-              <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+              <td className="mono td-num" style={{ fontSize: 11, color: 'var(--text3)' }}>
                 {l.stockBefore ?? '—'}→{l.stockAfter ?? '—'}
               </td>
             </tr>

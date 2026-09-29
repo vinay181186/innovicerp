@@ -12,6 +12,7 @@ export const designIssueAgingReport: RegisteredReport = {
     description:
       'Design issues with status Open or In Progress, sorted by age (days since raised) descending — stalest items at top.',
     group: 'Design',
+    dept: 'design',
     filters: [
       {
         key: 'severity',

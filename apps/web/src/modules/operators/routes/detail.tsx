@@ -1,7 +1,7 @@
 // Operator detail page (UI-003-03). Group-4 migration onto the primitives,
 // following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
 //
-//   ← Back to Operator Master
+//   ← Back
 //   DetailHeader (code + name + Active chip + Edit/Delete) → ReadGrid
 //
 // An operator is a flat master — no line table, no related-document query —
@@ -23,15 +23,19 @@
 //   Department lg · Linked user lg                      → 6 + 6 = 12
 //   Skills / Machines full                              → 12
 //
-// Linked user is the auth user's id, so it is mono: it is a code, and a code
-// that wraps mid-string is unreadable in a proportional face.
+// Linked user shows the login's NAME · EMAIL for an admin (GET /users/:id is
+// admin-only), and the NAME from the Task Board's active-user list for anyone
+// else; only a link to a user neither knows falls back to the id.
 
 import type { Operator } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
+import { useTaskUserOptions } from '@/modules/tasks/api';
+import { useUser } from '@/modules/users/api';
 import { ConfirmDialog } from '@/ui/feedback';
 import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useOperator, useSoftDeleteOperator } from '../api';
@@ -42,7 +46,7 @@ export const operatorDetailRoute = createRoute({
   component: OperatorDetailPage,
 });
 
-const BACK_LABEL = 'Back to Operator Master';
+const BACK_LABEL = 'Back';
 
 /** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
  *  state has no header to hang it on, so it renders the same control on its
@@ -74,7 +78,7 @@ function OperatorDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Operator not found'}
+          message={error instanceof Error ? error.message : 'Operator not found.'}
         />
       </div>
     );
@@ -106,7 +110,7 @@ function OperatorDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete operator.'
+      : 'Could not delete Operator. Try again.'
     : null;
 
   return (
@@ -147,10 +151,10 @@ function OperatorDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete operator ${operator.code}?`}
-          message={`${operator.name} will be removed from the Operator Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move Operator ${operator.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}
@@ -162,10 +166,25 @@ function OperatorDetailPage(): React.JSX.Element {
 
 function OperatorFacts(props: { operator: Operator }): React.JSX.Element {
   const { operator } = props;
+  const { data: users } = useTaskUserOptions(Boolean(operator.userId));
+  // Name AND email of the linked login. GET /users/:id is admin-only on the
+  // server, so it is asked only for an admin (anyone else would get a 403
+  // and a retry storm); everyone else sees the name from the Task Board's
+  // active-user list. 'User not in the active list' shows when neither knows the user.
+  const { data: me } = useSession();
+  const { data: linkedUser } = useUser(
+    me?.role === 'admin' ? (operator.userId ?? undefined) : undefined,
+  );
+  const optionName = users?.options.find((u) => u.id === operator.userId)?.name ?? null;
+  const linkedName = operator.userId
+    ? linkedUser
+      ? `${linkedUser.fullName?.trim() || optionName || linkedUser.email} · ${linkedUser.email}`
+      : (optionName ?? 'User not in the active list')
+    : null;
   return (
     <ReadGrid>
       <ReadField label="Department" size="lg" value={operator.department} />
-      <ReadField label="Linked user" size="lg" mono value={operator.userId} />
+      <ReadField label="Linked User" size="lg" value={linkedName} />
 
       <ReadField label="Skills / Machines" size="full" pre value={operator.skills} />
     </ReadGrid>

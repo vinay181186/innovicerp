@@ -11,10 +11,7 @@ import {
   useSoftDeleteMaterialGrade,
   useUpdateMaterialGrade,
 } from '../api';
-import {
-  downloadMaterialGradeTemplate,
-  parseMaterialGradeImportFile,
-} from '../lib/import-export';
+import { downloadMaterialGradeTemplate, parseMaterialGradeImportFile } from '../lib/import-export';
 import { fmtImportList } from '../lib/import-message';
 import { MaterialMasterPanel } from './material-master-panel';
 
@@ -26,11 +23,14 @@ export function GradeTab({
   term,
   searchInput,
   onSearchInput,
+  tabs,
 }: {
   /** The debounced search term from the URL (the route owns the debounce). */
   term: string | undefined;
   searchInput: string;
   onSearchInput: (v: string) => void;
+  /** The page's Grade | Size strip — drawn inside the panel's header band. */
+  tabs?: React.ReactNode;
 }): React.JSX.Element {
   // No isActive filter here — the whole master comes down once and the
   // Active/Inactive split is done in the panel, so the count strip can show all
@@ -56,7 +56,8 @@ export function GradeTab({
       error={list.error}
       searchInput={searchInput}
       onSearchInput={onSearchInput}
-      searchPlaceholder="🔍 Search grade, code, description…"
+      tabs={tabs}
+      searchPlaceholder="Search grade, code, description…"
       namePlaceholder="e.g. EN24"
       saving={create.isPending || update.isPending}
       onSave={async (input, id) => {
@@ -64,7 +65,11 @@ export function GradeTab({
           // '' (not undefined) so clearing the box actually clears the column.
           await update.mutateAsync({
             id,
-            input: { name: input.name, description: input.description ?? '', isActive: input.isActive },
+            input: {
+              name: input.name,
+              description: input.description ?? '',
+              isActive: input.isActive,
+            },
           });
         } else {
           await create.mutateAsync({

@@ -3,6 +3,7 @@
 // (mid-state) → closed=green (terminal good) → cancelled=grey.
 
 import type { PoStatus } from '@innovic/shared';
+import { PO_STATUS_LABELS } from '../lib/po-labels';
 
 const CLASSES: Record<PoStatus, string> = {
   draft: 'b-grey',
@@ -14,5 +15,5 @@ const CLASSES: Record<PoStatus, string> = {
 };
 
 export function PoStatusBadge(props: { status: PoStatus }) {
-  return <span className={`badge ${CLASSES[props.status]}`}>{props.status.replaceAll('_', ' ')}</span>;
+  return <span className={`badge ${CLASSES[props.status]}`}>{PO_STATUS_LABELS[props.status]}</span>;
 }

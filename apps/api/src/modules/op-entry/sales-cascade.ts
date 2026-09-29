@@ -203,7 +203,7 @@ async function finishJc(
       {
         action: 'JC_COMPLETE',
         entity: 'JobCard',
-        detail: `${jcCode} — All ops complete`,
+        detail: `${jcCode} — All operations Completed`,
         refId: jcCode,
       },
       user.companyId,

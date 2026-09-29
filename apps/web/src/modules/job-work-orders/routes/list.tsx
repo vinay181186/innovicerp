@@ -21,11 +21,15 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate, todayIst } from '@/lib/date';
 import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
+import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
 
 // No pagination — mirror the SO/WO list: load all matching JWSOs in one fetch
@@ -47,23 +51,63 @@ export const jobWorkOrdersListRoute = createRoute({
 });
 
 // Material status as colored text: header received vs expected client material.
-function MaterialCell({ received, expected }: { received: number; expected: number }): React.JSX.Element {
+function MaterialCell({
+  received,
+  expected,
+}: {
+  received: number;
+  expected: number;
+}): React.JSX.Element {
   if (expected > 0 && received >= expected) {
-    return <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓ Full</span>;
+    return <span style={{ color: 'var(--green2)', fontWeight: 700 }}>✓ Full</span>;
   }
   if (received > 0) {
-    return <span style={{ color: 'var(--amber)', fontWeight: 700 }}>◑ Partial ({received})</span>;
+    return (
+      <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
+        ◑ Partly Received ({received})
+      </span>
+    );
   }
-  return <span style={{ color: 'var(--red)', fontWeight: 700 }}>✕ Not Received</span>;
+  return <span style={{ color: 'var(--red2)', fontWeight: 700 }}>✕ Not Received</span>;
 }
 
-/** One cell of the card's metric strip — big number over a small caps label,
- *  mirroring the SO/WO list (TOTAL QTY / JC QTY / LINES). */
-function QtyBox({ label, value, color, bordered }: { label: string; value: number; color?: string; bordered?: boolean }): React.JSX.Element {
+/** One cell of the card's metric strip — big number over a small label,
+ *  mirroring the SO list (Total Qty / JC Qty / Lines). */
+function QtyBox({
+  label,
+  value,
+  color,
+  bordered,
+}: {
+  label: string;
+  value: number;
+  color?: string;
+  bordered?: boolean;
+}): React.JSX.Element {
   return (
-    <div style={{ padding: '4px 12px', textAlign: 'center', minWidth: 58, borderLeft: bordered ? '1px solid var(--border)' : undefined }}>
-      <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>{value}</div>
-      <div className="mono" style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+    <div
+      style={{
+        padding: '4px 12px',
+        textAlign: 'center',
+        minWidth: 58,
+        borderLeft: bordered ? '1px solid var(--border)' : undefined,
+      }}
+    >
+      <div
+        className="mono fw-700"
+        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
+      >
+        {value}
+      </div>
+      <div
+        className="mono"
+        style={{
+          fontSize: 11,
+          color: 'var(--text3)',
+        }}
+      >
+        {label}
+      </div>
     </div>
   );
 }
@@ -71,7 +115,8 @@ function QtyBox({ label, value, color, bordered }: { label: string; value: numbe
 /** Left accent bar — red when late, green once finished, blue while open. Same
  *  three tokens the badges use (mirrors the SO/WO list accentFor). */
 function accentFor(jw: JobWorkOrderListItem, today: string): string {
-  if (jw.earliestDueDate != null && jw.earliestDueDate < today && jw.status === 'open') return 'var(--red)';
+  if (jw.earliestDueDate != null && jw.earliestDueDate < today && jw.status === 'open')
+    return 'var(--red)';
   if (jw.status === 'closed' || jw.status === 'dispatched') return 'var(--green)';
   return 'var(--blue)';
 }
@@ -82,7 +127,11 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -116,13 +165,17 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
   const deleteMut = useSoftDeleteJobWorkOrder();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const toggleExpand = (id: string): void => setExpandedId((prev) => (prev === id ? null : id));
 
-  const onDelete = (jwId: string, code: string): void => {
-    if (confirm(`Move JW ${code} to Trash?`)) deleteMut.mutate(jwId);
+  // The JWSO the Move-to-Trash dialog is asking about, or null when closed.
+  const [trashTarget, setTrashTarget] = useState<{ id: string; code: string } | null>(null);
+  const onDelete = async (): Promise<void> => {
+    if (!trashTarget) return;
+    await deleteMut.mutateAsync(trashTarget.id);
+    setTrashTarget(null);
   };
 
   const total = data?.total ?? 0;
@@ -132,61 +185,86 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   // panel, not the list. `eff` undefined only while access loads — don't block
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
     <div>
-      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + search + status filter + New button stay pinned while the cards
-          scroll underneath. `#content` is the scroll container, so top:0 pins this
-          to its padding box; the background must be opaque var(--bg) or cards show
-          through as they pass under. The green info banner below is a one-time
-          explainer, so it is left OUTSIDE the band and scrolls away. Not bled to
-          the edges — that would give the app a horizontal scrollbar. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
+      {/* The ONE list header (ui/layout ListHeader) — same URL params, same
+          query as before; the status filter stays a select. */}
+      <ListHeader
+        title="JWSO Master"
+        icon="🔧"
+        count={total}
+        noun="JWSO"
+        filterNote={search.status ? SO_STATUS_LABEL[search.status] : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search JWSO no., customer, client PO, part, item code…"
+        updating={isFetching && !isLoading}
+        filters={
+          <select
+            className="innovic-select"
+            aria-label="JWSO status"
+            title="JWSO status"
+            value={search.status ?? ''}
+            onChange={(e) => {
+              const v = e.target.value as SoStatus | '';
+              void navigate({
+                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                replace: true,
+              });
+            }}
+          >
+            <option value="">All statuses</option>
+            {SO_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {SO_STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
+            replace: true,
+          });
         }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>JWSO Master — Job Work Sales Order (Material from Client)</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input className="innovic-input" placeholder="Search this list…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
-            <select className="innovic-select" value={search.status ?? ''} onChange={(e) => { const v = e.target.value as SoStatus | ''; void navigate({ search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 130, fontSize: 12 }}>
-              <option value="">All statuses</option>
-              {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
-            {canCreate ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JWSO Order</Link> : null}
-          </div>
-        </div>
-      </div>
-
-      <div style={{ padding: '10px 14px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, marginBottom: 14, fontSize: 12, color: 'var(--text2)' }}>
-        <b style={{ color: 'var(--green)' }}>📌 Job Work:</b> Client provides raw material → We machine/process it → Deliver finished parts back to client. Track client material receipt here.
-      </div>
+        filtersActive={search.search != null || search.status != null || searchInput !== ''}
+        primary={
+          canCreate ? (
+            <Link to="/job-work-orders/new" className="btn btn-primary">
+              + New JWSO
+            </Link>
+          ) : null
+        }
+      />
 
       {isLoading ? (
-        <div className="panel"><div className="empty-state" style={{ padding: 20 }}><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</div></div>
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 20 }}>
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+            Loading…
+          </div>
+        </div>
       ) : isError ? (
-        <div className="panel"><div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load job work orders'}</div></div>
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 20, color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Could not load JWSOs. Try again.'}
+          </div>
+        </div>
       ) : rows.length === 0 ? (
-        <div className="panel"><div className="empty-state" style={{ padding: 20 }}>No Job Work Sales Orders — click + New JWSO Order</div></div>
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 20 }}>
+            {search.search || search.status ? 'No JWSOs match.' : 'No JWSOs yet.'}
+          </div>
+        </div>
       ) : (
         rows.map((jw) => {
           const isExpanded = expandedId === jw.jwId;
-          const overdue = !!jw.earliestDueDate && jw.earliestDueDate < today && jw.status === 'open';
+          const overdue =
+            !!jw.earliestDueDate && jw.earliestDueDate < today && jw.status === 'open';
           const jcColor =
             jw.jcQty >= jw.totalQty && jw.totalQty > 0
               ? 'var(--green)'
@@ -206,7 +284,14 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                 <div
                   onClick={() => toggleExpand(jw.jwId)}
                   title={isExpanded ? 'Hide line items' : 'Show line items'}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 14px', cursor: 'pointer' }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                    padding: '10px 14px',
+                    cursor: 'pointer',
+                  }}
                 >
                   <span style={{ color: 'var(--text3)', display: 'inline-flex' }} aria-hidden>
                     {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -221,19 +306,33 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                   >
                     {jw.code}
                   </Link>
-                  <span className="fw-700" style={{ fontSize: 13 }}>{jw.customerName ?? '—'}</span>
+                  <span className="fw-700" style={{ fontSize: 13 }}>
+                    {jw.customerName ?? '—'}
+                  </span>
                   <SoStatusBadge status={jw.status} />
                   <span style={{ flex: 1 }} />
                   {canEdit || canDelete ? (
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <div
+                      style={{ display: 'flex', gap: 4, alignItems: 'center' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {canEdit ? (
-                        <Link to="/job-work-orders/$id/edit" params={{ id: jw.jwId }} className="btn btn-ghost btn-sm">
+                        <Link
+                          to="/job-work-orders/$id/edit"
+                          params={{ id: jw.jwId }}
+                          className="btn btn-ghost btn-sm"
+                        >
                           Edit
                         </Link>
                       ) : null}
                       {canDelete ? (
-                        <button type="button" className="btn btn-danger btn-sm" disabled={deleteMut.isPending} onClick={() => onDelete(jw.jwId, jw.code)}>
-                          Del
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm"
+                          disabled={deleteMut.isPending}
+                          onClick={() => setTrashTarget({ id: jw.jwId, code: jw.code })}
+                        >
+                          Delete
                         </button>
                       ) : null}
                     </div>
@@ -242,9 +341,18 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                 {/* Band 2: metric strip + meta line */}
                 <div
                   onClick={() => toggleExpand(jw.jwId)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '0 14px 10px', cursor: 'pointer' }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    padding: '0 14px 10px',
+                    cursor: 'pointer',
+                  }}
                 >
-                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
+                  <div
+                    style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
+                  >
                     <QtyBox label="Total Qty" value={jw.totalQty} />
                     <QtyBox label="JC Qty" value={jw.jcQty} color={jcColor} bordered />
                     {/* Dispatched = finished parts delivered back to the client
@@ -265,21 +373,41 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                   </div>
                   <div
                     className="mono"
-                    style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--text3)',
+                      display: 'flex',
+                      gap: 6,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                    }}
                   >
-                    <span className="text2">{jw.jwDate}</span>
+                    <span className="text2">{fmtDate(jw.jwDate)}</span>
                     <span>·</span>
                     <span>
-                      PO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{jw.clientPoNo ?? '—'}</span>
+                      Client PO No.{' '}
+                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                        {jw.clientPoNo ?? '—'}
+                      </span>
                     </span>
                     <span>·</span>
                     <span>
                       Material{' '}
-                      <MaterialCell received={jw.partyReceivedQty} expected={Number(jw.clientMaterialQty ?? 0)} />
+                      <MaterialCell
+                        received={jw.partyReceivedQty}
+                        expected={Number(jw.clientMaterialQty ?? 0)}
+                      />
                     </span>
                     <span>·</span>
-                    <span style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>
-                      {jw.earliestDueDate ? `Due ${jw.earliestDueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                    <span
+                      style={{
+                        color: overdue ? 'var(--red)' : undefined,
+                        fontWeight: overdue ? 700 : undefined,
+                      }}
+                    >
+                      {jw.earliestDueDate
+                        ? `Due ${fmtDate(jw.earliestDueDate)}${overdue ? ' ⚠' : ''}`
+                        : 'No due date'}
                     </span>
                     {jw.remarks ? (
                       <>
@@ -301,18 +429,18 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         })
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-        <span>
-          {total === 0
-            ? 'No JWSOs'
-            : total > LIST_LIMIT
-              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-              : `Showing all ${total} JWSO${total === 1 ? '' : 's'}`}
-        </span>
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-        💡 Click a row to open the JWSO. Click the chevron to expand its line items inline.
-      </div>
+      <ListFooter total={total} shown={rows.length} noun="JWSO" limit={LIST_LIMIT} />
+
+      {trashTarget ? (
+        <ConfirmDialog
+          title={`Move JWSO ${trashTarget.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          onConfirm={onDelete}
+          onCancel={() => setTrashTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -322,12 +450,28 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 // qty / rate / due / status.
 function JwExpandedPanel({ jwId, canEdit }: { jwId: string; canEdit: boolean }): React.JSX.Element {
   const { data, isLoading, isError, error } = useJobWorkOrder(jwId);
-  if (isLoading) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}><Loader2 size={12} className="inline animate-spin" /> Loading lines…</div>;
-  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load JWSO detail'}</div>;
+  if (isLoading)
+    return (
+      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}>
+        <Loader2 size={12} className="inline animate-spin" /> Loading lines…
+      </div>
+    );
+  if (isError || !data)
+    return (
+      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red2)' }}>
+        {error instanceof Error ? error.message : 'Could not load JWSO detail. Try again.'}
+      </div>
+    );
   return <JwLinesTable jw={data} canEdit={canEdit} />;
 }
 
-function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolean }): React.JSX.Element {
+function JwLinesTable({
+  jw,
+  canEdit,
+}: {
+  jw: JobWorkOrderDetail;
+  canEdit: boolean;
+}): React.JSX.Element {
   // Money hidden for L1 Viewers: the API nulls the JWSO GST % + line rates, so
   // the Rate column is dropped here too.
   // Told by the server, not inferred from a null money field: a null also means
@@ -339,51 +483,120 @@ function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolea
   const cols = (canEdit ? 13 : 12) - (priceHidden ? 1 : 0);
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
-      <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {jw.code}</div>
-      <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
-        <thead>
-          <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Ln</th><ItemThumbnailHeader /><th>Item</th><th>Material</th><th>Drawing No</th>
-            <th className="td-ctr">Order Qty</th>
-            <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
-            <th className="td-ctr">Pending</th>
-            <th>UOM</th>{priceHidden ? null : <th className="td-ctr">Rate</th>}<th>Due Date</th><th>JWSO Status</th>
-            {canEdit ? <th /> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {jw.lines.length === 0 ? (
-            <tr><td colSpan={cols} className="empty-state">No lines yet</td></tr>
-          ) : (
-            jw.lines.map((l) => {
-              const balance = Math.max(0, l.orderQty - l.returnedQty);
-              return (
-              <tr key={l.id} style={{ background: 'var(--bg)' }}>
-                <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
-                {/* CODE/REV — the client's drawing revision typed on this line travels
-                    with the code (the badge formats it via itemCodeWithRev). */}
-                <ItemThumbnailCell imagePath={l.itemImagePath} alt={l.partName} />
-                <td><ItemBadge size="row" showImage={false} code={l.itemCodeText} name={l.partName} revision={l.revision} imagePath={l.itemImagePath} /></td>
-                <td className="text2" style={{ fontSize: 11 }}>{l.material ?? '—'}</td>
-                <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{l.drawingNo ?? '—'}</td>
-                <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>
-                <td className="td-ctr mono fw-700" style={{ color: l.returnedQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{l.returnedQty}</td>
-                <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance}</td>
-                <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>{l.uom}</td>
-                {priceHidden ? null : <td className="td-ctr mono" style={{ fontSize: 11 }}>{l.rate}</td>}
-                <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
-                <td><SoStatusBadge status={l.status} /></td>
-                {canEdit ? (
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <Link to="/job-work-orders/$id/edit" params={{ id: jw.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}>Edit</Link>
-                  </td>
-                ) : null}
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--blue)',
+          fontFamily: 'var(--mono)',
+          fontWeight: 700,
+          marginBottom: 6,
+        }}
+      >
+        Line Items
+      </div>
+      <div className="tbl-wrap">
+        <table className="innovic-table tbl-grid tbl-compact" style={{ margin: 0 }}>
+          <thead>
+            <tr style={{ background: 'var(--bg4)' }}>
+              <th style={{ width: 36 }}>Ln</th>
+              <ItemThumbnailHeader />
+              <th>Item</th>
+              <th>Material</th>
+              <th>Drawing No.</th>
+              <th className="th-num">Order Qty</th>
+              <th className="th-num" style={{ color: 'var(--green2)' }}>
+                Dispatched
+              </th>
+              <th className="th-num">Pending</th>
+              <th>UOM</th>
+              {priceHidden ? null : <th className="th-num">Rate</th>}
+              <th>Due Date</th>
+              <th>JWSO Status</th>
+              {canEdit ? <th /> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {jw.lines.length === 0 ? (
+              <tr>
+                <td colSpan={cols} className="empty-state">
+                  No lines yet.
+                </td>
               </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
+            ) : (
+              jw.lines.map((l) => {
+                const balance = Math.max(0, l.orderQty - l.returnedQty);
+                return (
+                  <tr key={l.id} style={{ background: 'var(--bg)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                      {l.lineNo}
+                    </td>
+                    {/* CODE/REV — the client's drawing revision typed on this line travels
+                    with the code (the badge formats it via itemCodeWithRev). */}
+                    <ItemThumbnailCell imagePath={l.itemImagePath} alt={l.partName} />
+                    <td>
+                      <ItemBadge
+                        size="row"
+                        showImage={false}
+                        code={l.itemCodeText}
+                        name={l.partName}
+                        revision={l.revision}
+                        imagePath={l.itemImagePath}
+                      />
+                    </td>
+                    <td className="text2" style={{ fontSize: 11 }}>
+                      {l.material ?? '—'}
+                    </td>
+                    <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                      {l.drawingNo ?? '—'}
+                    </td>
+                    <td className="mono fw-700 td-num" style={{ fontSize: 14 }}>
+                      {l.orderQty}
+                    </td>
+                    <td
+                      className="mono fw-700 td-num"
+                      style={{ color: l.returnedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+                    >
+                      {l.returnedQty}
+                    </td>
+                    <td
+                      className="mono fw-700 td-num"
+                      style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
+                    >
+                      {balance}
+                    </td>
+                    <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+                      {l.uom}
+                    </td>
+                    {priceHidden ? null : (
+                      <td className="mono td-num" style={{ fontSize: 11 }}>
+                        {l.rate}
+                      </td>
+                    )}
+                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                      {fmtDate(l.dueDate)}
+                    </td>
+                    <td>
+                      <SoStatusBadge status={l.status} />
+                    </td>
+                    {canEdit ? (
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <Link
+                          to="/job-work-orders/$id/edit"
+                          params={{ id: jw.id }}
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 11 }}
+                        >
+                          Edit
+                        </Link>
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

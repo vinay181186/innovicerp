@@ -7,6 +7,7 @@ import {
   listClientsQuerySchema,
   updateClientInputSchema,
 } from './schema';
+import { getClientRelated } from './related';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -22,6 +23,13 @@ export async function clientsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/clients/next-code', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getNextClientCode(req.user);
+  });
+
+  // Related Documents panel for the master (ADR-190).
+  app.get('/clients/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return getClientRelated(id, req.user);
   });
 
   app.get('/clients/:id', async (req) => {

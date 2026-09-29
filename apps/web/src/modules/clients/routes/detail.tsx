@@ -19,6 +19,7 @@
 //   Contact person lg · Email lg                        → 6 + 6  = 12
 //   Phone lg · GST number lg                            → 6 + 6  = 12
 //   City lg · State md · Pincode xs                     → 6+4+2  = 12
+//   Payment Days xs (ADR-188)                           → 2, row closes
 //   Address full                                        → 12
 //
 // The address row is deliberately identical to the vendor's. Phone and GST
@@ -29,6 +30,7 @@ import type { Client } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -41,7 +43,7 @@ export const clientDetailRoute = createRoute({
   component: ClientDetailPage,
 });
 
-const BACK_LABEL = 'Back to Client Master';
+const BACK_LABEL = 'Back to Customer Master';
 
 /** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
  *  state has no header to hang it on, so it renders the same control on its
@@ -74,7 +76,7 @@ function ClientDetailPage(): React.JSX.Element {
   }
 
   if (isLoading) {
-    return <PageState state="loading" message="⟳ Loading client…" />;
+    return <PageState state="loading" message="Loading customer…" />;
   }
 
   if (isError || !client) {
@@ -83,7 +85,7 @@ function ClientDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Client not found'}
+          message={error instanceof Error ? error.message : 'Customer not found. Refresh the page.'}
         />
       </div>
     );
@@ -108,7 +110,7 @@ function ClientDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete client.'
+      : 'Could not move the customer to Trash. Try again.'
     : null;
 
   return (
@@ -147,12 +149,16 @@ function ClientDetailPage(): React.JSX.Element {
         <ClientFacts client={client} />
       </DetailHeader>
 
+      {/* Sales Orders, dispatches and outstanding invoices for this customer
+          (ADR-190). Hides when empty. */}
+      <RelatedDocsPanel module="clients" id={client.id} />
+
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete client ${client.code}?`}
-          message={`${client.name} will be removed from the Client Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move Customer ${client.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}
@@ -166,17 +172,19 @@ function ClientFacts(props: { client: Client }): React.JSX.Element {
   const { client } = props;
   return (
     <ReadGrid>
-      <ReadField label="Contact person" size="lg" value={client.contactPerson} />
-      <ReadField label="Email" size="lg" value={client.email} />
-
-      <ReadField label="Phone" size="lg" mono value={client.phone} />
-      <ReadField label="GST number" size="lg" mono value={client.gstNumber} />
+      {/* Same order as the Customer form: the address block, then contact. */}
+      <ReadField label="Address" size="full" pre value={client.addressLine1} />
 
       <ReadField label="City" size="lg" value={client.city} />
       <ReadField label="State" size="md" value={client.state} />
       <ReadField label="Pincode" size="xs" mono value={client.pincode} />
 
-      <ReadField label="Address" size="full" pre value={client.addressLine1} />
+      <ReadField label="Contact Person" size="lg" value={client.contactPerson} />
+      <ReadField label="Email" size="lg" value={client.email} />
+
+      <ReadField label="Phone" size="lg" mono value={client.phone} />
+      <ReadField label="GSTIN" size="lg" mono value={client.gstNumber} />
+      <ReadField label="Payment Days" size="xs" mono value={client.paymentDays ?? null} />
     </ReadGrid>
   );
 }

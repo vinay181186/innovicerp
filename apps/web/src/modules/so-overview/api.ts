@@ -1,15 +1,11 @@
-import type {
-  SoOverviewDetailResponse,
-  SoOverviewQuery,
-  SoOverviewResponse,
-} from '@innovic/shared';
+import type { SoOverviewQuery, SoOverviewResponse } from '@innovic/shared';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const soOverviewKeys = {
   all: ['so-overview'] as const,
-  list: (q: SoOverviewQuery) => [...soOverviewKeys.all, q.status ?? null, q.search ?? null] as const,
-  detail: (soId: string | null) => [...soOverviewKeys.all, 'detail', soId] as const,
+  list: (q: SoOverviewQuery) =>
+    [...soOverviewKeys.all, q.status ?? null, q.search ?? null] as const,
 };
 
 function buildSearch(q: SoOverviewQuery): string {
@@ -31,12 +27,5 @@ export function useSoOverview(query: SoOverviewQuery) {
   });
 }
 
-export function useSoOverviewDetail(soId: string | null) {
-  return useQuery<SoOverviewDetailResponse>({
-    queryKey: soOverviewKeys.detail(soId),
-    queryFn: () => apiFetch<SoOverviewDetailResponse>(`/so-overview/${soId}/detail`),
-    enabled: !!soId,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
-  });
-}
+// No per-SO drill hook: clicking an SO on SO Overview opens its SO Status page
+// (/sales-orders/$id/status), which fetches GET /so-status/:id itself.

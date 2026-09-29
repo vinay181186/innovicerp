@@ -1,14 +1,21 @@
 // GRN detail (UI-003-05).
 
-import type { GoodsReceiptNoteDetail, GoodsReceiptNoteLineDetail } from '@innovic/shared';
+import type {
+  GoodsReceiptNoteDetail,
+  GoodsReceiptNoteLineDetail,
+  GrnQcStatus,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
+import { ActionMenu } from '@/ui/layout';
 import { useSession } from '@/lib/session';
 import { useMyCompany } from '@/modules/settings/api';
 import { usePrintTemplates } from '@/modules/print-templates/api';
@@ -47,8 +54,8 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view GRNs. Ask an admin.
       </div>
     );
   }
@@ -69,20 +76,20 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'GRN not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'GRN not found. Refresh the page.'}
           </div>
         </div>
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(detail.id, {
-      onSuccess: () => {
-        void navigate({ to: '/goods-receipt-notes', replace: true });
-      },
-    });
+  // mutateAsync: ConfirmDialog stays pending while it runs and shows a
+  // rejection inside the dialog instead of closing.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(detail.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/goods-receipt-notes', replace: true });
   };
 
   // Print follows the page's existing VIEW permission — if you can read the
@@ -107,7 +114,23 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const totalReceived = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
   const totalAccepted = detail.lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
   const totalRejected = detail.lines.reduce((s, l) => s + l.qcRejectedQty, 0);
-  const anyCompleted = detail.lines.some((l) => l.qcStatus === 'completed');
+  // ADR-189: a GRN with ANY inspected qty (not only a fully cleared line)
+  // cannot be deleted — the server refuses it, so the menu says so up front.
+  const anyInspected = detail.lines.some(
+    (l) => l.qcStatus === 'completed' || l.qcAcceptedQty + l.qcRejectedQty > 0,
+  );
+  // The next step for a GRN is Incoming QC. `?line=` deep-links straight to
+  // the Inspect popup for that GRN line (incoming-qc/routes/index.tsx).
+  const firstQcPending = detail.lines.find((l) => l.qcStatus !== 'completed');
+  // Header QC status — same rule as the GRN list card and tile: cleared once
+  // every line is inspected, "In Progress" only when a line's QC status is
+  // 'in_progress', else pending.
+  const headerQcStatus: GrnQcStatus =
+    detail.lines.length > 0 && !firstQcPending
+      ? 'completed'
+      : detail.lines.some((l) => l.qcStatus === 'in_progress')
+        ? 'in_progress'
+        : 'pending';
 
   return (
     <div>
@@ -118,11 +141,14 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
-            >
-              {detail.code}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span
+                className="td-code"
+                style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
+              >
+                {detail.code}
+              </span>
+              <QcStatusBadge status={headerQcStatus} />
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
               {detail.vendorName ?? detail.vendorCodeText ?? '—'}
@@ -138,19 +164,6 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               }}
               suggestedTitle={`Follow up on GRN ${detail.code}`}
             />
-            {/* Disabled until the blocks land. Printing early is worse than
-                waiting: the sheet comes out looking complete but carries none
-                of the special notes, terms, footer or signature an admin wrote,
-                and nothing on it says so. */}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={onPrint}
-              disabled={templatesLoading}
-              title={templatesLoading ? 'Loading print templates\u2026' : 'Print this GRN'}
-            >
-              <Printer size={13} /> Print
-            </button>
             {detail.purchaseOrderId ? (
               <Link
                 to="/purchase-orders/$id"
@@ -182,90 +195,67 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 Open DC
               </Link>
             ) : null}
-            {canEdit ? (
+            {/* Print stays disabled until the print blocks land. Printing early
+                is worse than waiting: the sheet comes out looking complete but
+                carries none of the special notes, terms, footer or signature an
+                admin wrote, and nothing on it says so. Delete opens the inline
+                "Move to Trash?" confirm below. */}
+            <ActionMenu
+              items={[
+                {
+                  label: 'Print',
+                  onClick: onPrint,
+                  disabled: templatesLoading,
+                  title: templatesLoading ? 'Loading print templates…' : 'Print this GRN',
+                },
+                {
+                  label: 'Edit',
+                  onClick: () =>
+                    void navigate({
+                      to: '/goods-receipt-notes/$id/edit',
+                      params: { id: detail.id },
+                    }),
+                  hidden: !canEdit,
+                },
+                {
+                  label: 'Delete',
+                  danger: true,
+                  onClick: () => {
+                    softDelete.reset();
+                    setConfirmDelete(true);
+                  },
+                  hidden: !canDelete,
+                  disabled: anyInspected,
+                  title: anyInspected
+                    ? 'Incoming QC has already inspected a line, so this GRN cannot be moved to Trash.'
+                    : undefined,
+                },
+              ]}
+            />
+            {/* The one next step: while any line still waits for QC. */}
+            {firstQcPending ? (
               <Link
-                to="/goods-receipt-notes/$id/edit"
-                params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
+                to="/incoming-qc"
+                search={{ line: firstQcPending.id }}
+                className="btn btn-primary"
               >
-                <Pencil size={13} /> Edit
+                Open in Incoming QC
               </Link>
-            ) : null}
-            {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={anyCompleted}
-                  title={
-                    anyCompleted
-                      ? 'GRN has at least one QC-completed line — create a reversing GRN line instead'
-                      : undefined
-                  }
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
             ) : null}
           </div>
         </div>
         <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete GRN.'}
-            </div>
-          ) : null}
           <DetailGrid detail={detail} />
         </div>
       </div>
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Line items ({detail.lines.length})</div>
+          <div className="panel-title">Line Items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            received <b style={{ color: 'var(--text)' }}>{totalReceived}</b> · accepted{' '}
-            <b style={{ color: 'var(--green2)' }}>{totalAccepted}</b> · rejected{' '}
-            <b style={{ color: 'var(--amber2)' }}>{totalRejected}</b>
+            Received <b style={{ color: 'var(--text)' }}>{totalReceived}</b> · Accepted{' '}
+            <b style={{ color: 'var(--green2)' }}>{totalAccepted}</b> · Rejected{' '}
+            <b style={{ color: 'var(--red2)' }}>{totalRejected}</b>
           </span>
         </div>
         <div className="tbl-wrap">
@@ -278,11 +268,11 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th>Received</th>
-                <th>DC No.</th>
-                <th>QC</th>
-                <th>Accepted</th>
-                <th>Rejected</th>
+                <th className="th-num">Received</th>
+                <th>Vendor Challan No.</th>
+                <th>QC Status</th>
+                <th className="th-num">Accepted</th>
+                <th className="th-num">Rejected</th>
                 <th>QC Date</th>
               </tr>
             </thead>
@@ -302,6 +292,28 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       </div>
 
       <RelatedDocsPanel module="goods-receipt-notes" id={detail.id} />
+
+      {canDelete && confirmDelete ? (
+        <ConfirmDialog
+          title={`Move GRN ${detail.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          tone="danger"
+          onConfirm={onDelete}
+          onCancel={() => {
+            softDelete.reset();
+            setConfirmDelete(false);
+          }}
+          errorText={
+            softDelete.isError
+              ? softDelete.error instanceof Error
+                ? softDelete.error.message
+                : 'Could not move GRN to Trash. Try again.'
+              : null
+          }
+        />
+      ) : null}
     </div>
   );
 }
@@ -320,21 +332,19 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
         {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
       </td>
       <td>{l.itemName}</td>
-      <td className="mono">{l.receivedQty}</td>
-      <td className="mono" style={{ fontSize: 11 }}>
-        {l.dcRefNo ?? '—'}
-      </td>
+      <td className="mono td-num">{l.receivedQty}</td>
+      <td className="mono">{l.dcRefNo ?? '—'}</td>
       <td>
         <QcStatusBadge status={l.qcStatus} />
       </td>
-      <td className="mono" style={{ color: 'var(--green2)' }}>
+      <td className="mono td-num" style={{ color: 'var(--green2)' }}>
         {l.qcAcceptedQty}
       </td>
-      <td className="mono" style={{ color: 'var(--amber2)' }}>
+      <td className="mono td-num" style={{ color: 'var(--red2)' }}>
         {l.qcRejectedQty}
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {l.qcDate ?? '—'}
+        {fmtDate(l.qcDate)}
       </td>
     </tr>
   );
@@ -344,15 +354,19 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
   const { detail } = props;
   return (
     <div className="form-grid form-grid-3">
-      <Pair label="GRN Date" value={detail.grnDate} />
-      {/* The linked OSP challan's own code when the GRN came from a DC receive;
-          otherwise whatever the storekeeper typed on Against PO. */}
-      <Pair label="DC No." value={detail.dcCode ?? detail.dcNo ?? '—'} />
-      <Pair label="Invoice No." value={detail.invoiceNo ?? '—'} />
+      <Pair label="GRN Date" value={fmtDate(detail.grnDate)} />
+      {/* Two different numbers, each shown only when present: our own DC (when
+          the GRN came from a DC receive) and the vendor's challan number the
+          storekeeper typed. */}
+      {detail.dcCode ? <Pair label="DC No." value={detail.dcCode} /> : null}
+      {detail.dcNo && detail.dcNo !== detail.dcCode ? (
+        <Pair label="Vendor Challan No." value={detail.dcNo} />
+      ) : null}
+      <Pair label="Vendor Invoice No." value={detail.invoiceNo ?? '—'} />
       {/* On an NC-return GRN there is no PO: the header's poCodeText holds the
           NC code, so it is shown once, under an "NC" label. */}
       {detail.ncCode ? (
-        <Pair label="NC" value={detail.ncCode} />
+        <Pair label="NC No." value={detail.ncCode} />
       ) : (
         <Pair label="PO No." value={detail.poCode ?? detail.poCodeText ?? '—'} />
       )}

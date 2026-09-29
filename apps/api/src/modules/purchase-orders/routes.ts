@@ -1,7 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { createPurchaseOrderFromPrBatchInputSchema } from '@innovic/shared';
+import {
+  createPurchaseOrderFromPrBatchInputSchema,
+  shortClosePurchaseOrderInputSchema,
+} from '@innovic/shared';
 import {
   createPurchaseOrderFromPrInputSchema,
   createPurchaseOrderInputSchema,
@@ -95,5 +98,13 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
     const { id } = idParamSchema.parse(req.params);
     const body = z.object({ reason: z.string().min(1).max(500) }).parse(req.body);
     return service.rejectPurchaseOrder(id, body.reason, req.user);
+  });
+
+  // ADR-189 — stop an issued PO (cancel if nothing moved, else close short).
+  app.post('/purchase-orders/:id/short-close', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = shortClosePurchaseOrderInputSchema.parse(req.body);
+    return service.shortClosePurchaseOrder(id, body, req.user);
   });
 }

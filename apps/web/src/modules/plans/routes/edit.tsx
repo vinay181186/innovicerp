@@ -6,6 +6,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlan, useUpdatePlan } from '../api';
 import { PlanForm, type PlanFormValues, toCreateInput } from '../components/plan-form';
+import { STORED_LABEL } from '../lib/derived-status';
 
 export const planEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -25,9 +26,8 @@ function PlanEditPage(): React.JSX.Element {
 
   if (eff && !perms.edit) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have edit access to Plans. Ask an admin for L2 Data Entry or above in
-        Planning.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to edit Plans. Ask an admin.
       </div>
     );
   }
@@ -43,8 +43,8 @@ function PlanEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Plan not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Plan not found.'}
           </div>
         </div>
       </div>
@@ -61,11 +61,10 @@ function PlanEditPage(): React.JSX.Element {
             className="btn btn-ghost btn-sm"
             style={{ marginBottom: 10 }}
           >
-            <ArrowLeft size={14} /> Back to detail
+            <ArrowLeft size={14} /> Back
           </Link>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            Plans in status <b>{plan.planStatus}</b> are read-only. Cancel via the workflow if you
-            need changes.
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            A {STORED_LABEL[plan.planStatus]} plan cannot be edited.
           </div>
         </div>
       </div>
@@ -81,10 +80,10 @@ function PlanEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to {plan.code}
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="section-hdr" style={{ marginBottom: 10 }}>
-        ✏️ Edit plan {plan.code}
+        Edit Plan {plan.code}
       </div>
 
       <PlanForm
@@ -95,7 +94,7 @@ function PlanEditPage(): React.JSX.Element {
         // replace-all never runs against them.
         hideOps={plan.opsSource === 'route_card'}
         isSubmitting={update.isPending}
-        submitLabel="Save changes"
+        submitLabel="Save Changes"
         submitError={update.error instanceof Error ? update.error.message : null}
         onSubmit={(v) => {
           const ci = toCreateInput(v);
@@ -111,6 +110,8 @@ function PlanEditPage(): React.JSX.Element {
               rawMaterialGradeText: ci.rawMaterialGradeText,
               rawMaterialSizeId: ci.rawMaterialSizeId,
               rawMaterialSizeText: ci.rawMaterialSizeText,
+              rawMaterialItemId: ci.rawMaterialItemId,
+              rmQtyPerPiece: ci.rmQtyPerPiece,
               dpVendorId: ci.dpVendorId,
               dpVendorCodeText: ci.dpVendorCodeText,
               dpCost: ci.dpCost,
@@ -157,6 +158,9 @@ function toFormValues(plan: PlanDetail): PlanFormValues {
     rawMaterialGradeText: plan.rawMaterialGradeText,
     rawMaterialSizeId: plan.rawMaterialSizeId,
     rawMaterialSizeText: plan.rawMaterialSizeText,
+    rawMaterialItemId: plan.rawMaterialItemId,
+    rawMaterialItemCode: plan.rawMaterialItemCode,
+    rmQtyPerPiece: plan.rmQtyPerPiece != null ? String(plan.rmQtyPerPiece) : '',
     bomMasterId: plan.bomMasterId,
     bomParentCode: plan.bomParentCode ?? '',
     bomChildCode: plan.bomChildCode ?? '',

@@ -99,7 +99,6 @@ export function LineItemPicker({
           className="innovic-input"
           autoComplete="off"
           readOnly={nameLocked}
-          title={matchedItem ? 'Auto-filled from Item Master (item code is the key)' : undefined}
           style={matchedItem ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined}
           value={itemName}
           onChange={(e) => onChange({ code, itemId, name: e.target.value })}

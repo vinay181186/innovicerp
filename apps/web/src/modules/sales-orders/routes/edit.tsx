@@ -41,56 +41,68 @@ function SalesOrderNewPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      // Upload the chosen client-PO document against the new SO (legacy
-      // addSO L12459 uploads after save). Best-effort — the SO is already saved.
-      const poFile = poFileRef.current;
-      if (poFile && me?.companyId) {
+      // Upload the chosen client-PO document + email reference against the new
+      // SO (legacy addSO L12459 uploads after save). The SO is already saved, so
+      // a failed upload never undoes it — but it is no longer swallowed: the SO
+      // opens with a red banner naming the file that did not attach, and the
+      // Client PO bar on that page has the Upload button to retry.
+      const failed: string[] = [];
+      const uploads: {
+        file: File | null;
+        category: 'client_po' | 'email_reference';
+        docType: string;
+        label: string;
+      }[] = [
+        {
+          file: poFileRef.current,
+          category: 'client_po',
+          docType: 'Client PO',
+          label: 'Client PO file',
+        },
+        {
+          file: emailFileRef.current,
+          category: 'email_reference',
+          docType: 'Email Reference',
+          label: 'Email Reference file',
+        },
+      ];
+      for (const u of uploads) {
+        if (!u.file) continue;
         try {
-          const storagePath = await uploadSoDocFile(poFile, me.companyId);
+          if (!me?.companyId) throw new Error('no company');
+          const storagePath = await uploadSoDocFile(u.file, me.companyId);
           await createDoc.mutateAsync({
             salesOrderId: created.id,
             soCodeText: created.code,
-            category: 'client_po',
-            docType: 'Client PO',
-            fileName: poFile.name,
+            category: u.category,
+            docType: u.docType,
+            fileName: u.file.name,
             storagePath,
-            fileSize: poFile.size,
-            fileType: poFile.type || undefined,
+            fileSize: u.file.size,
+            fileType: u.file.type || undefined,
           });
         } catch {
-          // Non-fatal: SO is saved; the PO doc can be attached on the detail page.
+          failed.push(`${u.label} (${u.file.name})`);
         }
       }
-      // Upload the attached email reference the same way (best-effort).
-      const emailFile = emailFileRef.current;
-      if (emailFile && me?.companyId) {
-        try {
-          const storagePath = await uploadSoDocFile(emailFile, me.companyId);
-          await createDoc.mutateAsync({
-            salesOrderId: created.id,
-            soCodeText: created.code,
-            category: 'email_reference',
-            docType: 'Email Reference',
-            fileName: emailFile.name,
-            storagePath,
-            fileSize: emailFile.size,
-            fileType: emailFile.type || undefined,
-          });
-        } catch {
-          // Non-fatal: SO is saved; the email ref can be attached on the detail page.
-        }
-      }
-      exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id: created.id }, replace: true }));
+      exit.leave(
+        () =>
+          void navigate({
+            to: '/sales-orders/$id',
+            params: { id: created.id },
+            search: failed.length > 0 ? { uploadFailed: failed.join(', ') } : {},
+            replace: true,
+          }),
+      );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create sales order');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save SO. Try again.');
     }
   };
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to SO Master. Ask an admin for L2 Data Entry or above in
-        Sales.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to create SOs. Ask an admin.
       </div>
     );
   }
@@ -98,26 +110,26 @@ function SalesOrderNewPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      <div className="panel">
-        <div className="panel-body">
-          <SalesOrderForm
-            mode="create"
-            headerBack={
-              <Link to="/sales-orders" className="btn btn-ghost btn-sm">
-                <ArrowLeft size={14} /> Back
-              </Link>
-            }
-            /* Legacy addSO L12425 modal title. */
-            headerTitle="New SO / WO"
-            headerCrumb="Sales & CRM › SO Master › New"
-            onSubmit={onSubmit}
-            onPoFileChange={(f) => { poFileRef.current = f; }}
-            onEmailFileChange={(f) => { emailFileRef.current = f; }}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      {/* The form renders its own sticky PageHeader (Back · title · Cancel ·
+          Save) and Panels — no wrapping panel, which would clip the sticky
+          header (.panel is overflow:hidden). Back still passes the exit guard,
+          exactly as the old Back link did. */}
+      <SalesOrderForm
+        mode="create"
+        /* Legacy addSO L12425 modal title. */
+        title="New SO / WO"
+        backLabel="Back to SO Master"
+        onBack={goBack}
+        onSubmit={onSubmit}
+        onPoFileChange={(f) => {
+          poFileRef.current = f;
+        }}
+        onEmailFileChange={(f) => {
+          emailFileRef.current = f;
+        }}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </>
   );
 }
@@ -140,9 +152,8 @@ function SalesOrderEditPage(): React.JSX.Element {
   // Access matrix: edit access to SO Master is required (also enforced server-side).
   if (eff && !perms.edit) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have edit access to SO Master. Ask an admin for L2 Data Entry or above in
-        Sales.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to edit SOs. Ask an admin.
       </div>
     );
   }
@@ -157,7 +168,7 @@ function SalesOrderEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to SO
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             🔒 Only an admin can edit a Sales Order.
           </div>
         </div>
@@ -171,7 +182,7 @@ function SalesOrderEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update sales order');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');
     }
   };
 
@@ -192,7 +203,7 @@ function SalesOrderEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Sales order not found'}
           </div>
         </div>
@@ -203,26 +214,18 @@ function SalesOrderEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      <div className="panel">
-        <div className="panel-body">
-          <SalesOrderForm
-            mode="edit"
-            detail={detail}
-            headerBack={
-              <Link to="/sales-orders/$id" params={{ id }} className="btn btn-ghost btn-sm">
-                <ArrowLeft size={14} /> Back
-              </Link>
-            }
-            /* Legacy _editFullSO L12549 modal title — this route is the all-lines
-               editor, so it mirrors that title, not editSOLine's. */
-            headerTitle={`Edit SO — ${detail.code} (${detail.lines.length} lines)`}
-            headerCrumb="Sales & CRM › SO Master › Edit"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      <SalesOrderForm
+        mode="edit"
+        detail={detail}
+        /* Legacy _editFullSO L12549 modal title — this route is the all-lines
+           editor, so it mirrors that title, not editSOLine's. */
+        title={`Edit SO — ${detail.code} (${detail.lines.length} lines)`}
+        backLabel="Back to SO"
+        onBack={goBack}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </>
   );
 }

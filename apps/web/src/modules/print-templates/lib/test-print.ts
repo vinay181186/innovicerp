@@ -181,7 +181,7 @@ export const PO_SAMPLE_LINES: SheetLine[] = [
 // "today" and "today + 15".
 export function poSampleRecipient(isSpo = false): SheetField[] {
   return [
-    { label: 'Code', value: 'VND-999', variant: 'mono' },
+    { label: 'Vendor Code', value: 'VND-999', variant: 'mono' },
     {
       label: 'Name',
       value: isSpo ? 'Sample Services Pvt Ltd' : 'Sample Vendor Pvt Ltd',
@@ -200,13 +200,13 @@ export function poSampleRecipient(isSpo = false): SheetField[] {
 export function poSampleOrder(isSpo = false): SheetField[] {
   return [
     {
-      label: isSpo ? 'SPO No.' : 'PO No.',
+      label: 'PO No.',
       value: isSpo ? 'IN-SPO-99999' : 'IN-PO-99999',
       variant: 'mono',
       strong: true,
     },
     {
-      label: isSpo ? 'SPO Date' : 'PO Date',
+      label: 'PO Date',
       value: challanDate(format(new Date(), 'yyyy-MM-dd')),
       variant: 'mono',
     },
@@ -215,11 +215,10 @@ export function poSampleOrder(isSpo = false): SheetField[] {
       value: challanDate(format(addDays(new Date(), 15), 'yyyy-MM-dd')),
       variant: 'mono',
     },
-    { label: 'PR Ref.', value: 'IN-PR-99999', variant: 'mono' },
-    { label: 'Contact person', value: 'Admin User' },
+    { label: 'PR No.', value: 'IN-PR-99999', variant: 'mono' },
+    { label: 'Our Contact Person', value: 'Admin User' },
   ];
 }
-
 
 // The two sample GRN lines. Exported so the editor's on-screen preview and the
 // GRN test print show the SAME material — 100 + 100 received, 95 + 95 accepted,
@@ -308,7 +307,7 @@ function openChallanTestPrint(
   // visibly three months later rather than today's date twice.
   const sampleDcDate = format(new Date(), 'yyyy-MM-dd');
   const recipient: SheetField[] = [
-    { label: 'Code', value: 'VND-099', variant: 'mono' },
+    { label: 'Vendor Code', value: 'VND-099', variant: 'mono' },
     { label: 'Name', value: 'Sample Process House', variant: 'name' },
     { label: 'Address', value: 'GIDC, Vadodara', extra: ['Gujarat — 390010'] },
     { label: 'GSTIN', value: '24AAACS1234D1Z5', variant: 'mono' },
@@ -338,8 +337,8 @@ function openChallanTestPrint(
       email: SAMPLE_COMPANY.email ?? '',
       phone: SAMPLE_COMPANY.phone ?? '',
     },
-    recipient: { label: 'Recipient', fields: recipient },
-    document: { label: 'Document', fields: document },
+    recipient: { label: 'Vendor', fields: recipient },
+    document: { label: 'Challan', fields: document },
     lines: [
       {
         itemCode: 'STL-PL-6',
@@ -373,10 +372,7 @@ function openChallanTestPrint(
 // A SERVICE PO differs from a PO in wording only: its own title, its own
 // spo_* blocks and its own {spoNo}/{spoDate}/{expenseHead}/{costCenter}
 // vocabulary. The sheet, the columns and the money are identical.
-function openPoTestPrint(
-  doc: 'PO' | 'SERVICE PO',
-  templates: EffectivePrintTemplate[],
-): boolean {
+function openPoTestPrint(doc: 'PO' | 'SERVICE PO', templates: EffectivePrintTemplate[]): boolean {
   const isSpo = doc === 'SERVICE PO';
   const data = sampleDataFor(doc);
   const recipient = poSampleRecipient(isSpo);
@@ -385,6 +381,8 @@ function openPoTestPrint(
     title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     columns: 'po',
+    // Same foot as the real PO print (print-po.ts).
+    hidePreparedBy: true,
     blocks: templatesToBlocks(doc, templates),
     data,
     company: {
@@ -436,6 +434,7 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     city: 'Vadodara',
     state: 'Gujarat',
     pincode: '390010',
+    paymentDays: null,
     isActive: true,
     createdAt: '',
     createdBy: JWINV_SAMPLE_ID,
@@ -460,13 +459,21 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     itemRevision: 'B',
     clientPoLineNo: '20',
     partName: 'Single Fire Check Lever',
+    uom: 'NOS',
     qty: 10,
     rate: 500,
     taxableAmount: 5000,
     gstPercent: 18,
     gstAmount: 900,
     totalAmount: 5900,
+    // Same-state sample: the sheet prints SGST 9% + CGST 9%.
+    taxType: 'sgst_cgst',
     remarks: 'Sample invoice — turning and grinding on client-supplied blanks.',
+    // ADR-194: a live (issued) sample invoice.
+    status: 'issued',
+    cancelledAt: null,
+    cancelledBy: null,
+    cancelReason: null,
     createdAt: '',
     createdBy: JWINV_SAMPLE_ID,
     updatedAt: '',

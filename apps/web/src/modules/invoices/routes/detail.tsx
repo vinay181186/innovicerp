@@ -29,17 +29,28 @@
 // columns (invoice_date / due_date / payment_date) are `date`, not timestamptz,
 // so no UTC-shift bug exists at these render sites.
 
+import { PAYMENT_MODES, type PaymentMode } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
+import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
-import { invoiceDocHtml, printInvoice } from '../lib/print';
+import { SHEET_STYLE } from '@/lib/print/sheet-print';
+import { invoiceSheetHtml, printInvoice } from '../lib/print';
+import { splitGst } from '../lib/gst-split';
+
+/** Invoice status → the words the user reads; the stored codes are unchanged. */
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  unpaid: 'Unpaid',
+  partial: 'Partly Paid',
+  paid: 'Paid',
+};
 
 export const invoiceDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -52,21 +63,32 @@ export const invoiceDetailRoute = createRoute({
 // shared inrFormat() is 2dp and is what the print doc uses — a different
 // format for a different surface, matching legacy's own split.
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
-// Uses the shared todayLocal() helper (local calendar date) so the payment-date
-// default is today in IST, not the UTC "yesterday" before ~05:30 IST.
-const todayStr = (): string => todayLocal();
+// Uses the shared todayIst() helper so the payment-date default is today in
+// IST, not the UTC "yesterday" before ~05:30 IST.
+const todayStr = (): string => todayIst();
 
 function InvoiceDetailPage(): React.JSX.Element {
   const { id } = invoiceDetailRoute.useParams();
   const { data: inv, isLoading, isError, error } = useInvoice(id);
   const { data: company } = useMyCompany();
   const addPayment = useAddPayment(id);
-  const docHtml = useMemo(() => (inv ? invoiceDocHtml(inv, company) : ''), [inv, company]);
+  // The preview is the print: the same Innovic Sheet markup + stylesheet, in an
+  // iframe so the sheet's paper styles never leak into the app's own CSS.
+  const docHtml = useMemo(
+    () =>
+      inv
+        ? `<!DOCTYPE html><html><head><style>${SHEET_STYLE}.no-print{display:none!important}</style></head><body>${invoiceSheetHtml(inv, company)}</body></html>`
+        : '',
+    [inv, company],
+  );
+  const [previewHeight, setPreviewHeight] = useState(1123);
 
   const [payOpen, setPayOpen] = useState(false);
   const [payDate, setPayDate] = useState(todayStr());
   const [payAmt, setPayAmt] = useState('');
-  const [payMode, setPayMode] = useState('NEFT');
+  // TDS / short amount the customer deducted — counts toward settling.
+  const [payTds, setPayTds] = useState('');
+  const [payMode, setPayMode] = useState<PaymentMode>('NEFT');
   const [payRef, setPayRef] = useState('');
   const [payNotes, setPayNotes] = useState('');
   const [payErr, setPayErr] = useState<string | null>(null);
@@ -75,8 +97,8 @@ function InvoiceDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Invoices. Ask an admin.
       </div>
     );
   }
@@ -90,30 +112,36 @@ function InvoiceDetailPage(): React.JSX.Element {
   }
   if (isError || !inv) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
+        {error instanceof Error ? error.message : 'Could not load invoice. Try again.'}
       </div>
     );
   }
 
   async function submitPayment(): Promise<void> {
     setPayErr(null);
-    const amount = Number(payAmt);
-    if (!amount || amount <= 0) return setPayErr('Enter a payment amount');
+    const amount = Number(payAmt) || 0;
+    const tdsAmount = Number(payTds) || 0;
+    if (amount < 0 || tdsAmount < 0) return setPayErr('Amounts cannot be less than 0.');
+    if (amount <= 0 && tdsAmount <= 0) {
+      return setPayErr('Enter an Amount or a TDS / Short Amount.');
+    }
     try {
       await addPayment.mutateAsync({
         paymentDate: payDate,
         amount,
+        tdsAmount,
         mode: payMode,
         refNo: payRef || undefined,
         notes: payNotes || undefined,
       });
       setPayOpen(false);
       setPayAmt('');
+      setPayTds('');
       setPayRef('');
       setPayNotes('');
     } catch (e) {
-      setPayErr(e instanceof Error ? e.message : 'Failed to record payment');
+      setPayErr(e instanceof Error ? e.message : 'Could not save payment. Try again.');
     }
   }
 
@@ -129,17 +157,55 @@ function InvoiceDetailPage(): React.JSX.Element {
   const stats: { label: string; value: string; size: number; color?: string }[] = priceHidden
     ? []
     : [
-        { label: 'SUBTOTAL', value: inr(inv.subtotal ?? 0), size: 16 },
+        { label: 'Subtotal', value: inr(inv.subtotal ?? 0), size: 16 },
+        // The split follows the invoice's Tax Type; an invoice raised before it
+        // was recorded shows the single GST figure, as it always did.
+        ...(inv.taxType === 'igst'
+          ? [
+              {
+                label: `IGST ${inv.gstPercent}%`,
+                value: inr(inv.gstAmount ?? 0),
+                size: 16,
+                color: 'var(--amber2)',
+              },
+            ]
+          : inv.taxType === 'sgst_cgst'
+            ? [
+                {
+                  label: `SGST ${(inv.gstPercent ?? 0) / 2}%`,
+                  value: inr(splitGst(inv.gstAmount ?? 0).sgst),
+                  size: 16,
+                  color: 'var(--amber2)',
+                },
+                {
+                  label: `CGST ${(inv.gstPercent ?? 0) / 2}%`,
+                  value: inr(splitGst(inv.gstAmount ?? 0).cgst),
+                  size: 16,
+                  color: 'var(--amber2)',
+                },
+              ]
+            : [
+                {
+                  label: `GST ${inv.gstPercent}%`,
+                  value: inr(inv.gstAmount ?? 0),
+                  size: 16,
+                  color: 'var(--amber2)',
+                },
+              ]),
+        { label: 'Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green2)' },
+        { label: 'Paid', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
+        ...((inv.totalTds ?? 0) > 0
+          ? [
+              {
+                label: 'TDS / Short',
+                value: inr(inv.totalTds ?? 0),
+                size: 18,
+                color: 'var(--purple)',
+              },
+            ]
+          : []),
         {
-          label: `GST ${inv.gstPercent}%`,
-          value: inr(inv.gstAmount ?? 0),
-          size: 16,
-          color: 'var(--amber)',
-        },
-        { label: 'TOTAL', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green)' },
-        { label: 'PAID', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
-        {
-          label: 'BALANCE',
+          label: 'Outstanding',
           value: inr(inv.balance ?? 0),
           size: 18,
           color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)',
@@ -161,28 +227,39 @@ function InvoiceDetailPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📄 Invoice — {inv.code} <StatusBadge kind="invoice" status={inv.status} />
+          Invoice {inv.code}{' '}
+          <StatusBadge
+            kind="invoice"
+            status={inv.status}
+            label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
+          />
         </div>
+        {/* One primary next step (Add Payment) + the Actions menu for the rest. */}
         <div style={{ display: 'flex', gap: 8 }}>
+          <ActionMenu
+            items={[
+              {
+                label: 'Print',
+                onClick: () => {
+                  if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
+                },
+              },
+            ]}
+          />
           {perms.entry && inv.status !== 'paid' ? (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => setPayOpen((v) => !v)}
-            >
+            <button type="button" className="btn btn-primary" onClick={() => setPayOpen((v) => !v)}>
               💳 Add Payment
             </button>
           ) : null}
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => {
-              if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
-            }}
-          >
-            🖨 Print
-          </button>
         </div>
+      </div>
+
+      <div style={{ fontSize: 13, marginBottom: 10 }}>
+        Customer: <b>{inv.clientName ?? '—'}</b> · SO No.:{' '}
+        <Link to="/sales-orders/$id" params={{ id: inv.salesOrderId }} className="fw-700">
+          {inv.soCode ?? '—'}
+        </Link>{' '}
+        · Due Date: <b>{fmtDate(inv.dueDate)}</b>
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -192,7 +269,7 @@ function InvoiceDetailPage(): React.JSX.Element {
             className="panel"
             style={{ padding: 10, minWidth: 100, textAlign: 'center' }}
           >
-            <div className="text3" style={{ fontSize: 9 }}>
+            <div className="text3" style={{ fontSize: 11 }}>
               {s.label}
             </div>
             <div className="mono fw-700" style={{ fontSize: s.size, color: s.color }}>
@@ -202,15 +279,10 @@ function InvoiceDetailPage(): React.JSX.Element {
         ))}
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-        SO No.: <b>{inv.soCode ?? ''}</b> | Customer: <b>{inv.clientName ?? ''}</b> | Due Date:{' '}
-        <b>{inv.dueDate ?? '—'}</b>
-      </div>
-
       {payOpen ? (
         <div className="panel" style={{ marginBottom: 14 }}>
           <div className="panel-hdr">
-            <span className="panel-title">💳 Record Payment</span>
+            <span className="panel-title">Add Payment</span>
           </div>
           <div className="panel-body">
             <div className="form-grid">
@@ -224,7 +296,8 @@ function InvoiceDetailPage(): React.JSX.Element {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label">Amount ★</label>
+                {/* Amount or TDS / Short Amount — at least one (the server checks). */}
+                <label className="form-label">Amount</label>
                 <input
                   type="number"
                   className="innovic-input"
@@ -236,13 +309,26 @@ function InvoiceDetailPage(): React.JSX.Element {
                 />
               </div>
               <div className="form-grp">
+                <label className="form-label">TDS / Short Amount</label>
+                <input
+                  type="number"
+                  className="innovic-input"
+                  min="0"
+                  step="0.01"
+                  value={payTds}
+                  placeholder="0"
+                  title="Amount the customer deducted (TDS) or paid short. It counts toward settling the invoice."
+                  onChange={(e) => setPayTds(e.target.value)}
+                />
+              </div>
+              <div className="form-grp">
                 <label className="form-label">Payment Mode</label>
                 <select
                   className="innovic-input"
                   value={payMode}
-                  onChange={(e) => setPayMode(e.target.value)}
+                  onChange={(e) => setPayMode(e.target.value as PaymentMode)}
                 >
-                  {['NEFT', 'RTGS', 'Cheque', 'Cash', 'UPI', 'Other'].map((m) => (
+                  {PAYMENT_MODES.map((m) => (
                     <option key={m}>{m}</option>
                   ))}
                 </select>
@@ -267,7 +353,7 @@ function InvoiceDetailPage(): React.JSX.Element {
               </div>
             </div>
             {payErr ? (
-              <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{payErr}</div>
+              <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{payErr}</div>
             ) : null}
             <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
               <button
@@ -283,7 +369,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                 disabled={addPayment.isPending}
                 onClick={() => void submitPayment()}
               >
-                {addPayment.isPending ? 'Saving…' : 'Record Payment'}
+                {addPayment.isPending ? 'Saving…' : 'Add Payment'}
               </button>
             </div>
           </div>
@@ -291,24 +377,29 @@ function InvoiceDetailPage(): React.JSX.Element {
       ) : null}
 
       {/* A4-portrait paper preview — identical markup to the print output. */}
-      <div
-        style={{
-          maxWidth: 794, // A4 @96dpi: 794 × 1123
-          minHeight: 1123,
-          margin: '0 auto 14px',
-          background: '#fff',
-          boxShadow: '0 2px 14px rgba(0,0,0,.25)',
-          borderRadius: 4,
-          overflow: 'hidden',
+      <iframe
+        title={`Invoice ${inv.code} preview`}
+        // Self-built, esc()'d sheet HTML shared with the print window.
+        srcDoc={docHtml}
+        onLoad={(e) => {
+          const h = e.currentTarget.contentDocument?.documentElement.scrollHeight;
+          if (h) setPreviewHeight(h);
         }}
-        // Self-built, esc()'d document HTML shared with the print window.
-        dangerouslySetInnerHTML={{ __html: docHtml }}
+        style={{
+          display: 'block',
+          width: '100%',
+          maxWidth: 860,
+          height: previewHeight,
+          margin: '0 auto 14px',
+          border: 'none',
+          borderRadius: 4,
+        }}
       />
 
       {inv.payments.length > 0 && !priceHidden ? (
         <div className="panel">
           <div className="panel-hdr">
-            <span className="panel-title">💳 PAYMENTS ({inv.payments.length})</span>
+            <span className="panel-title">Payments ({inv.payments.length})</span>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -316,17 +407,21 @@ function InvoiceDetailPage(): React.JSX.Element {
                 <tr>
                   <th>Payment Date</th>
                   <th>Amount</th>
+                  <th>TDS / Short</th>
                   <th>Mode</th>
-                  <th>Ref No.</th>
+                  <th>Reference No.</th>
                   <th>Notes</th>
                 </tr>
               </thead>
               <tbody>
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
-                    <td style={{ fontSize: 11 }}>{p.paymentDate}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                    <td style={{ fontSize: 11 }}>{fmtDate(p.paymentDate)}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                       {inr(p.amount ?? 0)}
+                    </td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {(p.tdsAmount ?? 0) > 0 ? inr(p.tdsAmount ?? 0) : '—'}
                     </td>
                     <td style={{ fontSize: 11 }}>{p.mode}</td>
                     <td style={{ fontSize: 11, color: 'var(--purple)' }}>{p.refNo ?? ''}</td>

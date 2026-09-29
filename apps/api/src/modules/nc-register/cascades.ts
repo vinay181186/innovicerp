@@ -34,14 +34,17 @@
 //                        migration 0138); create supplementary JC inheriting
 //                        origin's source SO/JW link + parent_nc_id pointing
 //                        at this NC; rework_jc_code_text stored on NC.
+//                        ADR-184: refused on a Production Order's card (use
+//                        Scrap); otherwise the new JC gets a copy of the
+//                        origin card's live ops, progress zeroed.
 //
 // Partial disposition (interlock 2): `qty` below the NC's rejected qty shrinks
 // THIS row to `qty` and inserts a sibling holding the remainder, still
 // pending, linked back through split_from_nc_id. Every NC row is therefore
 // exactly one disposition — there is no child table to reconcile.
 
-import { opSrNo } from '@innovic/shared';
-import { and, desc, eq, isNull, like, sql } from 'drizzle-orm';
+import { NC_STATUS_LABELS, opSrNo } from '@innovic/shared';
+import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
@@ -56,6 +59,8 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { nextNcCodeFrom } from '../../lib/nc-code';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { jobCardOrderChainCte } from '../../lib/production-order-link';
+import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { reinjectLogType } from './reinject-log-type';
@@ -215,21 +220,23 @@ export async function disposeNcCascade(
     .limit(1);
   const loaded = ncRows[0];
   if (!loaded) {
-    throw new ValidationError(`NC ${ncId} not found`);
+    throw new ValidationError('NC not found. Refresh the page.');
   }
   if (loaded.status !== 'pending') {
-    throw new ConflictError(`NC ${loaded.code} is already ${loaded.status} — cannot re-dispose`);
+    throw new ConflictError(
+      `NC ${loaded.code} is already ${labelOf(NC_STATUS_LABELS, loaded.status)}.`,
+    );
   }
 
   // Interlock 2: never disposition more than the NC still owes.
   const open = ncOpenQty(loaded);
   const qty = input.qty ?? open;
   if (qty > open) {
-    throw new ValidationError(`Disposition qty ${qty} exceeds the open NC qty ${open}`);
+    throw new ValidationError(`Disposition Qty (${qty}) cannot be more than Open (${open}).`);
   }
   if (qty <= 0) {
     throw new ValidationError(
-      `Disposition qty must be at least 1 (NC ${loaded.code} has ${open} open)`,
+      `Disposition Qty must be at least 1 (NC ${loaded.code} has ${open} open).`,
     );
   }
 
@@ -260,9 +267,7 @@ export async function disposeNcCascade(
       jcOpId: loaded.jcOpId,
     });
     if (input.action === 'return_to_vendor' && !source.isVendorSourced) {
-      throw new ConflictError(
-        'This NC has no vendor source; in-house rejected material is reworked or scrapped, not returned to a vendor.',
-      );
+      throw new ConflictError(`Cannot return NC ${loaded.code} to vendor: it was made in-house.`);
     }
     if ((input.action === 'rework' || input.action === 'repair') && source.isVendorSourced) {
       throw new ConflictError(
@@ -314,7 +319,7 @@ export async function disposeNcCascade(
       })
       .returning({ id: ncRegister.id, code: ncRegister.code });
     const sib = sibling[0];
-    if (!sib) throw new ValidationError('Failed to split the NC');
+    if (!sib) throw new ValidationError('Could not split the NC. Try again.');
     await tx
       .update(ncRegister)
       .set({ rejectedQty: qty.toFixed(2), updatedBy: ctx.userId })
@@ -338,6 +343,57 @@ export async function disposeNcCascade(
   }
 
   const rejectedQtyInt = Math.round(Number(nc.rejectedQty));
+
+  // ADR-189 — a BOUGHT-MATERIAL reject: raised by Incoming QC on a GRN line
+  // that no job card stands behind (job_card_id NULL, grn_line_id set). The
+  // pieces never entered stock (Incoming QC credits only the accepted qty), so
+  // the only dispositions are to write them off or send them back to the
+  // vendor; either closes the NC with who / when / why. Everything below this
+  // branch is job-card work (rework, recovery, JC completion) and needs a card.
+  if (nc.jobCardId === null) {
+    if (input.action !== 'scrap' && input.action !== 'return_to_vendor') {
+      throw new ValidationError(
+        `NC ${nc.code} is a bought-material reject with no job card — it can only be Scrapped or Returned to Vendor.`,
+      );
+    }
+    if (input.action === 'scrap') {
+      // Written off: the pieces are gone for good.
+      await tx
+        .update(ncRegister)
+        .set({
+          status: 'closed',
+          disposition: 'scrap',
+          dispositionDate: today,
+          dispositionByText: ctx.userName,
+          dispositionRemarks: input.remarks ?? null,
+          failedQty: rejectedQtyInt.toFixed(2),
+          scrapCost: Math.max(0, input.scrapCost ?? 0).toFixed(2),
+          closedAt: new Date(),
+          closedBy: ctx.userId,
+          updatedBy: ctx.userId,
+        })
+        .where(eq(ncRegister.id, ncId));
+      result.status = 'closed';
+      return result;
+    }
+    // Return to vendor: 'disposed', exactly like an outsourced reject — the
+    // return challan is raised next (createNcDc), the PO line stops counting
+    // the pieces while they are out (recalcPoLineReceivedQty), and the vendor's
+    // replacement is received and inspected against this NC.
+    await tx
+      .update(ncRegister)
+      .set({
+        status: 'disposed',
+        disposition: 'return_to_vendor',
+        dispositionDate: today,
+        dispositionByText: ctx.userName,
+        dispositionRemarks: input.remarks ?? null,
+        updatedBy: ctx.userId,
+      })
+      .where(eq(ncRegister.id, ncId));
+    result.status = 'disposed';
+    return result;
+  }
 
   if (input.action === 'rework' || input.action === 'repair') {
     // `reworkOpSeq` in the input is the legacy in-route field; a new rework
@@ -415,14 +471,10 @@ export async function disposeNcCascade(
 
   if (input.action === 'use_as_is') {
     if (nc.opSeq == null) {
-      throw new ValidationError(
-        'Use-As-Is disposition requires the NC to have op_seq + jc_op_id set',
-      );
+      throw new ValidationError('Cannot Use As Is: this NC is not linked to a JC operation.');
     }
     if (nc.jcOpId == null) {
-      throw new ValidationError(
-        'Use-As-Is disposition requires the NC to have a resolved jc_op_id',
-      );
+      throw new ValidationError('Cannot Use As Is: this NC is not linked to a JC operation.');
     }
 
     // Operator resolution: byName lookup against operators master. Falls
@@ -614,7 +666,34 @@ export async function disposeNcCascade(
     .limit(1);
   const origin = originRows[0];
   if (!origin) {
-    throw new ValidationError(`Origin JC ${nc.jobCardId} not found`);
+    throw new ValidationError('Original Job Card not found. Refresh the page.');
+  }
+
+  // ADR-184 — Make Fresh is refused on a Production Order's card (or any
+  // rework / repair child of one — the walk goes up parent_job_card_id). A
+  // supplementary JC there would be a second, order-less card making pieces
+  // the order's plan already counts: the plan's Covered would never see it.
+  // The order-shaped route is Scrap: once the order is closed or short
+  // closed, the lost pieces are Pending on the plan again and a new
+  // Production Order is raised for them.
+  const orderRows = (await tx.execute(sql`
+    ${jobCardOrderChainCte(nc.jobCardId)}
+    SELECT po.code AS po_code,
+           COALESCE(p.code, po.plan_code_text) AS plan_code
+    FROM chain
+    JOIN public.production_orders po ON po.id = chain.production_order_id
+    LEFT JOIN public.plans p ON p.id = po.plan_id
+    WHERE po.deleted_at IS NULL
+    ORDER BY chain.depth
+    LIMIT 1
+  `)) as unknown as Array<{ po_code: string; plan_code: string | null }>;
+  const owningOrder = orderRows[0];
+  if (owningOrder) {
+    throw new ValidationError(
+      `${origin.code} belongs to Production Order ${owningOrder.po_code}. Use Scrap: the lost ` +
+        `pieces return to plan ${owningOrder.plan_code ?? '(unknown)'} as Pending and a new ` +
+        `Production Order is raised from it.`,
+    );
   }
 
   const newJcCode = await nextSupplementaryJcCode(tx, ctx.companyId, origin.code);
@@ -644,6 +723,9 @@ export async function disposeNcCascade(
       rawMaterialGradeText: origin.rawMaterialGradeText,
       rawMaterialSizeId: origin.rawMaterialSizeId,
       rawMaterialSizeText: origin.rawMaterialSizeText,
+      // ADR-193 phase 3a — RM item + qty per piece, copied like grade / size.
+      rawMaterialItemId: origin.rawMaterialItemId,
+      rmQtyPerPiece: origin.rmQtyPerPiece,
       sourceLegacyRef: `supp-of:${nc.code}`,
       parentNcId: ncId,
       createdBy: ctx.userId,
@@ -653,7 +735,54 @@ export async function disposeNcCascade(
 
   const newJc = insertedJc[0];
   if (!newJc) {
-    throw new ValidationError('Failed to create supplementary JC');
+    throw new ValidationError('Could not create the supplementary JC. Try again.');
+  }
+
+  // ADR-184 — the supplementary JC makes the SAME part by the SAME route, so
+  // it is seeded with a copy of the origin card's live operations. Only the
+  // columns that DEFINE an op are copied (sequence, machine, operation, type,
+  // cycle time, program, tool, QC flag, outsource vendor + cost). Every
+  // progress / document column (rework qty, OSP status / PR / PO line / DC /
+  // sent / returned, QC call dates, schedule) starts at its default — a new
+  // card has done nothing yet. Before ADR-184 the card was created with no
+  // ops at all and could not be worked.
+  // Review fix: the route is read off the TOP card of the chain (the origin's
+  // furthest ancestor via parent_job_card_id), never off a rework / repair
+  // child, whose ops are only the corrective steps, not the part's route.
+  const rootRows = (await tx.execute(sql`
+    ${jobCardOrderChainCte(origin.id)}
+    SELECT chain.id AS id FROM chain ORDER BY chain.depth DESC LIMIT 1
+  `)) as unknown as Array<{ id: string }>;
+  const routeJcId = rootRows[0]?.id ?? origin.id;
+  const originOps = await tx
+    .select({
+      opSeq: jcOps.opSeq,
+      machineId: jcOps.machineId,
+      machineCodeText: jcOps.machineCodeText,
+      operation: jcOps.operation,
+      opType: jcOps.opType,
+      cycleTimeMin: jcOps.cycleTimeMin,
+      program: jcOps.program,
+      toolNo: jcOps.toolNo,
+      toolDetails: jcOps.toolDetails,
+      qcRequired: jcOps.qcRequired,
+      outsourceVendorId: jcOps.outsourceVendorId,
+      outsourceVendorText: jcOps.outsourceVendorText,
+      outsourceCost: jcOps.outsourceCost,
+    })
+    .from(jcOps)
+    .where(and(eq(jcOps.jobCardId, routeJcId), isNull(jcOps.deletedAt)))
+    .orderBy(asc(jcOps.opSeq));
+  if (originOps.length > 0) {
+    await tx.insert(jcOps).values(
+      originOps.map((op) => ({
+        ...op,
+        companyId: ctx.companyId,
+        jobCardId: newJc.id,
+        createdBy: ctx.userId,
+        updatedBy: ctx.userId,
+      })),
+    );
   }
 
   // Ledger (QC-NC audit 2026-09-21, gap 8): the pieces are written off and
@@ -810,12 +939,110 @@ export interface AutoCreateNcResult {
   ncCode: string;
 }
 
+/**
+ * ADR-189 — the NC for a BOUGHT-MATERIAL reject at Incoming QC: a GRN line no
+ * job card stands behind (an ordinary purchase). job_card_id stays NULL and
+ * grn_line_id is the receipt end of the trail (0151 allows it). The pieces
+ * never entered stock — Incoming QC credits only the accepted qty — so this
+ * NC is the record of them until it is scrapped or returned to the vendor
+ * (disposeNcCascade's bought-material branch). Returns null when the GRN line
+ * has no master item (an NC needs one).
+ */
+export async function autoCreateMaterialNcFromIqcReject(
+  tx: DbTransaction,
+  ctx: {
+    companyId: string;
+    grnLineId: string;
+    grnCode: string;
+    lineNo: number;
+    rejectedQty: number;
+    ncDate: string;
+    reportedByText: string | null;
+    remarks: string | null;
+  },
+  user: AuthContext,
+): Promise<{ id: string; code: string } | null> {
+  const lineRows = await tx
+    .select({
+      itemId: goodsReceiptNoteLines.itemId,
+      itemCodeText: goodsReceiptNoteLines.itemCodeText,
+      itemName: goodsReceiptNoteLines.itemName,
+    })
+    .from(goodsReceiptNoteLines)
+    .where(eq(goodsReceiptNoteLines.id, ctx.grnLineId))
+    .limit(1);
+  const line = lineRows[0];
+  if (!line?.itemId) return null;
+  const itemRows = await tx
+    .select({ code: items.code })
+    .from(items)
+    .where(and(eq(items.id, line.itemId), eq(items.companyId, ctx.companyId)))
+    .limit(1);
+  const itemCode = itemRows[0]?.code ?? line.itemCodeText ?? '';
+
+  let code = await nextNcCode(tx, ctx.companyId);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const dup = await tx
+      .select({ id: ncRegister.id })
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.companyId, ctx.companyId),
+          eq(ncRegister.code, code),
+          isNull(ncRegister.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (dup.length === 0) break;
+    code = nextNcCodeFrom([code]);
+  }
+
+  const reason =
+    ctx.remarks && ctx.remarks.length > 0
+      ? `Auto-created from Incoming QC: ${ctx.remarks}`
+      : `Auto-created from Incoming QC on ${ctx.grnCode} Row #${ctx.lineNo}`;
+  const inserted = await tx
+    .insert(ncRegister)
+    .values({
+      companyId: ctx.companyId,
+      code,
+      ncDate: ctx.ncDate,
+      jobCardId: null,
+      itemId: line.itemId,
+      itemCodeText: itemCode,
+      itemNameText: line.itemName,
+      rejectedQty: ctx.rejectedQty.toFixed(2),
+      reason,
+      status: 'pending',
+      reportedByText: ctx.reportedByText,
+      grnLineId: ctx.grnLineId,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning({ id: ncRegister.id, code: ncRegister.code });
+  const nc = inserted[0];
+  if (!nc)
+    throw new ValidationError('Could not raise the NC for the rejected material. Try again.');
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'NonConformance',
+      detail: `${nc.code} — ${itemCode} qty=${ctx.rejectedQty.toFixed(2)} (bought material rejected at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo})`,
+      refId: nc.code,
+    },
+    ctx.companyId,
+    user,
+  );
+  return nc;
+}
+
 /** The next code in the company's `NC-#####` series (ADR-183). The number rule
  *  is pure and unit-tested in lib/nc-code.ts; this only feeds it the codes the
  *  company already holds. Rows written before the series — the long
  *  `NC-AUTO-<jc>-Op<n>-<stamp>` names and anything typed by hand — do not match
  *  the strict shape and so cannot move it. */
-async function nextNcCode(tx: DbTransaction, companyId: string): Promise<string> {
+export async function nextNcCode(tx: DbTransaction, companyId: string): Promise<string> {
   // Two inspections or production entries on DIFFERENT ops committing at once
   // would both read the same maximum; the loser then hits
   // nc_register_company_code_uniq and the operator's whole entry is thrown
@@ -835,7 +1062,7 @@ export async function autoCreateNcFromQcReject(
   user: AuthContext,
 ): Promise<AutoCreateNcResult> {
   if (ctx.rejectedQty <= 0) {
-    throw new ValidationError('autoCreateNcFromQcReject called with rejectedQty <= 0');
+    throw new ValidationError('Rejected Qty must be more than 0 to raise an NC.');
   }
 
   // Look up itemId + itemCode from the JC. NC requires itemId NOT NULL +
@@ -850,7 +1077,7 @@ export async function autoCreateNcFromQcReject(
     .where(and(eq(jobCards.id, ctx.jobCardId), eq(jobCards.companyId, ctx.companyId)))
     .limit(1);
   const jc = jcRows[0];
-  if (!jc) throw new NotFoundError(`JC ${ctx.jobCardId} not found for auto-NC`);
+  if (!jc) throw new NotFoundError('Job Card not found. Refresh the page.');
 
   const itemRows = await tx
     .select({ code: items.code })
@@ -973,7 +1200,7 @@ export async function autoCreateNcFromQcReject(
     {
       action: 'CREATE',
       entity: 'NonConformance',
-      detail: `${row.code} — ${itemCode || '—'} qty=${row.rejectedQty} (auto from QC reject)`,
+      detail: `${row.code} — ${itemCode || '—'}, ${row.rejectedQty} pcs Rejected at QC (auto NC)`,
       refId: row.code,
     },
     ctx.companyId,

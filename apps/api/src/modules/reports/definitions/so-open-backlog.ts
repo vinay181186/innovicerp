@@ -4,6 +4,7 @@
 // sales_order_lines → sales_orders → items → clients → v_jc_status.
 
 import { sql } from 'drizzle-orm';
+import { jcEffectiveQtySql } from '../../../lib/jc-effective-qty';
 import type { RegisteredReport } from '../registry';
 
 export const soOpenBacklogReport: RegisteredReport = {
@@ -11,8 +12,10 @@ export const soOpenBacklogReport: RegisteredReport = {
     slug: 'so-open-backlog',
     title: 'SO open backlog',
     description:
-      'Open SO lines with pending qty (order_qty - completed JC qty) and line value. Filter by SO type or due-date window; sorted by due date ascending.',
+      'Open SO lines with Pending qty (Order Qty minus Completed JC qty) and line value. Filter by SO type or Due Date window; sorted by Due Date ascending.',
     group: 'Sales',
+    dept: 'sales',
+    showsMoney: true,
     filters: [
       { key: 'fromDueDate', label: 'Due Date From', kind: 'date' },
       { key: 'toDueDate', label: 'Due Date To', kind: 'date' },
@@ -42,6 +45,8 @@ export const soOpenBacklogReport: RegisteredReport = {
       { key: 'line_value', label: 'Line Value', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },
     ],
+    // ADR-190 — so_code opens the document; so_id is not a column.
+    rowLink: { column: 'so_code', route: '/sales-orders/$id', idKey: 'so_id' },
   },
   async run({ tx, companyId, filters }) {
     const fromDate = filters['fromDueDate'];
@@ -56,6 +61,7 @@ export const soOpenBacklogReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
+        so.id AS so_id,
         so.code                                  AS so_code,
         so.so_date                               AS so_date,
         COALESCE(cl.name, so.customer_name, '—') AS client_name,
@@ -69,21 +75,26 @@ export const soOpenBacklogReport: RegisteredReport = {
         COALESCE(it.name, sol.part_name)         AS item_name,
         sol.order_qty                            AS order_qty,
         COALESCE((
-          SELECT SUM(GREATEST(0, jc.order_qty))
+          -- ADR-185 — the shared JC Qty rule (a stopped order's card counts
+          -- what it credited); rework / repair children re-make pieces the
+          -- parent already counts, so they are left out.
+          SELECT SUM(GREATEST(0, ${jcEffectiveQtySql('jc')}))
           FROM public.job_cards jc
           LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
           WHERE jc.source_so_line_id = sol.id
             AND jc.deleted_at IS NULL
+            AND jc.recovery_kind IS NULL
             AND v.computed_status IN ('complete', 'closed')
         ), 0)::int                               AS completed_qty,
         GREATEST(
           0,
           sol.order_qty - COALESCE((
-            SELECT SUM(GREATEST(0, jc.order_qty))
+            SELECT SUM(GREATEST(0, ${jcEffectiveQtySql('jc')}))
             FROM public.job_cards jc
             LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
             WHERE jc.source_so_line_id = sol.id
               AND jc.deleted_at IS NULL
+              AND jc.recovery_kind IS NULL
               AND v.computed_status IN ('complete', 'closed')
           ), 0)
         )::int                                   AS pending_qty,
@@ -105,6 +116,7 @@ export const soOpenBacklogReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      so_id: String(r['so_id'] ?? ''),
       so_code: String(r['so_code'] ?? ''),
       so_date:
         r['so_date'] instanceof Date

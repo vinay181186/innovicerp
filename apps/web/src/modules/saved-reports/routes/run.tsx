@@ -1,11 +1,12 @@
+// Saved Report run page — house layout (section header + panels), was a
+// shadcn Card page. Data, routes and export calls are unchanged.
+
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Edit, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { apiDownload } from '@/lib/api';
+import { ApiError, apiDownload } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useSavedReport, useSavedReportRun } from '../api';
+import { useSavedReport, useSavedReportRun, useSourceCatalog } from '../api';
 import { ResultTable } from '../components/result-table';
 
 export const savedReportRunRoute = createRoute({
@@ -14,10 +15,11 @@ export const savedReportRunRoute = createRoute({
   component: SavedReportRunPage,
 });
 
-function SavedReportRunPage() {
+function SavedReportRunPage(): React.JSX.Element {
   const { id } = savedReportRunRoute.useParams();
   const reportQ = useSavedReport(id);
   const runQ = useSavedReportRun(id);
+  const { data: catalog } = useSourceCatalog();
   const [excelLoading, setExcelLoading] = useState(false);
 
   const onExcel = async () => {
@@ -33,69 +35,92 @@ function SavedReportRunPage() {
     }
   };
 
+  const report = reportQ.data;
+  // Source label ("Sales Orders"), never the raw source key.
+  const sourceLabel = report
+    ? catalog?.sources.find((s) => s.sourceKey === report.sourceKey)?.label
+    : undefined;
+
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/saved-reports">
-            <ArrowLeft />
-            Back to saved reports
-          </Link>
-        </Button>
+    <div>
+      <Link to="/saved-reports" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to Saved Reports
+      </Link>
 
-        {reportQ.isLoading ? (
-          <Card>
-            <CardContent className="py-6">
-              <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading…
+      {reportQ.isLoading ? (
+        <div className="panel">
+          <div className="panel-body empty-state">
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+            Loading…
+          </div>
+        </div>
+      ) : reportQ.isError || !report ? (
+        <div className="panel">
+          <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
+            {/* 404 (or no row) = the report is gone; any other failure shows
+                the server's own message so a network/permission error is
+                not mistaken for a deletion. */}
+            {reportQ.isError &&
+            !(reportQ.error instanceof ApiError && reportQ.error.status === 404) &&
+            reportQ.error instanceof Error
+              ? reportQ.error.message
+              : 'Saved report not found. It may have been deleted.'}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <div className="section-hdr" style={{ marginBottom: 2 }}>
+                {report.name}
               </div>
-            </CardContent>
-          </Card>
-        ) : reportQ.isError || !reportQ.data ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Saved report not found</CardTitle>
-              <CardDescription>
-                {reportQ.error instanceof Error
-                  ? reportQ.error.message
-                  : 'No report exists with this id.'}
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          <>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">{reportQ.data.name}</h1>
-                {reportQ.data.description ? (
-                  <p className="mt-1 text-sm text-muted-foreground">{reportQ.data.description}</p>
-                ) : null}
-                <div className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {reportQ.data.sourceKey} · {reportQ.data.spec.columns.length} columns ·{' '}
-                  {reportQ.data.isShared ? 'shared' : 'private'}
+              {report.description ? (
+                <div className="text2" style={{ fontSize: 12 }}>
+                  {report.description}
                 </div>
+              ) : null}
+              <div
+                className="text3"
+                style={{
+                  fontSize: 11,
+                  marginTop: 4,
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'center',
+                }}
+              >
+                {sourceLabel ? <span>{sourceLabel}</span> : null}
+                {report.isShared ? (
+                  <span className="badge b-green">Shared</span>
+                ) : (
+                  <span className="badge b-grey">Private</span>
+                )}
               </div>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/saved-reports/$id/edit" params={{ id }}>
-                  <Edit />
-                  Edit
-                </Link>
-              </Button>
             </div>
+            <Link to="/saved-reports/$id/edit" params={{ id }} className="btn btn-ghost btn-sm">
+              ✎ Edit
+            </Link>
+          </div>
 
-            <ResultTable
-              data={runQ.data}
-              isLoading={runQ.isLoading}
-              isError={runQ.isError}
-              errorMessage={runQ.error instanceof Error ? runQ.error.message : undefined}
-              filenamePrefix={reportQ.data.name.replace(/[^a-z0-9-]/gi, '_').toLowerCase()}
-              onExcel={onExcel}
-              excelLoading={excelLoading}
-            />
-          </>
-        )}
-      </div>
-    </main>
+          <ResultTable
+            data={runQ.data}
+            isLoading={runQ.isLoading}
+            isError={runQ.isError}
+            errorMessage={runQ.error instanceof Error ? runQ.error.message : undefined}
+            filenamePrefix={report.name.replace(/[^a-z0-9-]/gi, '_').toLowerCase()}
+            onExcel={onExcel}
+            excelLoading={excelLoading}
+          />
+        </>
+      )}
+    </div>
   );
 }

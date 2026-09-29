@@ -16,6 +16,7 @@ import {
   type PrintDocType,
   substituteTemplateVars,
 } from '@innovic/shared';
+import { fmtDate as fmtDisplayDate } from '../date';
 import { letterheadFooterHtml, letterheadHeaderHtml } from './letterhead';
 
 // The company PAN, printed on outward documents. There is NO `pan` column on
@@ -38,11 +39,13 @@ export function nl2br(s: string): string {
   return esc(s).replace(/\r?\n/g, '<br>');
 }
 
-// ── Date format: YYYY-MM-DD (or ISO) → dd-MM-yyyy, no timezone shift ──
+// ── Date format: YYYY-MM-DD (or ISO) → 26-Sep-2026, no timezone shift ──
+// The calendar part of the value goes through the app's one display format
+// (lib/date), so template dates match the sheet header dates.
 export function fmtDate(d: string | null | undefined): string {
   if (!d) return '';
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : d;
+  return m ? fmtDisplayDate(`${m[1]}-${m[2]}-${m[3]}`, '') : d;
 }
 
 // ── Indian number format (1,00,000.00) ──

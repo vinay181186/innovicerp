@@ -30,6 +30,8 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
+import { ListFooter, ListHeader, PageState, ViewToggle } from '@/ui/layout';
 import { useSoStatus } from '../../so-status/api';
 import {
   fetchSalesOrdersForExport,
@@ -40,8 +42,15 @@ import {
 } from '../api';
 import { SoSheetTable } from '../components/so-sheet-table';
 import { SoStatusBadge } from '../components/so-status-badge';
+import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
-import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
+import { fmtDate, todayIst } from '@/lib/date';
+import {
+  ItemBadge,
+  ItemThumbnailCell,
+  ItemThumbnailHeader,
+  THUMBNAIL_COL_WIDTH,
+} from '@/components/shared/item-badge';
 
 // ISSUE-020 — legacy puts its cell classes on the <td> itself (e.g. L11867
 // `<td class="td-ctr mono fw-700">`), not on a wrapper span. td-ctr is
@@ -79,12 +88,18 @@ function QtyBox({
         borderLeft: bordered ? '1px solid var(--border)' : undefined,
       }}
     >
-      <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>
+      <div
+        className="mono fw-700"
+        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
+      >
         {value}
       </div>
       <div
         className="mono"
-        style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+        style={{
+          fontSize: 11,
+          color: 'var(--text3)',
+        }}
       >
         {label}
       </div>
@@ -138,7 +153,11 @@ function SalesOrdersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   // List View (the ruled sheet) vs Card View (the original cards). List is the
@@ -209,9 +228,10 @@ function SalesOrdersListPage(): React.JSX.Element {
     });
 
   const softDelete = useSoftDeleteSalesOrder();
-  const onDeleteSo = (so: SalesOrderListItem): void => {
-    if (confirm(`Delete SO ${so.code}? This soft-deletes the whole order.`)) softDelete.mutate(so.id);
-  };
+  // Delete asks through the ONE confirm dialog (never window.confirm); a failed
+  // delete is shown inside the dialog and the question stays open.
+  const [deletingSo, setDeletingSo] = useState<SalesOrderListItem | null>(null);
+  const onDeleteSo = (so: SalesOrderListItem): void => setDeletingSo(so);
 
   // Export status banner — an export that finds nothing, or fails, says so here.
   // (There was a bulk multi-SO Excel import on this screen; removed on the
@@ -243,7 +263,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       }
       await exportSoListExcel(res.items);
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Export failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not export. Try again.');
     } finally {
       setExporting(false);
     }
@@ -261,7 +281,7 @@ function SalesOrdersListPage(): React.JSX.Element {
   // The table machinery (TanStack column defs + SortableHead) is gone with it:
   // a card list has no column headers to click, so per-column sorting goes too.
   // It only ever sorted the 25 rows already on screen.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
   const rows = data?.items ?? [];
   const allExpanded = rows.length > 0 && rows.every((r) => expandedIds.has(r.id));
 
@@ -281,146 +301,153 @@ function SalesOrdersListPage(): React.JSX.Element {
   // panel, not the list. `eff` undefined only while access loads — don't block
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
     <div>
-      {/* Frozen header band (the reference supplied 2026-08-11) — the title,
-          the search/type/export toolbar and the status pills stay put while the
-          order cards scroll underneath.
-
-          `#content` is the app's scroll container (innovic-theme.css: flex:1 +
-          overflow-y:auto), so `top:0` pins this band to ITS padding box: it
-          lands flush under the topbar and the breadcrumb trail scrolls away
-          behind it. The background must therefore be opaque and match
-          #content's own (`--bg`, via .innovic-body) or the cards show through
-          as they pass under it.
-
-          Deliberately NOT bled to the edges with negative side margins: the
-          band and the cards below it are both inset by #content's padding, so
-          they already line up. Bleeding would mean matching that padding at two
-          breakpoints (20px, 12px under 768px) and a mismatch gives the whole
-          app a horizontal scrollbar — same warning as in
-          purchase-orders/routes/from-pr.tsx. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>SO / WO Orders</div>
-            {/* Count comes from the list response's `total` — the only aggregate
-                the endpoint returns. The reference mock also shows "N open ·
-                N overdue"; those are not derivable without a new API, and
-                counting the loaded page would quietly report 25 rows' worth as
-                the whole book, so they are left out rather than faked. */}
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} order{total === 1 ? '' : 's'}
-              {search.status ? <> · <span className="text2">{search.status}</span> only</> : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input className="innovic-input" placeholder="Search this list…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
-            <select className="innovic-select" value={search.type ?? ''} onChange={(e) => { const v = e.target.value as SoType | ''; void navigate({ search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 160, fontSize: 12 }}>
-              <option value="">All types</option>
-              {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
+      {/* The ONE list header (ui/layout ListHeader): title · count · view
+          toggle · Export · + New, then the filter bar (search · status · type
+          · Clear). Same URL params, same query as before. */}
+      <ListHeader
+        title="SO Master"
+        icon="📋"
+        count={total}
+        noun="order"
+        filterNote={search.status ? SO_STATUS_LABEL[search.status] : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search SO no., customer, client PO, part, item code…"
+        updating={isFetching && !isLoading}
+        filters={
+          <>
+            <select
+              className="innovic-select"
+              aria-label="SO status"
+              title="SO status"
+              value={search.status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as SoStatus | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+            >
+              <option value="">All statuses</option>
+              {SO_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {SO_STATUS_LABEL[s]}
+                </option>
+              ))}
             </select>
-            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={exporting} title="Export the current (filtered) list to Excel" onClick={() => void onExport()}>
-              {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Download className="inline h-3 w-3" />} Export
-            </button>
-            {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
-            {canCreate ? (
-              <Link to="/sales-orders/new" className="btn btn-primary">+ New SO / WO</Link>
-            ) : null}
-          </div>
-        </div>
-  
-        {/* Status filter as pills, per the reference layout. Replaces the status
-            <select> it used to sit beside — every SO_STATUSES value gets a pill,
-            so nothing that could be filtered before is unreachable now. Same
-            `status` search param, same query; only the control changed. */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {([null, ...SO_STATUSES] as (SoStatus | null)[]).map((s) => {
-              const active = (search.status ?? null) === s;
-              return (
-                <button
-                  key={s ?? 'all'}
-                  type="button"
-                  className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ fontSize: 11, textTransform: 'capitalize', borderRadius: 999, padding: '3px 12px' }}
-                  onClick={() => void navigate({ search: (prev) => ({ ...prev, status: s ?? undefined, page: 1 }), replace: true })}
-                >
-                  {s ?? 'All'}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {/* Expand all works on the one expandedIds set both views read,
-                so it opens every card AND every sheet row alike. */}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() =>
+            <select
+              className="innovic-select"
+              aria-label="SO type"
+              title="SO type"
+              value={search.type ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as SoType | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+            >
+              <option value="">All types</option>
+              {SELECTABLE_SO_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {SO_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              search: undefined,
+              status: undefined,
+              type: undefined,
+              page: 1,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={
+          search.search != null ||
+          search.status != null ||
+          search.type != null ||
+          searchInput !== ''
+        }
+        tools={
+          <>
+            {/* Expand all works on the one expandedIds set both views read. */}
+            <ViewToggle
+              value={view}
+              onChange={changeView}
+              expandAll={allExpanded}
+              onExpandAll={() =>
                 setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
               }
-              disabled={rows.length === 0}
-              title={allExpanded ? 'Hide every order’s line items' : 'Show every order’s line items'}
-            >
-              {allExpanded ? 'Collapse all' : 'Expand all'}
-            </button>
-            <span style={{ width: 1, height: 18, background: 'var(--border2)', margin: '0 4px' }} aria-hidden />
-            {/* List / Card view toggle */}
+            />
             <button
               type="button"
-              className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => changeView('list')}
-              aria-pressed={view === 'list'}
+              className="btn btn-ghost"
+              disabled={exporting}
+              title="Export the current (filtered) list to Excel"
+              onClick={() => void onExport()}
             >
-              ☰ List View
+              {exporting ? (
+                <Loader2 className="inline h-3 w-3 animate-spin" />
+              ) : (
+                <Download className="inline h-3 w-3" />
+              )}{' '}
+              Export
             </button>
-            <button
-              type="button"
-              className={`btn btn-sm ${view === 'card' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => changeView('card')}
-              aria-pressed={view === 'card'}
-            >
-              ▦ Card View
-            </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+        primary={
+          canCreate ? (
+            <Link to="/sales-orders/new" className="btn btn-primary">
+              + New SO
+            </Link>
+          ) : null
+        }
+      />
 
       {importMsg ? (
-        <div className="panel" style={{ marginBottom: 10, padding: '8px 12px', fontSize: 12, color: 'var(--text2)' }}>
+        <div
+          className="panel"
+          style={{ marginBottom: 10, padding: '8px 12px', fontSize: 12, color: 'var(--text2)' }}
+        >
           {importMsg}
-          <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 8, fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ marginLeft: 8, fontSize: 11 }}
+            onClick={() => setImportMsg(null)}
+          >
+            ✕
+          </button>
         </div>
       ) : null}
 
       {isLoading ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+          Loading…
         </div>
       ) : isError ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load sales orders'}
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
+          {error instanceof Error ? error.message : 'Could not load sales orders. Try again.'}
         </div>
       ) : rows.length === 0 ? (
-        <div className="panel empty-state" style={{ padding: 24 }}>No orders — click + New SO/WO</div>
+        <div className="panel empty-state" style={{ padding: 24 }}>
+          {search.search || search.status || search.type ? 'No SOs match.' : 'No SOs yet.'}
+        </div>
       ) : view === 'list' ? (
         // ── LIST VIEW (the ruled sheet) ──────────────────────────────────────
         <SoSheetTable
@@ -434,7 +461,12 @@ function SalesOrdersListPage(): React.JSX.Element {
           onDeleteSo={onDeleteSo}
           onPreviewClientPo={setPreviewPath}
           renderExpanded={(so) => (
-            <SoExpandedPanel soId={so.id} soType={so.type} canEdit={canEdit} canDelete={canDelete} />
+            <SoExpandedPanel
+              soId={so.id}
+              soType={so.type}
+              canEdit={canEdit}
+              canDelete={canDelete}
+            />
           )}
         />
       ) : (
@@ -487,10 +519,12 @@ function SalesOrdersListPage(): React.JSX.Element {
                   >
                     {so.code}
                   </Link>
-                  <span className="fw-700" style={{ fontSize: 13 }}>{so.customerName ?? '—'}</span>
+                  <span className="fw-700" style={{ fontSize: 13 }}>
+                    {so.customerName ?? '—'}
+                  </span>
                   {/* Legacy renders the type through badge() (L11870), which has
                       no map entry for either SO type and falls through to grey. */}
-                  <span className="badge b-grey">{so.type.replaceAll('_', ' ')}</span>
+                  <span className="badge b-grey">{SO_TYPE_LABEL[so.type]}</span>
                   <SoStatusBadge status={so.status} />
                   {so.type === 'equipment' && so.bomStatus ? (
                     <span
@@ -532,8 +566,12 @@ function SalesOrdersListPage(): React.JSX.Element {
                         />
                       ) : null}
                       {canDelete && so.status !== 'closed' ? (
-                        <button type="button" className="btn btn-danger btn-sm" onClick={() => onDeleteSo(so)}>
-                          Del
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm"
+                          onClick={() => onDeleteSo(so)}
+                        >
+                          Delete
                         </button>
                       ) : null}
                     </div>
@@ -552,19 +590,31 @@ function SalesOrdersListPage(): React.JSX.Element {
                     cursor: 'pointer',
                   }}
                 >
-                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
+                  <div
+                    style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
+                  >
                     <QtyBox label="Total Qty" value={so.totalQty} />
                     <QtyBox label="JC Qty" value={so.jcQty} color={jcColor} bordered />
                     <QtyBox label="Lines" value={so.lineCount} bordered />
                   </div>
                   <div
                     className="mono"
-                    style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--text3)',
+                      display: 'flex',
+                      gap: 6,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                    }}
                   >
-                    <span className="text2">{so.soDate}</span>
+                    <span className="text2">{fmtDate(so.soDate)}</span>
                     <span>·</span>
                     <span>
-                      PO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{so.clientPoNo ?? '—'}</span>
+                      Client PO No.{' '}
+                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                        {so.clientPoNo ?? '—'}
+                      </span>
                     </span>
                     {so.clientPoFilePath ? (
                       <button
@@ -572,7 +622,10 @@ function SalesOrdersListPage(): React.JSX.Element {
                         className="btn btn-ghost btn-sm"
                         style={{ padding: '0 4px', lineHeight: 1 }}
                         title="Preview Client PO Document"
-                        onClick={(e) => { e.stopPropagation(); setPreviewPath(so.clientPoFilePath!); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewPath(so.clientPoFilePath!);
+                        }}
                       >
                         📎
                       </button>
@@ -580,8 +633,15 @@ function SalesOrdersListPage(): React.JSX.Element {
                     <span>·</span>
                     <span className="text2">{so.createdByName ?? '—'}</span>
                     <span>·</span>
-                    <span style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>
-                      {so.earliestDueDate ? `Due ${so.earliestDueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                    <span
+                      style={{
+                        color: overdue ? 'var(--red)' : undefined,
+                        fontWeight: overdue ? 700 : undefined,
+                      }}
+                    >
+                      {so.earliestDueDate
+                        ? `Due ${fmtDate(so.earliestDueDate)}${overdue ? ' ⚠' : ''}`
+                        : 'No due date'}
                     </span>
                     <span>·</span>
                     <span title={so.remarks ?? ''}>{so.remarks || '—'}</span>
@@ -591,7 +651,12 @@ function SalesOrdersListPage(): React.JSX.Element {
                 {/* ── Band 3: line items ── */}
                 {isExpanded ? (
                   <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}>
-                    <SoExpandedPanel soId={so.id} soType={so.type} canEdit={canEdit} canDelete={canDelete} />
+                    <SoExpandedPanel
+                      soId={so.id}
+                      soType={so.type}
+                      canEdit={canEdit}
+                      canDelete={canDelete}
+                    />
                   </div>
                 ) : null}
               </div>
@@ -600,70 +665,172 @@ function SalesOrdersListPage(): React.JSX.Element {
         })
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-        <span>
-          {total === 0
-            ? 'No sales orders'
-            : total > LIST_LIMIT
-              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-              : `Showing all ${total} sales order${total === 1 ? '' : 's'}`}
-        </span>
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-        {view === 'list' ? (
-          <>💡 Click a row to open its detail page · click ▸ before the <b>SO number</b> to show its line items · use <b>+ Line</b> to add or edit lines.</>
-        ) : (
-          <>💡 Click the <b>SO number</b> to open its detail page · click the card to show its line items · use <b>+ Line</b> to add or edit lines.</>
-        )}
-      </div>
+      <ListFooter total={total} shown={rows.length} noun="sales order" limit={LIST_LIMIT} />
       {previewPath ? (
         <FilePreviewModal storagePath={previewPath} onClose={() => setPreviewPath(null)} />
       ) : null}
+      <ConfirmDialog
+        open={deletingSo !== null}
+        title={`Move SO ${deletingSo?.code ?? ''} to Trash?`}
+        message="You can restore it from Trash."
+        confirmLabel="Move to Trash"
+        pendingLabel="Moving to Trash…"
+        onCancel={() => setDeletingSo(null)}
+        onConfirm={async () => {
+          if (!deletingSo) return;
+          await softDelete.mutateAsync(deletingSo.id);
+          setDeletingSo(null);
+        }}
+      />
     </div>
   );
 }
 
-function SoExpandedPanel({ soId, soType, canEdit, canDelete }: { soId: string; soType: SoType; canEdit: boolean; canDelete: boolean }): React.JSX.Element {
+function SoExpandedPanel({
+  soId,
+  soType,
+  canEdit,
+  canDelete,
+}: {
+  soId: string;
+  soType: SoType;
+  canEdit: boolean;
+  canDelete: boolean;
+}): React.JSX.Element {
   const { data, isLoading, isError, error } = useSalesOrder(soId);
-  if (isLoading) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}><Loader2 size={12} className="inline animate-spin" /> Loading lines…</div>;
-  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load SO detail'}</div>;
-  return soType === 'equipment' ? <EquipmentSoExpand so={data} canEdit={canEdit} canDelete={canDelete} /> : <ComponentSoExpand so={data} canEdit={canEdit} />;
+  if (isLoading)
+    return (
+      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}>
+        <Loader2 size={12} className="inline animate-spin" /> Loading lines…
+      </div>
+    );
+  if (isError || !data)
+    return (
+      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red2)' }}>
+        {error instanceof Error ? error.message : 'Could not load SO detail. Try again.'}
+      </div>
+    );
+  return soType === 'equipment' ? (
+    <EquipmentSoExpand so={data} canEdit={canEdit} canDelete={canDelete} />
+  ) : (
+    <ComponentSoExpand so={data} canEdit={canEdit} />
+  );
 }
 
-function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; canEdit: boolean; canDelete: boolean }): React.JSX.Element {
+function EquipmentSoExpand({
+  so,
+  canEdit,
+  canDelete,
+}: {
+  so: SalesOrderDetail;
+  canEdit: boolean;
+  canDelete: boolean;
+}): React.JSX.Element {
   const softDelete = useSoftDeleteSalesOrder();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const line = so.lines[0];
-  if (!line) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}>No lines yet — add an item to this SO.</div>;
+  if (!line)
+    return (
+      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}>
+        No lines yet — add an item to this SO.
+      </div>
+    );
   const bomStatus = so.bomStatus ?? 'BOM Pending';
   return (
     <div>
-      <div style={{ padding: '10px 18px 8px 36px', display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
+      <div
+        style={{
+          padding: '10px 18px 8px 36px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 18,
+          alignItems: 'center',
+        }}
+      >
         {/* Same label band as <Fact>, but the value is the item badge (thumbnail ·
             code · name) rather than a string. The equipment line is an SO line
             like any other, so its drawing revision renders as CODE/REV (ADR-177). */}
         <div>
-          <div style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT</div>
-          <ItemBadge size="row" code={line.itemCode ?? line.itemCodeText} name={line.partName} revision={line.revision} imagePath={line.itemImagePath} />
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment</div>
+          <ItemBadge
+            size="row"
+            code={line.itemCode ?? line.itemCodeText}
+            name={line.partName}
+            revision={line.revision}
+            imagePath={line.itemImagePath}
+          />
         </div>
-        <Fact label="EQUIP QTY" value={String(line.orderQty)} big />
-        <Fact label="DUE DATE" value={line.dueDate ?? '—'} />
+        <Fact label="Order Qty" value={String(line.orderQty)} big />
+        <Fact label="Due Date" value={fmtDate(line.dueDate)} />
         <div>
-          <div style={{ fontSize: 10, color: 'var(--text3)' }}>BOM STATUS</div>
-          <div style={{ fontWeight: 700, color: bomStatus === 'BOM Pending' ? 'var(--amber)' : bomStatus === 'BOM Planned' ? 'var(--green)' : 'var(--cyan)' }}>
-            {bomStatus === 'BOM Pending' ? '⚠ BOM Pending' : bomStatus === 'BOM Planned' ? '✅ BOM Planned' : `📦 ${bomStatus}`}
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>BOM Status</div>
+          <div
+            style={{
+              fontWeight: 700,
+              color:
+                bomStatus === 'BOM Pending'
+                  ? 'var(--amber)'
+                  : bomStatus === 'BOM Planned'
+                    ? 'var(--green)'
+                    : 'var(--cyan)',
+            }}
+          >
+            {bomStatus === 'BOM Pending'
+              ? '⚠ BOM Pending'
+              : bomStatus === 'BOM Planned'
+                ? '✅ BOM Planned'
+                : `📦 ${bomStatus}`}
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {canEdit ? <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>✏ Edit</Link> : null}
+          {canEdit ? (
+            <Link
+              to="/sales-orders/$id/edit"
+              params={{ id: so.id }}
+              className="btn btn-ghost btn-sm"
+            >
+              ✏ Edit
+            </Link>
+          ) : null}
           {so.bomMasterId ? (
-            <Link to="/planning" className="btn btn-sm" style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}>📦 Plan BOM Items</Link>
+            <Link
+              to="/planning"
+              search={{ soId: so.id }}
+              className="btn btn-ghost btn-sm cyan fw-700"
+            >
+              📦 Plan BOM Items
+            </Link>
           ) : (
-            <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}>⚠ No BOM linked — assign one in Edit.</span>
+            <span
+              style={{ color: 'var(--amber2)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}
+            >
+              ⚠ No BOM linked — assign one in Edit.
+            </span>
           )}
-          {canDelete ? <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} onClick={() => { if (confirm(`Delete SO ${so.code}?`)) softDelete.mutate(so.id); }}>Del</button> : null}
+          {canDelete ? (
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete
+            </button>
+          ) : null}
         </div>
       </div>
-      {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : <div style={{ padding: '4px 32px 12px', color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>⚠ No BOM linked. Edit this SO to assign a BOM from BOM Master.</div>}
+      {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : null}
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Move SO ${so.code} to Trash?`}
+        message="You can restore it from Trash."
+        confirmLabel="Move to Trash"
+        pendingLabel="Moving to Trash…"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={async () => {
+          await softDelete.mutateAsync(so.id);
+          setConfirmDelete(false);
+        }}
+      />
     </div>
   );
 }
@@ -674,32 +841,82 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
   if (items.length === 0) return null;
   return (
     <div style={{ padding: '4px 12px 8px 32px' }}>
-      <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, marginBottom: 4 }}>
-        ▸ BOM ITEMS — {data?.header.equipmentInfo?.bomNo ?? ''} × {data?.header.equipmentInfo?.equipmentQty ?? 0} sets
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--cyan)',
+          fontFamily: 'var(--mono)',
+          fontWeight: 700,
+          marginBottom: 4,
+        }}
+      >
+        BOM Items — {data?.header.equipmentInfo?.bomNo ?? ''} ×{' '}
+        {data?.header.equipmentInfo?.equipmentQty ?? 0} sets
       </div>
       {/* tbl-ctr — the table-alignment standard: data centred, headers untouched. */}
       <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Sr No</th><th>Item Code</th><th>Item Name</th><th className="td-ctr">Qty/Set</th>
-            <th className="td-ctr" style={{ color: 'var(--cyan)' }}>Total Need</th><th>BOM Type</th>
-            <th className="td-ctr" style={{ color: 'var(--green)' }}>Stock</th><th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
+            <th style={{ width: 36 }}>Sr No</th>
+            <th>Item Code</th>
+            <th>Item Name</th>
+            <th className="th-num">Qty / Set</th>
+            <th className="th-num" style={{ color: 'var(--cyan)' }}>
+              Total Need
+            </th>
+            <th>BOM Type</th>
+            <th className="th-num" style={{ color: 'var(--green2)' }}>
+              Physical
+            </th>
+            <th className="th-num" style={{ color: 'var(--red2)' }}>
+              Pending
+            </th>
           </tr>
         </thead>
         <tbody>
           {items.map((c, idx) => {
-            const typeLabel = c.bomType === 'manufacture' ? '🏭 Mfg' : c.bomType === 'purchase' ? '🛒 Buy' : '🏭 Outsrc';
-            const typeColor = c.bomType === 'manufacture' ? 'var(--cyan)' : c.bomType === 'purchase' ? 'var(--green)' : 'var(--amber)';
+            const typeLabel =
+              c.bomType === 'manufacture' ? 'Make' : c.bomType === 'purchase' ? 'Buy' : 'Outsource';
+            const typeColor =
+              c.bomType === 'manufacture'
+                ? 'var(--cyan)'
+                : c.bomType === 'purchase'
+                  ? 'var(--green)'
+                  : 'var(--amber)';
             return (
-              <tr key={c.childItemId} style={{ background: c.shortfall > 0 ? 'rgba(239,68,68,0.03)' : 'rgba(34,197,94,0.03)' }}>
+              <tr
+                key={c.childItemId}
+                style={{
+                  background: c.shortfall > 0 ? 'rgba(239,68,68,0.03)' : 'rgba(34,197,94,0.03)',
+                }}
+              >
                 <td className="td-ctr mono fw-700">{idx + 1}</td>
-                <td className="td-code" style={{ color: 'var(--purple)' }}>{c.childItemCode}</td>
+                <td className="td-code" style={{ color: 'var(--purple)' }}>
+                  {c.childItemCode}
+                </td>
                 <td>{c.childItemName}</td>
-                <td className="td-ctr mono fw-700">{c.qtyPerSet}</td>
-                <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>{c.totalNeed}</td>
-                <td><span style={{ color: typeColor, fontSize: 11, fontWeight: 700 }}>{typeLabel}</span></td>
-                <td className="td-ctr mono fw-700" style={{ color: c.stockQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{c.stockQty}</td>
-                <td className="td-ctr mono fw-700" style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}>{c.shortfall}{c.shortfall <= 0 ? ' ✅' : ''}</td>
+                <td className="td-num mono fw-700">{c.qtyPerSet}</td>
+                <td className="td-num mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>
+                  {c.totalNeed}
+                </td>
+                <td>
+                  <span style={{ color: typeColor, fontSize: 11, fontWeight: 700 }}>
+                    {typeLabel}
+                  </span>
+                </td>
+                <td
+                  className="td-num mono fw-700"
+                  style={{ color: c.stockQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+                >
+                  {c.stockQty}
+                </td>
+                <td
+                  className="td-num mono fw-700"
+                  style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}
+                >
+                  {c.shortfall}
+                  {c.shortfall <= 0 ? ' ✅' : ''}
+                </td>
               </tr>
             );
           })}
@@ -709,19 +926,43 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
   );
 }
 
-function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boolean }): React.JSX.Element {
+function ComponentSoExpand({
+  so,
+  canEdit,
+}: {
+  so: SalesOrderDetail;
+  canEdit: boolean;
+}): React.JSX.Element {
   const update = useUpdateSalesOrder(so.id);
-  const onDeleteLine = (lineId: string): void => {
-    if (!confirm('Delete this line?')) return;
-    const surviving = so.lines.filter((l) => l.id !== lineId).map(lineToInput);
-    update.mutate({ header: {}, lines: surviving });
-  };
+  // Line delete asks through ConfirmDialog, not window.confirm. Same update
+  // call as before: re-send the surviving lines.
+  const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
+  const onDeleteLine = (lineId: string): void => setDeletingLineId(lineId);
+  const deletingLine = so.lines.find((l) => l.id === deletingLineId) ?? null;
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
       {/* Preview header. The row no longer navigates, so the preview carries its
           own way through to the full record — same route the SO code uses. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>▸ LINE ITEMS — {so.code}</div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 6,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--blue)',
+            fontFamily: 'var(--mono)',
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+          }}
+        >
+          Line Items
+        </div>
         <Link
           to="/sales-orders/$id"
           params={{ id: so.id }}
@@ -735,7 +976,10 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
           Fixed column widths: each expanded order draws its own lines table, and
           auto-sized columns put the Item column — and its picture box — at a
           slightly different x per order. Fixed, the box lines up down the page. */}
-      <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0, tableLayout: 'fixed' }}>
+      <table
+        className="innovic-table tbl-ctr"
+        style={{ width: '100%', margin: 0, tableLayout: 'fixed' }}
+      >
         <colgroup>
           <col style={{ width: '4%' }} />
           <col style={{ width: '7%' }} />
@@ -753,41 +997,114 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
           <tr style={{ background: 'var(--bg4)' }}>
             {/* Item = thumbnail · CODE/REV · part name in one badge cell (user
                 decision 2026-09-21); the old Item Code + Part Name pair folded in. */}
-            <th>Ln</th><th style={{ color: 'var(--purple)' }}>POL</th><ItemThumbnailHeader /><th style={{ textAlign: 'left' }}>Item</th>
-            <th className="td-ctr">Order Qty</th><th className="td-ctr">JC Qty</th>
-            <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
-            <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
-            <th>Due Date</th><th>SO Status</th>{canEdit ? <th /> : null}
+            <th>Ln</th>
+            <th style={{ color: 'var(--purple)' }}>POL</th>
+            <ItemThumbnailHeader />
+            <th style={{ textAlign: 'left' }}>Item</th>
+            <th className="th-num">Order Qty</th>
+            <th className="th-num">JC Qty</th>
+            <th className="th-num" style={{ color: 'var(--green2)' }}>
+              Dispatched
+            </th>
+            <th className="th-num" style={{ color: 'var(--red2)' }}>
+              Pending
+            </th>
+            <th>Due Date</th>
+            <th>SO Status</th>
+            {canEdit ? <th /> : null}
           </tr>
         </thead>
         <tbody>
           {so.lines.length === 0 ? (
-            <tr><td colSpan={canEdit ? 11 : 10} className="empty-state">No lines yet</td></tr>
+            <tr>
+              <td colSpan={canEdit ? 11 : 10} className="empty-state">
+                No lines yet
+              </td>
+            </tr>
           ) : (
             so.lines.map((l) => {
               const balance = Math.max(0, l.orderQty - l.dispatchedQty);
               return (
                 <tr key={l.id} style={{ background: 'var(--bg)' }}>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
-                  <td className="mono" style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 700 }}>{l.clientPoLineNo ?? '—'}</td>
+                  <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>
+                    {l.lineNo}
+                  </td>
+                  <td
+                    className="mono"
+                    style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 700 }}
+                  >
+                    {l.clientPoLineNo ?? '—'}
+                  </td>
                   {/* CODE/REV — the customer's drawing revision travels with the code
                       (the badge formats it via itemCodeWithRev). */}
                   <ItemThumbnailCell imagePath={l.itemImagePath} alt={l.partName} />
-                  <td><ItemBadge size="row" showImage={false} code={l.itemCode ?? l.itemCodeText} name={l.partName} revision={l.revision} imagePath={l.itemImagePath} /></td>
-                  <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>
-                  <td className="td-ctr mono" style={{ fontSize: 11 }}>
-                    <span style={{ color: l.jcQty >= l.orderQty ? 'var(--green)' : l.jcQty > 0 ? 'var(--amber)' : 'var(--text3)' }}>{l.jcQty}</span>
-                    <span className="text3" style={{ fontSize: 10 }}> /{l.orderQty}</span>
+                  <td>
+                    <ItemBadge
+                      size="row"
+                      showImage={false}
+                      code={l.itemCode ?? l.itemCodeText}
+                      name={l.partName}
+                      revision={l.revision}
+                      imagePath={l.itemImagePath}
+                    />
                   </td>
-                  <td className="td-ctr mono fw-700" style={{ color: l.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{l.dispatchedQty}</td>
-                  <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance <= 0 ? '✅ Done' : balance}</td>
-                  <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
-                  <td><SoStatusBadge status={l.status} /></td>
+                  <td className="td-num mono fw-700" style={{ fontSize: 14 }}>
+                    {l.orderQty}
+                  </td>
+                  <td className="td-num mono" style={{ fontSize: 11 }}>
+                    <span
+                      style={{
+                        color:
+                          l.jcQty >= l.orderQty
+                            ? 'var(--green)'
+                            : l.jcQty > 0
+                              ? 'var(--amber)'
+                              : 'var(--text3)',
+                      }}
+                    >
+                      {l.jcQty}
+                    </span>
+                    <span className="text3" style={{ fontSize: 11 }}>
+                      {' '}
+                      /{l.orderQty}
+                    </span>
+                  </td>
+                  <td
+                    className="td-num mono fw-700"
+                    style={{ color: l.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+                  >
+                    {l.dispatchedQty}
+                  </td>
+                  <td
+                    className="td-num mono fw-700"
+                    style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
+                  >
+                    {balance <= 0 ? '✅ Dispatched' : balance}
+                  </td>
+                  <td className="text2" style={{ fontSize: 11 }}>
+                    {fmtDate(l.dueDate)}
+                  </td>
+                  <td>
+                    <SoStatusBadge status={l.status} />
+                  </td>
                   {canEdit ? (
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}>Edit</Link>
-                        <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 10 }} disabled={update.isPending} onClick={() => onDeleteLine(l.id)}>Del</button>
+                        <Link
+                          to="/sales-orders/$id/edit"
+                          params={{ id: so.id }}
+                          className="btn btn-ghost btn-sm"
+                        >
+                          Edit
+                        </Link>
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm"
+                          disabled={update.isPending}
+                          onClick={() => onDeleteLine(l.id)}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   ) : null}
@@ -797,14 +1114,38 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
           )}
         </tbody>
       </table>
+      <ConfirmDialog
+        open={deletingLine !== null}
+        title={`Delete line ${deletingLine?.lineNo ?? ''} of SO ${so.code}?`}
+        message="The line is removed from this Sales Order."
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        onCancel={() => setDeletingLineId(null)}
+        onConfirm={async () => {
+          if (!deletingLineId) return;
+          const surviving = so.lines.filter((l) => l.id !== deletingLineId).map(lineToInput);
+          await update.mutateAsync({ header: {}, lines: surviving });
+          setDeletingLineId(null);
+        }}
+      />
     </div>
   );
 }
 
-function Fact({ label, value, color, big }: { label: string; value: string; color?: string | undefined; big?: boolean | undefined }): React.JSX.Element {
+function Fact({
+  label,
+  value,
+  color,
+  big,
+}: {
+  label: string;
+  value: string;
+  color?: string | undefined;
+  big?: boolean | undefined;
+}): React.JSX.Element {
   return (
     <div>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
       <div style={{ fontWeight: 700, color, fontSize: big ? 16 : undefined }}>{value}</div>
     </div>
   );

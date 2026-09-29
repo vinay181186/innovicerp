@@ -87,8 +87,8 @@ export type ProductionDashboardReadyOp = z.infer<typeof productionDashboardReady
 export const productionDashboardLowStockItemSchema = z.object({
   itemId: z.string().uuid(),
   code: z.string(),
-  inStock: z.number().int(),
-  minQty: z.number().int().nonnegative(),
+  inStock: z.number(),
+  minQty: z.number().nonnegative(),
 });
 export type ProductionDashboardLowStockItem = z.infer<
   typeof productionDashboardLowStockItemSchema

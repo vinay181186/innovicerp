@@ -69,12 +69,17 @@ export const purchaseOrderLineSchema = z.object({
    *  return, a line whose SO line was deleted). Read-only: the Sales Order is
    *  the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
+  /** Unit of the line's item, read live off the items master (items.uom) — a
+   *  PO line has no uom column of its own. Detail read only; null on a
+   *  hand-typed line with no item, and the print then shows NOS. */
+  uom: z.string().nullable().default(null),
   itemName: z.string(),
-  qty: z.number().int().positive(),
+  /** Decimal (KGS / MTR, 3 places) — 0172. */
+  qty: z.number().positive(),
   // numeric stored as string; NULL when the viewer's access hides prices
   // (L1 Viewer without "see price") — see canSeeFormPrice on the API.
   rate: z.string().nullable(),
-  receivedQty: z.number().int().nonnegative(),
+  receivedQty: z.number().nonnegative(),
   dueDate: z.string().nullable(),
   sourceSoLineId: z.string().uuid().nullable(),
   sourceJcOpId: z.string().uuid().nullable(),
@@ -133,6 +138,12 @@ export const purchaseOrderSchema = z.object({
   rejectedBy: z.string().uuid().nullable(),
   rejectedAt: z.string().nullable(),
   rejectionReason: z.string().nullable(),
+  /** ADR-189 — set when an issued PO was stopped by hand (Short Close):
+   *  'closed' part-way (its PRs keep only what was received) or 'cancelled'
+   *  when nothing had been received or sent. */
+  shortClosedAt: z.string().nullable().default(null),
+  shortClosedBy: z.string().uuid().nullable().default(null),
+  shortCloseReason: z.string().nullable().default(null),
   remarks: z.string().nullable(),
   /** users.full_name of whoever raised the PO -- the "Contact Person" a
    *  vendor rings about it. `createdBy` alone is a uuid, which is useless on
@@ -177,13 +188,16 @@ export type PurchaseOrderDetail = z.infer<typeof purchaseOrderDetailSchema>;
 export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
   vendorName: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
-  totalQty: z.number().int().nonnegative(),
-  receivedQty: z.number().int().nonnegative(),
+  totalQty: z.number().nonnegative(),
+  receivedQty: z.number().nonnegative(),
+  /** ADR-189 — Σ per line max(0, qty − received); 0 once the PO is closed,
+   *  short-closed or cancelled. The one Pending every PO screen shows. */
+  pendingQty: z.number().nonnegative().default(0),
   /** Pieces already sent OUT against this PO's lines on delivery challans that
    *  are not cancelled — the same rule the DC sendable check applies per line.
    *  `dcSentQty >= totalQty` means the PO is fully sent and has nothing left
    *  to put on a new challan. 0 on a buying PO that never ships anything. */
-  dcSentQty: z.number().int().nonnegative().default(0),
+  dcSentQty: z.number().nonnegative().default(0),
 });
 export type PurchaseOrderListItem = z.infer<typeof purchaseOrderListItemSchema>;
 
@@ -196,9 +210,10 @@ export const purchaseOrderLineInputSchema = z
     itemId: z.string().uuid().optional(),
     itemCodeText: z.string().min(1).max(64).optional(),
     itemName: z.string().min(1).max(255),
-    qty: z.number().int().positive(),
+    /** Decimal for KGS / MTR (3 places); NOS / SET stay whole (API rule, 0172). */
+    qty: z.number().positive().multipleOf(0.001),
     rate: z.coerce.number().nonnegative().default(0),
-    receivedQty: z.number().int().nonnegative().optional(),
+    receivedQty: z.number().nonnegative().optional(),
     dueDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
@@ -274,7 +289,11 @@ export type CreatePurchaseOrderInput = z.infer<typeof createPurchaseOrderInputSc
 
 /** UPDATE — same shape; lines optional (option C merge). `code` immutable. */
 export const updatePurchaseOrderInputSchema = z.object({
-  header: _poHeaderInputBase.partial().omit({ code: true }),
+  // taxType: null = "None" chosen on edit → the server clears the column.
+  header: _poHeaderInputBase
+    .partial()
+    .omit({ code: true })
+    .extend({ taxType: z.string().max(32).nullable().optional() }),
   lines: z.array(purchaseOrderLineInputSchema).optional(),
 });
 export type UpdatePurchaseOrderInput = z.infer<typeof updatePurchaseOrderInputSchema>;
@@ -325,7 +344,10 @@ export const createPurchaseOrderFromPrBatchInputSchema = z.object({
     code: z.string().min(1).max(64).regex(codeRegex),
     poDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'poDate must be YYYY-MM-DD'),
     poType: poTypeSchema.default('job_work'),
-    dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD').optional(),
+    dueDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
+      .optional(),
     taxType: z.string().max(32).optional(),
     sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
     cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
@@ -354,6 +376,8 @@ export const listPurchaseOrdersQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Only job-work / service POs whose lines trace to this JWSO (ADR-190 addendum). */
+  jobWorkOrderId: z.string().uuid().optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
@@ -365,3 +389,23 @@ export interface ListPurchaseOrdersResponse {
   limit: number;
   offset: number;
 }
+
+/** ADR-189 — stopping an issued PO is a recorded action with a reason a reader
+ *  can act on (ERPNext: Close / Cancel a Purchase Order). */
+/** ADR-189 — Pending of one PO line: qty − received, never below 0, and 0 once
+ *  the PO is closed, short-closed or cancelled (nothing more will come on it).
+ *  The API's SQL twin is apps/api/src/lib/po-pending.ts. */
+export function poLinePendingQty(qty: number, receivedQty: number, poStatus: string): number {
+  if (!['draft', 'open', 'partial', 'qc_pending'].includes(poStatus)) return 0;
+  return Math.max(0, qty - receivedQty);
+}
+
+export const PO_SHORT_CLOSE_REASON_MIN = 10;
+export const shortClosePurchaseOrderInputSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(PO_SHORT_CLOSE_REASON_MIN, `Give a reason (at least ${PO_SHORT_CLOSE_REASON_MIN} characters)`)
+    .max(500),
+});
+export type ShortClosePurchaseOrderInput = z.infer<typeof shortClosePurchaseOrderInputSchema>;

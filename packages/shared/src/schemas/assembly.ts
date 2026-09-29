@@ -153,6 +153,8 @@ export const markUnitAssembledInputSchema = z.object({
   assemblyDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   assembledBy: z.string().trim().max(80).optional(),
   remarks: z.string().trim().max(500).optional(),
+  /** ADR-193 3c — last units only: why Still Out ≠ BOM need (409 needsConfirmation). */
+  confirmVarianceReason: z.string().trim().min(10).max(500).optional(),
 });
 export type MarkUnitAssembledInput = z.infer<typeof markUnitAssembledInputSchema>;
 
@@ -178,6 +180,8 @@ export const stopAssemblyInputSchema = z.object({
   assemblyDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   assembledBy: z.string().trim().max(80).optional(),
   remarks: z.string().trim().max(500).optional(),
+  /** ADR-193 3c — last units only: why Still Out ≠ BOM need (409 needsConfirmation). */
+  confirmVarianceReason: z.string().trim().min(10).max(500).optional(),
 });
 export type StopAssemblyInput = z.infer<typeof stopAssemblyInputSchema>;
 

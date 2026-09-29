@@ -4,10 +4,10 @@
 // Legacy chrome.
 //
 // Data reuse (no figure is recomputed in React — CLAUDE.md rule 1):
-//  - "🏭 Machine-wise Pending Work" (L3780-3788) reads the existing
+//  - "Machine-wise Pending Work" (L3780-3788) reads the existing
 //    GET /machine-loading via useMachineLoading(); ops are grouped by machine
 //    for display only. "Full Queue →" → our /job-queue route.
-//  - "🏬 Supply Chain Snapshot" (L3804-3838) reads supplyChain on
+//  - "Supply Chain Snapshot" (L3804-3838) reads supplyChain on
 //    GET /production-dashboard, whose figures reuse store-inventory +
 //    sc-dashboard service formulas. "Store →" → our /store-inventory route.
 //
@@ -24,8 +24,12 @@ import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
+import { StatStrip } from '@/components/shared/stat-strip';
+import { addDaysLocal, fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useMachineLoading } from '@/modules/machine-loading/api';
 import { useProductionDashboard } from '../api';
 
@@ -40,12 +44,14 @@ export const productionDashboardRoute = createRoute({
 // stylesheet (L10559-10561), never in its main sheet at L10, so legacy renders
 // both as an unstyled `.badge` on screen. Empty class reproduces that exactly;
 // neither class exists in our theme either. Mirrors machine-loading's map.
+// Wave 2 (owner, 2026-09-26) overrides the legacy note above: in_progress now
+// reads "Partly Completed" (amber) and running (an open session) is green.
 const OP_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
-  complete: { label: 'Complete', cls: 'b-green' },
-  in_progress: { label: 'In Progress', cls: '' },
-  running: { label: 'Running', cls: '' },
+  complete: { label: 'Completed', cls: 'b-green' },
+  in_progress: { label: 'Partly Completed', cls: 'b-amber' },
+  running: { label: 'Running', cls: 'b-green' },
   available: { label: 'Available', cls: 'b-blue' },
-  waiting: { label: 'Waiting', cls: 'b-red' },
+  waiting: { label: 'Waiting', cls: 'b-grey' },
   qc_pending: { label: 'QC Pending', cls: 'b-amber' },
 };
 
@@ -64,27 +70,14 @@ function ProductionDashboardPage(): React.JSX.Element {
   const openJobCards = data?.openJobCards ?? [];
   const readyToProcess = data?.readyToProcess ?? [];
   const supplyChain = data?.supplyChain;
+  // ▶ Start / ✚ Log on the Ready rows open Op Entry — the same gate the Job
+  // Queue uses for the same two links.
+  const { data: eff } = useMyAccess();
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Production Dashboard
-        </div>
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
-        ) : null}
-      </div>
+      <ListHeader title="Production Dashboard" icon="📊" updating={isFetching && !isLoading} />
 
       {isLoading ? (
         <div className="panel">
@@ -94,8 +87,8 @@ function ProductionDashboardPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load dashboard'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Could not load dashboard. Try again.'}
           </div>
         </div>
       ) : (
@@ -105,37 +98,36 @@ function ProductionDashboardPage(): React.JSX.Element {
               already declares it (legacy L96 = theme L292). Copying it would
               override our @media(max-width:768px) 2-col rule (theme L864), so
               the bare class matches legacy's render AND stays responsive. */}
-          <div className="stat-grid">
-            <div className="stat-card cyan">
-              <div className="stat-label">Open Job Cards</div>
-              <div className="stat-val cyan">{c?.openJc ?? 0}</div>
-              <div className="stat-sub">
-                {c?.totalJc ?? 0} total · {c?.noOpsJc ?? 0} no-ops
-              </div>
-            </div>
-            <div className="stat-card amber">
-              <div className="stat-label">Total Pending Components</div>
-              <div className="stat-val amber">{c?.pendingQty ?? 0}</div>
-              <div className="stat-sub">pcs still to be manufactured</div>
-            </div>
-            <div
-              className="stat-card"
-              style={{ borderColor: (c?.runningOps ?? 0) > 0 ? 'var(--green)' : 'var(--border)' }}
-            >
-              <div className="stat-label">Running Now</div>
-              <div
-                className="stat-val"
-                style={{ color: (c?.runningOps ?? 0) > 0 ? 'var(--green)' : 'var(--text3)' }}
-              >
-                {c?.runningOps ?? 0}
-              </div>
-              <div className="stat-sub">operations on machines</div>
-            </div>
-            <div className="stat-card green">
-              <div className="stat-label">Ready to Start</div>
-              <div className="stat-val green">{c?.readyQty ?? 0}</div>
-              <div className="stat-sub">pcs available right now</div>
-            </div>
+          <div style={{ marginBottom: 16 }}>
+            <StatStrip
+              items={[
+                {
+                  key: 'open-jc',
+                  label: 'Open Job Cards',
+                  count: c?.openJc ?? 0,
+                  color: 'var(--cyan)',
+                  sub: `${c?.totalJc ?? 0} total · ${c?.noOpsJc ?? 0} without operations`,
+                },
+                {
+                  key: 'pending',
+                  label: 'Pending Qty (pcs)',
+                  count: c?.pendingQty ?? 0,
+                  color: 'var(--amber)',
+                },
+                {
+                  key: 'running',
+                  label: 'Running',
+                  count: c?.runningOps ?? 0,
+                  color: (c?.runningOps ?? 0) > 0 ? 'var(--green)' : 'var(--text3)',
+                },
+                {
+                  key: 'available',
+                  label: 'Available (pcs)',
+                  count: c?.readyQty ?? 0,
+                  color: 'var(--green)',
+                },
+              ]}
+            />
           </div>
 
           {/* Machine-wise Pending Work — legacy L3780-3788. Reuses the existing
@@ -150,7 +142,7 @@ function ProductionDashboardPage(): React.JSX.Element {
           {/* Open JC cards — legacy L3791-3799 */}
           <div className="panel" style={{ marginBottom: 16 }}>
             <div className="panel-hdr">
-              <span className="panel-title">📋 Open Job Cards</span>
+              <span className="panel-title">Open Job Cards</span>
               <Link to="/job-cards" className="btn btn-ghost btn-sm">
                 All JCs →
               </Link>
@@ -165,7 +157,7 @@ function ProductionDashboardPage(): React.JSX.Element {
             >
               {openJobCards.length === 0 ? (
                 <div className="empty-state" style={{ padding: 16 }}>
-                  ✓ No open job cards
+                  No open Job Cards.
                 </div>
               ) : (
                 openJobCards.map((jc) => <JcCard key={jc.jobCardId} jc={jc} />)
@@ -178,15 +170,15 @@ function ProductionDashboardPage(): React.JSX.Element {
           {readyToProcess.length > 0 ? (
             <div className="panel" style={{ marginBottom: 16 }}>
               <div className="panel-hdr">
-                <span className="panel-title">⚡ Ready to Process Now</span>
+                <span className="panel-title">Available Now</span>
                 <span className="text3" style={{ fontSize: 11 }}>
                   {/* Server's full-scope count. `readyToProcess` is LIMIT 100,
                       so binding .length here froze the figure at 100. */}
-                  {c?.readyOps ?? 0} operations with available qty
+                  {c?.readyOps ?? 0} operations
                 </span>
               </div>
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid">
                   <thead>
                     <tr>
                       <th>JC No.</th>
@@ -202,14 +194,15 @@ function ProductionDashboardPage(): React.JSX.Element {
                       <th>Actual Machine</th>
                       <th>Order Qty</th>
                       <th>Completed</th>
-                      <th style={{ color: 'var(--amber)' }}>Available</th>
-                      <th>Pending Hrs</th>
+                      <th style={{ color: 'var(--amber2)' }}>Available</th>
+                      <th>Pending (hrs)</th>
                       <th>Op Status</th>
+                      {canOpEntry ? <th>Action</th> : null}
                     </tr>
                   </thead>
                   <tbody>
                     {readyToProcess.map((op) => (
-                      <ReadyRow key={op.jcOpId} op={op} />
+                      <ReadyRow key={op.jcOpId} op={op} canOpEntry={canOpEntry} />
                     ))}
                   </tbody>
                 </table>
@@ -229,7 +222,8 @@ function ProductionDashboardPage(): React.JSX.Element {
 // Machine-wise Pending Work (legacy L3670-3714 + L3780-3788). One card per
 // machine; pending ops grouped from the machine-loading `ops` list (already
 // server-sorted priority → due → op_seq, preserved within each group).
-const DUE_SOON_ISO = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+// IST today + 3 days (not the UTC date, which is a day behind before 05:30 IST).
+const DUE_SOON_ISO = addDaysLocal(todayIst(), 3);
 
 function MachinePendingPanel({
   machines,
@@ -251,7 +245,7 @@ function MachinePendingPanel({
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <div className="panel-hdr">
-        <span className="panel-title">🏭 Machine-wise Pending Work</span>
+        <span className="panel-title">Machine-wise Pending Work</span>
         <Link to="/job-queue" className="btn btn-ghost btn-sm">
           Full Queue →
         </Link>
@@ -270,7 +264,7 @@ function MachinePendingPanel({
           </div>
         ) : machines.length === 0 ? (
           <div className="empty-state" style={{ padding: 16 }}>
-            No machines configured
+            No Machines yet.
           </div>
         ) : (
           machines.map((m) => (
@@ -324,7 +318,7 @@ function MachineCard({
           <span className="badge b-grey">Idle</span>
         </div>
         <div className="text3" style={{ fontSize: 12, textAlign: 'center', padding: '8px 0' }}>
-          — No pending work —
+          No pending work
         </div>
       </div>
     );
@@ -350,11 +344,11 @@ function MachineCard({
       >
         {label}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span className="text3" style={{ fontSize: 10 }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             {ops.length} op{ops.length !== 1 ? 's' : ''}
           </span>
           {runCount > 0 ? (
-            <span className="badge">● Running</span>
+            <span className="badge b-green">Running</span>
           ) : (
             <span className="badge b-amber">Pending</span>
           )}
@@ -365,10 +359,10 @@ function MachineCard({
           <thead>
             <tr>
               <th>JC No.</th>
-              <th>Item</th>
+              <th>Item Code</th>
               <th>Operation</th>
               <th>Op Status</th>
-              <th style={{ color: 'var(--amber)' }}>Pending</th>
+              <th style={{ color: 'var(--amber2)' }}>Available</th>
               <th>Due Date</th>
             </tr>
           </thead>
@@ -413,14 +407,14 @@ function MachineCard({
                   <td className="td-ctr">
                     <OpStatusBadge status={o.computedStatus} />
                   </td>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                  <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                     {o.available}
                   </td>
                   <td
                     className="td-ctr"
-                    style={{ fontSize: 10, color: dueSoon ? 'var(--red)' : 'var(--text3)' }}
+                    style={{ fontSize: 11, color: dueSoon ? 'var(--red)' : 'var(--text3)' }}
                   >
-                    {o.dueDate ?? '—'}
+                    {fmtDate(o.dueDate)}
                   </td>
                 </tr>
               );
@@ -456,7 +450,7 @@ function SupplyChainPanel({
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <div className="panel-hdr">
-        <span className="panel-title">🏬 Supply Chain Snapshot</span>
+        <span className="panel-title">Supply Chain Snapshot</span>
         <Link to="/store-inventory" className="btn btn-ghost btn-sm">
           Store →
         </Link>
@@ -484,7 +478,7 @@ function SupplyChainPanel({
           color="var(--amber)"
         />
         <ScTile
-          label="Open POs"
+          label="Open Purchase Orders"
           value={openPos}
           bg="var(--blue3)"
           border="var(--blue)"
@@ -500,8 +494,8 @@ function SupplyChainPanel({
       </div>
       {lowStockItems.length > 0 ? (
         <div style={{ padding: '0 14px 14px' }}>
-          <div style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700, marginBottom: 6 }}>
-            ⚠ Low Stock Items:
+          <div style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700, marginBottom: 6 }}>
+            Low Stock Items:
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {lowStockItems.map((i) => (
@@ -549,7 +543,7 @@ function ScTile({
         border: `1px solid ${border}`,
       }}
     >
-      <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
       <div className="mono fw-700" style={{ fontSize: 22, color }}>
         {value}
       </div>
@@ -557,7 +551,19 @@ function ScTile({
   );
 }
 
-function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element {
+function ReadyRow({
+  op,
+  canOpEntry,
+}: {
+  op: ProductionDashboardReadyOp;
+  canOpEntry: boolean;
+}): React.JSX.Element {
+  // ▶ Start / ✚ Log — the Job Queue's rule and deep links
+  // (job-queue/routes/list.tsx): pieces already made → ✚ Log (the Complete
+  // half), none yet → ▶ Start. Only for a machine op with no session running;
+  // an OSP op (no machine) is booked from its DC, not from Op Entry.
+  const hasMachine = Boolean(op.machineCode || op.machines.length);
+  const showLink = hasMachine && op.available > 0 && op.computedStatus !== 'running';
   return (
     <tr>
       {/* DESTINATION CHANGED (user request, 2026-09-11): this code used to open
@@ -581,21 +587,15 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
       </td>
-      {/* Part names run long, so the name truncates on one line and carries the
-          full text in its tooltip. Nothing to show renders empty, not a dash. */}
-      <td
-        style={{
-          fontSize: 11,
-          maxWidth: 180,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-        title={op.itemName ?? ''}
-      >
+      {/* Part names run long, so the name WRAPS inside its column (sheet
+          rule) rather than stretching the table. Nothing to show renders
+          empty, not a dash. */}
+      <td style={{ fontSize: 11, textAlign: 'left' }} title={op.itemName ?? ''}>
         {op.itemName ?? ''}
       </td>
-      <td className="td-ctr mono">{opSrNo(op.opSeq)}</td>
+      <td className="td-ctr mono" style={{ whiteSpace: 'nowrap' }}>
+        {opSrNo(op.opSeq)}
+      </td>
       <td>{op.operation}</td>
       {/* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs) and
           ACTUAL (the machine(s) that made the Completed qty, else the plan) each
@@ -628,11 +628,42 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
         </span>
       </td>
       <td className="td-ctr mono" style={{ color: 'var(--orange)' }}>
-        {op.pendingHrs}h
+        {op.pendingHrs}
       </td>
       <td>
         <OpStatusBadge status={op.computedStatus} />
       </td>
+      {canOpEntry ? (
+        <td style={{ whiteSpace: 'nowrap' }}>
+          {showLink ? (
+            op.completedQty > 0 ? (
+              <Link
+                to="/op-entry"
+                search={{ jc: op.jobCardCode, op: op.jcOpId, mode: 'complete' }}
+                className="btn btn-sm"
+                style={{
+                  background: 'var(--green3)',
+                  border: '1px solid var(--green2)',
+                  color: 'var(--green2)',
+                  fontSize: 11,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                ✚ Log Op
+              </Link>
+            ) : (
+              <Link
+                to="/op-entry"
+                search={{ jc: op.jobCardCode, op: op.jcOpId, mode: 'start' }}
+                className="btn btn-sm"
+                style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+              >
+                ▶ Start
+              </Link>
+            )
+          ) : null}
+        </td>
+      ) : null}
     </tr>
   );
 }
@@ -729,13 +760,13 @@ function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
             />
           </div>
         </div>
-        <span className="text3" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
+        <span className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
           {pct}%
         </span>
       </div>
       {jc.dueDate ? (
-        <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
-          Due: {jc.dueDate}
+        <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+          Due: {fmtDate(jc.dueDate)}
         </div>
       ) : null}
     </div>

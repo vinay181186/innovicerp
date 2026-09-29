@@ -7,9 +7,8 @@
 // implementation, modules/clients/routes/list.tsx. The composition is that
 // file's, unchanged:
 //
-//   <ListHeader>            title · count · SearchInput · Source filter · ⟳ Updating… · primary
-//     <StatStrip>           counts that double as the item-type filter
-//   </ListHeader>
+//   <ListHeader>            title · count · ⟳ Updating… · primary, then the filter
+//                           bar: SearchInput · item type (with counts) · Source · Clear
 //   <Banner>                import error / import result (dismissible)
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint · Excel template / import
@@ -23,7 +22,7 @@
 //
 // What did NOT change: the route and its search params, the 300ms debounce on
 // the URL write, normalizeSearchTerm, the whole-master count queries (so the
-// strip's numbers do not shrink as you type), perms -> canCreate/canEdit/
+// item-type dropdown's counts do not shrink as you type), perms -> canCreate/canEdit/
 // canDelete, the one-request bulk import and its duplicate/failure buckets,
 // row click -> detail, Item Code -> detail, the thumbnail's own click (the
 // picture opens large; it never opens the row).
@@ -57,6 +56,7 @@ import {
   ITEM_PROCUREMENT_TYPES,
   ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPES,
+  ITEM_TYPE_RULES,
   type Item,
   type ItemProcurementType,
   type ItemType,
@@ -70,7 +70,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Badge, Button, Icon, Tag } from '@/ui/core';
-import { DataTable, Panel, StatStrip, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
@@ -88,8 +88,10 @@ const LIST_LIMIT = 1000;
 // these are fetched once and served from cache, and the counts stay whole-master
 // totals — they don't shrink as you type in the search box.
 const COUNT_ALL: ListItemsQuery = { limit: 1, offset: 0 };
-const COUNT_COMPONENT: ListItemsQuery = { itemType: 'component', limit: 1, offset: 0 };
-const COUNT_ASSEMBLY: ListItemsQuery = { itemType: 'assembly', limit: 1, offset: 0 };
+// One count per item type (ADR-193), built from the shared type list.
+const COUNT_BY_TYPE: ReadonlyArray<readonly [ItemType, ListItemsQuery]> = ITEM_TYPES.map(
+  (t) => [t, { itemType: t, limit: 1, offset: 0 }] as const,
+);
 
 /** Outcome of an Excel import, bucketed so each group is shown on its own. */
 interface ImportResult {
@@ -128,7 +130,11 @@ function ItemsListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -159,10 +165,11 @@ function ItemsListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useItemsList(query);
 
-  // Strip counts — whole-master totals, independent of the search box.
+  // Item-type counts — whole-master totals, independent of the search box.
   const allCount = useItemsList(COUNT_ALL).data?.total ?? 0;
-  const componentCount = useItemsList(COUNT_COMPONENT).data?.total ?? 0;
-  const assemblyCount = useItemsList(COUNT_ASSEMBLY).data?.total ?? 0;
+  // Fixed-length list (one per type, a module constant), so the hook order
+  // never changes between renders.
+  const typeCounts = COUNT_BY_TYPE.map(([t, q]) => [t, useItemsList(q).data?.total ?? 0] as const);
 
   const setTypeFilter = useCallback(
     (next: ItemType | undefined): void => {
@@ -238,7 +245,7 @@ function ItemsListPage(): React.JSX.Element {
         warnings: errors,
       });
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : 'Import failed');
+      setImportError(e instanceof Error ? e.message : 'Could not import file. Try again.');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -290,7 +297,7 @@ function ItemsListPage(): React.JSX.Element {
             code={it.code}
             name={it.name}
             imagePath={it.imagePath}
-            codeColor="var(--purple)"
+            codeColor="var(--text)"
             nameMaxWidth="none"
             renderCode={(text) => (
               // A real link, so the code can be ctrl/middle-clicked into a new
@@ -299,8 +306,8 @@ function ItemsListPage(): React.JSX.Element {
               <Link
                 to="/items/$id"
                 params={{ id: it.id }}
-                className="td-code"
-                style={{ color: 'var(--purple)', textDecoration: 'none' }}
+                className="td-code fw-700"
+                style={{ color: 'var(--text)', textDecoration: 'none' }}
                 onClick={(e) => e.stopPropagation()}
               >
                 {text}
@@ -333,7 +340,7 @@ function ItemsListPage(): React.JSX.Element {
         render: (it) => <Tag tone="neutral">{it.uom}</Tag>,
       },
       {
-        header: 'Source',
+        header: 'Make / Buy',
         width: '9%',
         nowrap: true,
         // ADR-171 — Buy stands out (blue), Make is the quiet default.
@@ -357,76 +364,82 @@ function ItemsListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, search, the Source filter, the
-          primary action and the StatStrip stay put while the rows scroll
+      {/* The frozen header band: title, count, primary action and the filter
+          bar (search, item type, Source) stay put while the rows scroll
           underneath. */}
       <ListHeader
         title="Item Master"
         icon="◉"
         count={total}
         noun="item"
-        filterNote={search.itemType}
         search={searchInput}
         onSearch={setSearchInput}
+        searchPlaceholder="Search code, name, description, drawing, rev, material, UOM…"
         updating={isFetching && !isLoading}
-        tools={
-          <Select
-            fieldWidth="md"
-            value={search.procurementType ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as ItemProcurementType | '';
-              setSourceFilter(v === '' ? undefined : v);
-            }}
-            title="Source — Make / Buy"
-            aria-label="Source — Make / Buy"
-            options={[
-              { value: '', label: 'All sources' },
-              ...ITEM_PROCUREMENT_TYPES.map((t) => ({
-                value: t,
-                label: ITEM_PROCUREMENT_TYPE_LABEL[t],
-              })),
-            ]}
-          />
+        filters={
+          <>
+            {/* Item type, with the whole-master counts the old StatStrip
+                showed in the option labels (owner decision 2026-09-26: one
+                filter bar, no capsule row). Same `itemType` URL param. */}
+            <Select
+              value={search.itemType ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as ItemType | '';
+                setTypeFilter(v === '' ? undefined : v);
+              }}
+              title="Item type"
+              aria-label="Item type"
+              options={[
+                { value: '', label: `All Items (${allCount})` },
+                ...typeCounts.map(([t, n]) => ({
+                  value: t,
+                  label: `${ITEM_TYPE_RULES[t].label} (${n})`,
+                })),
+              ]}
+            />
+            <Select
+              value={search.procurementType ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as ItemProcurementType | '';
+                setSourceFilter(v === '' ? undefined : v);
+              }}
+              title="Make / Buy"
+              aria-label="Make / Buy"
+              options={[
+                { value: '', label: 'All — Make / Buy' },
+                ...ITEM_PROCUREMENT_TYPES.map((t) => ({
+                  value: t,
+                  label: ITEM_PROCUREMENT_TYPE_LABEL[t],
+                })),
+              ]}
+            />
+          </>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              search: undefined,
+              itemType: undefined,
+              procurementType: undefined,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={
+          search.itemType !== undefined ||
+          search.procurementType !== undefined ||
+          searchInput !== ''
         }
         primary={
           canCreate ? (
             <Link to="/items/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> Add Item
+              <Icon name="plus" size={14} /> New Item
             </Link>
           ) : null
         }
-      >
-        {/* Counts double as the item-type filter (styling skill, Rule 3), and
-            they are whole-master totals — not the size of the current search. */}
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: 'All Items',
-              count: allCount,
-              color: 'var(--cyan)',
-              active: search.itemType === undefined,
-              onClick: () => setTypeFilter(undefined),
-            },
-            {
-              key: 'component',
-              label: 'Component',
-              count: componentCount,
-              color: 'var(--blue)',
-              active: search.itemType === 'component',
-              onClick: () => setTypeFilter('component'),
-            },
-            {
-              key: 'assembly',
-              label: 'Assembly',
-              count: assemblyCount,
-              color: 'var(--purple)',
-              active: search.itemType === 'assembly',
-              onClick: () => setTypeFilter('assembly'),
-            },
-          ]}
-        />
-      </ListHeader>
+      />
 
       {importError ? (
         <Banner tone="error" role="alert" onDismiss={() => setImportError(null)}>
@@ -441,7 +454,7 @@ function ItemsListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load items'}
+          message={error instanceof Error ? error.message : 'Could not load items. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">
@@ -449,14 +462,17 @@ function ItemsListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText="No items"
+            emptyText={
+              search.search || search.itemType || search.procurementType
+                ? 'No items match.'
+                : 'No items yet.'
+            }
             onRowClick={(it) => void navigate({ to: '/items/$id', params: { id: it.id } })}
             rowActionsWidth="11%"
             rowActions={(it) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/items/${it.id}`}
+                // Row click opens the item (no separate View). Edit is a
+                // ROUTE, so it stays a real link — ctrl/middle-click work.
                 editTo={canEdit ? `/items/${it.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed: the confirm
@@ -471,8 +487,8 @@ function ItemsListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move item ${it.code} — ${it.name} to Trash?`,
-                  message: `${it.code} — ${it.name} stops appearing in Item Master and in every item picker.`,
+                  title: `Move Item ${it.code} to Trash?`,
+                  message: 'You can restore it from Trash.',
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',
                 }}
@@ -486,12 +502,6 @@ function ItemsListPage(): React.JSX.Element {
         total={total}
         noun="item"
         limit={LIST_LIMIT}
-        hint={
-          <>
-            Click a row to open the item. · ★ Item Master is for defining items only. Stock /
-            Inventory is managed in <b>Store → Store / Inventory</b>.
-          </>
-        }
         // Excel template + import sit below the count line (mirror of Client
         // and Vendor Master). The file input is hidden and only opened by the
         // button.
@@ -579,7 +589,7 @@ function ImportResultBanner(props: {
             {duplicates.length > 0
               ? ` · ${duplicates.length} duplicate${duplicates.length === 1 ? '' : 's'} skipped`
               : ''}
-            {failures.length > 0 ? ` · ${failures.length} failed` : ''}
+            {failures.length > 0 ? ` · ${failures.length} not imported` : ''}
           </>
         }
       >
@@ -602,11 +612,7 @@ function ImportResultBanner(props: {
                   className="fw-700"
                   style={{ color: 'var(--red2)', marginBottom: 'var(--sp-1)' }}
                 >
-                  ✕ Failed rows ({failures.length})
-                </div>
-                <div className="text3" style={{ marginBottom: 'var(--sp-1)' }}>
-                  ⚠ These rows were rejected on save — the actual reason is shown next to each. Fix
-                  the row in your sheet and re-import.
+                  ✕ Rows not imported ({failures.length})
                 </div>
                 {chips(failures)}
               </div>
@@ -642,10 +648,6 @@ function ImportResultBanner(props: {
             </>
           }
         >
-          <div className="text3" style={{ marginBottom: 'var(--sp-1)' }}>
-            These were skipped (they already exist). Remove them from your sheet, or ignore —
-            they’re already saved.
-          </div>
           {chips(duplicates)}
         </Banner>
       ) : null}

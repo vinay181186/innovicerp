@@ -69,5 +69,5 @@ export function revisionGoesBackwards(current: string, next: string): boolean {
 
 /** The sentence both the form and the API show for a backwards change. */
 export function revisionBackwardsMessage(lineNo: number, current: string, next: string): string {
-  return `Line ${lineNo}: Rev cannot go back from ${normalizeRevision(current)} to ${normalizeRevision(next)} — a revision only moves forward`;
+  return `Ln ${lineNo}: Drawing revision cannot go back from ${normalizeRevision(current)} to ${normalizeRevision(next)}.`;
 }

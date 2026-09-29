@@ -1,7 +1,7 @@
-// Log Entry tab of Settings → Approvals (ADR-130).
+// Op Entry tab of Settings → Approvals (ADR-130).
 //
-// Date/time corrections on op entries. Sub-tabbed into Waiting / Approved /
-// Rejected so a decision does not vanish the moment it is made — the row keeps
+// Date/time corrections on op entries. Split by a Status dropdown in the
+// filter bar (Pending / Approved / Rejected) so a decision does not vanish the moment it is made — the row keeps
 // its full trail (who decided, when, and the reject reason). While a request
 // sits in Waiting the entry is UNTOUCHED: the shop floor, the JC feed and every
 // report still read the original values, so nothing here can move a production
@@ -12,26 +12,46 @@
 
 import { type OpLogChangeStatus, type OpLogTimeChangeRequest, opSrNo } from '@innovic/shared';
 import { Check, Loader2, X } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests } from '@/modules/op-entry/api';
+import { ListHeader } from '@/ui/layout';
+import { approvalsKeys } from '../api';
 
-const hhmm = (t: string | null): string => (t ? t.slice(0, 5) : '');
-const when = (date: string, time: string | null): string => (time ? `${date} ${hhmm(time)}` : date);
+// The op-log entry type as the user reads it (codes stay as stored).
+const LOG_TYPE_LABEL: Record<string, string> = { start: 'Start', complete: 'Completed', qc: 'QC' };
 
-const istStamp = (iso: string): string =>
-  new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+const when = (date: string, time: string | null): string => fmtDateAndTime(date, time);
+
+const istStamp = (iso: string): string => fmtDateTime(iso);
 
 const SUB_TABS: Array<{ key: OpLogChangeStatus; label: string; empty: string }> = [
-  { key: 'pending', label: 'Waiting', empty: 'Nothing waiting for approval.' },
+  { key: 'pending', label: 'Pending', empty: 'Nothing pending approval.' },
   { key: 'approved', label: 'Approved', empty: 'No approved corrections yet.' },
   { key: 'rejected', label: 'Rejected', empty: 'No rejected corrections yet.' },
 ];
 
-export function LogEntryApprovals(): React.JSX.Element {
+export function LogEntryApprovals({
+  pendingCount,
+  tabs,
+}: {
+  /** Waiting-queue size, shown as a badge beside the tabs. */
+  pendingCount?: number | undefined;
+  /** The Approvals inbox's PR · PO · Log Entry switch, shown under the header. */
+  tabs?: React.ReactNode;
+}): React.JSX.Element {
   const [sub, setSub] = useState<OpLogChangeStatus>('pending');
   const list = useOpLogTimeChangeRequests({ status: sub, limit: 200 });
   const decide = useDecideOpLogTimeChange();
+  // A decision also shrinks the Approvals inbox (its Log Entry count and the
+  // nav badge), which is a separate query.
+  const qc = useQueryClient();
+  const refreshInbox = (): void => {
+    void qc.invalidateQueries({ queryKey: approvalsKeys.inbox() });
+  };
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
@@ -39,46 +59,85 @@ export function LogEntryApprovals(): React.JSX.Element {
   const rows = list.data ?? [];
   // Waiting is a FIFO queue (oldest first). The history tabs read better with
   // the most recent decision on top.
-  const ordered = sub === 'pending' ? rows : [...rows].reverse();
+  // Client-side search over the cards loaded (up to 200) — the JC, item,
+  // operation, machine, reason and the people on each card.
+  const [term, setTerm] = useState('');
+  const ordered = (sub === 'pending' ? rows : [...rows].reverse()).filter((r) =>
+    matchesSearchTerm(
+      [
+        r.jobCardCode,
+        r.itemCode,
+        r.itemRevision,
+        r.itemName,
+        r.clientPoLineNo,
+        r.operation,
+        r.machineCode,
+        r.reason,
+        r.requestedByName,
+        r.decidedByName,
+      ],
+      term,
+    ),
+  );
 
   return (
     <div>
-      {/* Sub-tabs: Waiting / Approved / Rejected. */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        {SUB_TABS.map((t) => {
-          const isActive = sub === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => {
-                setSub(t.key);
-                setRejectingId(null);
-              }}
-              style={{
-                background: 'none',
-                border: `1px solid ${isActive ? 'var(--cyan)' : 'var(--border)'}`,
-                color: isActive ? 'var(--cyan)' : 'var(--text2)',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: isActive ? 700 : 500,
-                padding: '5px 12px',
-                cursor: 'pointer',
-              }}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <ListHeader
+        title="Op Entry Approvals"
+        icon="✅"
+        count={list.data ? ordered.length : undefined}
+        noun="request"
+        filterNote={active?.label}
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search JC, item, operation, machine, reason, person…"
+        updating={list.isFetching && !list.isLoading}
+        filters={
+          /* Status: Pending / Approved / Rejected (were sub-tab buttons). Only
+             the waiting count is known without loading the other lists. */
+          <select
+            className="innovic-select"
+            aria-label="Request status"
+            title="Request status"
+            value={sub}
+            onChange={(e) => {
+              setSub(e.target.value as OpLogChangeStatus);
+              setRejectingId(null);
+            }}
+          >
+            {SUB_TABS.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.key === 'pending' && pendingCount != null
+                  ? `${t.label} (${pendingCount})`
+                  : t.label}
+              </option>
+            ))}
+          </select>
+        }
+        onClearFilters={() => {
+          setSub('pending');
+          setRejectingId(null);
+          setTerm('');
+        }}
+        filtersActive={sub !== 'pending' || term.trim() !== ''}
+        tools={
+          pendingCount ? (
+            <span className="badge b-amber" title="Waiting for a decision">
+              {pendingCount} waiting
+            </span>
+          ) : null
+        }
+      >
+        {tabs}
+      </ListHeader>
 
       {list.isLoading ? (
         <div className="empty-state">
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading requests…
         </div>
       ) : list.isError ? (
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
-          {list.error instanceof Error ? list.error.message : 'Failed to load requests'}
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          {list.error instanceof Error ? list.error.message : 'Could not load requests. Try again.'}
         </div>
       ) : ordered.length === 0 ? (
         <div className="empty-state">
@@ -88,7 +147,7 @@ export function LogEntryApprovals(): React.JSX.Element {
       ) : (
         <div style={{ display: 'grid', gap: 10 }}>
           {decide.isError ? (
-            <div style={{ color: 'var(--red)', fontSize: 12 }}>{decide.error.message}</div>
+            <div style={{ color: 'var(--red2)', fontSize: 12 }}>{decide.error.message}</div>
           ) : null}
           {ordered.map((r) => (
             <RequestCard
@@ -103,12 +162,15 @@ export function LogEntryApprovals(): React.JSX.Element {
                 setRejectReason('');
               }}
               onCancelReject={() => setRejectingId(null)}
-              onApprove={() => decide.mutate({ id: r.id, decision: 'approve' })}
+              onApprove={() =>
+                decide.mutate({ id: r.id, decision: 'approve' }, { onSuccess: refreshInbox })
+              }
               onReject={() =>
                 decide.mutate(
                   { id: r.id, decision: 'reject', decisionReason: rejectReason.trim() },
                   {
                     onSuccess: () => {
+                      refreshInbox();
                       setRejectingId(null);
                       setRejectReason('');
                     },
@@ -181,7 +243,7 @@ function RequestCard({
             </span>
           ) : null}
           {req.itemCode ? (
-            <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+            <span className="mono fw-700" style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}>
               {itemCodeWithRev(req.itemCode, req.itemRevision, '')}
             </span>
           ) : null}
@@ -200,15 +262,14 @@ function RequestCard({
               {req.itemName}
             </span>
           ) : null}
-          <span className="mono">Op{opSrNo(req.opSeq)}</span>
+          <span className="mono">Op {opSrNo(req.opSeq)}</span>
           <span>{req.operation}</span>
-          <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-            {req.logType}
+          <span className="text3" style={{ fontSize: 11 }}>
+            {LOG_TYPE_LABEL[req.logType] ?? req.logType}
           </span>
           {req.machineCode ? <span className="mono">{req.machineCode}</span> : null}
-          <span className="mono">{req.qty} pcs</span>
           {req.rejectQty > 0 ? (
-            <span className="mono" style={{ color: 'var(--red)' }}>
+            <span className="mono" style={{ color: 'var(--red2)' }}>
               {req.rejectQty} rejected
             </span>
           ) : null}
@@ -222,23 +283,19 @@ function RequestCard({
             marginBottom: 8,
           }}
         >
-          <Field label="LOG DATE / TIME">
+          <Field label="Log Date / Time">
             <span className="mono">{when(req.prevLogDate, req.prevStartTime)}</span>
             <span className="text3"> → </span>
-            <span className="mono" style={{ color: 'var(--amber)', fontWeight: 700 }}>
+            <span className="mono" style={{ color: 'var(--amber2)', fontWeight: 700 }}>
               {when(req.requestedLogDate, req.requestedStartTime)}
             </span>
           </Field>
-          <Field label="COMPLETED">
+          <Field label="Completed">
             <span className="mono">{req.qty}</span>
-            <span className="text3" style={{ fontSize: 10 }}>
-              {' '}
-              — cannot be changed
-            </span>
           </Field>
-          <Field label="ASKED BY">
+          <Field label="Asked By">
             {req.requestedByName ?? '—'}
-            <span className="text3" style={{ fontSize: 10 }}>
+            <span className="text3" style={{ fontSize: 11 }}>
               {' '}
               · {istStamp(req.requestedAt)}
             </span>
@@ -255,7 +312,7 @@ function RequestCard({
             longer matches the row. Approving still writes the requested value.
             Only relevant while the request is still waiting. */}
         {isPending && req.isStale ? (
-          <div style={{ color: 'var(--amber)', fontSize: 11, marginBottom: 8 }}>
+          <div style={{ color: 'var(--amber2)', fontSize: 11, marginBottom: 8 }}>
             ⚠ This entry has been changed since the request was raised — the “from” value above is
             out of date.
           </div>
@@ -355,7 +412,7 @@ function Field({
 }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 9, letterSpacing: '0.06em' }}>
+      <div className="text3" style={{ fontSize: 11, letterSpacing: '0.06em' }}>
         {label}
       </div>
       <div style={{ fontSize: 12 }}>{children}</div>

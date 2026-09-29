@@ -12,8 +12,8 @@
 import type { DispatchableLine } from '@innovic/shared';
 import { X } from 'lucide-react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { fmtDate } from '@/lib/print/doc-print';
 
 export interface LineCard {
   id: number;
@@ -21,7 +21,7 @@ export interface LineCard {
   qty: string;
 }
 
-const COL_COUNT = 14;
+const COL_COUNT = 10;
 
 export function DispatchLineTable(props: {
   cards: LineCard[];
@@ -60,7 +60,7 @@ export function DispatchLineTable(props: {
       >
         <table
           className="innovic-table"
-          style={{ width: '100%', tableLayout: 'fixed', minWidth: 1180 }}
+          style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}
         >
           <thead>
             <tr>
@@ -70,54 +70,34 @@ export function DispatchLineTable(props: {
               <th style={{ width: '4%', color: 'var(--purple)' }} className="td-ctr">
                 POL
               </th>
-              <th style={{ width: '14%' }}>
+              <th style={{ width: '18%' }}>
                 Item Code<span className="req">★</span>
               </th>
-              <th style={{ width: '8%' }}>Item Name</th>
-              <th style={{ width: '5%' }} className="td-ctr">
+              <th style={{ width: '24%' }}>Item Name</th>
+              <th style={{ width: '7%' }} className="th-num">
                 Order Qty
               </th>
-              <th style={{ width: '6%', color: 'var(--green)' }} className="td-ctr">
-                Ready
-              </th>
-              <th style={{ width: '8%' }} className="td-ctr">
-                Already Dispatched
-              </th>
               {/* ADR-180 — Pending is what the customer is still owed; it caps
-                  the DC qty. Reserved / Available are the stock position. */}
-              <th style={{ width: '6%', color: 'var(--amber)' }} className="td-ctr">
+                  the DC qty. */}
+              <th style={{ width: '7%', color: 'var(--amber2)' }} className="th-num">
                 Pending
               </th>
-              {/* The column that used to be called "Available" — ready +
-                  reserved to this line, less what has shipped. Renamed so
-                  "Available" can mean exactly one thing (free stock). */}
+              {/* Ready + reserved to this line, less what has shipped. The
+                  stock breakdown (Ready · Dispatched · Reserved · Available)
+                  sits in the cell's tooltip rather than four more columns. */}
               <th
-                style={{ width: '7%' }}
-                className="td-ctr"
-                title="Ready + reserved to this line, less what has already been dispatched"
+                style={{ width: '9%' }}
+                className="th-num"
+                title="Ready + reserved to this line, less what has already been dispatched. Hover a number for the stock breakdown."
               >
                 Dispatchable
-              </th>
-              <th
-                style={{ width: '8%', color: 'var(--purple)' }}
-                className="td-ctr"
-                title="Stock already booked to THIS SO line — dispatched first"
-              >
-                Reserved (this line)
-              </th>
-              <th
-                style={{ width: '8%', color: 'var(--cyan)' }}
-                className="td-ctr"
-                title="Free stock of this item: Physical − Reserved to any line"
-              >
-                Available (free stock)
               </th>
               {/* Earliest Customer Dispatch Date among the plans on the SO
                   line — the date the dispatch team works to. */}
               <th style={{ width: '9%' }} className="td-ctr">
                 Customer Dispatch Date
               </th>
-              <th style={{ width: '10%', color: 'var(--green)' }} className="td-ctr">
+              <th style={{ width: '10%', color: 'var(--green2)' }} className="th-num">
                 Dispatch Qty<span className="req">★</span>
               </th>
               <th style={{ width: '4%' }} />
@@ -190,49 +170,26 @@ export function DispatchLineTable(props: {
                         value={line?.itemName ?? ''}
                       />
                     </td>
-                    <td className="td-ctr mono">{line ? line.orderQty : '—'}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
-                      {line ? (
-                        <>
-                          {line.readyQty}
-                          {line.reservedQty > 0 ? (
-                            <div style={{ fontSize: 10, color: 'var(--purple)' }}>
-                              +{line.reservedQty} resv
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="td-ctr mono text3">{line ? line.dispatchedQty : '—'}</td>
+                    <td className="mono td-num">{line ? line.orderQty : '—'}</td>
                     {/* ADR-180 — Pending caps the dispatch qty. */}
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                    <td className="mono fw-700 td-num" style={{ color: 'var(--amber2)' }}>
                       {line ? line.pendingQty : '—'}
                     </td>
-                    <td className="td-ctr mono">{line ? line.availableQty : '—'}</td>
                     <td
-                      className="td-ctr mono fw-700"
-                      style={{ color: 'var(--purple)' }}
-                      title={line ? `${line.reservedQty} pcs booked to this SO line` : undefined}
-                    >
-                      {line ? line.reservedQty : '—'}
-                    </td>
-                    <td
-                      className="td-ctr mono"
-                      style={{ color: 'var(--cyan)' }}
+                      className="mono td-num"
+                      style={{ cursor: line ? 'help' : undefined }}
                       title={
                         line
-                          ? `Physical ${line.physicalQty} − reserved to any line = ${line.itemAvailableQty} free`
+                          ? `Ready ${line.readyQty} · Dispatched ${line.dispatchedQty} · Reserved (this line) ${line.reservedQty} · Available ${line.itemAvailableQty} (Physical ${line.physicalQty} − Reserved)`
                           : undefined
                       }
                     >
-                      {line ? line.itemAvailableQty : '—'}
+                      {line ? line.availableQty : '—'}
                     </td>
                     <td className="td-ctr mono" style={{ whiteSpace: 'nowrap' }}>
-                      {line?.customerDispatchDate ? fmtDate(line.customerDispatchDate) : '—'}
+                      {fmtDate(line?.customerDispatchDate)}
                     </td>
-                    <td>
+                    <td className="td-num">
                       <input
                         type="number"
                         className="innovic-input"
@@ -242,7 +199,6 @@ export function DispatchLineTable(props: {
                         disabled={!line || Math.min(line.availableQty, line.pendingQty) <= 0}
                         onChange={(e) => props.onPatch(card.id, { qty: e.target.value })}
                         style={{
-                          textAlign: 'center',
                           fontSize: 12,
                           fontWeight: 700,
                           color: err ? 'var(--red)' : 'var(--green)',
@@ -267,7 +223,7 @@ export function DispatchLineTable(props: {
                         className="btn btn-sm"
                         style={{
                           background: 'transparent',
-                          color: 'var(--red)',
+                          color: 'var(--red2)',
                           border: '1px solid var(--red)',
                           padding: '3px 8px',
                         }}
@@ -306,18 +262,12 @@ export function DispatchLineTable(props: {
         </span>
         <span style={{ fontSize: 12 }}>
           <span className="green" style={{ fontWeight: 800 }}>
-            TOTAL DISPATCH QTY{' '}
+            Total Dispatch Qty{' '}
           </span>
           <span className="mono fw-700 green" style={{ fontSize: 16 }}>
             {totalQty}
           </span>
         </span>
-      </div>
-
-      {/* ADR-180 — where the pieces come from, in one quiet line. */}
-      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-        💡 A dispatch uses the stock reserved to that line first, then free stock. Dispatch qty is
-        capped at Pending — what the customer is still owed on the line.
       </div>
     </>
   );

@@ -12,9 +12,9 @@
 //   outsource — OSP step (legacy: opType='OSP', isOSP=true, plus
 //               ospVendorCode / ospVendor / ospLeadDays)
 //
-// Cycle time is stored in HOURS in cycle_time_min — column name is a
-// legacy carry-over (see ISSUE-NN); UI labels read "Cycle (hrs)" so
-// the user-facing semantics stay aligned with legacy.
+// Cycle time is stored in MINUTES PER PIECE in cycle_time_min, and every
+// UI label reads "Cycle Time (min)". (Legacy stored hours; ADR-029 #2 is
+// superseded — the value is minutes per piece everywhere.)
 
 import { z } from 'zod';
 import { OP_TYPES } from '../enums/op-type';
@@ -54,6 +54,11 @@ export const routeCardSchema = z.object({
   rawMaterialGradeText: z.string().nullable(),
   rawMaterialSizeId: z.string().uuid().nullable(),
   rawMaterialSizeText: z.string().nullable(),
+  // ADR-193 phase 3a: the raw-material ITEM (from Item Master) and how much of
+  // it one piece takes — Required = rmQtyPerPiece × JC qty. Null = not planned.
+  rawMaterialItemId: z.string().uuid().nullable().default(null),
+  rawMaterialItemCode: z.string().nullable().default(null),
+  rmQtyPerPiece: z.number().nullable().default(null),
   notes: z.string().nullable(),
   /** How this item is normally made — Manufacture / Full Outsource / Direct
    *  Purchase, the same choice SO Planning asks per plan. Defaults to
@@ -76,7 +81,7 @@ export const routeCardOpSchema = z.object({
   machineCodeText: z.string().nullable(),
   operation: z.string(),
   opType: rcOpTypeSchema,
-  cycleTimeMin: z.string(), // numeric stored as string; legacy stores HOURS here
+  cycleTimeMin: z.string(), // numeric stored as string; MINUTES per piece
   program: z.string().nullable(),
   toolNo: z.string().nullable(),
   toolDetails: z.string().nullable(),
@@ -186,7 +191,7 @@ export interface ListRouteCardsResponse {
 //   outsource — operation required + at least one of
 //              (ospVendorId, ospVendorCodeText) must be present
 //
-// cycleTimeMin is the legacy "cycleTime" value (hours) parsed to a
+// cycleTimeMin is the cycle time in MINUTES per piece, parsed to a
 // non-negative float. opSeq is implicit (index + 1 at insert time)
 // so the form doesn't have to track it.
 export const createRouteCardOpInputSchema = z
@@ -230,6 +235,8 @@ export const createRouteCardInputSchema = z.object({
   rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
   rawMaterialSizeId: z.string().uuid().nullable().optional(),
   rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+  rawMaterialItemId: z.string().uuid().nullable().optional(),
+  rmQtyPerPiece: z.number().min(0.0001).max(100000).multipleOf(0.0001).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   planType: routeCardPlanTypeSchema.optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),
@@ -248,6 +255,8 @@ export const updateRouteCardInputSchema = z.object({
   rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
   rawMaterialSizeId: z.string().uuid().nullable().optional(),
   rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+  rawMaterialItemId: z.string().uuid().nullable().optional(),
+  rmQtyPerPiece: z.number().min(0.0001).max(100000).multipleOf(0.0001).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   planType: routeCardPlanTypeSchema.optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),

@@ -6,10 +6,9 @@
 // Markup follows design-ref/components/navigation/TopNav.jsx one-for-one —
 // `.topnav` > `.tn-logo` / `.tn-item` / `.tn-sec` > button + `▾ .tn-caret` /
 // `.tn-menu(.flip)` > `.tn-col` > `.tn-col-label` + `.tn-link` >
-// `.tn-link-icon`, then `.tn-right` > right cluster + `.tn-avatar`. Three
+// `.tn-link-icon`, then `.tn-right` > right cluster + `.tn-avatar`. Two
 // things here have no counterpart in the reference and are deliberate app
-// additions: `.tn-sync` (the connection indicator, audit/02 §e), the
-// `tn-mod-<dept>` / `open` hooks on `.tn-sec`, and the access gating below.
+// additions: the `tn-mod-<dept>` / `open` hooks on `.tn-sec`, and the access gating below.
 //
 // Same data as before: SECTIONS / ORDERED_SECTIONS in nav-sections.ts still
 // feed the breadcrumbs and the open-page tabs, so a page named here is named
@@ -35,10 +34,17 @@ import { useEffect, useRef, useState } from 'react';
 import { GlobalSearch } from '@/components/shared/global-search';
 import { canViewForm, useMyAccess } from '@/lib/access-control';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
+import { roleLabel } from '@/lib/role-label';
 import { signOut, useSession } from '@/lib/session';
-import { usePendingTimeChangeCount } from '@/modules/op-entry/api';
-import { Icon, SyncDot } from '@/ui/core';
-import { initials, ORDERED_SECTIONS, shouldShowSection, type NavSection } from './nav-sections';
+import { useApprovalInboxTotal } from '@/modules/approvals/api';
+import { Icon } from '@/ui/core';
+import {
+  initials,
+  navItemMatches,
+  ORDERED_SECTIONS,
+  shouldShowSection,
+  type NavItem,
+} from './nav-sections';
 
 const OPEN_KEY_STORAGE = 'innovic.topnav.open';
 
@@ -49,20 +55,28 @@ const BUTTON_LABEL: Record<string, string> = {
   system: 'Settings',
 };
 
-function sectionContains(sec: NavSection, pathname: string): boolean {
-  return sec.groups.some((g) =>
-    g.items.some((i) => pathname === i.to || pathname.startsWith(i.to + '/')),
+/** Is this item the page the user is on? When a query-specific item (a
+ *  department's "Reports" link, /reports?group=Sales) matches, it wins: the
+ *  plain item for the same path (the Reports section's /reports) stays unlit,
+ *  so only the department's menu lights up. */
+function makeIsOn(pathname: string, search: Record<string, unknown>): (it: NavItem) => boolean {
+  const specificHit = ORDERED_SECTIONS.some((sec) =>
+    sec.groups.some((g) => g.items.some((i) => i.search && navItemMatches(i, pathname, search))),
   );
+  return (it) =>
+    navItemMatches(it, pathname, search) && !(specificHit && !it.search && it.to === pathname);
 }
 
 export function TopNav(): React.JSX.Element {
   const { data: me } = useSession();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const isOn = makeIsOn(pathname, search as Record<string, unknown>);
   const { data: eff } = useMyAccess();
   const isAdmin = me?.role === 'admin';
-  // Badge on System Settings → Approvals (ADR-130). Only fetched for someone
-  // who can actually decide; everyone else gets 0 and no request.
-  const pendingApprovals = usePendingTimeChangeCount(isAdmin || me?.role === 'manager');
+  // Badge on System Settings → Approvals: everything waiting for THIS user
+  // (ADR-190 inbox — PR + PO + Log Entry). The server lists only rows the
+  // caller may approve, so someone who approves nothing sees no badge.
+  const pendingApprovals = useApprovalInboxTotal(!!me);
 
   // Which module's menu is open. Remembered in sessionStorage so it survives
   // a page reload (user, 2026-09-21: pick a page, then pick "Create SO" from
@@ -135,7 +149,7 @@ export function TopNav(): React.JSX.Element {
       </Link>
 
       {visible.map((sec) => {
-        const here = sectionContains(sec, pathname);
+        const here = sec.groups.some((g) => g.items.some(isOn));
         const open = openKey === sec.key;
         const items = sec.groups
           .map((grp) => ({
@@ -170,11 +184,12 @@ export function TopNav(): React.JSX.Element {
                   <div key={gi} className="tn-col">
                     {grp.label ? <div className="tn-col-label">{grp.label}</div> : null}
                     {grp.items.map((it) => {
-                      const on = pathname === it.to || pathname.startsWith(it.to + '/');
+                      const on = isOn(it);
                       return (
                         <Link
                           key={it.to}
                           to={it.to}
+                          {...(it.search ? { search: it.search } : {})}
                           role="menuitem"
                           className={`tn-link${on ? ' on' : ''}`}
                         >
@@ -183,8 +198,8 @@ export function TopNav(): React.JSX.Element {
                           </span>
                           <span>{it.label}</span>
                           {/* Only the Approvals item carries a count today. It is
-                              0 (and the query disabled) for anyone who cannot
-                              approve, so it never nags an operator. */}
+                              0 for anyone with nothing to approve, so it never
+                              nags an operator. */}
                           {it.to === '/approvals' && pendingApprovals > 0 ? (
                             <span className="badge b-amber" style={{ marginLeft: 'auto' }}>
                               {pendingApprovals}
@@ -203,13 +218,6 @@ export function TopNav(): React.JSX.Element {
 
       <div className="tn-right">
         <GlobalSearch />
-        {/* The `.tn-sync` wrapper keeps its hover title — SyncDot draws the
-            dot itself (and names its state for assistive tech) but takes no
-            title of its own. Hard-wired to "ok" as it has always been; there
-            is no connection-state source to read yet. */}
-        <span className="tn-sync" title="Connection status: synced">
-          <SyncDot state="ok" />
-        </span>
         <Link
           to="/change-password"
           className="btn btn-ghost btn-sm tn-iconbtn"
@@ -225,7 +233,10 @@ export function TopNav(): React.JSX.Element {
         >
           <Icon name="log-out" size={15} />
         </button>
-        <span className="tn-avatar" title={`${me?.email ?? 'Not signed in'} · ${me?.role ?? ''}`}>
+        <span
+          className="tn-avatar"
+          title={me?.email ? `${me.email} · ${roleLabel(me.role)}` : 'Not signed in'}
+        >
           {initials(me?.email)}
         </span>
       </div>

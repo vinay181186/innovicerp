@@ -17,8 +17,11 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useClientsList } from '../../clients/api';
 import { useItem } from '../../items/api';
+import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
 import { usePlanningSoDetail } from '../../so-planning/api';
@@ -29,6 +32,7 @@ import {
   usePartyMaterialsList,
   useUpdatePartyMaterial,
 } from '../api';
+import { ReturnPartyMaterialModal } from '../components/return-party-material-modal';
 
 const PAGE_SIZE = 50;
 
@@ -53,10 +57,15 @@ function PartyMaterialsListPage(): React.JSX.Element {
   const canAdd = perms.entry;
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
+  // R7 (ADR-194): returning spare customer material reuses the jw_create key
+  // (the same gate the JWSO create / invoice / return actions use), not
+  // party_create — the server enforces jw_create on this endpoint.
+  const canReturn = effectiveFormPerms(eff, 'jw_create').entry;
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [editRow, setEditRow] = useState<PartyMaterialListItem | null>(null);
+  const [returnRow, setReturnRow] = useState<PartyMaterialListItem | null>(null);
 
   const { data, isLoading, isError, error } = usePartyMaterialsList({
     search: search.trim() || undefined,
@@ -67,15 +76,13 @@ function PartyMaterialsListPage(): React.JSX.Element {
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
 
-  const onDelete = (row: PartyMaterialListItem): void => {
-    if (row.stockQty > 0) {
-      window.alert(
-        `Cannot delete "${row.code}" — stock qty is ${row.stockQty}. Issue material first.`,
-      );
-      return;
-    }
-    if (!window.confirm(`Delete party material "${row.code} — ${row.name}"?`)) return;
-    deleteMut.mutate(row.id);
+  // The material the Delete dialog is asking about, or null when closed. A row
+  // with stock on hand never gets here — its Delete button is disabled.
+  const [deleteRow, setDeleteRow] = useState<PartyMaterialListItem | null>(null);
+  const onDelete = async (): Promise<void> => {
+    if (!deleteRow) return;
+    await deleteMut.mutateAsync(deleteRow.id);
+    setDeleteRow(null);
   };
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -84,35 +91,35 @@ function PartyMaterialsListPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Party Materials. Ask an admin.
       </div>
     );
   }
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">🏭 Party Supplied Material Master</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search material, client…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          {canAdd ? (
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          + Add Material. */}
+      <ListHeader
+        title="Party Material Master"
+        icon="🏭"
+        count={data?.total}
+        noun="material"
+        search={search}
+        onSearch={(v) => {
+          setSearch(v);
+          setPage(1);
+        }}
+        searchPlaceholder="Search material, customer…"
+        primary={
+          canAdd ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               <Plus size={14} /> Add Material
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -123,29 +130,34 @@ function PartyMaterialsListPage(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load party materials'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error
+                ? error.message
+                : 'Could not load party materials. Try again.'}
             </div>
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Code</th>
                   <th>Material Name</th>
                   <th>Description</th>
-                  <th>Material</th>
-                  <th className="td-ctr">UOM</th>
+                  <th>Grade</th>
+                  <th>UOM</th>
                   <th>Customer</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     In Stock
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
                     Issued
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--cyan)' }}>
+                  <th className="th-num" style={{ color: 'var(--cyan)' }}>
                     Total Received
+                  </th>
+                  <th className="th-num" style={{ color: 'var(--purple)' }}>
+                    Returned
                   </th>
                   <th>Actions</th>
                 </tr>
@@ -153,14 +165,14 @@ function PartyMaterialsListPage(): React.JSX.Element {
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="empty-state">
-                      No party materials — click + Add Material
+                    <td colSpan={11} className="empty-state">
+                      {search.trim() ? 'No Party Materials match.' : 'No Party Materials yet.'}
                     </td>
                   </tr>
                 ) : null}
                 {data.items.map((pm) => (
                   <tr key={pm.id}>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <span className="td-code" style={{ color: 'var(--purple)' }}>
                         {pm.code}
                       </span>
@@ -170,7 +182,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                       {pm.description ?? '—'}
                     </td>
                     <td>{pm.material ?? '—'}</td>
-                    <td className="td-ctr">
+                    <td>
                       <span
                         className="tag"
                         style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
@@ -180,7 +192,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                     </td>
                     <td className="fw-700">{pm.clientName ?? pm.clientCodeText ?? '—'}</td>
                     <td
-                      className="td-ctr mono fw-700"
+                      className="mono fw-700 td-num"
                       style={{
                         fontSize: 14,
                         color: pm.stockQty > 0 ? 'var(--green)' : 'var(--text3)',
@@ -188,14 +200,39 @@ function PartyMaterialsListPage(): React.JSX.Element {
                     >
                       {pm.stockQty}
                     </td>
-                    <td className="td-ctr mono" style={{ fontSize: 12, color: 'var(--amber)' }}>
+                    <td className="mono td-num" style={{ fontSize: 12, color: 'var(--amber2)' }}>
                       {pm.issuedQty}
                     </td>
-                    <td className="td-ctr mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
+                    <td className="mono td-num" style={{ fontSize: 12, color: 'var(--cyan)' }}>
                       {pm.receivedQty}
+                    </td>
+                    <td
+                      className="mono td-num"
+                      style={{
+                        fontSize: 12,
+                        color: pm.returnedQty > 0 ? 'var(--purple)' : 'var(--text3)',
+                      }}
+                    >
+                      {pm.returnedQty}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
+                        {canReturn ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: 11, color: 'var(--purple)' }}
+                            disabled={pm.stockQty <= 0}
+                            title={
+                              pm.stockQty <= 0
+                                ? 'Nothing in the party store to return'
+                                : 'Return spare customer material'
+                            }
+                            onClick={() => setReturnRow(pm)}
+                          >
+                            Return
+                          </button>
+                        ) : null}
                         {canEdit ? (
                           <button
                             type="button"
@@ -211,9 +248,15 @@ function PartyMaterialsListPage(): React.JSX.Element {
                             type="button"
                             className="btn btn-danger btn-sm"
                             style={{ fontSize: 11 }}
-                            onClick={() => onDelete(pm)}
+                            disabled={pm.stockQty > 0}
+                            title={
+                              pm.stockQty > 0
+                                ? `Cannot delete: ${pm.stockQty} in stock. Issue it first.`
+                                : undefined
+                            }
+                            onClick={() => setDeleteRow(pm)}
                           >
-                            Del
+                            Delete
                           </button>
                         ) : null}
                       </div>
@@ -227,51 +270,30 @@ function PartyMaterialsListPage(): React.JSX.Element {
       </div>
 
       {data ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-            fontSize: 12,
-            color: 'var(--text3)',
-          }}
-        >
-          <span>
-            {data.total === 0
-              ? 'No materials'
-              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <ListFooter
+          total={data.total}
+          noun="material"
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+        />
       ) : null}
-
-      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 Party Material Master tracks raw materials supplied by clients for Job Work orders. Stock
-        is updated via Party Material GRN. Separate from company inventory.
-      </div>
 
       {showAdd ? <AddPartyMaterialModal onClose={() => setShowAdd(false)} /> : null}
       {editRow ? <EditPartyMaterialModal row={editRow} onClose={() => setEditRow(null)} /> : null}
+      {returnRow ? (
+        <ReturnPartyMaterialModal row={returnRow} onClose={() => setReturnRow(null)} />
+      ) : null}
+      {deleteRow ? (
+        <ConfirmDialog
+          title={`Delete Party Material ${deleteRow.code}?`}
+          message={`${deleteRow.name} will be removed from the Party Material Master.`}
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={onDelete}
+          onCancel={() => setDeleteRow(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -427,20 +449,30 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
     setDescription('');
   };
 
+  // ESC / a click outside asks before throwing away what was picked.
+  const guard = useDiscardGuard(
+    Boolean(clientId || orderId || lineId || description.trim()) || uom !== 'NOS',
+    onClose,
+  );
+
   const onSave = (): void => {
     setErr(null);
     const c = code.trim();
     const nm = autoName.trim();
     if (!c) {
-      setErr('Material code is missing');
+      setErr('Code is required.');
       return;
     }
     if (!clientId) {
-      setErr('Client is required');
+      setErr('Customer is required.');
+      return;
+    }
+    if (!orderId) {
+      setErr('SO / JWSO No. is required — the Item Code is picked from its lines.');
       return;
     }
     if (!nm) {
-      setErr('Pick an item so the material name is filled');
+      setErr('Item Code is required. Material Name fills from it.');
       return;
     }
     const input: CreatePartyMaterialInput = { code: c, name: nm, uom, clientId };
@@ -449,15 +481,17 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
     if (itemId) input.itemId = itemId;
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(e instanceof Error ? e.message : 'Could not save Material. Try again.'),
     });
   };
 
   return (
-    <ModalShell onClose={onClose} title="🏭 Add Party Material">
+    <ModalShell onClose={guard.requestClose} title="Add Party Material">
+      {guard.dialog}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {/* 1. Material Code (auto, read-only) + UOM */}
-        <Field label="Code (auto)">
+        <Field label="Code">
           <input type="text" className="innovic-input" value={code} readOnly disabled />
         </Field>
         <Field label="UOM">
@@ -476,7 +510,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 2. Client — who supplies the material */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Customer ★ (who supplies this material)">
+          <Field label="Customer" required>
             <SearchableSelect
               id="pmClient"
               value={clientId}
@@ -484,14 +518,14 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
               onSearch={setClientSearch}
               loading={clientsFetching}
               options={clientOptions}
-              placeholder="🔍 Type client code or name…"
+              placeholder="🔍 Type customer code or name…"
             />
           </Field>
         </div>
 
         {/* 3. SO / JWSO — filtered to the picked client */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="SO / JWSO No.">
+          <Field label="SO / JWSO No." required>
             <SearchableSelect
               id="pmOrder"
               value={orderId}
@@ -500,15 +534,15 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
               loading={soFetching || jwFetching}
               options={orderOptions}
               disabled={!clientId}
-              placeholder={clientId ? '🔍 Type SO / JWSO no…' : 'Pick a client first'}
-              emptyText="No orders for this client"
+              placeholder={clientId ? '🔍 Type SO / JWSO no…' : 'Pick a customer first'}
+              emptyText="No orders for this customer"
             />
           </Field>
         </div>
 
         {/* 4. Item Code — from the picked order's line items */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Item Code">
+          <Field label="Item Code" required>
             <SearchableSelect
               id="pmItem"
               value={lineId}
@@ -525,7 +559,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 5. Material Name — auto-fetched from the item, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material Name ★ (auto)">
+          <Field label="Material Name">
             <input
               type="text"
               className="innovic-input"
@@ -552,7 +586,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 7. Material / Grade — auto-fetched from the item, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material / Grade (auto)">
+          <Field label="Grade">
             <input
               type="text"
               className="innovic-input"
@@ -566,7 +600,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 8. JC No — auto-fetched Job Card linked to the SO/JW line, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JC No. (auto)">
+          <Field label="JC No.">
             <input
               type="text"
               className="innovic-input"
@@ -611,9 +645,8 @@ function EditPartyMaterialModal({
   const [clientSearch, setClientSearch] = useState('');
   const [clientId, setClientId] = useState<string | null>(row.clientId);
   const [err, setErr] = useState<string | null>(null);
-  const [clientFocused, setClientFocused] = useState(false);
 
-  const { data: clientsData } = useClientsList({
+  const { data: clientsData, isFetching: clientsFetching } = useClientsList({
     search: clientSearch.trim() || undefined,
     limit: 50,
     offset: 0,
@@ -636,11 +669,11 @@ function EditPartyMaterialModal({
     setErr(null);
     const nm = name.trim();
     if (!nm) {
-      setErr('Name is required');
+      setErr('Material Name is required.');
       return;
     }
     if (!clientId) {
-      setErr('Client is required');
+      setErr('Customer is required.');
       return;
     }
     const input: UpdatePartyMaterialInput = {
@@ -654,13 +687,14 @@ function EditPartyMaterialModal({
       { id: row.id, input },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to update'),
+        onError: (e) =>
+          setErr(e instanceof Error ? e.message : 'Could not save changes. Try again.'),
       },
     );
   };
 
   return (
-    <ModalShell onClose={onClose} title={`🏭 Edit Party Material — ${row.code}`}>
+    <ModalShell onClose={onClose} title={`Edit Party Material ${row.code}`}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="Code">
           <input
@@ -686,7 +720,7 @@ function EditPartyMaterialModal({
         </Field>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Linked Item (from Item Master)">
+          <Field label="Item Code">
             <input
               type="text"
               className="innovic-input"
@@ -700,7 +734,7 @@ function EditPartyMaterialModal({
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material Name ★">
+          <Field label="Material Name" required>
             <input
               type="text"
               className="innovic-input"
@@ -722,7 +756,7 @@ function EditPartyMaterialModal({
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material / Grade">
+          <Field label="Grade">
             <input
               type="text"
               className="innovic-input"
@@ -733,34 +767,23 @@ function EditPartyMaterialModal({
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Customer">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="🔍 Click to browse or type client code / name to change…"
-              value={
-                selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientSearch
+          <Field label="Customer" required>
+            <SearchableSelect
+              id="pmEditClient"
+              value={clientId}
+              onChange={setClientId}
+              onSearch={setClientSearch}
+              loading={clientsFetching}
+              options={(clientsData?.clients ?? []).map((c) => ({
+                id: c.id,
+                code: c.code,
+                name: c.name,
+              }))}
+              placeholder="🔍 Type customer code or name…"
+              valueLabel={
+                selectedClient?.code ? `${selectedClient.code} — ${selectedClient.name}` : undefined
               }
-              onFocus={() => setClientFocused(true)}
-              onBlur={() => setTimeout(() => setClientFocused(false), 150)}
-              onChange={(e) => {
-                setClientId(null);
-                setClientSearch(e.target.value);
-              }}
             />
-            {!clientId && (clientSearch || clientFocused) && clientsData ? (
-              <Picklist
-                items={clientsData.clients.slice(0, 20).map((c) => ({
-                  id: c.id,
-                  label: `${c.code} — ${c.name}`,
-                  sub: null,
-                }))}
-                onPick={(id) => {
-                  setClientId(id);
-                  setClientSearch('');
-                }}
-              />
-            ) : null}
           </Field>
         </div>
       </div>
@@ -853,62 +876,20 @@ function ModalActions({
 
 function Field({
   label,
+  required = false,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
+      <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
         {label}
+        {required ? <span className="req">★</span> : null}
       </div>
       {children}
-    </div>
-  );
-}
-
-function Picklist({
-  items,
-  onPick,
-}: {
-  items: Array<{ id: string; label: string; sub: string | null }>;
-  onPick: (id: string) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 4,
-        background: 'var(--bg2)',
-        marginTop: 4,
-        maxHeight: 180,
-        overflowY: 'auto',
-      }}
-    >
-      {items.map((it) => (
-        <div
-          key={it.id}
-          onClick={() => onPick(it.id)}
-          style={{
-            padding: '6px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span> : null}
-        </div>
-      ))}
     </div>
   );
 }
@@ -920,7 +901,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
         marginTop: 12,
         padding: 8,
         background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,
       }}

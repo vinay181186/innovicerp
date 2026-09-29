@@ -2,7 +2,9 @@
 // dispatched counts + status badge. Click-through to the per-SO tracker.
 //
 // PL-5b parity port (renderAssemblyTracker L28738–28787):
-//   - 5 status tiles (Total / Waiting / Ready / Assembling / Done) above table
+//   - the 5 status tile counts (Total / Waiting / Ready / In Assembly / Completed)
+//     now ride in the status dropdown's option labels (owner decision
+//     2026-09-26: no tiles/capsules beside a filter dropdown)
 //   - Search input + status filter dropdown
 //   - Due Date column
 // Legacy renders ONE screen: an accordion of per-SO cards. The port splits it —
@@ -12,14 +14,16 @@
 //
 // Port additions with NO legacy counterpart (kept deliberately, not parity):
 //   - red/bold Due when overdue (legacy L28785 prints the date unstyled)
-//   - active-tile ring + click-to-toggle (legacy tiles only set the filter)
 //   - Dispatched column (legacy shows it only in the expanded body, L28795)
 
 import type { AssemblyListItem } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { fmtDate, todayIst } from '@/lib/date';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useAssembliesList } from '../api';
 
 export const assemblyListRoute = createRoute({
@@ -31,12 +35,13 @@ export const assemblyListRoute = createRoute({
 type StatusKey = AssemblyListItem['status'];
 type FilterKey = 'all' | StatusKey;
 
-// Badge colours mirror legacy L28778–28781 (green / cyan / teal / amber).
+// Status colours follow the app rule (R5 PR-N50): Waiting grey, Ready (awaiting
+// the next step) blue, In Assembly amber, Completed green.
 const STATUS_BADGE_CLASS: Record<StatusKey, string> = {
-  waiting: 'b-amber',
-  ready: 'b-green',
-  assembling: 'b-cyan',
-  done: 'b-teal',
+  waiting: 'b-grey',
+  ready: 'b-blue',
+  assembling: 'b-amber',
+  done: 'b-green',
 };
 
 // Legacy badge text (L28778–28781). The waiting variant's "— <ready>/<total>"
@@ -46,31 +51,33 @@ const STATUS_BADGE_CLASS: Record<StatusKey, string> = {
 function statusBadgeLabel(row: AssemblyListItem): string {
   switch (row.status) {
     case 'ready':
-      return 'ALL READY ✓';
+      return 'Ready';
     case 'assembling':
-      return `Assembling ${row.assembledQty}/${row.orderQty}`;
+      return `In Assembly ${row.assembledQty}/${row.orderQty}`;
     case 'done':
-      return `Done ✓ ${row.assembledQty}/${row.orderQty}`;
+      return `Completed ${row.assembledQty}/${row.orderQty}`;
     case 'waiting':
       return row.totalCount > 0 ? `Waiting — ${row.readyCount}/${row.totalCount}` : 'Waiting';
   }
 }
 
-// Tile order matches legacy L28747–28749.
+// Status order + labels match legacy's tiles (L28747–28749).
 const TILES: Array<{ key: FilterKey; label: string; color: string }> = [
-  { key: 'all', label: 'Total', color: 'var(--blue)' },
-  { key: 'waiting', label: 'Waiting', color: 'var(--amber)' },
-  { key: 'ready', label: 'Ready', color: 'var(--green)' },
-  { key: 'assembling', label: 'Assembling', color: 'var(--cyan)' },
-  { key: 'done', label: 'Done', color: 'var(--teal, #14b8a6)' },
+  { key: 'all', label: 'Total', color: 'var(--text)' },
+  { key: 'waiting', label: 'Waiting', color: 'var(--text3)' },
+  { key: 'ready', label: 'Ready', color: 'var(--blue)' },
+  { key: 'assembling', label: 'In Assembly', color: 'var(--amber)' },
+  { key: 'done', label: 'Completed', color: 'var(--green)' },
 ];
 
 function AssemblyListPage(): React.JSX.Element {
-  const { data, isLoading, isError, error } = useAssembliesList();
+  const { data, isLoading, isFetching, isError, error } = useAssembliesList();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState<string>('');
 
-  const today = new Date().toISOString().slice(0, 10);
+  // IST today (the UTC date is yesterday before 05:30 IST).
+  const today = todayIst();
+  const navigate = useNavigate();
 
   const counts = useMemo(() => {
     const c: Record<FilterKey, number> = { all: 0, waiting: 0, ready: 0, assembling: 0, done: 0 };
@@ -83,26 +90,64 @@ function AssemblyListPage(): React.JSX.Element {
 
   const filtered = useMemo(() => {
     if (!data) return [];
-    const q = search.trim().toLowerCase();
+    const q = normalizeSearchTerm(search);
     return data.items.filter((it) => {
       if (filter !== 'all' && it.status !== filter) return false;
-      if (q) {
-        // Legacy matches on soNo + customer + partName + BOM NAME (L28768).
-        // bomName was not in the payload before, so a search for the BOM by
-        // name silently matched nothing.
-        const hay =
-          `${it.soCode} ${it.customerName ?? ''} ${it.bomCode ?? ''} ${it.bomName ?? ''} ${it.partName ?? ''}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+      // Every column the row shows (plus legacy's partName, L28768): SO no.,
+      // customer, BOM no. + name, due date and the status text. Shared matcher —
+      // case-insensitive, partial. Not the qty numbers: a bare "5" would match
+      // nearly every row.
+      return matchesSearchTerm(
+        [
+          it.soCode,
+          it.customerName,
+          it.bomCode,
+          it.bomName,
+          it.partName,
+          fmtDate(it.dueDate),
+          statusBadgeLabel(it),
+        ],
+        q,
+      );
     });
   }, [data, filter, search]);
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">🔧 Assembly Tracker</div>
-      </div>
+      {/* The ONE list header (ui/layout ListHeader): title · count, then the
+          filter bar — search · status dropdown (the old tiles' counts in its
+          option labels) · Clear. */}
+      <ListHeader
+        title="Assembly Tracker"
+        icon="🔧"
+        count={data ? filtered.length : undefined}
+        noun="assembly order"
+        filterNote={filter !== 'all' ? TILES.find((t) => t.key === filter)?.label : undefined}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search SO no., customer, BOM no. / name, part, due date, status…"
+        updating={isFetching && !isLoading}
+        filters={
+          <select
+            className="innovic-select"
+            aria-label="Assembly status"
+            title="Assembly status"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as FilterKey)}
+          >
+            {TILES.map((t) => (
+              <option key={t.key} value={t.key}>
+                {`${t.key === 'all' ? 'All Status' : t.label}${data ? ` (${counts[t.key]})` : ''}`}
+              </option>
+            ))}
+          </select>
+        }
+        onClearFilters={() => {
+          setSearch('');
+          setFilter('all');
+        }}
+        filtersActive={search !== '' || filter !== 'all'}
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -115,46 +160,36 @@ function AssemblyListPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load assemblies'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load assemblies. Try again.'}
             </div>
           </div>
         </div>
       ) : data ? (
         <>
-          <KpiTiles counts={counts} filter={filter} setFilter={setFilter} />
-
-          <Toolbar
-            search={search}
-            setSearch={setSearch}
-            filter={filter}
-            setFilter={setFilter}
-          />
-
           {filtered.length === 0 ? (
             <div className="panel">
               <div className="panel-body">
                 <div className="empty-state">
-                  <div className="empty-icon">🔧</div>
                   {data.items.length === 0
-                    ? 'No equipment assembly orders found. Create an Equipment SO with a linked BOM to see assembly tracking here.'
-                    : 'No results match your filter.'}
+                    ? 'No assembly orders yet.'
+                    : 'No assembly orders match.'}
                 </div>
               </div>
             </div>
           ) : (
             <div className="panel">
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid">
                   <thead>
                     <tr>
                       <th>SO No.</th>
                       <th>Customer</th>
                       <th>BOM No.</th>
                       <th>Due Date</th>
-                      <th>Required</th>
-                      <th>Assembled</th>
-                      <th>Dispatched</th>
+                      <th className="th-num">Required</th>
+                      <th className="th-num">Assembled</th>
+                      <th className="th-num">Dispatched</th>
                       <th>Assembly Status</th>
                     </tr>
                   </thead>
@@ -163,13 +198,20 @@ function AssemblyListPage(): React.JSX.Element {
                       const overdue =
                         row.dueDate !== null && row.dueDate < today && row.status !== 'done';
                       return (
-                        <tr key={row.soId}>
-                          <td>
+                        <tr
+                          key={row.soId}
+                          onClick={() =>
+                            void navigate({ to: '/assemblies/$soId', params: { soId: row.soId } })
+                          }
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <td style={{ whiteSpace: 'nowrap' }}>
                             <Link
                               to="/assemblies/$soId"
                               params={{ soId: row.soId }}
                               className="td-code"
                               style={{ color: 'var(--cyan)', fontWeight: 600 }}
+                              onClick={(e) => e.stopPropagation()}
                             >
                               {row.soCode}
                             </Link>
@@ -187,18 +229,22 @@ function AssemblyListPage(): React.JSX.Element {
                                   !== null would print "Rev undefined". */}
                               {row.bomRevision != null ? ` BOM Rev ${row.bomRevision}` : ''}
                             </span>
-                            {row.bomName ? (
-                              <div style={{ fontSize: 11 }}>{row.bomName}</div>
-                            ) : null}
+                            {row.bomName ? <div style={{ fontSize: 11 }}>{row.bomName}</div> : null}
                           </td>
-                          <td style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 600 : undefined }}>
-                            {row.dueDate ?? '—'}
+                          <td
+                            style={{
+                              whiteSpace: 'nowrap',
+                              color: overdue ? 'var(--red2)' : undefined,
+                              fontWeight: overdue ? 600 : undefined,
+                            }}
+                          >
+                            {fmtDate(row.dueDate)}
                           </td>
-                          <td>{row.orderQty}</td>
-                          <td style={{ color: 'var(--green2)' }}>
+                          <td className="td-num">{row.orderQty}</td>
+                          <td className="td-num" style={{ color: 'var(--green2)' }}>
                             {row.assembledQty}
                           </td>
-                          <td style={{ color: 'var(--cyan)' }}>
+                          <td className="td-num" style={{ color: 'var(--green2)' }}>
                             {row.dispatchedQty}
                           </td>
                           <td>
@@ -214,96 +260,9 @@ function AssemblyListPage(): React.JSX.Element {
               </div>
             </div>
           )}
+          <ListFooter total={data.items.length} shown={filtered.length} noun="assembly order" />
         </>
       ) : null}
-    </div>
-  );
-}
-
-function KpiTiles({
-  counts,
-  filter,
-  setFilter,
-}: {
-  counts: Record<FilterKey, number>;
-  filter: FilterKey;
-  setFilter: (k: FilterKey) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))',
-        gap: 10,
-        marginBottom: 20,
-      }}
-    >
-      {TILES.map((t) => {
-        const active = filter === t.key;
-        return (
-          <div
-            key={t.key}
-            onClick={() => setFilter(filter === t.key ? 'all' : t.key)}
-            style={{
-              cursor: 'pointer',
-              textAlign: 'center',
-              padding: 14,
-              borderRadius: 10,
-              background: 'var(--bg2)',
-              border: '1px solid var(--border)',
-              boxShadow: active ? `0 0 0 2px ${t.color}` : undefined,
-              transition: 'box-shadow .15s',
-            }}
-          >
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>{t.label}</div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: t.color }}>{counts[t.key]}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function Toolbar({
-  search,
-  setSearch,
-  filter,
-  setFilter,
-}: {
-  search: string;
-  setSearch: (v: string) => void;
-  filter: FilterKey;
-  setFilter: (k: FilterKey) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 10,
-        marginBottom: 16,
-        flexWrap: 'wrap',
-        alignItems: 'center',
-      }}
-    >
-      <input
-        type="text"
-        className="innovic-input"
-        placeholder="🔍 Search SO, customer, item…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ minWidth: 240 }}
-      />
-      <select
-        className="innovic-select"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value as FilterKey)}
-      >
-        <option value="all">All Status</option>
-        <option value="waiting">Waiting</option>
-        <option value="ready">Ready</option>
-        <option value="assembling">Assembling</option>
-        <option value="done">Done</option>
-      </select>
     </div>
   );
 }

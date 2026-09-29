@@ -11,8 +11,7 @@
 // (modules/clients/routes/list.tsx) as the reference. The composition is the
 // canonical one and nothing else:
 //
-//   <ListHeader>            title · count · SearchInput · Active filter · primary
-//   <Panel>                 the 💡 what-this-master-is-for note
+//   <ListHeader>            title · count · primary; filter bar: SearchInput · Active · Clear
 //   <Banner>                a refused delete, in the server's own words
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint
@@ -77,7 +76,11 @@ function TpiMastersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -145,7 +148,7 @@ function TpiMastersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Organization',
+        header: 'Organisation',
         width: '24%',
         className: 'text2',
         ellipsis: true,
@@ -208,10 +211,10 @@ function TpiMastersListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <Select
             aria-label="Active"
-            fieldWidth="md"
+            title="Active"
             value={search.isActive === undefined ? '' : String(search.isActive)}
             options={[
               { value: '', label: 'All' },
@@ -227,6 +230,14 @@ function TpiMastersListPage(): React.JSX.Element {
             }}
           />
         }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, isActive: undefined, search: undefined }),
+            replace: true,
+          });
+        }}
+        filtersActive={search.isActive !== undefined || searchInput.trim() !== ''}
         primary={
           perms.entry ? (
             <Link to="/tpi-masters/new" className="btn btn-primary">
@@ -235,16 +246,6 @@ function TpiMastersListPage(): React.JSX.Element {
           ) : null
         }
       />
-
-      {/* What this master is for. It sits ABOVE the sheet, not in the
-          ListFooter hint, because it is read once before the first inspector is
-          added — not a hint about operating the list. */}
-      <Panel>
-        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
-          💡 Add third-party inspectors here. The <b>Inspector Name</b> field on the TPI screen
-          picks from this list, and picking a name fills in their organization.
-        </span>
-      </Panel>
 
       {/* Why a banner and not a toast: the delete may be refused for a reason
           the user has to act on (retire the inspector as Inactive instead). It
@@ -258,7 +259,9 @@ function TpiMastersListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load TPI inspectors'}
+          message={
+            error instanceof Error ? error.message : 'Could not load TPI Inspectors. Try again.'
+          }
         />
       ) : (
         <Panel bodyPadding="none">
@@ -266,14 +269,17 @@ function TpiMastersListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText="No inspectors defined. Click + Add Inspector."
+            emptyText={
+              search.search || search.isActive !== undefined
+                ? 'No Inspectors match.'
+                : 'No Inspectors yet.'
+            }
             onRowClick={(t) => void navigate({ to: '/tpi-masters/$id', params: { id: t.id } })}
             rowActionsWidth="10%"
             rowActions={(t) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/tpi-masters/${t.id}`}
+                // Row click opens the record (ERPNext list); Edit stays a real
+                // link so ctrl-click / middle-click open a new tab.
                 editTo={perms.edit ? `/tpi-masters/${t.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed: the confirm dialog
@@ -293,8 +299,8 @@ function TpiMastersListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Delete inspector "${t.code}"?`,
-                  message: `${t.code} stops appearing in the TPI Master and in the TPI screen's Inspector picker.`,
+                  title: `Delete Inspector ${t.code}?`,
+                  message: 'Past TPI records keep the name.',
                   pendingLabel: 'Deleting…',
                 }}
               />

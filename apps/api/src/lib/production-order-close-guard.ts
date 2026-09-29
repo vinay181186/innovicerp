@@ -70,7 +70,7 @@ export function closeBlockedReason(item: CloseGuardInput): string | null {
   const jcDone = st === 'complete' || st === 'closed' || item.jcSettledWithLosses;
   const available = Math.max(0, item.jcFinishedQty - item.creditedQty);
   if (available <= 0 && !jcDone) {
-    return `No finished pieces to close yet for Job Card ${item.jcCodeText} (${st}) — credit pieces as its operations clear, or finish the order once it is complete`;
+    return `No Completed pieces to close yet on JC No. ${item.jcCodeText}. Try again once its last operation completes pieces.`;
   }
   return null;
 }

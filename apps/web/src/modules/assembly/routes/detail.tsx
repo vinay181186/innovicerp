@@ -19,18 +19,18 @@ import type {
   AssemblyRollup,
   AssemblyTrackerResponse,
   AssemblyUnitRow,
+  AssemblyVariancePart,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Play, RotateCcw, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { fmtDate, todayIst } from '@/lib/date';
+import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import {
-  useAssemblyTracker,
-  useStartAssembly,
-  useStopAssembly,
-  useUndoLastUnit,
-} from '../api';
+import { ConfirmDialog } from '@/ui/feedback';
+import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
+import { VarianceConfirm } from '../components/variance-confirm';
 
 export const assemblyDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -48,8 +48,11 @@ function AssemblyDetailPage(): React.JSX.Element {
   // happens per unit at STOP. Serial is auto-generated server-side.
   const [qty, setQty] = useState('1');
   const [assembledBy, setAssembledBy] = useState('');
-  const [assemblyDate, setAssemblyDate] = useState('');
+  // Prefilled with today (IST) so the default is visible, not hidden in a tooltip.
+  const [assemblyDate, setAssemblyDate] = useState(() => todayIst());
   const [remarks, setRemarks] = useState('');
+  // Undo un-builds a batch (and reverses its stock when completed) — ask first.
+  const [confirmUndo, setConfirmUndo] = useState(false);
 
   if (isLoading) {
     return (
@@ -65,8 +68,8 @@ function AssemblyDetailPage(): React.JSX.Element {
           <Link to="/assemblies" className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}>
             <ArrowLeft size={14} /> Back
           </Link>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Assembly tracker not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Assembly Tracker not found.'}
           </div>
         </div>
       </div>
@@ -96,21 +99,32 @@ function AssemblyDetailPage(): React.JSX.Element {
           setQty('1');
           setRemarks('');
         },
-        onError: (e) => setActionError(e instanceof Error ? e.message : 'Start failed'),
+        onError: (e) =>
+          setActionError(e instanceof Error ? e.message : 'Could not start the batch. Try again.'),
       },
     );
   };
+  // The batch the server will undo: the highest Batch No. still on the order
+  // (undoLastUnit orders by unitNo desc).
+  const lastBatch = data.units.reduce<(typeof data.units)[number] | null>(
+    (best, u) => (best === null || u.unitNo > best.unitNo ? u : best),
+    null,
+  );
   const onUndo = (): void => {
     setActionError(null);
-    undo.mutate(undefined, {
-      onError: (e) => setActionError(e instanceof Error ? e.message : 'Undo failed'),
-    });
+    setConfirmUndo(true);
+  };
+  // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
+  // shows a failure (e.g. "already dispatched") inside the dialog.
+  const doUndo = async (): Promise<void> => {
+    await undo.mutateAsync(undefined);
+    setConfirmUndo(false);
   };
 
   return (
     <div>
       <Link to="/assemblies" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to list
+        <ArrowLeft size={14} /> Back
       </Link>
 
       <HeaderPanel data={data} />
@@ -119,9 +133,9 @@ function AssemblyDetailPage(): React.JSX.Element {
       {actionError ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--sig-critical-bd)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,
@@ -139,29 +153,30 @@ function AssemblyDetailPage(): React.JSX.Element {
         inProgressQty={data.rollup.inProgressQty}
       />
 
-      <div className="panel">
+      {/* ADR-193 3b — parts the store issued against this SO (read-only). */}
+      <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-hdr">
-          <div className="panel-title">Start assembly</div>
+          <div className="panel-title">Material</div>
           <span className="text3" style={{ fontSize: 11 }}>
-            Put units on the bench — no stock leaves yet. Complete (Stop) each batch below to record the good qty.
+            Parts come from the store by Item Issue against this SO.
           </span>
         </div>
-        <div
-          className="panel-body"
-          style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}
-        >
+        <div className="panel-body">
+          <SoMaterialPanel salesOrderId={soId} />
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title">Start Assembly</div>
+          <span className="text3" style={{ fontSize: 11 }}>
+            Start units, then Complete each batch.
+          </span>
+        </div>
+        <div className="panel-body" style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
           <div>
-            <label
-              className="text3"
-              style={{
-                display: 'block',
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: 4,
-              }}
-            >
-              Qty to start
+            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+              Qty to Start<span className="req">★</span>
             </label>
             <input
               type="number"
@@ -175,17 +190,8 @@ function AssemblyDetailPage(): React.JSX.Element {
             />
           </div>
           <div>
-            <label
-              className="text3"
-              style={{
-                display: 'block',
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: 4,
-              }}
-            >
-              Started by
+            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+              Assembled By
             </label>
             <input
               className="innovic-input"
@@ -197,17 +203,8 @@ function AssemblyDetailPage(): React.JSX.Element {
           </div>
           {/* Start date + Remarks — stamped on the in-progress batch. */}
           <div>
-            <label
-              className="text3"
-              style={{
-                display: 'block',
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: 4,
-              }}
-            >
-              Start date
+            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+              Start Date
             </label>
             <input
               type="date"
@@ -215,20 +212,10 @@ function AssemblyDetailPage(): React.JSX.Element {
               style={{ width: 150 }}
               value={assemblyDate}
               onChange={(e) => setAssemblyDate(e.target.value)}
-              title="Defaults to today when left blank"
             />
           </div>
           <div>
-            <label
-              className="text3"
-              style={{
-                display: 'block',
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: 4,
-              }}
-            >
+            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
               Remarks
             </label>
             <input
@@ -260,9 +247,29 @@ function AssemblyDetailPage(): React.JSX.Element {
             disabled={undo.isPending || data.units.length === 0}
             title="Undo the latest batch (in-progress, or completed but not dispatched)"
           >
-            {undo.isPending ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-            Undo Last Unit
+            {undo.isPending ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <RotateCcw size={13} />
+            )}
+            Undo Last Batch
           </button>
+          {confirmUndo && lastBatch ? (
+            <ConfirmDialog
+              open
+              tone="danger"
+              title={`Undo Batch No. ${lastBatch.unitNo}?`}
+              message={
+                lastBatch.status === 'completed'
+                  ? `Batch No. ${lastBatch.unitNo} (${lastBatch.qty} qty) is COMPLETED. Undo removes it: the ${lastBatch.qty} finished unit(s) leave stock and the parts fitted to it go back to Still Out.`
+                  : `Batch No. ${lastBatch.unitNo} (${lastBatch.qty} qty) is in progress. Undo removes it from the bench; any parts fitted to it go back to Still Out.`
+              }
+              confirmLabel="Undo Batch"
+              pendingLabel="Undoing…"
+              onConfirm={doUndo}
+              onCancel={() => setConfirmUndo(false)}
+            />
+          ) : null}
         </div>
 
         {/* Legacy's action row (L28878-28880) carried three navigation buttons
@@ -270,7 +277,11 @@ function AssemblyDetailPage(): React.JSX.Element {
             these are links, not new features. "Dispatch Register" points at
             Customer Dispatch — the new ERP's name for that register. */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-          <Link to="/planning" className="btn btn-ghost btn-sm" title="Plan this equipment BOM's parts">
+          <Link
+            to="/planning"
+            className="btn btn-ghost btn-sm"
+            title="Plan this equipment BOM's parts"
+          >
             📦 BOM Planning
           </Link>
           <Link
@@ -290,7 +301,8 @@ function AssemblyDetailPage(): React.JSX.Element {
   );
 }
 
-// Legacy L28778–28781. `done` uses legacy's literal #14b8a6 → .b-teal.
+// Status colours follow the app rule (R5 PR-N50): Waiting grey, Ready blue,
+// In Assembly amber, Completed green.
 function StatusBadge({
   rollup,
   readyCount,
@@ -302,22 +314,22 @@ function StatusBadge({
 }): React.JSX.Element {
   switch (rollup.status) {
     case 'ready':
-      return <span className="badge b-green">ALL READY ✓</span>;
+      return <span className="badge b-blue">Ready</span>;
     case 'assembling':
       return (
-        <span className="badge b-cyan">
-          Assembling {rollup.assembledQty}/{rollup.orderQty}
+        <span className="badge b-amber">
+          In Assembly {rollup.assembledQty}/{rollup.orderQty}
         </span>
       );
     case 'done':
       return (
-        <span className="badge b-teal">
-          Done ✓ {rollup.assembledQty}/{rollup.orderQty}
+        <span className="badge b-green">
+          Completed {rollup.assembledQty}/{rollup.orderQty}
         </span>
       );
     case 'waiting':
       return (
-        <span className="badge b-amber">
+        <span className="badge b-grey">
           Waiting — {readyCount}/{totalCount}
         </span>
       );
@@ -334,7 +346,11 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
   // green at 100% component readiness, else amber.
   const pct = components.length ? Math.round((readyCount / components.length) * 100) : 0;
   const countColor =
-    rollup.assembledQty >= rollup.orderQty ? undefined : pct === 100 ? 'var(--green)' : 'var(--amber)';
+    rollup.assembledQty >= rollup.orderQty
+      ? undefined
+      : pct === 100
+        ? 'var(--green)'
+        : 'var(--amber)';
   return (
     <div className="panel">
       <div className="panel-hdr">
@@ -354,7 +370,7 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
           <div style={{ fontSize: 22, fontWeight: 700, color: countColor }}>
             {rollup.assembledQty}/{rollup.orderQty}
           </div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             assembled
           </div>
         </div>
@@ -375,7 +391,8 @@ function RollupPanel({
   components: AssemblyComponentRow[];
 }): React.JSX.Element {
   const readyCount = components.filter((c) => c.status === 'ready').length;
-  const pctAssembled = rollup.orderQty > 0 ? Math.round((rollup.assembledQty / rollup.orderQty) * 100) : 0;
+  const pctAssembled =
+    rollup.orderQty > 0 ? Math.round((rollup.assembledQty / rollup.orderQty) * 100) : 0;
   // Legacy L28792 colours CAN ASSEMBLE green when stock covers the requirement.
   // Legacy's `assembliesPossible` is the TOTAL buildable; ours is headroom on top
   // of what is already built (service.ts canAssembleAdditional), so the
@@ -389,7 +406,10 @@ function RollupPanel({
             --teal is undefined there → invalid → the bar renders EMPTY when
             complete. Ported as cyan throughout rather than copying that bug. */}
         <div className="prog-wrap" style={{ marginBottom: 10 }}>
-          <div className="prog-bar" style={{ width: `${pctAssembled}%`, background: 'var(--cyan)' }} />
+          <div
+            className="prog-bar"
+            style={{ width: `${pctAssembled}%`, background: 'var(--cyan)' }}
+          />
         </div>
         <div
           style={{
@@ -403,48 +423,52 @@ function RollupPanel({
           }}
         >
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
-              ORDER QTY
+            <span className="text3" style={{ fontSize: 11 }}>
+              Order Qty
             </span>
             <br />
             <b style={{ fontSize: 18 }}>{rollup.orderQty}</b>
           </div>
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
-              CAN ASSEMBLE
+            <span className="text3" style={{ fontSize: 11 }}>
+              Can Assemble
             </span>
             <br />
             <b style={{ fontSize: 18, color: canAssembleColor }}>{rollup.canAssembleAdditional}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10 }}>ASSEMBLED</span>
+            <span style={{ fontSize: 11 }}>Assembled</span>
             <br />
             <b style={{ fontSize: 18 }}>{rollup.assembledQty}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--amber)' }}>IN ASSEMBLY</span>
+            <span style={{ fontSize: 11, color: 'var(--amber2)' }}>In Assembly</span>
             <br />
-            <b style={{ fontSize: 18, color: rollup.inProgressQty > 0 ? 'var(--amber)' : undefined }}>
+            <b
+              style={{ fontSize: 18, color: rollup.inProgressQty > 0 ? 'var(--amber)' : undefined }}
+            >
               {rollup.inProgressQty}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--cyan)' }}>DISPATCHED</span>
+            <span style={{ fontSize: 11, color: 'var(--green2)' }}>Dispatched</span>
             <br />
-            <b style={{ fontSize: 18, color: 'var(--cyan)' }}>{rollup.dispatchedQty}</b>
+            <b style={{ fontSize: 18, color: 'var(--green2)' }}>{rollup.dispatchedQty}</b>
           </div>
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
-              BALANCE
+            <span className="text3" style={{ fontSize: 11 }}>
+              Pending
             </span>
             <br />
-            <b style={{ fontSize: 18, color: rollup.balanceQty > 0 ? 'var(--red)' : 'var(--green)' }}>
+            <b
+              style={{ fontSize: 18, color: rollup.balanceQty > 0 ? 'var(--red)' : 'var(--green)' }}
+            >
               {rollup.balanceQty}
             </b>
           </div>
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
-              COMPONENTS
+            <span className="text3" style={{ fontSize: 11 }}>
+              Components
             </span>
             <br />
             <b style={{ fontSize: 18 }}>
@@ -453,10 +477,10 @@ function RollupPanel({
           </div>
           {rollup.bottleneck && rollup.bottleneck.enoughForUnits < rollup.orderQty ? (
             <div>
-              <span style={{ fontSize: 10, color: 'var(--red)' }}>BOTTLENECK</span>
+              <span style={{ fontSize: 11, color: 'var(--red2)' }}>Bottleneck</span>
               <br />
               {/* Legacy prints childName||childCode; the rollup carries only the code. */}
-              <b style={{ color: 'var(--red)' }}>{rollup.bottleneck.childItemCode}</b>
+              <b style={{ color: 'var(--red2)' }}>{rollup.bottleneck.childItemCode}</b>
             </div>
           ) : null}
         </div>
@@ -468,8 +492,8 @@ function RollupPanel({
 // Legacy L28804–28805 (type label + colour map).
 const TYPE_META: Record<AssemblyComponentRow['bomType'], { label: string; color: string }> = {
   manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
-  purchase: { label: '🛒 Buy', color: 'var(--green)' },
-  outsource: { label: '🔧 JW', color: 'var(--amber)' },
+  purchase: { label: '🛒 Buy', color: 'var(--green2)' },
+  outsource: { label: '🔧 JW', color: 'var(--amber2)' },
 };
 
 function ComponentsPanel({
@@ -487,10 +511,7 @@ function ComponentsPanel({
     return (
       <div className="panel">
         <div className="panel-body">
-          <div className="empty-state">
-            <div className="empty-icon">📦</div>
-            No BOM linked. Set a BOM master on the sales order to populate components.
-          </div>
+          <div className="empty-state">No BOM linked to this Sales Order.</div>
         </div>
       </div>
     );
@@ -506,15 +527,15 @@ function ComponentsPanel({
           <thead>
             <tr>
               <th>Sr No</th>
-              <th>Child Item</th>
+              <th>Item Code</th>
               <th>BOM Type</th>
               {/* Qty/Set + Stock have no legacy counterpart — kept (live system). */}
-              <th>Qty/Set</th>
+              <th>Qty / Set</th>
               <th>Need</th>
               <th>Stock</th>
               <th>In Assembly</th>
               <th>Assembled</th>
-              <th style={{ color: 'var(--red)' }}>Pending</th>
+              <th style={{ color: 'var(--red2)' }}>Pending</th>
               <th>Enough For</th>
               <th>Stock Status</th>
             </tr>
@@ -523,11 +544,11 @@ function ComponentsPanel({
             {components.map((c, i) => (
               <tr
                 key={c.childItemCode}
-                style={{ background: c.status === 'ready' ? 'rgba(34,197,94,0.04)' : undefined }}
+                style={{ background: c.status === 'ready' ? 'var(--sig-ok-bg)' : undefined }}
               >
                 <td>{i + 1}</td>
                 <td>
-                  <div className="td-code" style={{ color: 'var(--purple)' }}>
+                  <div className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                     {c.childItemCode}
                   </div>
                   {c.childItemName ? (
@@ -537,15 +558,15 @@ function ComponentsPanel({
                   ) : null}
                 </td>
                 <td>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: TYPE_META[c.bomType].color }}>
+                  <span
+                    style={{ fontSize: 11, fontWeight: 700, color: TYPE_META[c.bomType].color }}
+                  >
                     {TYPE_META[c.bomType].label}
                   </span>
                 </td>
                 <td>{c.qtyPerSet}</td>
                 <td className="fw-700">{c.totalNeed}</td>
-                <td style={{ color: 'var(--green2)' }}>
-                  {c.stockQty}
-                </td>
+                <td style={{ color: 'var(--green2)' }}>{c.stockQty}</td>
                 {/* In Assembly = components tied up in STARTED-but-not-completed
                     batches (qtyPerSet × in-progress units, ADR-129). Assembled =
                     components already consumed into completed units (qtyPerSet ×
@@ -553,7 +574,7 @@ function ComponentsPanel({
                 <td style={{ color: 'var(--amber2)', fontWeight: 600 }}>
                   {c.qtyPerSet * inProgressQty}
                 </td>
-                <td className="fw-700" style={{ color: 'var(--green)' }}>
+                <td className="fw-700" style={{ color: 'var(--green2)' }}>
                   {c.qtyPerSet * assembledQty}
                 </td>
                 <td
@@ -568,7 +589,9 @@ function ComponentsPanel({
                     color: c.enoughForUnits >= orderQty ? 'var(--green)' : 'var(--amber)',
                   }}
                 >
-                  {c.enoughForUnits >= orderQty ? `${c.enoughForUnits} ✓` : `${c.enoughForUnits} / ${orderQty}`}
+                  {c.enoughForUnits >= orderQty
+                    ? `${c.enoughForUnits} ✓`
+                    : `${c.enoughForUnits} / ${orderQty}`}
                 </td>
                 <td>
                   <ComponentStatusBadge status={c.status} />
@@ -594,7 +617,7 @@ function ComponentStatusBadge({
   // have no server source for.
   const map: Record<AssemblyComponentRow['status'], { cls: string; label: string }> = {
     ready: { cls: 'b-green', label: 'Ready ✓' },
-    enough_for_some: { cls: 'b-amber', label: 'Partial' },
+    enough_for_some: { cls: 'b-amber', label: 'Partly Available' },
     shortage: { cls: 'b-red', label: 'Shortage' },
   };
   const m = map[status];
@@ -613,15 +636,19 @@ function UnitsPanel({
   // Per in-progress row: how many of the batch to complete now (default = all
   // that's left in the batch).
   const [stopQty, setStopQty] = useState<Record<string, string>>({});
+  // ADR-193 3c — last units whose parts out differ from the BOM wait here
+  // for a reason (409 needsConfirmation from Complete).
+  const [variance, setVariance] = useState<{
+    unit: AssemblyUnitRow;
+    completedQty: number;
+    parts: AssemblyVariancePart[];
+  } | null>(null);
 
   if (units.length === 0) {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div className="empty-state">
-            <div className="empty-icon">🔧</div>
-            No batches yet — click <strong>Start</strong> above to put units on the bench.
-          </div>
+          <div className="empty-state">No batches yet.</div>
         </div>
       </div>
     );
@@ -632,14 +659,38 @@ function UnitsPanel({
     const raw = stopQty[u.id];
     const completedQty = Math.max(1, Math.floor(Number(raw ?? u.qty) || u.qty));
     if (completedQty > u.qty) {
-      setError(`Batch #${u.unitNo} has only ${u.qty} left to complete.`);
+      setError(`Batch No. ${u.unitNo} has only ${u.qty} left to complete.`);
       return;
     }
+    complete(u, completedQty);
+  };
+
+  const complete = (u: AssemblyUnitRow, completedQty: number, reason?: string): void => {
+    setError(null);
     stop.mutate(
-      { unitId: u.id, input: { completedQty } },
       {
-        onSuccess: () => setStopQty((s) => ({ ...s, [u.id]: '' })),
-        onError: (e) => setError(e instanceof Error ? e.message : 'Complete failed'),
+        unitId: u.id,
+        input: { completedQty, ...(reason ? { confirmVarianceReason: reason } : {}) },
+      },
+      {
+        onSuccess: () => {
+          setStopQty((s) => ({ ...s, [u.id]: '' }));
+          setVariance(null);
+        },
+        onError: (e) => {
+          const d = (
+            e as {
+              details?: { needsConfirmation?: boolean; variance?: AssemblyVariancePart[] };
+            }
+          ).details;
+          if (d?.needsConfirmation && d.variance) {
+            setVariance({ unit: u, completedQty, parts: d.variance });
+            return;
+          }
+          // A short part (409 details.short) — the message already lists each
+          // part and says to issue it from the store first.
+          setError(e instanceof Error ? e.message : 'Could not complete the batch. Try again.');
+        },
       },
     );
   };
@@ -651,20 +702,29 @@ function UnitsPanel({
     <div className="panel">
       <div className="panel-hdr">
         <div className="panel-title">
-          📦 Assembly Batches — {completedTotal} completed
+          Assembly Batches — {completedTotal} completed
           {wipTotal > 0 ? `, ${wipTotal} in assembly` : ''}
         </div>
       </div>
       {error ? (
-        <div style={{ color: 'var(--red)', padding: '6px 10px', fontSize: 12 }}>{error}</div>
+        <div style={{ color: 'var(--red2)', padding: '6px 10px', fontSize: 12 }}>{error}</div>
+      ) : null}
+      {variance ? (
+        <VarianceConfirm
+          batchNo={variance.unit.unitNo}
+          parts={variance.parts}
+          busy={stop.isPending}
+          onCancel={() => setVariance(null)}
+          onConfirm={(reason) => complete(variance.unit, variance.completedQty, reason)}
+        />
       ) : null}
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Batch #</th>
+              <th>Batch No.</th>
               <th>Batch Status</th>
-              <th>Qty</th>
+              <th>Batch Qty</th>
               <th>Serial No.</th>
               <th>Assembly Date</th>
               <th>Assembled By</th>
@@ -684,7 +744,7 @@ function UnitsPanel({
                   </td>
                   <td>
                     {wip ? (
-                      <span className="badge b-amber">In assembly</span>
+                      <span className="badge b-amber">In Assembly</span>
                     ) : (
                       <span className="badge b-green">Completed ✓</span>
                     )}
@@ -692,14 +752,20 @@ function UnitsPanel({
                   <td className="fw-700">
                     {u.qty}
                     {wip ? (
-                      <span className="text3" style={{ fontSize: 10 }}> left</span>
+                      <span className="text3" style={{ fontSize: 11 }}>
+                        {' '}
+                        left
+                      </span>
                     ) : null}
                   </td>
-                  <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 700 }}>
+                  <td
+                    className="mono"
+                    style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 700 }}
+                  >
                     {u.serialNo ?? '—'}
                   </td>
                   <td className="mono" style={{ fontSize: 12 }}>
-                    {u.assemblyDate}
+                    {fmtDate(u.assemblyDate)}
                   </td>
                   <td style={{ fontSize: 12 }}>{u.assembledBy ?? '—'}</td>
                   <td className="text3" style={{ fontSize: 12 }}>
@@ -707,10 +773,12 @@ function UnitsPanel({
                   </td>
                   <td>
                     {wip ? (
-                      <span className="text3" style={{ fontSize: 11 }}>—</span>
+                      <span className="text3" style={{ fontSize: 11 }}>
+                        —
+                      </span>
                     ) : u.dispatched ? (
                       <span className="badge b-green">
-                        Dispatched ✓{u.dispatchDate ? ` ${u.dispatchDate}` : ''}
+                        Dispatched ✓{u.dispatchDate ? ` ${fmtDate(u.dispatchDate)}` : ''}
                       </span>
                     ) : (
                       <span className="badge b-amber">Pending</span>
@@ -759,7 +827,9 @@ function UnitsPanel({
                         <Truck size={13} /> Dispatch
                       </Link>
                     ) : (
-                      <span className="text3" style={{ fontSize: 11 }}>—</span>
+                      <span className="text3" style={{ fontSize: 11 }}>
+                        —
+                      </span>
                     )}
                   </td>
                 </tr>

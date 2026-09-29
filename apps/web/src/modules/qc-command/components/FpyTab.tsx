@@ -43,31 +43,33 @@ function GroupPanel({
     <div className="panel">
       <SubHdr>{title}</SubHdr>
       <div className="tbl-wrap">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               <th>{label}</th>
-              <th className="td-ctr">Total</th>
-              <th className="td-ctr">Accepted</th>
-              <th className="td-ctr">FPY</th>
+              <th className="th-num">Total</th>
+              <th className="th-num">Accepted</th>
+              <th className="th-num" title={FPY_HELP}>
+                FPY
+              </th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={4} className="empty-state">
-                  No QC data yet
+                  No QC data yet.
                 </td>
               </tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.name}>
                   <td style={{ fontSize: 12, fontWeight: nameWeight }}>{r.name}</td>
-                  <td className="td-ctr mono">{r.total}</td>
-                  <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                  <td className="td-num mono">{r.total}</td>
+                  <td className="td-num mono" style={{ color: 'var(--green2)' }}>
                     {r.passed}
                   </td>
-                  <td className="td-ctr mono fw-700" style={{ color: fpyColor(r.pct) }}>
+                  <td className="td-num mono fw-700" style={{ color: fpyColor(r.pct) }}>
                     {r.pct}%
                   </td>
                 </tr>
@@ -80,15 +82,22 @@ function GroupPanel({
   );
 }
 
+const FPY_HELP =
+  'Items accepted at QC on first attempt with no rejections. Green ≥ 95%, Amber 85–94%, Red < 85%.';
+
 export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
   return (
     <>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {/* Legacy L18799 leaves the operation name unweighted; L18809 gives the
             inspector name an inline font-weight:600 (there is no .fw-600). */}
-        <GroupPanel title="FPY by Operation" label="Operation" rows={fpy.byOperation} />
         <GroupPanel
-          title="FPY by Inspector"
+          title="First-Pass Yield by Operation"
+          label="Operation"
+          rows={fpy.byOperation}
+        />
+        <GroupPanel
+          title="First-Pass Yield by Inspector"
           label="Inspector"
           rows={fpy.byInspector}
           nameWeight={600}
@@ -96,38 +105,40 @@ export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
       </div>
 
       <div className="panel" style={{ marginTop: 14 }}>
-        <SubHdr>⚠ Items with Lowest First-Pass Yield (Quality Issues)</SubHdr>
+        <SubHdr>⚠ Items with Lowest First-Pass Yield</SubHdr>
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-ctr">Total Inspected</th>
-                <th className="td-ctr">First-Pass</th>
-                <th className="td-ctr">FPY</th>
+                <th className="th-num">Total Inspected</th>
+                <th className="th-num">First-Pass</th>
+                <th className="th-num" title={FPY_HELP}>
+                  FPY
+                </th>
               </tr>
             </thead>
             <tbody>
               {fpy.byItem.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="empty-state">
-                    No QC data yet
+                    No QC data yet.
                   </td>
                 </tr>
               ) : (
                 fpy.byItem.map((it: QcFpyItemRow) => (
                   <tr key={it.code}>
-                    {/* Legacy L18823 hardcodes #8B5CF6, not var(--purple) (#7c3aed). */}
-                    <td className="td-code" style={{ color: '#8B5CF6' }}>
+                    {/* Item code strong in the body colour (item-code rule). */}
+                    <td className="td-code" style={{ color: 'var(--text)' }}>
                       {it.code}
                     </td>
                     <td style={{ fontSize: 12 }}>{it.name}</td>
-                    <td className="td-ctr mono">{it.total}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                    <td className="td-num mono">{it.total}</td>
+                    <td className="td-num mono" style={{ color: 'var(--green2)' }}>
                       {it.passed}
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: fpyColor(it.pct) }}>
+                    <td className="td-num mono fw-700" style={{ color: fpyColor(it.pct) }}>
                       {it.pct}%
                     </td>
                   </tr>
@@ -136,11 +147,6 @@ export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 FPY = items that passed QC on first attempt with zero rejections. Below 85% indicates
-        quality issues. Green ≥ 95%, Amber 85-94%, Red &lt; 85%.
       </div>
     </>
   );

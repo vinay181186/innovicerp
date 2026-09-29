@@ -34,7 +34,7 @@ export async function createSO(page: Page, qty: number, poTag: string): Promise<
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
   const soNo = await page.locator('input[value^="IN-SO-"]').first().inputValue();
-  await pick(page, /Type client code or name/i, 'Demo', /CLI-DEMO — Demo Engineering Works/);
+  await pick(page, /Type customer code or name/i, 'Demo', /CLI-DEMO — Demo Engineering Works/);
   await page.getByPlaceholder(/Client PO reference/i).fill(`${poTag}-${Date.now()}`);
   await pick(page, /Search item code or name/i, ITEM_CODE, ITEM_LABEL);
   await page.getByPlaceholder('Qty', { exact: true }).first().fill(String(qty));
@@ -58,7 +58,7 @@ export async function planExecuteInhouse(
   await page.waitForTimeout(2000);
   await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
   await page.waitForTimeout(1500);
-  await page.getByRole('button', { name: /^Save$/ }).click();
+  await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);
   const planTitle = (await page.locator('text=/Plan:\\s*PLN-/i').first().innerText().catch(() => '')) || '';
   const pln = (planTitle.match(/PLN-\d+/) || [''])[0];
@@ -78,7 +78,7 @@ export async function planExecuteInhouse(
   }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Execute/i }).first().click();
+  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
   await page.waitForTimeout(4500);
   const jc = ((await page.locator('body').innerText()).match(/IN-JC-\d{2}-\d+/) || [''])[0];
   return { pln, jc };
@@ -99,7 +99,7 @@ export async function opLog(page: Page, opName: string, qty: number): Promise<vo
   await page.waitForTimeout(1200);
   await page.getByRole('spinbutton').first().fill(String(qty));
   await page.getByPlaceholder(/Operator name/i).fill('E2E Auto').catch(() => {});
-  await page.getByRole('button', { name: /Submit completion/i }).click();
+  await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
   await page.waitForTimeout(3000);
 }
 
@@ -109,7 +109,7 @@ export async function qcAccept(page: Page, opName: string, qty: number): Promise
   await page.waitForTimeout(1500);
   await page.getByRole('spinbutton').first().fill(String(qty)); // ACCEPTED QTY
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /Submit QC inspection/i }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await page.waitForTimeout(3500);
 }
 
@@ -139,7 +139,7 @@ export async function dispatch(page: Page, soNo: string, qty: number): Promise<{
   const max = await dqty.getAttribute('max').catch(() => null);
   await dqty.fill(String(qty));
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /Create Dispatch/i }).click();
+  await page.getByRole('button', { name: /Save Dispatch/i }).click();
   await page.waitForTimeout(3500);
   const dsp = ((await page.locator('body').innerText()).match(/DSP-\d+/) || [''])[0];
   return { dsp, max };
@@ -159,7 +159,7 @@ export async function invoice(page: Page, soNo: string, qty: number): Promise<{ 
     else if (v === '0') { await nums.nth(k).fill('10'); }
   }
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /Create Invoice/i }).click();
+  await page.getByRole('button', { name: /Save Invoice/i }).click();
   await page.waitForTimeout(3500);
   const inv = ((await page.locator('body').innerText()).match(/INV-\d+/) || [''])[0];
   return { inv, max };

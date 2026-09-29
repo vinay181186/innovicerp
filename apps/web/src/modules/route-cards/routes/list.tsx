@@ -10,7 +10,6 @@
 // request per row. See ISSUE-019.
 //
 //   <ListHeader>            title · count · SearchInput · ⟳ Updating… · + Add Route Card
-//   <Banner>                what a route card is for
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //     renderExpanded        the op sequence, as Tag chips
 //   <ListFooter>            count line · 💡 hint
@@ -46,10 +45,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, Tag } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
 import { PrintRouteCardButton } from '../components/print-route-card-button';
@@ -115,16 +114,15 @@ function RouteCardsListPage(): React.JSX.Element {
     });
   }, []);
 
-  // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+12+13+24+15+5+6+11 = 90, + 10 = 100, so
-  // the table never scrolls sideways. Centred by the standard; only Item Name
-  // is left-aligned.
+  // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
+  // only Sr No keeps a width; codes, revs, counts and dates sit on one line
+  // and Item Name wraps into what is left. Centred by the standard; only Item
+  // Name is left-aligned, the op count sits right.
   const columns = useMemo<DataTableColumn<RouteCardListItem>[]>(
     () => [
       { header: 'Sr No', width: '4%', className: 'text3', render: (_rc, i) => i + 1 },
       {
         header: 'RC No.',
-        width: '12%',
         nowrap: true,
         render: (rc) => (
           <span style={{ whiteSpace: 'nowrap' }}>
@@ -167,7 +165,6 @@ function RouteCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Item Code',
-        width: '13%',
         // The item code is the main thing on this row: mono, bold, full --text.
         className: 'mono fw-700',
         nowrap: true,
@@ -175,20 +172,16 @@ function RouteCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Item Name',
-        width: '24%',
         align: 'left',
         className: 'fw-700',
-        ellipsis: true,
         render: (rc) => rc.itemName ?? '— unknown item —',
         title: (rc) => rc.itemName ?? '',
       },
       {
         // Grade then size on one line — the stock this card is cut from, so the
         // master answers "what is it made of" without opening a card.
-        header: 'Grade / Size',
-        width: '15%',
+        header: 'RM Grade / RM Size',
         className: 'mono',
-        ellipsis: true,
         title: (rc) => `${rc.rawMaterialGradeText ?? '—'} / ${rc.rawMaterialSizeText ?? '—'}`,
         render: (rc) => (
           <>
@@ -197,20 +190,18 @@ function RouteCardsListPage(): React.JSX.Element {
           </>
         ),
       },
-      { header: 'Ops', width: '5%', className: 'mono', nowrap: true, key: 'opCount' },
+      { header: 'Ops', align: 'right', className: 'mono', nowrap: true, key: 'opCount' },
       {
         header: 'Route Card Rev',
-        width: '6%',
         className: 'mono fw-700',
         nowrap: true,
         render: (rc) => <span style={{ color: 'var(--cyan)' }}>R{rc.currentRevision}</span>,
       },
       {
         header: 'Last Updated',
-        width: '11%',
         className: 'mono text2',
         nowrap: true,
-        render: (rc) => new Date(rc.updatedAt).toISOString().slice(0, 10),
+        render: (rc) => fmtDate(rc.updatedAt),
       },
     ],
     [expanded, toggleExpand],
@@ -226,6 +217,7 @@ function RouteCardsListPage(): React.JSX.Element {
           stay put while the rows scroll underneath. */}
       <ListHeader
         title="Route Card Master"
+        icon="🗒"
         count={total}
         noun="card"
         search={searchInput}
@@ -235,25 +227,18 @@ function RouteCardsListPage(): React.JSX.Element {
         primary={
           perms.entry ? (
             <Link to="/route-cards/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> Add Route Card
+              <Icon name="plus" size={14} /> New Route Card
             </Link>
           ) : null
         }
       />
 
-      {/* Was a hand-tinted box carrying raw rgba() colours; it is the same
-          notice, drawn by the one Banner. */}
-      <Banner tone="info">
-        Route cards define the standard manufacturing sequence for each item. A card&apos;s
-        operations are <b>loaded into the plan</b> when you plan that item, and executing that plan
-        creates the Job Card. You can also create/edit route cards directly here. Revision history
-        is tracked on every save.
-      </Banner>
-
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load route cards.'}
+          message={
+            error instanceof Error ? error.message : 'Could not load Route Cards. Try again.'
+          }
         />
       ) : (
         <Panel bodyPadding="none">
@@ -261,22 +246,17 @@ function RouteCardsListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            empty={
-              <>
-                No route cards yet — click <strong>+ Add Route Card</strong>
-              </>
-            }
+            empty={search ? 'No Route Cards match.' : 'No Route Cards yet.'}
             onRowClick={(rc) => void navigate({ to: '/route-cards/$id', params: { id: rc.id } })}
             // The op sequence is fetched only for a row that is actually open —
             // returning null for a collapsed row means ExpandedOps (and its
             // detail query) never mounts for it.
             renderExpanded={(rc) => (expanded.has(rc.id) ? <ExpandedOps rcId={rc.id} /> : null)}
-            rowActionsWidth="10%"
+            rowActionsWidth="1%"
             rowActions={(rc) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/route-cards/${rc.id}`}
+                // Row click opens the card (no separate View). Edit is a ROUTE,
+                // so it stays a real link — ctrl-click still opens a new tab.
                 editTo={perms.edit ? `/route-cards/${rc.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // 🖨 Print is this screen's own action, not one of the three
@@ -299,10 +279,10 @@ function RouteCardsListPage(): React.JSX.Element {
                 // flight, which the old per-row mutation could not do.
                 deleteDisabled={del.isPending}
                 deleteConfirm={{
-                  title: `Delete route card for ${rc.itemCode ?? rc.code}?`,
-                  message: `${rc.code} and its ${rc.opCount} operation(s) are removed. Plans raised from it keep the ops they already copied.`,
-                  confirmLabel: 'Delete',
-                  pendingLabel: 'Deleting…',
+                  title: `Move Route Card ${rc.code} to Trash?`,
+                  message: `You can restore it from Trash. Plans raised from it keep the ops they already copied.`,
+                  confirmLabel: 'Move to Trash',
+                  pendingLabel: 'Moving to Trash…',
                 }}
               />
             )}
@@ -316,8 +296,7 @@ function RouteCardsListPage(): React.JSX.Element {
         limit={LIST_LIMIT}
         hint={
           <>
-            Click a row to open it · click ▸ before the <b>RC No.</b> to show its operation
-            sequence.
+            Click ▸ before the <b>RC No.</b> to show its operation sequence.
           </>
         }
       />
@@ -342,7 +321,7 @@ function ExpandedOps({ rcId }: { rcId: string }): React.JSX.Element {
         className="mono fw-700"
         style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)', marginBottom: 'var(--sp-1)' }}
       >
-        ▸ OPERATION SEQUENCE — {data.code}
+        ▸ Operation Sequence — {data.code}
       </div>
       <div style={{ display: 'flex', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>
         {data.ops.map((op, i) => {

@@ -51,9 +51,11 @@ import {
   type AccessTierKey,
 } from '@innovic/shared';
 import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useUpdateUser, useUser } from '@/modules/users/api';
-import { useSaveUserAccess, useUserAccess } from '../api';
+import { useSaveUserAccess, useUserAccess, useUserAccessList } from '../api';
+import { roleLabel } from '@/lib/role-label';
+import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
 
 interface Props {
   userId: string;
@@ -115,11 +117,11 @@ const OFF_SWITCH_DEPTS: readonly string[] = [
 // The full labels ("Editor / Executor", "Department Admin") are too long for a
 // single legend line; the fuller wording still shows on each segment's tooltip.
 const TIER_SHORT: Record<string, string> = {
-  L1: 'VIEWER',
-  L2: 'ENTRY',
-  L3: 'EDITOR',
-  L4: 'APPROVER',
-  L5: 'ADMIN',
+  L1: 'Viewer',
+  L2: 'Entry',
+  L3: 'Editor',
+  L4: 'Approver',
+  L5: 'Admin',
 };
 
 // Column template shared by the form checklist head and its rows so the
@@ -143,14 +145,14 @@ const ACTION_COLOR: Record<Action, string> = {
   price: 'var(--orange)',
 };
 
-// Short column captions. `price` shows as "SEE ₹" so the money column reads at
+// Short column captions. `price` shows as "See ₹" so the money column reads at
 // a glance without widening the table.
 const ACTION_LABEL: Record<Action, string> = {
-  view: 'VIEW',
-  entry: 'ENTRY',
-  edit: 'EDIT',
-  approve: 'APPROVE',
-  price: 'SEE ₹',
+  view: 'View',
+  entry: 'Entry',
+  edit: 'Edit',
+  approve: 'Approve',
+  price: 'See ₹',
 };
 
 const ACTION_HINT: Record<Action, string> = {
@@ -199,6 +201,17 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [copyFlash, setCopyFlash] = useState(false);
+  // "Copy access from…": pick another user, their saved matrix is read with the
+  // same per-user hook this box loads with, and poured into the form. Nothing
+  // is saved until Save Access — exactly like Paste Access.
+  const userList = useUserAccessList();
+  const [copyFromId, setCopyFromId] = useState<string | null>(null);
+  const copySource = useUserAccess(copyFromId);
+  const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
+  // "Discard changes?" — asked when the box is closed by ESC / the dim
+  // background / × after anything was touched. An admin who set five
+  // department tiers must not lose them to one mis-click.
+  const [askDiscard, setAskDiscard] = useState(false);
 
   // Only the approval limit comes from the user record now — the role is
   // derived on save, never read back into an input.
@@ -220,6 +233,24 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setForms(fillForms(data.forms));
     setExpanded(defaultExpanded(tiers, data.mainDept ?? ''));
   }, [data]);
+
+  // Load the picked user's matrix into the form once it arrives, then clear
+  // the picker so the same person can be picked again after further edits.
+  useEffect(() => {
+    const src = copySource.data;
+    if (!copyFromId || !src || src.userId !== copyFromId) return;
+    setFullAccess(src.fullAccess);
+    setAuditor(src.auditor);
+    setDrawingDownload(src.drawingDownload);
+    setMainDept(src.mainDept ?? '');
+    const tiers = loadDeptTiers(src.departments);
+    setDepartments(tiers);
+    setForms(fillForms(src.forms));
+    setExpanded(defaultExpanded(tiers, src.mainDept ?? ''));
+    const who = userList.data?.items.find((u) => u.userId === copyFromId);
+    setCopiedFrom(who?.userName ?? who?.userEmail ?? 'the selected user');
+    setCopyFromId(null);
+  }, [copyFromId, copySource.data, userList.data]);
 
   // "Standard" means neither of the two whole-account flags is on, so the
   // per-department tiers below are what count.
@@ -317,8 +348,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         approveOff: cur.approveOff,
       };
       for (const a of ACTIONS) {
-        const fromTier =
-          fullAccess || (auditor && (a === 'view' || a === 'price')) || base[a];
+        const fromTier = fullAccess || (auditor && (a === 'view' || a === 'price')) || base[a];
         if (own[a] && !fromTier) n++;
       }
       // A per-page action switched OFF below the tier is a hand-made change too,
@@ -494,7 +524,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       });
       onClose();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Save failed';
+      const msg = e instanceof Error ? e.message : 'Could not save access settings. Try again.';
       // The server refuses an admin demotion once, with the reason. Surface it
       // as a question rather than an error — the admin may well have meant it.
       if (msg.includes('is an admin')) setAdminWarning(msg);
@@ -507,29 +537,47 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // longer occur: the role now follows the tiers instead of capping them.
   const derivedRole = roleForAccess({ fullAccess, auditor, departments });
   const grantedCount = Object.keys(departments).length;
-  const tierLegend = ACCESS_TIERS.map((t) => `${t.key} ${TIER_SHORT[t.key] ?? t.label}`).join(' · ');
+  const tierLegend = ACCESS_TIERS.map((t) => `${t.key} ${TIER_SHORT[t.key] ?? t.label}`).join(
+    ' · ',
+  );
+
+  // Dirty = the form differs from what was loaded. Compared as JSON of the
+  // same fields the seed effects fill, so opening and closing untouched never
+  // asks.
+  const loadedSnapshot = useMemo(
+    () =>
+      data
+        ? JSON.stringify({
+            mainDept: data.mainDept ?? '',
+            approvalLimit: userDetail?.approvalLimit ?? '',
+            fullAccess: data.fullAccess,
+            auditor: data.auditor,
+            drawingDownload: data.drawingDownload,
+            departments: loadDeptTiers(data.departments),
+            forms: fillForms(data.forms),
+          })
+        : null,
+    [data, userDetail],
+  );
+  const dirty =
+    loadedSnapshot !== null &&
+    JSON.stringify({
+      mainDept,
+      approvalLimit,
+      fullAccess,
+      auditor,
+      drawingDownload,
+      departments,
+      forms,
+    }) !== loadedSnapshot;
+  function requestClose(): void {
+    if (dirty) setAskDiscard(true);
+    else onClose();
+  }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.45)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '4vh 16px',
-        zIndex: 60,
-      }}
-    >
-      <div
-        className="panel"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(1100px, 96vw)', maxHeight: '92vh', overflow: 'auto', marginBottom: 0 }}
-      >
+    <Modal title="Access Control" onClose={requestClose} bodyStyle={{ padding: 0 }}>
+      <div>
         {/* ── Header strip: user · role · home dept · PO limit · JSON clone ── */}
         <div
           style={{
@@ -546,31 +594,35 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="fw-700" style={{ fontSize: 14 }}>
-              🔒 Access Control
-            </span>
             <span className="fw-700" style={{ fontSize: 13 }}>
               {userName}
             </span>
             <span
               className={`badge ${roleBadgeClass(derivedRole)}`}
-              title="System role — worked out from the departments below, not chosen. This is the word the server checks on every save."
+              title="System role — worked out from the departments below, not chosen. This role decides what the user may do."
             >
-              {derivedRole}
+              {roleLabel(derivedRole)}
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              marginLeft: 'auto',
+              flexWrap: 'wrap',
+            }}
+          >
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>
-                Home dept
+                Home Dept
               </span>
               <select
                 className="innovic-select"
                 value={mainDept}
                 disabled={disabled}
                 onChange={(e) => changeMainDept(e.target.value)}
-                title="Sets this department to L3 Editor / Executor. Change the level, or add other departments, below."
                 style={{ fontSize: 12, fontWeight: 700, width: 130, padding: '5px 8px' }}
               >
                 <option value="">— none —</option>
@@ -580,13 +632,16 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   </option>
                 ))}
               </select>
+              <span className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                (sets L3)
+              </span>
             </label>
 
             {/* Moved here from User Management: the PO approval ceiling is an
                 approval right, and approval is an Access Control action now. */}
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>
-                PO limit ₹
+                PO Limit ₹
               </span>
               <input
                 className="innovic-input"
@@ -607,9 +662,41 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               />
             </label>
 
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <select
+                className="innovic-select"
+                aria-label="Copy access from another user"
+                title="Load another user's saved access into this form. Nothing is saved until Save Access."
+                value={copyFromId ?? ''}
+                disabled={Boolean(copyFromId) && !copySource.isError}
+                onChange={(e) => {
+                  setCopiedFrom(null);
+                  setCopyFromId(e.target.value || null);
+                }}
+                style={{ fontSize: 12, width: 'auto', padding: '4px 8px' }}
+              >
+                <option value="">{copyFromId ? 'Loading…' : 'Copy access from…'}</option>
+                {(userList.data?.items ?? [])
+                  .filter((u) => u.userId !== userId)
+                  .map((u) => (
+                    <option key={u.userId} value={u.userId}>
+                      {u.userName ?? u.userEmail}
+                      {u.isActive ? '' : ' (inactive)'}
+                    </option>
+                  ))}
+              </select>
+              {copiedFrom ? (
+                <span className="badge b-amber" role="status">
+                  Loaded from {copiedFrom} — Save to keep
+                </span>
+              ) : null}
+              {copySource.isError && copyFromId ? (
+                <span style={{ fontSize: 11, color: 'var(--red2)' }}>
+                  Could not load that user&apos;s access. Try again.
+                </span>
+              ) : null}
               <button type="button" className="btn btn-ghost btn-sm" onClick={handleCopyJson}>
-                <Copy size={13} /> {copyFlash ? 'Copied ✓' : 'Copy JSON'}
+                <Copy size={13} /> {copyFlash ? 'Copied ✓' : 'Copy Access'}
               </button>
               <button
                 type="button"
@@ -619,7 +706,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   setImportError(null);
                 }}
               >
-                <ClipboardPaste size={13} /> Paste JSON
+                <ClipboardPaste size={13} /> Paste Access
               </button>
             </div>
           </div>
@@ -630,8 +717,8 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
           </div>
         ) : isError ? (
-          <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load matrix'}
+          <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Could not load access settings. Try again.'}
           </div>
         ) : (
           <div style={{ padding: 14 }}>
@@ -645,7 +732,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   borderRadius: 8,
                 }}
               >
-                <div className="text3" style={{ fontSize: 10, marginBottom: 6 }}>
+                <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
                   Clone permissions from another user — copy there, paste here, then Save.
                 </div>
                 <textarea
@@ -657,7 +744,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}
                 />
                 {importError ? (
-                  <div style={{ marginTop: 6, color: 'var(--red)', fontSize: 11 }}>
+                  <div style={{ marginTop: 6, color: 'var(--red2)', fontSize: 11 }}>
                     {importError}
                   </div>
                 ) : null}
@@ -695,27 +782,16 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               }}
             >
               <span className="form-label" style={{ margin: 0 }}>
-                Access level
+                Access Level
               </span>
               <Seg
                 value={standard ? 'standard' : fullAccess ? 'full' : 'auditor'}
                 onChange={(v) => setLevel(v as 'standard' | 'full' | 'auditor')}
                 options={[
-                  {
-                    value: 'standard',
-                    label: 'Standard',
-                    title: 'Set a tier per department below.',
-                  },
-                  {
-                    value: 'full',
-                    label: 'L6 Super Admin',
-                    title: 'Everything, everywhere — ignores everything below.',
-                  },
-                  {
-                    value: 'auditor',
-                    label: 'L7 Auditor',
-                    title: 'Reads every department. Saves nothing, anywhere.',
-                  },
+                  // No tooltips: the side text below already says what each level does.
+                  { value: 'standard', label: 'Standard' },
+                  { value: 'full', label: 'L6 Super Admin' },
+                  { value: 'auditor', label: 'L7 Auditor' },
                 ]}
               />
               <span className="text3" style={{ fontSize: 11 }}>
@@ -725,7 +801,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                     ? 'Everything, everywhere — the worksheet below is ignored'
                     : 'Reads every department, writes nothing'}
               </span>
-              <span className="text3" style={{ fontSize: 11, marginLeft: 'auto', fontFamily: 'var(--mono)' }}>
+              <span
+                className="text3"
+                style={{ fontSize: 11, marginLeft: 'auto', fontFamily: 'var(--mono)' }}
+              >
                 {grantedCount} of {ACCESS_DEPTS.length} departments granted
               </span>
             </div>
@@ -759,7 +838,11 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               <div>
                 <label
                   htmlFor="ac-drawing-download"
-                  style={{ fontSize: 12, fontWeight: 700, cursor: fullAccess ? 'default' : 'pointer' }}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: fullAccess ? 'default' : 'pointer',
+                  }}
                 >
                   Can download drawing files
                 </label>
@@ -794,25 +877,25 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 <span
                   className="mono"
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     letterSpacing: '0.08em',
                     color: 'var(--text3)',
                     minWidth: 190,
                   }}
                 >
-                  DEPARTMENT
+                  Department
                 </span>
                 <span
                   className="mono"
-                  style={{ fontSize: 10, letterSpacing: '0.06em', color: 'var(--text3)', flex: 1 }}
+                  style={{ fontSize: 11, letterSpacing: '0.06em', color: 'var(--text3)', flex: 1 }}
                 >
-                  TIER — {tierLegend}
+                  Tier — {tierLegend}
                 </span>
                 <span
                   className="mono"
-                  style={{ fontSize: 10, letterSpacing: '0.08em', color: 'var(--text3)' }}
+                  style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--text3)' }}
                 >
-                  EXTRA
+                  Extra
                 </span>
               </div>
 
@@ -860,8 +943,11 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                           {d.label}
                         </span>
                         {isMain ? (
-                          <span className="tag" style={{ color: 'var(--amber2)', background: 'var(--amber3)' }}>
-                            HOME
+                          <span
+                            className="tag"
+                            style={{ color: 'var(--amber2)', background: 'var(--amber3)' }}
+                          >
+                            Home
                           </span>
                         ) : null}
                       </button>
@@ -891,7 +977,11 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                           textAlign: 'right',
                           color: extras > 0 ? 'var(--blue)' : 'var(--text3)',
                         }}
-                        title={extras > 0 ? `${extras} extra right(s) on top of the tier` : 'No extras beyond the tier'}
+                        title={
+                          extras > 0
+                            ? `${extras} extra right(s) on top of the tier`
+                            : 'No extras beyond the tier'
+                        }
                       >
                         {extras > 0 ? `+${extras}` : '—'}
                       </span>
@@ -899,41 +989,47 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
 
                     {/* Form / feature checklist for this department */}
                     {isOpen ? (
-                      <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}>
+                      <div
+                        style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}
+                      >
                         {/* Money starts at a different level depending on the
                             department, so say which one applies here rather
                             than making the admin remember the rule. */}
                         <div
                           style={{
                             padding: '5px 12px 5px 30px',
-                            fontSize: 10,
+                            fontSize: 11,
                             color: 'var(--text3)',
                             borderBottom: '1px solid var(--border)',
                           }}
                         >
                           <span style={{ color: 'var(--orange2)', fontWeight: 700 }}>
                             ₹ from {priceStartTier(d.key)}
-                          </span>{' '}
-                          — in {d.label}, prices show from {priceStartTier(d.key)} upwards.
-                          {priceStartTier(d.key) === 'L3'
-                            ? ' L2 here is data entry only and sees no money.'
-                            : ' This department works with the money itself.'}{' '}
-                          Click a ticked ₹ box to hide money on that one form.
+                          </span>
                           {OFF_SWITCH_DEPTS.includes(d.key) ? (
                             <>
-                              {' '}
-                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>
-                                Per-page switches:
+                              {' · '}
+                              <span style={{ color: 'var(--text2)', fontWeight: 700 }}>
+                                grey dot
                               </span>{' '}
-                              untick any box to remove that action for one page. A{' '}
-                              <span style={{ color: 'var(--text2)', fontWeight: 700 }}>grey dot</span> marks
-                              a box switched off here, a{' '}
-                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>blue dot</span> one
-                              added above the tier; a plain box is just the tier. Untick{' '}
-                              <strong>View</strong> to hide the whole page. Changing the tier resets
-                              this department&rsquo;s pages to the new level.
+                              = switched off{' · '}
+                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>
+                                blue dot
+                              </span>{' '}
+                              = added
                             </>
-                          ) : null}
+                          ) : null}{' '}
+                          <span
+                            style={{ cursor: 'help', fontWeight: 700 }}
+                            title={
+                              `Prices show from ${priceStartTier(d.key)} upwards. Click a ticked ₹ box to hide money on that one form.` +
+                              (OFF_SWITCH_DEPTS.includes(d.key)
+                                ? ' Untick any box to remove that action for one page; untick View to hide the whole page. Changing the tier resets this department’s pages to the new level.'
+                                : '')
+                            }
+                          >
+                            ?
+                          </span>
                         </div>
                         <div
                           style={{
@@ -945,9 +1041,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                         >
                           <span
                             className="mono"
-                            style={{ fontSize: 9, letterSpacing: '0.08em', color: 'var(--text3)' }}
+                            style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--text3)' }}
                           >
-                            FORM / FEATURE
+                            Form / Feature
                           </span>
                           {ACTIONS.map((a) => (
                             <span
@@ -955,7 +1051,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                               className="mono"
                               title={ACTION_HINT[a]}
                               style={{
-                                fontSize: 9,
+                                fontSize: 11,
                                 letterSpacing: '0.06em',
                                 color: a === 'price' ? 'var(--orange2)' : 'var(--text3)',
                                 textAlign: 'center',
@@ -964,7 +1060,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                             >
                               {a === 'price' ? (
                                 <>
-                                  SEE{' '}
+                                  See{' '}
                                   <span
                                     style={{
                                       fontSize: 14,
@@ -1058,7 +1154,11 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                 // for this page (money-hide included, any department);
                                 // blue dot = added above the tier (OFF-switch depts).
                                 // A plain empty box is just the tier — no dot.
-                                const marker = removed ? 'removed' : added && offDept ? 'added' : null;
+                                const marker = removed
+                                  ? 'removed'
+                                  : added && offDept
+                                    ? 'added'
+                                    : null;
                                 return (
                                   <span key={action} style={{ textAlign: 'center' }}>
                                     <input
@@ -1130,7 +1230,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   background: 'var(--bg3)',
                   border: '1px solid var(--amber)',
                   borderRadius: 6,
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   fontSize: 12,
                 }}
               >
@@ -1156,18 +1256,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             ) : null}
 
             {submitError ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: '8px 12px',
-                  background: 'var(--red3)',
-                  border: '1px solid var(--red)',
-                  borderRadius: 6,
-                  color: 'var(--red)',
-                  fontSize: 12,
-                }}
-              >
-                {submitError}
+              <div style={{ marginTop: 12 }}>
+                <Banner tone="error" role="alert">
+                  {submitError}
+                </Banner>
               </div>
             ) : null}
 
@@ -1181,10 +1273,6 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 flexWrap: 'wrap',
               }}
             >
-              <span className="text3" style={{ fontSize: 11 }}>
-                Tier grants the grey ticks; extra ticks add rights on top of it. To take a right
-                away, lower the tier.
-              </span>
               <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
                   Cancel
@@ -1208,7 +1296,20 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           </div>
         )}
       </div>
-    </div>
+      {askDiscard ? (
+        <ConfirmDialog
+          title="Discard changes?"
+          message={`The access changes made for ${userName} are not saved yet.`}
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          onConfirm={() => {
+            setAskDiscard(false);
+            onClose();
+          }}
+          onCancel={() => setAskDiscard(false)}
+        />
+      ) : null}
+    </Modal>
   );
 }
 

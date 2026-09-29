@@ -11,10 +11,10 @@
 // immediately (they are the approver), and can decide a pending request from
 // this card without walking to Settings → Approvals.
 
-import type { OpLog, OpLogTimeChangeRequest } from '@innovic/shared';
+import { SHIFT_LABELS, type OpLog, type OpLogTimeChangeRequest } from '@innovic/shared';
 import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
-import { todayIst } from '@/lib/date';
+import { fmtDate, fmtDateAndTime, fmtDateTime, todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests, useUpdateOpLogTiming } from '../api';
 
@@ -28,8 +28,8 @@ interface Props {
 
 const TYPE_LABEL: Record<OpLog['logType'], string> = {
   start: 'Start',
-  complete: 'Complete',
-  qc: 'QC',
+  complete: 'Completed',
+  qc: 'QC Inspection',
 };
 
 // Card type-badge palette — tokens only (no hard-coded hex).
@@ -42,7 +42,7 @@ const TYPE_STYLE: Record<OpLog['logType'], { bg: string; fg: string }> = {
 const hhmm = (t: string | null): string => (t ? t.slice(0, 5) : '');
 
 function whenLabel(date: string, time: string | null): string {
-  return time ? `${date} ${hhmm(time)}` : date;
+  return fmtDateAndTime(date, time);
 }
 
 export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Element {
@@ -81,7 +81,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
     // entry can, so it is bounded the same way. The server refuses it too
     // (assertNotFutureDate in op-entry/service.ts) -- this is the early word.
     if (draftDate > todayIst()) {
-      setNotice('Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.');
+      setNotice('Log Date cannot be in the future.');
       return;
     }
     retime.mutate(
@@ -114,7 +114,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 11,
-            color: 'var(--amber)',
+            color: 'var(--amber2)',
           }}
         >
           ⏳ {notice}
@@ -169,10 +169,8 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     style={{
                       background: ts.bg,
                       color: ts.fg,
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em',
                       padding: '2px 7px',
                       borderRadius: 999,
                       whiteSpace: 'nowrap',
@@ -202,16 +200,18 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     </div>
                   ) : (
                     <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
-                      {l.logDate}
+                      {fmtDate(l.logDate)}
                       {hhmm(l.startTime) ? ` · ${hhmm(l.startTime)}` : ''}
                     </span>
                   )}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="mono" style={{ fontSize: 12 }} title="Qty done / rejected">
+                  <span className="mono" style={{ fontSize: 12 }} title="Completed / Rejected">
                     {l.qty}
-                    {l.rejectQty ? <span style={{ color: 'var(--red)' }}> · rej {l.rejectQty}</span> : null}
+                    {l.rejectQty ? (
+                      <span style={{ color: 'var(--red2)' }}> · Rejected {l.rejectQty}</span>
+                    ) : null}
                   </span>
                   {/* Row action — edit / approve / reject. Logic preserved from
                       the table version. */}
@@ -249,7 +249,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                       </span>
                     )
                   ) : req ? (
-                    <span className="text3" style={{ fontSize: 10 }}>
+                    <span className="text3" style={{ fontSize: 11 }}>
                       awaiting approval
                     </span>
                   ) : (
@@ -271,7 +271,13 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   machine. A QC entry carries neither and keeps the bare dash. */}
               <div
                 className="text3"
-                style={{ fontSize: 11, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}
+                style={{
+                  fontSize: 11,
+                  display: 'flex',
+                  gap: 6,
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                }}
               >
                 {(() => {
                   const actual = l.machineCode ?? l.machineCodeText ?? null;
@@ -293,7 +299,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                 <span>·</span>
                 <span style={{ color: 'var(--text2)' }}>{l.operatorName ?? '—'}</span>
                 <span>·</span>
-                <span style={{ textTransform: 'uppercase' }}>{l.shift}</span>
+                <span>{SHIFT_LABELS[l.shift]}</span>
               </div>
 
               {/* Remarks + retimed marker (display only, not while editing) */}
@@ -306,10 +312,8 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   {l.timingEditedAt ? (
                     <span
                       className="text3"
-                      style={{ fontSize: 10, marginLeft: 4 }}
-                      title={`Date/time corrected on ${new Date(
-                        l.timingEditedAt,
-                      ).toLocaleString()}. Qty unchanged.`}
+                      style={{ fontSize: 11, marginLeft: 4 }}
+                      title={`Date/time corrected on ${fmtDateTime(l.timingEditedAt)}. Qty unchanged.`}
                     >
                       (retimed)
                     </span>
@@ -320,7 +324,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
               {/* Pending-change line */}
               {!editing && req ? (
                 <div
-                  style={{ fontSize: 10, color: 'var(--amber)', wordBreak: 'break-word' }}
+                  style={{ fontSize: 11, color: 'var(--amber2)', wordBreak: 'break-word' }}
                   title={req.reason ?? ''}
                 >
                   <Clock className="mr-1 inline h-3 w-3" />
@@ -415,7 +419,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
       )}
 
       {retime.isError || decide.isError ? (
-        <div style={{ color: 'var(--red)', fontSize: 11, padding: '6px 4px' }}>
+        <div style={{ color: 'var(--red2)', fontSize: 11, padding: '6px 4px' }}>
           {(retime.error ?? decide.error)?.message}
         </div>
       ) : null}

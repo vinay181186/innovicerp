@@ -87,7 +87,7 @@ export const THUMBNAIL_COL_WIDTH = '8%';
 export function ItemThumbnailHeader(): React.JSX.Element {
   return (
     <th
-      style={{ width: THUMBNAIL_COL_WIDTH, padding: '8px 2px', fontSize: 10, overflow: 'hidden' }}
+      style={{ width: THUMBNAIL_COL_WIDTH, padding: '8px 2px', fontSize: 11, overflow: 'hidden' }}
       title="Product image"
     >
       Thumbnail

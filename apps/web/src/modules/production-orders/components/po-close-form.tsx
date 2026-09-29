@@ -67,7 +67,10 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
       },
       {
         onSuccess: (closed) => onClosed?.(closed),
-        onError: (e) => setError(e instanceof Error ? e.message : 'Close failed.'),
+        onError: (e) =>
+          setError(
+            e instanceof Error ? e.message : 'Could not close the Production Order. Try again.',
+          ),
       },
     );
   };
@@ -87,13 +90,13 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
         }}
       >
         <span>
-          Available to close{' '}
+          Available{' '}
           <b className="mono" style={{ color: 'var(--text)' }}>
             {po.availableToClose}
           </b>
         </span>
         <span>
-          Credited so far{' '}
+          Credited{' '}
           <b className="mono" style={{ color: 'var(--text)' }}>
             {po.creditedQty ?? 0}
           </b>{' '}
@@ -103,7 +106,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           </b>
         </span>
         <span>
-          Remaining{' '}
+          Pending{' '}
           <b className="mono" style={{ color: 'var(--text)' }}>
             {po.remainingQty}
           </b>
@@ -118,7 +121,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
         {finish ? null : (
           <div className="form-grp">
             <label className="form-label" htmlFor={`close-qty-${po.id}`}>
-              Qty to close now<span className="req">★</span>
+              Qty to Close<span className="req">★</span>
             </label>
             <input
               id={`close-qty-${po.id}`}
@@ -131,15 +134,13 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
               onChange={(e) => setQty(e.target.value)}
               style={{ textAlign: 'right' }}
             />
-            <div className="form-help">
-              Defaults to all {max} available. Credits this many pieces to stock.
-            </div>
+            <div className="form-help">Credited to stock.</div>
           </div>
         )}
 
         <div className={finish ? 'form-grp form-full' : 'form-grp form-span-2'}>
           <label className="form-label" htmlFor={`close-remarks-${po.id}`}>
-            {finish ? 'Reason for finishing short' : 'Remarks'}
+            {finish ? 'Reason' : 'Remarks'}
             {finish ? <span className="req">★</span> : null}
           </label>
           <input
@@ -147,9 +148,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
             className="innovic-input"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
-            placeholder={
-              finish ? 'e.g. 3 pieces scrapped at final inspection' : 'Optional note…'
-            }
+            placeholder={finish ? 'e.g. 3 pieces scrapped at final inspection' : 'Optional note…'}
           />
         </div>
       </div>
@@ -176,23 +175,22 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           style={{ marginTop: 2 }}
         />
         <span>
-          <b style={{ color: 'var(--amber)' }}>Close short (finish)</b>
+          <b style={{ color: 'var(--amber2)' }}>Finish Short</b>
           <span className="text3">
             {' '}
-            — finish this Production Order now even though {po.remainingQty} of {po.orderQty} are
-            not made. The shortfall is recorded as lost; give the reason above.
+            — finish now; {po.remainingQty} of {po.orderQty} not made are recorded as lost.
           </span>
         </span>
       </label>
 
       {!remarksValid ? (
         <div className="form-error" style={{ marginTop: 8 }}>
-          A reason is required when finishing short.
+          Reason is required.
         </div>
       ) : null}
       {!finish && !qtyValid && qty.trim() !== '' ? (
         <div className="form-error" style={{ marginTop: 8 }}>
-          Enter a whole qty between 1 and {max}.
+          Qty to Close must be a whole number from 1 to {max}.
         </div>
       ) : null}
 
@@ -201,7 +199,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           role="alert"
           style={{
             marginTop: 10,
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
             borderRadius: 6,
@@ -226,12 +224,8 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
               : `Credit ${qtyValid ? qtyNum : 0} of ${po.availableToClose} to stock`
           }
         >
-          {closeMut.isPending ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Lock size={14} />
-          )}{' '}
-          {finish ? 'Close short (finish)' : 'Close'}
+          {closeMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}{' '}
+          {finish ? 'Finish Short' : 'Close'}
         </button>
       </div>
     </div>

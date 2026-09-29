@@ -14,6 +14,7 @@ export const designProjectSummaryReport: RegisteredReport = {
     description:
       'Per-project rollup: tasks done/total, open issues, checklist progress, logged hours, target date.',
     group: 'Design',
+    dept: 'design',
     filters: [
       {
         key: 'status',

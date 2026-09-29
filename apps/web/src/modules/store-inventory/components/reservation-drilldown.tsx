@@ -13,8 +13,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { fmtDate } from '@/lib/print/doc-print';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtDate } from '@/lib/date';
 import { useStockReservations } from '@/modules/plans/api';
 import { ModalShell } from './modal-shell';
 
@@ -65,14 +64,15 @@ export function ReservationDrilldown({
   const { data, isLoading, isError, error } = useStockReservations({ itemId });
 
   return (
+    // The item is named once, in the title — every row is the same item.
     <ModalShell onClose={onClose} title={`Reserved Stock — ${itemCode} (${itemName})`}>
       {isLoading ? (
         <div className="text3" style={{ fontSize: 12 }}>
           <Loader2 size={14} className="inline animate-spin" /> Loading…
         </div>
       ) : isError ? (
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load reservations'}
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          {error instanceof Error ? error.message : 'Could not load reservations. Try again.'}
         </div>
       ) : (
         <>
@@ -81,11 +81,6 @@ export function ReservationDrilldown({
             <b className="mono" style={{ color: 'var(--purple)', fontSize: 16 }}>
               {data?.totalReserved ?? 0}
             </b>
-            <span className="text3">
-              {' '}
-              — promised to the lines below. These pieces are still on the shelf; Physical only
-              changes when they are dispatched or issued.
-            </span>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -96,14 +91,19 @@ export function ReservationDrilldown({
                   {/* POL — the CUSTOMER's own purchase-order line number, an
                       extra value beside our SO line number. */}
                   <th style={{ color: 'var(--purple)' }}>POL</th>
+                  {/* REV — the drawing revision on that SO line. */}
+                  <th>REV</th>
                   <th>Customer</th>
-                  <th>Item Code</th>
-                  <th style={{ color: 'var(--purple)' }}>Reserved</th>
-                  <th>Consumed</th>
-                  <th style={{ color: 'var(--green)' }}>Pending</th>
+                  <th className="th-num" style={{ color: 'var(--purple)' }}>
+                    Reserved
+                  </th>
+                  <th className="th-num">Consumed</th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    Pending
+                  </th>
                   <th>Source</th>
                   <th>Reservation Status</th>
-                  <th>Production Order No</th>
+                  <th>Production Order No.</th>
                   <th>JC No.</th>
                   <th>Reserved On</th>
                   <th>Reserved By</th>
@@ -133,10 +133,11 @@ export function ReservationDrilldown({
                           <PlainRef code={row.soCodeText} />
                         )}
                       </td>
-                      <td className="mono text3">{row.lineNo}</td>
+                      <td className="mono text3">{row.lineNo ?? '—'}</td>
                       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                         {row.clientPoLineNo ?? '—'}
                       </td>
+                      <td className="mono fw-700">{row.itemRevision ?? '—'}</td>
                       <td
                         style={{
                           maxWidth: 160,
@@ -147,15 +148,11 @@ export function ReservationDrilldown({
                       >
                         {row.customerName ?? '—'}
                       </td>
-                      {/* Item code is the main thing: strong mono, darkest text. */}
-                      <td className="mono fw-700" style={{ color: 'var(--text)' }}>
-                        {itemCodeWithRev(row.itemCode, row.itemRevision)}
-                      </td>
-                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      <td className="mono fw-700 td-num" style={{ color: 'var(--purple)' }}>
                         {row.qty}
                       </td>
-                      <td className="mono text3">{row.consumedQty}</td>
-                      <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                      <td className="mono text3 td-num">{row.consumedQty}</td>
+                      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                         {row.remainingQty}
                       </td>
                       <td style={{ fontSize: 11 }}>{RESERVATION_SOURCE_LABEL[row.source]}</td>

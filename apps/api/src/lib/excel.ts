@@ -43,6 +43,27 @@ export interface BuildWorkbookInput {
   generatedAt: string;
 }
 
+// Screen words for the summary aggregate (wording clean-up 2026-09-26).
+// Display only — the stored function codes (SUM, AVG …) are unchanged.
+const AGG_FUNCTION_LABELS: Record<string, string> = {
+  SUM: 'Sum',
+  COUNT: 'Count',
+  AVG: 'Average',
+  MIN: 'Min',
+  MAX: 'Max',
+};
+
+/** "Sum of Order Qty" — the aggregate in words, using the column's label
+ *  (the raw key only if the column is not among the exported ones). */
+function aggregateLabel(input: BuildWorkbookInput): string | null {
+  if (!input.summaryColumn) return null;
+  const fn = input.summaryFunction ?? 'SUM';
+  const fnLabel = AGG_FUNCTION_LABELS[fn] ?? fn;
+  const colLabel =
+    input.columns.find((c) => c.key === input.summaryColumn)?.label ?? input.summaryColumn;
+  return `${fnLabel} of ${colLabel}`;
+}
+
 export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Innovic ERP';
@@ -99,9 +120,7 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
   // ─── Sheet 2: Summary (only when groupBy is set) ───────────────────────
   if (input.summary && input.summary.length > 0) {
     const summary = wb.addWorksheet('Summary');
-    const aggLabel = input.summaryColumn
-      ? `${input.summaryFunction ?? 'SUM'} of ${input.summaryColumn}`
-      : null;
+    const aggLabel = aggregateLabel(input);
     summary.columns = [
       { header: 'Group', key: 'group', width: 24 },
       { header: 'Count', key: 'count', width: 14 },
@@ -144,7 +163,7 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
   info.getRow(1).font = { bold: true };
 
   info.addRow({ k: 'Report', v: input.title });
-  info.addRow({ k: 'Id / slug', v: input.id });
+  info.addRow({ k: 'Report ID', v: input.id });
   info.addRow({ k: 'Records', v: input.rows.length });
   info.addRow({
     k: 'Columns',
@@ -153,9 +172,7 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
   if (input.summary && input.summary.length > 0) {
     info.addRow({
       k: 'Summary',
-      v: input.summaryColumn
-        ? `${input.summaryFunction ?? 'SUM'} of ${input.summaryColumn} grouped`
-        : 'Group count only',
+      v: input.summaryColumn ? `${aggregateLabel(input)} by group` : 'Group count only',
     });
   }
   info.addRow({ k: '', v: '' });

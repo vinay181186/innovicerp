@@ -30,7 +30,6 @@ import { Link } from '@tanstack/react-router';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcOpFlowCards } from './jc-stat-tiles';
-import { JcStatusBadge } from './jc-status-badge';
 import { fmtJcDate } from '../lib/fmt-jc-date';
 
 /** The quiet caption in front of a value (`Drawing`, `Due Date`, …). */
@@ -58,7 +57,7 @@ function Kv({ label, children }: { label: string; children: React.ReactNode }): 
   );
 }
 
-/** One KPI tile — big mono number over a small uppercase caption. `tone`
+/** One KPI tile — big mono number over a small caption. `tone`
  *  only tints it (background, border, number colour); the size never moves. */
 function KpiTile({
   label,
@@ -116,11 +115,9 @@ function KpiTile({
       </div>
       <div
         style={{
-          fontSize: 9.5,
+          fontSize: 11,
           color: 'var(--text3)',
           marginTop: 2,
-          textTransform: 'uppercase',
-          letterSpacing: '.05em',
           whiteSpace: 'nowrap',
         }}
       >
@@ -156,7 +153,6 @@ export function JcViewSummary({
   ops,
   opsLoaded,
   sortedOps,
-  rmAvailable,
   actualSize,
   drawing,
   onOpenDrawing,
@@ -167,8 +163,8 @@ export function JcViewSummary({
    *  tiles (WIP, Rejected) show "—" then rather than a zero that means nothing. */
   opsLoaded: boolean;
   sortedOps: JcOpEnriched[];
-  /** ADR-103 client material still workable on this JWSO Job Card. Null/absent
-   *  on SO-sourced and pre-cutover Job Cards — the RM line is then not shown. */
+  /** Still passed by the edit screen; the header no longer shows it — the
+   *  first op card's Customer Material chip carries the figure. */
   rmAvailable?: JobCardRmAvailable | null;
   /** ADR-182 — the size the store really had / really cut, typed on the
    *  Production Order that built this card. Null on a card no order built, or
@@ -176,9 +172,8 @@ export function JcViewSummary({
    *  what was PLANNED. */
   actualSize?: string | null;
   drawing: JcDrawingRef | null;
-  /** Opens the shared drawing preview — from the `👁 Open drawing` button
-   *  under the product picture, the drawing thumbnail (image drawings only),
-   *  or the Documents tab's Drawing card. */
+  /** Opens the shared drawing preview — from the drawing thumbnail (image
+   *  drawings) or the file name on the Drawing row (PDF / DWG). */
   onOpenDrawing: () => void;
 }): React.JSX.Element {
   // ── KPI tiles ──
@@ -288,6 +283,24 @@ export function JcViewSummary({
                   {jc.rawMaterialSizeText || '—'}
                 </span>
               </div>
+              {/* ADR-193 phase 3a — the RM ITEM the store issues, and how much
+                  this card needs (qty per piece × card qty). */}
+              {jc.rawMaterialItemId ? (
+                <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+                  <span style={{ color: 'var(--text3)', flexShrink: 0 }}>RM Item:</span>
+                  <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                    {jc.rawMaterialItemCode ?? '—'}
+                  </span>
+                  {jc.rmQtyPerPiece != null ? (
+                    <span style={{ color: 'var(--text3)' }}>
+                      {jc.rmQtyPerPiece} per piece · Required{' '}
+                      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                        {Math.round(jc.rmQtyPerPiece * jc.orderQty * 10000) / 10000}
+                      </span>
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               {/* ADR-182 — what was ACTUALLY cut, beside the planned size
                   above. Only shown when the Production Order recorded one. */}
               {actualSize ? (
@@ -304,11 +317,11 @@ export function JcViewSummary({
               ) : null}
             </div>
           </ItemBadge>
-          {/* Drawing controls — the open button, and the thumbnail when the
-              drawing is an image (a PDF has none); both open the same preview
-              the Documents tab's Drawing card does. Never `download`: opening
-              a thumbnail is nobody keeping a copy. */}
-          {drawing ? (
+          {/* Drawing thumbnail when the drawing is an image (a PDF has none —
+              its file name on the Drawing row opens it instead). Opens the
+              shared preview. Never `download`: opening a thumbnail is nobody
+              keeping a copy. */}
+          {drawing?.thumbUrl ? (
             <div
               style={{
                 marginTop: 6,
@@ -320,33 +333,23 @@ export function JcViewSummary({
             >
               <button
                 type="button"
-                className="btn btn-ghost btn-sm"
                 onClick={onOpenDrawing}
-                title={`Open this drawing — ${drawing.fileName}`}
+                title={`Open this drawing — ${drawing.label}`}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--border2)',
+                  borderRadius: 8,
+                  padding: 2,
+                  cursor: 'pointer',
+                  lineHeight: 0,
+                }}
               >
-                👁 Open drawing
+                <img
+                  src={drawing.thumbUrl}
+                  alt={`${drawing.label} drawing`}
+                  style={{ maxHeight: 56, maxWidth: 116, borderRadius: 6, display: 'block' }}
+                />
               </button>
-              {drawing.thumbUrl ? (
-                <button
-                  type="button"
-                  onClick={onOpenDrawing}
-                  title={`Open this drawing — ${drawing.label}`}
-                  style={{
-                    background: 'none',
-                    border: '1px solid var(--border2)',
-                    borderRadius: 8,
-                    padding: 2,
-                    cursor: 'pointer',
-                    lineHeight: 0,
-                  }}
-                >
-                  <img
-                    src={drawing.thumbUrl}
-                    alt={`${drawing.label} drawing`}
-                    style={{ maxHeight: 56, maxWidth: 116, borderRadius: 6, display: 'block' }}
-                  />
-                </button>
-              ) : null}
             </div>
           ) : null}
         </div>
@@ -376,17 +379,26 @@ export function JcViewSummary({
                   {drawing.label}
                 </span>
                 {drawing.thumbUrl ? null : (
-                  <div
+                  <button
+                    type="button"
+                    onClick={onOpenDrawing}
+                    title={`Open this drawing — ${drawing.fileName}`}
                     style={{
+                      display: 'block',
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      font: 'inherit',
                       fontSize: 11,
                       fontWeight: 400,
-                      color: 'var(--text2)',
+                      color: 'var(--blue)',
                       overflowWrap: 'anywhere',
                     }}
-                    title={drawing.fileName}
                   >
-                    📄 {drawing.fileName} — open it to view
-                  </div>
+                    📄 {drawing.fileName}
+                  </button>
                 )}
               </>
             ) : (
@@ -438,13 +450,13 @@ export function JcViewSummary({
                   {jc.routeCardCode}
                 </Link>
                 {jc.routeCardRevision != null ? (
-                  <span className="badge b-grey" style={{ fontSize: 9, padding: '1px 7px' }}>
-                    Rev {jc.routeCardRevision}
+                  <span className="badge b-grey" style={{ fontSize: 11, padding: '1px 7px' }}>
+                    Route Card Rev {jc.routeCardRevision}
                   </span>
                 ) : null}
               </span>
             ) : (
-              <span style={{ color: 'var(--amber)' }}>none</span>
+              <span style={{ color: 'var(--amber2)' }}>None</span>
             )}
           </Kv>
           {/* ADR-170 — the Production Order that built this card. Only such a
@@ -452,7 +464,7 @@ export function JcViewSummary({
               OSP GRN), so the link is the operator's cue for where "finished"
               actually lands. Old cards carry null and show a dash. The
               customer's PO line (POL) sits beside it, as before. */}
-          <Kv label="Prod. Order">
+          <Kv label="Production Order">
             {jc.productionOrderId && jc.productionOrderCode ? (
               <Link
                 to="/production-orders/$id"
@@ -476,8 +488,9 @@ export function JcViewSummary({
               the recovery kind as a badge). Neither fact renders on an
               ordinary card, so nothing else in the column moves. The amber
               RecoveryBanner above the header stays; this is the at-a-glance
-              fact beside the other references. */}
-          {jc.parentJobCardId ? (
+              fact beside the other references; a recovery child's parent is
+              already named in that banner, so the row is skipped then. */}
+          {jc.parentJobCardId && !jc.recoveryKind ? (
             <Kv label="Parent JC">
               <Link
                 to="/job-cards/$id"
@@ -509,13 +522,18 @@ export function JcViewSummary({
                   {c.recoveryKind ? (
                     <span
                       className={`badge ${c.recoveryKind === 'rework' ? 'b-amber' : 'b-blue'}`}
-                      style={{ fontSize: 9, padding: '1px 7px' }}
+                      style={{ fontSize: 11, padding: '1px 7px' }}
                     >
-                      {c.recoveryKind === 'rework' ? 'REWORK' : 'REPAIR'}
+                      {c.recoveryKind === 'rework' ? 'Rework' : 'Repair'}
                     </span>
                   ) : null}
                 </div>
               ))}
+            </Kv>
+          ) : null}
+          {jc.remarks ? (
+            <Kv label="Remarks">
+              <span style={{ fontWeight: 400, whiteSpace: 'pre-wrap' }}>{jc.remarks}</span>
             </Kv>
           ) : null}
         </div>
@@ -536,21 +554,20 @@ export function JcViewSummary({
               label="Completed"
               value={completed}
               tone="green"
-              title="Pieces through the LAST operation — finished goods are counted only after the last op"
+              title="Through the last op."
             />
             <KpiTile
-              label="WIP"
+              label="In Progress"
               value={wip ?? '—'}
               tone="blue"
-              title="Pieces released by the first operation and not yet through the last one (first-op done − completed)"
+              title="Started, not yet finished."
             />
             <KpiTile
               label="Rejected"
               value={rejected ?? '—'}
               tone="red"
               title={
-                `Pieces rejected and not recovered: still open on an NC or scrapped, summed over every operation.` +
-                (openNcCount > 0 ? ` ${openNcCount} NC(s) open.` : '')
+                'Rejected, not recovered.' + (openNcCount > 0 ? ` ${openNcCount} NC(s) open.` : '')
               }
             />
             {/* Amber while pieces are still owed; green once the order is
@@ -559,35 +576,9 @@ export function JcViewSummary({
               label="Pending"
               value={pending}
               tone={pending > 0 ? 'amber' : 'green'}
-              title="Order qty − completed"
+              title="Order Qty − Completed"
             />
           </div>
-          {/* ADR-103 — client material still workable on this job card. */}
-          {rmAvailable ? (
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: 11.5,
-                color: rmAvailable.availableQty > 0 ? 'var(--text3)' : 'var(--red)',
-                fontWeight: rmAvailable.availableQty > 0 ? 400 : 700,
-              }}
-              title={
-                `Client material issued to this job card: ${rmAvailable.issuedQty}. ` +
-                `Already produced on the first operation: ${rmAvailable.consumedQty}. ` +
-                (rmAvailable.availableQty > 0
-                  ? `${rmAvailable.availableQty} can still be worked.`
-                  : 'Issue more client material from Party Material Issue to continue.')
-              }
-            >
-              RM avail{' '}
-              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                {rmAvailable.availableQty}
-              </span>
-              {rmAvailable.availableQty === 0
-                ? ' · issue material'
-                : ` of ${rmAvailable.issuedQty} issued`}
-            </div>
-          ) : null}
         </div>
 
         {/* ── Column 4: due date · priority · overall status · where it is
@@ -609,16 +600,16 @@ export function JcViewSummary({
             className="fw-700"
             style={{ fontSize: 12.5, whiteSpace: 'nowrap', textAlign: 'right' }}
           >
-            📅 {jc.dueDate ? fmtJcDate(jc.dueDate) : '—'}
+            {jc.dueDate ? fmtJcDate(jc.dueDate) : '—'}
           </div>
           {/* The plan's Customer Dispatch Date (the date the dispatch team
               works to) — "—" on a card with no plan or no date. */}
-          <div style={kvLabel}>Customer Dispatch</div>
+          <div style={kvLabel}>Customer Dispatch Date</div>
           <div
             className="fw-700"
             style={{ fontSize: 12.5, whiteSpace: 'nowrap', textAlign: 'right' }}
           >
-            🚚 {jc.customerDispatchDate ? fmtJcDate(jc.customerDispatchDate) : '—'}
+            {jc.customerDispatchDate ? fmtJcDate(jc.customerDispatchDate) : '—'}
           </div>
           <div style={kvLabel}>Priority</div>
           <div style={{ textAlign: 'right' }}>
@@ -626,25 +617,21 @@ export function JcViewSummary({
               {jc.priority === 'high' ? '↑ High' : 'Normal'}
             </span>
           </div>
-          <div style={kvLabel}>Overall Status</div>
-          <div style={{ textAlign: 'right' }}>
-            <JcStatusBadge status={jc.computedStatus} />
-          </div>
-          <div style={kvLabel}>Waiting at</div>
+          <div style={kvLabel}>Current Op</div>
           <div className="fw-700" style={{ fontSize: 12.5, textAlign: 'right' }}>
             {stuck ? (
               <>
-                Op{opSrNo(stuck.opSeq)} · {stuckWhere}
+                Op {opSrNo(stuck.opSeq)} · {stuckWhere}
                 {stuckRunningOn?.differs ? (
                   <>
                     {' '}
                     · running on{' '}
-                    <span style={{ color: 'var(--amber)' }}>{stuckRunningOn.label}</span>
+                    <span style={{ color: 'var(--amber2)' }}>{stuckRunningOn.label}</span>
                   </>
                 ) : null}
               </>
             ) : (
-              <span style={{ color: 'var(--green)' }}>All operations complete</span>
+              <span style={{ color: 'var(--green2)' }}>All operations complete</span>
             )}
           </div>
         </div>
@@ -684,7 +671,7 @@ export function SectionBar({
           color: 'var(--blue2)',
         }}
       >
-        <span style={{ fontSize: 10, color: 'var(--text3)' }}>{open ? '▾' : '▸'}</span>
+        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{open ? '▾' : '▸'}</span>
         {title}
       </button>
       {right ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{right}</div> : null}

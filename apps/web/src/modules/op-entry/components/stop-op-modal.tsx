@@ -180,11 +180,11 @@ export function StopOpModal({
   // Mandatory: date, time, shift, operator, quantity. A quantity of 0 satisfies
   // this — an EMPTY box does not.
   const missing: string[] = [];
-  if (!logDate) missing.push('Date');
+  if (!logDate) missing.push('Log Date');
   if (!logTime) missing.push('Time');
   if (!shift) missing.push('Shift');
   if (!operatorId && !operatorName.trim()) missing.push('Operator');
-  if (qtyBlank) missing.push('Quantity made');
+  if (qtyBlank) missing.push('Completed');
 
   const canSubmit =
     missing.length === 0 &&
@@ -241,8 +241,8 @@ export function StopOpModal({
             borderBottom: '1px solid var(--border)',
           }}
         >
-          <div className="fw-700" style={{ color: 'var(--amber)' }}>
-            ■ Stop operation
+          <div className="fw-700" style={{ color: 'var(--amber2)' }}>
+            ■ Stop Operation
           </div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
             <X size={14} />
@@ -334,7 +334,7 @@ export function StopOpModal({
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div className="form-grp" style={{ width: 150 }}>
               <label className="form-label" htmlFor="stop-op-date">
-                Date <span className="req">★</span>
+                Log Date <span className="req">★</span>
               </label>
               <input
                 id="stop-op-date"
@@ -456,36 +456,34 @@ export function StopOpModal({
           </div>
 
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-            You can log up to{' '}
+            Max{' '}
             <b className="mono" style={{ color: 'var(--cyan)' }}>
               {target.availableQty}
             </b>{' '}
-            pcs, completed + rejected. Enter <b className="mono">0</b> if nothing was made in this
-            session — the machine is still released. Fields marked{' '}
-            <span style={{ color: 'var(--red)' }}>★</span> are required.{' '}
-            {/* .req is scoped to .form-label, so this one is coloured inline. */}
+            pcs (Completed + Rejected). Enter <b className="mono">0</b> if nothing was made.
           </div>
 
           {overCap ? (
-            <div style={{ fontSize: 11, color: 'var(--red)' }}>
-              Completed + rejected ({totalNum}) is more than the {target.availableQty} available.
+            <div style={{ fontSize: 11, color: 'var(--red2)' }}>
+              Completed + Rejected ({totalNum}) cannot be more than Available ({target.availableQty}
+              ).
             </div>
           ) : null}
           {dateInFuture ? (
-            <div style={{ fontSize: 11, color: 'var(--red)' }}>
-              Date cannot be in the future — an operation cannot be worked on a day that has not
-              happened yet.
+            <div style={{ fontSize: 11, color: 'var(--red2)' }}>
+              Log Date cannot be in the future.
             </div>
           ) : null}
           {qtyIsJunk || rejIsJunk ? (
-            <div style={{ fontSize: 11, color: 'var(--red)' }}>
-              Enter whole numbers (0 or more) in {qtyIsJunk ? 'Quantity made' : 'Rejects'}.
+            <div style={{ fontSize: 11, color: 'var(--red2)' }}>
+              Enter whole numbers (0 or more) in {qtyIsJunk ? 'Completed' : 'Rejected'}.
             </div>
           ) : null}
           {/* Naming what is still empty, rather than just greying the button out
-              and leaving the operator to hunt for the reason. */}
-          {missing.length > 0 ? (
-            <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+              and leaving the operator to hunt for the reason. Hidden while every
+              box is still empty, i.e. on open. */}
+          {missing.length > 0 && missing.length < 5 ? (
+            <div style={{ fontSize: 11, color: 'var(--amber2)' }}>
               Still to fill in: <b>{missing.join(', ')}</b>.
             </div>
           ) : null}
@@ -497,7 +495,7 @@ export function StopOpModal({
                 background: 'var(--red3)',
                 border: '1px solid var(--sig-critical-bd)',
                 borderRadius: 6,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 fontSize: 12,
               }}
             >
@@ -520,7 +518,7 @@ export function StopOpModal({
                   <Loader2 className="inline h-3 w-3 animate-spin" /> Stopping…
                 </>
               ) : (
-                'Stop'
+                'Stop Operation'
               )}
             </button>
           </div>

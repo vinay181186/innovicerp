@@ -96,7 +96,7 @@ export async function getMaterialGrade(id: string, user: AuthContext): Promise<M
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Material grade ${id} not found`);
+    if (!row) throw new NotFoundError('Grade not found. Refresh the page.');
     return row as unknown as MaterialGrade;
   });
 }
@@ -307,7 +307,7 @@ export async function updateMaterialGrade(
         ),
       )
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Material grade ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('Grade not found. Refresh the page.');
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.name !== undefined) updates.name = input.name.trim();
@@ -343,7 +343,7 @@ export async function softDeleteMaterialGrade(
         ),
       )
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Material grade ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('Grade not found. Refresh the page.');
     // Soft delete only. Plans and Job Cards already holding this grade keep
     // their text snapshot, so nothing they print changes.
     await tx

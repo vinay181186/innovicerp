@@ -225,22 +225,20 @@ export function outwardCapRefusal(s: OutwardSendableOp, qty: number): string {
     // … record a Party Material GRN", which sent the user to the wrong screen
     // — the real blocker on a gated JC is the missing Party Material ISSUE.
     // Share op-entry's wording so both gates say the same true thing.
-    return `${materialCapMessage(s.cap, s.effectiveSendable, qty)} (blocking the outward DC to the vendor.)`;
+    return `${materialCapMessage(s.cap, s.effectiveSendable, qty)} This blocks the DC to the vendor.`;
   }
   return (
-    `Cannot outsource ${qty} pcs — only ${Math.max(0, s.sendable)} available on this operation ` +
-    `(upstream cleared ${s.inputAvail}, done in-house ${s.inHouseCompleted}, already sent ${s.alreadySent}). ` +
-    `Complete or free up the quantity before sending it to the vendor.`
+    `Qty (${qty}) cannot be more than Available (${Math.max(0, s.sendable)}) on this operation ` +
+    `(cleared by the previous Op ${s.inputAvail}, Completed in-house ${s.inHouseCompleted}, ` +
+    `already sent ${s.alreadySent}).`
   );
 }
 
 /** The refusal for a job-work PO line that was never linked to its operation. */
 export function jobWorkUnlinkedRefusal(poCode: string): string {
   return (
-    `PO ${poCode} is a job-work order, but this line is not linked to a job card ` +
-    'operation -- so how many pieces may be sent cannot be checked. Raise the PO from ' +
-    'its purchase request (Purchase Requests -> Create PO) so the operation is linked, ' +
-    'then issue the challan.'
+    `PO ${poCode} line is not linked to a JC operation, so the Qty that may be sent cannot be checked. ` +
+    'Create the PO from its PR (Purchase Requests → Create PO), then issue the DC.'
   );
 }
 

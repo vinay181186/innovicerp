@@ -25,13 +25,21 @@ import {
   type QcHistoryLogRow,
   type QcHistoryPendingRow,
   opSrNo,
+  SHIFT_LABELS,
 } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/print/doc-print';
 
+/** Shift code ('day') → the word the screens show ('Day'); unknown text passes through. */
+function shiftLabel(code: string | null): string {
+  if (!code) return '';
+  return (SHIFT_LABELS as Record<string, string>)[code] ?? code;
+}
+
 function stamp(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayIst();
 }
 
 function download(rows: Record<string, unknown>[], sheetName: string, filename: string): void {
@@ -48,7 +56,7 @@ function tagged(
   grn: string,
   rest: Record<string, unknown>,
 ): Record<string, unknown> {
-  return mixed ? { Source: source, GRN: grn, ...rest } : rest;
+  return mixed ? { Source: source, 'GRN No.': grn, ...rest } : rest;
 }
 
 export function exportCompletedQc(
@@ -60,7 +68,7 @@ export function exportCompletedQc(
     ...logs.map((l) =>
       tagged(mixed, 'Process', '', {
         'JC No.': l.jcCode,
-        Op: `Op${opSrNo(l.opSeq)}`,
+        Op: `Op ${opSrNo(l.opSeq)}`,
         'SO No.': l.soCode ?? '',
         'Item Code': itemCodeWithRev(l.itemCode, l.itemRevision, ''),
         'Drawing Rev': l.itemRevision ?? '',
@@ -69,10 +77,10 @@ export function exportCompletedQc(
         Accepted: l.accepted,
         Rejected: l.rejected,
         'QC Date': fmtDate(l.logDate),
-        Shift: l.shift ?? '',
-        Inspector: l.inspector ?? '',
+        Shift: shiftLabel(l.shift),
+        'Inspected By': l.inspector ?? '',
         Remarks: l.remarks ?? '',
-        'Log No': l.logNo,
+        'Log No.': l.logNo,
       }),
     ),
     ...incoming.map((l) =>
@@ -88,13 +96,13 @@ export function exportCompletedQc(
         Rejected: l.rejectedQty,
         'QC Date': fmtDate(l.qcDate),
         Shift: '',
-        Inspector: l.qcInspectedBy ?? '',
+        'Inspected By': l.qcInspectedBy ?? '',
         Remarks: l.qcRemarks ?? '',
-        'Log No': '',
+        'Log No.': '',
       }),
     ),
   ];
-  download(rows, 'QC Completed', `qc-completed-${stamp()}.xlsx`);
+  download(rows, 'QC Completed', `QC Completed Export ${stamp()}.xlsx`);
 }
 
 export function exportPendingQc(
@@ -106,39 +114,43 @@ export function exportPendingQc(
     ...pending.map((o) =>
       tagged(mixed, 'Process', '', {
         'JC No.': o.jcCode,
-        Op: `Op${opSrNo(o.opSeq)}`,
+        Op: `Op ${opSrNo(o.opSeq)}`,
         'SO No.': o.soCode ?? '',
         'Item Code': itemCodeWithRev(o.itemCode, o.itemRevision, ''),
         'Drawing Rev': o.itemRevision ?? '',
         'Item Name': o.itemName ?? '',
         Operation: o.operation,
         'Order Qty': o.orderQty,
+        // Received Qty belongs to GRN calls; the column only exists when they are mixed in.
+        ...(mixed ? { 'Received Qty': '' } : {}),
         Completed: o.completed,
         Accepted: o.qcAccepted,
         Rejected: o.qcRejected,
-        Pending: o.qcPending,
-        Since: fmtDate(o.pendSince),
-        Overdue: o.overdue ? 'YES' : '',
+        'QC Pending': o.qcPending,
+        'Pending Since': fmtDate(o.pendSince),
+        Overdue: o.overdue ? 'Yes' : '',
       }),
     ),
     ...incoming.map((o) =>
       tagged(mixed, 'Incoming', o.grnNo, {
         'JC No.': o.jcCode ?? '',
-        Op: o.opSeq != null ? `Op${opSrNo(o.opSeq)}` : '',
+        Op: o.opSeq != null ? `Op ${opSrNo(o.opSeq)}` : '',
         'SO No.': o.soCode ?? '',
         'Item Code': itemCodeWithRev(o.itemCode, o.itemRevision, ''),
         'Drawing Rev': o.itemRevision ?? '',
         'Item Name': o.itemName ?? '',
         Operation: `Incoming · ${o.vendorName ?? ''}`,
-        'Order Qty': o.receivedQty,
+        // A GRN call has no order qty of its own — what came in is its Received Qty.
+        'Order Qty': '',
+        'Received Qty': o.receivedQty,
         Completed: '',
         Accepted: '',
         Rejected: '',
-        Pending: o.pendingQty,
-        Since: fmtDate(o.grnDate),
+        'QC Pending': o.pendingQty,
+        'Pending Since': fmtDate(o.grnDate),
         Overdue: '',
       }),
     ),
   ];
-  download(rows, 'QC Pending', `qc-pending-${stamp()}.xlsx`);
+  download(rows, 'QC Pending', `QC Pending Export ${stamp()}.xlsx`);
 }

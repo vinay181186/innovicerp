@@ -38,7 +38,7 @@ export function ActionFooter({
   return (
     <>
       <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
-        Cancel
+        Close
       </button>
       <button
         type="button"

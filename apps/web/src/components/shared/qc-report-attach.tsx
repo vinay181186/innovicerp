@@ -59,7 +59,7 @@ export function QcReportAttach({
       const path = await uploadFile(file, companyId, { folder: 'qc-reports' });
       onUploaded(path, file.name);
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : 'Upload failed');
+      setErr(e2 instanceof Error ? e2.message : 'Could not upload the file. Try again.');
     } finally {
       setBusy(false);
     }
@@ -103,7 +103,7 @@ export function QcReportAttach({
           × Remove
         </button>
       ) : null}
-      {err ? <span style={{ color: 'var(--red)', fontSize: 11 }}>{err}</span> : null}
+      {err ? <span style={{ color: 'var(--red2)', fontSize: 11 }}>{err}</span> : null}
     </div>
   );
 }

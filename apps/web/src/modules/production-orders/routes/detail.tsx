@@ -18,9 +18,11 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { useProductionOrder } from '../api';
 import { PoCloseForm } from '../components/po-close-form';
 import { PoCloseLedger } from '../components/po-close-ledger';
@@ -77,8 +79,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Production Order not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Production Order not found.'}
           </div>
         </div>
       </div>
@@ -87,8 +89,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Production Orders. Ask an admin.
       </div>
     );
   }
@@ -110,175 +112,174 @@ function ProductionOrderDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/production-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Production Orders
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ fontSize: 16, color: 'var(--text)', fontWeight: 700 }}
+      {/* DetailHeader layout: Back link, code + status, one shortcut to the
+          order's Job Card, and Short Close in the Actions menu (red, last). */}
+      <DetailHeader
+        backLabel="Back"
+        backTo="/production-orders"
+        renderLink={(p) => <Link {...p} />}
+        code={data.code}
+        name="Production Order"
+        badges={<PoStatusBadge status={data.status} />}
+        actions={
+          <>
+            <Link
+              to="/job-cards/$id"
+              params={{ id: data.jobCardId }}
+              className="btn btn-ghost btn-sm"
+              title={`Open Job Card ${data.jcCodeText}`}
             >
-              {data.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}
-            >
-              🏭 Production Order
-              <PoStatusBadge status={data.status} />
-            </div>
+              Open Job Card
+            </Link>
+            <ActionMenu
+              items={[
+                {
+                  label: 'Short Close',
+                  danger: true,
+                  hidden: !showShortCloseButton,
+                  title:
+                    'Stop this Production Order — its Job Card is frozen and the un-produced qty goes back to the plan',
+                  onClick: () => setShortCloseOpen(true),
+                },
+              ]}
+            />
+          </>
+        }
+      >
+        {!stopped && notClosed && !data.canClose && data.closeBlockedReason ? (
+          <div
+            className="text3"
+            style={{
+              fontSize: 12,
+              padding: '6px 10px',
+              background: 'var(--bg3)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              marginBottom: 10,
+            }}
+          >
+            🔒 Cannot close yet — {data.closeBlockedReason}
           </div>
-          {showShortCloseButton ? (
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => setShortCloseOpen(true)}
-              title="Stop this Production Order — its Job Card is frozen and the un-produced qty goes back to the plan"
+        ) : null}
+
+        <div className="form-grid form-grid-4">
+          <Fact label="Plan No.">
+            <Link
+              to="/plans/$id"
+              params={{ id: data.planId }}
+              className="mono fw-700"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
             >
-              ⛔ Short Close
-            </button>
-          ) : null}
-        </div>
+              {data.planCodeText}
+            </Link>
+          </Fact>
+          <Fact label="SO / JWSO No." mono>
+            {data.soCodeText ? (
+              <>
+                {data.soCodeText}
+                {data.lineNo ? <span className="text3"> · Ln {data.lineNo}</span> : null}
+              </>
+            ) : (
+              '—'
+            )}
+          </Fact>
+          <Fact label="Customer">{data.partyName ?? '—'}</Fact>
+          <Fact label="Customer Dispatch Date" mono>
+            {fmtDate(data.targetDate)}
+          </Fact>
 
-        <div className="panel-body">
-          {!stopped && notClosed && !data.canClose && data.closeBlockedReason ? (
-            <div
-              className="text3"
-              style={{
-                fontSize: 12,
-                padding: '6px 10px',
-                background: 'var(--bg3)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                marginBottom: 10,
-              }}
-            >
-              🔒 Cannot close yet — {data.closeBlockedReason}
-            </div>
-          ) : null}
-
-          <div className="form-grid form-grid-4">
-            <Fact label="Plan">
-              <Link
-                to="/plans/$id"
-                params={{ id: data.planId }}
-                className="mono fw-700"
-                style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-              >
-                {data.planCodeText}
-              </Link>
-            </Fact>
-            <Fact label="SO / JWSO No." mono>
-              {data.soCodeText ? (
-                <>
-                  {data.soCodeText}
-                  {data.lineNo ? <span className="text3"> / line {data.lineNo}</span> : null}
-                </>
-              ) : (
-                '—'
-              )}
-            </Fact>
-            <Fact label="Customer">{data.partyName ?? '—'}</Fact>
-            <Fact label="Customer Dispatch Date" mono>
-              {data.targetDate}
-            </Fact>
-
-            {/* POL — the line number printed on the CUSTOMER's own purchase
-                order. NOT our SO line number ("/ line n" above); on live data
+          {/* POL — the line number printed on the CUSTOMER's own purchase
+                order. NOT our SO line number ("Ln n" above); on live data
                 our line 11 is the customer's line 20. Sits before the item
                 code, as on every other document. */}
-            <Fact label="POL" mono>
-              <span className="fw-700" style={{ color: 'var(--purple)' }}>
-                {data.clientPoLineNo ?? '—'}
-              </span>
-            </Fact>
-            <Fact label="Item Code" mono>
-              {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-              {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
-            </Fact>
-            <div className="form-grp form-span-2">
-              <span className="form-label">Item Name</span>
-              <div className="fw-700" style={{ color: 'var(--text)' }}>
-                {data.itemNameText ?? '—'}
-              </div>
+          <Fact label="POL" mono>
+            <span className="fw-700" style={{ color: 'var(--purple)' }}>
+              {data.clientPoLineNo ?? '—'}
+            </span>
+          </Fact>
+          <Fact label="Item Code" mono>
+            {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
+            {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
+          </Fact>
+          <div className="form-grp form-span-2">
+            <span className="form-label">Item Name</span>
+            <div className="fw-700" style={{ color: 'var(--text)' }}>
+              {data.itemNameText ?? '—'}
             </div>
-            <Fact label="Order Qty" mono>
-              {data.orderQty}
-            </Fact>
-            {/* Raw material the order is cut from — read off its plan (same
-                labels as Plan detail). */}
-            <Fact label="RM grade">{data.rawMaterialGradeText ?? '—'}</Fact>
-            <Fact label="RM size">{data.rawMaterialSizeText ?? '—'}</Fact>
-            {/* ADR-182 — the shop floor's confirmation at Create, and the size
-                the store really cut (RM size above is the planned one). */}
-            <Fact label="Raw material available">
-              {data.rawMaterialAvailable ? (
-                <span style={{ color: 'var(--green)' }}>✓ Yes</span>
-              ) : (
-                <span style={{ color: 'var(--red)' }}>✗ No</span>
-              )}
-            </Fact>
-            <Fact label="Actual Size" mono>
-              {data.actualSize ?? '—'}
-            </Fact>
-
-            <Fact label="Route card">
-              <Link
-                to="/route-cards/$id"
-                params={{ id: data.routeCardId }}
-                className="mono fw-700"
-                style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-              >
-                {data.routeCardCodeText}
-              </Link>
-              <span className="text3" style={{ fontSize: 11 }}>
-                {' '}
-                · Rev {data.routeCardRevision}
-              </span>
-            </Fact>
-            <Fact label="JC No.">
-              <Link
-                to="/job-cards/$id"
-                params={{ id: data.jobCardId }}
-                className="mono fw-700"
-                style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-              >
-                {data.jcCodeText}
-              </Link>
-            </Fact>
-            <Fact label="Created By">
-              {data.createdByName ?? '—'}
-              <span className="text3 mono" style={{ fontSize: 11 }}>
-                {' '}
-                · {data.createdAt.slice(0, 10)}
-              </span>
-            </Fact>
-            <Fact label="Remarks">{data.remarks ?? '—'}</Fact>
           </div>
-        </div>
-      </div>
+          {/* The Production Order's own qty (the list calls it Order Qty).
+                Was mislabelled "Plan Qty" — the plan's qty can be larger when
+                several orders cover one plan (ADR-182). */}
+          <Fact label="Order Qty" mono>
+            {data.orderQty}
+          </Fact>
+          {/* Raw material the order is cut from — read off its plan (same
+                labels as Plan detail). */}
+          <Fact label="RM Grade">{data.rawMaterialGradeText ?? '—'}</Fact>
+          <Fact label="RM Size">{data.rawMaterialSizeText ?? '—'}</Fact>
+          {/* ADR-182 — the shop floor's confirmation at Create, and the size
+                the store really cut (RM size above is the planned one). */}
+          <Fact label="Raw Material Available">
+            {data.rawMaterialAvailable ? (
+              <span style={{ color: 'var(--green2)' }}>✓ Yes</span>
+            ) : (
+              <span style={{ color: 'var(--red2)' }}>✗ No</span>
+            )}
+          </Fact>
+          <Fact label="Actual Size" mono>
+            {data.actualSize ?? '—'}
+          </Fact>
 
-      {/* ADR-182 — the order was stopped. Red and high on the page, because it
-          changes what every panel under it means. */}
+          <Fact label="Route Card">
+            <Link
+              to="/route-cards/$id"
+              params={{ id: data.routeCardId }}
+              className="mono fw-700"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            >
+              {data.routeCardCodeText}
+            </Link>
+            <span className="text3" style={{ fontSize: 11 }}>
+              {' '}
+              · Route Card Rev {data.routeCardRevision}
+            </span>
+          </Fact>
+          <Fact label="JC No.">
+            <Link
+              to="/job-cards/$id"
+              params={{ id: data.jobCardId }}
+              className="mono fw-700"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            >
+              {data.jcCodeText}
+            </Link>
+          </Fact>
+          <Fact label="Created By">
+            {data.createdByName ?? '—'}
+            <span className="text3 mono" style={{ fontSize: 11 }}>
+              {' '}
+              · {fmtDate(data.createdAt)}
+            </span>
+          </Fact>
+          <Fact label="Remarks">{data.remarks ?? '—'}</Fact>
+        </div>
+      </DetailHeader>
+
+      {/* ADR-182 — the order was stopped. High on the page, because it changes
+          what every panel under it means. Grey, like its Short Closed badge. */}
       {stopped ? (
-        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--red)' }}>
+        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--text3)' }}>
           <div className="panel-hdr">
-            <div className="panel-title" style={{ color: 'var(--red)' }}>
-              ⛔ Short closed on {data.shortClosedAt ? data.shortClosedAt.slice(0, 10) : '—'} by{' '}
-              {data.shortClosedByName ?? '—'} — {data.shortCloseReason ?? '—'}
+            <div className="panel-title">
+              Short Closed on {fmtDate(data.shortClosedAt)} by {data.shortClosedByName ?? '—'} —{' '}
+              {data.shortCloseReason ?? '—'}
             </div>
           </div>
           <div className="panel-body">
             <div className="text2" style={{ fontSize: 12, lineHeight: 1.6 }}>
-              No further work is allowed on this order or on Job Card{' '}
-              <span className="mono fw-700">{data.jcCodeText}</span> — production entry, QC, NC,
-              outsourcing, dispatch and edits are all refused. The {data.creditedQty ?? 0} piece
-              {(data.creditedQty ?? 0) === 1 ? '' : 's'} already credited to stock stay credited;
-              the remaining {Math.max(0, data.orderQty - (data.creditedQty ?? 0))} went back to plan{' '}
-              <span className="mono fw-700">{data.planCodeText}</span>, which can be ordered again.
+              {data.creditedQty ?? 0} credited stay in stock;{' '}
+              {Math.max(0, data.orderQty - (data.creditedQty ?? 0))} Pending went back to Plan{' '}
+              <span className="mono fw-700">{data.planCodeText}</span>.
             </div>
           </div>
         </div>
@@ -288,14 +289,18 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       <div className="panel" style={{ marginTop: 12 }}>
         <div className="panel-hdr">
           <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            ▭ Job Card progress
+            Job Card Progress
             {data.jcComputedStatus ? (
               <JcStatusBadge status={data.jcComputedStatus} />
             ) : (
-              <span className="badge b-grey">no job card</span>
+              <span className="badge b-grey">No Job Card</span>
             )}
           </div>
-          <div className="mono fw-700" style={{ fontSize: 14, color: 'var(--text)' }}>
+          <div
+            className="mono fw-700"
+            style={{ fontSize: 14, color: 'var(--text)', cursor: 'help' }}
+            title="Finished qty = output of the Job Card's last op (QC-accepted if it is QC). Close credits this qty to stock."
+          >
             {data.jcFinishedQty} <span className="text3">/ {data.orderQty}</span>
           </div>
         </div>
@@ -307,7 +312,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               borderRadius: 4,
               overflow: 'hidden',
             }}
-            title={`${pct}% finished`}
+            title={`${pct}% completed`}
           >
             <div
               style={{
@@ -317,16 +322,11 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               }}
             />
           </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-            Finished qty is the output of the Job Card&apos;s last operation (QC-accepted where the
-            last op is QC). This is the qty Close will credit to stock.
-            {data.jcClosedAt ? (
-              <>
-                {' '}
-                JC closed on <span className="mono">{data.jcClosedAt.slice(0, 10)}</span>.
-              </>
-            ) : null}
-          </div>
+          {data.jcClosedAt ? (
+            <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
+              JC closed on <span className="mono">{fmtDate(data.jcClosedAt)}</span>.
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -334,7 +334,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       {showCloseForm ? (
         <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--cyan)' }}>
           <div className="panel-hdr">
-            <div className="panel-title">🔒 Close Production Order</div>
+            <div className="panel-title">Close Production Order</div>
           </div>
           <div className="panel-body">
             <PoCloseForm po={data} />
@@ -346,7 +346,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       {data.closes.length > 0 ? (
         <div className="panel" style={{ marginTop: 12 }}>
           <div className="panel-hdr">
-            <div className="panel-title">📒 Close ledger ({data.closes.length})</div>
+            <div className="panel-title">Close Ledger ({data.closes.length})</div>
             <div className="mono fw-700" style={{ fontSize: 13, color: 'var(--text)' }}>
               {data.creditedQty ?? 0} <span className="text3">/ {data.orderQty} credited</span>
             </div>
@@ -365,14 +365,14 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           </div>
           <div className="panel-body">
             <div className="form-grid form-grid-3">
-              <Fact label="Credited qty" mono>
+              <Fact label="Credited Qty" mono>
                 {data.creditedQty ?? '—'}
               </Fact>
-              <Fact label="Lost qty" mono>
+              <Fact label="Lost Qty" mono>
                 {data.lostQty ?? '—'}
               </Fact>
-              <Fact label="Closed on" mono>
-                {data.closedAt ? data.closedAt.slice(0, 10) : '—'}
+              <Fact label="Close Date" mono>
+                {fmtDate(data.closedAt)}
               </Fact>
             </div>
           </div>

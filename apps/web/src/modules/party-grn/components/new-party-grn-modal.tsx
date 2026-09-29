@@ -10,23 +10,28 @@
 // the SO Master dialogs. No validation, payload, query or mutation behaviour
 // changed — every message string is verbatim.
 
-import type {
-  CreatePartyGrnInput,
-  CreatePartyGrnLineInput,
-} from '@innovic/shared';
+import type { CreatePartyGrnInput, CreatePartyGrnLineInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { usePartyMaterialsList } from '../../party-materials/api';
+import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { useCreatePartyGrn, useNextPartyGrnCode } from '../api';
 import { LineRow, MATERIAL_DATALIST_ID, makeEmptyLine, type UiLine } from './party-grn-line-row';
 
-export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+export function NewPartyGrnModal({
+  onClose,
+  initialJwId,
+}: {
+  onClose: () => void;
+  /** `?jw=` deep link — the modal opens with this JWSO already picked. */
+  initialJwId?: string | undefined;
+}): React.JSX.Element {
   const [date, setDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
-  const [jwId, setJwId] = useState<string | null>(null);
+  const [jwId, setJwId] = useState<string | null>(initialJwId ?? null);
   const [dcNo, setDcNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<UiLine[]>([makeEmptyLine()]);
@@ -51,6 +56,13 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
   // master list no longer carries per-line rows).
   const jwDetailQ = useJobWorkOrder(jwId ?? undefined);
   const jwLinesForSelected = jwDetailQ.data?.lines ?? [];
+  // The picked JWSO's client / PO, from the open-JWSO page when it is on it and
+  // from the JWSO detail otherwise — a `?jw=` deep link may name a JWSO that
+  // is not in the first page of the picker's list.
+  const jwDetail = jwDetailQ.data && jwDetailQ.data.id === jwId ? jwDetailQ.data : null;
+  const jwClientId = selectedJw?.clientId ?? jwDetail?.clientId ?? null;
+  const jwCustomerName = selectedJw?.customerName ?? jwDetail?.customerName ?? '';
+  const jwClientPoNo = selectedJw?.clientPoNo ?? jwDetail?.clientPoNo ?? '';
 
   // ADR-102: only the selected JWSO's client's materials. Party material is
   // customer-owned — showing every client's codes invited receiving one
@@ -60,15 +72,28 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
   const { data: pmData } = usePartyMaterialsList(
     {
       search: undefined,
-      clientId: selectedJw?.clientId ?? undefined,
+      clientId: jwClientId ?? undefined,
       limit: 200,
       offset: 0,
     },
-    { enabled: Boolean(selectedJw?.clientId) },
+    { enabled: Boolean(jwClientId) },
   );
   const pmAll = pmData?.items ?? [];
 
   const createMut = useCreatePartyGrn();
+
+  // A stray click outside / ESC used to throw away every typed line; now it
+  // asks first when anything was typed (party-grn-create#1).
+  const dirty =
+    jwId !== (initialJwId ?? null) ||
+    Boolean(dcNo.trim() || remarks.trim()) ||
+    lines.some(
+      (l) =>
+        Boolean(l.partyMaterialId) ||
+        Boolean(l.materialSearch.trim() || l.receivedQty.trim() || l.remarks.trim()) ||
+        Boolean(l.jwLineNoText),
+    );
+  const guard = useDiscardGuard(dirty, onClose);
 
   const setLine = (idx: number, patch: Partial<UiLine>): void => {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -82,10 +107,39 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
     setLines((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  // "Add this client's materials": one line per party material of the picked
+  // JWSO's client that is not on a line already, Received left blank for the
+  // storekeeper to fill. A still-blank first line is replaced rather than left
+  // behind. When exactly one JWSO line is for the material's part, that line
+  // is pre-picked (still editable); otherwise it is left to choose.
+  const addClientMaterials = (): void => {
+    setLines((prev) => {
+      const isBlank = (l: UiLine): boolean =>
+        !l.partyMaterialId && !l.materialSearch.trim() && !l.receivedQty.trim() && !l.jwLineNoText;
+      const kept = prev.filter((l) => !isBlank(l));
+      const have = new Set(kept.map((l) => l.partyMaterialId).filter(Boolean));
+      const added = pmAll
+        .filter((p) => !have.has(p.id))
+        .map((p): UiLine => {
+          const forPart =
+            p.itemId != null ? jwLinesForSelected.filter((j) => j.itemId === p.itemId) : [];
+          const only = forPart.length === 1 ? forPart[0] : undefined;
+          return {
+            ...makeEmptyLine(),
+            partyMaterialId: p.id,
+            materialSearch: p.code,
+            jwLineNoText: only ? String(only.lineNo) : '',
+          };
+        });
+      const next = [...kept, ...added];
+      return next.length > 0 ? next : prev;
+    });
+  };
+
   const onSave = (): void => {
     setErr(null);
     if (!jwId) {
-      setErr('Select a JWSO');
+      setErr('JWSO No. is required.');
       return;
     }
     const validLines: CreatePartyGrnLineInput[] = [];
@@ -109,7 +163,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
       }
       const q = Number(l.receivedQty);
       if (!Number.isFinite(q) || q <= 0) {
-        setErr(`Line ${i + 1}: qty must be ≥ 1`);
+        setErr(`Line ${i + 1}: Received must be 1 or more.`);
         return;
       }
       // ADR-102: the JWSO line is mandatory — the order-qty cap and the
@@ -122,22 +176,44 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
       const jwLine = jwLinesForSelected.find((j) => String(j.lineNo) === lnNo);
       // ADR-102: refuse a material that is not that line's part.
       const pm = pmAll.find((p) => p.id === pmId);
-      if (jwLine && pm && pm.itemId != null && jwLine.itemId != null && pm.itemId !== jwLine.itemId) {
+      if (
+        jwLine &&
+        pm &&
+        pm.itemId != null &&
+        jwLine.itemId != null &&
+        pm.itemId !== jwLine.itemId
+      ) {
         setErr(
           `Line ${i + 1}: ${pm.code} is "${pm.name}", but JWSO line ${lnNo} is "${jwLine.partName}". Pick the material for this part, or pick the line this material belongs to.`,
         );
+        return;
+      }
+      // R2 (ADR-194): compulsory incoming QC split. Accepted + Rejected must
+      // equal Received, and a reason is required when anything is rejected —
+      // the same refine the shared schema enforces, shown before Save.
+      const accepted = Number(l.acceptedQty);
+      const rejected = Number(l.rejectedQty) || 0;
+      if (!Number.isFinite(accepted) || accepted < 0 || accepted + rejected !== q) {
+        setErr(`Line ${i + 1}: Accepted + Rejected must equal Received (${q}).`);
+        return;
+      }
+      if (rejected > 0 && !l.rejectReason.trim()) {
+        setErr(`Line ${i + 1}: give a reject reason — ${rejected} rejected.`);
         return;
       }
       const ln: CreatePartyGrnLineInput = {
         partyMaterialId: pmId,
         receivedQty: q,
         jwLineNoText: lnNo,
+        acceptedQty: accepted,
+        rejectedQty: rejected,
       };
+      if (rejected > 0) ln.rejectReason = l.rejectReason.trim();
       if (l.remarks.trim()) ln.remarks = l.remarks.trim();
       validLines.push(ln);
     }
     if (validLines.length === 0) {
-      setErr('Add at least one line');
+      setErr('Add at least one line.');
       return;
     }
     const input: CreatePartyGrnInput = {
@@ -150,7 +226,10 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save GRN. Check the lines and try again.',
+        ),
     });
   };
 
@@ -165,8 +244,12 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
         justifyContent: 'center',
         zIndex: 200,
       }}
-      onClick={onClose}
+      onClick={(e) => {
+        // Only the dim backdrop itself — not the exit question rendered inside it.
+        if (e.target === e.currentTarget) guard.requestClose();
+      }}
     >
+      {guard.dialog}
       <div
         style={{
           background: 'var(--bg)',
@@ -180,7 +263,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 12 }}>
-          📥 New Party Material GRN
+          New Party GRN
         </div>
 
         {/* Native <datalist> rather than a custom absolute dropdown: a custom one
@@ -196,7 +279,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
 
         <div className="form-grid">
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-code">GRN No.</label>
+            <label className="form-label" htmlFor="pgrn-code">
+              GRN No.
+            </label>
             <input
               id="pgrn-code"
               type="text"
@@ -207,7 +292,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-date">GRN Date</label>
+            <label className="form-label" htmlFor="pgrn-date">
+              GRN Date
+            </label>
             <input
               id="pgrn-date"
               type="date"
@@ -232,30 +319,39 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
                 code: j.code,
                 name: j.customerName ?? '',
               }))}
+              valueLabel={
+                jwDetail ? `${jwDetail.code} — ${jwDetail.customerName ?? ''}` : undefined
+              }
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-client">Customer</label>
+            <label className="form-label" htmlFor="pgrn-client">
+              Customer
+            </label>
             <input
               id="pgrn-client"
               type="text"
               className="innovic-input"
               readOnly
-              value={selectedJw?.customerName ?? ''}
+              value={jwCustomerName}
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-cpo">Client PO No.</label>
+            <label className="form-label" htmlFor="pgrn-cpo">
+              Client PO No.
+            </label>
             <input
               id="pgrn-cpo"
               type="text"
               className="innovic-input"
               readOnly
-              value={selectedJw?.clientPoNo ?? ''}
+              value={jwClientPoNo}
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-dc">DC No.</label>
+            <label className="form-label" htmlFor="pgrn-dc">
+              Customer Challan No.
+            </label>
             <input
               id="pgrn-dc"
               type="text"
@@ -263,11 +359,13 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
               autoComplete="off"
               value={dcNo}
               onChange={(e) => setDcNo(e.target.value)}
-              placeholder="Client's challan no."
+              placeholder="Customer's challan no."
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-remarks">Remarks</label>
+            <label className="form-label" htmlFor="pgrn-remarks">
+              Remarks
+            </label>
             <input
               id="pgrn-remarks"
               type="text"
@@ -296,46 +394,67 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
                 color: 'var(--cyan)',
                 fontFamily: 'var(--mono)',
                 fontWeight: 700,
-                letterSpacing: '0.06em',
               }}
             >
-              INWARD LINE ITEMS
-            </span>
-            <span className="text3" style={{ fontSize: 11 }}>
-              Items must exist in Party Material Master first.
+              Line Items
             </span>
           </div>
-          <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
-            + Add Line
-          </button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {jwId && pmAll.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={addClientMaterials}
+                title="Add one line for every party material of this JWSO's customer (Received left blank)"
+              >
+                + Add this client&apos;s materials
+              </button>
+            ) : null}
+            <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
+              + Add Line
+            </button>
+          </div>
         </div>
 
         {/* `overflow: visible`, not hidden — the old box clipped the columns
             instead of letting them fit, so a wide row simply disappeared. */}
         <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
-          <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}>
+          <table
+            className="innovic-table"
+            style={{ width: '100%', tableLayout: 'fixed', minWidth: 1150 }}
+          >
             <thead>
               <tr>
-                <th style={{ width: '4%' }}>Ln</th>
-                <th style={{ width: '20%' }}>
+                <th style={{ width: '3%' }}>Ln</th>
+                <th style={{ width: '15%' }}>
                   JWSO Line<span className="req">★</span>
                 </th>
-                <th style={{ width: '17%' }}>
+                <th style={{ width: '12%' }}>
                   Material<span className="req">★</span>
                 </th>
-                <th style={{ width: '22%' }}>Material Name</th>
-                <th style={{ width: '10%', color: 'var(--green)' }} className="td-ctr">
+                <th style={{ width: '16%' }}>Material Name</th>
+                <th style={{ width: '8%', color: 'var(--green2)' }} className="th-num">
                   Received<span className="req">★</span>
                 </th>
-                <th style={{ width: '7%' }} className="td-ctr">UOM</th>
-                <th style={{ width: '16%' }}>Remarks</th>
-                <th style={{ width: '4%' }} />
+                {/* R2 (ADR-194): compulsory incoming QC split. */}
+                <th style={{ width: '8%', color: 'var(--green2)' }} className="th-num">
+                  Accepted<span className="req">★</span>
+                </th>
+                <th style={{ width: '8%', color: 'var(--red2)' }} className="th-num">
+                  Rejected
+                </th>
+                <th style={{ width: '13%' }}>Reject Reason</th>
+                <th style={{ width: '5%' }} className="td-ctr">
+                  UOM
+                </th>
+                <th style={{ width: '9%' }}>Remarks</th>
+                <th style={{ width: '3%' }} />
               </tr>
             </thead>
             <tbody>
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
                     No line items — click <strong>+ Add Line</strong>.
                   </td>
                 </tr>
@@ -360,7 +479,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
           <div
             style={{
               marginTop: 12,
-              color: 'var(--red)',
+              color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid var(--red)',
               borderRadius: 6,
@@ -378,7 +497,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
           </button>
           <button
             type="button"
-            className="btn btn-success"
+            className="btn btn-primary"
             disabled={createMut.isPending}
             onClick={onSave}
           >

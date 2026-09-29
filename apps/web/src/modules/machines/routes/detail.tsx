@@ -1,7 +1,7 @@
 // Machine detail page (UI-003-03). Group-4 migration onto the primitives,
 // following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
 //
-//   ← Back to Machine Master
+//   ← Back
 //   DetailHeader (code + name + machine-state chip + Edit/Delete) → ReadGrid
 //
 // A machine is a flat master — no line table, no related-document query — so
@@ -35,6 +35,7 @@ import type { Machine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useJobQueue } from '@/modules/job-queue/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -47,7 +48,7 @@ export const machineDetailRoute = createRoute({
   component: MachineDetailPage,
 });
 
-const BACK_LABEL = 'Back to Machine Master';
+const BACK_LABEL = 'Back';
 
 /** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
  *  state has no header to hang it on, so it renders the same control on its
@@ -73,6 +74,9 @@ function MachineDetailPage(): React.JSX.Element {
   // moment the machine finishes loading. Same placement as every sibling detail
   // page. `effectiveFormPerms` is a plain function and stays where it is used.
   const { data: eff } = useMyAccess();
+  // "Queue (n) →" — this machine's pending ops, from the same one-fetch view
+  // the Job Queue screen reads (cached, so opening the queue after is free).
+  const queue = useJobQueue({});
 
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading machine…" />;
@@ -84,7 +88,7 @@ function MachineDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Machine not found'}
+          message={error instanceof Error ? error.message : 'Machine not found.'}
         />
       </div>
     );
@@ -116,10 +120,14 @@ function MachineDetailPage(): React.JSX.Element {
     return <PageState state="noaccess" as="page" />;
   }
 
+  const queuePending = queue.data
+    ? (queue.data.machines.find((m) => m.machineId === machine.id)?.pendingCount ?? 0)
+    : null;
+
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete machine.'
+      : 'Could not delete Machine. Try again.'
     : null;
 
   return (
@@ -133,6 +141,32 @@ function MachineDetailPage(): React.JSX.Element {
         badges={<StatusBadge kind="machine" status={machine.status} />}
         actions={
           <>
+            {/* Where this machine's work lives — the one queue screen, its
+                load, and Op Entry already on this machine. */}
+            <Link
+              to="/job-queue"
+              search={{ machine: machine.code }}
+              className="btn btn-ghost btn-sm"
+              title="Pending operations on this machine, in queue order"
+            >
+              Queue ({queuePending ?? '…'}) →
+            </Link>
+            <Link
+              to="/machine-loading"
+              search={{ m: machine.id }}
+              className="btn btn-ghost btn-sm"
+              title="Load, hours pending and days to clear for this machine"
+            >
+              Loading →
+            </Link>
+            <Link
+              to="/op-entry"
+              search={{ view: 'machine', machineId: machine.id }}
+              className="btn btn-ghost btn-sm"
+              title="Op Entry — By Machine, with this machine picked"
+            >
+              Op Entry →
+            </Link>
             {canEdit ? (
               <Link
                 to="/machines/$id/edit"
@@ -160,10 +194,10 @@ function MachineDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete machine ${machine.code}?`}
-          message={`${machine.name} will be removed from the Machine Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move Machine ${machine.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}
@@ -186,17 +220,17 @@ function MachineFacts(props: { machine: Machine }): React.JSX.Element {
       {/* Group first: it is the master-backed field. Type stays exactly as it
           was — free text, alongside the group, not replaced by it. A machine
           with no group (every row created before this change) reads an em dash. */}
-      <ReadField label="Machine group" size="md" mono value={groupCode} />
-      <ReadField label="Machine type" size="md" value={machine.machineType} />
-      <ReadField label="Product code" size="md" mono value={machine.productCode} />
+      <ReadField label="Machine Group" size="md" mono value={groupCode} />
+      <ReadField label="Machine Type" size="md" value={machine.machineType} />
+      <ReadField label="Product Code" size="md" mono value={machine.productCode} />
 
       <ReadField
-        label="Capacity / shift"
+        label="Capacity / Shift (hrs)"
         size="lg"
         mono
-        value={machine.capacityPerShift !== null ? `${machine.capacityPerShift} h` : null}
+        value={machine.capacityPerShift !== null ? String(machine.capacityPerShift) : null}
       />
-      <ReadField label="Shifts / day" size="lg" mono value={String(machine.shiftsPerDay)} />
+      <ReadField label="Shifts / Day" size="lg" mono value={String(machine.shiftsPerDay)} />
     </ReadGrid>
   );
 }

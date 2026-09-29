@@ -31,7 +31,7 @@ function PurchaseOrderEditPage(): React.JSX.Element {
   if (isLoading || accessPending) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase order…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading PO…
       </div>
     );
   }
@@ -39,8 +39,8 @@ function PurchaseOrderEditPage(): React.JSX.Element {
   if (!canEdit) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
-          ⛔ Edit access required to change a purchase order.
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
+          You do not have permission to edit POs. Ask an admin.
         </div>
       </div>
     );
@@ -55,8 +55,8 @@ function PurchaseOrderEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Purchase order not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'PO not found. Refresh the page.'}
           </div>
         </div>
       </div>

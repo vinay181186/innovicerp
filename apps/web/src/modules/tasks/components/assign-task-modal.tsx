@@ -25,8 +25,24 @@ import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
 import { useCreateTask, useNextTaskCode, useRelatedOptions, useTaskUserOptions } from '../api';
 import { oversizedFile, relatedNavPage } from '../lib/format';
-import { FormError, FormNote, Overlay } from './task-overlay';
+import { FormError, Overlay } from './task-overlay';
 import { UserPicker } from './user-picker';
+
+// A contextual link's record type as the user reads it. The shared map covers
+// the Related To picker's types; the contextual Assign buttons add a few more.
+const EXTRA_LINKED_TYPE_LABELS: Record<string, string> = {
+  purchase_request: 'Purchase Request',
+  grn: 'GRN',
+  capa: 'CAPA',
+  design_issue: 'Design Issue',
+};
+function linkedTypeLabel(type: string): string {
+  return (
+    TASK_RELATED_TYPE_LABELS[type as TaskRelatedType] ??
+    EXTRA_LINKED_TYPE_LABELS[type] ??
+    type.replace(/_/g, ' ').replace(/\b[a-z]/g, (c) => c.toUpperCase())
+  );
+}
 
 export function AssignTaskModal({
   onClose,
@@ -81,16 +97,17 @@ export function AssignTaskModal({
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!title.trim()) return setErr('Task Title is required');
-    if (!assignedTo) return setErr('Select who the task is assigned to');
-    if (!dueDate) return setErr('Due Date is required');
-    if (startDate && startDate > dueDate) return setErr('Start Date cannot be after Due Date');
-    if (relatedType && !relatedId) return setErr('Pick the Reference No. for the Related To type');
+    if (!title.trim()) return setErr('Title is required.');
+    if (!assignedTo) return setErr('Assigned To is required.');
+    if (!dueDate) return setErr('Due Date is required.');
+    if (startDate && startDate > dueDate) return setErr('Start Date cannot be after Due Date.');
+    if (relatedType && !relatedId) return setErr('Reference No. is required.');
     const big = oversizedFile(files);
-    if (big) return setErr(`${big} is over 10 MB`);
-    if (files.length > 10) return setErr('Up to 10 files per task');
+    if (big) return setErr(`${big} cannot be more than 10 MB.`);
+    if (files.length > 10) return setErr('Attachment cannot be more than 10 files.');
     const companyId = me?.companyId ?? null;
-    if (files.length > 0 && !companyId) return setErr('No company in session — cannot upload');
+    if (files.length > 0 && !companyId)
+      return setErr('Could not upload files. Refresh the page and try again.');
 
     let ref: TaskLinkedRef | undefined;
     if (linkedRef) ref = linkedRef;
@@ -128,7 +145,7 @@ export function AssignTaskModal({
       });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to assign task');
+      setErr(e instanceof Error ? e.message : 'Could not assign task. Try again.');
     } finally {
       setBusy(false);
     }
@@ -160,17 +177,15 @@ export function AssignTaskModal({
             disabled={busy}
             onClick={() => void submit()}
           >
-            {busy ? 'Saving…' : 'Assign Task'}
+            {busy ? 'Saving…' : 'Save Task'}
           </button>
         </>
       }
     >
-      <FormNote>Assigned By is automatically the logged-in user.</FormNote>
-
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="tk-title">
-            Task Title<span className="req">*</span>
+            Title<span className="req">★</span>
           </label>
           <input
             id="tk-title"
@@ -196,7 +211,7 @@ export function AssignTaskModal({
 
         <div className="form-grp">
           <label className="form-label">
-            Assigned To<span className="req">*</span>
+            Assigned To<span className="req">★</span>
           </label>
           <UserPicker
             users={users}
@@ -239,7 +254,7 @@ export function AssignTaskModal({
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="tk-due">
-            Due Date<span className="req">*</span>
+            Due Date<span className="req">★</span>
           </label>
           <input
             id="tk-due"
@@ -255,11 +270,7 @@ export function AssignTaskModal({
           <>
             <div className="form-grp">
               <label className="form-label">Related To</label>
-              <input
-                className="innovic-input"
-                value={linkedRef.type.replaceAll('_', ' ')}
-                readOnly
-              />
+              <input className="innovic-input" value={linkedTypeLabel(linkedRef.type)} readOnly />
             </div>
             <div className="form-grp">
               <label className="form-label">Reference No.</label>

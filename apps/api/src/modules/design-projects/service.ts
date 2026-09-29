@@ -46,6 +46,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
+  ConflictError,
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
@@ -302,7 +303,7 @@ export async function getDesignProjectDetail(
       LIMIT 1
     `);
     const h = (headers as unknown as Array<Record<string, unknown>>)[0];
-    if (!h) throw new NotFoundError(`Design project ${id} not found`);
+    if (!h) throw new NotFoundError('Design Project not found. Refresh the page.');
 
     const tasksRows = await tx
       .select()
@@ -473,10 +474,31 @@ export async function createDesignProject(
         )
         .limit(1);
       const so = soRows[0];
-      if (!so) throw new NotFoundError(`Sales Order ${input.salesOrderId} not found`);
+      if (!so) throw new NotFoundError('Sales Order not found. Refresh the page.');
       soCode = so.code;
       clientId = so.clientId ?? null;
       if (!clientText && so.customerName) clientText = so.customerName;
+
+      // ADR-188: the Design Project is the ONE per-SO design record — Design
+      // Tracker "Log Time" files hours under the SO's project only when there
+      // is exactly one. So a second project for the same SO is refused; the
+      // user is sent to the existing one instead.
+      const existing = await tx
+        .select({ code: designProjects.code, status: designProjects.status })
+        .from(designProjects)
+        .where(
+          and(
+            eq(designProjects.companyId, companyId),
+            eq(designProjects.salesOrderId, so.id),
+            isNull(designProjects.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) {
+        throw new ConflictError(
+          `${so.code} already has Design Project ${existing[0].code} (${existing[0].status}). Open ${existing[0].code} instead of creating another.`,
+        );
+      }
     }
     if (clientId) {
       const cRows = await tx
@@ -510,7 +532,7 @@ export async function createDesignProject(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to insert design project');
+    if (!row) throw new ValidationError('Could not save Design Project. Try again.');
     return rowToProject(row);
   });
 }
@@ -566,7 +588,7 @@ export async function updateDesignProject(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design project ${id} not found`);
+    if (!existing) throw new NotFoundError('Design Project not found. Refresh the page.');
 
     const patch: Partial<typeof designProjects.$inferInsert> = {
       updatedAt: new Date(),
@@ -611,7 +633,7 @@ export async function toggleDesignChecklistItem(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design project ${projectId} not found`);
+    if (!existing) throw new NotFoundError('Design Project not found. Refresh the page.');
     const checklist = (existing.checklist as Record<string, boolean> | null) ?? {};
     const next = { ...checklist, [input.key]: !checklist[input.key] };
     const updated = await tx
@@ -623,10 +645,7 @@ export async function toggleDesignChecklistItem(
   });
 }
 
-export async function releaseDesignProject(
-  id: string,
-  user: AuthContext,
-): Promise<DesignProject> {
+export async function releaseDesignProject(id: string, user: AuthContext): Promise<DesignProject> {
   // Releasing the design package is a formal sign-off → `approve` (judgment
   // call; see report — it is a finalisation, not a field edit).
   await requireFormAccess(user, 'dsnproj_create', 'approve');
@@ -645,7 +664,7 @@ export async function releaseDesignProject(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design project ${id} not found`);
+    if (!existing) throw new NotFoundError('Design Project not found. Refresh the page.');
     const updated = await tx
       .update(designProjects)
       .set({
@@ -684,7 +703,7 @@ export async function createDesignTask(
         ),
       )
       .limit(1);
-    if (!projRows[0]) throw new NotFoundError(`Design project ${projectId} not found`);
+    if (!projRows[0]) throw new NotFoundError('Design Project not found. Refresh the page.');
 
     const inserted = await tx
       .insert(designTasks)
@@ -729,7 +748,7 @@ export async function updateDesignTask(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design task ${id} not found`);
+    if (!existing) throw new NotFoundError('Design Task not found. Refresh the page.');
 
     const patch: Partial<typeof designTasks.$inferInsert> = {
       updatedAt: new Date(),
@@ -783,8 +802,10 @@ export async function addDesignTaskComment(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design task ${taskId} not found`);
-    const list = (Array.isArray(existing.discussions) ? existing.discussions : []) as DesignDiscussion[];
+    if (!existing) throw new NotFoundError('Design Task not found. Refresh the page.');
+    const list = (
+      Array.isArray(existing.discussions) ? existing.discussions : []
+    ) as DesignDiscussion[];
     const next: DesignDiscussion[] = [
       ...list,
       {
@@ -826,7 +847,7 @@ export async function createDesignIssue(
         ),
       )
       .limit(1);
-    if (!projRows[0]) throw new NotFoundError(`Design project ${projectId} not found`);
+    if (!projRows[0]) throw new NotFoundError('Design Project not found. Refresh the page.');
 
     if (input.designTaskId) {
       const tRows = await tx
@@ -840,7 +861,7 @@ export async function createDesignIssue(
           ),
         )
         .limit(1);
-      if (!tRows[0]) throw new NotFoundError(`Task ${input.designTaskId} not in project`);
+      if (!tRows[0]) throw new NotFoundError('Task not found in this project. Refresh the page.');
     }
 
     const inserted = await tx
@@ -853,7 +874,7 @@ export async function createDesignIssue(
         partText: input.partText ?? null,
         severity: input.severity,
         status: input.status,
-        raisedByText: input.raisedByText ?? (user.email ?? user.id),
+        raisedByText: input.raisedByText ?? user.email ?? user.id,
         assignedToText: input.assignedToText ?? null,
         raisedDate: new Date().toISOString().slice(0, 10),
         description: input.description ?? null,
@@ -889,7 +910,7 @@ export async function updateDesignIssue(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design issue ${id} not found`);
+    if (!existing) throw new NotFoundError('Design Issue not found. Refresh the page.');
 
     const patch: Partial<typeof designIssues.$inferInsert> = {
       updatedAt: new Date(),
@@ -946,8 +967,10 @@ export async function addDesignIssueComment(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design issue ${issueId} not found`);
-    const list = (Array.isArray(existing.discussions) ? existing.discussions : []) as DesignDiscussion[];
+    if (!existing) throw new NotFoundError('Design Issue not found. Refresh the page.');
+    const list = (
+      Array.isArray(existing.discussions) ? existing.discussions : []
+    ) as DesignDiscussion[];
     const next: DesignDiscussion[] = [
       ...list,
       {
@@ -989,7 +1012,7 @@ export async function createDesignDcr(
         ),
       )
       .limit(1);
-    if (!projRows[0]) throw new NotFoundError(`Design project ${projectId} not found`);
+    if (!projRows[0]) throw new NotFoundError('Design Project not found. Refresh the page.');
 
     const code = await nextSequence(tx, 'design_dcrs', 'DCR-', companyId);
     const inserted = await tx
@@ -1003,7 +1026,7 @@ export async function createDesignDcr(
         partAffected: input.partAffected ?? null,
         priority: input.priority,
         status: 'Submitted',
-        requestedByText: input.requestedByText ?? (user.email ?? user.id),
+        requestedByText: input.requestedByText ?? user.email ?? user.id,
         requestDate: input.requestDate,
         description: input.description ?? null,
         createdBy: userId,
@@ -1036,7 +1059,7 @@ export async function updateDesignDcr(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`DCR ${id} not found`);
+    if (!existing) throw new NotFoundError('DCR not found. Refresh the page.');
     const patch: Partial<typeof designDcrs.$inferInsert> = {
       updatedAt: new Date(),
       updatedBy: userId,
@@ -1079,7 +1102,7 @@ export async function createDesignDcn(
         ),
       )
       .limit(1);
-    if (!projRows[0]) throw new NotFoundError(`Design project ${projectId} not found`);
+    if (!projRows[0]) throw new NotFoundError('Design Project not found. Refresh the page.');
     if (input.linkedDcrId) {
       const dcrRows = await tx
         .select({ id: designDcrs.id })
@@ -1092,7 +1115,7 @@ export async function createDesignDcn(
           ),
         )
         .limit(1);
-      if (!dcrRows[0]) throw new NotFoundError(`DCR ${input.linkedDcrId} not in project`);
+      if (!dcrRows[0]) throw new NotFoundError('DCR not found in this project. Refresh the page.');
     }
 
     const code = await nextSequence(tx, 'design_dcns', 'DCN-', companyId);
@@ -1136,7 +1159,7 @@ export async function updateDesignDcn(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`DCN ${id} not found`);
+    if (!existing) throw new NotFoundError('DCN not found. Refresh the page.');
     const patch: Partial<typeof designDcns.$inferInsert> = {
       updatedAt: new Date(),
       updatedBy: userId,
@@ -1203,7 +1226,7 @@ export async function getDesignProjectRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Design project ${id} not found`);
+    if (!header) throw new NotFoundError('Design Project not found. Refresh the page.');
 
     const row = (
       id_: string,

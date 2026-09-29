@@ -4,13 +4,17 @@
 import { opSrNo } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
+import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Select } from '@/ui/forms';
+import { ListHeader } from '@/ui/layout';
 import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
 
 const searchSchema = z.object({
@@ -65,6 +69,29 @@ function JobQueuePage(): React.JSX.Element {
   );
   const displayMachines = selectedMachine ? [selectedMachine] : machines;
 
+  // Client-side search over the columns each row shows — JC no., POL, item
+  // code / name, SO no., customer, operation. The queue is one fetch, so every
+  // row is already here. While a term is typed the ▲/▼ arrows are hidden: a
+  // move swaps a row with its neighbour in the FULL queue, which a filtered
+  // view no longer shows.
+  const [searchInput, setSearchInput] = useState('');
+  const term = searchInput.trim().toLowerCase();
+  const matches = (r: (typeof machines)[number]['rows'][number]): boolean =>
+    term === '' ||
+    [
+      r.jcCode,
+      r.clientPoLineNo,
+      itemCodeWithRev(r.itemCode, r.itemRevision, ''),
+      r.itemName,
+      r.soCode,
+      r.soCustomer,
+      r.operation,
+    ].some((v) => v != null && String(v).toLowerCase().includes(term));
+  const shownMachines = term
+    ? displayMachines.filter((m) => m.rows.some(matches))
+    : displayMachines;
+  const pendingShown = displayMachines.reduce((n, m) => n + m.rows.filter(matches).length, 0);
+
   const setMachine = (code: string | null): void => {
     void navigate({ search: () => ({ machine: code ?? undefined }) });
   };
@@ -85,75 +112,61 @@ function JobQueuePage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">⬛ Job Queue View</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isAdmin ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={backfillMut.isPending}
-              title="Link operations that carry a machine as text only to the matching machine. Safe to run repeatedly."
-              onClick={() => backfillMut.mutate()}
-            >
-              {backfillMut.isPending
-                ? 'Linking…'
-                : backfillMut.isSuccess
-                  ? `Linked ${backfillMut.data.updated} op(s) ✓`
-                  : 'Link machine codes'}
-            </button>
-          ) : null}
-          {selectedMachine ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMachine(null)}>
-              All Machines ×
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Machine cards strip */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 8,
-          marginBottom: 16,
+      <ListHeader
+        title="Job Queue"
+        icon="⬛"
+        count={isLoading ? undefined : pendingShown}
+        noun="pending op"
+        filterNote={selectedMachine ? selectedMachine.machineCode : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search JC no., POL, item, SO no., customer, operation…"
+        // The machine picker (owner's filter-bar decision 2026-09-26): the
+        // clickable machine-card strip became this dropdown — each label carries
+        // the pending-op count the card showed, and ▶n when ops are running.
+        filters={
+          <Select
+            aria-label="Machine"
+            title="Machine"
+            value={selectedMachine ? selectedMachine.machineCode : ''}
+            options={[
+              {
+                value: '',
+                label: `All machines (${machines.reduce((n, m) => n + m.pendingCount, 0)})`,
+              },
+              ...machines.map((m) => ({
+                value: m.machineCode,
+                label: `${m.machineCode} (${m.pendingCount})${m.runningCount > 0 ? ` ▶${m.runningCount}` : ''}`,
+              })),
+            ]}
+            onChange={(e) => setMachine(e.target.value === '' ? null : e.target.value)}
+          />
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          setMachine(null);
         }}
-      >
-        {machines.map((m) => {
-          const active = selectedMachine?.machineId === m.machineId;
-          return (
-            <div
-              key={m.machineId}
-              onClick={() => setMachine(m.machineCode)}
-              style={{
-                padding: 10,
-                background: 'var(--bg2)',
-                border: `1px solid ${active ? 'var(--cyan)' : 'var(--border)'}`,
-                borderRadius: 6,
-                cursor: 'pointer',
-                boxShadow: active ? '0 0 0 2px rgba(0,136,187,.2)' : undefined,
-                textAlign: 'center',
-              }}
-            >
-              <div className="mono fw-700" style={{ fontSize: 13 }}>
-                {m.machineCode}
-              </div>
-              <div className="text3" style={{ fontSize: 10, marginBottom: 4 }}>
-                {m.machineType ?? ''}
-              </div>
-              {m.runningCount > 0 ? (
-                <div style={{ color: 'var(--amber)', fontSize: 11, fontWeight: 700 }}>
-                  ▶ {m.runningCount} running
-                </div>
-              ) : null}
-              <div style={{ fontSize: 10, color: 'var(--text3)' }}>
-                {m.pendingCount} pending ops
-              </div>
-            </div>
-          );
-        })}
-      </div>
+        filtersActive={term !== '' || selectedMachine != null}
+        tools={
+          <>
+            {isAdmin ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={backfillMut.isPending}
+                title="Link operations that carry a machine as text only to the matching machine. Safe to run repeatedly."
+                onClick={() => backfillMut.mutate()}
+              >
+                {backfillMut.isPending
+                  ? 'Linking…'
+                  : backfillMut.isSuccess
+                    ? `Linked ${backfillMut.data.updated} op(s) ✓`
+                    : 'Link machine codes'}
+              </button>
+            ) : null}
+          </>
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -166,19 +179,19 @@ function JobQueuePage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load job queue. Try again.'}
             </div>
           </div>
         </div>
-      ) : displayMachines.length === 0 ? (
+      ) : shownMachines.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 32 }}>
-            No pending operations
+            {term ? 'No pending operations match.' : 'No pending operations.'}
           </div>
         </div>
       ) : (
-        displayMachines.map((m) => (
+        shownMachines.map((m) => (
           <div key={m.machineId} className="panel" style={{ marginBottom: 14 }}>
             <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
@@ -197,7 +210,7 @@ function JobQueuePage(): React.JSX.Element {
                   style={{
                     padding: '2px 8px',
                     borderRadius: 10,
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: 700,
                     background:
                       m.pendingHrs > 80
@@ -226,10 +239,10 @@ function JobQueuePage(): React.JSX.Element {
               </div>
             ) : (
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid">
                   <thead>
                     <tr>
-                      <th style={{ width: 44 }}>Order</th>
+                      <th style={{ width: 44 }}>Move</th>
                       <th style={{ width: 30 }}>Sr No</th>
                       <th>JC No.</th>
                       {/* POL — the line number printed on the CUSTOMER's own
@@ -240,15 +253,22 @@ function JobQueuePage(): React.JSX.Element {
                       <th>Operation</th>
                       <th>Priority</th>
                       <th>Due Date</th>
-                      <th>Order Qty</th>
-                      <th style={{ color: 'var(--green)' }}>Completed</th>
-                      <th style={{ color: 'var(--amber)' }}>Available</th>
+                      <th className="th-num">JC Qty</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Completed
+                      </th>
+                      <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                        Available
+                      </th>
                       <th>Op Status</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {m.rows.map((r, idx) => {
+                    {m.rows.filter(matches).map((r) => {
+                      // Queue position in the FULL queue, so Sr No and the
+                      // ▲/▼ neighbours stay true while a search narrows rows.
+                      const idx = m.rows.indexOf(r);
                       const isNext = r.available > 0 && !r.isRunning;
                       // ADR-126 — "started" has to mean started ON THIS MACHINE.
                       // The row is bucketed under the machine that runs the
@@ -277,7 +297,7 @@ function JobQueuePage(): React.JSX.Element {
                                 alignItems: 'center',
                               }}
                             >
-                              {canReorder && idx > 0 ? (
+                              {canReorder && term === '' && idx > 0 ? (
                                 <button
                                   type="button"
                                   style={queueBtnStyle}
@@ -289,7 +309,7 @@ function JobQueuePage(): React.JSX.Element {
                               ) : (
                                 <span style={{ width: 18, display: 'inline-block' }} />
                               )}
-                              {canReorder && idx < m.rows.length - 1 ? (
+                              {canReorder && term === '' && idx < m.rows.length - 1 ? (
                                 <button
                                   type="button"
                                   style={queueBtnStyle}
@@ -324,31 +344,38 @@ function JobQueuePage(): React.JSX.Element {
                             {r.clientPoLineNo ?? '—'}
                           </td>
                           <td>
+                            {/* Code (and SO no.) on one line; the item NAME wraps. */}
                             <div
                               style={{
                                 fontSize: 12,
-                                fontWeight: 600,
-                                color: 'var(--cyan)',
+                                textAlign: 'left',
                               }}
                             >
-                              {itemCodeWithRev(r.itemCode, r.itemRevision, '')}{' '}
+                              <span
+                                className="mono fw-700"
+                                style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+                              >
+                                {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
+                              </span>{' '}
                               {r.itemName ? `— ${r.itemName}` : ''}
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'left' }}>
                               {r.soCode ?? '—'}
                               {r.soCustomer ? ` · ${r.soCustomer}` : ''}
                             </div>
                           </td>
-                          <td className="mono">{opSrNo(r.opSeq)}</td>
+                          <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                            {opSrNo(r.opSeq)}
+                          </td>
                           <td>{r.operation}</td>
                           <td>
                             <PriorityBadge priority={r.priority} />
                           </td>
-                          <td className="text2" style={{ fontSize: 11 }}>
-                            {r.dueDate ?? '—'}
+                          <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                            {fmtDate(r.dueDate)}
                           </td>
-                          <td className="mono">{r.orderQty}</td>
-                          <td className="green mono fw-700">
+                          <td className="mono td-num">{r.orderQty}</td>
+                          <td className="green mono fw-700 td-num">
                             {r.completed}
                             {/* ADR-164 — this row sits in its PLANNED machine's
                                 queue, so say which machine ACTUALLY made this
@@ -357,7 +384,7 @@ function JobQueuePage(): React.JSX.Element {
                                 per-machine breakdown for a 2+ machine split. */}
                             <ActualMachineLine planned={m.machineCode} machines={r.machines} />
                           </td>
-                          <td>
+                          <td className="td-num">
                             <span
                               className="mono fw-700"
                               style={{
@@ -369,23 +396,11 @@ function JobQueuePage(): React.JSX.Element {
                             </span>
                           </td>
                           <td>
-                            {r.isRunning ? (
-                              <span
-                                style={{
-                                  color: 'var(--amber)',
-                                  fontWeight: 700,
-                                  fontSize: 12,
-                                }}
-                              >
-                                ▶ Running
-                              </span>
-                            ) : (
-                              <StatusBadge status={r.status} />
-                            )}
+                            <StatusBadge status={r.isRunning ? 'running' : r.status} />
                           </td>
                           <td>
                             {isNext && canOpEntry ? (
-                              // T33: only offer "Log Op" once the op is started
+                              // T33: only offer "Complete" once the op is started
                               // on this machine; otherwise show "Start".
                               startedHere ? (
                                 <Link
@@ -395,12 +410,12 @@ function JobQueuePage(): React.JSX.Element {
                                   style={{
                                     background: 'var(--green3)',
                                     border: '1px solid var(--green2)',
-                                    color: 'var(--green)',
+                                    color: 'var(--green2)',
                                     fontSize: 11,
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  ✚ Log Op
+                                  ✓ Complete
                                 </Link>
                               ) : (
                                 <Link
@@ -409,7 +424,7 @@ function JobQueuePage(): React.JSX.Element {
                                   className="btn btn-sm"
                                   style={{ fontSize: 11, whiteSpace: 'nowrap' }}
                                 >
-                                  ▶ Start
+                                  ▶ Start Operation
                                 </Link>
                               )
                             ) : null}
@@ -428,25 +443,7 @@ function JobQueuePage(): React.JSX.Element {
   );
 }
 
-// Legacy badge() (HTML L1959) mapped onto our lowercase computed_status enum.
-// Legacy's `In Progress`/`At Vendor` map to .b-yellow, which legacy defines ONLY
-// in its print-only <style> block (L10559) — so on legacy's screen they render as
-// a bare .badge. We reproduce that with no b-* class rather than invent a tint.
-const OP_STATUS: Record<string, { label: string; cls: string }> = {
-  complete: { label: 'Complete', cls: 'b-green' },
-  in_progress: { label: 'In Progress', cls: '' },
-  available: { label: 'Available', cls: 'b-blue' },
-  waiting: { label: 'Waiting', cls: 'b-red' },
-  qc_pending: { label: 'QC Pending', cls: 'b-amber' },
-  running: { label: 'Running', cls: '' },
-  ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
-  pr_raised: { label: 'PR Raised', cls: 'b-amber' },
-  po_created: { label: 'PO Created', cls: 'b-blue' },
-  at_vendor: { label: 'Processing', cls: '' },
-  received: { label: 'Incoming QC', cls: 'b-cyan' },
-  outsource: { label: 'Outsource', cls: 'b-amber' },
-};
-
+// Op status words + colours: the ONE shared map (job-cards/lib/jc-op-labels).
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
   const hit = OP_STATUS[status.toLowerCase()];
   // Legacy: `m[status] || 'b-grey'`.

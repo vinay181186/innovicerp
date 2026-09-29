@@ -31,7 +31,7 @@ test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
   await page.waitForTimeout(2000);
   await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
   await page.waitForTimeout(1500);
-  await page.getByRole('button', { name: /^Save$/ }).click();
+  await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);
   const rows = page.locator('table.ops-routing tbody tr');
   const del = page.locator('table.ops-routing tbody tr button.btn-danger');
@@ -57,7 +57,7 @@ test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
   await snap(page, 'c5', '01-plan-tpi');
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Execute/i }).first().click();
+  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
   await page.waitForTimeout(4500);
   const jc = ((await page.locator('body').innerText()).match(/IN-JC-\d{2}-\d+/) || [''])[0];
   if (jc) log('IN-JC', jc);
@@ -73,7 +73,7 @@ test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
   await page.waitForTimeout(1200);
   await page.getByRole('spinbutton').first().fill(String(QTY));
   await page.getByPlaceholder(/Operator name/i).fill('C5 Auto').catch(() => {});
-  await page.getByRole('button', { name: /Submit completion/i }).click();
+  await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
   await page.waitForTimeout(3000);
   log('op-log Turning', `${QTY}`);
 
@@ -90,7 +90,7 @@ test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
   await page.getByPlaceholder(/Organization|Organisation|Org/i).first().fill('SGS India').catch(() => {});
   await page.getByPlaceholder(/Cert/i).first().fill('CERT-TPI-001').catch(() => {});
   await snap(page, 'c5', '03-tpi-filled');
-  await page.getByRole('button', { name: /Submit QC|Submit TPI|Record|Save/i }).first().click().catch(() => {});
+  await page.getByRole('button', { name: /Submit Inspection|Submit TPI|Record|Save/i }).first().click().catch(() => {});
   await page.waitForTimeout(3500);
   log('TPI QC', `accepted ${QTY} on /tpi (SGS India / CERT-TPI-001)`);
   await snap(page, 'c5', '04-tpi-submitted');

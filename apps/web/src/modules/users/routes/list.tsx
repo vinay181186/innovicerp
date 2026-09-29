@@ -58,6 +58,7 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { useUserAccessList } from '@/modules/access-control/api';
 import { useUsersList } from '../api';
+import { ROLE_LABEL } from '@/lib/role-label';
 
 const PAGE_SIZE = 25;
 
@@ -81,7 +82,7 @@ function AccessCell({ access }: { access: UserAccessListItem | undefined }): Rea
   if (!access) return <span className="text3">—</span>;
   if (access.fullAccess)
     return (
-      <span className="fw-700" style={{ color: 'var(--green)', fontSize: 'var(--fs-xs)' }}>
+      <span className="fw-700" style={{ color: 'var(--green2)', fontSize: 'var(--fs-xs)' }}>
         L6 Super Admin
       </span>
     );
@@ -114,7 +115,11 @@ function UsersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -167,7 +172,7 @@ function UsersListPage(): React.JSX.Element {
   // ListHeader prints "· … only" for anything it is given, including an empty
   // fragment.
   const filterParts = [
-    search.role,
+    search.role ? ROLE_LABEL[search.role] : undefined,
     search.isActive === undefined ? undefined : search.isActive ? 'Active' : 'Inactive',
   ].filter((p): p is string => p !== undefined);
   const filterNote = filterParts.length > 0 ? filterParts.join(' · ') : undefined;
@@ -246,7 +251,7 @@ function UsersListPage(): React.JSX.Element {
         render: (u) => u.phone ?? '—',
       },
       {
-        header: 'Active',
+        header: 'Status',
         width: '8%',
         nowrap: true,
         // `useractive`, not the generic `active` map: a deactivated login is
@@ -261,7 +266,7 @@ function UsersListPage(): React.JSX.Element {
           u.role === 'admin' || approverSet.has(u.id) ? (
             <span
               className="fw-700"
-              style={{ color: 'var(--green)', fontSize: 'var(--fs-xs)' }}
+              style={{ color: 'var(--green2)', fontSize: 'var(--fs-xs)' }}
               title={u.role === 'admin' ? 'Admin always approves' : 'PO approver'}
             >
               ✅ PO
@@ -278,7 +283,13 @@ function UsersListPage(): React.JSX.Element {
   // sentence: this page is hidden by ROLE, not by an Access Control switch,
   // so "ask an admin for access" would be the wrong instruction.
   if (!isAdmin) {
-    return <PageState as="page" state="noaccess" message="⛔ Admin access required." />;
+    return (
+      <PageState
+        as="page"
+        state="noaccess"
+        message="You do not have permission to view User Management. Ask an admin."
+      />
+    );
   }
 
   return (
@@ -287,18 +298,17 @@ function UsersListPage(): React.JSX.Element {
           primary action stay put while the rows scroll underneath. */}
       <ListHeader
         title="User Management"
-        icon="👥"
         count={total}
         noun="user"
         filterNote={filterNote}
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
             <Select
               aria-label="Filter by role"
-              fieldWidth="md"
+              title="Role"
               value={search.role ?? ''}
               onChange={(e) => {
                 const v = e.target.value as UserRole | '';
@@ -308,13 +318,13 @@ function UsersListPage(): React.JSX.Element {
                 });
               }}
               options={[
-                { value: '', label: 'All roles' },
-                ...USER_ROLES.map((r) => ({ value: r, label: r })),
+                { value: '', label: 'All Roles' },
+                ...USER_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r] })),
               ]}
             />
             <Select
-              aria-label="Filter by active"
-              fieldWidth="sm"
+              aria-label="Filter by status"
+              title="Status"
               value={search.isActive === undefined ? '' : String(search.isActive)}
               onChange={(e) => {
                 const v = e.target.value;
@@ -328,13 +338,27 @@ function UsersListPage(): React.JSX.Element {
                 });
               }}
               options={[
-                { value: '', label: 'All' },
+                { value: '', label: 'All Status' },
                 { value: 'true', label: 'Active' },
                 { value: 'false', label: 'Inactive' },
               ]}
             />
           </>
         }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              role: undefined,
+              isActive: undefined,
+              search: undefined,
+              page: 1,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={!!search.role || search.isActive !== undefined || searchInput.trim() !== ''}
         primary={
           <Link to="/users/new" className="btn btn-primary">
             <Icon name="plus" size={14} /> Add User
@@ -345,7 +369,7 @@ function UsersListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load users'}
+          message={error instanceof Error ? error.message : 'Could not load users. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">
@@ -353,7 +377,11 @@ function UsersListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText="No users match these filters."
+            emptyText={
+              search.search || search.role || search.isActive !== undefined
+                ? 'No users match.'
+                : 'No users yet.'
+            }
             // A user has no detail page — Edit is where the name link has
             // always gone, so the row opens the same place.
             onRowClick={(u) => void navigate({ to: '/users/$id/edit', params: { id: u.id } })}
@@ -392,24 +420,12 @@ function UsersListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      {/* Legacy L13469 tips this as "Edit manages everything ... all in one window" — that
-          describes legacy's _unifiedUserForm. This port deliberately splits it: Edit owns the
-          basic fields + approval limit + password, while department / form permissions live on
-          Access Control, and email is owned by Supabase Auth. Tip reworded to match what Edit
-          actually does — see ISSUE-021. */}
       <ListFooter
         total={total}
         noun="user"
         page={currentPage}
         pageSize={PAGE_SIZE}
         onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
-        hint={
-          <>
-            Click <b>✏ Edit</b> to manage a user: name, role, phone, status, PO approval limit and
-            password. Department + form permissions are managed on <b>Access Control</b>. Click{' '}
-            <b>+ Add User</b> to create a login and app account in one step.
-          </>
-        }
       />
     </div>
   );

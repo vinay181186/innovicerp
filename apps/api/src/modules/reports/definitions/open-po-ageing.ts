@@ -4,6 +4,7 @@
 // computed field + status enum filter.
 
 import { sql } from 'drizzle-orm';
+import { poLinePendingSql } from '../../../lib/po-pending';
 import type { RegisteredReport } from '../registry';
 
 export const openPoAgeingReport: RegisteredReport = {
@@ -11,8 +12,9 @@ export const openPoAgeingReport: RegisteredReport = {
     slug: 'open-po-ageing',
     title: 'Open PO ageing',
     description:
-      'POs not yet closed or cancelled, with `days_open` computed from po_date. Sorted oldest first to surface stuck procurement.',
-    group: 'Procurement',
+      'POs not yet Closed or Cancelled, with Days Open counted from the PO Date. Sorted oldest first to surface stuck procurement.',
+    group: 'Purchase',
+    dept: 'purchase',
     filters: [
       {
         key: 'status',
@@ -31,6 +33,8 @@ export const openPoAgeingReport: RegisteredReport = {
       { key: 'received_qty', label: 'Received', type: 'number' },
       { key: 'pending_qty', label: 'Pending', type: 'number' },
     ],
+    // ADR-190 — po_code opens the document; po_id is not a column.
+    rowLink: { column: 'po_code', route: '/purchase-orders/$id', idKey: 'po_id' },
   },
   async run({ tx, companyId, filters }) {
     const statusFilter = filters['status'];
@@ -42,6 +46,7 @@ export const openPoAgeingReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
+        po.id AS po_id,
         po.code AS po_code,
         po.po_date,
         (CURRENT_DATE - po.po_date)::int AS days_open,
@@ -49,7 +54,8 @@ export const openPoAgeingReport: RegisteredReport = {
         po.status,
         COALESCE(SUM(pol.qty), 0)::float AS total_qty,
         COALESCE(SUM(pol.received_qty), 0)::float AS received_qty,
-        COALESCE(SUM(pol.qty - pol.received_qty), 0)::float AS pending_qty
+        -- ADR-189 — the one Pending rule (lib/po-pending.ts), clamped per line.
+        COALESCE(SUM(${poLinePendingSql('pol', 'po')}), 0)::float AS pending_qty
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v
         ON v.id = po.vendor_id AND v.deleted_at IS NULL
@@ -63,6 +69,7 @@ export const openPoAgeingReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      po_id: String(r['po_id'] ?? ''),
       po_code: String(r['po_code'] ?? ''),
       po_date:
         r['po_date'] instanceof Date

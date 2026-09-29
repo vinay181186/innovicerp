@@ -1,4 +1,6 @@
-// Shared plan form for new + edit. Mirrors legacy renderSOPlanning panels
+// Plan EDIT form (plans/$id/edit). /plans/new no longer uses it — a new plan
+// is made by plan-create-form.tsx, the same Route-Card plan as SO Planning
+// "+ Plan". Mirrors legacy renderSOPlanning panels
 // (HTML L9299) — type picker + type-specific sub-form + ops table for
 // manufacture/assembly plans. Direct-purchase / full-outsource hide the
 // ops table.
@@ -9,10 +11,12 @@ import {
   opSrNo,
   qcAfterOutsourceError,
 } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
+import { Link, useParams } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
+import { RmItemFields, rmItemToInput } from '@/components/shared/rm-item-fields';
+import { VendorPicker } from '@/components/shared/vendor-picker';
 import { useItemsList } from '@/modules/items/api';
 import {
   MaterialGradePicker,
@@ -42,6 +46,10 @@ export interface PlanFormValues {
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  // ADR-193 phase 3a: RM item + qty per piece (prefilled from the Route Card).
+  rawMaterialItemId: string | null;
+  rawMaterialItemCode: string | null;
+  rmQtyPerPiece: string;
   bomMasterId: string | null;
   bomParentCode: string;
   bomChildCode: string;
@@ -92,15 +100,15 @@ export const PLAN_TYPE_OPTIONS: Array<{
   },
   {
     value: 'direct_purchase',
-    label: 'Direct Purchase',
+    label: 'Buy',
     icon: '🛒',
-    help: 'Buy from vendor — single PR generated',
+    help: 'Raises one PR to a vendor',
   },
   {
     value: 'full_outsource',
     label: 'Full Outsource',
     icon: '📦',
-    help: 'Outsource to job-work vendor (+ optional material PR)',
+    help: 'Job-work vendor makes the part',
   },
   { value: 'assembly', label: 'Assembly', icon: '🔧', help: 'Assembly of equipment per BOM' },
 ];
@@ -129,6 +137,9 @@ export function emptyValues(): PlanFormValues {
     rawMaterialGradeText: null,
     rawMaterialSizeId: null,
     rawMaterialSizeText: null,
+    rawMaterialItemId: null,
+    rawMaterialItemCode: null,
+    rmQtyPerPiece: '',
     bomMasterId: null,
     bomParentCode: '',
     bomChildCode: '',
@@ -168,6 +179,7 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
     rawMaterialGradeText: v.rawMaterialGradeText || null,
     rawMaterialSizeId: v.rawMaterialSizeId ?? null,
     rawMaterialSizeText: v.rawMaterialSizeText || null,
+    ...rmItemToInput(v),
     bomMasterId: v.bomMasterId ?? null,
     bomParentCode: v.bomParentCode || null,
     bomChildCode: v.bomChildCode || null,
@@ -236,6 +248,11 @@ export function PlanForm({
   hideOps,
 }: PlanFormProps): React.JSX.Element {
   const [values, setValues] = useState<PlanFormValues>(initialValues);
+  // The saved plan's id, for the "Create Production Order" link. The form is
+  // only ever mounted with a saved plan on the edit route (plans/$id/edit),
+  // so the id is read off that route rather than threaded through a new prop.
+  const routeParams: { id?: string | undefined } = useParams({ strict: false });
+  const editPlanId = isEdit ? routeParams.id : undefined;
 
   // Reload default ops button is wired against itemId; query enabled only when item is set.
   const {
@@ -275,9 +292,18 @@ export function PlanForm({
     setValues((v) => {
       const gradeBlank = !v.rawMaterialGradeId && !v.rawMaterialGradeText;
       const sizeBlank = !v.rawMaterialSizeId && !v.rawMaterialSizeText;
-      if (!gradeBlank && !sizeBlank) return v;
+      const rmItemBlank = !v.rawMaterialItemId;
+      if (!gradeBlank && !sizeBlank && !rmItemBlank) return v;
       return {
         ...v,
+        ...(rmItemBlank && defaultOps.rawMaterialItemId
+          ? {
+              rawMaterialItemId: defaultOps.rawMaterialItemId,
+              rawMaterialItemCode: defaultOps.rawMaterialItemCode,
+              rmQtyPerPiece:
+                defaultOps.rmQtyPerPiece != null ? String(defaultOps.rmQtyPerPiece) : '',
+            }
+          : {}),
         ...(gradeBlank
           ? {
               rawMaterialGradeId: defaultOps.rawMaterialGradeId,
@@ -399,9 +425,9 @@ export function PlanForm({
       {submitError ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--red2)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,
@@ -414,7 +440,7 @@ export function PlanForm({
       {/* Header block */}
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Plan header</div>
+          <div className="panel-title">Plan Details</div>
         </div>
         <div
           className="panel-body"
@@ -424,7 +450,7 @@ export function PlanForm({
             gap: 10,
           }}
         >
-          <Field label="Plan code">
+          <Field label="Plan No.">
             <input
               className="innovic-input"
               readOnly={isEdit}
@@ -433,7 +459,7 @@ export function PlanForm({
               onChange={(e) => update('code', e.target.value)}
             />
           </Field>
-          <Field label="Plan date *">
+          <Field label="Plan Date" required>
             <input
               type="date"
               className="innovic-input"
@@ -442,7 +468,7 @@ export function PlanForm({
               onChange={(e) => update('planDate', e.target.value)}
             />
           </Field>
-          <Field label="Plan type *">
+          <Field label="Plan Type" required>
             <select
               className="innovic-select"
               value={values.planType}
@@ -450,7 +476,11 @@ export function PlanForm({
               disabled={isEdit}
               title={isEdit ? 'Type cannot be changed after create' : undefined}
             >
-              {PLAN_TYPE_OPTIONS.map((opt) => (
+              {/* ADR-171: Buy is not planned any more (bought lines get "+ PR"
+                  on SO Planning) — only an existing Buy plan still shows it. */}
+              {PLAN_TYPE_OPTIONS.filter(
+                (opt) => opt.value !== 'direct_purchase' || values.planType === 'direct_purchase',
+              ).map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.icon} {opt.label}
                 </option>
@@ -466,7 +496,7 @@ export function PlanForm({
       {/* Item + SO link */}
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Item &amp; source</div>
+          <div className="panel-title">Item &amp; Source</div>
         </div>
         <div
           className="panel-body"
@@ -476,11 +506,14 @@ export function PlanForm({
             gap: 10,
           }}
         >
-          <Field label="Item Code *">
+          <Field label="Item Code" required>
             <input
               className="innovic-input"
-              list="dlPlanItems"
+              list={isEdit ? undefined : 'dlPlanItems'}
               required
+              // The item is fixed once the plan exists — the edit never sends it.
+              readOnly={isEdit}
+              style={isEdit ? { background: 'var(--bg4)' } : undefined}
               placeholder="🔍 search code…"
               value={values.itemCodeText}
               onChange={(e) => onItemCodeChange(e.target.value)}
@@ -509,15 +542,9 @@ export function PlanForm({
               onChange={(e) => update('itemNameText', e.target.value)}
             />
           </Field>
-          <Field label="Item id (UUID, optional)">
-            <input
-              className="innovic-input"
-              placeholder="optional — auto-resolves item code if blank"
-              value={values.itemId ?? ''}
-              onChange={(e) => update('itemId', e.target.value || null)}
-            />
-          </Field>
-          <Field label="Order Qty *">
+          {/* No raw "Item id (UUID)" box: the Item Code picker above already
+              links the plan to the Item Master (sets itemId). */}
+          <Field label="Order Qty" required>
             <input
               type="number"
               min={1}
@@ -527,7 +554,7 @@ export function PlanForm({
               onChange={(e) => update('orderQty', Number(e.target.value))}
             />
           </Field>
-          <Field label="Plan qty *">
+          <Field label="Plan Qty" required>
             <input
               type="number"
               min={1}
@@ -537,32 +564,25 @@ export function PlanForm({
               onChange={(e) => update('planQty', Number(e.target.value))}
             />
           </Field>
-          <Field label="SO line id (UUID, optional)">
+          {/* The SO / JWSO line is fixed once the plan exists (a new plan picks
+              it on /plans/new). No raw "SO line id (UUID)" box: shown, not typed. */}
+          <Field label="SO / JWSO No.">
             <input
               className="innovic-input"
-              placeholder="optional — link to a sales order line"
-              value={values.soLineId ?? ''}
-              onChange={(e) => update('soLineId', e.target.value || null)}
-            />
-          </Field>
-          <Field label="SO No.">
-            <input
-              className="innovic-input"
-              value={values.soCodeText}
-              onChange={(e) => update('soCodeText', e.target.value)}
+              readOnly
+              style={{ background: 'var(--bg4)' }}
+              value={values.soCodeText || '—'}
             />
           </Field>
           <Field label="Ln">
             <input
-              type="number"
               className="innovic-input"
-              value={values.lineNo ?? ''}
-              onChange={(e) =>
-                update('lineNo', e.target.value === '' ? null : Number(e.target.value))
-              }
+              readOnly
+              style={{ background: 'var(--bg4)' }}
+              value={values.lineNo ?? '—'}
             />
           </Field>
-          <Field label="Planned start">
+          <Field label="Planned Start Date">
             <input
               type="date"
               className="innovic-input"
@@ -570,7 +590,7 @@ export function PlanForm({
               onChange={(e) => update('plannedStartDate', e.target.value)}
             />
           </Field>
-          <Field label="Planned end">
+          <Field label="Planned End Date">
             <input
               type="date"
               className="innovic-input"
@@ -582,7 +602,7 @@ export function PlanForm({
               the planned dates. Both optional — no ★ on either. */}
           <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
             <RawMaterialGroup>
-              <Field label="Grade">
+              <Field label="RM Grade">
                 <MaterialGradePicker
                   valueId={values.rawMaterialGradeId}
                   valueText={values.rawMaterialGradeText}
@@ -595,7 +615,7 @@ export function PlanForm({
                   }}
                 />
               </Field>
-              <Field label="Size">
+              <Field label="RM Size">
                 <MaterialSizePicker
                   valueId={values.rawMaterialSizeId}
                   valueText={values.rawMaterialSizeText}
@@ -608,6 +628,14 @@ export function PlanForm({
                   }}
                 />
               </Field>
+              <RmItemFields
+                value={{
+                  rawMaterialItemId: values.rawMaterialItemId,
+                  rawMaterialItemCode: values.rawMaterialItemCode,
+                  rmQtyPerPiece: values.rmQtyPerPiece,
+                }}
+                onChange={(rm) => setValues((v) => ({ ...v, ...rm }))}
+              />
             </RawMaterialGroup>
           </div>
         </div>
@@ -617,7 +645,7 @@ export function PlanForm({
       {values.planType === 'direct_purchase' ? (
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">🛒 Direct purchase</div>
+            <div className="panel-title">Buy</div>
           </div>
           <div
             className="panel-body"
@@ -627,22 +655,23 @@ export function PlanForm({
               gap: 10,
             }}
           >
-            <Field label="Vendor code *">
-              <input
-                className="innovic-input"
-                required
-                value={values.dpVendorCodeText}
-                onChange={(e) => update('dpVendorCodeText', e.target.value)}
-              />
-            </Field>
-            <Field label="Vendor id (optional)">
-              <input
-                className="innovic-input"
-                value={values.dpVendorId ?? ''}
-                onChange={(e) => update('dpVendorId', e.target.value || null)}
-              />
-            </Field>
-            <Field label="Unit cost">
+            {/* The shared vendor picker: master vendors only, stores the id
+                AND the code snapshot. No free-text code, no raw id box. */}
+            <VendorPicker
+              id="plan-dp-vendor"
+              className=""
+              value={values.dpVendorId}
+              initialLabel={values.dpVendorCodeText}
+              carriedText={values.dpVendorId ? '' : values.dpVendorCodeText}
+              onChange={(id, label) =>
+                setValues((v) => ({
+                  ...v,
+                  dpVendorId: id,
+                  dpVendorCodeText: id ? vendorCodeOf(label) : '',
+                }))
+              }
+            />
+            <Field label="Unit Cost">
               <input
                 type="number"
                 step="0.01"
@@ -668,7 +697,7 @@ export function PlanForm({
       {values.planType === 'full_outsource' ? (
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">📦 Full outsource</div>
+            <div className="panel-title">Full Outsource</div>
           </div>
           <div
             className="panel-body"
@@ -678,15 +707,22 @@ export function PlanForm({
               gap: 10,
             }}
           >
-            <Field label="JW Vendor code *">
-              <input
-                className="innovic-input"
-                required
-                value={values.foVendorCodeText}
-                onChange={(e) => update('foVendorCodeText', e.target.value)}
-              />
-            </Field>
-            <Field label="Process *">
+            <VendorPicker
+              id="plan-fo-vendor"
+              className=""
+              labelText="JW Vendor"
+              value={values.foVendorId}
+              initialLabel={values.foVendorCodeText}
+              carriedText={values.foVendorId ? '' : values.foVendorCodeText}
+              onChange={(id, label) =>
+                setValues((v) => ({
+                  ...v,
+                  foVendorId: id,
+                  foVendorCodeText: id ? vendorCodeOf(label) : '',
+                }))
+              }
+            />
+            <Field label="Process" required>
               <input
                 className="innovic-input"
                 required
@@ -709,7 +745,7 @@ export function PlanForm({
             {/* ADR-095: Material Source removed. A full-outsource job buys the
                 finished part; the vendor supplies his own material, so there is
                 nothing for the planner to choose and no material PR is raised. */}
-            <Field label="Delivery date">
+            <Field label="Due Date">
               <input
                 type="date"
                 className="innovic-input"
@@ -743,7 +779,13 @@ export function PlanForm({
             <div className="text3" style={{ fontSize: 12 }}>
               Operations come from the item's Route Card. Create a Production Order to build the Job
               Card.{' '}
-              <Link to="/production-orders/new" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
+              <Link
+                to="/production-orders/new"
+                // Open the form on THIS plan (same search the Plans list
+                // sends). Only an edit has a saved plan to name.
+                search={editPlanId ? { planId: editPlanId, planCode: values.code } : {}}
+                style={{ color: 'var(--cyan)', fontWeight: 600 }}
+              >
                 Create Production Order →
               </Link>
             </div>
@@ -766,7 +808,7 @@ export function PlanForm({
                     'Loading…'
                   ) : (
                     <>
-                      Route Card: <span style={{ color: 'var(--amber)' }}>none</span> &mdash; enter
+                      <span style={{ color: 'var(--amber2)' }}>No Route Card</span> &mdash; enter
                       the operations below
                     </>
                   )}
@@ -778,14 +820,14 @@ export function PlanForm({
                   className="btn btn-ghost btn-sm"
                   onClick={handleLoadDefaultOps}
                   disabled={loadingOps}
-                  title="Replaces ops with the item's active route card"
+                  title="Replaces the operations with the item's Route Card"
                 >
                   {loadingOps ? <Loader2 size={13} className="animate-spin" /> : null}
-                  Load route card ({defaultOps.ops.length})
+                  Load Route Card ({defaultOps.ops.length})
                 </button>
               ) : null}
               <button type="button" className="btn btn-ghost btn-sm" onClick={addOp}>
-                <Plus size={13} /> Add op
+                <Plus size={13} /> Add Op
               </button>
             </div>
           </div>
@@ -796,11 +838,11 @@ export function PlanForm({
                   <th>Op</th>
                   <th>Operation</th>
                   <th>Op Type</th>
-                  <th>Machine</th>
-                  <th>Cycle Time (h)</th>
-                  <th>QC?</th>
-                  <th>OSP vendor</th>
-                  <th>OSP cost</th>
+                  <th>Planned Machine</th>
+                  <th>Cycle Time (min)</th>
+                  <th>QC Required</th>
+                  <th>OSP Vendor</th>
+                  <th>OSP Cost</th>
                   <th></th>
                 </tr>
               </thead>
@@ -808,7 +850,7 @@ export function PlanForm({
                 {values.ops.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="empty-state">
-                      No operations. Add one or load from the item's route card.
+                      No operations yet.
                     </td>
                   </tr>
                 ) : (
@@ -849,7 +891,7 @@ export function PlanForm({
                             }))
                           }
                         >
-                          <option value="process">Process</option>
+                          <option value="process">In-house</option>
                           <option value="outsource">Outsource</option>
                           <option value="qc">QC</option>
                         </select>
@@ -960,9 +1002,9 @@ export function PlanForm({
             <div
               role="alert"
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
-                border: '1px solid #fca5a5',
+                border: '1px solid var(--red2)',
                 borderRadius: 6,
                 padding: '6px 10px',
                 fontSize: 12,
@@ -978,7 +1020,7 @@ export function PlanForm({
       {/* Remarks */}
       <div className="panel">
         <div className="panel-body">
-          <Field label="Plan remarks" full>
+          <Field label="Plan Remarks" full>
             <textarea
               className="innovic-input"
               rows={2}
@@ -1003,14 +1045,21 @@ export function PlanForm({
   );
 }
 
+/** "CODE — Name" (the picker's label) → CODE, the snapshot the plan keeps. */
+function vendorCodeOf(label: string): string {
+  return label.split(' — ')[0]?.trim() ?? '';
+}
+
 function Field({
   label,
   children,
   full,
+  required,
 }: {
   label: string;
   children: React.ReactNode;
   full?: boolean;
+  required?: boolean;
 }): React.JSX.Element {
   return (
     <div style={full ? { gridColumn: '1 / -1' } : undefined}>
@@ -1018,13 +1067,12 @@ function Field({
         className="text3"
         style={{
           display: 'block',
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
+          fontSize: 11,
           marginBottom: 4,
         }}
       >
         {label}
+        {required ? <span className="req">★</span> : null}
       </label>
       {children}
     </div>

@@ -43,7 +43,7 @@ export function JwLineDrawingCell({
       const path = await uploadFile(file, me.companyId, { folder: 'jw-line-drawings' });
       onChange(path);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
     } finally {
       setBusy(false);
     }
@@ -72,7 +72,7 @@ export function JwLineDrawingCell({
         <button
           type="button"
           className="btn btn-sm"
-          style={{ padding: '2px 6px', fontSize: 11, background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)' }}
+          style={{ padding: '2px 6px', fontSize: 11, background: 'transparent', color: 'var(--red2)', border: '1px solid var(--red)' }}
           onClick={() => onChange(undefined)}
           title="Clear drawing"
           aria-label="Clear drawing"
@@ -104,7 +104,7 @@ export function JwLineDrawingCell({
         onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
       />
       {err ? (
-        <div className="form-error" style={{ fontSize: 10 }}>
+        <div className="form-error" style={{ fontSize: 11 }}>
           {err}
         </div>
       ) : null}

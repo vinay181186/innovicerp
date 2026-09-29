@@ -12,7 +12,12 @@
 //
 // ESC / click outside ask "Are you sure you want to exit?" through `Modal`.
 
-import type { CreatePlanInput, PlanningDetailResponse, PlanningLine } from '@innovic/shared';
+import type {
+  CreatePlanInput,
+  PlanDetail,
+  PlanningDetailResponse,
+  PlanningLine,
+} from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
@@ -37,9 +42,7 @@ const stepBtnStyle: React.CSSProperties = {
 };
 
 const groupTitle: React.CSSProperties = {
-  fontSize: 9,
-  textTransform: 'uppercase',
-  letterSpacing: '.08em',
+  fontSize: 11,
   marginBottom: 6,
 };
 
@@ -47,8 +50,9 @@ interface Props {
   so: PlanningDetailResponse;
   line: PlanningLine;
   onClose: () => void;
-  /** Called with the new plan id once it is saved. */
-  onCreated: (planId: string) => void;
+  /** Called with the saved plan, so the page can offer the next step
+   *  (Create Production Order →, or make the Route Card first). */
+  onCreated: (plan: PlanDetail) => void;
 }
 
 export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.Element {
@@ -142,7 +146,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         lineNo: line.lineNo,
       });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to reserve');
+      setErr(e instanceof Error ? e.message : 'Could not reserve stock. Try again.');
     }
   };
 
@@ -152,7 +156,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       return;
     }
     if (planQty > remaining) {
-      setErr(`Cannot exceed remaining: ${remaining} pcs`);
+      setErr(`Plan Qty cannot be more than Pending to Plan (${remaining}).`);
       return;
     }
     if (!plannedStartDate || !plannedEndDate) {
@@ -192,9 +196,9 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
     };
     try {
       const created = await createPlan.mutateAsync(input);
-      onCreated(created.id);
+      onCreated(created);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to create plan');
+      setErr(e instanceof Error ? e.message : 'Could not save Plan. Try again.');
     }
   };
 
@@ -228,10 +232,10 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         {createPlan.isPending ? (
           <>
             <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} />{' '}
-            Creating…
+            Saving…
           </>
         ) : (
-          'Create Plan'
+          'Save Plan'
         )}
       </button>
     </>
@@ -276,16 +280,16 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       >
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>
               {so.source === 'jw' ? 'JWSO' : 'SO'}
             </span>
             <br />
             <b className="mono">
-              {so.soCode} L{line.lineNo}
+              {so.soCode} Ln {line.lineNo}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>ITEM</span>
             <br />
             {/* Item code is the main thing: strong mono, darkest text. */}
             <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
@@ -298,7 +302,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             ) : null}
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>ORDER QTY</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
             <br />
             <b style={{ fontSize: 18 }}>{line.orderQty}</b>
           </div>
@@ -313,7 +317,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               border: '1px solid var(--border)',
             }}
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>ALREADY PLANNED</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Plan Qty</div>
             <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--cyan)' }}>
               {line.totalPlanned}
             </div>
@@ -327,8 +331,8 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               border: '1px solid var(--green)',
             }}
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>REMAINING</div>
-            <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Pending to Plan</div>
+            <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green2)' }}>
               {remaining}
             </div>
           </div>
@@ -343,7 +347,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           >
             {/* ADR-180 — this is AVAILABLE (physical − reserved), not what is
                 on the shelf. PHYSICAL sits in its own tile beside it. */}
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>AVAILABLE</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Available</div>
             <div
               className="mono fw-700"
               style={{ fontSize: 20, color: stock > 0 ? 'var(--amber)' : 'var(--text3)' }}
@@ -361,7 +365,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             }}
             title="On the shelf for this item — reserving never changes it"
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>PHYSICAL</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Physical</div>
             <div
               className="mono fw-700"
               style={{ fontSize: 20, color: line.physicalQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}
@@ -378,7 +382,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               border: '1px solid var(--border)',
             }}
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>RESERVED</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Reserved</div>
             <div
               className="mono fw-700"
               style={{ fontSize: 20, color: reserved > 0 ? 'var(--purple)' : 'var(--text3)' }}
@@ -396,7 +400,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
                   padding: 0,
                   marginTop: 2,
                   color: 'var(--cyan)',
-                  fontSize: 10,
+                  fontSize: 11,
                   cursor: 'pointer',
                 }}
               >
@@ -434,19 +438,11 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               width: '100%',
             }}
           />
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-            Max: {remaining} pcs (Order: {line.orderQty} − Already Planned: {line.totalPlanned})
-          </div>
-          {stock > 0 ? (
-            <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
-              💡 {suggested} pcs to make — {remaining} remaining − {stock} already in stock
-              {suggested === 0 ? ' (fully covered by stock)' : ''}.
-            </div>
-          ) : null}
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Max {remaining}</div>
         </div>
         <div className="form-grp" style={{ flex: '1 1 260px', minWidth: 0 }}>
           <label className="form-label" htmlFor="create-plan-remark">
-            Remark
+            Remarks
           </label>
           <textarea
             id="create-plan-remark"
@@ -478,7 +474,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
               <label className="form-label" htmlFor="create-plan-start">
-                Planned Start / Required Date
+                Planned Start Date
               </label>
               <input
                 id="create-plan-start"
@@ -561,7 +557,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           <label
             className="form-label"
             htmlFor="reserve-qty"
-            style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 14 }}
+            style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 14 }}
           >
             Reserve Qty (from stock)
           </label>
@@ -591,7 +587,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
                 fontWeight: 800,
                 textAlign: 'center',
                 border: '2px solid var(--amber)',
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
                 padding: 6,
                 width: 120,
                 height: 38,
@@ -620,7 +616,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
             {reservable > 0
-              ? `Max: ${reservable} pcs (Available: ${stock}, still uncovered: ${uncovered})`
+              ? `Max ${reservable}`
               : stock <= 0
                 ? 'No free stock to reserve — Available is 0.'
                 : 'This line is already fully covered — nothing left to reserve.'}
@@ -639,7 +635,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             padding: 8,
             borderRadius: 4,
             background: 'var(--red3)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >

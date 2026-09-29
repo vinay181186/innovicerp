@@ -19,7 +19,7 @@ READ-ONLY. Reads: `sales_orders` + `sales_order_lines` (headers/lines, filtered 
 ## API Endpoints
 `routes.ts` (auth required):
 - `GET /so-overview?status=&search=` — dashboard rows + summary. `status` default `open` (or `all`).
-- `GET /so-overview/:id/detail` — per-SO drill: child rows (per line or per BOM child) with stage/status/qty breakdown.
+- ~~`GET /so-overview/:id/detail`~~ — removed 2026-09-26 (dead since the drill view moved to the SO Status page).
 
 Access: any authenticated company user; RLS enforces company isolation.
 

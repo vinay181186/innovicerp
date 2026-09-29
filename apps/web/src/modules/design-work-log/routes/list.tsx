@@ -1,8 +1,10 @@
-// Daily Work Log (Design slice E) — engineer timesheet feed.
+// Design Work Log (Design slice E) — engineer timesheet feed.
 // Mirrors legacy renderDesignWorkLog (HTML L7935) with 5 tabs.
 
 import {
   type CreateDesignWorkLogInput,
+  DESIGN_DAY_HOURS_WARN,
+  DESIGN_HOURS_MAX_PER_ENTRY,
   DESIGN_WORK_CATEGORIES,
   type DesignWorkCategory,
   type DesignWorkLogEntry,
@@ -10,15 +12,15 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate, todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { ListHeader } from '@/ui/layout';
 import { useDesignProjectDetail, useDesignProjectsList } from '../../design-projects/api';
-import {
-  useCreateDesignWorkLog,
-  useDeleteDesignWorkLog,
-  useDesignWorkLogList,
-} from '../api';
+import { useCreateDesignWorkLog, useDeleteDesignWorkLog, useDesignWorkLogList } from '../api';
 
 type TabKey = 'entry' | 'daily' | 'weekly' | 'project' | 'alerts';
 
@@ -44,13 +46,20 @@ export const designWorkLogListRoute = createRoute({
 });
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayIst();
+}
+
+/** A local Date → YYYY-MM-DD from its LOCAL parts. `toISOString()` is UTC, so
+ *  a local midnight in IST (UTC+5:30) came back as the previous day. */
+function localYmd(d: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function addDays(date: string, n: number): string {
   const d = new Date(date + 'T00:00:00');
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return localYmd(d);
 }
 
 function dayName(date: string): string {
@@ -64,41 +73,37 @@ function DesignWorkLogPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Design Work Log. Ask an admin.
       </div>
     );
   }
 
   const tabs: Array<{ k: TabKey; label: string }> = [
-    { k: 'entry', label: '📝 My Timesheet' },
-    { k: 'daily', label: '📅 Daily View' },
-    { k: 'weekly', label: '📊 Weekly View' },
-    { k: 'project', label: '🏭 Project Hours' },
-    { k: 'alerts', label: '🔔 Alerts' },
+    { k: 'entry', label: 'My Log' },
+    { k: 'daily', label: 'Daily View' },
+    { k: 'weekly', label: 'Weekly View' },
+    { k: 'project', label: 'Project Hours' },
+    { k: 'alerts', label: 'Alerts' },
   ];
 
   return (
     <div>
-      <div className="section-hdr">⏱ Daily Work Log</div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
-        {tabs.map((t) => (
-          <button
-            key={t.k}
-            type="button"
-            className="btn btn-sm"
-            style={{
-              fontWeight: 700,
-              background: tab === t.k ? 'var(--blue)' : 'var(--bg4)',
-              color: tab === t.k ? '#fff' : 'var(--text2)',
-              border: `1px solid ${tab === t.k ? 'var(--blue)' : 'var(--border)'}`,
-            }}
-            onClick={() => setTab(t.k)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <ListHeader title="Design Work Log" icon="⏱">
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {tabs.map((t) => (
+            <button
+              key={t.k}
+              type="button"
+              className={`btn btn-sm ${tab === t.k ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ fontWeight: 700 }}
+              onClick={() => setTab(t.k)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </ListHeader>
 
       {tab === 'entry' ? <EntryTab /> : null}
       {tab === 'daily' ? <DailyTab /> : null}
@@ -128,6 +133,8 @@ function EntryTab(): React.JSX.Element {
   const [hours, setHours] = useState('');
   const [description, setDescription] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  // Set after a save that took the day's total above the warning line.
+  const [dayWarn, setDayWarn] = useState<string | null>(null);
 
   // Legacy L7954 offers every project that is not Released — that is
   // Design Active + In Review + On Hold. The `active` server filter is
@@ -156,16 +163,22 @@ function EntryTab(): React.JSX.Element {
 
   const createMut = useCreateDesignWorkLog();
   const deleteMut = useDeleteDesignWorkLog();
+  const [askDelete, setAskDelete] = useState<string | null>(null);
 
   const onSave = (): void => {
     setErr(null);
+    setDayWarn(null);
     if (!projectId) {
-      setErr('Select project');
+      setErr('Project is required.');
       return;
     }
     const h = Number(hours);
     if (!Number.isFinite(h) || h <= 0) {
-      setErr('Enter hours');
+      setErr('Hours is required.');
+      return;
+    }
+    if (h > DESIGN_HOURS_MAX_PER_ENTRY) {
+      setErr(`Hours cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`);
       return;
     }
     const input: CreateDesignWorkLogInput = {
@@ -177,12 +190,18 @@ function EntryTab(): React.JSX.Element {
     if (task.trim()) input.taskText = task.trim();
     if (description.trim()) input.description = description.trim();
     createMut.mutate(input, {
-      onSuccess: () => {
+      onSuccess: (saved) => {
         setHours('');
         setTask('');
         setDescription('');
+        const day = saved.dayTotalHours ?? 0;
+        if (day > DESIGN_DAY_HOURS_WARN) {
+          setDayWarn(
+            `Saved. You now have ${day}h booked on ${fmtDate(saved.logDate)} — more than ${DESIGN_DAY_HOURS_WARN}h in one day. Check the hours are right.`,
+          );
+        }
       },
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save Entry. Try again.'),
     });
   };
 
@@ -198,17 +217,14 @@ function EntryTab(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile label="Today" value={`${todayHrs.toFixed(1)}h`} color="var(--blue)" />
-        <Tile label="Entries Today" value={todayLogs.length} color="var(--green)" />
-        <Tile label="Total Hours" value={`${totalHrs.toFixed(0)}h`} color="var(--cyan)" />
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            { key: 'today', label: 'Today', count: `${todayHrs.toFixed(1)}h` },
+            { key: 'entries', label: 'Entries Today', count: todayLogs.length },
+            { key: 'total', label: 'Total Hours', count: `${totalHrs.toFixed(0)}h` },
+          ]}
+        />
       </div>
 
       {canAdd ? (
@@ -216,7 +232,7 @@ function EntryTab(): React.JSX.Element {
           className="panel"
           style={{ padding: 16, marginBottom: 16, borderLeft: '3px solid var(--blue)' }}
         >
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📝 Log Work Entry</div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Log Work Entry</div>
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label">Log Date</label>
@@ -278,7 +294,7 @@ function EntryTab(): React.JSX.Element {
                 type="number"
                 min={0.5}
                 step={0.5}
-                max={12}
+                max={DESIGN_HOURS_MAX_PER_ENTRY}
                 className="innovic-input"
                 style={{ width: 80 }}
                 value={hours}
@@ -295,13 +311,20 @@ function EntryTab(): React.JSX.Element {
               />
             </div>
           </div>
+          {dayWarn ? (
+            <div style={{ marginTop: 12 }}>
+              <Banner tone="warn" flush onDismiss={() => setDayWarn(null)}>
+                {dayWarn}
+              </Banner>
+            </div>
+          ) : null}
           {err ? (
             <div
               style={{
                 marginTop: 12,
                 padding: 8,
-                background: 'rgba(239,68,68,0.08)',
-                color: 'var(--red)',
+                background: 'var(--red3)',
+                color: 'var(--red2)',
                 fontSize: 12,
                 borderRadius: 4,
               }}
@@ -327,6 +350,17 @@ function EntryTab(): React.JSX.Element {
         </div>
       ) : null}
 
+      <ConfirmDialog
+        open={askDelete !== null}
+        title="Delete this work entry?"
+        message="The hours are removed from the log."
+        confirmLabel="Delete"
+        onCancel={() => setAskDelete(null)}
+        onConfirm={async () => {
+          if (askDelete) await deleteMut.mutateAsync(askDelete);
+          setAskDelete(null);
+        }}
+      />
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Recent Work Log</div>
       {dates.length === 0 ? (
         <div className="empty-state" style={{ padding: 30 }}>
@@ -338,13 +372,11 @@ function EntryTab(): React.JSX.Element {
         const dayHrs = dayLogs.reduce((s, l) => s + l.hours, 0);
         return (
           <div key={date} style={{ marginBottom: 14 }}>
-            <div
-              style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}
-            >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <span
                 style={{
-                  background: 'rgba(37,99,235,0.08)',
-                  border: '1px solid rgba(37,99,235,0.3)',
+                  background: 'var(--blue3)',
+                  border: '1px solid var(--blue)',
                   color: 'var(--blue)',
                   padding: '3px 10px',
                   borderRadius: 6,
@@ -353,19 +385,14 @@ function EntryTab(): React.JSX.Element {
                   fontFamily: 'var(--mono)',
                 }}
               >
-                {date}
+                {fmtDate(date)}
               </span>
               <span
                 style={{
                   marginLeft: 'auto',
                   fontWeight: 700,
                   fontFamily: 'var(--mono)',
-                  color:
-                    dayHrs >= 6
-                      ? 'var(--green)'
-                      : dayHrs >= 3
-                        ? 'var(--amber)'
-                        : 'var(--red)',
+                  color: dayHrs >= 6 ? 'var(--green)' : dayHrs >= 3 ? 'var(--amber)' : 'var(--red)',
                 }}
               >
                 {dayHrs.toFixed(1)}h
@@ -395,7 +422,7 @@ function EntryTab(): React.JSX.Element {
                       {l.taskText ?? 'General'}{' '}
                       <span
                         style={{
-                          fontSize: 9,
+                          fontSize: 11,
                           padding: '1px 6px',
                           borderRadius: 10,
                           color: cc,
@@ -403,10 +430,9 @@ function EntryTab(): React.JSX.Element {
                       >
                         {l.category}
                       </span>
+                      <TrackerBadge designTrackerId={l.designTrackerId} />
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                      {l.projectName ?? ''}
-                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>{l.projectName ?? ''}</div>
                     {l.description ? (
                       <div style={{ fontSize: 11, color: 'var(--text2)' }}>{l.description}</div>
                     ) : null}
@@ -425,11 +451,10 @@ function EntryTab(): React.JSX.Element {
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
-                      style={{ fontSize: 10 }}
+                      style={{ fontSize: 11 }}
                       disabled={deleteMut.isPending}
-                      onClick={() => {
-                        if (window.confirm('Delete entry?')) deleteMut.mutate(l.id);
-                      }}
+                      title="Delete entry"
+                      onClick={() => setAskDelete(l.id)}
                     >
                       🗑
                     </button>
@@ -459,7 +484,8 @@ function DailyTab(): React.JSX.Element {
 
   // Legacy L7994-7997: the engineer cards always show that engineer's full day,
   // while the entry list and the Total tile follow the selected engineer.
-  const logs = viewEng === 'All' ? allDayLogs : allDayLogs.filter((l) => l.engineerText === viewEng);
+  const logs =
+    viewEng === 'All' ? allDayLogs : allDayLogs.filter((l) => l.engineerText === viewEng);
   const totalHrs = logs.reduce((s, l) => s + l.hours, 0);
 
   const engineers = useMemo(() => {
@@ -477,9 +503,7 @@ function DailyTab(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}
-      >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
@@ -488,7 +512,7 @@ function DailyTab(): React.JSX.Element {
           ←
         </button>
         <div style={{ fontSize: 14, fontWeight: 700, minWidth: 160, textAlign: 'center' }}>
-          {viewDate} ({dayName(viewDate)})
+          {fmtDate(viewDate)} ({dayName(viewDate)})
         </div>
         <button
           type="button"
@@ -557,7 +581,7 @@ function DailyTab(): React.JSX.Element {
               >
                 {hrs.toFixed(1)}h
               </div>
-              <div style={{ fontSize: 10, color: 'var(--text3)' }}>{eng}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{eng}</div>
             </div>
           );
         })}
@@ -572,13 +596,13 @@ function DailyTab(): React.JSX.Element {
           >
             {totalHrs.toFixed(1)}h
           </div>
-          <div style={{ fontSize: 10, color: 'var(--text3)' }}>Total</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Total</div>
         </div>
       </div>
 
       {Object.keys(byEng).length === 0 ? (
         <div className="empty-state" style={{ padding: 30 }}>
-          📭 No entries
+          No entries yet.
         </div>
       ) : (
         Object.entries(byEng).map(([eng, entries]) => {
@@ -615,7 +639,8 @@ function DailyTab(): React.JSX.Element {
                 >
                   <div style={{ flex: 1 }}>
                     <b>{l.taskText ?? 'General'}</b>{' '}
-                    <span style={{ fontSize: 10, color: 'var(--text3)' }}>{l.category}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>{l.category}</span>
+                    <TrackerBadge designTrackerId={l.designTrackerId} />
                     <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                       {l.projectName ?? ''}
                       {l.description ? ` — ${l.description}` : ''}
@@ -645,7 +670,7 @@ function WeeklyTab(): React.JSX.Element {
     for (let i = 0; i < 7; i++) {
       const dd = new Date(mon);
       dd.setDate(mon.getDate() + i);
-      out.push(dd.toISOString().slice(0, 10));
+      out.push(localYmd(dd));
     }
     return out;
   }, [refDate]);
@@ -682,7 +707,7 @@ function WeeklyTab(): React.JSX.Element {
           ←
         </button>
         <div style={{ fontSize: 14, fontWeight: 700, minWidth: 200, textAlign: 'center' }}>
-          {weekDates[0]} — {weekDates[6]}
+          {fmtDate(weekDates[0])} — {fmtDate(weekDates[6])}
         </div>
         <button
           type="button"
@@ -695,15 +720,15 @@ function WeeklyTab(): React.JSX.Element {
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Design Engineer</th>
                 {weekDates.map((dt) => (
-                  <th key={dt} style={{ fontSize: 10 }}>
+                  <th key={dt} style={{ fontSize: 11 }}>
                     {dayName(dt)}
                     <br />
-                    {dt.slice(5)}
+                    {fmtDate(dt)}
                   </th>
                 ))}
                 <th>Total</th>
@@ -726,12 +751,7 @@ function WeeklyTab(): React.JSX.Element {
                           className="mono"
                           style={{
                             fontWeight: 700,
-                            color:
-                              hrs >= 7
-                                ? 'var(--green)'
-                                : hrs > 0
-                                  ? undefined
-                                  : 'var(--text3)',
+                            color: hrs >= 7 ? 'var(--green)' : hrs > 0 ? undefined : 'var(--text3)',
                           }}
                         >
                           {hrs > 0 ? hrs.toFixed(1) : '0'}
@@ -741,8 +761,7 @@ function WeeklyTab(): React.JSX.Element {
                     <td
                       className="mono fw-700"
                       style={{
-                        color:
-                          wt >= 30 ? 'var(--green)' : wt >= 20 ? 'var(--amber)' : 'var(--red)',
+                        color: wt >= 30 ? 'var(--green)' : wt >= 20 ? 'var(--amber)' : 'var(--red)',
                       }}
                     >
                       {(() => {
@@ -806,20 +825,13 @@ function ProjectTab(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        className="panel"
-        style={{ textAlign: 'center', padding: 14, marginBottom: 16 }}
-      >
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>Grand Total</div>
-        <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--blue)' }}>
-          {gt.toFixed(0)}h
-        </div>
+      <div className="panel" style={{ textAlign: 'center', padding: 14, marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Grand Total</div>
+        <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--blue)' }}>{gt.toFixed(0)}h</div>
       </div>
       {projectData.map((p) => (
         <div key={p.id} className="panel" style={{ padding: 14, marginBottom: 10 }}>
-          <div
-            style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}
-          >
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
             <span className="fw-700">
               {p.code} — {p.name}
             </span>
@@ -827,14 +839,9 @@ function ProjectTab(): React.JSX.Element {
               {p.totalHrs.toFixed(1)}h
             </span>
           </div>
-          <div
-            style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
-              <div
-                className="text3"
-                style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}
-              >
+              <div className="text3" style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
                 BY DESIGN ENGINEER
               </div>
               {Object.entries(p.byEng)
@@ -855,10 +862,7 @@ function ProjectTab(): React.JSX.Element {
                 ))}
             </div>
             <div>
-              <div
-                className="text3"
-                style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}
-              >
+              <div className="text3" style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
                 BY CATEGORY
               </div>
               {Object.entries(p.byCat)
@@ -899,7 +903,7 @@ function AlertsTab(): React.JSX.Element {
     const d = new Date(todayStr() + 'T00:00:00');
     while (out.length < 10) {
       const wd = d.getDay();
-      if (wd !== 0 && wd !== 6) out.push(d.toISOString().slice(0, 10));
+      if (wd !== 0 && wd !== 6) out.push(localYmd(d));
       d.setDate(d.getDate() - 1);
     }
     return out;
@@ -952,16 +956,18 @@ function AlertsTab(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile label="Unlogged Days" value={unlogged.length} color="var(--red)" />
-        <Tile label="Low Hours" value={lowHours.length} color="var(--amber)" />
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            {
+              key: 'unlogged',
+              label: 'Unlogged Days',
+              count: unlogged.length,
+              color: 'var(--red2)',
+            },
+            { key: 'low', label: 'Low Hours', count: lowHours.length, color: 'var(--amber2)' },
+          ]}
+        />
       </div>
 
       {unlogged.length > 0 ? (
@@ -969,16 +975,16 @@ function AlertsTab(): React.JSX.Element {
           <div
             style={{
               padding: '10px 14px',
-              background: 'rgba(239,68,68,0.06)',
+              background: 'var(--red3)',
               fontWeight: 700,
               fontSize: 12,
-              color: 'var(--red)',
+              color: 'var(--red2)',
             }}
           >
-            🔴 Unlogged Working Days
+            Unlogged Working Days
           </div>
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Log Date</th>
@@ -989,7 +995,9 @@ function AlertsTab(): React.JSX.Element {
               <tbody>
                 {unlogged.slice(0, 30).map((u, idx) => (
                   <tr key={idx}>
-                    <td className="mono">{u.date}</td>
+                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(u.date)}
+                    </td>
                     <td>{dayName(u.date)}</td>
                     <td className="fw-700">{u.engineer}</td>
                   </tr>
@@ -1005,16 +1013,16 @@ function AlertsTab(): React.JSX.Element {
           <div
             style={{
               padding: '10px 14px',
-              background: 'rgba(196,122,0,0.06)',
+              background: 'var(--amber3)',
               fontWeight: 700,
               fontSize: 12,
-              color: 'var(--amber)',
+              color: 'var(--amber2)',
             }}
           >
-            ⚠ Low Hours (&lt;4h)
+            Low Hours (&lt;4h)
           </div>
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Log Date</th>
@@ -1026,10 +1034,12 @@ function AlertsTab(): React.JSX.Element {
               <tbody>
                 {lowHours.map((u, idx) => (
                   <tr key={idx}>
-                    <td className="mono">{u.date}</td>
+                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(u.date)}
+                    </td>
                     <td>{dayName(u.date)}</td>
                     <td className="fw-700">{u.engineer}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--amber)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {u.hours.toFixed(1)}h
                     </td>
                   </tr>
@@ -1049,10 +1059,10 @@ function AlertsTab(): React.JSX.Element {
             fontSize: 12,
           }}
         >
-          📊 Utilization (Last 10 Working Days)
+          Utilization (Last 10 Working Days)
         </div>
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Design Engineer</th>
@@ -1068,10 +1078,7 @@ function AlertsTab(): React.JSX.Element {
                 <tr key={u.engineer}>
                   <td className="fw-700">{u.engineer}</td>
                   <td className="mono">{u.days}/10</td>
-                  <td
-                    className="mono"
-                    style={{ color: u.missing > 2 ? 'var(--red)' : undefined }}
-                  >
+                  <td className="mono" style={{ color: u.missing > 2 ? 'var(--red)' : undefined }}>
                     {u.missing}
                   </td>
                   <td className="mono fw-700">{u.hours.toFixed(1)}h</td>
@@ -1099,23 +1106,14 @@ function AlertsTab(): React.JSX.Element {
   );
 }
 
-// ─── Shared bits ──────────────────────────────────────────────────────────
-
-function Tile({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number | string;
-  color: string;
-}): React.JSX.Element {
+/** ADR-188 — time logged on the Design Tracker now lands in the Work Log as a
+ *  row that carries its tracker id. The badge tells engineers where it came
+ *  from; hand-entered rows (null) show nothing. */
+function TrackerBadge(props: { designTrackerId: string | null }): React.JSX.Element | null {
+  if (!props.designTrackerId) return null;
   return (
-    <div className="panel" style={{ textAlign: 'center', padding: 14 }}>
-      <div className="text3" style={{ fontSize: 10 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
-    </div>
+    <span className="badge b-blue" title="Logged from the Design Tracker" style={{ marginLeft: 4 }}>
+      Tracker
+    </span>
   );
 }

@@ -1,15 +1,25 @@
 // All Design Issues (Design slice D) — cross-project view.
 // Mirrors legacy renderDesignIssuesPage (HTML L7890).
 
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useDesignIssuesAll } from '../api';
 
 type FilterKey = 'all' | 'open' | 'resolved' | 'critical';
+
+const FILTER_LABEL: Record<FilterKey, string> = {
+  all: 'All',
+  open: 'Open',
+  resolved: 'Resolved',
+  critical: 'Critical',
+};
 
 export const designIssuesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -22,96 +32,63 @@ function DesignIssuesAllPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'dsnissue_create');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
+  const navigate = useNavigate();
 
-  const { data, isLoading, isError, error } = useDesignIssuesAll({
+  const { data, isLoading, isFetching, isError, error } = useDesignIssuesAll({
     search: search.trim() || undefined,
     filter,
     limit: 200,
     offset: 0,
   });
   const summary = data?.summary ?? { total: 0, open: 0, resolved: 0, critical: 0 };
+  const filterCount: Record<FilterKey, number> = {
+    all: summary.total,
+    open: summary.open,
+    resolved: summary.resolved,
+    critical: summary.critical,
+  };
 
   // "Hide page" (Access Control → Config): a user whose VIEW was removed for
   // the Design Issues page sees the no-access panel, not the page.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Design Issues. Ask an admin.
       </div>
     );
   }
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile
-          label="Total"
-          value={summary.total}
-          color="var(--blue)"
-          onClick={() => setFilter('all')}
-        />
-        <Tile
-          label="Open"
-          value={summary.open}
-          color="var(--red)"
-          onClick={() => setFilter('open')}
-        />
-        <Tile
-          label="Resolved"
-          value={summary.resolved}
-          color="var(--green)"
-          onClick={() => setFilter('resolved')}
-        />
-        <Tile
-          label="Critical"
-          value={summary.critical}
-          color="var(--red)"
-          onClick={() => setFilter('critical')}
-        />
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          ⚠ All Design Issues
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 220, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
+      <ListHeader
+        title="All Design Issues"
+        icon="⚠"
+        count={data?.total}
+        noun="issue"
+        filterNote={filter === 'all' ? undefined : FILTER_LABEL[filter]}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search issue, part, assigned to, project…"
+        updating={isFetching && !isLoading}
+        filters={
+          <Select
+            aria-label="Issue filter"
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterKey)}
-            style={{ fontSize: 12 }}
-          >
-            <option value="all">All</option>
-            <option value="open">Open</option>
-            <option value="resolved">Resolved</option>
-            <option value="critical">Critical</option>
-          </select>
-        </div>
-      </div>
+            // Counts in the labels — they were the clickable Total / Open /
+            // Resolved / Critical strip (owner's filter-bar decision 2026-09-26).
+            options={(Object.keys(FILTER_LABEL) as FilterKey[]).map((k) => ({
+              value: k,
+              label: `${FILTER_LABEL[k]} (${filterCount[k]})`,
+            }))}
+          />
+        }
+        onClearFilters={() => {
+          setSearch('');
+          setFilter('all');
+        }}
+        filtersActive={search.trim() !== '' || filter !== 'all'}
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -122,13 +99,13 @@ function DesignIssuesAllPage(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load design issues. Try again.'}
             </div>
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Issue</th>
@@ -138,23 +115,33 @@ function DesignIssuesAllPage(): React.JSX.Element {
                   <th>Assigned To</th>
                   <th>Raised Date</th>
                   <th>Age</th>
-                  <th />
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="empty-state">
-                      No issues
+                      {search.trim() || filter !== 'all'
+                        ? 'No Design Issues match.'
+                        : 'No Design Issues yet.'}
                     </td>
                   </tr>
                 ) : null}
                 {data.items.map((i) => {
-                  const stale =
-                    i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
+                  const stale = i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
                   return (
-                    <tr key={i.id}>
-                      <td className="fw-700">
+                    <tr
+                      key={i.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() =>
+                        void navigate({
+                          to: '/design-projects/$id',
+                          params: { id: i.designProjectId },
+                        })
+                      }
+                    >
+                      <td className="fw-700" style={{ textAlign: 'left' }}>
                         <Link
                           to="/design-projects/$id"
                           params={{ id: i.designProjectId }}
@@ -173,14 +160,16 @@ function DesignIssuesAllPage(): React.JSX.Element {
                         <Badge value={i.status} kind="status" />
                       </td>
                       <td style={{ fontSize: 11, fontWeight: 600 }}>{i.assignedToText ?? ''}</td>
-                      <td style={{ fontSize: 11 }}>{i.raisedDate}</td>
+                      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {fmtDate(i.raisedDate)}
+                      </td>
                       <td
                         className="mono fw-700"
                         style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}
                       >
                         {i.ageDays}d
                       </td>
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         {i.status !== 'Closed' && i.status !== 'Resolved' ? (
                           <AssignTaskButton
                             linkedRef={{
@@ -201,61 +190,23 @@ function DesignIssuesAllPage(): React.JSX.Element {
           </div>
         ) : null}
       </div>
+      {data ? <ListFooter total={data.total} noun="issue" limit={200} /> : null}
     </div>
   );
 }
 
-function Tile({
-  label,
-  value,
-  color,
-  onClick,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  onClick?: () => void;
-}): React.JSX.Element {
-  return (
-    <div
-      className="panel"
-      onClick={onClick}
-      style={{ textAlign: 'center', padding: 12, cursor: 'pointer' }}
-    >
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
-    </div>
-  );
-}
-
-function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.Element {
+/** Severity / status badge — house classes: Critical red, Major amber, Minor
+ *  grey; Open blue, In Progress amber, Resolved / Closed green. */
+function Badge({ value }: { value: string; kind?: 'status' }): React.JSX.Element {
   const v = value.toLowerCase().replace(/[\s/]/g, '');
-  // Colour map mirrors legacy _dpBadge (HTML L7555-7562) exactly — note Major
-  // is orange there, not amber.
-  const colors: Record<string, string> = {
-    critical: 'var(--red)',
-    major: 'var(--orange)',
-    minor: 'var(--green)',
-    open: 'var(--red)',
-    inprogress: 'var(--blue)',
-    resolved: 'var(--green)',
-    closed: 'var(--text3)',
+  const cls: Record<string, string> = {
+    critical: 'b-red',
+    major: 'b-amber',
+    minor: 'b-grey',
+    open: 'b-blue',
+    inprogress: 'b-amber',
+    resolved: 'b-green',
+    closed: 'b-green',
   };
-  const c = colors[v] ?? 'var(--text3)';
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 9px',
-        borderRadius: kind === 'status' ? 4 : 12,
-        fontSize: 10,
-        fontWeight: 700,
-        color: c,
-        background: `${c}12`,
-        border: `1px solid ${c}30`,
-      }}
-    >
-      {value}
-    </span>
-  );
+  return <span className={`badge ${cls[v] ?? 'b-grey'}`}>{value}</span>;
 }

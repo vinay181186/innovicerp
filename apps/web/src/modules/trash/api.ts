@@ -39,6 +39,8 @@ export interface ListTrashResponse {
 
 export interface ListTrashQuery {
   type?: TrashEntityType | undefined;
+  /** Server-side match on document code/name, type and deleted-by. */
+  search?: string | undefined;
   limit: number;
   offset: number;
 }
@@ -51,6 +53,7 @@ export const trashKeys = {
 function toQueryString(q: ListTrashQuery): string {
   const params = new URLSearchParams();
   if (q.type) params.set('type', q.type);
+  if (q.search) params.set('search', q.search);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -75,23 +78,5 @@ export function useRestoreFromTrash() {
   });
 }
 
-export function usePermDeleteTrash() {
-  const qc = useQueryClient();
-  return useMutation<{ ok: true }, Error, { type: TrashEntityType; id: string }>({
-    mutationFn: (input) =>
-      apiFetch<{ ok: true }>('/trash/perm-delete', { method: 'POST', json: input }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: trashKeys.all });
-    },
-  });
-}
-
-export function useEmptyTrash() {
-  const qc = useQueryClient();
-  return useMutation<{ deleted: number }, Error, void>({
-    mutationFn: () => apiFetch<{ deleted: number }>('/trash/empty', { method: 'POST' }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: trashKeys.all });
-    },
-  });
-}
+// No permanent-delete / empty-trash hooks: the app never hard-deletes
+// (CLAUDE.md rule 8). Restore is the only write Trash offers.

@@ -37,9 +37,8 @@ function CostCenterNewPage(): React.JSX.Element {
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to Cost Centre Master. Ask an admin for L2 Data Entry or
-        above in Finance.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to create Cost Centres. Ask an admin.
       </div>
     );
   }
@@ -52,20 +51,14 @@ function CostCenterNewPage(): React.JSX.Element {
       </Link>
       <div className="panel">
         <div className="panel-hdr">
-          <div>
-            <div className="panel-title">🏢 Add Cost Centre</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Master record for budgeting + reporting. Used by Sales Orders + Daily Production
-              Reports + SO Costing.
-            </div>
-          </div>
+          <div className="panel-title">New Cost Centre</div>
         </div>
         <div className="panel-body">
           <CostCenterForm
             mode="create"
             suggestedCode={suggestedCode}
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save Cost Centre"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateCostCenterInput) => {
               setSubmitError(null);
@@ -75,7 +68,9 @@ function CostCenterNewPage(): React.JSX.Element {
                   () => void navigate({ to: '/cost-centers/$id', params: { id: created.id } }),
                 );
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to create cost centre.');
+                setSubmitError(
+                  e instanceof Error ? e.message : 'Could not save Cost Centre. Try again.',
+                );
               }
             }}
           />

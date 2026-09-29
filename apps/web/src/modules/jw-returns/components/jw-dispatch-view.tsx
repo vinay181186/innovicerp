@@ -6,16 +6,21 @@
 
 import {
   type CreateJwReturnChallanInput,
+  type JwReturnChallan,
   type ListJwReturnChallansQuery,
 } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { statusText } from '@/lib/status-text';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { useCancelJwReturn, useCreateJwReturnChallan, useJwReturnsList } from '../api';
+import { useCreateJwReturnChallan, useJwReturnable, useJwReturnsList } from '../api';
+import { CancelJwReturnModal } from './cancel-jw-return-modal';
+import { PrintJwReturnButton } from './print-jw-return-button';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
 // exactly the cap this list already ran under, so nothing that was visible
@@ -56,41 +61,32 @@ export function JwDispatchView({
     [term],
   );
 
-  const { data, isLoading, isError, error } = useJwReturnsList(query);
+  const { data, isLoading, isFetching, isError, error } = useJwReturnsList(query);
   const rows = data?.items ?? [];
-  const cancelMut = useCancelJwReturn();
 
-  const onCancel = (id: string, code: string): void => {
-    if (!confirm(`Cancel JW Dispatch ${code}? This reverses the returned-qty cascade.`)) {
-      return;
-    }
-    cancelMut.mutate(id);
-  };
-
+  // The return the Cancel dialog is asking about, or null when closed. The
+  // dialog now captures a reason (R10, ADR-194) and runs the mutation itself.
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-end gap-3">
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search return no., date, JWSO, client, part, transport, status…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 260, fontSize: 12 }}
-          />
-          {canWrite ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowModal(true)}
-            >
+      <ListHeader
+        title="JW Return"
+        icon="📦"
+        count={data?.total ?? rows.length}
+        noun="JW return"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search return no., date, JWSO, customer, part, transport, status…"
+        updating={isFetching && !isLoading}
+        primary={
+          canWrite ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
               <Plus size={14} /> New Return
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -101,13 +97,13 @@ export function JwDispatchView({
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load JW returns'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load JW returns. Try again.'}
             </div>
           </div>
         ) : (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid tbl-auto">
               <thead>
                 <tr>
                   <th>Return No.</th>
@@ -115,20 +111,20 @@ export function JwDispatchView({
                   <th>JWSO No.</th>
                   <th>Customer</th>
                   <th>Item Name</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Return Qty
                   </th>
-                  <th>Transport</th>
-                  <th>Vehicle</th>
+                  <th>Transporter</th>
+                  <th>Vehicle No.</th>
                   <th>Return Status</th>
-                  {canWrite ? <th className="td-ctr">Actions</th> : null}
+                  <th className="td-ctr">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={canWrite ? 10 : 9} className="empty-state">
-                      No JW returns — click + New Return
+                    <td colSpan={10} className="empty-state">
+                      {term ? 'No JW Returns match.' : 'No JW Returns yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -140,19 +136,16 @@ export function JwDispatchView({
                       </span>
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
-                      {r.returnDate}
+                      {fmtDate(r.returnDate)}
                     </td>
-                    <td
-                      className="mono fw-700"
-                      style={{ fontSize: 11, color: 'var(--purple)' }}
-                    >
+                    <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--purple)' }}>
                       {r.jwCodeText ?? '—'}
                     </td>
                     <td className="fw-700">{r.clientName ?? '—'}</td>
                     <td className="text2">{r.partName ?? '—'}</td>
                     <td
-                      className="td-ctr mono fw-700"
-                      style={{ fontSize: 14, color: 'var(--green)' }}
+                      className="td-num mono fw-700"
+                      style={{ fontSize: 14, color: 'var(--green2)' }}
                     >
                       {r.qty}
                     </td>
@@ -165,49 +158,41 @@ export function JwDispatchView({
                     <td>
                       <span
                         style={{
-                          fontSize: 10,
+                          fontSize: 11,
                           fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.04em',
                           padding: '2px 6px',
                           borderRadius: 4,
-                          color:
-                            r.status === 'cancelled' ? 'var(--red)' : 'var(--green)',
+                          color: r.status === 'cancelled' ? 'var(--red2)' : 'var(--green2)',
                           background:
                             r.status === 'cancelled'
                               ? 'rgba(239,68,68,0.10)'
                               : 'rgba(34,197,94,0.10)',
                         }}
                       >
-                        {r.status}
+                        {statusText(r.status)}
                       </span>
                     </td>
-                    {canWrite ? (
-                      <td className="td-ctr">
-                        {r.status === 'cancelled' ? (
-                          <span className="text3" style={{ fontSize: 11 }}>
-                            —
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            style={{ color: 'var(--red)' }}
-                            disabled={cancelMut.isPending}
-                            onClick={() => onCancel(r.id, r.code)}
-                          >
-                            {cancelMut.isPending && cancelMut.variables === r.id ? (
-                              <>
-                                <Loader2 size={12} className="inline animate-spin" />{' '}
-                                Cancelling…
-                              </>
-                            ) : (
-                              'Cancel'
-                            )}
-                          </button>
-                        )}
-                      </td>
-                    ) : null}
+                    <td className="td-ctr" style={{ whiteSpace: 'nowrap' }}>
+                      {r.status === 'cancelled' ? (
+                        <span className="text3" style={{ fontSize: 11 }}>
+                          —
+                        </span>
+                      ) : (
+                        <>
+                          <PrintJwReturnButton returnId={r.id} row={r} />
+                          {canWrite ? (
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              style={{ color: 'var(--red2)' }}
+                              onClick={() => setCancelTarget({ id: r.id, code: r.code })}
+                            >
+                              Cancel
+                            </button>
+                          ) : null}
+                        </>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -215,13 +200,15 @@ export function JwDispatchView({
           </div>
         )}
       </div>
+      <ListFooter total={data?.total ?? rows.length} noun="JW return" limit={LIST_LIMIT} />
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 JW Dispatch returns machined goods to the customer against a Job Work Order
-        line. Return qty cannot exceed what has been produced (QC-accepted) minus already
-        returned.
-      </div>
-
+      {cancelTarget ? (
+        <CancelJwReturnModal
+          id={cancelTarget.id}
+          code={cancelTarget.code}
+          onClose={() => setCancelTarget(null)}
+        />
+      ) : null}
       {showModal ? <NewJwReturnModal onClose={() => setShowModal(false)} /> : null}
     </div>
   );
@@ -239,6 +226,8 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
   const [vehicleNo, setVehicleNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  // Set once Save succeeds — the popup then offers Print challan.
+  const [saved, setSaved] = useState<JwReturnChallan | null>(null);
 
   // ADR-104: NO status filter. A JWSO closes automatically the moment its Job
   // Card's final QC passes (ADR-099) — which is exactly when the goods are
@@ -255,6 +244,14 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
 
   const jwDetailQ = useJobWorkOrder(jwId ?? undefined);
   const jwLines = jwDetailQ.data?.lines ?? [];
+
+  // Returnable per line — the SAME limit the server enforces on Save.
+  const returnableQ = useJwReturnable(jwId ?? undefined);
+  const returnableById = useMemo(
+    () => new Map((returnableQ.data?.lines ?? []).map((l) => [l.jobWorkOrderLineId, l])),
+    [returnableQ.data],
+  );
+  const pickedReturnable = jobWorkOrderLineId ? returnableById.get(jobWorkOrderLineId) : undefined;
 
   const createMut = useCreateJwReturnChallan();
 
@@ -273,6 +270,12 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
       setErr('Qty must be ≥ 1');
       return;
     }
+    if (pickedReturnable && q > pickedReturnable.returnableQty) {
+      setErr(
+        `Return Qty (${q}) cannot be more than Returnable (${pickedReturnable.returnableQty}).`,
+      );
+      return;
+    }
     const input: CreateJwReturnChallanInput = {
       returnDate,
       jobWorkOrderLineId,
@@ -283,10 +286,60 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
     if (remarks.trim()) input.remarks = remarks.trim();
 
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onSuccess: (row) => setSaved(row),
+      onError: (e) =>
+        setErr(
+          e instanceof Error
+            ? e.message
+            : 'Could not save JW Return. Check the lines and try again.',
+        ),
     });
   };
+
+  // After Save: say so and offer the challan for the goods going out.
+  if (saved) {
+    return (
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+        }}
+        onClick={onClose}
+      >
+        <div
+          style={{
+            background: 'var(--bg)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            padding: 20,
+            width: 'min(480px, 96vw)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="section-hdr" style={{ marginBottom: 10 }}>
+            📦 JW Return saved
+          </div>
+          <div style={{ fontSize: 13, marginBottom: 16 }}>
+            <span className="mono fw-700">{saved.code}</span> — {saved.qty} pcs back to the customer
+            on {saved.jwCodeText ?? 'the JWSO'}. Print the challan to send with the goods.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Close
+            </button>
+            <PrintJwReturnButton returnId={saved.id} primary />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -314,7 +367,7 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          📦 New JW Dispatch
+          📦 New JW Return
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -354,7 +407,13 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
               <select
                 className="innovic-input"
                 value={jobWorkOrderLineId}
-                onChange={(e) => setJobWorkOrderLineId(e.target.value)}
+                onChange={(e) => {
+                  const lineId = e.target.value;
+                  setJobWorkOrderLineId(lineId);
+                  // Prefill with what can go back now; blank when nothing can.
+                  const rq = returnableById.get(lineId)?.returnableQty ?? 0;
+                  setQty(rq > 0 ? String(rq) : '');
+                }}
                 disabled={!jwId || jwDetailQ.isFetching}
                 style={{ width: '100%' }}
               >
@@ -369,7 +428,10 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
                 </option>
                 {jwLines.map((l) => (
                   <option key={l.id} value={l.id}>
-                    L{l.lineNo} · {l.partName} · Qty {l.orderQty}
+                    L{l.lineNo} · {l.partName} · Order Qty {l.orderQty}
+                    {returnableById.has(l.id)
+                      ? ` · Returnable ${returnableById.get(l.id)?.returnableQty ?? 0}`
+                      : ''}
                   </option>
                 ))}
               </select>
@@ -390,8 +452,16 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
                 borderRadius: 4,
               }}
             />
+            {pickedReturnable ? (
+              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+                Returnable <b className="mono">{pickedReturnable.returnableQty}</b> · Ready{' '}
+                {pickedReturnable.readyQty} · Returned {pickedReturnable.returnedQty} · Pending{' '}
+                {pickedReturnable.pendingQty}
+                {pickedReturnable.returnableQty === 0 ? ' — complete final QC first' : ''}
+              </div>
+            ) : null}
           </Field>
-          <Field label="Transport">
+          <Field label="Transporter">
             <input
               type="text"
               className="innovic-input"
@@ -427,7 +497,7 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}
@@ -472,7 +542,7 @@ function Field({
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           marginBottom: 4,

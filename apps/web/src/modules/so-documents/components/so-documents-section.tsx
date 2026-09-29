@@ -14,6 +14,7 @@ import {
 import { Loader2, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import {
@@ -22,22 +23,6 @@ import {
   useDeleteSoDocument,
   useSoDocDetail,
 } from '../api';
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return '';
-  const d = iso.slice(0, 10);
-  const [y, m, day] = d.split('-');
-  return y && m && day ? `${day}-${m}-${y}` : d;
-}
-
-// Legacy renders the SO status through badge() (L19507/19535), whose map knows
-// Open→b-cyan, Closed/Completed→b-green, Cancelled→b-red, else b-grey.
-function soBadgeColor(status: string): string {
-  if (status === 'open') return 'cyan';
-  if (status === 'closed') return 'green';
-  if (status === 'cancelled') return 'red';
-  return 'grey';
-}
 
 function fmtSize(bytes: number | null): string {
   const b = bytes ?? 0;
@@ -93,8 +78,8 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load SO documents'}
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
+        {error instanceof Error ? error.message : 'Could not load SO documents. Try again.'}
       </div>
     );
   }
@@ -106,30 +91,13 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
 
   return (
     <div>
-      {/* Stat cards (legacy L19531-19536) */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))',
-          gap: 8,
-          marginBottom: 16,
-        }}
-      >
-        <StatCard label="TOTAL FILES" value={String(data.totals.fileCount)} color="var(--green)" size={24} />
-        <StatCard
-          label="TOTAL SIZE"
-          value={`${(data.totals.totalSize / 1048576).toFixed(1)} MB`}
-          color="var(--cyan)"
-          size={18}
-        />
-        <StatCard label="QC DOCS" value={String(data.totals.qcCount)} color="var(--text2)" size={24} />
-        <StatCard label="ARCHIVED" value={String(data.totals.archivedCount)} color="var(--amber)" size={24} />
-        <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-          <div style={{ fontSize: 9, color: 'var(--text3)' }}>STATUS</div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>
-            <span className={`badge b-${soBadgeColor(data.so.status)}`}>{data.so.status}</span>
-          </div>
-        </div>
+      {/* One count line in place of the old five stat tiles. */}
+      <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
+        <b className="mono" style={{ color: 'var(--text)' }}>
+          {data.totals.fileCount}
+        </b>{' '}
+        files · <b className="mono">{data.totals.qcCount}</b> QC ·{' '}
+        <b className="mono">{data.totals.archivedCount}</b> archived
       </div>
 
       {/* Action bar */}
@@ -211,27 +179,6 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
   );
 }
 
-function StatCard({
-  label,
-  value,
-  color,
-  size,
-}: {
-  label: string;
-  value: string;
-  color: string;
-  size: number;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-      <div style={{ fontSize: 9, color: 'var(--text3)' }}>{label}</div>
-      <div className="mono fw-700" style={{ fontSize: size, color }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
 function LinePanel({
   line,
   files,
@@ -259,7 +206,7 @@ function LinePanel({
   return (
     <div className="panel" style={{ marginBottom: 12 }}>
       <div className="panel-hdr" style={{ background: 'rgba(34,197,94,0.06)' }}>
-        <span className="panel-title" style={{ color: 'var(--green)' }}>
+        <span className="panel-title" style={{ color: 'var(--green2)' }}>
           {/* POL is the line number on the CUSTOMER'S OWN purchase order — an
               extra value beside our line number, never a substitute for it. */}
           📦 Ln {line.lineNo} ·{' '}
@@ -286,11 +233,9 @@ function LinePanel({
                 style={{
                   padding: '6px 14px',
                   background: 'var(--bg4)',
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: 700,
                   color: 'var(--text3)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
                 }}
               >
                 {SO_DOC_CATEGORY_LABELS[cat]} ({catFiles.length})
@@ -333,7 +278,7 @@ function FileRow({
     file.docType ?? file.category,
     file.fileSize != null ? fmtSize(file.fileSize) : null,
     file.uploadedByText,
-    fmtDate(file.createdAt),
+    fmtDate(file.createdAt, ''),
     file.jcCodeText,
   ]
     .filter(Boolean)
@@ -363,18 +308,18 @@ function FileRow({
         >
           {file.fileName}
           {file.source === 'qc' ? (
-            <span className="badge b-grey" style={{ marginLeft: 6, fontSize: 9 }}>
+            <span className="badge b-grey" style={{ marginLeft: 6, fontSize: 11 }}>
               QC · read-only
             </span>
           ) : null}
         </div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>{meta}</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{meta}</div>
       </div>
       <div style={{ display: 'flex', gap: 4 }}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ fontSize: 10 }}
+          style={{ fontSize: 11 }}
           title="Preview this file (download from the preview window)"
           onClick={() => onView(file)}
         >
@@ -384,7 +329,7 @@ function FileRow({
           <button
             type="button"
             className="btn btn-danger btn-sm"
-            style={{ fontSize: 10, padding: '2px 6px' }}
+            style={{ fontSize: 11, padding: '2px 6px' }}
             disabled={deleting}
             onClick={() => onDelete(file)}
           >
@@ -448,7 +393,7 @@ function UploadDialog({
         });
         ok += 1;
       } catch (e) {
-        fails.push(`${f.name}: ${e instanceof Error ? e.message : 'failed'}`);
+        fails.push(`${f.name}: ${e instanceof Error ? e.message : 'could not upload'}`);
       }
     }
     setBusy(false);
@@ -535,12 +480,12 @@ function UploadDialog({
               onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
             />
             {files.length > 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700, marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: 'var(--green2)', fontWeight: 700, marginTop: 4 }}>
                 {files.length} file(s): {files.map((f) => f.name).join(', ')}
               </div>
             ) : null}
           </div>
-          {msg ? <div style={{ fontSize: 12, color: 'var(--red)' }}>{msg}</div> : null}
+          {msg ? <div style={{ fontSize: 12, color: 'var(--red2)' }}>{msg}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
               Cancel

@@ -12,6 +12,7 @@
 // hard-coded block.
 
 import type { Company } from '@innovic/shared';
+import { fmtDateTime } from '../date';
 import { companyAddressLines } from './company';
 import { esc } from './doc-print';
 import { letterheadLogoHtml } from './letterhead';
@@ -85,7 +86,8 @@ export function printWindow(args: {
   return true;
 }
 
-// Convenience for "Printed: <now>" meta + section markup.
+// Convenience for "Printed: <now>" meta + section markup. The app's one
+// display format (lib/date, IST, 24-hour), never the browser's locale.
 export function printedMeta(): string {
-  return `Printed: ${new Date().toLocaleString()}`;
+  return `Printed: ${fmtDateTime(new Date().toISOString())}`;
 }

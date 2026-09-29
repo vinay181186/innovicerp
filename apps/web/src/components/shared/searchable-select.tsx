@@ -14,7 +14,6 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 export interface SearchableOption {
@@ -84,6 +83,7 @@ export function SearchableSelect({
   const [query, setQuery] = useState('');
   const [highlight, setHighlight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -280,6 +280,12 @@ export function SearchableSelect({
     onChange(o.id);
     setQuery(selectedLabel ? selectedLabel(o) : optionLabel(o));
     setOpen(false);
+    // Tell the page a field changed. A pick sets the value from state, so no
+    // native event fires -- and lib/exit-guard.tsx listens for exactly those
+    // to know the form has edits worth asking about before leaving. Sent now,
+    // before React re-renders the input, so React's own onChange ignores it
+    // (the DOM value has not moved yet).
+    inputRef.current?.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
@@ -304,7 +310,13 @@ export function SearchableSelect({
 
   return (
     <div ref={containerRef} className={cn('relative', className)}>
-      <Input
+      {/* `.innovic-input` = the one 28px control every other field uses. This was
+          the shadcn <Input> (40px, 14px text), so a Customer/Item/Vendor picker
+          stood 12px taller than the date and select beside it on every create
+          page (ERPNext gap report 2026-09-26). */}
+      <input
+        ref={inputRef}
+        className="innovic-input"
         id={baseId}
         type="text"
         role="combobox"
@@ -342,13 +354,16 @@ export function SearchableSelect({
                 width: rect.width,
                 maxHeight: rect.maxHeight,
                 zIndex: 1000,
+                // Theme surface, not shadcn's popover tokens.
+                background: 'var(--bg2)',
+                borderColor: 'var(--border)',
               }}
-              className="overflow-y-auto rounded-md border border-input bg-popover py-1 text-popover-foreground shadow-md"
+              className="overflow-y-auto rounded-md border py-1 shadow-md"
             >
               {loading ? (
-                <li className="px-3 py-2 text-sm text-muted-foreground">Loading…</li>
+                <li className="ss-muted">Loading…</li>
               ) : filtered.length === 0 ? (
-                <li className="px-3 py-2 text-sm text-muted-foreground">{emptyText}</li>
+                <li className="ss-muted">{emptyText}</li>
               ) : (
                 filtered.map((o, i) => (
                   <li
@@ -361,10 +376,8 @@ export function SearchableSelect({
                       pick(o);
                     }}
                     onMouseEnter={() => setHighlight(i)}
-                    className={cn(
-                      'cursor-pointer px-3 py-2 text-sm',
-                      i === highlight ? 'bg-accent text-accent-foreground' : 'text-foreground',
-                    )}
+                    // .ss-opt = 13px row on the theme; .hl = the blue highlight.
+                    className={cn('ss-opt', i === highlight && 'hl')}
                   >
                     {o.code ? (
                       <>
@@ -374,7 +387,9 @@ export function SearchableSelect({
                         invisible, so the part NAME — the thing you are reading
                         to confirm the pick — disappeared. Inherit the row's own
                         foreground there and just soften it. */}
-                        <span className={i === highlight ? 'opacity-80' : 'text-muted-foreground'}>
+                        <span
+                          style={i === highlight ? { opacity: 0.85 } : { color: 'var(--text2)' }}
+                        >
                           {' '}
                           — {o.name}
                         </span>

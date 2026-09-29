@@ -2,10 +2,12 @@ import {
   adjustStockInputSchema,
   listReservationsQuerySchema,
   listStoreInventoryQuerySchema,
-  setMinStockInputSchema,
+  reorderPrInputSchema,
+  setReorderInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { AuthenticationError } from '../../lib/errors';
+import * as reorder from './reorder';
 import * as service from './service';
 
 export async function storeInventoryRoutes(app: FastifyInstance): Promise<void> {
@@ -21,10 +23,24 @@ export async function storeInventoryRoutes(app: FastifyInstance): Promise<void> 
     return service.adjustStock(input, req.user);
   });
 
-  app.post('/store-inventory/set-min', async (req) => {
+  // ADR-193 phase 5 — Reorder Level + Reorder Qty (replaces POST /set-min).
+  // The item id in the URL wins over any itemId in the body.
+  app.patch<{ Params: { id: string } }>('/store-inventory/items/:id/reorder', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    const input = setMinStockInputSchema.parse(req.body);
-    return service.setMinStock(input, req.user);
+    const body = typeof req.body === 'object' && req.body !== null ? req.body : {};
+    const input = setReorderInputSchema.parse({ ...body, itemId: req.params.id });
+    return reorder.setReorder(input, req.user);
+  });
+
+  app.get('/store-inventory/reorder-list', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return reorder.getReorderList(req.user);
+  });
+
+  app.post('/store-inventory/reorder-pr', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const input = reorderPrInputSchema.parse(req.body);
+    return reorder.raiseReorderPrs(input, req.user);
   });
 
   // ADR-180 stock-booking reads. They live in this module because they are the

@@ -6,15 +6,21 @@
 // they are working through. Legacy chrome.
 
 import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback/Banner';
+import { ListHeader } from '@/ui/layout';
 import { useIncomingQc } from '../api';
+import { type IncomingRaisedNc } from '../components/incoming-qc-inspect-form';
 import { IncomingQcInspectModal } from '../components/incoming-qc-inspect-modal';
 
 const searchSchema = z.object({
@@ -32,18 +38,16 @@ export const incomingQcRoute = createRoute({
   component: IncomingQcPage,
 });
 
-function waitColor(days: number): string {
-  if (days >= 3) return 'var(--red)';
-  if (days >= 2) return 'var(--amber)';
-  return 'var(--green)';
+// Days Waiting chip: badge classes, no hard-coded colours.
+function waitBadge(days: number): string {
+  if (days >= 3) return 'b-red';
+  if (days >= 2) return 'b-amber';
+  return 'b-green';
 }
 
-// Legacy hard-codes the chip's translucent fill as an rgb triple alongside the
-// var() border/text colour (HTML L23775).
-function waitRgb(days: number): string {
-  if (days >= 3) return '239,68,68';
-  if (days >= 2) return '245,158,11';
-  return '34,197,94';
+/** "1 day" / "3 days" — the one waiting-time format on every QC screen. */
+function daysText(n: number): string {
+  return `${n} ${n === 1 ? 'day' : 'days'}`;
 }
 
 function respColor(days: number | null): string {
@@ -59,6 +63,11 @@ function dispColor(d: IncomingQcCompletedRow['disposition']): string {
   return 'var(--green)';
 }
 
+/** Screen word for the stored QC result code. */
+function dispLabel(d: IncomingQcCompletedRow['disposition']): string {
+  return d === 'Partial Accept' ? 'Partly Accepted' : d;
+}
+
 function IncomingQcPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useIncomingQc();
   const { data: eff } = useMyAccess();
@@ -70,6 +79,9 @@ function IncomingQcPage(): React.JSX.Element {
   // so a refetch (the queue polls every 30s) cannot leave the box on stale
   // figures.
   const [inspectLineId, setInspectLineId] = useState<string | null>(null);
+  // The NC the last reject raised — named with a link to its disposition,
+  // the same banner the QC Call Register shows (incoming-qc-inspect#1).
+  const [raisedNc, setRaisedNc] = useState<IncomingRaisedNc | null>(null);
   const pending = data?.pending;
   const inspectRow = inspectLineId
     ? (pending?.find((r) => r.grnLineId === inspectLineId) ?? null)
@@ -97,38 +109,123 @@ function IncomingQcPage(): React.JSX.Element {
     }
   }, [inspectLineId, pending]);
 
+  // Client-side search over the rows already loaded — every column the two
+  // tables show that carries text (GRN, PO, vendor, POL, item code/name).
+  const [term, setTerm] = useState('');
+  const pendingRows = (data?.pending ?? []).filter((r) =>
+    matchesSearchTerm(
+      [r.grnNo, r.poCode, r.vendorName, r.clientPoLineNo, r.itemCode, r.itemRevision, r.itemName],
+      term,
+    ),
+  );
+  const completedRows = (data?.completed ?? []).filter((r) =>
+    matchesSearchTerm(
+      [
+        r.grnNo,
+        r.vendorName,
+        r.clientPoLineNo,
+        r.itemCode,
+        r.itemRevision,
+        r.itemName,
+        r.qcRemarks,
+      ],
+      term,
+    ),
+  );
+
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load.
   if (eff && !effectiveFormPerms(eff, 'qc_incoming').view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Incoming QC. Ask an admin.
       </div>
     );
   }
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
+      <ListHeader
+        title="Incoming QC"
+        icon="🔬"
+        count={data ? pendingRows.length : undefined}
+        noun="pending line"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search GRN, PO, vendor, POL, item code, item name…"
+        updating={isFetching && !isLoading}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔬 Incoming QC
-        </div>
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
+        {/* Pipeline dashboard — one strip */}
+        {data ? (
+          <StatStrip
+            items={[
+              {
+                key: 'grnsWaiting',
+                label: 'GRNs Waiting',
+                count: data.metrics.grnsWaiting,
+                color: 'var(--amber2)',
+                // Price-gated: the server sends null when prices are hidden.
+                sub:
+                  data.metrics.valueInQc == null
+                    ? undefined
+                    : `₹${data.metrics.valueInQc.toLocaleString('en-IN')} in QC`,
+              },
+              {
+                key: 'pendingQty',
+                label: 'QC Pending',
+                count: data.metrics.pendingQty,
+                color: 'var(--amber2)',
+              },
+              {
+                key: 'oldest',
+                label: 'Oldest GRN',
+                count: daysText(data.metrics.oldestDays),
+                color: data.metrics.oldestDays > 5 ? 'var(--red2)' : 'var(--amber2)',
+                sub: [data.metrics.oldestGrnNo, `Avg ${daysText(data.metrics.avgWaitDays)}`]
+                  .filter(Boolean)
+                  .join(' · '),
+              },
+              {
+                key: 'todayAccepted',
+                label: 'Today Accepted',
+                count: data.metrics.todayAcceptedQty,
+                color: 'var(--green2)',
+                sub: `${data.metrics.todayAcceptedGrns} GRNs`,
+              },
+              {
+                key: 'todayRejected',
+                label: 'Today Rejected',
+                count: data.metrics.todayRejectedQty,
+                color: 'var(--red2)',
+              },
+            ]}
+          />
         ) : null}
-      </div>
+      </ListHeader>
+
+      {raisedNc ? (
+        <Banner
+          tone="warn"
+          accent
+          onDismiss={() => setRaisedNc(null)}
+          title={
+            <>
+              NC{' '}
+              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                {raisedNc.code}
+              </span>{' '}
+              raised —{' '}
+              <Link to="/nc-register/$id" params={{ id: raisedNc.id }}>
+                Dispose now →
+              </Link>
+            </>
+          }
+        >
+          The rejected qty from the Incoming QC just saved is on this NC until it is disposed.
+        </Banner>
+      ) : null}
 
       {isLoading ? (
         <div className="panel">
@@ -138,68 +235,23 @@ function IncomingQcPage(): React.JSX.Element {
         </div>
       ) : isError || !data ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load incoming QC'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Could not load Incoming QC. Try again.'}
           </div>
         </div>
       ) : (
         <>
-          {/* Pipeline dashboard */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-              gap: 8,
-              marginBottom: 16,
-            }}
-          >
-            <Card label="GRNs Waiting" value={data.metrics.grnsWaiting} color="var(--amber)" />
-            <Card label="Pending Qty" value={data.metrics.pendingQty} color="var(--red)" />
-            <Card
-              label="Avg Wait (days)"
-              value={data.metrics.avgWaitDays}
-              color={
-                data.metrics.avgWaitDays > 3
-                  ? 'var(--red)'
-                  : data.metrics.avgWaitDays > 1
-                    ? 'var(--amber)'
-                    : 'var(--green)'
-              }
-            />
-            <Card
-              label="Oldest GRN"
-              value={`${data.metrics.oldestDays}d`}
-              color={data.metrics.oldestDays > 5 ? 'var(--red)' : 'var(--amber)'}
-              {...(data.metrics.oldestGrnNo ? { sub: data.metrics.oldestGrnNo } : {})}
-            />
-            {data.metrics.valueInQc == null ? null : (
-              <Card
-                label="Value in QC"
-                value={`₹${data.metrics.valueInQc.toLocaleString('en-IN')}`}
-                color="var(--amber)"
-                valueFontSize={18}
-              />
-            )}
-            <Card
-              label="Today Accepted"
-              value={data.metrics.todayAcceptedQty}
-              color="var(--green)"
-              sub={`${data.metrics.todayAcceptedGrns} GRNs`}
-            />
-            <Card label="Today Rejected" value={data.metrics.todayRejectedQty} color="var(--red)" />
-          </div>
-
           {/* Pending inspection queue */}
           <div className="panel">
             <div className="panel-hdr">
-              <span className="panel-title" style={{ color: 'var(--amber)' }}>
-                ⏳ Pending Inspection ({data.pending.length})
+              <span className="panel-title" style={{ color: 'var(--amber2)' }}>
+                ⏳ Pending Inspection ({pendingRows.length} lines)
               </span>
             </div>
             {/* The sheet look (tbl-grid, as the Plans and Job Card lists):
                 bold blue column names, gridlines, cream / white rows, fixed
                 widths that add up to the page so nothing scrolls sideways. */}
-            <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+            <div className="tbl-wrap">
               <table className="innovic-table tbl-grid">
                 {/* POL added before Item Code; Vendor and Item Name gave up
                     the width so these still total 100. */}
@@ -227,21 +279,25 @@ function IncomingQcPage(): React.JSX.Element {
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Received</th>
-                    <th style={{ color: 'var(--amber)' }}>⏳ Waiting</th>
-                    <th style={{ color: 'var(--amber)' }}>Pending QC</th>
+                    <th className="th-num">Received</th>
+                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                      Days Waiting
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                      QC Pending
+                    </th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.pending.length === 0 ? (
+                  {pendingRows.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="empty-state">
-                        ✅ No items pending QC inspection
+                        {term.trim() ? 'No GRN lines match.' : 'No GRN lines waiting for QC.'}
                       </td>
                     </tr>
                   ) : (
-                    data.pending.map((r) => (
+                    pendingRows.map((r) => (
                       <PendingRow
                         key={r.grnLineId}
                         r={r}
@@ -257,11 +313,11 @@ function IncomingQcPage(): React.JSX.Element {
           {/* Recently completed */}
           <div className="panel" style={{ marginTop: 16 }}>
             <div className="panel-hdr">
-              <span className="panel-title" style={{ color: 'var(--green)' }}>
+              <span className="panel-title" style={{ color: 'var(--green2)' }}>
                 ✅ Recently Completed QC (last 20)
               </span>
             </div>
-            <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+            <div className="tbl-wrap">
               <table className="innovic-table tbl-grid">
                 {/* POL added before Item Code; Vendor, Item Code and Item Name
                     gave up the width so these still total 100. */}
@@ -285,41 +341,41 @@ function IncomingQcPage(): React.JSX.Element {
                   <tr>
                     <th>GRN No.</th>
                     <th>GRN Date</th>
-                    <th style={{ color: 'var(--green)' }}>QC Date</th>
-                    <th>Response</th>
+                    <th style={{ color: 'var(--green2)' }}>QC Date</th>
+                    <th className="th-num">Days to Inspect</th>
                     <th>Vendor</th>
                     {/* POL = the CUSTOMER's own PO line number off the SO line
                         behind this receipt. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Received</th>
-                    <th style={{ color: 'var(--green)' }}>Accepted</th>
-                    <th style={{ color: 'var(--red)' }}>Rejected</th>
-                    <th>Disposition</th>
+                    <th className="th-num">Received</th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                      Accepted
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--red2)' }}>
+                      Rejected
+                    </th>
+                    <th>QC Result</th>
                     <th>Remarks</th>
                     <th>Report</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.completed.length === 0 ? (
+                  {completedRows.length === 0 ? (
                     <tr>
                       <td colSpan={14} className="empty-state">
-                        No completed QC inspections yet
+                        {term.trim()
+                          ? 'No completed inspections match.'
+                          : 'No completed inspections yet.'}
                       </td>
                     </tr>
                   ) : (
-                    data.completed.map((r) => <CompletedRow key={r.grnLineId} r={r} />)
+                    completedRows.map((r) => <CompletedRow key={r.grnLineId} r={r} />)
                   )}
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-            💡 Items appear here automatically when GRN is done. Click <b>🔬 Inspect</b> to open the
-            QC form, accept/reject and optionally attach QC report. Accepted qty goes to Store
-            stock, rejected qty tracked for vendor action.
           </div>
         </>
       )}
@@ -329,34 +385,8 @@ function IncomingQcPage(): React.JSX.Element {
           key={inspectRow.grnLineId}
           o={inspectRow}
           onClose={() => setInspectLineId(null)}
+          onNcRaised={setRaisedNc}
         />
-      ) : null}
-    </div>
-  );
-}
-
-function Card(props: {
-  label: string;
-  value: number | string;
-  color: string;
-  sub?: string;
-  valueFontSize?: number;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
-        {props.label}
-      </div>
-      <div
-        className="mono fw-700"
-        style={{ fontSize: props.valueFontSize ?? 24, color: props.color }}
-      >
-        {props.value}
-      </div>
-      {props.sub ? (
-        <div className="text3" style={{ fontSize: 9 }}>
-          {props.sub}
-        </div>
       ) : null}
     </div>
   );
@@ -373,10 +403,10 @@ function PendingRow({
     <tr>
       <td className="td-code cyan">{r.grnNo}</td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {r.grnDate}
+        {fmtDate(r.grnDate)}
       </td>
-      <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
-        {r.poCode ?? 'Manual'}
+      <td className="mono text2" style={{ fontSize: 11 }}>
+        {r.poCode ?? '—'}
       </td>
       <td>{r.vendorName ?? '—'}</td>
       {/* POL — the customer's own PO line number; '—' on a raw-material
@@ -384,30 +414,18 @@ function PendingRow({
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {r.clientPoLineNo ?? '—'}
       </td>
-      <td className="td-code" style={{ color: 'var(--purple)' }}>
+      <td className="td-code" style={{ color: 'var(--text)' }}>
         {/* An OSP return traces back to an SO line and shows CODE/REV; a vendor's
             raw-material receipt has no SO behind it and shows the bare code. Half
             this queue being unslashed is the truth, not a missing value. */}
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td>{r.itemName ?? '—'}</td>
-      <td className="td-ctr mono fw-700">{r.receivedQty}</td>
-      <td className="td-ctr">
-        <span
-          style={{
-            fontWeight: 800,
-            color: waitColor(r.waitDays),
-            fontSize: 11,
-            padding: '2px 8px',
-            background: `rgba(${waitRgb(r.waitDays)},0.1)`,
-            borderRadius: 4,
-            border: `1px solid ${waitColor(r.waitDays)}`,
-          }}
-        >
-          ⏳ {r.waitDays}d
-        </span>
+      <td className="mono fw-700 td-num">{r.receivedQty}</td>
+      <td className="td-num">
+        <span className={`badge ${waitBadge(r.waitDays)}`}>{daysText(r.waitDays)}</span>
       </td>
-      <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--amber)' }}>
+      <td className="mono fw-700 td-num" style={{ fontSize: 14, color: 'var(--amber2)' }}>
         {r.pendingQty}
       </td>
       <td>
@@ -429,16 +447,16 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
     <tr>
       <td className="td-code cyan">{r.grnNo}</td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {r.grnDate}
+        {fmtDate(r.grnDate)}
       </td>
-      <td className="text2" style={{ fontSize: 11, color: 'var(--green)' }}>
-        {r.qcDate ?? '—'}
+      <td className="text2" style={{ fontSize: 11, color: 'var(--green2)' }}>
+        {fmtDate(r.qcDate)}
       </td>
       <td
-        className="td-ctr"
+        className="td-num"
         style={{ fontSize: 11, fontWeight: 700, color: respColor(r.respDays) }}
       >
-        {r.respDays === null ? '' : r.respDays <= 0 ? 'Same day' : `${r.respDays}d`}
+        {r.respDays === null ? '' : r.respDays <= 0 ? 'Same day' : daysText(r.respDays)}
       </td>
       <td>{r.vendorName ?? '—'}</td>
       {/* POL — the customer's own PO line number; '—' on a raw-material
@@ -446,20 +464,20 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {r.clientPoLineNo ?? '—'}
       </td>
-      <td className="td-code" style={{ color: 'var(--purple)' }}>
+      <td className="td-code" style={{ color: 'var(--text)' }}>
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td>{r.itemName ?? '—'}</td>
-      <td className="td-ctr mono fw-700">{r.receivedQty}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+      <td className="mono fw-700 td-num">{r.receivedQty}</td>
+      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
         {r.acceptedQty}
       </td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
+      <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
         {r.rejectedQty}
       </td>
       <td>
         <span className="fw-700" style={{ color: dispColor(r.disposition) }}>
-          {r.disposition}
+          {dispLabel(r.disposition)}
         </span>
       </td>
       <td
@@ -478,7 +496,7 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
         {r.qcReportPath ? (
           <QcReportLink path={r.qcReportPath} name={r.qcReportName} label="Report" />
         ) : (
-          <span className="text3" style={{ fontSize: 10 }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             —
           </span>
         )}

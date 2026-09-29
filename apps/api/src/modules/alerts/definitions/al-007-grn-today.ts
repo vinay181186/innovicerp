@@ -1,6 +1,7 @@
 // AL-007 — Today's GRN (store). Legacy line 22269-22270.
 // Filter: grn_date = today.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -20,7 +21,7 @@ export const al007GrnToday: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT g.code AS grn_code, g.grn_date,
+      SELECT g.id AS nav_id, g.code AS grn_code, g.grn_date,
              COALESCE(v.code, g.vendor_code_text, '') AS vendor,
              COALESCE(po.code, g.po_code_text, '') AS po_code
       FROM public.goods_receipt_notes g
@@ -32,6 +33,7 @@ export const al007GrnToday: RegisteredAlert = {
       ORDER BY g.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('grn', String(r['nav_id'])),
       grn_code: (r['grn_code'] as string) ?? '',
       grn_date:
         r['grn_date'] instanceof Date

@@ -1,9 +1,11 @@
 // Machine Master → MACHINE GROUPS tab. The master the shop floor types once —
 // VMC, CNC, Lathe — and then picks from on every machine.
 //
-// Visually this is the Raw Material Master panel (tbl-wrap + innovic-table, ONE
-// StatStrip row for the counts which double as the Active/Inactive filter,
-// clickable rows, scrolling list, inline New/Edit modal). It is a LOCAL copy
+// Visually this is the Raw Material Master panel (tbl-wrap + innovic-table,
+// clickable rows, scrolling list, inline New/Edit modal). The header is the
+// shared <ListHeader>: search, then an All / Active / Inactive dropdown whose
+// labels carry the counts (owner's filter-bar decision 2026-09-26 — it replaced
+// the clickable count strip), then Clear. It is a LOCAL copy
 // rather than a reuse of <MaterialMasterPanel> because that panel is built for a
 // two-field master (auto `code` + typed `name`) and hard-wires an Excel
 // template/import pair. A machine group has ONE value — `code` IS the word the
@@ -17,8 +19,10 @@ import type { ListMachineGroupsQuery, MachineGroup } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { ConfirmDialog } from '@/ui/feedback';
+import { Select } from '@/ui/forms';
+import { ListHeader } from '@/ui/layout';
 import {
   MACHINE_GROUP_LIST_LIMIT,
   useCreateMachineGroup,
@@ -30,7 +34,7 @@ import {
 type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: MachineGroup };
 type StatusFilter = 'all' | 'active' | 'inactive';
 
-export function MachineGroupTab(): React.JSX.Element {
+export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   // Same department form as the machines themselves (machine_create sits in
   // Production): Add = entry, Edit = edit, Del = the edit+approve pair only
   // L5 Department Admin and above hold.
@@ -64,6 +68,8 @@ export function MachineGroupTab(): React.JSX.Element {
 
   const [status, setStatus] = useState<StatusFilter>('all');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
+  // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
+  const [trashRow, setTrashRow] = useState<MachineGroup | null>(null);
 
   const rows = useMemo(() => list.data?.groups ?? [], [list.data]);
   const total = list.data?.total ?? 0;
@@ -71,78 +77,65 @@ export function MachineGroupTab(): React.JSX.Element {
   const inactiveCount = rows.length - activeCount;
   const visible = useMemo(
     () =>
-      status === 'all' ? rows : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
+      status === 'all'
+        ? rows
+        : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
     [rows, status],
   );
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          marginBottom: 12,
-          gap: 8,
+      <ListHeader
+        title="Machine Master"
+        icon="⚙"
+        count={list.isLoading ? undefined : total}
+        noun="machine group"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search group, description…"
+        updating={list.isFetching && !list.isLoading}
+        filters={
+          <Select
+            aria-label="Machine Group Status"
+            title="Machine Group Status"
+            value={status}
+            options={[
+              { value: 'all', label: `All (${rows.length})` },
+              { value: 'active', label: `Active (${activeCount})` },
+              { value: 'inactive', label: `Inactive (${inactiveCount})` },
+            ]}
+            onChange={(e) => setStatus(e.target.value as StatusFilter)}
+          />
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          setStatus('all');
         }}
+        filtersActive={searchInput.trim() !== '' || status !== 'all'}
+        primary={
+          canAdd ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModal({ kind: 'new' })}
+            >
+              <Plus size={14} /> Add Machine Group
+            </button>
+          ) : null
+        }
       >
-        <input
-          className="innovic-input"
-          placeholder="🔍 Search group, description…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          style={{ width: 260, fontSize: 12 }}
-        />
-        {list.isFetching && !list.isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
-        ) : null}
-        {canAdd ? (
-          <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: 'new' })}>
-            <Plus size={14} /> Add Machine Group
-          </button>
-        ) : null}
-      </div>
-
-      {/* Counts + the Active/Inactive filter in ONE strip (styling skill Rule 3). */}
-      <div style={{ marginBottom: 12 }}>
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: 'All Groups',
-              count: rows.length,
-              color: 'var(--cyan)',
-              active: status === 'all',
-              onClick: () => setStatus('all'),
-            },
-            {
-              key: 'active',
-              label: 'Active',
-              count: activeCount,
-              color: 'var(--green)',
-              active: status === 'active',
-              onClick: () => setStatus('active'),
-            },
-            {
-              key: 'inactive',
-              label: 'Inactive',
-              count: inactiveCount,
-              color: 'var(--amber)',
-              active: status === 'inactive',
-              onClick: () => setStatus('inactive'),
-            },
-          ]}
-        />
-      </div>
+        {tabs}
+      </ListHeader>
 
       {softDelete.isError ? (
         <div className="panel" style={{ marginBottom: 12 }}>
-          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red)' }}>
+          <div
+            className="panel-body"
+            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red2)' }}
+          >
             {softDelete.error instanceof Error
               ? softDelete.error.message
-              : 'Failed to delete machine group.'}
+              : 'Could not delete Machine Group. Try again.'}
           </div>
         </div>
       ) : null}
@@ -167,16 +160,18 @@ export function MachineGroupTab(): React.JSX.Element {
                 </tr>
               ) : list.isError ? (
                 <tr>
-                  <td colSpan={4} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={4} className="empty-state" style={{ color: 'var(--red2)' }}>
                     {list.error instanceof Error
                       ? list.error.message
-                      : 'Failed to load machine groups'}
+                      : 'Could not load machine groups. Try again.'}
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="empty-state">
-                    No machine groups — click <strong>+ Add Machine Group</strong> to begin
+                    {rows.length === 0 && !term
+                      ? 'No Machine Groups yet.'
+                      : 'No Machine Groups match.'}
                   </td>
                 </tr>
               ) : (
@@ -229,12 +224,12 @@ export function MachineGroupTab(): React.JSX.Element {
                             className="btn btn-danger btn-sm"
                             disabled={softDelete.isPending}
                             onClick={() => {
-                              if (confirm(`Move machine group "${row.code}" to Trash?`)) {
-                                softDelete.mutate(row.id);
-                              }
+                              // A failed earlier delete must not greet this one.
+                              softDelete.reset();
+                              setTrashRow(row);
                             }}
                           >
-                            Del
+                            Delete
                           </button>
                         ) : null}
                       </div>
@@ -261,13 +256,34 @@ export function MachineGroupTab(): React.JSX.Element {
           color: 'var(--text3)',
         }}
       >
-        <span>{canEdit ? '💡 Click a row to edit that group.' : ''}</span>
+        <span />
         <span>
           {total > rows.length
             ? `Showing first ${rows.length} of ${total} — refine with search`
             : `Showing all ${total} machine group${total === 1 ? '' : 's'}`}
         </span>
       </div>
+
+      {trashRow ? (
+        <ConfirmDialog
+          title={`Move Machine Group ${trashRow.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          onConfirm={async () => {
+            await softDelete.mutateAsync(trashRow.id);
+            setTrashRow(null);
+          }}
+          onCancel={() => setTrashRow(null)}
+          errorText={
+            softDelete.isError
+              ? softDelete.error instanceof Error
+                ? softDelete.error.message
+                : 'Could not delete Machine Group. Try again.'
+              : null
+          }
+        />
+      ) : null}
 
       {modal.kind !== 'none' ? (
         <MachineGroupModal
@@ -350,7 +366,7 @@ function MachineGroupModal({
       );
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : 'Could not save Machine Group. Try again.');
     }
   }
 
@@ -387,7 +403,7 @@ function MachineGroupModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
-          <span className="panel-title">{row ? '✏ Edit Machine Group' : '＋ Add Machine Group'}</span>
+          <span className="panel-title">{row ? 'Edit Machine Group' : 'Add Machine Group'}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             ✕
           </button>
@@ -410,9 +426,8 @@ function MachineGroupModal({
                 readOnly={Boolean(row)}
               />
               {row ? (
-                <div className="text3" style={{ fontSize: 10, marginTop: 3 }}>
-                  The group name cannot be changed — machines already carry it. Set Status to
-                  Inactive to retire it.
+                <div className="text3" style={{ fontSize: 11, marginTop: 3 }}>
+                  Cannot be changed. Set Status to Inactive to retire it.
                 </div>
               ) : null}
             </div>
@@ -444,7 +459,7 @@ function MachineGroupModal({
             </div>
           </div>
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
               {err}
             </div>
           ) : null}
@@ -458,7 +473,8 @@ function MachineGroupModal({
               disabled={saving}
               onClick={() => void submit()}
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{' '}
+              {row ? 'Save Changes' : 'Save Machine Group'}
             </button>
           </div>
         </div>

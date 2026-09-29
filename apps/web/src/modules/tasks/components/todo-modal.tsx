@@ -1,12 +1,13 @@
 // "+ My To-Do" — the approved board's 500px personal to-do form (ADR-176).
-// Created By and Assigned To are both the caller, set server-side.
+// Created By and Assigned To are both the caller, set server-side (no note
+// on the form — the fields are not on it).
 
 import type { TaskPriority } from '@innovic/shared';
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from '@innovic/shared';
 import { useState } from 'react';
 import { useCreatePersonalTodo, useNextTaskCode } from '../api';
 import { localDateTimeToIso } from '../lib/format';
-import { FormError, FormNote, Overlay } from './task-overlay';
+import { FormError, Overlay } from './task-overlay';
 
 export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const create = useCreatePersonalTodo();
@@ -20,7 +21,7 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!title.trim()) return setErr('To-Do Title is required');
+    if (!title.trim()) return setErr('Title is required.');
     try {
       await create.mutateAsync({
         title: title.trim(),
@@ -31,7 +32,7 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
       });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to create to-do');
+      setErr(e instanceof Error ? e.message : 'Could not save to-do. Try again.');
     }
   }
 
@@ -66,17 +67,15 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
             disabled={create.isPending}
             onClick={() => void submit()}
           >
-            {create.isPending ? 'Saving…' : 'Create To-Do'}
+            {create.isPending ? 'Saving…' : 'Save To-Do'}
           </button>
         </>
       }
     >
-      <FormNote>Created By and Assigned To are automatically set to the logged-in user.</FormNote>
-
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="td-title">
-            To-Do Title<span className="req">*</span>
+            Title<span className="req">★</span>
           </label>
           <input
             id="td-title"

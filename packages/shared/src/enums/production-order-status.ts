@@ -22,7 +22,7 @@ export type ProductionOrderStatus = (typeof PRODUCTION_ORDER_STATUSES)[number];
 /** Screen labels — NAMING.md: the document is a "Production Order", never "PO". */
 export const PRODUCTION_ORDER_STATUS_LABEL: Record<ProductionOrderStatus, string> = {
   open: 'Open',
-  partially_closed: 'Partially Closed',
+  partially_closed: 'Partly Closed',
   closed: 'Closed',
   short_closed: 'Short Closed',
 };

@@ -33,14 +33,14 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
         <h1 className="text-2xl font-semibold">Something went wrong</h1>
-        <p className="max-w-md text-sm text-muted-foreground">
-          The page hit an unexpected error. The team has been notified. Try reloading; if it keeps
-          happening, sign out and back in.
-        </p>
+        <p className="max-w-md text-sm text-muted-foreground">Reload the page.</p>
         {this.state.error?.message ? (
-          <pre className="max-w-xl overflow-x-auto rounded bg-muted px-3 py-2 text-left text-xs">
-            {this.state.error.message}
-          </pre>
+          <details className="max-w-xl text-left text-xs">
+            <summary className="cursor-pointer text-muted-foreground">Details</summary>
+            <pre className="mt-2 overflow-x-auto rounded bg-muted px-3 py-2">
+              {this.state.error.message}
+            </pre>
+          </details>
         ) : null}
         <div className="flex gap-2">
           <Button onClick={this.reset} variant="outline">

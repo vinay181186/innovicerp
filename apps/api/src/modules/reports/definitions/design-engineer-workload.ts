@@ -18,6 +18,7 @@ export const designEngineerWorkloadReport: RegisteredReport = {
     description:
       'Per-engineer load: tasks total/active/completed/overdue + open issues + logged hours.',
     group: 'Design',
+    dept: 'design',
     filters: [],
     columns: [
       { key: 'engineer', label: 'Design Engineer', type: 'text' },

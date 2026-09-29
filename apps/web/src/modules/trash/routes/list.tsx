@@ -2,21 +2,29 @@
 //
 // Mirror of legacy renderTrash (HTML L11309). Lists every soft-deleted
 // row across the curated set of entities (one UNION ALL backend query).
-// Restore (clears deleted_at) + Permanent Delete (hard) + Empty All.
+// Restore (clears deleted_at) only. There is no permanent delete inside the
+// app (CLAUDE.md rule 8 — hard deletes only via documented admin scripts after
+// a backup), so the legacy per-row Delete and Empty All are gone. The search
+// box is answered by the server (GET /trash?search=), so total and paging
+// count only the matching documents.
 
 import { createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2, Lock, RotateCcw, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Loader2, Lock, RotateCcw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
+import { SearchInput } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import {
-  useEmptyTrash,
-  usePermDeleteTrash,
   useRestoreFromTrash,
   useTrash,
   type ListTrashQuery,
   type TrashEntityType,
+  type TrashListItem,
 } from '../api';
 
 const PAGE_SIZE = 50;
@@ -41,8 +49,21 @@ const TYPE_OPTIONS: readonly TrashEntityType[] = [
   'QC Process',
 ];
 
+// On-screen names for the type codes above. The codes themselves are what the
+// API filters on and stay as they are; only the words the user reads change
+// (Customer, never Client; Cost Centre spelling; JWSO's full name).
+const TYPE_LABEL: Partial<Record<TrashEntityType, string>> = {
+  'Job Work Order': 'Job Work Sales Order',
+  Client: 'Customer',
+  'Cost Center': 'Cost Centre',
+};
+function typeLabel(t: TrashEntityType): string {
+  return TYPE_LABEL[t] ?? t;
+}
+
 const listSearchSchema = z.object({
   type: z.string().optional(),
+  search: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
 });
 
@@ -53,15 +74,6 @@ export const trashListRoute = createRoute({
   component: TrashListPage,
 });
 
-function fmtTs(ts: string): string {
-  const dt = new Date(ts);
-  return (
-    dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) +
-    ' ' +
-    dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  );
-}
-
 function TrashListPage(): React.JSX.Element {
   const search = trashListRoute.useSearch();
   const navigate = trashListRoute.useNavigate();
@@ -71,108 +83,87 @@ function TrashListPage(): React.JSX.Element {
   const query: ListTrashQuery = useMemo(
     () => ({
       type: search.type as TrashEntityType | undefined,
+      search: search.search,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.type, search.page],
+    [search.type, search.search, search.page],
   );
 
   const { data, isLoading, isError, error } = useTrash(query);
   const restore = useRestoreFromTrash();
-  const permDel = usePermDeleteTrash();
-  const empty = useEmptyTrash();
 
-  const [actionError, setActionError] = useState<string | null>(null);
+  // The row whose Restore is being confirmed (ConfirmDialog, not window.confirm).
+  const [restoring, setRestoring] = useState<TrashListItem | null>(null);
+
+  const items = data?.items ?? [];
+
+  // The box keeps what the user typed (a trailing space included); only the
+  // normalised term goes to the URL, and a new term goes back to page 1.
+  const urlTerm = search.search;
+  const urlTermRef = useRef(urlTerm);
+  urlTermRef.current = urlTerm;
+  const [searchInput, setSearchInput] = useState(urlTerm ?? '');
+  useEffect(() => {
+    // Adopt a URL term the box did not produce (Back, a pasted link).
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (urlTerm ?? '') ? prev : (urlTerm ?? ''),
+    );
+  }, [urlTerm]);
+  useEffect(() => {
+    // Runs only when the box changes (not when the URL does), so a Back to
+    // another term is adopted above instead of being written over here.
+    const next = normalizeSearchTerm(searchInput) || undefined;
+    if (next === urlTermRef.current) return;
+    void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
+  }, [searchInput, navigate]);
 
   if (!isAdmin) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           <Lock size={14} style={{ display: 'inline', marginRight: 6 }} />
-          Admin access required for Trash.
+          You do not have permission to view Trash. Ask an admin.
         </div>
       </div>
     );
   }
 
-  const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   // `total` is scoped to the active type filter; `byType` is always computed
   // server-side over every type, so its sum is the true trash-wide count.
-  // Legacy gates Empty All on the UNFILTERED count (db.trash.length, L11335)
-  // and states that same unfiltered count in its confirm (L2191).
   const grandTotal = Object.values(data?.byType ?? {}).reduce((a, b) => a + b, 0);
 
-  async function onRestore(it: { type: TrashEntityType; id: string; label: string }): Promise<void> {
-    setActionError(null);
-    if (!window.confirm(`Restore ${it.type} "${it.label}"?`)) return;
-    try {
-      await restore.mutateAsync({ type: it.type, id: it.id });
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Restore failed');
-    }
-  }
-
-  async function onPermDelete(it: { type: TrashEntityType; id: string; label: string }): Promise<void> {
-    setActionError(null);
-    if (
-      !window.confirm(
-        `Permanently delete ${it.type} "${it.label}"?\n\nThis CANNOT be undone.`,
-      )
-    )
-      return;
-    try {
-      await permDel.mutateAsync({ type: it.type, id: it.id });
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Permanent delete failed');
-    }
-  }
-
-  async function onEmptyAll(): Promise<void> {
-    setActionError(null);
-    // Count is grandTotal, not `total`: Empty All deletes every soft-deleted
-    // row of every type, ignoring the active type filter. Warnings mirror
-    // legacy _confirmDestructive's warningList (L2192-2197).
-    const confirmText = window.prompt(
-      `You are about to permanently delete ${grandTotal} items from trash.\n\n` +
-        '• This action CANNOT be undone\n' +
-        '• Items will be lost forever — not recoverable from trash\n' +
-        '• If you need any of these items, click Cancel and recover them first\n' +
-        '• A backup before this operation is strongly recommended\n\n' +
-        'Type DELETE to confirm:',
-    );
-    if (confirmText !== 'DELETE') return;
-    try {
-      await empty.mutateAsync();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Empty trash failed');
-    }
+  async function onRestoreConfirmed(): Promise<void> {
+    if (!restoring) return;
+    // A rejection is shown inside the dialog (ConfirmDialog catches it).
+    await restore.mutateAsync({ type: restoring.type, id: restoring.id });
+    setRestoring(null);
   }
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 10,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            Trash
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Soft-deleted records across every module. Restore to bring back, or permanently delete (cannot be undone).
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <ListHeader
+        title="Trash"
+        icon="🗑"
+        count={data ? total : undefined}
+        noun="deleted document"
+        filterNote={search.type ? typeLabel(search.type as TrashEntityType) : undefined}
+        // Own box: the shared SearchInput with its 300ms debounce, as before.
+        searchSlot={
+          <SearchInput
+            value={searchInput}
+            debounceMs={300}
+            placeholder="Search document type, document, deleted by…"
+            onChange={setSearchInput}
+          />
+        }
+        filters={
           <select
             className="innovic-select"
+            aria-label="Document type"
+            title="Document type"
             value={search.type ?? ''}
             onChange={(e) =>
               void navigate({
@@ -180,66 +171,38 @@ function TrashListPage(): React.JSX.Element {
                 replace: true,
               })
             }
-            style={{ width: 160 }}
           >
             <option value="">All Document Types ({grandTotal})</option>
             {TYPE_OPTIONS.map((t) => {
               const n = data?.byType[t] ?? 0;
               return (
                 <option key={t} value={t} disabled={n === 0}>
-                  {t} ({n})
+                  {typeLabel(t)} ({n})
                 </option>
               );
             })}
           </select>
-          <span className="text3" style={{ fontSize: 11 }}>
-            {total} item{total !== 1 ? 's' : ''} in trash
-          </span>
-          {grandTotal > 0 ? (
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => void onEmptyAll()}
-              disabled={empty.isPending}
-            >
-              {empty.isPending ? (
-                <>
-                  <Loader2 className="inline h-3 w-3 animate-spin" /> Emptying…
-                </>
-              ) : (
-                'Empty All'
-              )}
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {actionError ? (
-        <div
-          style={{
-            marginBottom: 12,
-            padding: '8px 12px',
-            background: 'rgba(239,68,68,0.06)',
-            border: '1px solid rgba(239,68,68,0.3)',
-            borderRadius: 6,
-            color: 'var(--red)',
-            fontSize: 12,
-          }}
-        >
-          {actionError}
-        </div>
-      ) : null}
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, type: undefined, search: undefined, page: 1 }),
+            replace: true,
+          });
+        }}
+        filtersActive={!!search.type || searchInput.trim() !== ''}
+      />
 
       {!isLoading && !isError && items.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 32 }}>
-            Trash is empty
+            {urlTerm || search.type ? 'No deleted documents match.' : 'Trash is empty.'}
           </div>
         </div>
       ) : (
         <div className="panel">
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Deleted At</th>
@@ -259,42 +222,32 @@ function TrashListPage(): React.JSX.Element {
                   </tr>
                 ) : isError ? (
                   <tr>
-                    <td colSpan={5} className="empty-state" style={{ color: 'var(--red)' }}>
-                      {error instanceof Error ? error.message : 'Failed to load trash'}
+                    <td colSpan={5} className="empty-state" style={{ color: 'var(--red2)' }}>
+                      {error instanceof Error ? error.message : 'Could not load Trash. Try again.'}
                     </td>
                   </tr>
                 ) : (
                   items.map((it) => (
                     <tr key={`${it.type}:${it.id}`}>
                       <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        {fmtTs(it.deletedAt)}
+                        {fmtDateTime(it.deletedAt)}
                       </td>
                       <td>
-                        <span className="badge b-grey">{it.type}</span>
+                        <span className="badge b-grey">{typeLabel(it.type)}</span>
                       </td>
                       <td className="fw-700">{it.label}</td>
                       <td className="text3" style={{ fontSize: 11 }}>
                         {it.deletedByName ?? '—'}
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            disabled={restore.isPending}
-                            onClick={() => void onRestore(it)}
-                          >
-                            <RotateCcw size={12} /> Restore
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            disabled={permDel.isPending}
-                            onClick={() => void onPermDelete(it)}
-                          >
-                            <Trash2 size={12} /> Delete
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={restore.isPending}
+                          onClick={() => setRestoring(it)}
+                        >
+                          <RotateCcw size={12} /> Restore
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -305,58 +258,35 @@ function TrashListPage(): React.JSX.Element {
         </div>
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'Nothing in trash'
-            : `Showing ${(search.page - 1) * PAGE_SIZE + 1}–${Math.min(search.page * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={search.page <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, search.page - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {search.page} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={search.page >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, search.page + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      <ListFooter
+        total={total}
+        noun="deleted document"
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        onPage={(p) =>
+          void navigate({
+            search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+            replace: true,
+          })
+        }
+      />
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-        Items can be restored to their original list. Only Admins can permanently delete or empty
-        trash.
+        Only admins can open Trash. Restore puts a document back where it was; nothing is
+        permanently deleted from here.
       </div>
+
+      {restoring ? (
+        <ConfirmDialog
+          tone="primary"
+          title={`Restore ${typeLabel(restoring.type)} ${restoring.label}?`}
+          message="It goes back to its list exactly as it was before it was deleted."
+          confirmLabel="Restore"
+          pendingLabel="Restoring…"
+          onConfirm={onRestoreConfirmed}
+          onCancel={() => setRestoring(null)}
+        />
+      ) : null}
     </div>
   );
 }

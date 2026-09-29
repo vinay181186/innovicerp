@@ -186,7 +186,7 @@ test('@bom3 02 — equipment SO, BOM attaches itself', async ({ page }) => {
   await page.locator('select.innovic-select').first().selectOption('equipment');
   await page.waitForTimeout(2500);
 
-  await pickByPlaceholder(page, /Type client code or name/i, CLIENT_CODE, CLIENT_MATCH);
+  await pickByPlaceholder(page, /Type customer code or name/i, CLIENT_CODE, CLIENT_MATCH);
   await page.getByPlaceholder(/Client PO reference/i).fill(TAG);
 
   await page.locator('input[name="lines.0.itemCodeText"]').fill(PARENT);

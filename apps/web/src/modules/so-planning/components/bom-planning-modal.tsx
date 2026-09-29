@@ -4,7 +4,8 @@
 //
 // Shows the BOM explosion (per child item: qty/set × orderQty = totalNeed,
 // stock, shortfall) and lets the planner select which children to plan +
-// what qty for each. Save creates one in_planning plan per checked child.
+// what qty for each. Save creates every checked child's plan in ONE server
+// call / ONE transaction; a Make child is a Route-Card plan like "+ Plan".
 // Existing plans are shown disabled.
 
 import type {
@@ -16,9 +17,10 @@ import type {
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { todayLocal } from '@/lib/date';
+import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { useCreatePlan } from '@/modules/plans/api';
+import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
+import { useCreatePlansBatch } from '@/modules/plans/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { usePlanningBom } from '../api';
 import { Modal } from './modal';
@@ -74,7 +76,7 @@ const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
   jc_created: 'JC Created',
   pr_created: 'PR Created',
   in_production: 'In Production',
-  complete: 'Complete',
+  complete: 'Completed',
   cancelled: 'Cancelled',
 };
 
@@ -99,7 +101,7 @@ export function BomPlanningModal({
   onSaved,
 }: Props): JSX.Element {
   const { data, isLoading, error } = usePlanningBom(soId, soLineId);
-  const createPlan = useCreatePlan();
+  const createPlans = useCreatePlansBatch();
   const [rowState, setRowState] = useState<Map<string, RowState>>(new Map());
   const [planAssembly, setPlanAssembly] = useState<boolean>(false);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
@@ -146,98 +148,97 @@ export function BomPlanningModal({
       setSubmitErr(`Cannot plan yet: ${missing.join('; ')}.`);
       return;
     }
+    // ONE call, ONE transaction: every ticked child (and the assembly plan)
+    // lands together or none does, so the planner never sees "2 created, 1
+    // could not" and has to work out what is half-saved.
+    //
+    // A Make child is saved exactly like SO Planning "+ Plan" (ADR-170): a
+    // Route-Card plan — its operations come from the child's Route Card when
+    // the Production Order is raised — born 'Planned' and dated start today,
+    // end PLAN_DEFAULT_SPAN_DAYS later, so nothing has to be opened and
+    // finished by hand. Buy / Outsource children keep their vendor plan.
+    const start = todayLocal();
+    const end = addDaysLocal(start, PLAN_DEFAULT_SPAN_DAYS);
+    const plansToSave: CreatePlanInput[] = [];
+    for (const c of data.children) {
+      if (c.existingPlan) continue;
+      const s = rowState.get(c.childItemCode);
+      if (!s || !s.checked || s.qty <= 0) continue;
+      const qty = Math.min(s.qty, c.totalNeed);
+      const planType = planTypeFor(c.bomType);
+      plansToSave.push({
+        // code omitted → server assigns the next sequential PLN-NNNN.
+        planDate: start,
+        planType,
+        ...(planType === 'manufacture'
+          ? { opsSource: 'route_card' as const, plannedStartDate: start, plannedEndDate: end }
+          : {}),
+        soLineId,
+        soCodeText: soCode,
+        itemId: c.childItemId,
+        itemCodeText: c.childItemCode,
+        itemNameText: c.childItemName,
+        orderQty: c.totalNeed,
+        planQty: qty,
+        bomMasterId: data.bomMasterId,
+        bomParentCode: data.parentItemCode ?? null,
+        bomChildCode: c.childItemCode,
+        // Send the vendor's CODE as well as its id. The Edit Plan modal reads
+        // the *CodeText snapshot, so an id-only plan opened there showed a
+        // blank vendor and refused to save.
+        ...(planType === 'direct_purchase'
+          ? { dpVendorId: s.vendorId, dpVendorCodeText: s.vendorCode || null }
+          : {}),
+        ...(planType === 'full_outsource'
+          ? {
+              foVendorId: s.vendorId,
+              foVendorCodeText: s.vendorCode || null,
+              foProcess: s.process.trim(),
+            }
+          : {}),
+      });
+    }
+    if (data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly) {
+      plansToSave.push({
+        // code omitted → server assigns the next sequential PLN-NNNN.
+        planDate: start,
+        planType: 'assembly',
+        soLineId,
+        soCodeText: soCode,
+        itemCodeText: data.parentItemCode ?? '',
+        itemNameText: data.parentItemName ?? '',
+        orderQty: data.orderQty,
+        planQty: data.orderQty,
+        bomMasterId: data.bomMasterId,
+        bomParentCode: data.parentItemCode ?? null,
+      });
+    }
+    if (plansToSave.length === 0) {
+      setSubmitErr('No plans to create. Check at least one item.');
+      return;
+    }
     setSubmitting(true);
-    let plansCreated = 0;
-    // One child failing must NOT abandon the rest. The loop used to throw
-    // straight out, so a purchase child that the server refused silently took
-    // every child after it down with it: 3 ticked, 1 created, one message that
-    // named neither of the two that were dropped.
-    const failures: string[] = [];
     try {
-      for (const c of data.children) {
-        if (c.existingPlan) continue;
-        const s = rowState.get(c.childItemCode);
-        if (!s || !s.checked || s.qty <= 0) continue;
-        const qty = Math.min(s.qty, c.totalNeed);
-        const planType = planTypeFor(c.bomType);
-        const input: CreatePlanInput = {
-          // code omitted → server assigns the next sequential PLN-NNNN.
-          planDate: todayLocal(),
-          planType,
-          soLineId,
-          soCodeText: soCode,
-          itemId: c.childItemId,
-          itemCodeText: c.childItemCode,
-          itemNameText: c.childItemName,
-          orderQty: c.totalNeed,
-          planQty: qty,
-          bomMasterId: data.bomMasterId,
-          bomParentCode: data.parentItemCode ?? null,
-          bomChildCode: c.childItemCode,
-          // Send the vendor's CODE as well as its id. The Edit Plan modal reads
-          // the *CodeText snapshot, so an id-only plan opened there showed a
-          // blank vendor and refused to save.
-          ...(planType === 'direct_purchase'
-            ? { dpVendorId: s.vendorId, dpVendorCodeText: s.vendorCode || null }
-            : {}),
-          ...(planType === 'full_outsource'
-            ? {
-                foVendorId: s.vendorId,
-                foVendorCodeText: s.vendorCode || null,
-                foProcess: s.process.trim(),
-              }
-            : {}),
-        };
-        try {
-          await createPlan.mutateAsync(input);
-          plansCreated++;
-        } catch (e) {
-          failures.push(`${c.childItemCode}: ${e instanceof Error ? e.message : 'failed'}`);
-        }
-      }
-      if (data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly) {
-        const input: CreatePlanInput = {
-          // code omitted → server assigns the next sequential PLN-NNNN.
-          planDate: todayLocal(),
-          planType: 'assembly',
-          soLineId,
-          soCodeText: soCode,
-          itemCodeText: data.parentItemCode ?? '',
-          itemNameText: data.parentItemName ?? '',
-          orderQty: data.orderQty,
-          planQty: data.orderQty,
-          bomMasterId: data.bomMasterId,
-          bomParentCode: data.parentItemCode ?? null,
-        };
-        try {
-          await createPlan.mutateAsync(input);
-          plansCreated++;
-        } catch (e) {
-          failures.push(`assembly: ${e instanceof Error ? e.message : 'failed'}`);
-        }
-      }
-      if (failures.length > 0) {
-        // Say what DID land as well as what did not — the planner has to know
-        // the partial state before deciding what to do next.
-        setSubmitErr(
-          `${plansCreated} plan(s) created. ${failures.length} failed — ${failures.join('; ')}`,
-        );
-        if (plansCreated > 0) onSaved();
-        return;
-      }
-      if (plansCreated === 0) {
-        setSubmitErr('No plans to create. Check at least one item.');
-        return;
-      }
+      await createPlans.mutateAsync({ plans: plansToSave });
       onSaved();
     } catch (e) {
-      setSubmitErr(e instanceof Error ? e.message : 'Failed');
+      setSubmitErr(
+        e instanceof Error ? e.message : 'Could not create plans — nothing was saved. Try again.',
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  const unplannedCount = data?.children.filter((c) => !c.existingPlan).length ?? 0;
+  // The button counts what Save will actually create: ticked rows with a qty,
+  // plus the assembly plan when it is ticked.
+  const saveCount =
+    (data?.children.filter((c) => {
+      if (c.existingPlan) return false;
+      const s = rowState.get(c.childItemCode);
+      return Boolean(s && s.checked && s.qty > 0);
+    }).length ?? 0) +
+    (data && data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly ? 1 : 0);
 
   const title =
     mode === 'equipment'
@@ -253,19 +254,17 @@ export function BomPlanningModal({
       </button>
       <button
         type="button"
-        className="btn btn-success"
+        className="btn btn-primary"
         disabled={submitting || isLoading || !data}
         onClick={submit}
       >
         {submitting ? (
           <>
             <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} />{' '}
-            …
+            Saving…
           </>
         ) : (
-          // showModalLg with an explicit saveLabel → btn-success, and L28044
-          // renders `&#10003; ${_saveLabel}` so the ✓ prefixes the label too.
-          `✓ Create ${unplannedCount} Plans`
+          `Save ${saveCount} Plan${saveCount === 1 ? '' : 's'}`
         )}
       </button>
     </>
@@ -284,14 +283,24 @@ export function BomPlanningModal({
             padding: 8,
             borderRadius: 4,
             background: 'rgba(239,68,68,0.1)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >
-          {error instanceof Error ? error.message : 'Failed to load BOM'}
+          {error instanceof Error ? error.message : 'Could not load BOM. Try again.'}
         </div>
       )}
-      {data && <BomBody mode={mode} data={data} rowState={rowState} setRowState={setRowState} planAssembly={planAssembly} setPlanAssembly={setPlanAssembly} submitErr={submitErr} />}
+      {data && (
+        <BomBody
+          mode={mode}
+          data={data}
+          rowState={rowState}
+          setRowState={setRowState}
+          planAssembly={planAssembly}
+          setPlanAssembly={setPlanAssembly}
+          submitErr={submitErr}
+        />
+      )}
     </Modal>
   );
 }
@@ -358,12 +367,12 @@ function BomBody({
           {mode === 'equipment' ? (
             <>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT SO</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment SO</span>
                 <br />
                 <b style={{ color: 'var(--cyan)' }}>{data.soCode}</b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment</span>
                 <br />
                 <b style={{ color: 'var(--purple)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
@@ -372,19 +381,19 @@ function BomBody({
                 </b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIP QTY</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.orderQty}</b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>BOM</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM</span>
                 <br />
-                <b style={{ color: 'var(--green)' }}>
-                  {data.bomNo} Rev {data.bomRev}
+                <b style={{ color: 'var(--green2)' }}>
+                  {data.bomNo} BOM Rev {data.bomRev}
                 </b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>BOM ITEMS</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM Items</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.children.length}</b>
               </div>
@@ -392,7 +401,7 @@ function BomBody({
           ) : (
             <>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>ASSEMBLY</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Assembly</span>
                 <br />
                 <b style={{ color: 'var(--purple)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
@@ -401,17 +410,17 @@ function BomBody({
                 {data.parentItemName}
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO/JW</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO/JW</span>
                 <br />
                 <b className="mono">{data.soCode}</b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>ORDER QTY</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.orderQty}</b> units
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>BOM ITEMS</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM Items</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.children.length}</b>
               </div>
@@ -430,8 +439,7 @@ function BomBody({
       >
         {/* Equipment (L8899): "📦 BOM Explosion — N sets × BOM-NO".
             Assembly  (L7172): "📦 BOM Explosion — N units" — no BOM no. */}
-        📦 BOM Explosion — {data.orderQty}{' '}
-        {mode === 'equipment' ? `sets × ${data.bomNo}` : 'units'}
+        📦 BOM Explosion — {data.orderQty} {mode === 'equipment' ? `sets × ${data.bomNo}` : 'units'}
       </div>
 
       <div
@@ -451,11 +459,13 @@ function BomBody({
               <th>Item Name</th>
               <th>{mode === 'equipment' ? 'Qty/Set' : 'Per Unit'}</th>
               <th>Total Need</th>
-              <th style={{ color: 'var(--green)' }}>Stock</th>
-              <th style={{ color: 'var(--red)' }}>Pending</th>
+              <th style={{ color: 'var(--green2)' }}>Stock</th>
+              <th style={{ color: 'var(--red2)' }} title="Total Need − Current Stock">
+                Pending
+              </th>
               <th>BOM Type</th>
               <th>Plan Status</th>
-              <th>Plan?</th>
+              <th>Select</th>
               <th>Qty to Plan</th>
             </tr>
           </thead>
@@ -492,7 +502,7 @@ function BomBody({
                   <td>{c.childItemName}</td>
                   <td>{c.qtyPerSet}</td>
                   <td className="fw-700">{c.totalNeed}</td>
-                  <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                  <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                     {c.stockQty}
                   </td>
                   <td
@@ -521,10 +531,7 @@ function BomBody({
                         {c.existingPlan.jcCode ? (
                           <>
                             {' '}
-                            <span
-                              className="mono"
-                              style={{ fontSize: 10, color: 'var(--cyan)' }}
-                            >
+                            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
                               {c.existingPlan.jcCode}
                             </span>
                           </>
@@ -534,10 +541,7 @@ function BomBody({
                         {mode === 'assembly' && c.existingPlan.dpPrCode ? (
                           <>
                             {' '}
-                            <span
-                              className="mono"
-                              style={{ fontSize: 10, color: 'var(--purple)' }}
-                            >
+                            <span className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
                               {c.existingPlan.dpPrCode}
                             </span>
                           </>
@@ -624,7 +628,7 @@ function BomBody({
                         />
                       ) : null}
                       {!s.vendorId ? (
-                        <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>
+                        <span style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}>
                           vendor required
                         </span>
                       ) : null}
@@ -662,7 +666,7 @@ function BomBody({
               onChange={(e) => setPlanAssembly(e.target.checked)}
               style={{ width: 16, height: 16, accentColor: 'var(--green)' }}
             />
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green2)' }}>
               🛠 Final Assembly Job Card
             </span>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -681,8 +685,8 @@ function BomBody({
         {/* The two modes have different footnotes in legacy — equipment L8901,
             assembly L7185. They are not interchangeable. */}
         {mode === 'equipment'
-          ? 'ℹ Total Need = Equipment Qty × Qty per Set. Pending = Total Need − Current Stock.'
-          : 'ℹ Pending = Total Need − Current Stock. You can adjust Qty to Plan up to Total Need if you want to plan more than the pending qty.'}
+          ? 'Total Need = Equipment Qty × Qty per Set.'
+          : 'Qty to Plan can go up to Total Need.'}
       </div>
 
       {submitErr ? (
@@ -691,7 +695,7 @@ function BomBody({
             padding: 8,
             borderRadius: 4,
             background: 'rgba(239,68,68,0.1)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >

@@ -26,6 +26,7 @@ function toQueryString(q: ListPurchaseOrdersQuery): string {
   if (q.vendorId) params.set('vendorId', q.vendorId);
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
+  if (q.jobWorkOrderId) params.set('jobWorkOrderId', q.jobWorkOrderId);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -152,23 +153,20 @@ export function useRejectPurchaseOrder() {
   });
 }
 
-import type { CreatePurchaseOrderFromPrBatchInput } from '@innovic/shared';
-
-export function useCreatePurchaseOrderFromPrBatch() {
+// ADR-189 — stop an issued PO (cancel if nothing moved, else close short).
+export function useShortClosePurchaseOrder() {
   const qc = useQueryClient();
-  return useMutation<PurchaseOrderDetail, Error, CreatePurchaseOrderFromPrBatchInput>({
-    mutationFn: (input) =>
-      apiFetch<PurchaseOrderDetail>('/purchase-orders/from-pr-batch', {
+  return useMutation<PurchaseOrderDetail, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<PurchaseOrderDetail>(`/purchase-orders/${id}/short-close`, {
         method: 'POST',
-        json: input,
+        json: { reason },
       }),
-    onSuccess: (created, vars) => {
+    onSuccess: (po) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
-      qc.setQueryData(purchaseOrdersKeys.detail(created.id), created);
-      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
-      for (const prId of vars.prIds) {
-        void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(prId) });
-      }
+      qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
+      // Its PRs' Pending changes too.
+      void qc.invalidateQueries({ queryKey: ['purchase-requests'] });
     },
   });
 }

@@ -38,7 +38,7 @@ export function DrawingUploadField({
       const path = await uploadFile(file, me.companyId, { folder: 'item-drawings' });
       onChange(path);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
     } finally {
       setBusy(false);
     }
@@ -75,9 +75,7 @@ export function DrawingUploadField({
             Remove
           </button>
         </div>
-      ) : (
-        <div className="form-help">Stored privately; opened via a short-lived link.</div>
-      )}
+      ) : null}
       {err ? <div className="form-error">{err}</div> : null}
       {previewOpen && value ? (
         <FilePreviewModal

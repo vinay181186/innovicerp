@@ -17,9 +17,8 @@
 // PHASE 4 — composed exactly like the reference list
 // (modules/clients/routes/list.tsx), which this screen is the twin of:
 //
-//   <ListHeader>            title · count · SearchInput · ⟳ Updating… · primary
-//     <StatStrip>           counts that double as the status filter
-//   </ListHeader>
+//   <ListHeader>            title · count · ⟳ Updating… · primary, then the
+//                           filter bar: SearchInput · status (with counts) · Clear
 //   <Banner>                import result (dismissible)
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint · Excel template / import
@@ -34,7 +33,7 @@
 //
 // What did NOT change: the route and its search params, the 300ms debounce on
 // the URL write, normalizeSearchTerm, the single un-filtered fetch (so the
-// strip can count all three tiles), perms -> canAdd/canEdit/canDelete, the
+// status dropdown can count all three options), perms -> canAdd/canEdit/canDelete, the
 // one-request bulk import, row click -> detail, Code cell -> detail.
 
 import type { ListVendorsQuery, Vendor } from '@innovic/shared';
@@ -45,7 +44,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import { DataTable, Panel, StatStrip, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateVendors, useSoftDeleteVendor, useVendorsList } from '../api';
@@ -83,7 +82,11 @@ function VendorsListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -102,8 +105,8 @@ function VendorsListPage(): React.JSX.Element {
   }, [searchInput, search.search, navigate]);
 
   // One fetch of every vendor matching the search (no isActive server filter):
-  // the Active/Inactive split is derived + filtered client-side so the StatStrip
-  // can show real counts for all three tiles.
+  // the Active/Inactive split is derived + filtered client-side so the status
+  // dropdown can show real counts for all three options.
   const query: ListVendorsQuery = useMemo(
     () => ({
       search: search.search,
@@ -175,7 +178,7 @@ function VendorsListPage(): React.JSX.Element {
           (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
       );
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -204,7 +207,7 @@ function VendorsListPage(): React.JSX.Element {
     () => [
       { header: 'Sr No', width: '4%', className: 'text3', render: (_v, i) => i + 1 },
       {
-        header: 'Code',
+        header: 'Vendor Code',
         width: '8%',
         nowrap: true,
         // A real link, so the code can be ctrl/middle-clicked into a new tab.
@@ -223,7 +226,7 @@ function VendorsListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Name',
+        header: 'Vendor Name',
         width: '15%',
         align: 'left',
         className: 'fw-700',
@@ -231,7 +234,7 @@ function VendorsListPage(): React.JSX.Element {
         key: 'name',
       },
       {
-        header: 'Contact',
+        header: 'Contact Person',
         width: '9%',
         ellipsis: true,
         render: (v) => v.contactPerson ?? '—',
@@ -265,7 +268,7 @@ function VendorsListPage(): React.JSX.Element {
         render: (v) => <StatusBadge kind="rating" status={v.rating} />,
       },
       {
-        header: 'Active',
+        header: 'Vendor Status',
         width: '6%',
         nowrap: true,
         render: (v) => <StatusBadge kind="active" status={String(v.isActive)} />,
@@ -284,56 +287,52 @@ function VendorsListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, search, primary action and the
-          StatStrip stay put while the rows scroll underneath. */}
+      {/* The frozen header band: title, count, primary action and the filter
+          bar stay put while the rows scroll underneath. */}
       <ListHeader
         title="Vendor Master"
-        icon="🏭"
+        icon="🚚"
         count={total}
         noun="vendor"
-        filterNote={search.status}
         search={searchInput}
         onSearch={setSearchInput}
+        searchPlaceholder="Search code, vendor, contact, phone, email, GST, address…"
         updating={isFetching && !isLoading}
+        filters={
+          // Status with its counts in the option labels (owner decision
+          // 2026-09-26: one filter bar, no capsule row). Counts are the same
+          // client-side split the strip showed.
+          <select
+            className="innovic-select"
+            aria-label="Vendor status"
+            title="Vendor status"
+            value={search.status ?? ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              setStatus(v === 'active' || v === 'inactive' ? v : undefined);
+            }}
+          >
+            <option value="">All Vendors ({total})</option>
+            <option value="active">Active ({activeCount})</option>
+            <option value="inactive">Inactive ({inactiveCount})</option>
+          </select>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, status: undefined }),
+            replace: true,
+          });
+        }}
+        filtersActive={search.status !== undefined || searchInput !== ''}
         primary={
           canAdd ? (
             <Link to="/vendors/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> Add Vendor
+              <Icon name="plus" size={14} /> New Vendor
             </Link>
           ) : null
         }
-      >
-        {/* Counts double as the status filter (styling skill, Rule 3). Active
-            state = coloured label + underline, handled inside <StatStrip>. */}
-        <StatStrip
-          items={[
-            {
-              key: 'all',
-              label: 'All Vendors',
-              count: total,
-              color: 'var(--cyan)',
-              active: search.status === undefined,
-              onClick: () => setStatus(undefined),
-            },
-            {
-              key: 'active',
-              label: 'Active',
-              count: activeCount,
-              color: 'var(--green)',
-              active: search.status === 'active',
-              onClick: () => setStatus('active'),
-            },
-            {
-              key: 'inactive',
-              label: 'Inactive',
-              count: inactiveCount,
-              color: 'var(--text3)',
-              active: search.status === 'inactive',
-              onClick: () => setStatus('inactive'),
-            },
-          ]}
-        />
-      </ListHeader>
+      />
 
       {importMsg ? (
         <Banner tone="info" onDismiss={() => setImportMsg(null)}>
@@ -344,7 +343,7 @@ function VendorsListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load vendors'}
+          message={error instanceof Error ? error.message : 'Could not load vendors. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">
@@ -352,18 +351,13 @@ function VendorsListPage(): React.JSX.Element {
             columns={columns}
             rows={visibleRows}
             loading={isLoading}
-            emptyText={
-              search.status
-                ? `No ${search.status} vendors`
-                : 'No vendors. Add vendors to create Purchase Orders.'
-            }
+            emptyText={search.status || search.search ? 'No vendors match.' : 'No vendors yet.'}
             onRowClick={(v) => void navigate({ to: '/vendors/$id', params: { id: v.id } })}
             rowActionsWidth="11%"
             rowActions={(v) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/vendors/${v.id}`}
+                // Row click opens the vendor (no separate View). Edit is a
+                // ROUTE, so it stays a real link — ctrl/middle-click work.
                 editTo={canEdit ? `/vendors/${v.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed. The confirm
@@ -377,8 +371,8 @@ function VendorsListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move vendor ${v.name} to Trash?`,
-                  message: `${v.code} — ${v.name} stops appearing in the Vendor Master and in every vendor picker.`,
+                  title: `Move Vendor ${v.code} to Trash?`,
+                  message: 'You can restore it from Trash.',
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',
                 }}
@@ -393,7 +387,6 @@ function VendorsListPage(): React.JSX.Element {
         shown={visibleRows.length}
         noun="vendor"
         limit={LIST_LIMIT}
-        hint="Click a row to open the vendor. Click a count above to filter by status."
         // Legacy L27776-27779: Excel template + import sit below the count
         // line. The file input is hidden and only opened by the button.
         actions={

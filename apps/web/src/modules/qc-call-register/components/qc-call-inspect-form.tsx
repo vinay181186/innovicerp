@@ -23,7 +23,6 @@ import {
   type Shift,
   type SubmitQcLogInput,
   type QcHistoryPendingRow,
-  opSrNo,
   shortName,
 } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
@@ -32,7 +31,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
@@ -41,7 +40,7 @@ import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/
 import { tpiKeys } from '@/modules/tpi/api';
 
 function todayIso(): string {
-  return todayLocal();
+  return todayIst();
 }
 
 export interface QcCallInspectState {
@@ -73,11 +72,18 @@ export interface QcCallInspectState {
   doSubmit: () => Promise<void>;
 }
 
+/** The NC a QC submit raised (ADR-183) — handed to `onDone` so the register
+ *  can name it and link to its disposition instead of closing silently. */
+export interface RaisedNc {
+  id: string;
+  code: string;
+}
+
 /** State + submit for one pending job-card operation. */
 export function useQcCallInspect(props: {
   o: QcHistoryPendingRow;
-  /** After a successful submit. */
-  onDone: () => void;
+  /** After a successful submit — with the NC it raised, if any. */
+  onDone: (raisedNc?: RaisedNc) => void;
 }): QcCallInspectState {
   const { o, onDone } = props;
   const submitQc = useSubmitQcLog();
@@ -149,19 +155,19 @@ export function useQcCallInspect(props: {
     const acc = Number(accept || '0');
     const rej = Number(reject || '0');
     if (!Number.isInteger(acc) || acc < 0 || !Number.isInteger(rej) || rej < 0) {
-      setErr('Accept/Reject must be non-negative integers.');
+      setErr('Accepted and Rejected must be whole numbers, 0 or more.');
       return;
     }
     if (acc + rej <= 0) {
-      setErr('Enter accept and/or reject qty.');
+      setErr('Enter the Accepted and/or Rejected qty.');
       return;
     }
     if (acc + rej > o.qcPending) {
-      setErr(`Total ${acc + rej} exceeds pending ${o.qcPending}.`);
+      setErr(`Accepted + Rejected (${acc + rej}) cannot be more than QC Pending (${o.qcPending}).`);
       return;
     }
     if (!inspector.trim()) {
-      setErr('Enter who did the QC (QC By).');
+      setErr('Inspected By is required.');
       return;
     }
     // Nobody touched the dropdown, so the field still holds the seeded name of
@@ -184,16 +190,20 @@ export function useQcCallInspect(props: {
       ...(qcReportPath ? { qcReportPath, qcReportName } : {}),
     };
     try {
-      await submitQc.mutateAsync(input);
+      const saved = await submitQc.mutateAsync(input);
       // useSubmitQcLog refreshes op-entry's own views but not this register's
       // feed, so the row used to linger in Pending until the 60 s poll. Refresh
       // the register (and the TPI tab, which reads the same operations) now,
       // so the row leaves the list the moment the popup closes.
       void queryClient.invalidateQueries({ queryKey: qcHistoryKeys.all });
       void queryClient.invalidateQueries({ queryKey: tpiKeys.all });
-      onDone();
+      // A reject raises an NC: pass it up so the register names it and links
+      // straight to its disposition (ADR-190) — the popup itself closes, as the
+      // row may leave the pending feed on this very refetch.
+      const nc = saved.ncs[0];
+      onDone(nc ? { id: nc.id, code: nc.code } : undefined);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'QC submit failed');
+      setErr(e instanceof Error ? e.message : 'Could not save QC Inspection. Try again.');
     }
   }
 
@@ -230,8 +240,8 @@ export function QcCallInspectForm(props: {
   o: QcHistoryPendingRow;
   /** The form's own Cancel button. */
   onCancel: () => void;
-  /** After a successful submit. */
-  onDone: () => void;
+  /** After a successful submit — with the NC it raised, if any. */
+  onDone: (raisedNc?: RaisedNc) => void;
   /** Optional — only the popup listens. */
   onDirtyChange?: (dirty: boolean) => void;
 }): React.JSX.Element | null {
@@ -256,13 +266,10 @@ export function QcCallInspectFormView(props: {
 
   return (
     <div style={{ padding: '14px 16px', borderTop: '2px solid var(--green)' }}>
-      {/* Legacy L4167: QC Entry header naming the JC/Op and the operation. */}
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
-        ✅ QC Entry — {o.jcCode} Op{opSrNo(o.opSeq)} — {o.operation}
-      </div>
+      {/* The popup header above already names the JC, op and item. */}
       <div className="form-grid">
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 10 }}>
+          <label className="form-label" style={{ fontSize: 11 }}>
             QC Date
           </label>
           <input
@@ -273,7 +280,7 @@ export function QcCallInspectFormView(props: {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 10 }}>
+          <label className="form-label" style={{ fontSize: 11 }}>
             Shift
           </label>
           <select
@@ -289,50 +296,8 @@ export function QcCallInspectFormView(props: {
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 10, color: 'var(--green)' }}>
-            ✅ Accepted (max {o.qcPending})
-          </label>
-          <input
-            type="number"
-            className="innovic-input"
-            min={0}
-            max={o.qcPending}
-            value={form.accept}
-            onChange={(e) => form.setAccept(e.target.value)}
-            placeholder="0"
-            style={{
-              fontSize: 18,
-              fontWeight: 800,
-              color: 'var(--green)',
-              border: '2px solid var(--green)',
-              textAlign: 'center',
-            }}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 10, color: 'var(--red)' }}>
-            ❌ Rejected
-          </label>
-          <input
-            type="number"
-            className="innovic-input"
-            min={0}
-            max={o.qcPending}
-            value={form.reject}
-            onChange={(e) => form.setReject(e.target.value)}
-            placeholder="0"
-            style={{
-              fontSize: 18,
-              fontWeight: 800,
-              color: 'var(--red)',
-              border: '2px solid var(--red)',
-              textAlign: 'center',
-            }}
-          />
-        </div>
-        <div className="form-grp form-full">
-          <label className="form-label" style={{ fontSize: 10 }}>
-            👤 QC By ★
+          <label className="form-label" style={{ fontSize: 11 }}>
+            👤 Inspected By<span className="req">★</span>
           </label>
           {/* The whole QC list comes back in one small response, so the
               picker filters it in the browser and there is no ?search= to
@@ -349,15 +314,57 @@ export function QcCallInspectFormView(props: {
             emptyText="No QC users — set them up in Access Control"
           />
         </div>
+        <div className="form-grp">
+          <label className="form-label" style={{ fontSize: 11, color: 'var(--green2)' }}>
+            ✅ Accepted (max {o.qcPending})
+          </label>
+          <input
+            type="number"
+            className="innovic-input"
+            min={0}
+            max={o.qcPending}
+            value={form.accept}
+            onChange={(e) => form.setAccept(e.target.value)}
+            placeholder="0"
+            style={{
+              fontSize: 18,
+              fontWeight: 800,
+              color: 'var(--green2)',
+              border: '2px solid var(--green)',
+              textAlign: 'center',
+            }}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" style={{ fontSize: 11, color: 'var(--red2)' }}>
+            ❌ Rejected
+          </label>
+          <input
+            type="number"
+            className="innovic-input"
+            min={0}
+            max={o.qcPending}
+            value={form.reject}
+            onChange={(e) => form.setReject(e.target.value)}
+            placeholder="0"
+            style={{
+              fontSize: 18,
+              fontWeight: 800,
+              color: 'var(--red2)',
+              border: '2px solid var(--red)',
+              textAlign: 'center',
+            }}
+          />
+        </div>
         <div className="form-grp form-full">
-          <label className="form-label" style={{ fontSize: 10 }}>
+          <label className="form-label" style={{ fontSize: 11 }}>
             Remarks
           </label>
           <input
             className="innovic-input"
             value={form.remarks}
             onChange={(e) => form.setRemarks(e.target.value)}
-            placeholder="NC reason, observations..."
+            placeholder="Observations…"
           />
         </div>
         <div className="form-grp form-full">
@@ -370,7 +377,7 @@ export function QcCallInspectFormView(props: {
         </div>
       </div>
       {form.err ? (
-        <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
           {form.err}
         </div>
       ) : null}
@@ -380,11 +387,11 @@ export function QcCallInspectFormView(props: {
         </button>
         <button
           type="button"
-          className="btn btn-success"
+          className="btn btn-primary"
           disabled={form.submitting}
           onClick={() => void form.doSubmit()}
         >
-          {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit QC
+          {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Submit Inspection
         </button>
       </div>
     </div>

@@ -42,7 +42,7 @@ function OperatorNewPage(): React.JSX.Element {
         () => void navigate({ to: '/operators/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create operator');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Operator. Try again.');
     }
   };
 
@@ -60,10 +60,10 @@ function OperatorNewPage(): React.JSX.Element {
         <div className="panel-body">
           <div style={{ marginBottom: 8 }}>
             <Link to="/operators" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back to Operator Master
+              <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have create access to Operator Master. Ask an admin for L2 Data Entry or
             above in Production.
           </div>
@@ -76,7 +76,7 @@ function OperatorNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <Link to="/operators" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Operator Master
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="panel">
         <div className="panel-hdr">
@@ -122,7 +122,7 @@ function OperatorEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/operators/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update operator');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Operator. Try again.');
     }
   };
 
@@ -140,10 +140,10 @@ function OperatorEditPage(): React.JSX.Element {
         <div className="panel-body">
           <div style={{ marginBottom: 8 }}>
             <Link to="/operators" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back to Operator Master
+              <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have edit access to Operator Master. Ask an admin for L3 Editor or above in
             Production.
           </div>
@@ -169,8 +169,8 @@ function OperatorEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Operator not found'}
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Operator not found.'}
           </div>
         </div>
       </div>
@@ -186,7 +186,7 @@ function OperatorEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to operator
+        <ArrowLeft size={14} /> Back
       </Link>
       <div className="panel">
         <div className="panel-hdr">

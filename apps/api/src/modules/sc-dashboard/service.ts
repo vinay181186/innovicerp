@@ -7,6 +7,7 @@ import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
+import { poLinePendingRaw } from '../../lib/po-pending';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -72,7 +73,7 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
           COALESCE(SUM(pol.qty), 0) AS total_qty,
           COALESCE(SUM(pol.received_qty), 0) AS received_qty,
           COALESCE(SUM(pol.qty * pol.rate), 0) AS total_val,
-          COALESCE(SUM((pol.qty - pol.received_qty) * pol.rate), 0) AS pending_val
+          COALESCE(SUM(${poLinePendingRaw('pol', 'po')} * pol.rate), 0) AS pending_val
         FROM purchase_orders po
         JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
         LEFT JOIN vendors v ON v.id = po.vendor_id
@@ -119,7 +120,7 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
           COALESCE(SUM(pol.qty), 0) AS total_qty,
           COALESCE(SUM(pol.received_qty), 0) AS received_qty,
           COALESCE(SUM(pol.qty * pol.rate), 0) AS total_val,
-          COALESCE(SUM((pol.qty - pol.received_qty) * pol.rate), 0) AS pending_val
+          COALESCE(SUM(${poLinePendingRaw('pol', 'po')} * pol.rate), 0) AS pending_val
         FROM purchase_orders po
         JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
         LEFT JOIN sales_order_lines sol ON sol.id = pol.source_so_line_id

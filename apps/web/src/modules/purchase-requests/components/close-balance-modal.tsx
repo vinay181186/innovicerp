@@ -65,8 +65,8 @@ export function CloseBalanceModal({
             borderBottom: '1px solid var(--border)',
           }}
         >
-          <div className="fw-700" style={{ color: 'var(--amber)' }}>
-            🚫 Close balance — {code}
+          <div className="fw-700" style={{ color: 'var(--amber2)' }}>
+            🚫 Short Close — {code}
           </div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
             <X size={14} />
@@ -84,19 +84,11 @@ export function CloseBalanceModal({
               lineHeight: 1.5,
             }}
           >
-            <div>
-              <b className="mono">{bal.ordered}</b> of <b className="mono">{bal.qty}</b> is on
-              purchase orders. Closing the balance stops the remaining{' '}
-              <b className="mono" style={{ color: 'var(--amber)' }}>
-                {bal.balance}
-              </b>{' '}
-              from ever being ordered.
-            </div>
-            <div className="text3" style={{ marginTop: 6 }}>
-              The request still says {bal.qty} was asked for and keeps every purchase order it
-              already has — nothing is cancelled. It simply drops out of the "still to buy" list. To
-              scrap the whole request instead, use Reject.
-            </div>
+            Stop ordering the pending{' '}
+            <b className="mono" style={{ color: 'var(--amber2)' }}>
+              {bal.balance}
+            </b>
+            ? Existing POs stay.
           </div>
           <div className="form-grp">
             <label className="form-label" htmlFor="pr-close-balance-reason">
@@ -109,7 +101,7 @@ export function CloseBalanceModal({
               value={reason}
               autoFocus
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Customer cut the order to 10 pcs — balance not required"
+              placeholder="e.g. Customer cut the order to 10 pcs — rest not required"
             />
           </div>
           {errorText ? (
@@ -119,7 +111,7 @@ export function CloseBalanceModal({
                 background: 'var(--red3)',
                 border: '1px solid var(--sig-critical-bd)',
                 borderRadius: 6,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 fontSize: 12,
               }}
             >
@@ -144,7 +136,7 @@ export function CloseBalanceModal({
                   <Loader2 className="inline h-3 w-3 animate-spin" /> Closing…
                 </>
               ) : (
-                'Close balance'
+                'Short Close'
               )}
             </button>
           </div>

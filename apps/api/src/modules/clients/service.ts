@@ -109,7 +109,7 @@ export async function getClient(id: string, user: AuthContext): Promise<Client> 
       .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Client ${id} not found`);
+    if (!row) throw new NotFoundError('Customer not found. It may have been moved to Trash.');
     return row as unknown as Client;
   });
 }
@@ -140,6 +140,43 @@ export async function getNextClientCode(user: AuthContext): Promise<{ code: stri
   return withUserContext(user, async (tx) => ({ code: await nextClientCode(tx, companyId) }));
 }
 
+/**
+ * One customer per name. Refuse a name that a LIVE customer (not in Trash)
+ * already carries, compared trimmed and case-insensitively — the same rule the
+ * Excel import (createClientsBulk) has always applied. Without it "ABC
+ * Industries" typed twice got CLI-012 and CLI-013 and split its SOs/invoices
+ * over two customers. The 409 carries the existing customer so the quick-add
+ * pop-ups can offer "Use this customer" instead of a dead end.
+ * `exceptId` lets a rename keep its own name.
+ */
+async function assertClientNameFree(
+  tx: DbTransaction,
+  companyId: string,
+  name: string,
+  exceptId?: string,
+): Promise<void> {
+  const key = name.trim().toLowerCase();
+  if (!key) return;
+  const conds: SQL[] = [
+    eq(clients.companyId, companyId),
+    isNull(clients.deletedAt),
+    sql`lower(trim(${clients.name})) = ${key}`,
+  ];
+  if (exceptId) conds.push(sql`${clients.id} <> ${exceptId}`);
+  const rows = await tx
+    .select({ id: clients.id, code: clients.code, name: clients.name })
+    .from(clients)
+    .where(and(...conds))
+    .limit(1);
+  const dup = rows[0];
+  if (dup) {
+    throw new ConflictError(
+      `A customer named "${dup.name}" already exists (${dup.code}). Use that customer instead of adding it again.`,
+      { existingClient: { id: dup.id, code: dup.code, name: dup.name } },
+    );
+  }
+}
+
 export async function createClient(input: CreateClientInput, user: AuthContext): Promise<Client> {
   requireWriteRole(user);
   await requireFormAccess(user, 'client_create', 'entry');
@@ -159,18 +196,19 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
       if (dup) {
         if (dup.deletedAt) {
           throw new ConflictError(
-            `Client code "${code}" belongs to a deleted client — restore it instead of re-creating`,
+            `Customer Code "${code}" is in Trash. Restore it from Trash instead.`,
           );
         }
-        throw new ConflictError(`Client code "${code}" already exists`);
+        throw new ConflictError(`Customer Code "${code}" already exists.`);
       }
+      await assertClientNameFree(tx, companyId, input.name);
 
       const inserted = await tx
         .insert(clients)
         .values({
           companyId,
           code,
-          name: input.name,
+          name: input.name.trim(),
           contactPerson: emptyToNull(input.contactPerson),
           email: emptyToNull(input.email),
           phone: emptyToNull(input.phone),
@@ -179,6 +217,7 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
           city: emptyToNull(input.city),
           state: emptyToNull(input.state),
           pincode: emptyToNull(input.pincode),
+          paymentDays: input.paymentDays ?? null,
           isActive: input.isActive,
           createdBy: user.id,
           updatedBy: user.id,
@@ -256,14 +295,14 @@ export async function createClientsBulk(
       const name = c.name.trim();
       const nameKey = name.toLowerCase();
       if (takenNames.has(nameKey)) {
-        skipped.push({ index, name, reason: 'a client with this name already exists' });
+        skipped.push({ index, name, reason: 'a Customer with this name already exists' });
         continue;
       }
 
       let code = c.code?.trim();
       if (code) {
         if (takenCodes.has(code.toLowerCase())) {
-          skipped.push({ index, name, reason: `code "${code}" is already used` });
+          skipped.push({ index, name, reason: `Customer Code "${code}" is already used` });
           continue;
         }
       } else {
@@ -293,6 +332,7 @@ export async function createClientsBulk(
         city: emptyToNull(c.city),
         state: emptyToNull(c.state),
         pincode: emptyToNull(c.pincode),
+        paymentDays: c.paymentDays ?? null,
         isActive: c.isActive,
         createdBy: user.id,
         updatedBy: user.id,
@@ -320,17 +360,19 @@ export async function updateClient(
 ): Promise<Client> {
   requireWriteRole(user);
   await requireFormAccess(user, 'client_create', 'edit');
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
       .select({ id: clients.id })
       .from(clients)
       .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Client ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Customer not found. It may have been moved to Trash.');
+    if (input.name !== undefined) await assertClientNameFree(tx, companyId, input.name, id);
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.name !== undefined) updates.name = input.name;
+    if (input.name !== undefined) updates.name = input.name.trim();
     if (input.contactPerson !== undefined) updates.contactPerson = emptyToNull(input.contactPerson);
     if (input.email !== undefined) updates.email = emptyToNull(input.email);
     if (input.phone !== undefined) updates.phone = emptyToNull(input.phone);
@@ -339,6 +381,7 @@ export async function updateClient(
     if (input.city !== undefined) updates.city = emptyToNull(input.city);
     if (input.state !== undefined) updates.state = emptyToNull(input.state);
     if (input.pincode !== undefined) updates.pincode = emptyToNull(input.pincode);
+    if (input.paymentDays !== undefined) updates.paymentDays = input.paymentDays;
     if (input.isActive !== undefined) updates.isActive = input.isActive;
 
     const updated = await tx.update(clients).set(updates).where(eq(clients.id, id)).returning();
@@ -357,7 +400,8 @@ export async function softDeleteClient(id: string, user: AuthContext): Promise<{
       .from(clients)
       .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Client ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Customer not found. It may have been moved to Trash.');
     await tx
       .update(clients)
       .set({ deletedAt: new Date(), updatedBy: user.id })

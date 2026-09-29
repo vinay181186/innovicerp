@@ -8,14 +8,18 @@ import {
   type CreateJwDcOutwardLineInput,
   type JwDcOutwardListItem,
 } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
+import { ExitConfirmDialog } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
+import { ListFooter, ListHeader } from '@/ui/layout';
+import { useJobWorkOrder } from '../../job-work-orders/api';
 import { usePurchaseOrdersList } from '../../purchase-orders/api';
 import {
   useCreateJwDcInward,
@@ -37,6 +41,9 @@ const searchSchema = z.object({
   // pre-fills the active view's search box. Read ONCE (lazy useState) by the
   // Outward / Inward views below; typing afterwards stays local.
   search: z.string().optional(),
+  // `?jw=<jwsoId>` (JWSO detail → "JW DC"): opens New Outward DC straight
+  // away, naming that JWSO. A malformed id is ignored.
+  jw: z.string().uuid().optional().catch(undefined),
 });
 
 export const jwDcListRoute = createRoute({
@@ -65,18 +72,18 @@ function JwDcPage(): React.JSX.Element {
           color="var(--purple)"
           onClick={() => setTab('outward')}
         >
-          📤 Outward (to Vendor)
+          Outward (to Vendor)
         </TabButton>
-        <TabButton
-          active={tab === 'inward'}
-          color="var(--green)"
-          onClick={() => setTab('inward')}
-        >
-          📥 Inward (Return from Vendor)
+        <TabButton active={tab === 'inward'} color="var(--green)" onClick={() => setTab('inward')}>
+          Inward (Return from Vendor)
         </TabButton>
       </div>
 
-      {tab === 'outward' ? <OutwardView /> : <InwardView />}
+      {tab === 'outward' ? (
+        <OutwardView key={search.jw ?? ''} forJwId={search.jw} />
+      ) : (
+        <InwardView />
+      )}
     </div>
   );
 }
@@ -100,7 +107,7 @@ function TabButton({
       style={{
         fontWeight: 700,
         background: active ? color : 'var(--bg4)',
-        color: active ? '#fff' : 'var(--text2)',
+        color: active ? 'var(--bg2)' : 'var(--text2)',
         border: `1px solid ${active ? color : 'var(--border)'}`,
       }}
     >
@@ -111,14 +118,17 @@ function TabButton({
 
 // ─── Outward view ─────────────────────────────────────────────────────────
 
-function OutwardView(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+function OutwardView({ forJwId }: { forJwId?: string | undefined }): React.JSX.Element {
+  // Same right the server checks (ADR-193): OSP Outward DC entry.
+  const { data: eff } = useMyAccess();
+  const canWrite = effectiveFormPerms(eff, 'ospdc_create').entry;
   const routeSearch = jwDcListRoute.useSearch();
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => routeSearch.search ?? '');
   const [page, setPage] = useState(1);
-  const [showModal, setShowModal] = useState(false);
+  // A `?jw=` landing opens New Outward DC at once (write access only — the
+  // modal is gated the same way the + button is).
+  const [showModal, setShowModal] = useState(() => Boolean(forJwId));
 
   const { data, isLoading, isError, error } = useJwDcOutwardList({
     search: search.trim() || undefined,
@@ -130,31 +140,27 @@ function OutwardView(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📤 Outward Register (Returnable Gate Pass)</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search DC, JWPO, vendor…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            style={{ width: 260, fontSize: 12 }}
-          />
-          {canWrite ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowModal(true)}
-            >
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          + New Outward DC. */}
+      <ListHeader
+        title="Outward Register"
+        icon="📤"
+        count={data?.total}
+        noun="outward DC"
+        search={search}
+        onSearch={(v) => {
+          setSearch(v);
+          setPage(1);
+        }}
+        searchPlaceholder="Search DC, PO, vendor…"
+        primary={
+          canWrite ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
               <Plus size={14} /> New Outward DC
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -165,39 +171,38 @@ function OutwardView(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load outward DCs'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load outward DCs. Try again.'}
             </div>
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>DC No.</th>
                   <th>DC Date</th>
-                  <th>JWPO</th>
+                  <th>PO No.</th>
                   <th>SO No.</th>
                   <th>Vendor</th>
-                  <th className="td-ctr">Items</th>
-                  <th className="td-ctr" style={{ color: 'var(--purple)' }}>
+                  <th className="th-num">Items</th>
+                  <th className="th-num" style={{ color: 'var(--purple)' }}>
                     Sent
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Received
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--red)' }}>
+                  <th className="th-num" style={{ color: 'var(--red2)' }}>
                     Pending
                   </th>
                   <th>DC Status</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="empty-state">
-                      No outward DCs. Click + New Outward DC.
+                    <td colSpan={10} className="empty-state">
+                      {search.trim() ? 'No outward DCs match.' : 'No outward DCs yet.'}
                     </td>
                   </tr>
                 ) : (
@@ -210,72 +215,41 @@ function OutwardView(): React.JSX.Element {
       </div>
 
       {data ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-            fontSize: 12,
-            color: 'var(--text3)',
-          }}
-        >
-          <span>
-            {data.total === 0
-              ? 'No DCs'
-              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <ListFooter
+          total={data.total}
+          noun="outward DC"
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+        />
       ) : null}
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-        💡 Material returns are tracked in 📥 Inward tab. ⚠ RETURNABLE — material comes back after
-        processing.
-      </div>
-
-      {showModal ? <NewOutwardModal onClose={() => setShowModal(false)} /> : null}
+      {showModal && canWrite ? (
+        <NewOutwardModal forJwId={forJwId} onClose={() => setShowModal(false)} />
+      ) : null}
     </div>
   );
 }
 
 function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
-  const stColor =
-    dc.returnStatus === 'fully_returned'
-      ? 'var(--green)'
-      : dc.returnStatus === 'partial'
-        ? 'var(--cyan)'
-        : 'var(--red)';
+  const navigate = useNavigate();
+  // Returned = done (green); Partly Returned / Out (at the vendor) = under way (amber).
+  const stClass = dc.returnStatus === 'fully_returned' ? 'b-green' : 'b-amber';
   const stLabel =
     dc.returnStatus === 'fully_returned'
-      ? 'Fully Returned'
+      ? 'Returned'
       : dc.returnStatus === 'partial'
-        ? 'Partial'
-        : 'Out';
+        ? 'Partly Returned'
+        : 'At Vendor';
 
   return (
-    <tr>
-      <td className="mono fw-700">
+    <tr
+      style={{ cursor: 'pointer' }}
+      onClick={() => void navigate({ to: '/jw-dc/$id', params: { id: dc.id } })}
+    >
+      <td className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
         <Link
+          onClick={(e) => e.stopPropagation()}
           to="/jw-dc/$id"
           params={{ id: dc.id }}
           style={{ color: 'var(--purple)', textDecoration: 'underline dotted' }}
@@ -283,44 +257,29 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
           {dc.code}
         </Link>
       </td>
-      <td style={{ fontSize: 11 }}>{dc.dcDate}</td>
-      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{fmtDate(dc.dcDate)}</td>
+      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
         {dc.jwpoCodeText ?? '—'}
       </td>
-      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
         {dc.soCode ?? '—'}
       </td>
       <td style={{ fontWeight: 600 }}>{dc.vendorNameText ?? dc.vendorCodeText ?? '—'}</td>
-      <td className="td-ctr">{dc.linesCount}</td>
-      <td
-        className="td-ctr mono fw-700"
-        style={{ color: 'var(--purple)' }}
-      >
+      <td className="td-num">{dc.linesCount}</td>
+      <td className="mono fw-700 td-num" style={{ color: 'var(--purple)' }}>
         {dc.totalSentQty}
       </td>
-      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+      <td className="mono td-num" style={{ color: 'var(--green2)' }}>
         {dc.totalReturnedQty}
       </td>
       <td
-        className="td-ctr mono fw-700"
+        className="mono fw-700 td-num"
         style={{ color: dc.pendingQty > 0 ? 'var(--red)' : 'var(--green)' }}
       >
         {dc.pendingQty}
       </td>
       <td>
-        <span style={{ fontWeight: 700, color: stColor }}>{stLabel}</span>
-      </td>
-      <td>
-        <div style={{ display: 'flex', gap: 3 }}>
-          <Link
-            to="/jw-dc/$id"
-            params={{ id: dc.id }}
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 10 }}
-          >
-            👁 View
-          </Link>
-        </div>
+        <span className={`badge ${stClass}`}>{stLabel}</span>
       </td>
     </tr>
   );
@@ -329,8 +288,9 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
 // ─── Inward view ──────────────────────────────────────────────────────────
 
 function InwardView(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Same right the server checks (ADR-193): OSP Outward DC entry.
+  const { data: eff } = useMyAccess();
+  const canWrite = effectiveFormPerms(eff, 'ospdc_create').entry;
   const routeSearch = jwDcListRoute.useSearch();
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => routeSearch.search ?? '');
@@ -347,31 +307,28 @@ function InwardView(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📥 Inward Register (JW DC Returns)</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          {canWrite ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowModal(true)}
-            >
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          + New Inward Entry. */}
+      <ListHeader
+        title="Inward Register"
+        icon="📥"
+        count={data?.total}
+        noun="inward entry"
+        nounPlural="inward entries"
+        search={search}
+        onSearch={(v) => {
+          setSearch(v);
+          setPage(1);
+        }}
+        searchPlaceholder="Search inward no, DC, vendor, vendor challan…"
+        primary={
+          canWrite ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
               <Plus size={14} /> New Inward Entry
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -382,13 +339,13 @@ function InwardView(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load inward entries'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load inward entries. Try again.'}
             </div>
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Inward No.</th>
@@ -396,11 +353,14 @@ function InwardView(): React.JSX.Element {
                   <th>DC No.</th>
                   <th>Vendor</th>
                   <th>Vendor Challan No.</th>
-                  <th className="td-ctr">Received</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  {/* The QC-pending GRN the receipt raised; Accepted / Rejected
+                      below are that GRN's Incoming QC figures (0172). */}
+                  <th>GRN No.</th>
+                  <th className="th-num">Received</th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Accepted
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--red)' }}>
+                  <th className="th-num" style={{ color: 'var(--red2)' }}>
                     Rejected
                   </th>
                 </tr>
@@ -408,31 +368,48 @@ function InwardView(): React.JSX.Element {
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="empty-state">
-                      No inward entries. Click + New Inward Entry when material returns from
-                      vendor.
+                    <td colSpan={9} className="empty-state">
+                      {search.trim() ? 'No inward entries match.' : 'No inward entries yet.'}
                     </td>
                   </tr>
                 ) : (
                   data.items.map((inv) => (
                     <tr key={inv.id}>
-                      <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                      <td
+                        className="mono fw-700"
+                        style={{ color: 'var(--green2)', whiteSpace: 'nowrap' }}
+                      >
                         {inv.code}
                       </td>
-                      <td style={{ fontSize: 11 }}>{inv.inwardDate}</td>
+                      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {fmtDate(inv.inwardDate)}
+                      </td>
                       <td
                         className="mono"
-                        style={{ color: 'var(--purple)', fontSize: 11 }}
+                        style={{ color: 'var(--purple)', fontSize: 11, whiteSpace: 'nowrap' }}
                       >
                         {inv.dcCodeText ?? '—'}
                       </td>
                       <td style={{ fontWeight: 600 }}>{inv.vendorNameText ?? '—'}</td>
                       <td style={{ fontSize: 11 }}>{inv.vendorChallanNo ?? '—'}</td>
-                      <td className="td-ctr mono fw-700">{inv.totalReceivedQty}</td>
-                      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                      <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {inv.goodsReceiptNoteId && inv.grnCode ? (
+                          <Link
+                            to="/goods-receipt-notes/$id"
+                            params={{ id: inv.goodsReceiptNoteId }}
+                            style={{ color: 'var(--blue)' }}
+                          >
+                            {inv.grnCode}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="mono fw-700 td-num">{inv.totalReceivedQty}</td>
+                      <td className="mono td-num" style={{ color: 'var(--green2)' }}>
                         {inv.totalOkQty}
                       </td>
-                      <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                      <td className="mono td-num" style={{ color: 'var(--red2)' }}>
                         {inv.totalRejectedQty > 0 ? inv.totalRejectedQty : '—'}
                       </td>
                     </tr>
@@ -445,42 +422,14 @@ function InwardView(): React.JSX.Element {
       </div>
 
       {data ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-            fontSize: 12,
-            color: 'var(--text3)',
-          }}
-        >
-          <span>
-            {data.total === 0
-              ? 'No inward entries'
-              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <ListFooter
+          total={data.total}
+          noun="inward entry"
+          nounPlural="inward entries"
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+        />
       ) : null}
 
       {showModal ? <NewInwardModal onClose={() => setShowModal(false)} /> : null}
@@ -489,6 +438,9 @@ function InwardView(): React.JSX.Element {
 }
 
 // ─── New Outward modal ────────────────────────────────────────────────────
+
+/** PO statuses material may go out against: approved and still live. */
+const SENDABLE_PO_STATUSES: ReadonlySet<string> = new Set(['open', 'partial', 'qc_pending']);
 
 interface OutwardLineUi {
   purchaseOrderLineId: string;
@@ -499,6 +451,7 @@ interface OutwardLineUi {
   clientPoLineNo: string | null;
   itemName: string;
   processText: string | null;
+  uom: string | null;
   poQty: number;
   alreadySent: number;
   available: number;
@@ -506,13 +459,26 @@ interface OutwardLineUi {
   checked: boolean;
 }
 
-function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+function NewOutwardModal({
+  onClose,
+  forJwId,
+}: {
+  onClose: () => void;
+  /** `?jw=` deep link from a JWSO. An outward DC is keyed by the job-work PO,
+   *  not the JWSO, so the PO list is asked for the POs whose lines trace to
+   *  that JWSO (`jobWorkOrderId`, ADR-190 addendum): exactly one is pre-picked,
+   *  several narrow the PO picker to them, none leaves the full picker. */
+  forJwId?: string | undefined;
+}): React.JSX.Element {
+  const { data: forJw } = useJobWorkOrder(forJwId);
   const [date, setDate] = useState(todayLocal());
   const [poId, setPoId] = useState<string | null>(null);
   const [vehicleNo, setVehicleNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<OutwardLineUi[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  // Anything the user typed, picked or ticked — arms the exit question.
+  const [touched, setTouched] = useState(false);
 
   const { data: next } = useNextOutwardCode();
 
@@ -530,14 +496,31 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
     limit: 200,
     offset: 0,
   });
-  const poData = useMemo(
-    () => ({ items: [...(poDataJw?.items ?? []), ...(poDataSvc?.items ?? [])] }),
-    [poDataJw, poDataSvc],
+  // `?jw=` — the job-work / service POs carrying this JWSO's work.
+  const { data: poDataForJw } = usePurchaseOrdersList(
+    { jobWorkOrderId: forJwId, limit: 200, offset: 0 },
+    { enabled: Boolean(forJwId) },
   );
-  const selectedPo = useMemo(
-    () => poData.items.find((p) => p.id === poId) ?? null,
-    [poData, poId],
-  );
+  const forJwPos = forJwId ? (poDataForJw?.items ?? null) : null;
+  // Only an approved, live PO can send material out — the server refuses a
+  // Draft, Closed or Cancelled one (same rule as the OSP DC), so they are not
+  // offered here either.
+  const poData = useMemo(() => {
+    const all =
+      forJwPos && forJwPos.length > 0
+        ? forJwPos
+        : [...(poDataJw?.items ?? []), ...(poDataSvc?.items ?? [])];
+    return { items: all.filter((p) => SENDABLE_PO_STATUSES.has(p.status)) };
+  }, [forJwPos, poDataJw, poDataSvc]);
+  // Exactly one PO carries the JWSO → pick it (once; the user may change it).
+  const [prePicked, setPrePicked] = useState(false);
+  useEffect(() => {
+    if (prePicked || !forJwPos) return;
+    setPrePicked(true);
+    const sendable = forJwPos.filter((p) => SENDABLE_PO_STATUSES.has(p.status));
+    if (sendable.length === 1 && sendable[0]) setPoId(sendable[0].id);
+  }, [forJwPos, prePicked]);
+  const selectedPo = useMemo(() => poData.items.find((p) => p.id === poId) ?? null, [poData, poId]);
 
   const { data: poLines } = useJwDcPoLines(poId ?? undefined);
   // Sync lines from server response once
@@ -551,6 +534,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
           clientPoLineNo: l.clientPoLineNo,
           itemName: l.itemName,
           processText: l.processText,
+          uom: l.uom,
           poQty: l.poQty,
           alreadySent: l.alreadySent,
           available: l.available,
@@ -568,14 +552,14 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const onSave = (): void => {
     setErr(null);
     if (!poId) {
-      setErr('Select a JWPO');
+      setErr('PO No. is required.');
       return;
     }
     const valid: CreateJwDcOutwardLineInput[] = lines
       .filter((l) => l.checked && l.sendQty > 0)
       .map((l) => ({ purchaseOrderLineId: l.purchaseOrderLineId, sentQty: l.sendQty }));
     if (valid.length === 0) {
-      setErr('Check at least one line and enter qty to send');
+      setErr('Tick at least one line and enter Send Now.');
       return;
     }
     const input: CreateJwDcOutwardInput = {
@@ -588,22 +572,48 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save JW DC. Check the lines and try again.',
+        ),
     });
   };
 
   const setLine = (i: number, patch: Partial<OutwardLineUi>): void => {
+    setTouched(true);
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   };
 
   return (
     <ModalShell
       onClose={onClose}
-      title="📤 New Outward DC (Returnable Gate Pass)"
+      title="New Outward DC"
       onSave={onSave}
       saving={createMut.isPending}
       saveLabel="Save Outward DC"
+      dirty={touched}
     >
+      {forJw ? (
+        <div
+          className="text2"
+          style={{
+            marginBottom: 12,
+            padding: '8px 12px',
+            background: 'var(--purple3)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            fontSize: 12,
+          }}
+        >
+          For JWSO <span className="td-code">{forJw.code}</span>
+          {forJw.customerName ? <> · {forJw.customerName}</> : null}
+          {forJwPos && forJwPos.length === 1
+            ? ' — the PO carrying this JWSO’s work is picked below.'
+            : forJwPos && forJwPos.length > 1
+              ? ` — ${forJwPos.length} POs carry this JWSO’s work; pick one below.`
+              : ' — pick the job-work PO that carries this JWSO’s work.'}
+        </div>
+      ) : null}
       <div className="form-grid" style={{ marginBottom: 14 }}>
         <div className="form-grp">
           <label className="form-label">Outward DC No.</label>
@@ -620,19 +630,25 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
             type="date"
             className="innovic-input"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setDate(e.target.value);
+            }}
           />
         </div>
         <div className="form-grp form-full">
           <label className="form-label">
-            JWPO<span className="req">★</span>
+            PO No.<span className="req">★</span>
           </label>
           <select
             className="innovic-select"
             value={poId ?? ''}
-            onChange={(e) => setPoId(e.target.value || null)}
+            onChange={(e) => {
+              setTouched(true);
+              setPoId(e.target.value || null);
+            }}
           >
-            <option value="">-- Select JWPO --</option>
+            <option value="">-- Select PO --</option>
             {poData.items.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.code} — {p.vendorName ?? p.vendorCodeText ?? ''}
@@ -674,7 +690,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
               fontSize: 12,
             }}
           >
-            PO Lines — Select items to send
+            PO Lines
           </div>
           <table style={{ width: '100%' }}>
             <thead>
@@ -685,10 +701,20 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
                 <th style={{ padding: 6, color: 'var(--purple)' }}>POL</th>
                 <th style={{ padding: 6 }}>Item Code · Name</th>
                 <th style={{ color: 'var(--purple)', padding: 6 }}>Process</th>
-                <th style={{ padding: 6 }}>PO Qty</th>
-                <th style={{ color: 'var(--amber)', padding: 6 }}>Already Sent</th>
-                <th style={{ color: 'var(--green)', padding: 6 }}>Available</th>
-                <th style={{ color: 'var(--cyan)', padding: 6 }}>Qty to Send</th>
+                <th className="th-num" style={{ padding: 6 }}>
+                  PO Qty
+                </th>
+                <th style={{ padding: 6 }}>UOM</th>
+                {/* Sent on OSP DCs AND JW DCs together — the one figure. */}
+                <th className="th-num" style={{ color: 'var(--amber2)', padding: 6 }}>
+                  Sent
+                </th>
+                <th className="th-num" style={{ color: 'var(--green2)', padding: 6 }}>
+                  Pending
+                </th>
+                <th className="th-num" style={{ color: 'var(--cyan)', padding: 6 }}>
+                  Send Now<span className="req">★</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -711,29 +737,30 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
                         style={{ width: 16, height: 16 }}
                       />
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ padding: 6, color: 'var(--purple)' }}>
+                    <td
+                      className="td-ctr mono fw-700"
+                      style={{ padding: 6, color: 'var(--purple)' }}
+                    >
                       {l.clientPoLineNo ?? '—'}
                     </td>
                     <td style={{ padding: 6, fontSize: 12 }}>
                       <b>{itemCodeWithRev(l.itemCode, l.itemRevision)}</b>{' '}
                       <span style={{ color: 'var(--text3)' }}>{l.itemName}</span>
                     </td>
-                    <td
-                      style={{ padding: 6, fontSize: 11, color: 'var(--purple)' }}
-                    >
+                    <td style={{ padding: 6, fontSize: 11, color: 'var(--purple)' }}>
                       {l.processText ?? '—'}
                     </td>
-                    <td className="td-ctr mono" style={{ padding: 6 }}>
+                    <td className="mono td-num" style={{ padding: 6 }}>
                       {l.poQty}
                     </td>
-                    <td
-                      className="td-ctr mono"
-                      style={{ padding: 6, color: 'var(--amber)' }}
-                    >
+                    <td className="mono" style={{ padding: 6, fontSize: 11 }}>
+                      {l.uom ?? 'NOS'}
+                    </td>
+                    <td className="mono td-num" style={{ padding: 6, color: 'var(--amber2)' }}>
                       {l.alreadySent > 0 ? l.alreadySent : '0'}
                     </td>
                     <td
-                      className="td-ctr mono fw-700"
+                      className="mono fw-700 td-num"
                       style={{
                         padding: 6,
                         color: l.available > 0 ? 'var(--green)' : 'var(--red)',
@@ -741,10 +768,11 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
                     >
                       {l.available}
                     </td>
-                    <td style={{ padding: 6 }}>
+                    <td className="td-num" style={{ padding: 6 }}>
                       <input
                         type="number"
                         min={0}
+                        step="any"
                         max={l.available}
                         value={l.sendQty}
                         disabled={!hasQty}
@@ -757,7 +785,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
                           width: 70,
                           fontSize: 14,
                           fontWeight: 700,
-                          textAlign: 'center',
+                          textAlign: 'right',
                           color: 'var(--cyan)',
                           border: '2px solid var(--cyan)',
                           borderRadius: 4,
@@ -779,7 +807,10 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
             type="text"
             className="innovic-input"
             value={vehicleNo}
-            onChange={(e) => setVehicleNo(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setVehicleNo(e.target.value);
+            }}
             placeholder="GJ-05-XX-1234"
           />
         </div>
@@ -789,7 +820,10 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
             type="text"
             className="innovic-input"
             value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setRemarks(e.target.value);
+            }}
             placeholder="Packing, handling notes..."
           />
         </div>
@@ -815,8 +849,6 @@ interface InwardLineUi {
   alreadyReturned: number;
   pending: number;
   receivedQty: number;
-  okQty: number;
-  rejectedQty: number;
 }
 
 function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element {
@@ -827,6 +859,8 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<InwardLineUi[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  // Anything the user typed or picked — arms the exit question.
+  const [touched, setTouched] = useState(false);
 
   const { data: next } = useNextInwardCode();
 
@@ -852,8 +886,6 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
           alreadyReturned: l.alreadyReturned,
           pending: l.pending,
           receivedQty: l.pending,
-          okQty: l.pending,
-          rejectedQty: 0,
         })),
       );
     } else {
@@ -866,25 +898,16 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
   const onSave = (): void => {
     setErr(null);
     if (!dcId) {
-      setErr('Select a DC');
+      setErr('JW DC is required.');
       return;
     }
     const valid: CreateJwDcInwardLineInput[] = [];
     for (const l of lines) {
       if (l.receivedQty <= 0) continue;
-      if (l.okQty + l.rejectedQty !== l.receivedQty) {
-        setErr(`Line ${l.itemCode}: OK + Rejected must equal Received`);
-        return;
-      }
-      valid.push({
-        jwDcOutwardLineId: l.outwardLineId,
-        receivedQty: l.receivedQty,
-        okQty: l.okQty,
-        rejectedQty: l.rejectedQty,
-      });
+      valid.push({ jwDcOutwardLineId: l.outwardLineId, receivedQty: l.receivedQty });
     }
     if (valid.length === 0) {
-      setErr('Enter received qty for at least one line');
+      setErr('Enter Receive Now for at least one line.');
       return;
     }
     const input: CreateJwDcInwardInput = {
@@ -898,22 +921,21 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save Inward. Check the lines and try again.',
+        ),
     });
   };
 
   const setLine = (i: number, patch: Partial<InwardLineUi>): void => {
+    setTouched(true);
     setLines((prev) =>
       prev.map((l, idx) => {
         if (idx !== i) return l;
         const next = { ...l, ...patch };
         // Re-clamp to pending bound
         next.receivedQty = Math.min(Math.max(0, next.receivedQty), l.pending);
-        next.okQty = Math.min(Math.max(0, next.okQty), next.receivedQty);
-        next.rejectedQty = Math.min(
-          Math.max(0, next.rejectedQty),
-          next.receivedQty - next.okQty,
-        );
         return next;
       }),
     );
@@ -922,11 +944,18 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
   return (
     <ModalShell
       onClose={onClose}
-      title="📥 New Inward Entry"
+      title="New Inward Entry"
       onSave={onSave}
       saving={createMut.isPending}
       saveLabel="Save Inward"
+      dirty={touched}
     >
+      {/* ADR-189 — Incoming QC is the only inspector. The store records what
+          came back; accept / reject happens at Incoming QC, as for DC Receive. */}
+      <Banner tone="info">
+        Enter only the quantity received. It goes to Incoming QC on a GRN (QC pending); QC accepts
+        it into stock or rejects it with an NC.
+      </Banner>
       <div className="form-grid" style={{ marginBottom: 14 }}>
         <div className="form-grp">
           <label className="form-label">Inward No.</label>
@@ -943,17 +972,23 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             type="date"
             className="innovic-input"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setDate(e.target.value);
+            }}
           />
         </div>
         <div className="form-grp form-full">
           <label className="form-label">
-            JW DC<span className="req">★</span> (select DC with pending returns)
+            JW DC<span className="req">★</span>
           </label>
           <select
             className="innovic-select"
             value={dcId ?? ''}
-            onChange={(e) => setDcId(e.target.value || null)}
+            onChange={(e) => {
+              setTouched(true);
+              setDcId(e.target.value || null);
+            }}
           >
             <option value="">-- Select DC --</option>
             {pendingDcs.map((dc) => (
@@ -969,7 +1004,10 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             type="text"
             className="innovic-input"
             value={vendorChallan}
-            onChange={(e) => setVendorChallan(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setVendorChallan(e.target.value);
+            }}
             placeholder="Vendor reference"
           />
         </div>
@@ -979,7 +1017,10 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             type="text"
             className="innovic-input"
             value={vehicleNo}
-            onChange={(e) => setVehicleNo(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setVehicleNo(e.target.value);
+            }}
             placeholder="GJ-05-XX-5678"
           />
         </div>
@@ -1001,7 +1042,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
               fontSize: 12,
             }}
           >
-            DC Lines — Enter received quantities
+            DC Lines
           </div>
           <table style={{ width: '100%' }}>
             <thead>
@@ -1009,12 +1050,18 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                 <th style={{ padding: 6, color: 'var(--purple)' }}>POL</th>
                 <th style={{ padding: 6 }}>Item Code · Name</th>
                 <th style={{ padding: 6, color: 'var(--purple)' }}>Process</th>
-                <th style={{ padding: 6 }}>Sent</th>
-                <th style={{ padding: 6, color: 'var(--green)' }}>Received so far</th>
-                <th style={{ padding: 6, color: 'var(--amber)' }}>Pending</th>
-                <th style={{ padding: 6 }}>Received</th>
-                <th style={{ padding: 6, color: 'var(--green)' }}>Accepted</th>
-                <th style={{ padding: 6, color: 'var(--red)' }}>Rejected</th>
+                <th className="th-num" style={{ padding: 6 }}>
+                  Sent
+                </th>
+                <th className="th-num" style={{ padding: 6, color: 'var(--green2)' }}>
+                  Received
+                </th>
+                <th className="th-num" style={{ padding: 6, color: 'var(--amber2)' }}>
+                  Pending
+                </th>
+                <th className="th-num" style={{ padding: 6 }}>
+                  Receive Now
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1028,29 +1075,27 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                       opacity: hasPending ? 1 : 0.4,
                     }}
                   >
-                    <td className="td-ctr mono fw-700" style={{ padding: 6, color: 'var(--purple)' }}>
+                    <td
+                      className="td-ctr mono fw-700"
+                      style={{ padding: 6, color: 'var(--purple)' }}
+                    >
                       {l.clientPoLineNo ?? '—'}
                     </td>
                     <td style={{ padding: 6, fontSize: 12 }}>
                       <b>{itemCodeWithRev(l.itemCode, l.itemRevision)}</b>{' '}
                       <span style={{ color: 'var(--text3)' }}>{l.itemName}</span>
                     </td>
-                    <td
-                      style={{ padding: 6, fontSize: 11, color: 'var(--purple)' }}
-                    >
+                    <td style={{ padding: 6, fontSize: 11, color: 'var(--purple)' }}>
                       {l.processText ?? '—'}
                     </td>
-                    <td className="td-ctr mono" style={{ padding: 6 }}>
+                    <td className="mono td-num" style={{ padding: 6 }}>
                       {l.sentQty}
                     </td>
-                    <td
-                      className="td-ctr mono"
-                      style={{ padding: 6, color: 'var(--green)' }}
-                    >
+                    <td className="mono td-num" style={{ padding: 6, color: 'var(--green2)' }}>
                       {l.alreadyReturned > 0 ? l.alreadyReturned : '0'}
                     </td>
                     <td
-                      className="td-ctr mono fw-700"
+                      className="mono fw-700 td-num"
                       style={{
                         padding: 6,
                         color: l.pending > 0 ? 'var(--amber)' : 'var(--green)',
@@ -1058,62 +1103,23 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                     >
                       {l.pending}
                     </td>
-                    <td style={{ padding: 6 }}>
+                    <td className="td-num" style={{ padding: 6 }}>
                       <input
                         type="number"
                         min={0}
+                        step="any"
                         max={l.pending}
                         value={l.receivedQty}
                         disabled={!hasPending}
                         onChange={(e) => {
                           const r = Math.min(Number(e.target.value) || 0, l.pending);
-                          setLine(i, { receivedQty: r, okQty: r, rejectedQty: 0 });
+                          setLine(i, { receivedQty: r });
                         }}
                         style={{
                           width: 65,
                           fontSize: 13,
                           fontWeight: 700,
-                          textAlign: 'center',
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: 6 }}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={l.receivedQty}
-                        value={l.okQty}
-                        disabled={!hasPending}
-                        onChange={(e) => {
-                          const v = Math.min(Number(e.target.value) || 0, l.receivedQty);
-                          setLine(i, { okQty: v, rejectedQty: l.receivedQty - v });
-                        }}
-                        style={{
-                          width: 65,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          textAlign: 'center',
-                          color: 'var(--green)',
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: 6 }}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={l.receivedQty}
-                        value={l.rejectedQty}
-                        disabled={!hasPending}
-                        onChange={(e) => {
-                          const v = Math.min(Number(e.target.value) || 0, l.receivedQty);
-                          setLine(i, { rejectedQty: v, okQty: l.receivedQty - v });
-                        }}
-                        style={{
-                          width: 65,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          textAlign: 'center',
-                          color: 'var(--red)',
+                          textAlign: 'right',
                         }}
                       />
                     </td>
@@ -1131,7 +1137,10 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
           type="text"
           className="innovic-input"
           value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
+          onChange={(e) => {
+            setTouched(true);
+            setRemarks(e.target.value);
+          }}
           placeholder="Condition notes, issues..."
         />
       </div>
@@ -1151,6 +1160,7 @@ function ModalShell({
   onSave,
   saving,
   saveLabel,
+  dirty,
   children,
 }: {
   onClose: () => void;
@@ -1158,19 +1168,37 @@ function ModalShell({
   onSave: () => void;
   saving: boolean;
   saveLabel: string;
+  /** Something was typed or ticked. Then a click on the grey backdrop, the ✕
+   *  or Cancel asks "Are you sure you want to exit?" instead of throwing the
+   *  popup away (the shared exit guard, lib/exit-guard.tsx). */
+  dirty: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
+  const [askExit, setAskExit] = useState(false);
+  const requestClose = (): void => {
+    if (dirty) setAskExit(true);
+    else onClose();
+  };
   return (
     <div
       className="overlay"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) requestClose();
       }}
     >
+      {askExit ? (
+        <ExitConfirmDialog
+          onStay={() => setAskExit(false)}
+          onExit={() => {
+            setAskExit(false);
+            onClose();
+          }}
+        />
+      ) : null}
       <div className="modal modal-lg">
         <div className="modal-hdr">
           <span className="modal-title">{title}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
+          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={requestClose}>
             ✕
           </button>
         </div>
@@ -1178,16 +1206,16 @@ function ModalShell({
           {children}
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
+          <button type="button" className="btn btn-ghost" onClick={requestClose}>
             Cancel
           </button>
-          <button type="button" className="btn btn-success" disabled={saving} onClick={onSave}>
+          <button type="button" className="btn btn-primary" disabled={saving} onClick={onSave}>
             {saving ? (
               <>
                 <Loader2 size={14} className="inline animate-spin" /> Saving…
               </>
             ) : (
-              <>✓ {saveLabel}</>
+              <>{saveLabel}</>
             )}
           </button>
         </div>
@@ -1203,7 +1231,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
         marginTop: 12,
         padding: 8,
         background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,
       }}

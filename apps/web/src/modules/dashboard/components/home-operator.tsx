@@ -6,6 +6,7 @@ import type { HomeResponse } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { StatStrip } from '@/components/shared/stat-strip';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 function elapsedStr(min: number): string {
@@ -78,13 +79,13 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                   ) : null}
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>ELAPSED</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>ELAPSED</div>
                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)' }}>
                     {elapsedStr(r.elapsedMin)}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>PROGRESS</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>PROGRESS</div>
                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)' }}>
                     {r.completed}/{r.orderQty}
                   </div>
@@ -115,15 +116,15 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
             count: o.readyCount,
             color: 'var(--dept-production)',
             to: '/op-entry',
-            sub: o.readyCount > 0 ? 'Pick an op below to start' : 'All ops waiting on material',
+            sub: o.readyCount > 0 ? 'Pick an op below to start' : 'None ready',
           },
           {
             key: 'running',
             label: 'Running Now',
-            count: `${o.allRunningCount} in factory`,
+            count: o.allRunningCount,
+            sub: 'Whole factory',
             color: 'var(--sig-warn)',
             to: '/production-dashboard',
-            sub: 'All running operations',
           },
         ]}
       />
@@ -143,10 +144,10 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
               <tr>
                 <th>JC No.</th>
                 <th>Op</th>
-                <th>Machine</th>
+                <th>Planned Machine</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-ctr">Available</th>
+                <th className="th-num">Available</th>
                 <th>Due Date</th>
                 <th />
               </tr>
@@ -194,7 +195,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                       {r.itemName ?? ''}
                     </td>
                     <td
-                      className="td-ctr mono"
+                      className="mono td-num"
                       style={{ fontSize: 15, fontWeight: 800, color: 'var(--sig-warn)' }}
                     >
                       {r.available}
@@ -206,7 +207,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                         fontWeight: r.isOverdue ? 700 : 400,
                       }}
                     >
-                      {r.dueDate ?? '—'}
+                      {fmtDate(r.dueDate)}
                       {r.isOverdue ? ' ⚠' : ''}
                     </td>
                     <td>
@@ -215,7 +216,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                         className="btn btn-success btn-sm"
                         style={{ fontSize: 11 }}
                       >
-                        ▶ Start
+                        ▶ Start Operation
                       </Link>
                     </td>
                   </tr>

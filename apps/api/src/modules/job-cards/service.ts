@@ -41,6 +41,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { resolveRmItem } from '../../lib/rm-item';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import {
   assertNoQcDirectlyAfterOutsource,
@@ -51,7 +52,13 @@ import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { saveRouteCardForItem } from '../route-cards/service';
 import { opSrNo, stripStaleGeneratedTerminalQc } from '@innovic/shared';
-import type { CreateRouteCardOpInput, DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import type {
+  CreateRouteCardOpInput,
+  DocumentTraceability,
+  JcRouteCardWriteBack,
+  JobCardSaveResult,
+  RelatedDoc,
+} from '@innovic/shared';
 import type {
   JcOpInput,
   JcOpPoLinkView,
@@ -67,6 +74,7 @@ import type {
   ListJobCardsQuery,
   ListJobCardsResponse,
 } from './schema';
+import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -199,6 +207,27 @@ export async function listJobCards(
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
         jwl.part_name AS "jwPartName",
+        -- R1 (ADR-194): customer-material roll-up for a JW-sourced JC, summed off
+        -- the separate party-store ledger for THIS JWSO line. Reversals are NETTED
+        -- so the roll-up matches party-store reality after a cancel: a GRN cancel
+        -- posts reversal/out (undoes a receive), an issue cancel posts reversal/in
+        -- (undoes an issue). balance = received − issued − returned is computed in
+        -- the mapper. All 0 on a non-JW card (jwl.id NULL).
+        COALESCE((SELECT SUM(CASE
+            WHEN psl.movement = 'receive' THEN psl.qty
+            WHEN psl.movement = 'reversal' AND psl.direction = 'out' THEN -psl.qty
+            ELSE 0 END)
+          FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmReceived",
+        COALESCE((SELECT SUM(CASE
+            WHEN psl.movement = 'issue' THEN psl.qty
+            WHEN psl.movement = 'reversal' AND psl.direction = 'in' THEN -psl.qty
+            ELSE 0 END)
+          FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmIssued",
+        COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
+            AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
@@ -207,6 +236,11 @@ export async function listJobCards(
         -- size the JC was raised with after a master row is renamed or removed.
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_text  AS "rawMaterialSizeText",
+        -- ADR-193 phase 3a: RM item + qty per piece (code joined live).
+        jc.raw_material_item_id AS "rawMaterialItemId",
+        (SELECT rmi.code FROM public.items rmi
+          WHERE rmi.id = jc.raw_material_item_id) AS "rawMaterialItemCode",
+        jc.rm_qty_per_piece AS "rmQtyPerPiece",
         -- Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4). The parent
         -- card's and the NC's codes are joined live: neither is ever renamed,
         -- and the FK is the link the banner and the related-docs card follow.
@@ -363,7 +397,8 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
       )
       .limit(1);
-    if (exists.length === 0) throw new NotFoundError(`Job card ${id} not found`);
+    if (exists.length === 0)
+      throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
 
     const result = await tx.execute(sql`
       SELECT
@@ -400,6 +435,27 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
         jwl.part_name AS "jwPartName",
+        -- R1 (ADR-194): customer-material roll-up for a JW-sourced JC, summed off
+        -- the separate party-store ledger for THIS JWSO line. Reversals are NETTED
+        -- so the roll-up matches party-store reality after a cancel: a GRN cancel
+        -- posts reversal/out (undoes a receive), an issue cancel posts reversal/in
+        -- (undoes an issue). balance = received − issued − returned is computed in
+        -- the mapper. All 0 on a non-JW card (jwl.id NULL).
+        COALESCE((SELECT SUM(CASE
+            WHEN psl.movement = 'receive' THEN psl.qty
+            WHEN psl.movement = 'reversal' AND psl.direction = 'out' THEN -psl.qty
+            ELSE 0 END)
+          FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmReceived",
+        COALESCE((SELECT SUM(CASE
+            WHEN psl.movement = 'issue' THEN psl.qty
+            WHEN psl.movement = 'reversal' AND psl.direction = 'in' THEN -psl.qty
+            ELSE 0 END)
+          FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmIssued",
+        COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
+          WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
+            AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
@@ -408,6 +464,11 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         -- size the JC was raised with after a master row is renamed or removed.
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_text  AS "rawMaterialSizeText",
+        -- ADR-193 phase 3a: RM item + qty per piece (code joined live).
+        jc.raw_material_item_id AS "rawMaterialItemId",
+        (SELECT rmi.code FROM public.items rmi
+          WHERE rmi.id = jc.raw_material_item_id) AS "rawMaterialItemCode",
+        jc.rm_qty_per_piece AS "rmQtyPerPiece",
         -- Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4). The parent
         -- card's and the NC's codes are joined live: neither is ever renamed,
         -- and the FK is the link the banner and the related-docs card follow.
@@ -496,7 +557,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
       WHERE jc.id = ${id}::uuid
     `);
     const row = (result as unknown as Array<Record<string, unknown>>)[0];
-    if (!row) throw new NotFoundError(`Job card ${id} not found`);
+    if (!row) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
     return toListItem(row);
   });
 }
@@ -550,6 +611,29 @@ function toChildJobCards(v: unknown): JobCardListItem['childJobCards'] {
 }
 
 function toListItem(r: Record<string, unknown>): JobCardListItem {
+  // R1 (ADR-194): customer-material roll-up. Only a JW-sourced card has customer
+  // material; an own-material (SO-sourced or standalone) card reports null. When
+  // the card IS JW-sourced, Needed = rmQtyPerPiece × orderQty (route-card RM,
+  // null when not planned), and Received/Issued/Returned come off the party-store
+  // ledger for this JWSO line; Balance = received − issued − returned.
+  const jwLineId = (r['jwLineId'] as string | null) ?? null;
+  const rmQtyPerPiece = r['rmQtyPerPiece'] == null ? null : Number(r['rmQtyPerPiece']);
+  const orderQty = Number(r['orderQty']);
+  // Netted totals (reversals already subtracted in SQL). Balance uses the TRUE
+  // net so it always equals party-store reality; the three display categories
+  // are clamped at ≥0 in case a reversal edge case drives one slightly negative.
+  const cmReceived = Number(r['cmReceived'] ?? 0);
+  const cmIssued = Number(r['cmIssued'] ?? 0);
+  const cmReturned = Number(r['cmReturned'] ?? 0);
+  const customerMaterial: JobCardListItem['customerMaterial'] = jwLineId
+    ? {
+        needed: rmQtyPerPiece == null ? null : Math.round(rmQtyPerPiece * orderQty),
+        received: Math.max(0, cmReceived),
+        issued: Math.max(0, cmIssued),
+        returned: Math.max(0, cmReturned),
+        balance: cmReceived - cmIssued - cmReturned,
+      }
+    : null;
   return {
     id: r['id'] as string,
     companyId: r['companyId'] as string,
@@ -596,6 +680,10 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     routeCardRevision: r['routeCardRevision'] != null ? Number(r['routeCardRevision']) : null,
     rawMaterialGradeText: (r['rawMaterialGradeText'] as string | null) ?? null,
     rawMaterialSizeText: (r['rawMaterialSizeText'] as string | null) ?? null,
+    rawMaterialItemId: (r['rawMaterialItemId'] as string | null) ?? null,
+    rawMaterialItemCode: (r['rawMaterialItemCode'] as string | null) ?? null,
+    rmQtyPerPiece,
+    customerMaterial,
     lastOpCompletedQty: Number(r['lastOpCompletedQty'] ?? 0),
     runningCount: Number(r['runningCount'] ?? 0),
     createdAt: tsLike(r['createdAt']),
@@ -620,6 +708,7 @@ function toSourceOption(r: Record<string, unknown>): JobCardSourceOption {
     lineNo: Number(r['lineNo'] ?? 0),
     partName: (r['partName'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
+    itemId: (r['itemId'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
     orderQty,
     dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
@@ -644,13 +733,14 @@ async function resolveLinkedSource(
           SELECT 'so' AS type, so.id AS "orderId", sol.id AS "lineId", so.code,
             sol.line_no AS "lineNo", sol.part_name AS "partName",
             COALESCE(i.code, sol.item_code_text) AS "itemCode",
+            sol.item_id AS "itemId",
             COALESCE(so.customer_name, cli.name) AS "customerName",
             sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
             sol.client_po_line_no AS "clientPoLineNo",
             -- "Already in JCs" excludes rework/repair children, exactly as
             -- assertLineBalance does — they re-make pieces the parent card
             -- already covers (QC-NC audit 2026-09-21, gap 3).
-            COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
+            COALESCE((SELECT SUM(${jcEffectiveQtySql('jc')}) FROM public.job_cards jc
               WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
                 AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
           FROM public.sales_order_lines sol
@@ -664,6 +754,7 @@ async function resolveLinkedSource(
           SELECT 'jw' AS type, jw.id AS "orderId", jwl.id AS "lineId", jw.code,
             jwl.line_no AS "lineNo", jwl.part_name AS "partName",
             COALESCE(i.code, jwl.item_code_text) AS "itemCode",
+            jwl.item_id AS "itemId",
             COALESCE(jw.customer_name, cli.name) AS "customerName",
             jwl.order_qty AS "orderQty", jwl.due_date AS "dueDate",
             NULL AS "clientPoLineNo",
@@ -691,9 +782,10 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         COALESCE(so.customer_name, cli.name) AS "customerName",
         sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
         sol.client_po_line_no AS "clientPoLineNo",
-        COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
+        COALESCE((SELECT SUM(${jcEffectiveQtySql('jc')}) FROM public.job_cards jc
           WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
-            AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
+            AND jc.recovery_kind IS NULL), 0)::int AS "inJc",
+        sol.item_id AS "itemId"
       FROM public.sales_order_lines sol
       JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = sol.item_id
@@ -706,7 +798,8 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         jwl.order_qty, jwl.due_date, NULL,
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
           WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
-            AND jc.recovery_kind IS NULL), 0)::int
+            AND jc.recovery_kind IS NULL), 0)::int,
+        jwl.item_id
       FROM public.job_work_order_lines jwl
       JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.items i2 ON i2.id = jwl.item_id
@@ -739,6 +832,11 @@ export async function getJobCardEditModel(
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_id AS "rawMaterialSizeId",
         jc.raw_material_size_text AS "rawMaterialSizeText",
+        -- ADR-193 phase 3a: RM item + qty per piece (code joined live).
+        jc.raw_material_item_id AS "rawMaterialItemId",
+        (SELECT rmi.code FROM public.items rmi
+          WHERE rmi.id = jc.raw_material_item_id) AS "rawMaterialItemCode",
+        jc.rm_qty_per_piece AS "rmQtyPerPiece",
         -- THE ORDER'S drawing, resolved LIVE from the line this card was raised
         -- from — never copied onto the card. A copy would freeze whatever file
         -- was current the day the card was raised, so the shop floor would go on
@@ -781,7 +879,7 @@ export async function getJobCardEditModel(
       LIMIT 1
     `)) as unknown as Array<Record<string, unknown>>;
     const h = headRows[0];
-    if (!h) throw new NotFoundError(`Job card ${id} not found`);
+    if (!h) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
 
     const opRows = (await tx.execute(sql`
       SELECT o.id, o.op_seq AS "opSeq",
@@ -863,6 +961,9 @@ export async function getJobCardEditModel(
       rawMaterialGradeText: (h['rawMaterialGradeText'] as string | null) ?? null,
       rawMaterialSizeId: (h['rawMaterialSizeId'] as string | null) ?? null,
       rawMaterialSizeText: (h['rawMaterialSizeText'] as string | null) ?? null,
+      rawMaterialItemId: (h['rawMaterialItemId'] as string | null) ?? null,
+      rawMaterialItemCode: (h['rawMaterialItemCode'] as string | null) ?? null,
+      rmQtyPerPiece: h['rmQtyPerPiece'] == null ? null : Number(h['rmQtyPerPiece']),
       ops: opRows.map((o) => ({
         id: o['id'] as string,
         opSeq: Number(o['opSeq'] ?? 0),
@@ -936,7 +1037,7 @@ export async function getJobCardStatusExtras(
       LIMIT 1
     `)) as unknown as Array<{ code: string }>;
     const jcRow = jcRows[0];
-    if (!jcRow) throw new NotFoundError(`Job card ${id} not found`);
+    if (!jcRow) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
     const jcCode = jcRow.code;
     const jcLike = `%${jcCode}%`;
 
@@ -1368,11 +1469,20 @@ async function resolveJcRawMaterial(
   tx: DbTransaction,
   companyId: string,
   input: JobCardWriteInput,
+  /** ADR-193 phase 3a — the card's stored RM item pair, on edit. A field the
+   *  payload leaves out (undefined) keeps its stored value; null clears it. On
+   *  create there is nothing stored, so left out means not set. */
+  storedRmItem?: { rawMaterialItemId: string | null; rmQtyPerPiece: number | null },
 ): Promise<{
   rawMaterialGradeId: string | null;
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
+  rawMaterialItemId: string | null;
+  rmQtyPerPiece: number | null;
+  /** True only when the payload itself carried the pair (the web JC form does
+   *  not) — only then is it re-validated and allowed onto the Route Card. */
+  rmSent: boolean;
 }> {
   const gradeId = input.rawMaterialGradeId ?? null;
   const sizeId = input.rawMaterialSizeId ?? null;
@@ -1411,11 +1521,34 @@ async function resolveJcRawMaterial(
     sizeText = rows[0].name;
   }
 
+  // ADR-193 phase 3a — RM item + qty per piece. Validated only when the
+  // payload sends it; an omitted pair keeps the stored one untouched, even if
+  // that item was later deleted or retyped (review M2 — the JC form has no
+  // field to fix it, so re-validating would block every edit of the card).
+  const rmSent = input.rawMaterialItemId !== undefined || input.rmQtyPerPiece !== undefined;
+  const rmItem = rmSent
+    ? await resolveRmItem(tx, companyId, {
+        rawMaterialItemId:
+          input.rawMaterialItemId !== undefined
+            ? input.rawMaterialItemId
+            : (storedRmItem?.rawMaterialItemId ?? null),
+        rmQtyPerPiece:
+          input.rmQtyPerPiece !== undefined
+            ? input.rmQtyPerPiece
+            : (storedRmItem?.rmQtyPerPiece ?? null),
+      })
+    : {
+        rawMaterialItemId: storedRmItem?.rawMaterialItemId ?? null,
+        rmQtyPerPiece: storedRmItem?.rmQtyPerPiece ?? null,
+      };
+
   return {
     rawMaterialGradeId: gradeId,
     rawMaterialGradeText: gradeText,
     rawMaterialSizeId: sizeId,
     rawMaterialSizeText: sizeText,
+    ...rmItem,
+    rmSent,
   };
 }
 
@@ -1499,7 +1632,7 @@ async function assertLineBalance(
         )
         .limit(1)
     )[0];
-    if (!line) throw new ValidationError('Linked SO/JW line not found');
+    if (!line) throw new ValidationError('The SO / JWSO line was not found. Pick the line again.');
 
     // A BOM line's child job cards ALL hang off the parent SO line but are for
     // DIFFERENT items, each needing its own qtyPerSet × parent qty. Summing
@@ -1526,16 +1659,25 @@ async function assertLineBalance(
       const remaining = Math.max(0, bomLine.required - inJC);
       if (input.orderQty > remaining) {
         throw new ValidationError(
-          `Cannot exceed the BOM requirement for ${bomLine.childCode}. ` +
-            `Needed: ${bomLine.required} (${bomLine.qtyPerSet} per set × ${line.oq}) | ` +
-            `Already in Job Cards: ${inJC} | Remaining: ${remaining}`,
+          `JC Qty (${input.orderQty}) for ${bomLine.childCode} cannot be more than Pending ` +
+            `(${remaining}) on the BOM.`,
         );
       }
       return;
     }
 
+    // ADR-185 — an SO line's "already on JCs" is the same JC Qty the SO screens
+    // state (lib/jc-effective-qty.ts: a stopped order's card counts what it
+    // credited). No double claim with the plan's Pending is possible: a card
+    // on an SO line is only ever MADE from Planning (createJobCard refuses a
+    // manual one), so this check runs on an edit, with the card itself left
+    // out. JW lines keep the literal card qty.
+    const cardQty =
+      lineTable === salesOrderLines
+        ? sql<number>`COALESCE(SUM(${jcEffectiveQtySql('"job_cards"')}), 0)::int`
+        : sql<number>`COALESCE(SUM(${jobCards.orderQty}), 0)::int`;
     const sumRows = await tx
-      .select({ s: sql<number>`COALESCE(SUM(${jobCards.orderQty}), 0)::int` })
+      .select({ s: cardQty })
       .from(jobCards)
       .where(
         and(
@@ -1549,7 +1691,8 @@ async function assertLineBalance(
     const remaining = Math.max(0, line.oq - inJC);
     if (input.orderQty > remaining) {
       throw new ValidationError(
-        `Cannot exceed SO Line balance. Ordered: ${line.oq} | Already in JCs: ${inJC} | Remaining: ${remaining}`,
+        `JC Qty (${input.orderQty}) cannot be more than Pending (${remaining}). ` +
+          `Order Qty ${line.oq}, already on JCs ${inJC}.`,
       );
     }
   };
@@ -1583,16 +1726,16 @@ function withTerminalQcOp(
 
 /** Validate ops (legacy addJC op validations), returning the type per op. */
 function validateOps(ops: JcOpInput[]): ResolvedOpType[] {
-  return ops.map((o) => {
+  return ops.map((o, i) => {
     const t = o.opType;
     if (t === 'process' && (!o.machineCode || !o.operation)) {
-      throw new ValidationError('All in-house operations need machine and operation name.');
+      throw new ValidationError(`Row #${i + 1}: Machine and Operation are required.`);
     }
     if (t === 'qc' && !o.operation) {
-      throw new ValidationError('All QC operations need a process name.');
+      throw new ValidationError(`Row #${i + 1}: QC Process is required.`);
     }
     if (t === 'outsource' && !o.outsourceVendorCode) {
-      throw new ValidationError('All outsource operations need a vendor selected.');
+      throw new ValidationError(`Row #${i + 1}: Vendor is required for an OSP operation.`);
     }
     return t;
   });
@@ -1773,7 +1916,7 @@ async function autoRaiseOspPrs(
 export async function createJobCard(
   input: JobCardWriteInput,
   user: AuthContext,
-): Promise<JobCardListItem> {
+): Promise<JobCardSaveResult> {
   // Tier gate (was requireWriteRole, which only knew admin/manager). L2 Data
   // Entry and up in Production can raise a Job Card; L1 Viewer cannot.
   await requireFormAccess(user, 'jc_create', 'entry');
@@ -1785,12 +1928,14 @@ export async function createJobCard(
   // NC rework and BOM cascade insert JCs internally and bypass this entry point.
   if (!input.sourceJwLineId) {
     throw new ValidationError(
-      'Direct Job Cards are disabled — create the Job Card from Planning (execute a Plan). Manual creation is allowed only for Job Work (JW) orders.',
+      'Create Job Cards from Planning. Manual Job Cards are allowed only for JWSO.',
     );
   }
 
+  let routeCardWriteBack: JcRouteCardWriteBack | null = null;
   const newId = await withUserContext(user, async (tx) => {
     const item = await resolveItem(tx, input.itemCode, companyId);
+    await assertItemIsJwLineItem(tx, companyId, input.sourceJwLineId!, item);
     await assertLineBalance(tx, input, companyId, null, item.id);
 
     // Routing rule: a QC op may not sit directly after an OSP op. Checked on
@@ -1864,8 +2009,9 @@ export async function createJobCard(
       // ADR-051 write half: remember this item's routing so the next plan for
       // the same item can load it back. Same transaction as the JC — a failure
       // here rolls the Job Card back too. Deliberately fed `input.ops` (what
-      // the user entered), never the appended terminal QC op.
-      await saveRouteCardForItem(
+      // the user entered), never the appended terminal QC op. What it wrote is
+      // handed back so the screen says so (no silent write-back).
+      routeCardWriteBack = await saveRouteCardForItem(
         tx,
         companyId,
         item.id,
@@ -1893,7 +2039,37 @@ export async function createJobCard(
     return jobCardId;
   });
 
-  return getJobCard(newId, user);
+  return { ...(await getJobCard(newId, user)), routeCardWriteBack };
+}
+
+/** A hand-raised JWSO Job Card makes the JWSO line's item — never another one
+ *  typed over it (2026-09-28 form audit). A line with no master item (legacy
+ *  text-only line) leaves the pick to the user. */
+async function assertItemIsJwLineItem(
+  tx: DbTransaction,
+  companyId: string,
+  jwLineId: string,
+  item: { id: string; code: string },
+): Promise<void> {
+  const line = (
+    await tx
+      .select({ itemId: jobWorkOrderLines.itemId, lineCode: items.code })
+      .from(jobWorkOrderLines)
+      .leftJoin(items, eq(items.id, jobWorkOrderLines.itemId))
+      .where(
+        and(
+          eq(jobWorkOrderLines.id, jwLineId),
+          eq(jobWorkOrderLines.companyId, companyId),
+          isNull(jobWorkOrderLines.deletedAt),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (line?.itemId && line.itemId !== item.id) {
+    throw new ValidationError(
+      `This JWSO line is for item ${line.lineCode ?? 'another item'}; a Job Card on it must make that item, not ${item.code}.`,
+    );
+  }
 }
 
 /** ids of this JC's active ops that have started (any op_log row OR a running
@@ -1934,7 +2110,7 @@ export async function updateJobCard(
   id: string,
   input: JobCardWriteInput,
   user: AuthContext,
-): Promise<JobCardListItem> {
+): Promise<JobCardSaveResult> {
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
   await requireFormAccess(user, 'jc_create', 'edit');
   const companyId = requireCompany(user);
@@ -1943,6 +2119,7 @@ export async function updateJobCard(
   // stored value instead of letting it zero a cost they were never shown.
   const showMoney = await canSeeFormPrice(user, 'jc_create');
 
+  let routeCardWriteBack: JcRouteCardWriteBack | null = null;
   await withUserContext(user, async (tx) => {
     const headRows = await tx
       .select({
@@ -1954,6 +2131,14 @@ export async function updateJobCard(
         // and the NC-qty cap below.
         recoveryKind: jobCards.recoveryKind,
         parentNcId: jobCards.parentNcId,
+        // ADR-185 — what the card is for and how many, as stored, so the
+        // freeze below can tell a real change from a re-save.
+        itemId: jobCards.itemId,
+        orderQty: jobCards.orderQty,
+        productionOrderId: jobCards.productionOrderId,
+        // ADR-193 phase 3a — kept when the edit payload leaves them out.
+        rawMaterialItemId: jobCards.rawMaterialItemId,
+        rmQtyPerPiece: jobCards.rmQtyPerPiece,
       })
       .from(jobCards)
       .where(
@@ -1961,7 +2146,7 @@ export async function updateJobCard(
       )
       .limit(1);
     const head = headRows[0];
-    if (!head) throw new NotFoundError(`Job card ${id} not found`);
+    if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
     // ADR-182 — a short-closed Production Order's card is frozen: it records
     // what really happened before the order was stopped and must not be edited.
     await assertProductionOrderNotShortClosed(tx, id);
@@ -1986,13 +2171,60 @@ export async function updateJobCard(
         const openQty = Number(nc.rejectedQty) - Number(nc.clearedQty) - Number(nc.failedQty);
         if (input.orderQty > openQty) {
           throw new ValidationError(
-            `Recovery job card qty ${input.orderQty} exceeds the open NC qty ${openQty}`,
+            `JC Qty (${input.orderQty}) cannot be more than the NC's open qty (${openQty}).`,
           );
         }
       }
     }
 
     const item = await resolveItem(tx, input.itemCode, companyId);
+
+    // ADR-185 — a card's item and qty are facts every other screen repeats
+    // (the order, the plan, the SO line's JC Qty), so they freeze once work
+    // exists:
+    //   - the item cannot change after any production / QC log is on the card;
+    //   - a Production Order's card keeps the ORDER's qty (change the order);
+    //   - no card may drop below what an operation has already completed.
+    const workRows = (await tx.execute(sql`
+      SELECT COUNT(l.id)::int AS logs,
+             COALESCE(MAX(vos.completed_qty), 0)::int AS done,
+             (SELECT po.order_qty FROM public.production_orders po
+              WHERE po.id = ${head.productionOrderId ?? null}::uuid AND po.deleted_at IS NULL) AS po_qty,
+             (SELECT po.code FROM public.production_orders po
+              WHERE po.id = ${head.productionOrderId ?? null}::uuid AND po.deleted_at IS NULL) AS po_code
+      FROM public.jc_ops o
+      LEFT JOIN public.op_log l ON l.jc_op_id = o.id
+      LEFT JOIN public.v_jc_op_status vos ON vos.jc_op_id = o.id
+      WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
+    `)) as unknown as Array<{
+      logs: number;
+      done: number;
+      po_qty: number | null;
+      po_code: string | null;
+    }>;
+    const work = workRows[0];
+    if (work && Number(work.logs) > 0 && (item.id ?? null) !== (head.itemId ?? null)) {
+      throw new ValidationError(
+        `${head.code} already has production logged — its item cannot be changed. Raise a new card for the other item.`,
+      );
+    }
+    // Only a CHANGE of qty is refused: a card whose qty already differs from
+    // its order (edited before this rule) still saves unchanged.
+    if (
+      work?.po_qty != null &&
+      input.orderQty !== head.orderQty &&
+      input.orderQty !== Number(work.po_qty)
+    ) {
+      throw new ValidationError(
+        `${head.code} belongs to Production Order ${work.po_code ?? ''} — its JC Qty is the order's qty (${work.po_qty}).`,
+      );
+    }
+    if (work && input.orderQty < Number(work.done)) {
+      throw new ValidationError(
+        `JC Qty (${input.orderQty}) cannot be less than what is already completed on ${head.code} (${work.done}).`,
+      );
+    }
+
     await assertLineBalance(tx, input, companyId, id, item.id, { recoveryKind: head.recoveryKind });
     // The generated terminal QC op comes back on edit with an id. If the person
     // has since retyped an op to OSP, that op is stale (Rule B never gates an
@@ -2105,7 +2337,7 @@ export async function updateJobCard(
         });
       if (structurallyChanged) {
         throw new ValidationError(
-          'This job card is complete — its operations are frozen. Reopen it to change operations.',
+          'This JC is Completed, so its operations cannot change. Reopen it first.',
         );
       }
     }
@@ -2122,9 +2354,10 @@ export async function updateJobCard(
       const isStarted = started.has(ex.id);
       const isCommitted = committed.has(ex.id);
       if (!isStarted && !isCommitted) continue;
+      // display rule — see opSrNo in @innovic/shared
       const subject = isStarted
-        ? 'an operation that already has logged work'
-        : 'an outsourced operation that already has a PR/PO — cancel the PR/PO first';
+        ? `Op ${opSrNo(ex.opSeq)} — it already has logged work`
+        : `Op ${opSrNo(ex.opSeq)} — its PR / PO exists. Cancel it first`;
       if (!payloadIds.has(ex.id)) {
         throw new ValidationError(`Cannot remove ${subject}.`);
       }
@@ -2134,7 +2367,7 @@ export async function updateJobCard(
       }
       const newSeq = newSeqById.get(ex.id);
       if (newSeq !== undefined && newSeq !== ex.opSeq) {
-        throw new ValidationError(`Cannot re-sequence ${subject}.`);
+        throw new ValidationError(`Cannot move ${subject}.`);
       }
       // Machine change on a started op is ALLOWED. Since migration 0095 each
       // op_log row permanently carries the machine that produced its qty, so
@@ -2150,9 +2383,7 @@ export async function updateJobCard(
         inPayload.opType === 'process' &&
         (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
       ) {
-        throw new ValidationError(
-          'Stop the running machine session before changing the machine — the pieces already made are recorded against the current machine, then switch.',
-        );
+        throw new ValidationError('Stop Operation first, then change the machine.');
       }
       if (
         inPayload &&
@@ -2161,7 +2392,7 @@ export async function updateJobCard(
       ) {
         // display rule — see opSrNo in @innovic/shared
         machineSwaps.push(
-          `op ${opSrNo(ex.opSeq)} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
+          `Op ${opSrNo(ex.opSeq)} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
         );
       }
     }
@@ -2274,7 +2505,10 @@ export async function updateJobCard(
     // Resolved once, up here: the header write below AND the route-card
     // auto-save at step 6 both need it, and resolving it twice would run the
     // master lookups twice for the same answer.
-    const rawMaterial = await resolveJcRawMaterial(tx, companyId, input);
+    const rawMaterial = await resolveJcRawMaterial(tx, companyId, input, {
+      rawMaterialItemId: head.rawMaterialItemId,
+      rmQtyPerPiece: head.rmQtyPerPiece,
+    });
     await tx
       .update(jobCards)
       .set({
@@ -2325,14 +2559,18 @@ export async function updateJobCard(
     //    itself changed, and only from the ops the user submitted (the appended
     //    terminal QC op is filtered out inside saveRouteCardForItem).
     if (opsChanged && userOps.length > 0) {
-      await saveRouteCardForItem(
+      routeCardWriteBack = await saveRouteCardForItem(
         tx,
         companyId,
         item.id,
         toRouteCardOps(userOps, types.slice(0, userOps.length), machineMap, vendorMap),
         user,
         head.code,
-        rawMaterial,
+        // Review M1: an RM pair the form did not send (stored fallback) must
+        // never overwrite the Route Card — only what the user sent may.
+        rawMaterial.rmSent
+          ? rawMaterial
+          : { ...rawMaterial, rawMaterialItemId: null, rmQtyPerPiece: null },
       );
     }
 
@@ -2351,7 +2589,7 @@ export async function updateJobCard(
     );
   });
 
-  return getJobCard(id, user);
+  return { ...(await getJobCard(id, user)), routeCardWriteBack };
 }
 
 export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok: true }> {
@@ -2368,7 +2606,7 @@ export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok
         and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
       )
       .limit(1);
-    if (!rows[0]) throw new NotFoundError(`Job card ${id} not found`);
+    if (!rows[0]) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
     // ADR-182 — nor may it be deleted; the stopped order still points at it.
     await assertProductionOrderNotShortClosed(tx, id);
 
@@ -2451,7 +2689,7 @@ export async function getJobCardRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Job card ${id} not found`);
+    if (!header) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
 
     const row = (
       id_: string,

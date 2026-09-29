@@ -51,11 +51,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader, ViewToggle } from '@/ui/layout';
 import { usePurchaseOrdersList } from '../api';
 import { PoSheetTable } from '../components/po-sheet-table';
 import { PoStatusBadge } from '../components/po-status-badge';
+import { PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 
 // No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
 // PO list-query cap is 200; the count line flags a rare larger set.
@@ -64,8 +67,8 @@ const LIST_LIMIT = 200;
 // Where the List / Card choice is remembered (per browser).
 const VIEW_STORAGE_KEY = 'po-list-view';
 
-/** One cell of the card's metric strip — big mono number over a tiny uppercase
- *  label, mirroring the SO/WO list (TOTAL QTY / RECEIVED / PENDING / LINES). */
+/** One cell of the card's metric strip — big mono number over a small label,
+ *  mirroring the SO/WO list (Qty / Received / Pending / Lines). */
 function QtyBox({
   label,
   value,
@@ -95,10 +98,8 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -127,7 +128,11 @@ function PurchaseOrdersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   // List View (the sheet) vs Card View (the original cards). List is the
@@ -186,65 +191,45 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
 
-  // Legacy L25347-25348: when a filter is on, the panel title names it and a
-  // "Show All" button clears it. Legacy's `_poFlt` is set by the stat cards;
-  // ours by the status / type selects, which drive the same table.
-  const activeFilter = [search.status, search.poType]
-    .filter((v): v is PoStatus | PoType => Boolean(v))
-    .map((v) => v.replaceAll('_', ' '))
-    .join(', ');
-
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
   // page. `eff` is undefined only while access is still loading — don't block
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view POs. Ask an admin.
       </div>
     );
   }
 
   return (
     <div>
-      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + search + filters + New button stay pinned while the PO cards
-          scroll underneath. Background must be opaque var(--bg) or cards show
-          through as they pass under. Not bled edge-to-edge — that would give the
-          app a horizontal scrollbar. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            🛒 Purchase Orders
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              className="innovic-input"
-              placeholder="🔍 Search this list…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 240, fontSize: 12 }}
-            />
+      {/* THE list header (ui/layout ListHeader): title · count · view toggle ·
+          + New PO, then the filter bar (search · status · type · Clear). */}
+      <ListHeader
+        title="Purchase Orders"
+        icon="📋"
+        count={total}
+        noun="purchase order"
+        filterNote={
+          [
+            search.status ? PO_STATUS_LABELS[search.status] : null,
+            search.poType ? PO_TYPE_LABELS[search.poType] : null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || undefined
+        }
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search PO no, vendor, PR, item, status, type, date…"
+        updating={isFetching && !isLoading}
+        filters={
+          <>
             <select
               className="innovic-select"
+              aria-label="PO status"
+              title="PO status"
               value={search.status ?? ''}
               onChange={(e) => {
                 const v = e.target.value as PoStatus | '';
@@ -253,17 +238,18 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 140, fontSize: 12 }}
             >
-              <option value="">All statuses</option>
+              <option value="">All Statuses</option>
               {PO_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
+                  {PO_STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
             <select
               className="innovic-select"
+              aria-label="PO type"
+              title="PO type"
               value={search.poType ?? ''}
               onChange={(e) => {
                 const v = e.target.value as PoType | '';
@@ -272,72 +258,41 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 140, fontSize: 12 }}
             >
-              <option value="">All types</option>
+              <option value="">All Types</option>
               {PO_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t.replaceAll('_', ' ')}
+                  {PO_TYPE_LABELS[t]}
                 </option>
               ))}
             </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canAdd ? (
-              <Link to="/purchase-orders/from-pr" className="btn btn-primary">
-                <Plus size={14} /> New PO
-              </Link>
-            ) : null}
-            {/* List / Card view toggle */}
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button
-                type="button"
-                className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => changeView('list')}
-                aria-pressed={view === 'list'}
-              >
-                List View
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${view === 'card' ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => changeView('card')}
-                aria-pressed={view === 'card'}
-              >
-                Card View
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {activeFilter ? (
-        <div
-          style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12 }}
-        >
-          <span className="text3">
-            Filtered:{' '}
-            <span className="amber" style={{ fontWeight: 700 }}>
-              {activeFilter}
-            </span>
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, status: undefined, poType: undefined, page: 1 }),
-                replace: true,
-              })
-            }
-          >
-            Show All
-          </button>
-        </div>
-      ) : null}
+          </>
+        }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              search: undefined,
+              status: undefined,
+              poType: undefined,
+              page: 1,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={
+          search.status !== undefined || search.poType !== undefined || searchInput !== ''
+        }
+        tools={<ViewToggle value={view} onChange={changeView} />}
+        primary={
+          canAdd ? (
+            <Link to="/purchase-orders/from-pr" className="btn btn-primary">
+              <Plus size={14} /> New PO
+            </Link>
+          ) : null
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -348,14 +303,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel">
-          <div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load purchase orders'}
+          <div className="empty-state" style={{ padding: 20, color: 'var(--red2)' }}>
+            {error instanceof Error ? error.message : 'Could not load purchase orders. Try again.'}
           </div>
         </div>
       ) : rows.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 20 }}>
-            No purchase orders yet
+            {search.search || search.status || search.poType ? 'No POs match.' : 'No POs yet.'}
           </div>
         </div>
       ) : view === 'list' ? (
@@ -370,12 +325,12 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         rows.map((po) => {
           const isJW = po.poType === 'job_work';
           const isSvc = po.poType === 'service';
-          const pending = po.totalQty - po.receivedQty;
+          const pending = po.pendingQty;
           const accent =
             po.status === 'closed'
               ? 'var(--green)'
               : po.status === 'cancelled'
-                ? 'var(--red)'
+                ? 'var(--text3)'
                 : 'var(--blue)';
           return (
             <div
@@ -383,7 +338,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               className="panel"
               style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
             >
-              {/* Accent bar — green closed, red cancelled, blue otherwise. */}
+              {/* Accent bar — green closed, grey cancelled, blue otherwise. */}
               <div style={{ width: 4, flexShrink: 0, background: accent }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 {/* Band 1: identity + type + status + actions */}
@@ -411,7 +366,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                     {po.code}
                   </Link>
                   <span className={`badge ${isJW ? 'b-amber' : isSvc ? 'b-teal' : 'b-blue'}`}>
-                    {isJW ? 'JW' : isSvc ? 'SVC' : 'MAT'}
+                    {PO_TYPE_LABELS[po.poType]}
                   </span>
                   <span className="fw-700" style={{ fontSize: 13 }}>
                     {po.vendorName ?? po.vendorCodeText ?? '—'}
@@ -422,15 +377,6 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                     style={{ display: 'flex', gap: 4, alignItems: 'center' }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Link
-                      to="/purchase-orders/$id"
-                      params={{ id: po.id }}
-                      className="btn btn-ghost btn-sm"
-                      style={{ fontSize: 11 }}
-                      title="View"
-                    >
-                      👁 View
-                    </Link>
                     {canEdit && po.status !== 'closed' ? (
                       <Link
                         to="/purchase-orders/$id/edit"
@@ -449,7 +395,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                         className="btn btn-ghost btn-sm"
                         style={{ fontSize: 11 }}
                       >
-                        📦 Create DC
+                        Create DC
                       </Link>
                     ) : null}
                     {po.status !== 'closed' && po.status !== 'cancelled' ? (
@@ -483,7 +429,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   <div
                     style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
                   >
-                    <QtyBox label="Total Qty" value={po.totalQty} />
+                    <QtyBox label="Qty" value={po.totalQty} />
                     <QtyBox
                       label="Received"
                       value={po.receivedQty}
@@ -493,7 +439,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                     <QtyBox
                       label="Pending"
                       value={pending}
-                      color={pending > 0 ? 'var(--red)' : 'var(--green)'}
+                      color={pending > 0 ? 'var(--blue)' : 'var(--green)'}
                       bordered
                     />
                     <QtyBox label="Lines" value={po.lineCount} bordered />
@@ -509,7 +455,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                       flexWrap: 'wrap',
                     }}
                   >
-                    <span className="text2">{po.poDate}</span>
+                    <span className="text2">{fmtDate(po.poDate)}</span>
                     <span>·</span>
                     <span>
                       PR{' '}
@@ -525,24 +471,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         })
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No purchase orders'
-            : total > LIST_LIMIT
-              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-              : `Showing all ${total} purchase order${total === 1 ? '' : 's'}`}
-        </span>
-      </div>
+      <ListFooter
+        total={total}
+        noun="purchase order"
+        limit={LIST_LIMIT}
+        hint={
+          view === 'list' && rows.length > 0 ? 'Click a row to open the purchase order.' : undefined
+        }
+      />
     </div>
   );
 }

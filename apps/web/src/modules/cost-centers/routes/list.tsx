@@ -8,7 +8,8 @@
 // (modules/clients/routes/list.tsx) as the reference. The composition is the
 // canonical one and nothing else:
 //
-//   <ListHeader>            title · count · SearchInput · filters · ⟳ Updating… · primary
+//   <ListHeader>            title · count · ⟳ Updating… · primary, then the
+//                           filter bar: SearchInput · filters · Clear
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            the count line and the Prev / Page n / Next pager
 //   <PageState>             no-access and load-failure
@@ -78,7 +79,11 @@ function CostCentersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -124,13 +129,6 @@ function CostCentersListPage(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<CostCenter>[]>(
     () => [
       {
-        header: 'Sr No',
-        width: '5%',
-        className: 'text3',
-        // Server-paged list: the serial number continues across pages.
-        render: (_cc, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
-      },
-      {
         header: 'Code',
         width: '11%',
         nowrap: true,
@@ -152,7 +150,7 @@ function CostCentersListPage(): React.JSX.Element {
       },
       {
         header: 'Name',
-        width: '22%',
+        width: '27%',
         align: 'left',
         className: 'fw-700',
         ellipsis: true,
@@ -188,7 +186,7 @@ function CostCentersListPage(): React.JSX.Element {
         render: (cc) => <StatusBadge kind="active" status={String(cc.isActive)} />,
       },
     ],
-    [currentPage],
+    [],
   );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -200,11 +198,11 @@ function CostCentersListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* The frozen header band: title, count, search, the three filters and
-          the primary action stay put while the rows scroll underneath. */}
+      {/* The frozen header band: title, count and the primary action, then the
+          filter bar (search, the three filters, Clear), stay put while the
+          rows scroll underneath. */}
       <ListHeader
         title="Cost Centre Master"
-        icon="🏢"
         // Count comes from the list response's `total` — the only aggregate
         // GET /cost-centers returns.
         count={total}
@@ -215,11 +213,10 @@ function CostCentersListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
             <Select
               aria-label="Department"
-              fieldWidth="md"
               value={search.department ?? ''}
               options={[
                 { value: '', label: 'All departments' },
@@ -238,7 +235,6 @@ function CostCentersListPage(): React.JSX.Element {
             />
             <Select
               aria-label="Cost Centre Type"
-              fieldWidth="md"
               value={search.type ?? ''}
               options={[
                 { value: '', label: 'All types' },
@@ -257,7 +253,6 @@ function CostCentersListPage(): React.JSX.Element {
             />
             <Select
               aria-label="Active"
-              fieldWidth="md"
               value={search.isActive === undefined ? '' : String(search.isActive)}
               options={[
                 { value: '', label: 'All' },
@@ -278,10 +273,31 @@ function CostCentersListPage(): React.JSX.Element {
             />
           </>
         }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              search: undefined,
+              department: undefined,
+              type: undefined,
+              isActive: undefined,
+              page: 1,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={
+          search.search != null ||
+          search.department != null ||
+          search.type != null ||
+          search.isActive != null ||
+          searchInput !== ''
+        }
         primary={
           canAdd ? (
             <Link to="/cost-centers/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> Add Cost Centre
+              <Icon name="plus" size={14} /> New Cost Centre
             </Link>
           ) : null
         }
@@ -290,7 +306,9 @@ function CostCentersListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load cost centres'}
+          message={
+            error instanceof Error ? error.message : 'Could not load cost centres. Try again.'
+          }
         />
       ) : (
         <Panel bodyPadding="none">
@@ -298,14 +316,17 @@ function CostCentersListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText="No cost centres. Click + Add Cost Centre."
+            emptyText={
+              search.search || search.isActive !== undefined || search.type || search.department
+                ? 'No Cost Centres match.'
+                : 'No Cost Centres yet.'
+            }
             onRowClick={(cc) => void navigate({ to: '/cost-centers/$id', params: { id: cc.id } })}
             rowActionsWidth="10%"
             rowActions={(cc) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/cost-centers/${cc.id}`}
+                // Row click opens the cost centre (ERPNext list); Edit is a
+                // ROUTE, so it stays a real link for ctrl-click / new tab.
                 editTo={canEdit ? `/cost-centers/${cc.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed: the confirm dialog
@@ -319,9 +340,10 @@ function CostCentersListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: 'Delete this cost centre?',
-                  message: `${cc.code} — ${cc.name} stops appearing in the Cost Centre Master and in every cost centre picker.`,
-                  pendingLabel: 'Deleting…',
+                  title: `Move Cost Centre ${cc.code} to Trash?`,
+                  message: 'You can restore it from Trash.',
+                  confirmLabel: 'Move to Trash',
+                  pendingLabel: 'Moving to Trash…',
                 }}
               />
             )}

@@ -43,9 +43,8 @@ function TpiMasterNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to TPI Master
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have create access to TPI Master. Ask an admin for L2 Data Entry or above
-            in QC.
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+            ⛔ You do not have permission to add an Inspector. Ask an admin.
           </div>
         </div>
       </div>
@@ -62,17 +61,13 @@ function TpiMasterNewPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div>
             <div className="panel-title">🔍 Add Inspector</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Master record for third-party inspectors — the TPI screen&apos;s Inspector Name field
-              picks from this list.
-            </div>
           </div>
         </div>
         <div className="panel-body">
           <TpiMasterForm
             mode="create"
             submitError={submitError}
-            submitLabel="Save"
+            submitLabel="Save Inspector"
             onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateTpiMasterInput) => {
               setSubmitError(null);
@@ -82,7 +77,9 @@ function TpiMasterNewPage(): React.JSX.Element {
                   () => void navigate({ to: '/tpi-masters/$id', params: { id: created.id } }),
                 );
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to create inspector.');
+                setSubmitError(
+                  e instanceof Error ? e.message : 'Could not save Inspector. Try again.',
+                );
               }
             }}
           />

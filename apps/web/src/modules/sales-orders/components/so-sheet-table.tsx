@@ -14,9 +14,11 @@
 
 import type { SalesOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, Eye, Pencil, Trash2 } from 'lucide-react';
+import { fmtDate } from '@/lib/date';
+import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { SoStatusBadge } from './so-status-badge';
+import { soTypeLabel } from '../lib/so-status-label';
 
 /** Column count — the expanded row's <td colSpan> must always match the
  *  <colgroup> below, so it is named once here. */
@@ -69,7 +71,7 @@ export function SoSheetTable({
           sideways. Every column is centred by the standard; only Customer is
           left-aligned (a name reads from its left edge, and the POL under
           it must start at the same x). */}
-      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+      <div className="tbl-wrap">
         <table className="innovic-table tbl-grid">
           <colgroup>
             <col style={{ width: '4%' }} />
@@ -91,11 +93,11 @@ export function SoSheetTable({
               <th>SO No.</th>
               <th>SO Type</th>
               <th style={{ textAlign: 'left' }}>Customer</th>
-              <th>Lines</th>
-              <th>Order Qty</th>
-              <th>JC Qty</th>
-              <th>Dispatched</th>
-              <th>Pending</th>
+              <th className="th-num">Lines</th>
+              <th className="th-num">Order Qty</th>
+              <th className="th-num">JC Qty</th>
+              <th className="th-num">Dispatched</th>
+              <th className="th-num">Pending</th>
               <th>Due Date</th>
               <th>SO Status</th>
               <th>Action</th>
@@ -157,7 +159,7 @@ export function SoSheetTable({
                       className="mono"
                       style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}
                     >
-                      {so.soDate}
+                      {fmtDate(so.soDate)}
                     </div>
                   </td>
                   <td>
@@ -166,7 +168,9 @@ export function SoSheetTable({
                         grey — same chip as the card. */}
                     {/* One word per type: the full "component manufacturing"
                         is wider than this column and ran into Customer. */}
-                    <span className="badge b-grey">{TYPE_SHORT[so.type] ?? so.type.replaceAll('_', ' ')}</span>
+                    <span className="badge b-grey">
+                      {TYPE_SHORT[so.type] ?? soTypeLabel(so.type)}
+                    </span>
                     {so.type === 'equipment' && so.bomStatus ? (
                       <div style={{ marginTop: 3 }}>
                         <span
@@ -197,7 +201,7 @@ export function SoSheetTable({
                       }}
                     >
                       <span>
-                        Client PO:{' '}
+                        Client PO No.{' '}
                         <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                           {so.clientPoNo ?? '—'}
                         </span>
@@ -218,15 +222,15 @@ export function SoSheetTable({
                       ) : null}
                     </div>
                   </td>
-                  <td className="mono">{so.lineCount}</td>
-                  <td className="mono fw-700">{so.totalQty}</td>
-                  <td className="mono fw-700" style={{ color: jcColor }}>
+                  <td className="td-num mono">{so.lineCount}</td>
+                  <td className="td-num mono fw-700">{so.totalQty}</td>
+                  <td className="td-num mono fw-700" style={{ color: jcColor }}>
                     {so.jcQty}
                   </td>
-                  <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                  <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
                     {so.dispatchedQty}
                   </td>
-                  <td className="mono fw-700" style={{ color: 'var(--red)' }}>
+                  <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
                     {Math.max(0, so.totalQty - so.dispatchedQty)}
                   </td>
                   <td
@@ -238,7 +242,9 @@ export function SoSheetTable({
                       fontWeight: overdue ? 700 : undefined,
                     }}
                   >
-                    {so.earliestDueDate ? `${so.earliestDueDate}${overdue ? ' ⚠' : ''}` : '—'}
+                    {so.earliestDueDate
+                      ? `${fmtDate(so.earliestDueDate)}${overdue ? ' ⚠' : ''}`
+                      : '—'}
                   </td>
                   <td>
                     <SoStatusBadge status={so.status} />
@@ -260,24 +266,14 @@ export function SoSheetTable({
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <Link
-                        to="/sales-orders/$id"
-                        params={{ id: so.id }}
-                        className="btn btn-ghost btn-sm btn-icon"
-                        style={ICON_BTN}
-                        title="View"
-                        aria-label="View"
-                      >
-                        <Eye size={ICON} />
-                      </Link>
                       {canEdit ? (
                         <Link
                           to="/sales-orders/$id/edit"
                           params={{ id: so.id }}
                           className="btn btn-ghost btn-sm btn-icon"
                           style={ICON_BTN}
-                          title="Add line"
-                          aria-label="Add line"
+                          title="Edit"
+                          aria-label="Edit"
                         >
                           <Pencil size={ICON} />
                         </Link>
@@ -306,7 +302,7 @@ export function SoSheetTable({
                         <button
                           type="button"
                           className="btn btn-danger btn-sm btn-icon"
-                          style={{ ...ICON_BTN, color: 'var(--red)' }}
+                          style={{ ...ICON_BTN, color: 'var(--red2)' }}
                           onClick={() => onDeleteSo(so)}
                           title="Delete"
                           aria-label="Delete"

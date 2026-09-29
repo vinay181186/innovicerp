@@ -1,5 +1,5 @@
 // Dashboard / home landing — mirror of legacy renderHome (L2486). Role-aware
-// (admin / operator / specialist) with Alerts, Widgets and Customize modes, a
+// (admin / operator / specialist) with Widgets and Customize modes, a
 // My Work panel, and a greeting header. Replaces the old KPI-tiles-only page.
 
 import { createRoute } from '@tanstack/react-router';
@@ -9,13 +9,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useMarkTasksViewed } from '@/modules/tasks/api';
 import { dashboardKeys, useHome } from '@/modules/dashboard/api';
 import { HomeAdmin } from '@/modules/dashboard/components/home-admin';
-import { HomeAlerts } from '@/modules/dashboard/components/home-alerts';
 import { HomeCustomize } from '@/modules/dashboard/components/home-customize';
 import { HomeOperator } from '@/modules/dashboard/components/home-operator';
 import { HomeSpecialist } from '@/modules/dashboard/components/home-specialist';
 import { HomeWidgets } from '@/modules/dashboard/components/home-widgets';
 import { MyWorkPanel } from '@/modules/dashboard/components/my-work-panel';
 import { authenticatedRoute } from './_authenticated';
+import { roleLabel } from '@/lib/role-label';
 
 export const indexRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,7 +23,8 @@ export const indexRoute = createRoute({
   component: IndexPage,
 });
 
-type Mode = 'home' | 'alerts' | 'widgets' | 'customize';
+// No Alerts mode: it repeated Tasks & Alerts › Alerts one click away.
+type Mode = 'home' | 'widgets' | 'customize';
 
 function IndexPage(): React.JSX.Element {
   const { data: home, isLoading, isError, error } = useHome();
@@ -44,7 +45,7 @@ function IndexPage(): React.JSX.Element {
     return <div className="empty-state" style={{ padding: 40 }}><Loader2 className="inline h-4 w-4 animate-spin" /> Loading dashboard…</div>;
   }
   if (isError || !home) {
-    return <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load'}</div>;
+    return <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Could not load dashboard. Try again.'}</div>;
   }
 
   const greetCap = home.greetingPart.charAt(0).toUpperCase() + home.greetingPart.slice(1);
@@ -61,32 +62,13 @@ function IndexPage(): React.JSX.Element {
             Good {greetCap}, {home.userName}
           </h1>
           <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-            {home.dateLabel} · <b style={{ color: 'var(--text2)' }}>{home.role}</b>
+            {home.dateLabel} · <b style={{ color: 'var(--text2)' }}>{roleLabel(home.role)}</b>
           </div>
         </div>
-        {/* These four switch the page's whole content, so they are a tab set in
+        {/* These switch the page's whole content, so they are a tab set in
             behaviour if not in markup. aria-pressed says which one is on —
             previously the active state was colour only (the `active` class). */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {mode === 'alerts' ? (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ fontSize: 11 }}
-              onClick={() => setMode('home')}
-            >
-              📊 Overview
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ fontSize: 11 }}
-              onClick={() => setMode('alerts')}
-            >
-              🔔 Alerts
-            </button>
-          )}
           <button
             type="button"
             className={`btn btn-ghost ${mode === 'widgets' ? 'active' : ''}`}
@@ -94,7 +76,7 @@ function IndexPage(): React.JSX.Element {
             aria-pressed={mode === 'widgets'}
             onClick={() => setMode(mode === 'widgets' ? 'home' : 'widgets')}
           >
-            📦 Widgets
+            Widgets
           </button>
           <button
             type="button"
@@ -103,18 +85,16 @@ function IndexPage(): React.JSX.Element {
             aria-pressed={mode === 'customize'}
             onClick={() => setMode(mode === 'customize' ? 'home' : 'customize')}
           >
-            ⚙ Customize
+            Customize
           </button>
-          {/* Icon-only: the emoji is the whole label, so it needs a real name. */}
           <button
             type="button"
             className="btn btn-ghost"
             style={{ fontSize: 11 }}
-            title="Refresh"
             aria-label="Refresh dashboard"
             onClick={() => void qc.invalidateQueries({ queryKey: dashboardKeys.all })}
           >
-            <span aria-hidden="true">🔄</span>
+            Refresh
           </button>
         </div>
       </div>
@@ -123,8 +103,6 @@ function IndexPage(): React.JSX.Element {
         <HomeCustomize onClose={() => setMode('home')} />
       ) : mode === 'widgets' ? (
         <HomeWidgets quickLinkPages={quickLinkPages} />
-      ) : mode === 'alerts' ? (
-        <HomeAlerts quickLinkPages={quickLinkPages} />
       ) : (
         <>
           <MyWorkPanel mode={home.layout === 'operator' ? 'strip' : 'full'} />

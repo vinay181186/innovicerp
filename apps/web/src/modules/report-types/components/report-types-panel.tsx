@@ -75,8 +75,8 @@ export function ReportTypesPanel(): React.JSX.Element {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={6} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load report types'}
+                  <td colSpan={6} className="empty-state" style={{ color: 'var(--red2)' }}>
+                    {error instanceof Error ? error.message : 'Could not load report types. Try again.'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
@@ -173,7 +173,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
       else await create.mutateAsync(input);
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : 'Could not save report type. Try again.');
     }
   }
 
@@ -249,7 +249,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
             </div>
           </div>
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
               {err}
             </div>
           ) : null}

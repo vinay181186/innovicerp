@@ -11,26 +11,26 @@
 // PRESENTATION ONLY. Same fields, same values, same sources — nothing is
 // computed, fetched or formatted differently here; the blocks were merged and
 // restyled. Every colour is a token (no hard-coded hex), and the type scale is
-// the app's: 10px uppercase captions, 11px muted labels, 12–13px values, mono
+// the app's: 11px Title Case captions, 11px muted labels, 12–13px values, mono
 // for codes and money.
 
 import type { PurchaseOrderDetail, Vendor } from '@innovic/shared';
+import { fmtDate, fmtDateTime } from '@/lib/date';
+import { PO_TYPE_LABELS, taxTypeLabel } from '../lib/po-labels';
 
 /** Accent bar — the same reading the status badge already gives: green closed,
- *  red cancelled, amber part-received / awaiting QC, grey draft, blue open. */
+ *  grey cancelled, amber part-received / awaiting QC, grey draft, blue open. */
 function accentFor(status: PurchaseOrderDetail['status']): string {
   if (status === 'closed') return 'var(--green)';
-  if (status === 'cancelled') return 'var(--red)';
+  if (status === 'cancelled') return 'var(--text3)';
   if (status === 'partial' || status === 'qc_pending') return 'var(--amber)';
   if (status === 'draft') return 'var(--text3)';
   return 'var(--blue)';
 }
 
 const CAPTION: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 11,
   fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.08em',
   color: 'var(--text3)',
   marginBottom: 8,
 };
@@ -100,6 +100,13 @@ export function PoHeaderBand({
 }): React.JSX.Element {
   const address = [vendor?.addressLine1, vendor?.city, vendor?.state].filter(Boolean).join(', ');
   const rejected = Boolean(detail.rejectedAt ?? detail.rejectedBy ?? detail.rejectionReason);
+  const gstParts = (
+    [
+      ['SGST', detail.sgstPct],
+      ['CGST', detail.cgstPct],
+      ['IGST', detail.igstPct],
+    ] as const
+  ).filter(([, pct]) => Number(pct) > 0);
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch' }}>
@@ -160,10 +167,10 @@ export function PoHeaderBand({
               </span>
             }
           />
-          <Row label="PO Type" value={detail.poType.replaceAll('_', ' ')} />
-          <Row label="PO Date" value={<span className="mono">{detail.poDate}</span>} />
+          <Row label="PO Type" value={PO_TYPE_LABELS[detail.poType]} />
+          <Row label="PO Date" value={<span className="mono">{fmtDate(detail.poDate)}</span>} />
           <Row
-            label="PR"
+            label="PR No."
             value={
               detail.prCodeText ? (
                 <span className="mono" style={{ color: 'var(--purple)' }}>
@@ -197,11 +204,11 @@ export function PoHeaderBand({
         {/* ── Totals ── */}
         <Col caption="Totals">
           <Row label="Lines" value={<span className="mono">{detail.lines.length}</span>} align="right" />
-          <Row label="Total qty" value={<span className="mono">{totalQty}</span>} align="right" />
+          <Row label="Total Qty" value={<span className="mono">{totalQty}</span>} align="right" />
           <Row
             label="Received"
             value={
-              <span className="mono" style={{ color: 'var(--green)' }}>
+              <span className="mono" style={{ color: 'var(--green2)' }}>
                 {receivedQty}
               </span>
             }
@@ -235,7 +242,7 @@ export function PoHeaderBand({
                 }}
               >
                 <span style={{ fontSize: 12, fontWeight: 700 }}>Total</span>
-                <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
+                <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--green2)' }}>
                   ₹{detail.totalAmount.toFixed(2)}
                 </span>
               </div>
@@ -245,40 +252,47 @@ export function PoHeaderBand({
 
         {/* ── Tax & approval ── */}
         <Col caption="Tax & Approval">
-          <Row label="Tax type" value={detail.taxType ?? '—'} />
-          <Row label="Due Date" value={<span className="mono">{detail.dueDate ?? '—'}</span>} />
-          {detail.totalAmount == null ? null : (
+          <Row label="Tax Type" value={taxTypeLabel(detail.taxType)} />
+          <Row label="Due Date" value={<span className="mono">{fmtDate(detail.dueDate)}</span>} />
+          {/* Only the rates that apply — a 0% rate is not shown. */}
+          {detail.totalAmount == null || gstParts.length === 0 ? null : (
             <div style={{ fontSize: 11, marginBottom: 6 }}>
               <div className="text3" style={{ marginBottom: 2 }}>
                 GST split
               </div>
               <div className="mono">
-                <span className="text2">SGST</span> {detail.sgstPct}% ·{' '}
-                <span className="text2">CGST</span> {detail.cgstPct}% ·{' '}
-                <span className="text2">IGST</span> {detail.igstPct}%
+                {gstParts.map(([label, pct], i) => (
+                  <span key={label}>
+                    {i > 0 ? ' · ' : null}
+                    <span className="text2">{label}</span> {pct}%
+                  </span>
+                ))}
               </div>
             </div>
           )}
           {detail.approvedAt ? (
-            <Row label="Approved at" value={<span className="mono">{detail.approvedAt}</span>} />
+            <Row
+              label="Approved At"
+              value={<span className="mono">{fmtDateTime(detail.approvedAt)}</span>}
+            />
           ) : null}
           {detail.approvalRemarks ? (
-            <Row label="Approval note" value={detail.approvalRemarks} />
+            <Row label="Approval Remarks" value={detail.approvalRemarks} />
           ) : null}
           {rejected ? (
             <>
               <Row
-                label="Rejected at"
+                label="Rejected At"
                 value={
-                  <span className="mono" style={{ color: 'var(--red)' }}>
-                    {detail.rejectedAt ?? '—'}
+                  <span className="mono" style={{ color: 'var(--red2)' }}>
+                    {fmtDateTime(detail.rejectedAt)}
                   </span>
                 }
               />
               {detail.rejectionReason ? (
                 <Row
-                  label="Reason"
-                  value={<span style={{ color: 'var(--red)' }}>{detail.rejectionReason}</span>}
+                  label="Rejection Reason"
+                  value={<span style={{ color: 'var(--red2)' }}>{detail.rejectionReason}</span>}
                 />
               ) : null}
             </>

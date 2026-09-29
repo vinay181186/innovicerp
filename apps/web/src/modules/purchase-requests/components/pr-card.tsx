@@ -29,15 +29,17 @@
 import { type PurchaseRequestListItem, opSrNo } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import {
   type PrOrderBalance,
-  prBalanceBadgeClass,
   prBalanceClosedText,
   prBalanceColor,
   prOrderBalance,
 } from '../lib/pr-balance';
+import { prConvertible, usePrApprovalOn } from '../lib/pr-convertible';
 import { PrStatusBadge } from './pr-status-badge';
+import { PR_TYPE_LABELS } from '../lib/pr-labels';
 
 /** Accent bar: how much of this request is actually on order (ADR-152) — amber
  *  none of it yet, blue part of it, green all of it, red over-ordered, grey
@@ -55,14 +57,23 @@ function QtyBox({
   value,
   color,
   bordered,
+  note,
+  noteColor,
+  title,
 }: {
   label: string;
   value: React.ReactNode;
   color?: string | undefined;
   bordered?: boolean | undefined;
+  /** Small line under the label — the Pending box carries the ordering
+   *  progress here (R5 PU-P48) instead of a third badge in the title band. */
+  note?: string | undefined;
+  noteColor?: string | undefined;
+  title?: string | undefined;
 }): React.JSX.Element {
   return (
     <div
+      title={title}
       style={{
         padding: '4px 12px',
         textAlign: 'center',
@@ -79,14 +90,17 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
       </div>
+      {note ? (
+        <div style={{ fontSize: 11, fontWeight: 600, color: noteColor ?? 'var(--text3)' }}>
+          {note}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -98,7 +112,7 @@ function SourceRef({ pr }: { pr: PurchaseRequestListItem }): React.JSX.Element {
     return (
       <span style={{ color: 'var(--cyan)' }}>
         {pr.soCode}
-        {pr.soLineNo ? <span className="text3"> · L{pr.soLineNo}</span> : null}
+        {pr.soLineNo ? <span className="text3"> · Ln {pr.soLineNo}</span> : null}
       </span>
     );
   }
@@ -106,7 +120,7 @@ function SourceRef({ pr }: { pr: PurchaseRequestListItem }): React.JSX.Element {
     return (
       <span style={{ color: 'var(--cyan)' }}>
         {pr.sourceJcCode}
-        {pr.sourceJcOpSeq ? <span className="text3"> · op {opSrNo(pr.sourceJcOpSeq)}</span> : null}
+        {pr.sourceJcOpSeq ? <span className="text3"> · Op {opSrNo(pr.sourceJcOpSeq)}</span> : null}
       </span>
     );
   }
@@ -121,6 +135,7 @@ export function PrCard({
   rejecting,
   onApprove,
   onReject,
+  select,
 }: {
   pr: PurchaseRequestListItem;
   /** L4 Approver and above — signing a PR off is NOT an edit right. */
@@ -131,6 +146,15 @@ export function PrCard({
   rejecting: boolean;
   onApprove: (pr: PurchaseRequestListItem) => void;
   onReject: (pr: PurchaseRequestListItem) => void;
+  /** "Create PO from selected" tick box — given only for a PR that can still
+   *  be ordered. `disabledReason` greys it out (another vendor is ticked). */
+  select?:
+    | {
+        checked: boolean;
+        disabledReason?: string | undefined;
+        onToggle: () => void;
+      }
+    | undefined;
 }): React.JSX.Element {
   const navigate = useNavigate();
   // Money hidden for L1 Viewers: estCost comes back null → drop the field.
@@ -141,6 +165,8 @@ export function PrCard({
   // How much is on a live purchase order and how much is still to buy. This is
   // what the card now says instead of the old yes/no "has a PO".
   const bal = prOrderBalance(pr);
+  // ADR-189: while PR approval is on, an un-approved PR cannot become a PO.
+  const prApprovalOn = usePrApprovalOn();
   const openDetail = (): void => {
     void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } });
   };
@@ -165,6 +191,18 @@ export function PrCard({
             cursor: 'pointer',
           }}
         >
+          {select ? (
+            <input
+              type="checkbox"
+              checked={select.checked}
+              disabled={select.disabledReason !== undefined}
+              title={select.disabledReason ?? 'Tick to add this PR to one PO'}
+              aria-label={`Select ${pr.code} for a PO`}
+              onClick={(e) => e.stopPropagation()}
+              onChange={select.onToggle}
+              style={{ cursor: select.disabledReason ? 'not-allowed' : 'pointer' }}
+            />
+          ) : null}
           <Link
             to="/purchase-requests/$id"
             params={{ id: pr.id }}
@@ -184,7 +222,7 @@ export function PrCard({
             </span>
           ) : null}
           <span style={{ fontSize: 12 }}>
-            <span className="mono" style={{ color: 'var(--purple)' }}>
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
               {/* CODE/REV — the customer's drawing revision off the SO line this
                   request was raised against. A PR with no SO behind it has no
                   revision and keeps the bare code. */}
@@ -192,34 +230,21 @@ export function PrCard({
             </span>{' '}
             <span className="fw-700">{pr.itemName ?? ''}</span>
           </span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber)' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber2)' }}>
             {pr.vendorName ?? pr.vendorCodeText ?? '—'}
           </span>
           <PrStatusBadge status={pr.status} />
           {/* How far the ORDERING has got, which the status alone cannot say:
-              a `po_created` PR may still have 90 of 100 to buy. Shown only once
-              something has actually been ordered — before that the status badge
-              already says Open / Approved and the Balance box below carries the
-              full quantity, so a second "Open" pill would only add noise. */}
-          {bal.ordered > 0 ? (
-            <span
-              className={`badge ${prBalanceBadgeClass(bal.state)}`}
-              title={
-                bal.closed
-                  ? `${prBalanceClosedText(bal)}${bal.closedReason ? ` — ${bal.closedReason}` : ''}`
-                  : `${bal.ordered} of ${bal.qty} ordered · ${bal.balance} left`
-              }
-            >
-              {bal.label}
-            </span>
-          ) : null}
+              a `po_created` PR may still have 90 of 100 to buy. It now sits
+              under the Pending box below (R5 PU-P48) — status + type are the
+              only badges here. */}
           {/* Type tag — only when it is NOT a plain buy, so a normal PR row stays
-              as clean as it was. SVC becomes a Service PO (sends the item out on
-              a DC); OSP is the system-raised outsource PR. */}
+              as clean as it was. Service becomes a Service PO (sends the item out
+              on a DC); Outsource is the system-raised outsource PR. */}
           {pr.prType === 'service' ? (
-            <span className="badge b-teal">SVC</span>
+            <span className="badge b-teal">{PR_TYPE_LABELS[pr.prType]}</span>
           ) : pr.prType === 'jw_osp' ? (
-            <span className="badge b-amber">OSP</span>
+            <span className="badge b-amber">{PR_TYPE_LABELS[pr.prType]}</span>
           ) : null}
           <span style={{ flex: 1 }} />
           {/* Row actions do something OTHER than open the PR, so the card's
@@ -243,8 +268,7 @@ export function PrCard({
               <>
                 <button
                   type="button"
-                  className="btn btn-sm btn-success"
-                  style={{ fontSize: 10 }}
+                  className="btn btn-sm btn-primary"
                   disabled={approving}
                   onClick={() => onApprove(pr)}
                 >
@@ -253,7 +277,6 @@ export function PrCard({
                 <button
                   type="button"
                   className="btn btn-sm btn-danger"
-                  style={{ fontSize: 10 }}
                   disabled={rejecting}
                   onClick={() => onReject(pr)}
                 >
@@ -264,15 +287,15 @@ export function PrCard({
             {/* Raise a PO for what is LEFT. The old gate was
                 `status === 'open' || 'approved'`, so the first partial PO flipped
                 the PR to `po_created` and took the button away with 90 of 100
-                still unordered (ADR-152). Cancelled PRs are never orderable. */}
-            {canEntry && pr.status !== 'cancelled' && bal.balance > 0 ? (
+                still unordered (ADR-152). Cancelled PRs are never orderable, and
+                while PR approval is on an un-approved PR is not either (ADR-189). */}
+            {canEntry && prConvertible(pr, prApprovalOn) && bal.balance > 0 ? (
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: pr.id }}
-                className="btn btn-sm btn-success"
-                style={{ fontSize: 10 }}
+                className="btn btn-sm btn-primary"
               >
-                📝 PO
+                Create PO
               </Link>
             ) : null}
             {pr.status === 'po_created' && pr.poId && pr.poCode ? (
@@ -316,7 +339,7 @@ export function PrCard({
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
             <QtyBox label="PR Qty" value={pr.qty} />
-            <QtyBox label="Order Qty" value={bal.ordered} bordered />
+            <QtyBox label="On PO" value={bal.ordered} bordered />
             {/* Negative = more ordered than requested. Red and flagged, never
                 clamped to 0 — somebody has to go and look at it. */}
             <QtyBox
@@ -324,10 +347,17 @@ export function PrCard({
               value={bal.balance < 0 ? `⚠ ${bal.balance}` : bal.balance}
               color={prBalanceColor(bal.state)}
               bordered
+              note={bal.ordered > 0 ? bal.label : undefined}
+              noteColor={prBalanceColor(bal.state)}
+              title={
+                bal.closed
+                  ? `${prBalanceClosedText(bal)}${bal.closedReason ? ` — ${bal.closedReason}` : ''}`
+                  : `${bal.ordered} of ${bal.qty} ordered · ${bal.balance} pending`
+              }
             />
             {priceHidden ? null : (
               <QtyBox
-                label="Est. Cost"
+                label="Est. Rate (₹)"
                 value={estCost > 0 ? `₹${estCost.toFixed(2)}` : '—'}
                 bordered
               />
@@ -344,7 +374,7 @@ export function PrCard({
               flexWrap: 'wrap',
             }}
           >
-            <span className="text2">{pr.prDate}</span>
+            <span className="text2">{fmtDate(pr.prDate)}</span>
             <span>·</span>
             <SourceRef pr={pr} />
             {pr.operation ? (
@@ -355,18 +385,18 @@ export function PrCard({
             ) : null}
             <span>·</span>
             <span>
-              Req <span className="text2">{pr.requiredDate ?? '—'}</span>
+              Due Date <span className="text2">{fmtDate(pr.requiredDate)}</span>
             </span>
             {pr.approvedAt ? (
               <>
                 <span>·</span>
-                <span style={{ color: 'var(--blue)' }}>✔ {pr.approvedAt.slice(0, 10)}</span>
+                <span style={{ color: 'var(--blue)' }}>Approved {fmtDate(pr.approvedAt)}</span>
               </>
             ) : null}
             {pr.poCreatedAt ? (
               <>
                 <span>·</span>
-                <span style={{ color: 'var(--green)' }}>📝 {pr.poCreatedAt.slice(0, 10)}</span>
+                <span style={{ color: 'var(--green2)' }}>PO {fmtDate(pr.poCreatedAt)}</span>
               </>
             ) : null}
             {bal.closed ? (

@@ -8,18 +8,22 @@
 // sentinel) may hold free text and no `vendorId`, and the DB CHECK
 // (`num_nonnulls(vendor_id, vendor_code_text) >= 1`, ADR-015) demands one of the
 // two. Dropping it would make those PRs unsaveable.
+//
+// Layout (create-page pattern): sticky PageHeader (Cancel + blue Save, Ctrl+S)
+// → one Panel on the 12-column grid, in the order the buyer thinks:
+// PR Type · PR No. · PR Date / Item Code · Item Name · PR Qty /
+// Due Date · Vendor · Est. Rate / Operation / Remarks.
 
 import {
   type CreatePurchaseRequestInput,
   type ListItemsResponse,
-  PR_STATUSES,
   PR_TYPES,
   type PurchaseRequest,
   type PurchaseRequestDetail,
   type UpdatePurchaseRequestInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { type Path, type PathValue, useForm } from 'react-hook-form';
 import {
   type CascadeField,
@@ -28,12 +32,17 @@ import {
   useFieldCascade,
 } from '@/lib/use-field-cascade';
 import { useItemsList } from '@/modules/items/api';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import {
   PR_FORM_DEFAULTS,
   PR_ITEM_DATALIST_ID,
   PR_USER_ENTERED_FIELDS,
   type PrFormValues,
 } from './pr-form-values';
+import { PR_TYPE_LABELS } from '../lib/pr-labels';
 import { PrVendorField } from './pr-vendor-field';
 
 type FormValues = PrFormValues;
@@ -50,15 +59,41 @@ function prField<TName extends Path<FormValues>>(
   return cascadeField<FormValues, PrItemMaster, TName>(name, from, empty, options);
 }
 
-type CreateMode = {
+/** The page band the form renders itself, so Save sits top-right in the sticky
+ *  header and is a real submit button of THIS form. */
+type HeaderProps = {
+  title: string;
+  subtitle?: React.ReactNode;
+  backLabel?: string;
+  onBack?: () => void;
+};
+
+/** What "Save & New" carries onto the next blank form: PR Date, PR Type and
+ *  Vendor (with its label, so the picker shows it). */
+export interface PrKeepValues {
+  prDate: string;
+  prType: FormValues['prType'];
+  vendorId?: string | undefined;
+  vendorLabel: string;
+}
+
+type CreateMode = HeaderProps & {
   mode: 'create';
   onSubmit: (values: CreatePurchaseRequestInput) => Promise<void> | void;
+  /** Given → a ghost "Save & New" button sits beside Save. It saves the same
+   *  payload, then the page reopens a blank form seeded from `keep`. */
+  onSaveAndNew?: (values: CreatePurchaseRequestInput, keep: PrKeepValues) => Promise<void> | void;
+  /** Seeds for a new PR — from Save & New (date / type / vendor) or from a
+   *  "Raise PR" link (`?itemId=&qty=`: item + qty). Every one stays editable. */
+  initialValues?: Partial<FormValues> | undefined;
+  /** "CODE — Name" of a seeded vendor, so the picker shows it. */
+  initialVendorLabel?: string | undefined;
   submitLabel?: string;
   submitError?: string | null;
   onCancel?: () => void;
 };
 
-type EditMode = {
+type EditMode = HeaderProps & {
   mode: 'edit';
   detail: PurchaseRequestDetail;
   onSubmit: (values: UpdatePurchaseRequestInput) => Promise<void> | void;
@@ -71,7 +106,9 @@ export type PurchaseRequestFormProps = CreateMode | EditMode;
 
 export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
-  const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : PR_FORM_DEFAULTS;
+  const defaults: FormValues = isEdit
+    ? detailToFormValues(props.detail)
+    : { ...PR_FORM_DEFAULTS, ...(props.initialValues ?? {}) };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, handleSubmit, formState, watch } = form;
@@ -80,7 +117,14 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   // Free text already stored on this PR. Its presence is what lets the vendor
   // picker be left empty — see the rule in <PrVendorField>.
   const carriedVendorText = isEdit ? (props.detail.vendorCodeText?.trim() ?? '') : '';
-  const vendorInitialLabel = isEdit ? joinVendorLabel(props.detail) : '';
+  const vendorInitialLabel = isEdit
+    ? joinVendorLabel(props.detail)
+    : (props.initialVendorLabel ?? '');
+  // The vendor's label as last picked — Save & New hands it to the next form.
+  const vendorLabelRef = useRef(vendorInitialLabel);
+  // Which header button submitted: Save (false) or Save & New (true).
+  const andNewRef = useRef(false);
+  const onSaveAndNew = props.mode === 'create' ? props.onSaveAndNew : undefined;
 
   // Item master drives the code autosuggest + name auto-fill. PR still accepts
   // off-master free text, so a non-matching code is left as-is.
@@ -159,230 +203,293 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
       // ended up coded "001" / "002" / "009" instead of the series.
       // prType is create-only — `updatePurchaseRequestInputSchema` omits it, so
       // it is never sent on an edit.
-      await props.onSubmit({
+      const createPayload = {
         prType: values.prType,
         ...payload,
-      } as CreatePurchaseRequestInput);
+      } as CreatePurchaseRequestInput;
+      const andNew = andNewRef.current;
+      andNewRef.current = false;
+      if (andNew && onSaveAndNew) {
+        await onSaveAndNew(createPayload, {
+          prDate: values.prDate,
+          prType: values.prType,
+          vendorId: values.vendorId,
+          vendorLabel: values.vendorId ? vendorLabelRef.current : '',
+        });
+      } else {
+        await props.onSubmit(createPayload);
+      }
     }
   };
 
+  // Ctrl+S runs the same Save as the header button.
+  const submitting = formState.isSubmitting;
+  useSaveShortcut(() => void handleSubmit(onValid)(), !submitting);
+
+  // Field errors, collected so the user sees them under the header, where Save
+  // is — not only beside a field that may be scrolled away.
+  const errorList = [
+    errors.prDate?.message,
+    errors.itemCodeText?.message,
+    errors.qty?.message,
+    errors.vendorId?.message,
+    errors.code?.message,
+  ].filter((m): m is string => typeof m === 'string' && m !== '');
+
+  const itemLocked = Boolean(watch('itemId'));
+  // The item's unit, shown beside PR Qty (KGS / MTR may be decimal).
+  const qtyUom = itemsByCode.get((watch('itemCodeText') ?? '').trim().toUpperCase())?.uom ?? null;
+
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid-4">
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            PR No.
-          </label>
-          {/* System-generated, never typed. The server allocates the next
-              IN-PR-##### on save. This was a free text box that only defaulted
-              to auto when left blank, which is how PRs ended up numbered
-              "001" / "002" / "009" instead of following the series. */}
-          <input
-            id="code"
-            className="innovic-input"
-            readOnly
-            tabIndex={-1}
-            style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-            value={isEdit ? (watch('code') ?? '') : 'Auto-generated on save'}
-            onChange={() => undefined}
-          />
-          <div className="form-help">
-            {isEdit
-              ? 'PR No. cannot be changed after creation.'
-              : 'Allocated by the system — the next IN-PR-##### in the series.'}
-          </div>
-          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
-        </div>
-
-        <div className="form-grp">
-          <label className="form-label" htmlFor="prDate">
-            PR Date<span className="req">★</span>
-          </label>
-          <input
-            id="prDate"
-            type="date"
-            className="innovic-input"
-            {...register('prDate', { required: 'Date is required' })}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="operation">
-            Operation
-          </label>
-          <input
-            id="operation"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="COATING / TURN / …"
-            {...register('operation')}
-          />
-        </div>
-        <PrVendorField
-          form={form}
-          carriedVendorText={carriedVendorText}
-          initialLabel={vendorInitialLabel}
-        />
-        <div className="form-grp">
-          <label className="form-label" htmlFor="requiredDate">
-            Required Date
-          </label>
-          <input
-            id="requiredDate"
-            type="date"
-            className="innovic-input"
-            {...register('requiredDate')}
-          />
-        </div>
-        {/* Status is NOT a field on create: a new PR is always 'open', stamped
-            by the server. Letting it be picked meant a PR could be born
-            'approved' with no approvedBy/approvedAt behind it, or born
-            'po_created' and never convertible. On EDIT the current status is
-            still shown, read-only — it advances only via Approve / Reject /
-            Create PO. */}
-        {isEdit ? (
-          <div className="form-grp">
-            <label className="form-label" htmlFor="status">
-              PR Status
-            </label>
-            <select
-              id="status"
-              className="innovic-select"
-              disabled
-              style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-              {...register('status')}
+      <PageHeader
+        sticky
+        title={props.title}
+        subtitle={props.subtitle}
+        backLabel={props.backLabel}
+        onBack={props.onBack}
+        dirty={formState.isDirty}
+        actions={
+          <>
+            {props.onCancel ? (
+              <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+                Cancel
+              </button>
+            ) : null}
+            {onSaveAndNew ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={submitting}
+                title="Save this PR, then open a blank one with the same PR Date, PR Type and Vendor"
+                onClick={() => {
+                  andNewRef.current = true;
+                  void handleSubmit(onValid, () => {
+                    andNewRef.current = false;
+                  })();
+                }}
+              >
+                Save &amp; New
+              </button>
+            ) : null}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={submitting}
+              title="Save (Ctrl+S)"
             >
-              {PR_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </select>
-            <div className="form-help">
-              Status changes via Approve / Reject / Create PO — not here.
-            </div>
-          </div>
-        ) : null}
+              {submitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Saving…
+                </>
+              ) : (
+                (props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save PR'))
+              )}
+            </button>
+          </>
+        }
+      />
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="prType">
-            PR Type
-          </label>
-          {/* What this PR is FOR, and therefore what the PO it becomes can do:
-              standard ends in a GRN (goods in), service sends the item out on a
-              DC and receives it back (the job-work chain). 'jw_osp' is NOT
-              offered — the system stamps that itself when an outsource JC op
-              raises the PR, and hand-picking it would fake an OSP job with no
-              operation behind it.
+      {props.submitError ? (
+        <Banner tone="error" role="alert">
+          {props.submitError}
+        </Banner>
+      ) : null}
+      {errorList.length > 0 ? (
+        <Banner tone="warn" role="alert">
+          {errorList.join(' · ')}
+        </Banner>
+      ) : null}
 
-              Immutable after create: `updatePurchaseRequestInputSchema` omits
-              prType, so on edit this shows the stored value read-only rather
-              than a dropdown that silently would not save. */}
-          {isEdit ? (
+      <Panel>
+        <FormGrid>
+          {/* ── Row 1: PR Type · PR No. · PR Date */}
+          <FormField
+            label="PR Type"
+            size="md"
+            htmlFor="prType"
+            help={isEdit ? undefined : 'Service = work done outside (DC out).'}
+          >
+            {/* What this PR is FOR, and therefore what the PO it becomes can do:
+                standard ends in a GRN (goods in), service sends the item out on
+                a DC and receives it back (the job-work chain). 'jw_osp' is NOT
+                offered — the system stamps that itself when an outsource JC op
+                raises the PR, and hand-picking it would fake an OSP job with no
+                operation behind it.
+
+                Immutable after create: `updatePurchaseRequestInputSchema` omits
+                prType, so on edit this shows the stored value read-only rather
+                than a dropdown that silently would not save. */}
+            {isEdit ? (
+              <input
+                id="prType"
+                className="innovic-input is-derived"
+                readOnly
+                value={PR_TYPE_LABELS[watch('prType') ?? 'standard']}
+              />
+            ) : (
+              <select
+                id="prType"
+                className="innovic-select"
+                title="Service = buying work (calibration, heat-treat, plating). Its PO sends the item out on a DC instead of receiving stock in."
+                {...register('prType')}
+              >
+                {PR_TYPES.filter((t) => t === 'standard' || t === 'service').map((t) => (
+                  <option key={t} value={t}>
+                    {PR_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            )}
+          </FormField>
+
+          <FormField label="PR No." size="md" htmlFor="code" error={errors.code?.message}>
+            {/* System-generated, never typed. The server allocates the next
+                IN-PR-##### on save. This was a free text box that only defaulted
+                to auto when left blank, which is how PRs ended up numbered
+                "001" / "002" / "009" instead of following the series. */}
             <input
-              id="prType"
-              className="innovic-input"
+              id="code"
+              className="innovic-input is-derived"
               readOnly
-              title="PR type is fixed when the PR is created"
-              style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-              value={(watch('prType') ?? 'standard').replaceAll('_', ' ')}
+              tabIndex={-1}
+              value={isEdit ? (watch('code') ?? '') : 'Auto-generated on save'}
+              onChange={() => undefined}
             />
-          ) : (
-            <select id="prType" className="innovic-select" {...register('prType')}>
-              {PR_TYPES.filter((t) => t === 'standard' || t === 'service').map((t) => (
-                <option key={t} value={t}>
-                  {t.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </select>
-          )}
-          {isEdit ? (
-            <div className="form-help">PR type is fixed at creation.</div>
-          ) : (
-            <div className="form-help">
-              Service = buying work (calibration, heat-treat, plating). Its PO sends
-              the item out on a DC instead of receiving stock in.
-            </div>
-          )}
-        </div>
+          </FormField>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="itemCodeText">
-            Item Code
-            {isEdit ? null : <span className="req">★</span>}
-          </label>
-          {/* Stays a free-text box over a <datalist>, not a picker: a picker can
-              only return a master row's id, and an off-master item is legitimate
-              on a PR (ADR-124). */}
-          <input
-            id="itemCodeText"
-            className="innovic-input"
-            list={PR_ITEM_DATALIST_ID}
-            autoComplete="off"
-            placeholder="🔍 ITM-001"
-            {...register('itemCodeText')}
-          />
-        </div>
-        <div className="form-grp form-span-2">
-          <label className="form-label" htmlFor="itemName">
-            Item Name (snapshot)
-          </label>
-          {/* Rule: item code is the unique key — on-master name is derived +
-              read-only; off-master free text stays editable. */}
-          <input
-            id="itemName"
-            className="innovic-input"
-            autoComplete="off"
-            readOnly={Boolean(watch('itemId'))}
-            title={
-              watch('itemId') ? 'Auto-filled from Item Master (item code is the key)' : undefined
+          <FormField label="PR Date" required size="md" htmlFor="prDate">
+            <input
+              id="prDate"
+              type="date"
+              className="innovic-input"
+              {...register('prDate', { required: 'PR Date is required.' })}
+            />
+          </FormField>
+
+          {/* ── Row 2: Item Code · Item Name · PR Qty */}
+          <FormField
+            label="Item Code"
+            required={!isEdit}
+            size="sm"
+            htmlFor="itemCodeText"
+            error={errors.itemCodeText?.message}
+          >
+            {/* Stays a free-text box over a <datalist>, not a picker: a picker can
+                only return a master row's id, and an off-master item is legitimate
+                on a PR (ADR-124). */}
+            <input
+              id="itemCodeText"
+              className="innovic-input"
+              list={PR_ITEM_DATALIST_ID}
+              autoComplete="off"
+              placeholder="🔍 ITM-001"
+              {...register('itemCodeText', {
+                // The ★ is enforced here, in plain words, instead of letting the
+                // server answer with "itemId or itemCodeText is required".
+                validate: (v) => isEdit || Boolean(v?.trim()) || 'Item Code is required.',
+              })}
+            />
+          </FormField>
+
+          <FormField label="Item Name" size="lg" htmlFor="itemName">
+            {/* Rule: item code is the unique key — on-master name is derived +
+                read-only; off-master free text stays editable. */}
+            <input
+              id="itemName"
+              className={itemLocked ? 'innovic-input is-derived' : 'innovic-input'}
+              autoComplete="off"
+              readOnly={itemLocked}
+              title={itemLocked ? 'Auto-filled from Item Master (item code is the key)' : undefined}
+              {...register('itemName')}
+            />
+          </FormField>
+
+          <FormField
+            label={
+              <>
+                PR Qty
+                {qtyUom ? (
+                  <span className="mono" style={{ color: 'var(--text2)', marginLeft: 4 }}>
+                    ({qtyUom})
+                  </span>
+                ) : null}
+              </>
             }
-            style={watch('itemId') ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined}
-            {...register('itemName')}
-          />
-        </div>
+            required
+            size="sm"
+            htmlFor="qty"
+            error={errors.qty?.message}
+          >
+            {/* Decimal for KGS / MTR (3 places); a NOS / SET item stays whole —
+                the server refuses a fraction for it (0172). */}
+            <input
+              id="qty"
+              type="number"
+              min={0}
+              step="any"
+              className="innovic-input"
+              {...register('qty', {
+                valueAsNumber: true,
+                validate: (v) => (Number.isFinite(v) && v > 0) || 'PR Qty must be more than 0.',
+              })}
+            />
+          </FormField>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="qty">
-            PR Qty<span className="req">★</span>
-          </label>
-          <input
-            id="qty"
-            type="number"
-            min={1}
-            className="innovic-input"
-            {...register('qty', {
-              valueAsNumber: true,
-              min: { value: 1, message: 'Min 1' },
-            })}
-          />
-          {errors.qty?.message ? <div className="form-error">{errors.qty.message}</div> : null}
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="estCost">
-            Estimated Cost (₹)
-          </label>
-          <input
-            id="estCost"
-            type="number"
-            step="0.01"
-            min={0}
-            className="innovic-input"
-            {...register('estCost', { valueAsNumber: true })}
-          />
-        </div>
+          {/* ── Row 3: Due Date · Vendor · Est. Rate */}
+          <FormField label="Due Date" size="sm" htmlFor="requiredDate">
+            <input
+              id="requiredDate"
+              type="date"
+              className="innovic-input"
+              {...register('requiredDate')}
+            />
+          </FormField>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="remarks">
-            Remarks
-          </label>
-          <textarea
-            id="remarks"
-            className="innovic-textarea"
-            rows={3}
-            {...register('remarks')}
-          />
-        </div>
-      </div>
+          {/* The shared picker brings its own .form-grp; this cell gives it the
+              party width (6/12) on the grid. */}
+          <div className="f-lg">
+            <PrVendorField
+              form={form}
+              carriedVendorText={carriedVendorText}
+              initialLabel={vendorInitialLabel}
+              onPickLabel={(label) => {
+                vendorLabelRef.current = label;
+              }}
+            />
+          </div>
+
+          <FormField label="Est. Rate (₹)" size="sm" htmlFor="estCost">
+            <input
+              id="estCost"
+              type="number"
+              step="0.01"
+              min={0}
+              className="innovic-input"
+              {...register('estCost', { valueAsNumber: true })}
+            />
+          </FormField>
+
+          {/* Status is NOT a field, on create or edit: a new PR is always 'open',
+              stamped by the server, and it advances only via Approve / Reject /
+              Create PO. The Edit page header shows the current status badge. */}
+
+          {/* ── Row 4 / 5: Operation · Remarks */}
+          <FormField label="Operation" size="full" htmlFor="operation">
+            <input
+              id="operation"
+              className="innovic-input"
+              autoComplete="off"
+              placeholder="COATING / TURN / …"
+              {...register('operation')}
+            />
+          </FormField>
+
+          <FormField label="Remarks" size="full" htmlFor="remarks">
+            <textarea id="remarks" className="innovic-textarea" rows={3} {...register('remarks')} />
+          </FormField>
+        </FormGrid>
+      </Panel>
 
       <datalist id={PR_ITEM_DATALIST_ID}>
         {items.map((it) => (
@@ -391,35 +498,6 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           </option>
         ))}
       </datalist>
-
-      <div style={{ marginTop: 16 }}>
-        {props.submitError ? (
-          <div
-            style={{
-              color: 'var(--red)',
-              background: 'var(--red3)',
-              border: '1px solid #fca5a5',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
-          >
-            {props.submitError}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          {props.onCancel ? (
-            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-              Cancel
-            </button>
-          ) : null}
-          <button type="submit" className="btn btn-success" disabled={formState.isSubmitting}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}✓{' '}
-            {props.submitLabel ?? (isEdit ? 'Save PR' : 'Create PR')}
-          </button>
-        </div>
-      </div>
     </form>
   );
 }

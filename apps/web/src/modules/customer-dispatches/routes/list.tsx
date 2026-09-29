@@ -26,8 +26,10 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
-import { useCancelDispatch, useDispatchRegister } from '../api';
+import { ConfirmDialog } from '@/ui/feedback';
+import { useCancelDispatch, useDispatchList, useDispatchRegister } from '../api';
 import { type DispatchGroup, DispatchCard } from '../components/dispatch-card';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
@@ -83,6 +85,13 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
   const { data, isLoading, isFetching, isError, error } = useDispatchRegister();
   const { data: company } = useMyCompany();
+  // ADR-190 — how far each dispatch is invoiced lives on the dispatch-grain
+  // list, not the line-grain register this page is built from.
+  const { data: dispatchList } = useDispatchList();
+  const billedById = useMemo(
+    () => new Map((dispatchList?.dispatches ?? []).map((d) => [d.id, d.billedStatus])),
+    [dispatchList],
+  );
   const cancel = useCancelDispatch();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
@@ -96,6 +105,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
   );
   const [soFilter, setSoFilter] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Item-wise Summary is folded away by default so the Dispatch Log is first.
+  const [showSummary, setShowSummary] = useState(false);
+  const [cancelling, setCancelling] = useState<DispatchGroup | null>(null);
 
   const allRows = useMemo(() => data?.rows ?? [], [data]);
   const soOptions = useMemo(
@@ -184,19 +196,34 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const allExpanded = groups.length > 0 && groups.every((g) => expanded.has(g.dispatchId));
 
   const tabBar = (
-    <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+    <div
+      style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}
+    >
       {(['so', 'jw'] as const).map((t) => (
-        <button key={t} type="button" onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent', color: tab === t ? 'var(--cyan)' : 'var(--text3)', fontSize: 12, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', marginBottom: -1 }}>{t === 'so' ? '🚚 Customer Dispatch' : '📦 JW Dispatch'}</button>
+        <button
+          key={t}
+          type="button"
+          onClick={() => setTab(t)}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
+            color: tab === t ? 'var(--cyan)' : 'var(--text3)',
+            fontSize: 12,
+            fontWeight: 700,
+            padding: '6px 12px',
+            cursor: 'pointer',
+            marginBottom: -1,
+          }}
+        >
+          {t === 'so' ? 'Customer Dispatch' : 'JW Return'}
+        </button>
       ))}
     </div>
   );
 
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   if (tab === 'jw') {
@@ -213,83 +240,46 @@ function CustomerDispatchListPage(): React.JSX.Element {
   return (
     <div>
       {tabBar}
-      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + count + filters + Export/Print/New stay pinned while the cards
-          scroll underneath. `#content` is the scroll container, so top:0 pins this
-          to its padding box; the background must be opaque var(--bg) or cards show
-          through as they pass under. Not bled to the edges — that would give the
-          app a horizontal scrollbar. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
+      {/* The ONE list header (ui/layout ListHeader). Same filters, same
+          client-side search, same Export / Print as before — Excel + Print
+          now sit under one Export menu. The KPI strip stays in the band. */}
+      <ListHeader
+        title="Customer Dispatch"
+        icon="🚚"
+        count={groups.length}
+        noun="dispatch"
+        nounPlural="dispatches"
+        filterNote={soFilter || undefined}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search dispatch no., SO, JC, POL, item, customer, date…"
+        updating={isFetching && !isLoading}
+        filters={
+          <select
+            className="innovic-select"
+            aria-label="SO No."
+            title="SO No."
+            value={soFilter}
+            onChange={(e) => setSoFilter(e.target.value)}
+          >
+            <option value="">All SOs</option>
+            {soOptions.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        }
+        onClearFilters={() => {
+          setSearch('');
+          setSoFilter('');
         }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              📦 Dispatch Register
-            </div>
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {groups.length} dispatch{groups.length === 1 ? '' : 'es'}
-              {soFilter ? (
-                <>
-                  {' '}· <span className="text2">{soFilter}</span> only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select
-              className="innovic-select"
-              value={soFilter}
-              onChange={(e) => setSoFilter(e.target.value)}
-              style={{ width: 160, fontSize: 12 }}
-            >
-              <option value="">All SOs</option>
-              {soOptions.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            <input
-              className="innovic-input"
-              placeholder="Search dispatch no, SO, JC, item, customer, date…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 200, fontSize: 12 }}
-            />
+        filtersActive={search !== '' || soFilter !== ''}
+        tools={
+          <>
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 12 }}
-              title="Export the current (SO-filtered) register to Excel"
-              onClick={() => exportDispatchRegister(soRows, soFilter || undefined)}
-            >
-              📊 Export Excel
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 12 }}
-              title="Print the dispatch register"
-              disabled={isLoading}
-              onClick={() => {
-                if (!printCustomerDispatchRegister({ rows: active, company })) {
-                  window.alert('Allow popups to print.');
-                }
-              }}
-            >
-              🖨 Print
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 12 }}
+              className="btn btn-ghost"
               disabled={groups.length === 0}
               title={allExpanded ? 'Hide every card’s items' : 'Show every card’s items'}
               onClick={() =>
@@ -298,87 +288,112 @@ function CustomerDispatchListPage(): React.JSX.Element {
             >
               {allExpanded ? 'Collapse all' : 'Expand all'}
             </button>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canAdd ? (
-              <Link to="/customer-dispatches/new" className="btn btn-primary">
-                + New Dispatch
-              </Link>
-            ) : null}
-          </div>
-        </div>
-
-        {/* The three KPIs were three `.panel` tiles in a 3-col grid below the
-            band — centred text, ~120px tall, and they scrolled away with the
-            list. Now one strip in the band (styling skill Rule 3). Read-only
-            metrics, so no onClick: they are totals, not filters. Counts are
-            over ACTIVE rows (cancelled dispatches were reversed) and follow the
-            SO filter + search, exactly as before. */}
-        <div style={{ marginTop: 10 }}>
-          <StatStrip
-            items={[
-              {
-                key: 'pcs',
-                label: 'Total Dispatched',
-                count: totalPcs,
-                color: 'var(--red)',
-                sub: 'pieces',
-              },
-              {
-                key: 'entries',
-                label: 'Dispatch Entries',
-                count: groups.filter((g) => g.status !== 'cancelled').length,
-              },
-              {
-                key: 'items',
-                label: 'Items Dispatched',
-                count: summary.length,
-                color: 'var(--cyan)',
-              },
-            ]}
-          />
-        </div>
-      </div>
+            <ActionMenu
+              label="Export"
+              items={[
+                {
+                  label: '📊 Export Excel',
+                  title: 'Export the current (SO-filtered) register to Excel',
+                  onClick: () => exportDispatchRegister(soRows, soFilter || undefined),
+                },
+                {
+                  label: '🖨 Print',
+                  title: 'Print the dispatch register',
+                  disabled: isLoading,
+                  onClick: () => {
+                    if (!printCustomerDispatchRegister({ rows: active, company })) {
+                      window.alert('Allow popups to print.');
+                    }
+                  },
+                },
+              ]}
+            />
+          </>
+        }
+        primary={
+          canAdd ? (
+            <Link to="/customer-dispatches/new" className="btn btn-primary">
+              + New Dispatch
+            </Link>
+          ) : null
+        }
+      >
+        {/* Read-only metrics, not filters. Counts are over ACTIVE rows
+            (cancelled dispatches were reversed) and follow the SO filter +
+            search, exactly as before. */}
+        <StatStrip
+          items={[
+            {
+              key: 'pcs',
+              label: 'Total Dispatched',
+              count: totalPcs,
+              color: 'var(--green2)',
+              sub: 'pieces',
+            },
+            {
+              key: 'entries',
+              label: 'Dispatch Entries',
+              count: groups.filter((g) => g.status !== 'cancelled').length,
+            },
+          ]}
+        />
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+          Loading…
         </div>
       ) : isError || !data ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load'}
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
+          {error instanceof Error ? error.message : 'Could not load dispatches. Try again.'}
         </div>
       ) : (
         <>
           {summary.length > 0 ? (
+            <div style={{ marginBottom: 8 }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                aria-expanded={showSummary}
+                onClick={() => setShowSummary((v) => !v)}
+              >
+                {showSummary ? '▾ Hide summary' : '▸ Show summary'}
+              </button>
+            </div>
+          ) : null}
+          {summary.length > 0 && showSummary ? (
             <div className="panel" style={{ marginBottom: 14 }}>
               <div className="panel-hdr">
                 <span className="panel-title">Item-wise Summary</span>
               </div>
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid tbl-auto">
                   <thead>
                     <tr>
                       <th>Item Code</th>
                       <th>Item Name</th>
-                      <th>Total Dispatched</th>
-                      <th>No. of Dispatches</th>
-                      <th style={{ color: 'var(--green)' }}>Current Stock</th>
+                      <th className="th-num">Total Dispatched</th>
+                      <th className="th-num">No. of Dispatches</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Current Stock
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {summary.map((s) => (
                       <tr key={s.code + s.name}>
-                        <td className="td-code" style={{ color: 'var(--purple)' }}>{s.code}</td>
-                        <td className="fw-700">{s.name}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>{s.total}</td>
-                        <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                          {s.count} dispatches
+                        <td className="td-code" style={{ color: 'var(--purple)' }}>
+                          {s.code}
                         </td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                        <td className="fw-700">{s.name}</td>
+                        <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
+                          {s.total}
+                        </td>
+                        <td className="mono td-num" style={{ fontSize: 11, color: 'var(--text3)' }}>
+                          {s.count}
+                        </td>
+                        <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                           {s.stock ?? 0}
                         </td>
                       </tr>
@@ -395,41 +410,47 @@ function CustomerDispatchListPage(): React.JSX.Element {
               color: 'var(--cyan)',
               fontFamily: 'var(--mono)',
               fontWeight: 700,
-              letterSpacing: '0.06em',
               margin: '4px 0 8px',
             }}
           >
-            DISPATCH LOG
+            Dispatch Log
           </div>
 
           {groups.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No dispatches recorded yet — click + New Dispatch
+              {search || soFilter ? 'No Dispatches match.' : 'No Dispatches yet.'}
             </div>
           ) : (
             groups.map((g) => (
               <DispatchCard
                 key={g.dispatchId}
                 g={g}
+                billedStatus={billedById.get(g.dispatchId)}
                 isOpen={expanded.has(g.dispatchId)}
                 canCancel={canCancel}
                 cancelPending={cancel.isPending}
                 onToggle={() => toggle(g.dispatchId)}
-                onCancel={() => {
-                  if (confirm(`Cancel dispatch ${g.code} (all its lines)? This reverses the dispatched qty + stock.`)) {
-                    cancel.mutate(g.dispatchId);
-                  }
-                }}
+                onCancel={() => setCancelling(g)}
               />
             ))
           )}
-
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8, padding: '0 4px' }}>
-            💡 Click a card to show the items on that dispatch · <b>🧾 Invoice</b> opens a
-            pre-filled invoice · <b>Cancel</b> reverses the dispatched qty and the stock.
-          </div>
+          <ListFooter total={groups.length} noun="dispatch" nounPlural="dispatches" />
         </>
       )}
+      {cancelling ? (
+        <ConfirmDialog
+          title={`Cancel Dispatch ${cancelling.code}?`}
+          message="Stock will be reversed."
+          confirmLabel="Cancel Dispatch"
+          cancelLabel="Keep"
+          pendingLabel="Cancelling…"
+          onConfirm={async () => {
+            await cancel.mutateAsync(cancelling.dispatchId);
+            setCancelling(null);
+          }}
+          onCancel={() => setCancelling(null)}
+        />
+      ) : null}
     </div>
   );
 }

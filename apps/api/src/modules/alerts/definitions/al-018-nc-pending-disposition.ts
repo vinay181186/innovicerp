@@ -1,6 +1,7 @@
-// AL-018 — NCs pending disposition (qc). Legacy line 22291-22292.
+// AL-018 — NC Disposition Pending (qc). Legacy line 22291-22292.
 // Filter: nc_register.status = 'pending'.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -8,8 +9,8 @@ export const al018NcPendingDisposition: RegisteredAlert = {
   definition: {
     code: 'AL-018',
     dept: 'qc',
-    name: 'NCs pending disposition',
-    description: 'Non-conformance records awaiting a disposition decision.',
+    name: 'NC Disposition Pending',
+    description: 'NCs still waiting for a disposition decision.',
     columns: [
       { key: 'nc_code', label: 'NC No.', type: 'text' },
       { key: 'nc_date', label: 'NC Date', type: 'date' },
@@ -22,17 +23,18 @@ export const al018NcPendingDisposition: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT nc.code AS nc_code, nc.nc_date, jc.code AS jc_code,
+      SELECT nc.id AS nav_id, nc.code AS nc_code, nc.nc_date, jc.code AS jc_code,
              COALESCE(nc.item_code_text, '') AS item,
              nc.rejected_qty, nc.reason_category
       FROM public.nc_register nc
-      JOIN public.job_cards jc ON jc.id = nc.job_card_id
+      LEFT JOIN public.job_cards jc ON jc.id = nc.job_card_id
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
         AND nc.status = 'pending'
       ORDER BY nc.nc_date, nc.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('nc', String(r['nav_id'])),
       nc_code: (r['nc_code'] as string) ?? '',
       nc_date:
         r['nc_date'] instanceof Date

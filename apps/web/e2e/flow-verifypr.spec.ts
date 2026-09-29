@@ -20,7 +20,7 @@ test('T23 create PR blank → IN-PR', async ({ page }: { page: Page }) => {
   await page.locator('input[type="number"]').first().fill('5');
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${SHOT}/vpr-filled.png`, fullPage: true });
-  await page.getByRole('button', { name: /Create PR/i }).click();
+  await page.getByRole('button', { name: /Save PR/i }).click();
   await page.waitForTimeout(4500);
   await page.screenshot({ path: `${SHOT}/vpr-saved.png`, fullPage: true });
   const body = await page.locator('body').innerText();

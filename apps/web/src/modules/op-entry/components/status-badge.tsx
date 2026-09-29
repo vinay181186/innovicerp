@@ -1,62 +1,21 @@
 import type { ComputedJcOpStatus, RunningOpStatus } from '@innovic/shared';
+import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 
-// Badge modifier per legacy `badge()` (HTML L1959-1970), which is the colour
-// function Op Entry's Ready-to-Process table calls at L5268. The previous map
-// here was Tailwind tone classes citing lines that hold no colour table.
-//
-// Two legacy keys resolve to modifiers that its MAIN stylesheet never defines:
-// 'In Progress'/'At Vendor' -> .b-yellow and 'Running' -> .b-running. Both are
-// declared only inside the print-window stylesheet written by document.write
-// (HTML L10555-10561), so on the legacy SCREEN they render as a bare `.badge`
-// with no fill. We reproduce that by emitting `badge` alone — matching legacy's
-// rendering while using only classes that exist in innovic-theme.css.
-const JC_OP_BADGE: Record<ComputedJcOpStatus, string> = {
-  waiting: 'b-red',
-  available: 'b-blue',
-  in_progress: '', // legacy b-yellow — undefined on screen
-  running: '', // legacy b-running — undefined on screen
-  qc_pending: 'b-amber',
-  complete: 'b-green',
-  pr_raised: 'b-amber',
-  po_created: 'b-blue',
-  at_vendor: '', // legacy b-yellow — undefined on screen
-  received: 'b-cyan',
-  ready_for_pr: 'b-amber',
-  outsource: 'b-amber',
-};
-
-const RUNNING_TONE: Record<RunningOpStatus, string> = {
-  running: 'bg-green-500/15 text-green-700 dark:text-green-300',
-  done: 'bg-muted text-muted-foreground',
-  stopped: 'bg-red-500/15 text-red-700 dark:text-red-300',
-};
-
-const LABELS: Record<ComputedJcOpStatus, string> = {
-  waiting: 'Waiting',
-  available: 'Available',
-  in_progress: 'In Progress',
-  running: 'Running',
-  qc_pending: 'QC Pending',
-  complete: 'Complete',
-  pr_raised: 'PR Raised',
-  po_created: 'PO Created',
-  at_vendor: 'Processing',
-  received: 'Incoming QC',
-  ready_for_pr: 'Ready for PR',
-  outsource: 'Outsource',
-};
-
+// Op status wording + colour come from the ONE shared map the Job Card page
+// uses (job-cards/lib/jc-op-labels.ts), so the same status never looks
+// different on two screens (At Vendor used to be uncoloured here).
 export function JcOpStatusBadge({ status }: { status: ComputedJcOpStatus }) {
-  return <span className={`badge ${JC_OP_BADGE[status]}`.trim()}>{LABELS[status]}</span>;
+  const s = OP_STATUS[status];
+  return <span className={`badge ${s?.cls ?? ''}`.trim()}>{s?.label ?? status}</span>;
 }
 
+const RUNNING_BADGE: Record<RunningOpStatus, { label: string; cls: string }> = {
+  running: { label: 'Running', cls: 'b-green' },
+  done: { label: 'Completed', cls: 'b-green' },
+  stopped: { label: 'Stopped', cls: 'b-red' },
+};
+
 export function RunningOpStatusBadge({ status }: { status: RunningOpStatus }) {
-  const text = status === 'running' ? 'Running' : status === 'done' ? 'Done' : 'Stopped';
-  return (
-    <span
-      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${RUNNING_TONE[status]}`}
-    >
-      {text}
-    </span>
-  );
+  const s = RUNNING_BADGE[status];
+  return <span className={`badge ${s.cls}`}>{s.label}</span>;
 }

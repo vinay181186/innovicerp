@@ -10,15 +10,17 @@ import {
   type PartyMaterialIssueListItem,
 } from '@innovic/shared';
 import { Loader2, Plus, XCircle } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useJobWorkOrdersList } from '@/modules/job-work-orders/api';
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
+import { useDiscardGuard } from '@/modules/store-inventory/components/discard-guard';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   useCancelPartyMaterialIssue,
   useCreatePartyMaterialIssue,
@@ -81,29 +83,32 @@ export function PartyMaterialIssueView({
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view Party Material Issues. Ask an admin.
       </div>
     );
   }
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-end gap-3">
-        <input
-          type="text"
-          className="innovic-input"
-          placeholder="🔍 Search Issue No., date, JWSO, Job Card, material, remarks…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          style={{ width: 260, fontSize: 12 }}
-        />
-        {canIssue ? (
-          <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
-            <Plus size={14} /> New Issue
-          </button>
-        ) : null}
-      </div>
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          + New Issue. */}
+      <ListHeader
+        title="Party Material Issue"
+        icon="📤"
+        count={data?.total}
+        noun="issue"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search Issue No., date, JWSO, Job Card, material, remarks…"
+        primary={
+          canIssue ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
+              <Plus size={14} /> New Issue
+            </button>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -114,13 +119,15 @@ export function PartyMaterialIssueView({
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load party material issues'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error
+                ? error.message
+                : 'Could not load party material issues. Try again.'}
             </div>
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Issue No.</th>
@@ -128,41 +135,43 @@ export function PartyMaterialIssueView({
                   <th>JWSO No.</th>
                   <th>JC No.</th>
                   {/* TWO different items sit side by side here and the headers
-                      have to keep them apart. "Item Made" is OUR produced part,
-                      off the job card; "Material" is the CLIENT'S supplied
-                      stock this issue debits. A JC number alone says WHICH JOB,
-                      not WHICH PART, which is why the first column now exists. */}
-                  <th>Item Name</th>
+                      have to keep them apart. "Item Code" is OUR produced part
+                      (CODE/REV, name under it), off the job card; "Material" is
+                      the CUSTOMER'S supplied stock this issue debits. */}
+                  <th>Item Code</th>
                   <th>Material</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Issue Qty
                   </th>
                   <th>Remarks</th>
-                  {canCancel ? <th className="td-ctr">Actions</th> : null}
+                  {canCancel ? <th>Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
                     <td colSpan={canCancel ? 9 : 8} className="empty-state">
-                      No party material issues — click + New Issue
+                      {term ? 'No Party Material Issues match.' : 'No Party Material Issues yet.'}
                     </td>
                   </tr>
                 ) : null}
                 {rows.map((it) => (
                   <tr key={it.id}>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <span className="td-code" style={{ color: 'var(--cyan)' }}>
                         {it.code}
                       </span>
                     </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {it.issueDate}
+                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                      {fmtDate(it.issueDate)}
                     </td>
-                    <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                    <td
+                      className="mono fw-700"
+                      style={{ fontSize: 11, color: 'var(--purple)', whiteSpace: 'nowrap' }}
+                    >
                       {it.jwCodeText ?? '—'}
                     </td>
-                    <td className="mono text2" style={{ fontSize: 11 }}>
+                    <td className="mono text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {it.jcCodeText ?? '—'}
                     </td>
                     {/* The job card's PRODUCED part — not the party material in
@@ -179,17 +188,7 @@ export function PartyMaterialIssueView({
                         {itemCodeWithRev(it.jcItemCode, it.jcItemRevision, '')}
                       </span>
                       {it.jcItemName ? (
-                        <div
-                          className="text3"
-                          style={{
-                            fontSize: 10,
-                            maxWidth: 160,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          title={it.jcItemName}
-                        >
+                        <div className="text3" style={{ fontSize: 11 }} title={it.jcItemName}>
                           {it.jcItemName}
                         </div>
                       ) : null}
@@ -206,33 +205,23 @@ export function PartyMaterialIssueView({
                       ) : null}
                     </td>
                     <td
-                      className="td-ctr mono fw-700"
-                      style={{ fontSize: 14, color: 'var(--green)' }}
+                      className="td-num mono fw-700"
+                      style={{ fontSize: 14, color: 'var(--green2)' }}
                     >
                       {it.qty}
                     </td>
-                    <td
-                      className="text3"
-                      style={{
-                        fontSize: 11,
-                        maxWidth: 140,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title={it.remarks ?? ''}
-                    >
+                    <td className="text3" style={{ fontSize: 11 }} title={it.remarks ?? ''}>
                       {it.remarks ?? '—'}
                     </td>
                     {canCancel ? (
-                      <td className="td-ctr">
+                      <td>
                         <button
                           type="button"
                           className="btn btn-sm"
                           style={{
-                            background: 'rgba(239,68,68,0.08)',
-                            color: 'var(--red)',
-                            border: '1px solid rgba(239,68,68,0.3)',
+                            background: 'var(--red3)',
+                            color: 'var(--red2)',
+                            border: '1px solid var(--red)',
                             padding: '2px 8px',
                           }}
                           onClick={() => setCancelRow(it)}
@@ -250,10 +239,9 @@ export function PartyMaterialIssueView({
         ) : null}
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 Party Material Issue debits client-supplied (party) stock when it is issued to a Job Card
-        for in-house machining. Linked to JWSO No. / Job Card.
-      </div>
+      {data ? (
+        <ListFooter total={data.total} shown={rows.length} noun="issue" limit={LIST_LIMIT} />
+      ) : null}
 
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
       {cancelRow ? <CancelIssueModal row={cancelRow} onClose={() => setCancelRow(null)} /> : null}
@@ -282,7 +270,8 @@ function CancelIssueModal({
       { id: row.id, reason: reason.trim() },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to cancel'),
+        onError: (e) =>
+          setErr(e instanceof Error ? e.message : 'Could not cancel issue. Try again.'),
       },
     );
   };
@@ -314,14 +303,10 @@ function CancelIssueModal({
           ⚠ Cancel {row.code}
         </div>
         <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
-          This returns <b style={{ color: 'var(--green)' }}>{row.qty}</b> of{' '}
-          <b>{row.partyMaterialCodeText ?? 'the material'}</b> to party stock and lowers what{' '}
-          <b>{row.jcCodeText ?? 'the job card'}</b> is allowed to produce.
-          <br />
-          If those pieces have already been machined the cancel will be refused — that material is
-          used, so record a scrap/adjustment instead.
+          Returns <b style={{ color: 'var(--green2)' }}>{row.qty}</b> to party stock. Refused if
+          already machined.
         </div>
-        <Field label="Reason ★">
+        <Field label="Reason" required>
           <input
             type="text"
             className="innovic-input"
@@ -337,7 +322,7 @@ function CancelIssueModal({
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}
@@ -389,39 +374,127 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
   });
   const jwHeaders = jwQuery.data?.items ?? [];
 
-  const jcQuery = useJobCardsList({ search: jcSearch.trim() || undefined, limit: 50, offset: 0 });
-  const jcItems = jcQuery.data?.items ?? [];
+  // Cascade JWSO → JC → Party Material (party-material-issue-create#1). The
+  // picked JWSO / JC are remembered, since the pickers' option lists change
+  // with every search. The server still makes the same checks on Save.
+  const [pickedJw, setPickedJw] = useState<{ code: string; clientId: string | null } | null>(null);
+  const [pickedJcItemId, setPickedJcItemId] = useState<string | null>(null);
 
-  const { data: pmData, isFetching: pmFetching } = usePartyMaterialsList({
-    search: pmSearch.trim() || undefined,
-    limit: 200,
-    offset: 0,
-  });
-  const pmAll = pmData?.items ?? [];
+  // Only this JWSO's job cards: the JC search also matches the source JWSO
+  // code, so with no JC typed the JWSO code brings its cards.
+  const jcQuery = useJobCardsList(
+    {
+      search: jcSearch.trim() || pickedJw?.code || undefined,
+      limit: 200,
+      offset: 0,
+    },
+    { enabled: Boolean(jobWorkOrderId) },
+  );
+  const jcItems = useMemo(
+    () =>
+      (jcQuery.data?.items ?? []).filter(
+        (jc) => jc.sourceLink?.type === 'jw' && jc.sourceLink.jobWorkOrderId === jobWorkOrderId,
+      ),
+    [jcQuery.data, jobWorkOrderId],
+  );
+
+  // Only the JWSO customer's materials, and — once a JC is picked — only the
+  // ones for the part that JC makes (a material with no Item Code still shows).
+  const {
+    data: pmData,
+    isFetching: pmFetching,
+    isPlaceholderData: pmStale,
+  } = usePartyMaterialsList(
+    {
+      search: pmSearch.trim() || undefined,
+      ...(pickedJw?.clientId ? { clientId: pickedJw.clientId } : {}),
+      limit: 200,
+      offset: 0,
+    },
+    { enabled: Boolean(jobWorkOrderId) },
+  );
+  const pmAll = useMemo(
+    () =>
+      (pmData?.items ?? []).filter(
+        (p) => !pickedJcItemId || !p.itemId || p.itemId === pickedJcItemId,
+      ),
+    [pmData, pickedJcItemId],
+  );
   const selectedPm = useMemo(
     () => pmAll.find((p) => p.id === partyMaterialId) ?? null,
     [pmAll, partyMaterialId],
   );
+
+  const onJwChange = (id: string | null): void => {
+    setJobWorkOrderId(id);
+    const jw = jwHeaders.find((j) => j.jwId === id);
+    setPickedJw(jw ? { code: jw.code, clientId: jw.clientId ?? null } : null);
+    setJcSearch('');
+    setJobCardId(null);
+    setPickedJcItemId(null);
+    setPmSearch('');
+    setPartyMaterialId(null);
+  };
+  const onJcChange = (id: string | null): void => {
+    setJobCardId(id);
+    setPickedJcItemId(jcItems.find((jc) => jc.id === id)?.itemId ?? null);
+    setPartyMaterialId(null);
+  };
+
+  // Auto-pick when only one fits — once per parent pick, so clearing it by
+  // hand is not undone.
+  const autoJcFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jobWorkOrderId || jobCardId || jcSearch.trim()) return;
+    if (!jcQuery.data || jcQuery.isFetching || jcQuery.isPlaceholderData) return;
+    if (autoJcFor.current === jobWorkOrderId) return;
+    autoJcFor.current = jobWorkOrderId;
+    const only = jcItems.length === 1 ? jcItems[0] : undefined;
+    if (only) {
+      setJobCardId(only.id);
+      setPickedJcItemId(only.itemId);
+    }
+  }, [
+    jobWorkOrderId,
+    jobCardId,
+    jcSearch,
+    jcQuery.data,
+    jcQuery.isFetching,
+    jcQuery.isPlaceholderData,
+    jcItems,
+  ]);
+  const autoPmFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jobCardId || partyMaterialId || pmSearch.trim()) return;
+    if (!pmData || pmFetching || pmStale) return;
+    if (autoPmFor.current === jobCardId) return;
+    autoPmFor.current = jobCardId;
+    const only = pmAll.length === 1 ? pmAll[0] : undefined;
+    if (only) setPartyMaterialId(only.id);
+  }, [jobCardId, partyMaterialId, pmSearch, pmData, pmFetching, pmStale, pmAll]);
+
+  const dirty = Boolean(jobWorkOrderId || qty.trim() || remarks.trim());
+  const guard = useDiscardGuard(dirty, onClose);
 
   const createMut = useCreatePartyMaterialIssue();
 
   const onSave = (): void => {
     setErr(null);
     if (!jobWorkOrderId) {
-      setErr('Select a JWSO');
+      setErr('JWSO No. is required.');
       return;
     }
     if (!jobCardId) {
-      setErr('Select the Job Card this material is for — work cannot start without it.');
+      setErr('JC No. is required. Work cannot start without it.');
       return;
     }
     if (!partyMaterialId) {
-      setErr('Select a party material');
+      setErr('Party Material is required.');
       return;
     }
     const q = Number(qty);
     if (!Number.isFinite(q) || q <= 0) {
-      setErr('Qty must be ≥ 1');
+      setErr('Issue Qty must be 1 or more.');
       return;
     }
     const input: CreatePartyMaterialIssueInput = {
@@ -435,7 +508,10 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
 
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save Issue. Check the lines and try again.',
+        ),
     });
   };
 
@@ -450,8 +526,11 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
         justifyContent: 'center',
         zIndex: 100,
       }}
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) guard.requestClose();
+      }}
     >
+      {guard.dialog}
       <div
         style={{
           background: 'var(--bg)',
@@ -465,7 +544,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          📤 New Party Material Issue
+          New Party Material Issue
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -477,7 +556,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
               onChange={(e) => setIssueDate(e.target.value)}
             />
           </Field>
-          <Field label="Issue Qty ★">
+          <Field label="Issue Qty" required>
             <input
               type="number"
               min={1}
@@ -495,11 +574,12 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           </Field>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JWSO No. ★">
+            <Field label="JWSO No." required>
               <SearchableSelect
                 id="pmi-jwso"
                 value={jobWorkOrderId}
-                onChange={setJobWorkOrderId}
+                onChange={onJwChange}
+                valueLabel={pickedJw?.code}
                 onSearch={setJwSearch}
                 loading={jwQuery.isFetching}
                 placeholder="🔍 Select JWSO — type number or customer…"
@@ -513,39 +593,49 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           </div>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JC No. ★">
+            <Field label="JC No." required>
               <SearchableSelect
                 id="pmi-jc"
                 value={jobCardId}
-                onChange={setJobCardId}
+                onChange={onJcChange}
                 onSearch={setJcSearch}
                 loading={jcQuery.isFetching}
-                placeholder="🔍 Select Job Card — type number…"
+                disabled={!jobWorkOrderId}
+                emptyText="No Job Card on this JWSO"
+                placeholder={
+                  jobWorkOrderId ? '🔍 Select Job Card of this JWSO…' : 'Pick the JWSO first'
+                }
                 options={jcItems.map((jc) => ({ id: jc.id, code: jc.code, name: jc.itemName }))}
               />
             </Field>
           </div>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Party Material ★">
+            <Field label="Party Material" required>
               <SearchableSelect
                 id="pmi-material"
                 value={partyMaterialId}
                 onChange={setPartyMaterialId}
                 onSearch={setPmSearch}
                 loading={pmFetching}
-                placeholder="🔍 Select party material — type code or name…"
+                disabled={!jobWorkOrderId}
+                emptyText="No material of this customer for this part"
+                placeholder={
+                  jobWorkOrderId
+                    ? '🔍 Select party material — type code or name…'
+                    : 'Pick the JWSO first'
+                }
                 options={pmAll.map((p) => ({
                   id: p.id,
                   code: p.code,
-                  name: `${p.name} · stock ${p.stockQty}`,
+                  name: `${p.name} · Available ${p.stockQty}`,
                 }))}
               />
             </Field>
             {selectedPm ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                Available party stock:{' '}
-                <span style={{ color: 'var(--green)', fontWeight: 700 }}>
+                Available:{' '}
+                <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
                   {selectedPm.stockQty}
                 </span>{' '}
                 {selectedPm.uom}
@@ -572,7 +662,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}
@@ -607,23 +697,18 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
 
 function Field({
   label,
+  required = false,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
+      <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
         {label}
+        {required ? <span className="req">★</span> : null}
       </div>
       {children}
     </div>

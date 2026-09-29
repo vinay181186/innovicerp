@@ -90,7 +90,7 @@ function NumberTile({
 }): JSX.Element {
   return (
     <div style={tile} title={title}>
-      <div style={{ fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{label}</div>
       <div
         className="mono fw-700"
         style={{ fontSize: 18, color: color ?? 'var(--text)', whiteSpace: 'nowrap' }}
@@ -106,7 +106,7 @@ function LineIdentity({ f }: { f: StockLineFacts }): JSX.Element {
   return (
     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 10 }}>
       <div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Item</div>
         {/* The item code is the main thing: strong mono, darkest text. */}
         <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
           {f.itemLabel}
@@ -118,13 +118,13 @@ function LineIdentity({ f }: { f: StockLineFacts }): JSX.Element {
         ) : null}
       </div>
       <div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>SO</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>SO</div>
         <b className="mono" style={{ whiteSpace: 'nowrap' }}>
           {f.soCode}
         </b>
       </div>
       <div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>LINE</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Ln</div>
         <b className="mono">{f.lineNo}</b>
       </div>
     </div>
@@ -140,7 +140,7 @@ function ErrorBox({ message }: { message: string }): JSX.Element {
         padding: 8,
         borderRadius: 4,
         background: 'var(--red3)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
       }}
     >
       {message}
@@ -173,7 +173,6 @@ export function AllocateStockModal({
       }
     : facts;
   const cap = allocateCap(shown);
-  const pending = pendingOf(shown);
   const [qty, setQty] = useState<string>('');
   // Until the user types, the field simply mirrors the cap — so a cap that
   // moves when the live numbers land does not leave a stale default behind.
@@ -211,7 +210,7 @@ export function AllocateStockModal({
       });
       onDone(result);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to allocate');
+      setErr(e instanceof Error ? e.message : 'Could not reserve stock. Try again.');
     }
   };
 
@@ -230,7 +229,7 @@ export function AllocateStockModal({
             ? 'This line has no stock-tracked item'
             : cap <= 0
               ? 'Nothing can be allocated to this line right now'
-              : `Reserve ${valid ? typed : 0} pcs to ${facts.soCode} line ${facts.lineNo}`
+              : `Allocate ${valid ? typed : 0} pcs to ${facts.soCode} Ln ${facts.lineNo}`
         }
       >
         {reserve.isPending ? 'Allocating…' : 'Allocate'}
@@ -242,42 +241,15 @@ export function AllocateStockModal({
     <Modal title={`Allocate Stock — ${facts.itemLabel}`} onClose={onClose} footer={footer}>
       <LineIdentity f={shown} />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <NumberTile label="ORDER QTY" value={shown.orderQty} />
         <NumberTile
-          label="PENDING"
-          value={pending}
-          color={pending > 0 ? 'var(--amber)' : 'var(--green)'}
-          title="Still owed to the customer: order qty less what has been dispatched"
-        />
-        <NumberTile
-          label="DISPATCHED"
-          value={shown.dispatchedQty}
-          color={shown.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)'}
-          title="Already shipped against this line"
-        />
-        <NumberTile
-          label="PHYSICAL"
-          value={shown.physicalQty}
-          color="var(--cyan)"
-          title="On the shelf — allocating never changes this"
-        />
-        <NumberTile
-          label="RESERVED (TOTAL)"
-          value={shown.totalReservedQty}
-          color="var(--purple)"
-          title="Promised to every SO line, still on the shelf"
-        />
-        <NumberTile
-          label="AVAILABLE"
+          label="Available"
           value={shown.availableQty}
           color={shown.availableQty > 0 ? 'var(--green)' : 'var(--text3)'}
-          title="Physical − Reserved: free stock anyone may still be promised"
         />
         <NumberTile
-          label="RESERVED (THIS LINE)"
+          label="Reserved (This Line)"
           value={shown.reservedQty}
           color={shown.reservedQty > 0 ? 'var(--purple)' : 'var(--text3)'}
-          title="Already booked to this SO line"
         />
       </div>
 
@@ -285,7 +257,7 @@ export function AllocateStockModal({
         <label
           className="form-label"
           htmlFor="allocate-qty"
-          style={{ color: 'var(--amber)', fontWeight: 700 }}
+          style={{ color: 'var(--amber2)', fontWeight: 700 }}
         >
           Qty to allocate ★
         </label>
@@ -306,7 +278,7 @@ export function AllocateStockModal({
         />
         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
           {cap > 0
-            ? `Most you can allocate here: ${cap} — that is the lower of Available (${shown.availableQty}) and what this line still needs (${shown.orderQty} ordered − ${shown.dispatchedQty} dispatched − ${shown.reservedQty} already reserved to this line = ${Math.max(0, shown.orderQty - shown.dispatchedQty - shown.reservedQty)}).`
+            ? `Max ${cap}`
             : shown.availableQty <= 0
               ? 'No free stock to allocate — Available is 0.'
               : 'This line is already covered by what has been dispatched and reserved to it.'}
@@ -315,7 +287,7 @@ export function AllocateStockModal({
 
       <div className="form-grp">
         <label className="form-label" htmlFor="allocate-remarks">
-          Remarks (optional)
+          Remarks
         </label>
         <input
           id="allocate-remarks"
@@ -325,11 +297,6 @@ export function AllocateStockModal({
           onChange={(e) => setRemarks(e.target.value)}
           placeholder="Why this stock is being booked…"
         />
-      </div>
-
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
-        Allocating books the stock to this line. It stays on the shelf — Physical only changes when
-        the goods are dispatched or issued.
       </div>
 
       {err ? <ErrorBox message={err} /> : null}
@@ -376,7 +343,7 @@ export function ReleaseStockModal({
       });
       onDone(result);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to release');
+      setErr(e instanceof Error ? e.message : 'Could not release the reserved stock. Try again.');
     }
   };
 
@@ -406,14 +373,14 @@ export function ReleaseStockModal({
     <Modal title={`Release Reserved Stock — ${facts.itemLabel}`} onClose={onClose} footer={footer}>
       <LineIdentity f={facts} />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <NumberTile label="PHYSICAL" value={facts.physicalQty} color="var(--cyan)" />
+        <NumberTile label="Physical" value={facts.physicalQty} color="var(--cyan)" />
         <NumberTile
-          label="RESERVED (THIS LINE)"
+          label="Reserved (This Line)"
           value={facts.reservedQty}
           color={facts.reservedQty > 0 ? 'var(--purple)' : 'var(--text3)'}
         />
         <NumberTile
-          label="AVAILABLE"
+          label="Available"
           value={facts.availableQty}
           color={facts.availableQty > 0 ? 'var(--green)' : 'var(--text3)'}
         />
@@ -423,7 +390,7 @@ export function ReleaseStockModal({
         <label
           className="form-label"
           htmlFor="release-qty"
-          style={{ color: 'var(--amber)', fontWeight: 700 }}
+          style={{ color: 'var(--amber2)', fontWeight: 700 }}
         >
           Qty to release ★
         </label>
@@ -440,9 +407,7 @@ export function ReleaseStockModal({
           style={{ width: 160, fontSize: 16, fontWeight: 700 }}
         />
         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-          {max > 0
-            ? `Most you can release: ${max} — everything still reserved to this line. Released pieces go back to Available; Physical does not change.`
-            : 'Nothing is reserved to this line.'}
+          {max > 0 ? `Max ${max}` : 'Nothing is reserved to this line.'}
         </div>
       </div>
 
@@ -450,7 +415,7 @@ export function ReleaseStockModal({
         <label
           className="form-label"
           htmlFor="release-reason"
-          style={{ color: 'var(--amber)', fontWeight: 700 }}
+          style={{ color: 'var(--amber2)', fontWeight: 700 }}
         >
           Reason ★
         </label>
@@ -463,11 +428,6 @@ export function ReleaseStockModal({
           onChange={(e) => setReason(e.target.value)}
           placeholder="Why is this stock being given back?"
         />
-        {!reasonOk ? (
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-            Release stays disabled until a reason is typed.
-          </div>
-        ) : null}
       </div>
 
       {err ? <ErrorBox message={err} /> : null}

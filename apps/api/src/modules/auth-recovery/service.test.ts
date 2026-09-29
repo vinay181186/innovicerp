@@ -156,8 +156,7 @@ describe('auth-recovery email templates', () => {
     const mail = buildPasswordChangedEmail('Vinay', at);
     expect(mail.subject).toBe('Your Innovic ERP password was changed');
     const when = formatIst(at);
-    expect(when).toMatch(/^19 Sept? 2026, /); // en-IN ICU prints "Sept"
-    expect(when).toMatch(/3:42\s?pm IST$/i);
+    expect(when).toBe('19-Sep-2026 15:42 IST');
     for (const body of [mail.html, mail.text]) {
       expect(body).toContain('Hello Vinay,');
       expect(body).toContain(`was changed on ${when}.`);

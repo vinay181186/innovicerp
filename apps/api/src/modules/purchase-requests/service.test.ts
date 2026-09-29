@@ -187,6 +187,7 @@ describe('purchase-requests service', () => {
         sourceJcOpId: cascadeSourceOpId,
       },
       admin,
+      { systemRaised: true },
     );
     // The PR itself records its source op.
     expect(pr.sourceJcOpId).toBe(cascadeSourceOpId);
@@ -233,6 +234,7 @@ describe('purchase-requests service', () => {
         sourceJcOpId: op.id,
       },
       admin,
+      { systemRaised: true },
     );
     const stamped = (await db.select().from(jcOps).where(eq(jcOps.id, op.id)))[0]!;
     expect(stamped.outsourcePrId).toBe(pr.id);
@@ -557,7 +559,7 @@ describe('purchase-requests service', () => {
     // refusal must send the user to that button by name, not just say no.
     await expect(
       service.closePurchaseRequestBalance(pr.id, { reason: 'customer cut the order' }, admin),
-    ).rejects.toThrow(/use Reject/);
+    ).rejects.toThrow(/Use Reject/);
     await expect(
       service.closePurchaseRequestBalance(pr.id, { reason: 'customer cut the order' }, admin),
     ).rejects.toBeInstanceOf(ValidationError);

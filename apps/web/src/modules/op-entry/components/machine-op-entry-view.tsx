@@ -21,14 +21,20 @@ import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDateAndTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useMachinesList } from '@/modules/machines/api';
 import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps } from '../api';
 import { MachineCard } from './machine-card';
 import { OpEntryModal, type OpEntryModalTarget } from './op-entry-modal';
 
-export function MachineOpEntryView(): React.JSX.Element {
-  const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
+export function MachineOpEntryView({
+  initialMachineId = null,
+}: {
+  /** Machine to open on (the Machine detail page's "Op Entry" link). */
+  initialMachineId?: string | null;
+} = {}): React.JSX.Element {
+  const [selectedMachineId, setSelectedMachineId] = useState<string | null>(initialMachineId);
   // THE one open popup for this whole view — both the running-machine card and
   // every pending row set this same piece of state. Deliberately one, not one
   // modal per row: a modal per row is a form per row again, which is the bug
@@ -177,10 +183,11 @@ export function MachineOpEntryView(): React.JSX.Element {
               }}
             >
               <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>
-                {selectedMachine.code} — <span style={{ color: 'var(--green)' }}>🟢 Running</span>
+                {selectedMachine.code} — <span style={{ color: 'var(--green2)' }}>🟢 Running</span>
               </div>
               <div className="text3" style={{ fontSize: 11 }}>
-                Started: {selectedRunning.startTime} by {selectedRunning.operatorName ?? ''}
+                Started: {fmtDateAndTime(selectedRunning.startDate, selectedRunning.startTime)} by{' '}
+                {selectedRunning.operatorName ?? ''}
               </div>
             </div>
             <div
@@ -199,8 +206,8 @@ export function MachineOpEntryView(): React.JSX.Element {
                   border: '1px solid var(--border)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 9 }}>
-                  JC NO.
+                <div className="text3" style={{ fontSize: 11 }}>
+                  JC No.
                 </div>
                 <div className="mono fw-700 cyan">{selectedRunning.jobCardCode}</div>
               </div>
@@ -222,15 +229,15 @@ export function MachineOpEntryView(): React.JSX.Element {
                     border: '1px solid var(--border)',
                   }}
                 >
-                  <div className="text3" style={{ fontSize: 9 }}>
-                    ITEM CODE
+                  <div className="text3" style={{ fontSize: 11 }}>
+                    Item Code
                   </div>
                   {/* POL — the line number printed on the CUSTOMER's own
                       purchase order, immediately before the item code. Dropped
                       when no sales order sits behind the card, so a job-work
                       job reads exactly as this tile always has. */}
                   {selectedRunning.clientPoLineNo ? (
-                    <div className="mono text3" style={{ fontSize: 10 }}>
+                    <div className="mono text3" style={{ fontSize: 11 }}>
                       POL{' '}
                       <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                         {selectedRunning.clientPoLineNo}
@@ -248,7 +255,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                     <div
                       className="text3"
                       style={{
-                        fontSize: 10,
+                        fontSize: 11,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -268,11 +275,11 @@ export function MachineOpEntryView(): React.JSX.Element {
                   border: '1px solid var(--border)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 9 }}>
-                  OPERATION
+                <div className="text3" style={{ fontSize: 11 }}>
+                  Operation
                 </div>
                 <div className="fw-700">
-                  Op{opSrNo(runningOpRow.opSeq)}: {runningOpRow.operation}
+                  Op {opSrNo(runningOpRow.opSeq)}: {runningOpRow.operation}
                 </div>
               </div>
               <div
@@ -283,8 +290,8 @@ export function MachineOpEntryView(): React.JSX.Element {
                   border: '1px solid var(--border)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 9 }}>
-                  AVAILABLE
+                <div className="text3" style={{ fontSize: 11 }}>
+                  Available
                 </div>
                 <div className="mono fw-700 amber" style={{ fontSize: 18 }}>
                   {runningOpRow.available}
@@ -312,21 +319,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                     })
                   }
                 >
-                  ✚ Log
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  title="Books the quantity you enter AND frees the machine for the next job"
-                  onClick={() =>
-                    setEntryTarget({
-                      op: runningOpRow,
-                      activeRunningId: selectedRunning.id,
-                      mode: 'complete',
-                    })
-                  }
-                >
-                  ■ Stop
+                  ✓ Complete / ■ Stop
                 </button>
               </div>
             ) : null}
@@ -486,12 +479,8 @@ function PendingOpsSection({
         </div>
       ) : ops.length > 0 ? (
         <>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber2)', marginBottom: 8 }}>
             Pending Jobs for this Machine ({ops.length})
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-            Press ▶ Start on the row you are booking against — the date, time, shift and operator
-            are asked for inside, under that job card's own heading.
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -504,7 +493,9 @@ function PendingOpsSection({
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th style={{ color: 'var(--amber)' }}>Available</th>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                    Available
+                  </th>
                   <th></th>
                 </tr>
               </thead>
@@ -539,7 +530,7 @@ function PendingOpsSection({
                     />
                     <td className="mono fw-700">Op {opSrNo(op.opSeq)}</td>
                     <td className="fw-700">{op.operation}</td>
-                    <td className="mono fw-700 amber">{op.available}</td>
+                    <td className="mono fw-700 amber td-num">{op.available}</td>
                     <td>
                       {canOpEntry ? (
                         <button
@@ -547,7 +538,7 @@ function PendingOpsSection({
                           className="btn btn-primary btn-sm"
                           onClick={() => onStart(op)}
                         >
-                          ▶ Start
+                          ▶ Start Operation
                         </button>
                       ) : null}
                     </td>
@@ -559,9 +550,7 @@ function PendingOpsSection({
         </>
       ) : (
         <div className="empty-state" style={{ padding: 20 }}>
-          No pending jobs for this machine. Every operation assigned to {machineCode} is either
-          complete, still waiting for input from the previous operation, already running on another
-          session, or held up in QC.
+          No pending jobs for this machine.
         </div>
       )}
       {/* MADE ON THIS MACHINE — history, not work. An op lands here because the
@@ -575,7 +564,7 @@ function PendingOpsSection({
             style={{
               fontSize: 12,
               fontWeight: 700,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               marginTop: 16,
               marginBottom: 8,
             }}
@@ -593,7 +582,9 @@ function PendingOpsSection({
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th style={{ color: 'var(--green)' }}>Completed</th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    Completed
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -618,9 +609,9 @@ function PendingOpsSection({
                       name={row.op.itemName}
                       pol={row.op.clientPoLineNo}
                     />
-                    <td className="mono">Op{opSrNo(row.op.opSeq)}</td>
+                    <td className="mono">Op {opSrNo(row.op.opSeq)}</td>
                     <td>{row.op.operation}</td>
-                    <td className="mono fw-700 green">{row.qty}</td>
+                    <td className="mono fw-700 green td-num">{row.qty}</td>
                   </tr>
                 ))}
               </tbody>

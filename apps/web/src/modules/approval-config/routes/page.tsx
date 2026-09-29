@@ -1,9 +1,11 @@
 // Approval Configuration page — admin-only.
 //
 // Mirror of legacy renderApprovalConfig (HTML L21608):
-//   - PO Approval toggle + manager limit + approvers picker + flow diagram
-//   - PR Approval (always ON — read-only)
-//   - Invoice Approval toggle
+//   - PO Approval switch + manager limit + approvers picker, and the PR
+//     Approval switch — both read by the server since ADR-189 (on: a new PO
+//     starts as Draft; a PR must be approved before it becomes a PO). The
+//     Invoice Approval switch stays hidden: no server code reads it.
+//   - Op Entry date/time edit approval toggle
 //   - Recent Approval Activity (last 20 APPROVE / REJECT / PAYMENT rows)
 //
 // Save is one shot (legacy auto-saved on every change; we save explicitly
@@ -13,10 +15,13 @@ import type { ApprovalConfig, UserRole } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { PageHeader } from '@/ui/layout';
 import { useUsersList } from '@/modules/users/api';
 import { useApprovalConfig, useApprovalHistory, useSaveApprovalConfig } from '../api';
+import { roleLabel } from '@/lib/role-label';
 
 export const approvalConfigRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -24,17 +29,33 @@ export const approvalConfigRoute = createRoute({
   component: ApprovalConfigPage,
 });
 
-function inr(n: number): string {
-  return Math.round(n).toLocaleString('en-IN');
+// Screen word for the logged action code (APPROVE / REJECT / PAYMENT).
+function actionLabel(action: string): string {
+  if (action === 'APPROVE') return 'Approved';
+  if (action === 'REJECT') return 'Rejected';
+  if (action === 'PAYMENT') return 'Payment';
+  return action;
 }
 
-function fmtTs(ts: string): string {
-  const dt = new Date(ts);
-  return (
-    dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) +
-    ' ' +
-    dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  );
+// Screen word for the logged document type. The server writes 'Purchase Order'
+// and 'Invoice' already spaced, but 'PurchaseRequest' as a raw code.
+const DOC_TYPE_LABELS: Record<string, string> = {
+  PurchaseRequest: 'Purchase Request',
+  'Purchase Order': 'Purchase Order',
+  Invoice: 'Invoice',
+};
+
+function docTypeLabel(entity: string): string {
+  const known = DOC_TYPE_LABELS[entity];
+  if (known) return known;
+  // Fallback: split camelCase / snake_case and title-case each word.
+  return entity
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
 }
 
 function ApprovalConfigPage(): React.JSX.Element {
@@ -55,9 +76,9 @@ function ApprovalConfigPage(): React.JSX.Element {
 
   if (!isAdmin) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
         <div style={{ fontSize: 28, marginBottom: 10 }}>🔒</div>
-        Admin access required for Approval Configuration.
+        You do not have permission to open Approval Rules. Ask an admin.
       </div>
     );
   }
@@ -72,8 +93,8 @@ function ApprovalConfigPage(): React.JSX.Element {
 
   if (isError) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)', padding: 40 }}>
-        {error instanceof Error ? error.message : 'Failed to load approval config'}
+      <div className="empty-state" style={{ color: 'var(--red2)', padding: 40 }}>
+        {error instanceof Error ? error.message : 'Could not load approval settings. Try again.'}
       </div>
     );
   }
@@ -82,6 +103,7 @@ function ApprovalConfigPage(): React.JSX.Element {
   const dirty =
     cfg &&
     (cfg.poApproval !== draft.poApproval ||
+      cfg.prApproval !== draft.prApproval ||
       cfg.poManagerLimit !== draft.poManagerLimit ||
       cfg.invoiceApproval !== draft.invoiceApproval ||
       cfg.opEntryEditApproval !== draft.opEntryEditApproval ||
@@ -108,45 +130,43 @@ function ApprovalConfigPage(): React.JSX.Element {
       setSubmitOk(true);
       window.setTimeout(() => setSubmitOk(false), 3000);
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Save failed');
+      setSubmitError(
+        e instanceof Error ? e.message : 'Could not save approval settings. Try again.',
+      );
     }
   }
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          ⚖ Approval Configuration
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {submitOk ? (
-            <span className="text2" style={{ fontSize: 11, color: 'var(--green)' }}>
-              ✅ Saved
-            </span>
-          ) : null}
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={!dirty || save.isPending}
-            onClick={() => void onSave()}
-          >
-            {save.isPending ? (
-              <>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save Changes'
-            )}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        sticky
+        title="Approval Rules"
+        icon="⚖"
+        dirty={Boolean(dirty)}
+        actions={
+          <>
+            {submitOk ? (
+              <span className="text2" style={{ fontSize: 11, color: 'var(--green2)' }}>
+                ✅ Saved
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!dirty || save.isPending}
+              onClick={() => void onSave()}
+            >
+              {save.isPending ? (
+                <>
+                  <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </button>
+          </>
+        }
+      />
 
       {submitError ? (
         <div
@@ -156,7 +176,7 @@ function ApprovalConfigPage(): React.JSX.Element {
             background: 'rgba(239,68,68,0.06)',
             border: '1px solid rgba(239,68,68,0.3)',
             borderRadius: 6,
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >
@@ -167,25 +187,25 @@ function ApprovalConfigPage(): React.JSX.Element {
       {/* PO Approval block */}
       <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
         <div
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 12,
+          }}
         >
           <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>🛒 Purchase Order Approval</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Purchase Order Approval</span>
             <div className="text3" style={{ fontSize: 11 }}>
-              When enabled, new POs are created as Draft and need Manager/Admin approval before printing.
+              {draft.poApproval
+                ? 'New POs start as Draft and open once an approver approves them.'
+                : 'PO approval is off. New POs open straight away.'}
             </div>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={draft.poApproval}
-              onChange={(e) => setDraft({ ...draft, poApproval: e.target.checked })}
-              style={{ width: 20, height: 20 }}
-            />
-            <span style={{ fontWeight: 700, color: draft.poApproval ? 'var(--green)' : 'var(--text3)' }}>
-              {draft.poApproval ? 'ENABLED' : 'DISABLED'}
-            </span>
-          </label>
+          <OnOffSwitch
+            checked={draft.poApproval}
+            onChange={(v) => setDraft({ ...draft, poApproval: v })}
+          />
         </div>
 
         <div
@@ -196,25 +216,24 @@ function ApprovalConfigPage(): React.JSX.Element {
             border: '1px solid var(--border)',
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 10 }}>
-            ₹ Amount Limits
-          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
-                Manager can approve PO up to (₹)
+                Manager PO Limit (₹)
               </label>
               <input
                 type="number"
                 value={draft.poManagerLimit}
                 min={0}
                 step={10000}
-                onChange={(e) => setDraft({ ...draft, poManagerLimit: Number(e.target.value) || 0 })}
+                onChange={(e) =>
+                  setDraft({ ...draft, poManagerLimit: Number(e.target.value) || 0 })
+                }
                 style={{
                   width: '100%',
                   fontSize: 16,
                   fontWeight: 700,
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   padding: 8,
                   border: '2px solid var(--amber)',
                   borderRadius: 6,
@@ -222,16 +241,8 @@ function ApprovalConfigPage(): React.JSX.Element {
                   textAlign: 'right',
                 }}
               />
-              <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
-                PO above this amount → only Admin can approve
-              </div>
-            </div>
-            <div>
-              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
-                Admin approval limit
-              </label>
-              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--green)', padding: 8 }}>
-                Unlimited ∞
+              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+                Admin: no limit.
               </div>
             </div>
           </div>
@@ -248,10 +259,7 @@ function ApprovalConfigPage(): React.JSX.Element {
           }}
         >
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)', marginBottom: 8 }}>
-            👤 PO Approvers (select users who can approve)
-          </div>
-          <div className="text3" style={{ fontSize: 10, marginBottom: 8 }}>
-            Only selected users can approve/reject POs. Admin always has approval rights.
+            PO Approvers
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {(users?.items ?? []).map((u) => {
@@ -265,7 +273,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                     alignItems: 'center',
                     gap: 5,
                     padding: '6px 10px',
-                    background: checked ? 'rgba(34,197,94,0.10)' : 'var(--bg)',
+                    background: checked ? 'var(--green3)' : 'var(--bg)',
                     border: `1px solid ${checked ? 'var(--green)' : 'var(--border)'}`,
                     borderRadius: 6,
                     cursor: isAdm ? 'default' : 'pointer',
@@ -289,227 +297,131 @@ function ApprovalConfigPage(): React.JSX.Element {
                   </span>
                   <span
                     style={{
-                      fontSize: 9,
+                      fontSize: 11,
                       color: 'var(--text3)',
                       padding: '1px 5px',
                       background: 'var(--bg4)',
                       borderRadius: 3,
                     }}
                   >
-                    {u.role}
+                    {roleLabel(u.role)}
                   </span>
-                  {isAdm ? (
-                    <span style={{ fontSize: 9, color: 'var(--green)' }}>(always)</span>
-                  ) : null}
                 </label>
               );
             })}
           </div>
         </div>
-
-        {/* Flow diagram */}
-        <div style={{ marginTop: 12, padding: 10, background: 'var(--bg3)', borderRadius: 6 }}>
-          <div className="text3" style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
-            FLOW:
-          </div>
-          {draft.poApproval ? (
-            <div
-              style={{
-                fontSize: 12,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                flexWrap: 'wrap',
-              }}
-            >
-              <span style={{ padding: '4px 10px', background: 'var(--bg4)', borderRadius: 4, fontWeight: 700 }}>
-                PO Created
-              </span>
-              <span className="text3">→</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(148,163,184,0.15)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--text3)',
-                }}
-              >
-                Draft
-              </span>
-              <span className="text3">→</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(34,197,94,0.10)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--green)',
-                }}
-              >
-                ✅ Approve
-              </span>
-              <span className="text3">or</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(239,68,68,0.10)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--red)',
-                }}
-              >
-                ❌ Reject
-              </span>
-              <span className="text3">→</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(34,197,94,0.15)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--green)',
-                }}
-              >
-                Open (Active)
-              </span>
-            </div>
-          ) : (
-            <div style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ padding: '4px 10px', background: 'var(--bg4)', borderRadius: 4, fontWeight: 700 }}>
-                PO Created
-              </span>
-              <span className="text3">→</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(34,197,94,0.15)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--green)',
-                }}
-              >
-                Open (Active) — No approval needed
-              </span>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* PR Approval — always on */}
-      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
-        <div
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-        >
-          <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>📋 Purchase Request Approval</span>
-            <div className="text3" style={{ fontSize: 11 }}>
-              PRs must be approved before PO can be created. This is always enabled.
-            </div>
-          </div>
-          <span style={{ fontWeight: 700, color: 'var(--green)' }}>ALWAYS ON</span>
-        </div>
-      </div>
-
-      {/* Invoice Approval */}
-      <div className="panel" style={{ padding: 16, marginBottom: 14, opacity: 0.7 }}>
-        <div
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-        >
-          <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>📄 Invoice Approval</span>
-            <div className="text3" style={{ fontSize: 11 }}>
-              Require approval before invoice can be printed and sent to client.
-            </div>
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={draft.invoiceApproval}
-              onChange={(e) => setDraft({ ...draft, invoiceApproval: e.target.checked })}
-              style={{ width: 20, height: 20 }}
-            />
-            <span style={{ fontWeight: 700, color: draft.invoiceApproval ? 'var(--green)' : 'var(--text3)' }}>
-              {draft.invoiceApproval ? 'ENABLED' : 'DISABLED'}
-            </span>
-          </label>
-        </div>
-      </div>
-
-      {/* Op Entry date/time edit approval (ADR-130). Unlike the two panels
-          above, this switch is actually read by the server — it decides
-          whether an operator's correction applies on save or waits here. */}
+      {/* PR approval (ADR-189). Read by the server: while on, only an
+          approved PR can be turned into a PO. PRs raised from a job card
+          are exempt. */}
       <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>⏱ Op Entry date/time changes</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Purchase Request Approval</span>
             <div className="text3" style={{ fontSize: 11 }}>
-              Require a manager to approve when an operator corrects the date or time of a log
-              entry. The entry keeps its original values until approved. Quantities can never be
-              edited either way.
+              {draft.prApproval
+                ? 'A PR must be approved before it can become a PO. PRs raised from a Job Card do not need it.'
+                : 'PR approval is off. Any open PR can become a PO.'}
             </div>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={draft.opEntryEditApproval}
-              onChange={(e) => setDraft({ ...draft, opEntryEditApproval: e.target.checked })}
-              style={{ width: 20, height: 20 }}
-            />
-            <span
-              style={{
-                fontWeight: 700,
-                color: draft.opEntryEditApproval ? 'var(--green)' : 'var(--text3)',
-              }}
-            >
-              {draft.opEntryEditApproval ? 'ENABLED' : 'DISABLED'}
-            </span>
-          </label>
+          <OnOffSwitch
+            checked={draft.prApproval}
+            onChange={(v) => setDraft({ ...draft, prApproval: v })}
+          />
+        </div>
+      </div>
+
+      {/* Op Entry date/time edit approval (ADR-130). Read by the server — it
+          decides whether an operator's correction applies on save or waits
+          here. */}
+      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Op Entry Date/Time Changes</span>
+            <div className="text3" style={{ fontSize: 11 }}>
+              Manager approves date/time corrections on Op Entry.
+            </div>
+          </div>
+          <OnOffSwitch
+            checked={draft.opEntryEditApproval}
+            onChange={(v) => setDraft({ ...draft, opEntryEditApproval: v })}
+          />
         </div>
       </div>
 
       {/* Approval History */}
       <div className="panel" style={{ padding: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
-          📜 Recent Approval Activity
+          Recent Approval Activity
         </div>
         {(history?.items ?? []).length === 0 ? (
           <div className="text3" style={{ fontSize: 11, padding: 10 }}>
             No approval activity yet.
           </div>
         ) : (
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Log Date</th>
-                <th>Action</th>
-                <th>Document Type</th>
-                <th>Details</th>
-                <th>User</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(history?.items ?? []).map((h) => {
-                const color =
-                  h.action === 'APPROVE' ? 'var(--green)' : h.action === 'REJECT' ? 'var(--red)' : 'var(--cyan)';
-                return (
-                  <tr key={h.id}>
-                    <td style={{ fontSize: 11 }}>{fmtTs(h.ts)}</td>
-                    <td style={{ fontWeight: 700, color, fontSize: 11 }}>{h.action}</td>
-                    <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{h.entity}</td>
-                    <td className="text2" style={{ fontSize: 11 }}>{h.detail}</td>
-                    <td style={{ fontSize: 11 }}>{h.userName ?? '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="tbl-wrap">
+            <table className="innovic-table tbl-grid">
+              <thead>
+                <tr>
+                  <th>Action Date &amp; Time</th>
+                  <th>Action</th>
+                  <th>Document Type</th>
+                  <th>Details</th>
+                  <th>User</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(history?.items ?? []).map((h) => {
+                  const color =
+                    h.action === 'APPROVE'
+                      ? 'var(--green)'
+                      : h.action === 'REJECT'
+                        ? 'var(--red)'
+                        : 'var(--cyan)';
+                  return (
+                    <tr key={h.id}>
+                      <td style={{ fontSize: 11 }}>{fmtDateTime(h.ts)}</td>
+                      <td style={{ fontWeight: 700, color, fontSize: 11 }}>
+                        {actionLabel(h.action)}
+                      </td>
+                      <td style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                        {docTypeLabel(h.entity)}
+                      </td>
+                      <td className="text2" style={{ fontSize: 11 }}>
+                        {h.detail}
+                      </td>
+                      <td style={{ fontSize: 11 }}>{h.userName ?? '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 {inr(draft.poManagerLimit)} ₹ — managers approve up to this amount; admins always have full approval rights.
-      </div>
     </div>
+  );
+}
+
+/** The page's On/Off checkbox (same look for every switch). */
+function OnOffSwitch(props: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+      <input
+        type="checkbox"
+        checked={props.checked}
+        onChange={(e) => props.onChange(e.target.checked)}
+        style={{ width: 20, height: 20 }}
+      />
+      <span style={{ fontWeight: 700, color: props.checked ? 'var(--green)' : 'var(--text3)' }}>
+        {props.checked ? 'On' : 'Off'}
+      </span>
+    </label>
   );
 }

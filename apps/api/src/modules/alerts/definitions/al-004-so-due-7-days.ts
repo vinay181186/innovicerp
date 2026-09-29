@@ -3,6 +3,7 @@
 // due_date to per-line, so we return one record per line. Filter:
 // line status = 'open' AND due_date BETWEEN today AND today + 7 days.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -10,8 +11,8 @@ export const al004SoDue7Days: RegisteredAlert = {
   definition: {
     code: 'AL-004',
     dept: 'sales',
-    name: 'Upcoming SO delivery (7 days)',
-    description: 'Open SO lines with due_date between today and 7 days from now.',
+    name: 'SO Delivery Due in 7 Days',
+    description: 'Open SO lines with a Due Date between today and 7 days from now.',
     columns: [
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'line_no', label: 'Ln', type: 'number' },
@@ -24,7 +25,7 @@ export const al004SoDue7Days: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT so.code AS so_code, sol.line_no,
+      SELECT so.id AS nav_id, so.code AS so_code, sol.line_no,
              COALESCE(c.name, so.customer_name, '') AS customer,
              COALESCE(i.code, sol.item_code_text, '') AS item,
              sol.order_qty, sol.due_date
@@ -41,6 +42,7 @@ export const al004SoDue7Days: RegisteredAlert = {
       ORDER BY sol.due_date, so.code, sol.line_no
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('sales-order', String(r['nav_id'])),
       so_code: (r['so_code'] as string) ?? '',
       line_no: r['line_no'] != null ? Number(r['line_no']) : 0,
       customer: (r['customer'] as string) ?? '',

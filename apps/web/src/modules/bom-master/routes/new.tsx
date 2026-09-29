@@ -38,15 +38,14 @@ function BomMasterNewPage(): React.JSX.Element {
       });
       exit.leave(() => void navigate({ to: '/bom-masters/$id', params: { id: created.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to create BOM.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save BOM. Try again.');
     }
   };
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to BOM Master. Ask an admin for L2 Data Entry or above in
-        Design.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to create BOMs. Ask an admin.
       </div>
     );
   }

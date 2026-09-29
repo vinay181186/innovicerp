@@ -26,11 +26,15 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { canDownloadDrawings, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
+import { useJobCardsList } from '@/modules/job-cards/api';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoQcStatusView } from '@/modules/so-qc-status/components/so-qc-status-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
+import { ActionMenu, ListHeader } from '@/ui/layout';
 import {
   qcDocViewUrl,
   saveQcDoc,
@@ -49,6 +53,19 @@ const searchSchema = z.object({
   search: z.string().optional(),
 });
 
+/** Screen words for the stored category codes (the code stays the value). */
+const CATEGORY_LABEL: Record<QcDocCategory, string> = {
+  'qc-docs': 'QC Docs',
+  drawing: 'Drawing',
+  inspection: 'Inspection',
+  tpi: 'TPI',
+  'incoming-qc': 'Incoming QC',
+  'po-docs': 'PO Docs',
+  design: 'Design',
+  dispatch: 'Dispatch',
+  other: 'Other',
+};
+
 export const qcDocumentsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'qc-docs',
@@ -56,7 +73,9 @@ export const qcDocumentsListRoute = createRoute({
   component: QcDocumentsPage,
 });
 
-function fmtDate(iso: string | null): string {
+/** Excel-export date (DD-MM-YYYY) — the export keeps its own format; the
+ *  screen uses the shared `fmtDate` (DD-MMM-YYYY). */
+function fmtExportDate(iso: string | null): string {
   if (!iso) return '';
   const d = iso.slice(0, 10);
   const [y, m, day] = d.split('-');
@@ -85,71 +104,51 @@ function QcDocumentsPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !effectiveFormPerms(eff, 'qcdocs_upload').view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to view QC Documents. Ask an admin.
       </div>
     );
   }
 
+  // Matrix | File Register | SO Status — the view switch sits in every view's
+  // ListHeader tools, so each view owns its own count, search and actions.
+  const setView = (v: 'matrix' | 'register' | 'status'): void =>
+    void navigate({ search: (p) => ({ ...p, view: v }), replace: true });
+  const toggle = (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {(
+        [
+          ['matrix', 'Matrix'],
+          ['register', 'File Register'],
+          ['status', 'SO Status'],
+        ] as const
+      ).map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          className={view === v ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+          aria-pressed={view === v}
+          onClick={() => setView(v)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (view === 'matrix') return <MatrixView toggle={toggle} />;
+  if (view === 'register') return <RegisterView toggle={toggle} />;
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🗃 QC Documents
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            type="button"
-            className={view === 'matrix' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-            onClick={() =>
-              void navigate({ search: (p) => ({ ...p, view: 'matrix' }), replace: true })
-            }
-          >
-            Matrix
-          </button>
-          <button
-            type="button"
-            className={view === 'register' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-            onClick={() =>
-              void navigate({ search: (p) => ({ ...p, view: 'register' }), replace: true })
-            }
-          >
-            File Register
-          </button>
-          <button
-            type="button"
-            className={view === 'status' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-            onClick={() =>
-              void navigate({ search: (p) => ({ ...p, view: 'status' }), replace: true })
-            }
-          >
-            SO Status
-          </button>
-        </div>
-      </div>
-
-      {view === 'matrix' ? (
-        <MatrixView />
-      ) : view === 'status' ? (
-        <SoQcStatusView />
-      ) : (
-        <RegisterView />
-      )}
+      <ListHeader title="QC Documents" icon="🗃" tools={toggle} />
+      <SoQcStatusView />
     </div>
   );
 }
 
 // ─── Matrix view (legacy renderQCDocuments L23039) ──────────────────────────
 
-function MatrixView(): React.JSX.Element {
+function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
   const maySave = useMaySaveFiles();
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
@@ -169,17 +168,19 @@ function MatrixView(): React.JSX.Element {
 
   const [detailJcId, setDetailJcId] = useState<string | null>(null);
 
-  if (soQuery.isLoading) {
+  if (soQuery.isLoading || sos.length === 0) {
     return (
-      <div className="empty-state" style={{ padding: 60 }}>
-        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
-      </div>
-    );
-  }
-  if (sos.length === 0) {
-    return (
-      <div className="empty-state" style={{ padding: 60 }}>
-        No SOs found
+      <div>
+        <ListHeader title="QC Documents" icon="🗃" tools={toggle} />
+        <div className="empty-state" style={{ padding: 60 }}>
+          {soQuery.isLoading ? (
+            <>
+              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
+            </>
+          ) : (
+            'No SOs yet.'
+          )}
+        </div>
       </div>
     );
   }
@@ -188,9 +189,9 @@ function MatrixView(): React.JSX.Element {
   const rowsAll = matrix?.rows ?? [];
   const overallLabel = (ov: string): string =>
     ov === 'complete'
-      ? 'Complete'
+      ? 'Completed'
       : ov === 'partial'
-        ? 'In Progress'
+        ? 'Partly Completed'
         : ov === 'no_jc'
           ? 'No JC'
           : 'No QC';
@@ -226,64 +227,65 @@ function MatrixView(): React.JSX.Element {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 10 }}>
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{
-            background: 'rgba(34,197,94,0.1)',
-            color: 'var(--green)',
-            border: '1px solid rgba(34,197,94,0.3)',
-          }}
-          disabled={!matrix}
-          onClick={() => matrix && exportMatrixExcel(matrix)}
-        >
-          ⬇ Export Excel
-        </button>
-        {/* Absent, not greyed, for anyone without the download tick — and the
-            server would refuse the links anyway. Export Excel beside it is a
-            spreadsheet this page builds itself, not a stored file, so it is
-            untouched. */}
-        {maySave ? (
-          <button
-            type="button"
-            className="btn btn-sm"
-            style={{
-              background: 'rgba(34,197,94,0.1)',
-              color: 'var(--green)',
-              border: '1px solid rgba(34,197,94,0.3)',
-            }}
-            disabled={!matrix}
-            onClick={() => matrix && void downloadAllReports(matrix)}
-          >
-            ⬇ Download All Reports
-          </button>
-        ) : null}
-      </div>
-
-      {/* SO selector (legacy L23042-23047) */}
-      <div style={{ marginBottom: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
-        <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700 }}>SELECT SO:</label>
-        <div style={{ minWidth: 320 }}>
-          <SearchableSelect
-            id="qc-docs-so"
-            value={selectedSo ?? null}
-            valueLabel={
-              matrix?.so
-                ? `${matrix.so.code}${matrix.so.customerName ? ` — ${matrix.so.customerName}` : ''}`
-                : undefined
-            }
-            onChange={(id) =>
-              void navigate({ search: (p) => ({ ...p, so: id ?? undefined }), replace: true })
-            }
-            onSearch={setSoSearch}
-            loading={soQuery.isFetching}
-            placeholder="🔍 Select SO — type code or customer…"
-            options={sos.map((s) => ({ id: s.id, code: s.code, name: s.customerName ?? '' }))}
-          />
-        </div>
-        {isFetching && !isLoading ? <Loader2 className="inline h-3 w-3 animate-spin" /> : null}
-      </div>
+      <ListHeader
+        title="QC Documents"
+        icon="🗃"
+        count={matrix ? filteredRows.length : undefined}
+        noun="line"
+        updating={isFetching && !isLoading}
+        searchSlot={
+          /* SO selector (legacy L23042-23047) — the matrix is one SO at a time. */
+          <div style={{ minWidth: 320 }}>
+            <SearchableSelect
+              id="qc-docs-so"
+              value={selectedSo ?? null}
+              valueLabel={
+                matrix?.so
+                  ? `${matrix.so.code}${matrix.so.customerName ? ` — ${matrix.so.customerName}` : ''}`
+                  : undefined
+              }
+              onChange={(id) =>
+                void navigate({ search: (p) => ({ ...p, so: id ?? undefined }), replace: true })
+              }
+              onSearch={setSoSearch}
+              loading={soQuery.isFetching}
+              placeholder="Search SO No. or customer…"
+              options={sos.map((s) => ({ id: s.id, code: s.code, name: s.customerName ?? '' }))}
+            />
+          </div>
+        }
+        tools={
+          <>
+            {toggle}
+            {/* One Export control. "All reports" is absent, not greyed, for
+                anyone without the download tick — the server would refuse the
+                links anyway. The Excel matrix is a spreadsheet this page builds
+                itself, not a stored file, so it is always offered. */}
+            <ActionMenu
+              label="⬇ Export"
+              items={[
+                {
+                  label: 'Excel (This Matrix)',
+                  disabled: !matrix,
+                  onClick: () => {
+                    if (matrix) exportMatrixExcel(matrix);
+                  },
+                },
+                {
+                  label: 'Download All Reports',
+                  hidden: !maySave,
+                  disabled:
+                    !matrix ||
+                    !matrix.rows.some((r) => r.cells.some((c) => c.hasDoc && c.storagePath)),
+                  onClick: () => {
+                    if (matrix) void downloadAllReports(matrix);
+                  },
+                },
+              ]}
+            />
+          </>
+        }
+      />
 
       {/* SO summary bar (legacy L23112) */}
       {matrix ? (
@@ -300,19 +302,19 @@ function MatrixView(): React.JSX.Element {
           }}
         >
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO</span>
             <br />
             <b style={{ color: 'var(--cyan)', fontSize: 16 }}>{matrix.so.code}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>CUSTOMER</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Customer</span>
             <br />
             <b>{matrix.so.customerName ?? ''}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>QC OPS</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>QC Ops</span>
             <br />
-            <b style={{ color: 'var(--green)' }}>{matrix.totalDone}</b>
+            <b style={{ color: 'var(--green2)' }}>{matrix.totalDone}</b>
             <span style={{ color: 'var(--text3)' }}> / {matrix.totalTotal}</span>
           </div>
           <div
@@ -347,7 +349,7 @@ function MatrixView(): React.JSX.Element {
 
       <div className="panel">
         <div className="tbl-wrap" style={{ border: '1px solid var(--border)', borderRadius: 8 }}>
-          <table className="innovic-table" style={{ width: '100%' }}>
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Ln</th>
@@ -357,7 +359,7 @@ function MatrixView(): React.JSX.Element {
                 <th>Order Qty</th>
                 <th>JC No.</th>
                 {cols.map((c) => (
-                  <th key={c} style={{ color: 'var(--green)', minWidth: 90 }}>
+                  <th key={c} style={{ color: 'var(--green2)', minWidth: 90 }}>
                     {c}
                   </th>
                 ))}
@@ -422,15 +424,17 @@ function MatrixView(): React.JSX.Element {
                   <td
                     colSpan={7 + cols.length}
                     className="empty-state"
-                    style={{ color: 'var(--red)' }}
+                    style={{ color: 'var(--red2)' }}
                   >
-                    {error instanceof Error ? error.message : 'Failed to load matrix'}
+                    {error instanceof Error
+                      ? error.message
+                      : 'Could not load QC Documents. Try again.'}
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={7 + cols.length} className="empty-state">
-                    No data
+                    {rowsAll.length === 0 ? 'No lines yet.' : 'No lines match.'}
                   </td>
                 </tr>
               ) : (
@@ -450,7 +454,7 @@ function MatrixView(): React.JSX.Element {
                     >
                       {r.clientPoLineNo ?? '—'}
                     </td>
-                    <td className="td-code" style={{ color: 'var(--purple)' }}>
+                    <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                       {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
                     </td>
                     <td style={{ fontSize: 11 }}>{r.itemName ?? ''}</td>
@@ -477,8 +481,12 @@ function MatrixView(): React.JSX.Element {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-        💡 ✅ Done (date) + ⬇ Download | ⏳ Pending (qty) | Waiting | — not applicable | Not
-        uploaded = QC done but no report attached
+        <span
+          style={{ cursor: 'help' }}
+          title="✅ Completed (date) + ⬇ Download · ⏳ QC Pending (qty) · Waiting · — not applicable · Report Missing = QC completed but no report attached"
+        >
+          ?
+        </span>
       </div>
 
       {detailJcId ? (
@@ -490,14 +498,14 @@ function MatrixView(): React.JSX.Element {
 
 function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
   if (!cell.applicable) {
-    return <td style={{ color: 'var(--text3)', fontSize: 10 }}>—</td>;
+    return <td style={{ color: 'var(--text3)', fontSize: 11 }}>—</td>;
   }
   if (cell.done) {
     if (cell.hasDoc) {
       return (
         <td>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--green)' }}>✅ Done</div>
-          <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate)}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--green2)' }}>✅ Completed</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(cell.docDate, '')}</div>
           <button
             type="button"
             className="btn"
@@ -508,9 +516,9 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
               background: 'rgba(34,197,94,0.1)',
               border: '1px solid rgba(34,197,94,0.3)',
               borderRadius: 3,
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 700,
-              color: 'var(--green)',
+              color: 'var(--green2)',
             }}
             onClick={(e) => {
               e.stopPropagation();
@@ -524,26 +532,28 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
     }
     return (
       <td>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green)' }}>✅ Done</div>
-        <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate)}</div>
-        <div style={{ fontSize: 9, color: 'var(--amber)', fontStyle: 'italic' }}>Not uploaded</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--green2)' }}>✅ Completed</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(cell.docDate, '')}</div>
+        <div style={{ fontSize: 11, color: 'var(--amber2)', fontStyle: 'italic' }}>
+          Report Missing
+        </div>
       </td>
     );
   }
   if (cell.pending) {
     return (
       <td>
-        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber)' }}>⏳ Pending</div>
-        <div style={{ fontSize: 9, color: 'var(--amber)' }}>{cell.qcPending} pcs</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)' }}>⏳ QC Pending</div>
+        <div style={{ fontSize: 11, color: 'var(--amber2)' }}>{cell.qcPending} pcs</div>
         {cell.accepted > 0 ? (
-          <div style={{ fontSize: 9, color: 'var(--green)' }}>{cell.accepted} acc</div>
+          <div style={{ fontSize: 11, color: 'var(--green2)' }}>{cell.accepted} Accepted</div>
         ) : null}
       </td>
     );
   }
   return (
     <td>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>Waiting</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>Waiting</div>
     </td>
   );
 }
@@ -561,19 +571,19 @@ function OverallTd({
   // linked JC gets a bare, left-aligned "No JC" td (L23072); a JC that simply
   // has no QC ops gets a centred "No QC" span (L23096).
   if (overall === 'no_jc') {
-    return <td style={{ color: 'var(--text3)', fontSize: 10 }}>No JC</td>;
+    return <td style={{ color: 'var(--text3)', fontSize: 11 }}>No JC</td>;
   }
   if (overall === 'no_qc') {
     return (
       <td>
-        <span style={{ color: 'var(--text3)', fontSize: 10 }}>No QC</span>
+        <span style={{ color: 'var(--text3)', fontSize: 11 }}>No QC</span>
       </td>
     );
   }
   if (overall === 'complete') {
     return (
       <td>
-        <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 11 }}>
+        <span style={{ color: 'var(--green2)', fontWeight: 700, fontSize: 11 }}>
           ✅ {done}/{total}
         </span>
       </td>
@@ -581,7 +591,7 @@ function OverallTd({
   }
   return (
     <td>
-      <span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 11 }}>
+      <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 11 }}>
         {done}/{total}
       </span>
     </td>
@@ -596,7 +606,7 @@ async function openStoragePath(path: string, refCode?: string | null): Promise<v
     const url = await qcDocViewUrl(path, refCode);
     window.open(url, '_blank', 'noopener');
   } catch (e) {
-    window.alert(e instanceof Error ? e.message : 'Could not open file');
+    window.alert(e instanceof Error ? e.message : 'Could not open file. Try again.');
   }
 }
 
@@ -621,9 +631,10 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
   for (const r of matrix.rows) {
     const cells = r.cells.map((c) => {
       if (!c.applicable) return '—';
-      if (c.done) return c.hasDoc ? `✅ Done (${fmtDate(c.docDate)})` : 'Done - No report';
+      if (c.done)
+        return c.hasDoc ? `Completed (${fmtExportDate(c.docDate)})` : 'Completed, Report Missing';
       if (c.pending)
-        return `⏳ Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} acc` : ''}`;
+        return `QC Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} Accepted` : ''}`;
       return 'Waiting';
     });
     const overall =
@@ -643,7 +654,7 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, `QC Docs ${matrix.so.code}`.slice(0, 31));
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = todayIst();
   XLSX.writeFile(wb, `QC_Documents_${matrix.so.code}_${stamp}.xlsx`);
 }
 
@@ -656,10 +667,7 @@ async function downloadAllReports(matrix: QcMatrixResponse): Promise<void> {
       if (c.hasDoc && c.storagePath) paths.push(c.storagePath);
     }
   }
-  if (paths.length === 0) {
-    window.alert(`No reports uploaded for ${matrix.so.code} yet`);
-    return;
-  }
+  if (paths.length === 0) return;
   for (const p of paths) {
     try {
       await saveQcDoc(p, null, matrix.so.code);
@@ -716,7 +724,7 @@ function LineDetailModal({
       >
         <div className="panel-hdr">
           <span className="panel-title">
-            📄 QC Documents{' '}
+            QC Documents{' '}
             {data
               ? `— ${itemCodeWithRev(data.itemCode, data.itemRevision, '')} (${data.jcCode})`
               : ''}
@@ -731,8 +739,8 @@ function LineDetailModal({
               <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
             </div>
           ) : isError ? (
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
+              {error instanceof Error ? error.message : 'Could not load line details. Try again.'}
             </div>
           ) : data ? (
             <LineDetailBody
@@ -781,34 +789,29 @@ function LineDetailBody({
         <div>
           {/* POL — the customer's own PO line number, read-only here; it is
               typed only on the Sales Order. */}
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>POL</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>POL</span>
           <br />
           <b className="mono" style={{ color: 'var(--purple)' }}>
             {data.clientPoLineNo ?? '—'}
           </b>
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM CODE</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Item Code</span>
           <br />
-          <b style={{ color: 'var(--purple)' }}>
+          <b className="mono fw-700" style={{ color: 'var(--text)' }}>
             {itemCodeWithRev(data.itemCode, data.itemRevision, '')}
           </b>{' '}
           {data.itemName ?? ''}
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>JC NO.</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>JC No.</span>
           <br />
           <b style={{ color: 'var(--cyan)' }}>{data.jcCode}</b>
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>ORDER QTY</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
           <br />
           <b>{data.orderQty} pcs</b>
-        </div>
-        <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>QC BATCHES</span>
-          <br />
-          <b>{data.batches.length}</b>
         </div>
         {maySave ? (
           <div style={{ marginLeft: 'auto' }}>
@@ -817,9 +820,10 @@ function LineDetailBody({
               className="btn btn-sm"
               style={{
                 background: 'rgba(34,197,94,0.1)',
-                color: 'var(--green)',
+                color: 'var(--green2)',
                 border: '1px solid rgba(34,197,94,0.3)',
               }}
+              disabled={!data.sections.some((s) => s.docs.some((d) => d.storagePath))}
               onClick={() => void downloadAllLine(data)}
             >
               ⬇ Download All
@@ -832,7 +836,7 @@ function LineDetailBody({
       {data.batches.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-            QC Inspection Batches
+            QC Inspection Batches ({data.batches.length})
           </div>
           {data.batches.map((b, i) => (
             <div
@@ -849,23 +853,23 @@ function LineDetailBody({
                 fontSize: 12,
               }}
             >
-              <span className="mono fw-700" style={{ color: 'var(--green)' }}>
+              <span className="mono fw-700" style={{ color: 'var(--green2)' }}>
                 Batch {i + 1}
               </span>
-              <span>{fmtDate(b.date)}</span>
+              <span>{fmtDate(b.date, '')}</span>
               <span>
-                Op{opSrNo(b.opSeq)}: <b>{b.operation}</b>
+                Op {opSrNo(b.opSeq)}: <b>{b.operation}</b>
               </span>
-              <span style={{ color: 'var(--green)' }}>
+              <span style={{ color: 'var(--green2)' }}>
                 Accepted: <b>{b.accepted}</b>
               </span>
               {b.rejected > 0 ? (
-                <span style={{ color: 'var(--red)' }}>
+                <span style={{ color: 'var(--red2)' }}>
                   Rejected: <b>{b.rejected}</b>
                 </span>
               ) : null}
               <span className="mono fw-700" style={{ color: 'var(--cyan)', marginLeft: 'auto' }}>
-                Sr. {b.srFrom} to {b.srTo}
+                Pieces {b.srFrom} to {b.srTo}
               </span>
             </div>
           ))}
@@ -920,9 +924,9 @@ function DocSection({
       ? 'var(--amber)'
       : 'var(--text3)';
   const statusLabel = isDone
-    ? '✅ Complete'
+    ? '✅ Completed'
     : uploads.length > 0
-      ? `⏳ Partial (${totalUploaded}/${totalNeeded})`
+      ? `⏳ Partly Uploaded (${totalUploaded}/${totalNeeded})`
       : '— No uploads';
 
   const nextSrFrom = uploads.length > 0 ? (uploads[uploads.length - 1]?.srTo ?? 0) + 1 : 1;
@@ -933,11 +937,11 @@ function DocSection({
 
   async function onUpload(file: File): Promise<void> {
     if (!companyId) {
-      setErr('No company on session');
+      setErr('Session expired. Log in again.');
       return;
     }
     if (srTo < srFrom) {
-      setErr('To must be ≥ From');
+      setErr('To cannot be less than From.');
       return;
     }
     setErr(null);
@@ -959,16 +963,13 @@ function DocSection({
       };
       await create.mutateAsync(input);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload document. Try again.');
     } finally {
       setBusy(false);
     }
   }
 
-  async function onDelete(id: string): Promise<void> {
-    if (!window.confirm('Delete this QC document upload?')) return;
-    await del.mutateAsync(id);
-  }
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; fileName: string } | null>(null);
 
   const showUpload = canUpload && (nextSrFrom <= totalNeeded || totalNeeded === 0);
 
@@ -991,13 +992,13 @@ function DocSection({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--green)' }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--green2)' }}>
             {section.docType}
           </span>
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>{section.fullName}</span>
           <span
             style={{
-              fontSize: 10,
+              fontSize: 11,
               padding: '2px 8px',
               borderRadius: 10,
               fontWeight: 700,
@@ -1005,7 +1006,7 @@ function DocSection({
               color: section.mandatory ? 'var(--red)' : 'var(--text3)',
             }}
           >
-            {section.mandatory ? 'MANDATORY' : 'OPTIONAL'}
+            {section.mandatory ? 'Mandatory' : 'Optional'}
           </span>
         </div>
         <span style={{ fontWeight: 700, fontSize: 11, color: statusColor }}>{statusLabel}</span>
@@ -1013,7 +1014,7 @@ function DocSection({
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ fontSize: 10, marginLeft: 6, color: 'var(--green)' }}
+            style={{ fontSize: 11, marginLeft: 6, color: 'var(--green2)' }}
             onClick={() => void downloadDocs(uploads, jcCode)}
             title="Save every file in this section"
           >
@@ -1035,16 +1036,16 @@ function DocSection({
           }}
         >
           <span className="mono fw-700" style={{ fontSize: 11, color: 'var(--cyan)' }}>
-            {up.srFrom != null && up.srTo != null ? `Sr. ${up.srFrom} – ${up.srTo}` : 'Sr. —'}
+            {up.srFrom != null && up.srTo != null ? `Pieces ${up.srFrom} – ${up.srTo}` : '—'}
           </span>
           {up.srFrom != null && up.srTo != null ? (
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>
               ({up.srTo - up.srFrom + 1} pcs)
             </span>
           ) : null}
-          <span style={{ fontSize: 10, color: 'var(--text2)' }}>{up.fileName}</span>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>{fmtDate(up.createdAt)}</span>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>{up.uploadedByText ?? ''}</span>
+          <span style={{ fontSize: 11, color: 'var(--text2)' }}>{up.fileName}</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(up.createdAt, '')}</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{up.uploadedByText ?? ''}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
             <button
               type="button"
@@ -1054,9 +1055,9 @@ function DocSection({
                 background: 'rgba(34,197,94,0.1)',
                 border: '1px solid rgba(34,197,94,0.3)',
                 borderRadius: 4,
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 700,
-                color: 'var(--green)',
+                color: 'var(--green2)',
               }}
               onClick={() => void openStoragePath(up.storagePath, jcCode)}
             >
@@ -1066,9 +1067,9 @@ function DocSection({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10, color: 'var(--red)' }}
+                style={{ fontSize: 11, color: 'var(--red2)' }}
                 disabled={del.isPending}
-                onClick={() => void onDelete(up.id)}
+                onClick={() => setPendingDelete({ id: up.id, fileName: up.fileName })}
               >
                 ✗
               </button>
@@ -1076,6 +1077,20 @@ function DocSection({
           </div>
         </div>
       ))}
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          title={`Delete ${pendingDelete.fileName}?`}
+          message="The file is removed from QC Documents."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={async () => {
+            await del.mutateAsync(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      ) : null}
 
       {showUpload ? (
         <div
@@ -1088,7 +1103,7 @@ function DocSection({
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Upload for:</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Pieces</span>
           <input
             type="number"
             min={1}
@@ -1133,7 +1148,7 @@ function DocSection({
               }}
             />
           </label>
-          {err ? <span style={{ fontSize: 11, color: 'var(--red)' }}>{err}</span> : null}
+          {err ? <span style={{ fontSize: 11, color: 'var(--red2)' }}>{err}</span> : null}
         </div>
       ) : null}
     </div>
@@ -1142,10 +1157,7 @@ function DocSection({
 
 async function downloadAllLine(data: QcLineDetailResponse): Promise<void> {
   const paths = data.sections.flatMap((s) => s.docs.map((d) => d.storagePath)).filter(Boolean);
-  if (paths.length === 0) {
-    window.alert('No documents uploaded yet');
-    return;
-  }
+  if (paths.length === 0) return;
   for (const p of paths) {
     try {
       await saveQcDoc(p, null, data.jcCode);
@@ -1174,7 +1186,7 @@ async function downloadDocs(
 
 // ─── Flat file register (original QC Documents list) ────────────────────────
 
-function RegisterView(): React.JSX.Element {
+function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
   // `me` is still needed for the company id the upload modal writes against.
@@ -1192,6 +1204,9 @@ function RegisterView(): React.JSX.Element {
   const canDelete = perms.edit && perms.approve;
   const del = useDeleteQcDocument();
   const [uploadOpen, setUploadOpen] = useState(false);
+  // The box mirrors the URL's ?search= (the server searches); typing writes
+  // the normalised term back, while the box keeps exactly what was typed.
+  const [term, setTerm] = useState(search.search ?? '');
 
   const query: ListQcDocumentsQuery = useMemo(
     () => ({
@@ -1208,76 +1223,82 @@ function RegisterView(): React.JSX.Element {
       const url = await qcDocViewUrl(d.storagePath, d.soCodeText);
       window.open(url, '_blank', 'noopener');
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not open file');
+      window.alert(e instanceof Error ? e.message : 'Could not open file. Try again.');
     }
   }
-  async function onDelete(d: QcDocument): Promise<void> {
-    if (!window.confirm(`Remove "${d.fileName}" from the QC document register?`)) return;
-    await del.mutateAsync(d.id);
-  }
+  const [pendingDelete, setPendingDelete] = useState<QcDocument | null>(null);
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" />
-          </span>
-        ) : null}
-        {perms.entry ? (
-          <button type="button" className="btn btn-primary" onClick={() => setUploadOpen(true)}>
-            📎 Upload Document
-          </button>
-        ) : null}
-      </div>
-
-      <div className="panel" style={{ marginBottom: 12, padding: '10px 14px' }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select
-            className="innovic-select"
-            style={{ width: 180, fontSize: 12 }}
-            value={search.category ?? ''}
-            onChange={(e) =>
-              void navigate({
-                search: (prev) => ({
-                  ...prev,
-                  category: (e.target.value || undefined) as QcDocCategory | undefined,
-                }),
-                replace: true,
-              })
-            }
-          >
-            <option value="">All categories</option>
-            {QC_DOC_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <input
-            className="innovic-input"
-            style={{ width: 240, fontSize: 12 }}
-            placeholder="🔍 Search this register…"
-            defaultValue={search.search ?? ''}
-            onChange={(e) => {
-              // normalizeSearchTerm (shared) — trims and collapses inner spacing so
-              // "  MTC  01 " and "MTC 01" are one query, one cache entry, one URL.
-              const v = normalizeSearchTerm(e.target.value);
-              void navigate({
-                search: (prev) => ({ ...prev, search: v || undefined }),
-                replace: true,
-              });
-            }}
-          />
-        </div>
-      </div>
+      <ListHeader
+        title="QC Documents"
+        icon="🗃"
+        count={data ? items.length : undefined}
+        noun="document"
+        filterNote={search.category ? CATEGORY_LABEL[search.category] : undefined}
+        search={term}
+        onSearch={(v) => {
+          setTerm(v);
+          // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+          // "  MTC  01 " and "MTC 01" are one query, one cache entry, one URL.
+          const n = normalizeSearchTerm(v);
+          void navigate({
+            search: (prev) => ({ ...prev, search: n || undefined }),
+            replace: true,
+          });
+        }}
+        searchPlaceholder="Search this register…"
+        updating={isFetching && !isLoading}
+        filters={
+          <>
+            <select
+              className="innovic-select"
+              aria-label="Category"
+              title="Category"
+              value={search.category ?? ''}
+              onChange={(e) =>
+                void navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    category: (e.target.value || undefined) as QcDocCategory | undefined,
+                  }),
+                  replace: true,
+                })
+              }
+            >
+              <option value="">All Categories</option>
+              {QC_DOC_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {CATEGORY_LABEL[c]}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+        onClearFilters={() => {
+          setTerm('');
+          void navigate({
+            search: (prev) => ({ ...prev, category: undefined, search: undefined }),
+            replace: true,
+          });
+        }}
+        filtersActive={!!search.category || term.trim() !== ''}
+        tools={toggle}
+        primary={
+          perms.entry ? (
+            <button type="button" className="btn btn-primary" onClick={() => setUploadOpen(true)}>
+              📎 Upload Document
+            </button>
+          ) : null
+        }
+      />
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
-                <th>Doc Type</th>
+                <th>Document Type</th>
                 <th>File Name</th>
                 <th>Category</th>
                 <th>JC No.</th>
@@ -1304,15 +1325,18 @@ function RegisterView(): React.JSX.Element {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={11} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load QC documents'}
+                  <td colSpan={11} className="empty-state" style={{ color: 'var(--red2)' }}>
+                    {error instanceof Error
+                      ? error.message
+                      : 'Could not load QC Documents. Try again.'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="empty-state">
-                    No QC documents. Click 📎 Upload Document to attach MIR / MCR / inspection
-                    reports.
+                    {search.category || search.search
+                      ? 'No QC Documents match.'
+                      : 'No QC Documents yet.'}
                   </td>
                 </tr>
               ) : (
@@ -1323,7 +1347,7 @@ function RegisterView(): React.JSX.Element {
                     </td>
                     <td style={{ fontSize: 12 }}>{d.fileName}</td>
                     <td className="text3" style={{ fontSize: 11 }}>
-                      {d.category}
+                      {(CATEGORY_LABEL as Record<string, string>)[d.category] ?? d.category}
                     </td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
                       {d.jcCodeText ?? '—'}
@@ -1337,7 +1361,7 @@ function RegisterView(): React.JSX.Element {
                         line behind the card, never items.revision. A document
                         with no card behind it gets the helper's dash, which is
                         what the JC and SO cells either side already show. */}
-                    <td className="td-code" style={{ color: 'var(--purple)' }}>
+                    <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                       {itemCodeWithRev(d.itemCode, d.itemRevision)}
                     </td>
                     <td style={{ fontSize: 11 }}>
@@ -1370,7 +1394,7 @@ function RegisterView(): React.JSX.Element {
                       {d.uploadedByText ?? '—'}
                     </td>
                     <td className="text3" style={{ fontSize: 11 }}>
-                      {d.createdAt.slice(0, 10)}
+                      {fmtDate(d.createdAt)}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
@@ -1386,7 +1410,7 @@ function RegisterView(): React.JSX.Element {
                             type="button"
                             className="btn btn-danger btn-sm"
                             disabled={del.isPending}
-                            onClick={() => void onDelete(d)}
+                            onClick={() => setPendingDelete(d)}
                           >
                             ✕
                           </button>
@@ -1400,6 +1424,20 @@ function RegisterView(): React.JSX.Element {
           </table>
         </div>
       </div>
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          title={`Delete ${pendingDelete.fileName}?`}
+          message="The file is removed from QC Documents."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={async () => {
+            await del.mutateAsync(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      ) : null}
 
       {uploadOpen && me?.companyId ? (
         <UploadModal companyId={me.companyId} onClose={() => setUploadOpen(false)} />
@@ -1419,8 +1457,20 @@ function UploadModal({
   const [file, setFile] = useState<File | null>(null);
   const [category, setCategory] = useState<QcDocCategory>('qc-docs');
   const [docType, setDocType] = useState<string>(QC_DOC_TYPES[0]);
+  // JC / SO are picked from their masters (a hand-typed code broke the link on
+  // every typo). The picked id is SAVED with the code — the SO matrix and the
+  // line detail find a JC's files by job_card_id, so code text alone never
+  // showed the MIR as done there.
+  const [jcId, setJcId] = useState<string | null>(null);
   const [jcCode, setJcCode] = useState('');
+  const [jcSearch, setJcSearch] = useState('');
+  const [soId, setSoId] = useState<string | null>(null);
   const [soCode, setSoCode] = useState('');
+  const [soSearch, setSoSearch] = useState('');
+  const jcQuery = useJobCardsList({ search: jcSearch || undefined, limit: 20, offset: 0 });
+  const soQuery = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
+  const jcItems = jcQuery.data?.items ?? [];
+  const soItems = soQuery.data?.items ?? [];
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1438,13 +1488,15 @@ function UploadModal({
         docType,
         fileName: file.name,
         storagePath,
+        ...(jcId ? { jobCardId: jcId } : {}),
         ...(jcCode.trim() ? { jcCodeText: jcCode.trim() } : {}),
+        ...(soId ? { salesOrderId: soId } : {}),
         ...(soCode.trim() ? { soCodeText: soCode.trim() } : {}),
       };
       await create.mutateAsync(input);
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload document. Try again.');
     } finally {
       setBusy(false);
     }
@@ -1509,31 +1561,64 @@ function UploadModal({
                 onChange={(e) => setCategory(e.target.value as QcDocCategory)}
               >
                 {QC_DOC_CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {CATEGORY_LABEL[c]}
+                  </option>
                 ))}
               </select>
             </div>
             <div className="form-grp">
-              <label className="form-label">JC No. (optional)</label>
-              <input
-                className="innovic-input"
-                value={jcCode}
-                onChange={(e) => setJcCode(e.target.value)}
-                placeholder="IN-JC-00001"
+              <label className="form-label">JC No.</label>
+              <SearchableSelect
+                id="qc-doc-upload-jc"
+                value={jcId}
+                valueLabel={jcCode || undefined}
+                onChange={(id) => {
+                  const jc = jcItems.find((j) => j.id === id);
+                  setJcId(id);
+                  setJcCode(jc?.code ?? '');
+                  // Fetch-from: a JC raised against an SO line already knows
+                  // its SO, so SO No. fills from it.
+                  if (jc?.sourceLink?.type === 'so') {
+                    setSoId(jc.sourceLink.salesOrderId);
+                    setSoCode(jc.sourceLink.code);
+                  }
+                }}
+                onSearch={setJcSearch}
+                loading={jcQuery.isFetching}
+                placeholder="Search JC No. or item…"
+                selectedLabel={(o) => o.code ?? o.name}
+                options={jcItems.map((j) => ({
+                  id: j.id,
+                  code: j.code,
+                  name: `${itemCodeWithRev(j.itemCode, j.itemRevision)} ${j.itemName}`,
+                }))}
               />
             </div>
             <div className="form-grp">
-              <label className="form-label">SO No. (optional)</label>
-              <input
-                className="innovic-input"
-                value={soCode}
-                onChange={(e) => setSoCode(e.target.value)}
-                placeholder="SO-001"
+              <label className="form-label">SO No.</label>
+              <SearchableSelect
+                id="qc-doc-upload-so"
+                value={soId}
+                valueLabel={soCode || undefined}
+                onChange={(id) => {
+                  setSoId(id);
+                  setSoCode(soItems.find((so) => so.id === id)?.code ?? '');
+                }}
+                onSearch={setSoSearch}
+                loading={soQuery.isFetching}
+                placeholder="Search SO No. or customer…"
+                selectedLabel={(o) => o.code ?? o.name}
+                options={soItems.map((so) => ({
+                  id: so.id,
+                  code: so.code,
+                  name: so.customerName ?? '',
+                }))}
               />
             </div>
           </div>
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
               {err}
             </div>
           ) : null}
@@ -1547,7 +1632,7 @@ function UploadModal({
               disabled={busy}
               onClick={() => void submit()}
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Upload &amp; Register
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save QC Document
             </button>
           </div>
         </div>

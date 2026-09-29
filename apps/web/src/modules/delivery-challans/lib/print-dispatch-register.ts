@@ -27,9 +27,17 @@ const STATUS_BADGE: Record<string, string> = {
   cancelled: 'b-grey',
 };
 
+const STATUS_LABEL: Record<string, string> = {
+  open: 'Open',
+  issued: 'Issued',
+  partially_received: 'Partly Received',
+  received: 'Received',
+  cancelled: 'Cancelled',
+};
+
 function statusBadge(status: string): string {
   const cls = STATUS_BADGE[status] ?? 'b-grey';
-  return `<span class="badge ${cls}">${esc(status.replaceAll('_', ' '))}</span>`;
+  return `<span class="badge ${cls}">${esc(STATUS_LABEL[status] ?? status.replaceAll('_', ' '))}</span>`;
 }
 
 export function printDispatchRegister(args: {
@@ -46,6 +54,9 @@ export function printDispatchRegister(args: {
   // sales-order number would read as a revision of the order itself. This is a
   // HEADER-grain register, so there is no item code here to hang it off — the
   // SO number is where the revision belongs. Nothing prints when there is none.
+  // The SO No. column itself prints only when at least one row has an SO —
+  // an OSP DC usually has none, and a column of "—" on every row is noise.
+  const showSo = rows.some((d) => Boolean(d.soCode ?? d.soRefText));
   const tableRows = rows
     .map(
       (d) => `<tr>
@@ -53,9 +64,9 @@ export function printDispatchRegister(args: {
       <td>${esc(fmtDate(d.dcDate))}</td>
       <td>${esc(d.vendorName ?? d.vendorCodeText ?? '—')}</td>
       <td style="font-family:monospace">${esc(d.poCode ?? d.poCodeText ?? '—')}</td>
-      <td style="font-family:monospace;font-size:10px">${esc(d.soCode ?? d.soRefText ?? '—')}${d.soLineRevision ? `<div style="font-family:inherit;color:#64748b">Rev ${esc(d.soLineRevision)}</div>` : ''}</td>
+      ${showSo ? `<td style="font-family:monospace;font-size:10px">${esc(d.soCode ?? d.soRefText ?? '—')}${d.soLineRevision ? `<div style="font-family:inherit;color:#64748b">Drawing Rev ${esc(d.soLineRevision)}</div>` : ''}</td>` : ''}
       <td style="text-align:center;font-weight:700">${d.lineCount}</td>
-      <td style="text-align:right;font-weight:700;color:#dc2626">${Number(d.totalQty).toFixed(2)}</td>
+      <td style="text-align:right;font-weight:700">${Number(d.totalQty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
       <td style="text-align:center">${statusBadge(d.status)}</td>
     </tr>`,
     )
@@ -64,24 +75,24 @@ export function printDispatchRegister(args: {
   const totalQty = summary.totalDispatched.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
   const body = `
-    <div class="doc-title"><h1>DISPATCH REGISTER</h1><span class="print-meta">${printedMeta()}</span></div>
+    <div class="doc-title"><h1>DC REGISTER</h1><span class="print-meta">${printedMeta()}</span></div>
     ${
       filterLabel
         ? `<div style="font-size:11px;color:#666;margin:-6px 0 12px">Filter: ${esc(filterLabel)}</div>`
         : ''
     }
     <div class="info-grid" style="grid-template-columns:repeat(3,1fr)">
-      <div class="info-box"><div class="info-lbl">Total Dispatched</div><div class="info-val" style="color:#dc2626;font-size:20px">${totalQty} pcs</div></div>
-      <div class="info-box"><div class="info-lbl">Dispatch Entries</div><div class="info-val">${summary.entryCount}</div></div>
-      <div class="info-box"><div class="info-lbl">Items Dispatched</div><div class="info-val">${summary.itemCount}</div></div>
+      <div class="info-box"><div class="info-lbl">Total Sent to Vendor</div><div class="info-val" style="font-size:20px">${totalQty} pcs</div></div>
+      <div class="info-box"><div class="info-lbl">DC Entries</div><div class="info-val">${summary.entryCount}</div></div>
+      <div class="info-box"><div class="info-lbl">Items Sent</div><div class="info-val">${summary.itemCount}</div></div>
     </div>
-    <table><thead><tr><th>DC No.</th><th>DC Date</th><th>Vendor</th><th>PO No.</th><th>SO No.</th><th>Lines</th><th>Dispatch Qty</th><th>DC Status</th></tr></thead>
-    <tbody>${tableRows || '<tr><td colspan="8" style="text-align:center;color:#aaa">No dispatch records</td></tr>'}</tbody></table>
+    <table><thead><tr><th>DC No.</th><th>DC Date</th><th>Vendor</th><th>PO No.</th>${showSo ? '<th>SO No.</th>' : ''}<th>Lines</th><th>Sent Qty</th><th>DC Status</th></tr></thead>
+    <tbody>${tableRows || `<tr><td colspan="${showSo ? 8 : 7}" style="text-align:center;color:#aaa">No DCs</td></tr>`}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Store In-Charge</div>
-      <div class="sign-box">Dispatch Manager</div>
+      <div class="sign-box">Purchase</div>
       <div class="sign-box">Authorised By</div>
     </div>`;
 
-  return printWindow({ title: 'Dispatch Register', body, company });
+  return printWindow({ title: 'DC Register', body, company });
 }

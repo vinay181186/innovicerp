@@ -5,21 +5,26 @@
 // longer removes stock from the shelf, so the dispatch draws on this line's
 // reservation first and then on free stock.
 //
-// Styled to SO Master (sales-orders/components/sales-order-form.tsx): top action
-// bar carrying Back + title + crumb + Cancel/Save, a 4-up header grid, and the
-// shared line-item table. Errors stay at the bottom, next to the fields that
-// caused them. The payload and the mutation are unchanged; the qty cap moved
+// Create-page pattern (ERPNext gap report 2026-09-26): sticky PageHeader with
+// Cancel + Save top-right (Ctrl+S saves), the header on the 12-column grid, and
+// the shared line-item table. Errors show right under the header, where Save
+// is. "Add all pending lines" pre-fills one card per pending SO line (and runs
+// once on arrival with ?so=). The payload and the mutation are unchanged; the qty cap moved
 // from "available" to "pending" with ADR-180 (see the validation block below).
 
 import type { DispatchableLine } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createRoute, useNavigate } from '@tanstack/react-router';
+import { Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import {
   useCreateDispatch,
   useDispatchableSo,
@@ -40,7 +45,7 @@ export const customerDispatchNewRoute = createRoute({
 });
 
 function todayStr(): string {
-  return todayLocal();
+  return todayIst();
 }
 
 function CustomerDispatchNewPage(): React.JSX.Element {
@@ -81,6 +86,39 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     return lines.find((l) => l.salesOrderLineId === soLineId) ?? null;
   }
 
+  // FLOW HELPER (frontend only): one card per SO line that still has a
+  // pending qty and is not already on a card, pre-filled with the most the
+  // live check below allows (pending, capped at what can go now). Every card
+  // stays editable; a line that can send nothing right now is added blank so
+  // the user still sees it.
+  function addAllPendingLines(): void {
+    setCards((cs) => {
+      const onCards = new Set(cs.map((c) => c.soLineId));
+      const added: LineCard[] = lines
+        .filter((l) => l.pendingQty > 0 && !onCards.has(l.salesOrderLineId))
+        .map((l) => {
+          const cap = Math.min(l.availableQty, l.pendingQty);
+          return {
+            id: nextId.current++,
+            soLineId: l.salesOrderLineId,
+            qty: cap > 0 ? String(cap) : '',
+          };
+        });
+      return [...cs, ...added];
+    });
+  }
+
+  // Arriving with ?so= (e.g. the Assembly Tracker's Dispatch button): add the
+  // pending lines once, as soon as that SO's lines have loaded, if the user
+  // has not started on the lines already.
+  const autoFilled = useRef(false);
+  useEffect(() => {
+    if (autoFilled.current || !preselectSo || soId !== preselectSo) return;
+    if (!dispatchable || cards.length > 0) return;
+    autoFilled.current = true;
+    addAllPendingLines();
+  }, [dispatchable, soId, preselectSo]);
+
   function addLine(): void {
     setCards((cs) => [...cs, { id: nextId.current++, soLineId: null, qty: '' }]);
   }
@@ -118,8 +156,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       lineErrors.set(
         c.id,
         cap === line.pendingQty
-          ? `Only ${cap} still pending on this line — reduce the qty to ${cap} or less.`
-          : `Only ${cap} can be dispatched now (this line's reserved stock plus free stock) — reduce the qty to ${cap} or less.`,
+          ? `Dispatch Qty cannot be more than Pending (${cap}).`
+          : `Dispatch Qty cannot be more than Dispatchable (${cap}).`,
       );
       continue;
     }
@@ -134,8 +172,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!soId) return setErr('Select an SO');
-    if (cards.length === 0) return setErr('Add at least one line');
+    if (!soId) return setErr('SO No. is required.');
+    if (cards.length === 0) return setErr('Add at least one line.');
 
     // Resolve each card → SO line and VALIDATE (no silent clamp): an over-qty is
     // a hard block so the user sees why, instead of us quietly reducing it.
@@ -145,12 +183,12 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       if (!line) return setErr('Pick an item on every line (or remove the empty line).');
       const raw = c.qty.trim() === '' ? 0 : Number(c.qty);
       if (Number.isNaN(raw) || raw < 0) {
-        return setErr(`${line.itemName}: enter a valid dispatch quantity.`);
+        return setErr(`${line.itemName}: enter a valid Dispatch Qty.`);
       }
       const lineCap = Math.min(line.availableQty, line.pendingQty);
       if (raw > lineCap) {
         return setErr(
-          `${line.itemName}: only ${lineCap} can be dispatched (you entered ${raw}). Reduce the qty to ${lineCap} or less.`,
+          `${line.itemName}: Dispatch Qty (${raw}) cannot be more than Dispatchable (${lineCap}).`,
         );
       }
       if (raw <= 0) continue;
@@ -160,10 +198,10 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       salesOrderLineId,
       qty,
     }));
-    if (payloadLines.length === 0) return setErr('Enter a dispatch qty on at least one line');
+    if (payloadLines.length === 0) return setErr('Enter a Dispatch Qty on at least one line.');
 
     try {
-      await create.mutateAsync({
+      const saved = await create.mutateAsync({
         salesOrderId: soId,
         dispatchDate,
         transport: transport || undefined,
@@ -171,17 +209,42 @@ function CustomerDispatchNewPage(): React.JSX.Element {
         remarks: remarks || undefined,
         lines: payloadLines,
       });
-      exit.leave(goBack);
+      // Land on the new dispatch — Print DC and Create Invoice are right there,
+      // instead of hunting for the new DSP on the list.
+      exit.leave(() => void navigate({ to: '/customer-dispatches/$id', params: { id: saved.id } }));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to create dispatch');
+      setErr(e instanceof Error ? e.message : 'Could not save Dispatch. Try again.');
     }
   }
 
+  // Ctrl+S runs the same Save as the header button, only while it is enabled.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  const runSave = useCallback(() => void submitRef.current(), []);
+  useSaveShortcut(runSave, canSave);
+  const dirty = cards.length > 0 || transport !== '' || vehicleNo !== '' || remarks !== '';
+
+  // SO picker rows: "SO code — Customer". Filtered client-side over the list
+  // already loaded (no server search on this endpoint).
+  const soOptions = useMemo(
+    () =>
+      (soOpts?.options ?? []).map((o) => ({
+        id: o.salesOrderId,
+        code: o.soCode,
+        name: o.customer ?? '',
+      })),
+    [soOpts],
+  );
+  // The picker shows a chosen SO only through valueLabel (e.g. arriving ?so=).
+  const soValueLabel = useMemo(() => {
+    const o = soOptions.find((x) => x.id === soId);
+    return o ? `${o.code} — ${o.name}` : undefined;
+  }, [soOptions, soId]);
+
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to Customer Dispatch. Ask an admin for L2 Data Entry or
-        above in Sales.
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to create Dispatches. Ask an admin.
       </div>
     );
   }
@@ -189,198 +252,139 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <div className="panel">
-        <div className="panel-body">
-          {/* Top action bar — SO Master keeps Save/Cancel here, not in a sticky
-              footer, so they stay visible with the header fields. */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              flexWrap: 'wrap',
-              paddingBottom: 10,
-              marginBottom: 12,
-              borderBottom: '1px solid var(--border)',
-            }}
-          >
-            <Link to="/customer-dispatches" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-            <div className="panel-title" style={{ fontSize: 16 }}>
-              🚚 New Customer Dispatch
-            </div>
-            <div className="text3" style={{ fontSize: 11 }}>
-              Sales &amp; CRM › Customer Dispatch › New
-            </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+      <PageHeader
+        sticky
+        title="New Customer Dispatch"
+        backLabel="Back to Customer Dispatch"
+        onBack={goBack}
+        dirty={dirty}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!canSave}
+              title={
+                lineErrors.size > 0
+                  ? 'Fix the highlighted lines — Dispatch Qty cannot be more than Pending.'
+                  : undefined
+              }
+              onClick={() => void submit()}
+            >
+              {create.isPending ? 'Saving…' : 'Save Dispatch'}
+            </button>
+          </>
+        }
+      />
+
+      {/* Save error right under the header's Save. */}
+      {err ? (
+        <Banner tone="error" role="alert">
+          {err}
+        </Banner>
+      ) : null}
+
+      <Panel title="Dispatch Details">
+        <FormGrid>
+          {/* Row 1 — SO No. · Dispatch Date · Dispatch No. (6 + 3 + 3). */}
+          <FormField label="SO No." required size="lg" htmlFor="dispatchSo">
+            <SearchableSelect
+              id="dispatchSo"
+              value={soId || null}
+              // Null arrives on the first keystroke; only a real pick changes the
+              // SO, or typing would clear the auto-filled lines.
+              onChange={(id) => {
+                if (id) setSoId(id);
+              }}
+              options={soOptions}
+              valueLabel={soValueLabel}
+              placeholder="🔍 Type SO number or customer…"
+              emptyText="No SOs match."
+            />
+          </FormField>
+          <FormField label="Dispatch Date" size="sm" htmlFor="dispatchDate">
+            <input
+              id="dispatchDate"
+              type="date"
+              className="innovic-input"
+              value={dispatchDate}
+              onChange={(e) => setDispatchDate(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Dispatch No." size="sm" htmlFor="dispatchNo">
+            <input
+              id="dispatchNo"
+              className="innovic-input"
+              readOnly
+              value={next?.code ?? '(auto on save)'}
+            />
+          </FormField>
+
+          {/* Row 2 — Transporter · Vehicle No. (6 + 6). */}
+          <FormField label="Transporter" size="lg" htmlFor="transport">
+            <input
+              id="transport"
+              className="innovic-input"
+              autoComplete="off"
+              value={transport}
+              onChange={(e) => setTransport(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Vehicle No." size="lg" htmlFor="vehicleNo">
+            <input
+              id="vehicleNo"
+              className="innovic-input"
+              autoComplete="off"
+              value={vehicleNo}
+              onChange={(e) => setVehicleNo(e.target.value)}
+            />
+          </FormField>
+
+          {/* Row 3 — Remarks (full). */}
+          <FormField label="Remarks" size="full" htmlFor="remarks">
+            <input
+              id="remarks"
+              className="innovic-input"
+              autoComplete="off"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
+
+      {soId ? (
+        <Panel
+          title="Items"
+          actions={
+            <>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={() => exit.leave(goBack)}
+                onClick={addAllPendingLines}
+                disabled={!dispatchable}
+                title="Add every SO line that still has a pending qty"
               >
-                Cancel
+                Add all pending lines
               </button>
-              <button
-                type="button"
-                className="btn btn-success btn-sm"
-                disabled={!canSave}
-                title={
-                  lineErrors.size > 0
-                    ? 'Fix the highlighted lines — dispatch qty cannot exceed the pending qty.'
-                    : undefined
-                }
-                onClick={() => void submit()}
-              >
-                {create.isPending ? 'Saving…' : 'Create Dispatch'}
+              <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
+                <Plus size={13} /> Add Line
               </button>
-            </div>
-          </div>
-
-          <div className="form-grid-4" style={{ marginBottom: 10 }}>
-            <div className="form-grp form-span-2">
-              <label className="form-label" htmlFor="dispatchSo">
-                Sales Order<span className="req">★</span>
-              </label>
-              <select
-                id="dispatchSo"
-                className="innovic-select"
-                value={soId}
-                onChange={(e) => setSoId(e.target.value)}
-              >
-                <option value="">-- Select SO --</option>
-                {(soOpts?.options ?? []).map((o) => (
-                  <option key={o.salesOrderId} value={o.salesOrderId}>
-                    {o.soCode} — {o.customer ?? ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="dispatchNo">
-                Dispatch No.
-              </label>
-              <input
-                id="dispatchNo"
-                className="innovic-input"
-                readOnly
-                value={next?.code ?? '(auto on save)'}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="dispatchDate">
-                Dispatch Date
-              </label>
-              <input
-                id="dispatchDate"
-                type="date"
-                className="innovic-input"
-                value={dispatchDate}
-                onChange={(e) => setDispatchDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="transport">
-                Transport
-              </label>
-              <input
-                id="transport"
-                className="innovic-input"
-                autoComplete="off"
-                value={transport}
-                onChange={(e) => setTransport(e.target.value)}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="vehicleNo">
-                Vehicle No.
-              </label>
-              <input
-                id="vehicleNo"
-                className="innovic-input"
-                autoComplete="off"
-                value={vehicleNo}
-                onChange={(e) => setVehicleNo(e.target.value)}
-              />
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label" htmlFor="remarks">
-                Remarks
-              </label>
-              <input
-                id="remarks"
-                className="innovic-input"
-                autoComplete="off"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {soId ? (
-            <>
-              <div
-                style={{
-                  margin: '4px 0 8px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 10,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--cyan)',
-                      fontFamily: 'var(--mono)',
-                      fontWeight: 700,
-                      letterSpacing: '0.06em',
-                    }}
-                  >
-                    READY TO DISPATCH (produced + QC-accepted)
-                  </span>
-                  <span className="text3" style={{ fontSize: 11 }}>
-                    Add a line, then type an item code — name and quantities auto-fill from this SO.
-                  </span>
-                </div>
-                <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
-                  <Plus size={13} /> Add Line
-                </button>
-              </div>
-
-              <DispatchLineTable
-                cards={cards}
-                lines={lines}
-                lineErrors={lineErrors}
-                onPatch={patchLine}
-                onRemove={removeLine}
-              />
             </>
-          ) : null}
-
-          {err ? (
-            <div style={{ marginTop: 16 }}>
-              {/* SO Master's error box, with the border taken from --red rather
-                  than the hex it hard-codes — this module keeps zero literal
-                  colours. */}
-              <div
-                style={{
-                  color: 'var(--red)',
-                  background: 'var(--red3)',
-                  border: '1px solid var(--red)',
-                  borderRadius: 6,
-                  padding: '6px 10px',
-                  fontSize: 12,
-                }}
-              >
-                {err}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
+          }
+        >
+          <DispatchLineTable
+            cards={cards}
+            lines={lines}
+            lineErrors={lineErrors}
+            onPatch={patchLine}
+            onRemove={removeLine}
+          />
+        </Panel>
+      ) : null}
     </div>
   );
 }

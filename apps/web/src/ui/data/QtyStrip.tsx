@@ -1,5 +1,5 @@
 // <QtyStrip> — the bordered figure group on a document card:
-// TOTAL QTY · JC QTY · LINES, each a mono number over its uppercase label,
+// TOTAL QTY · JC QTY · LINES, each a mono number over its label,
 // hairline-divided inside one 6px-radius box.
 //
 // Fourteen files had their own local QtyBox / StatFact / MetricBox helper for
@@ -58,8 +58,6 @@ export function QtyStrip({ items, className, style }: QtyStripProps): React.JSX.
             className="mono text3"
             style={{
               fontSize: 'var(--fs-xs)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
             }}
           >
             {it.label}

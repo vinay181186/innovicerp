@@ -20,7 +20,9 @@
 //     enforces exactly that (`createPurchaseOrderInputSchema`), so ADR-138
 //     ("a PO is always raised against a Purchase Request") still holds.
 //
-// Styling is the screen-local `.pof-` palette (see `po-form-css.ts`).
+// Styling is the app theme: sticky PageHeader (Cancel + Save, Ctrl+S) →
+// Panel(FormGrid) → Panel(line table) → Panel(taxes + totals). The old private
+// `.pof-` palette (po-form-css.ts) is gone.
 
 import {
   type CreatePurchaseOrderInput,
@@ -31,19 +33,23 @@ import {
   type PurchaseRequestDetail,
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
-import { Link, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Check, Loader2, X } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { Check, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
-import { addDaysLocal, daysBetweenLocal, todayLocal } from '@/lib/date';
+import { addDaysLocal, daysBetweenLocal, todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { useItemsList } from '@/modules/items/api';
-import { useVendorsList } from '@/modules/vendors/api';
+import { useVendor, useVendorsList } from '@/modules/vendors/api';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreatePurchaseOrder, useUpdatePurchaseOrder } from '../api';
-import { PO_FORM_CSS } from './po-form-css';
+import { PO_TYPE_LABELS } from '../lib/po-labels';
 import { PoFormLine, type PoItemMasterRow } from './po-form-line';
 import {
   NEW_PO_LINE,
@@ -55,7 +61,7 @@ import {
 /** The Delivery Days box as a number, or null when it does not hold one yet —
  *  blank, a lone "-", "1e". Whole days only: half a day is not a delivery term.
  *  Negative IS parsed, so a date before the PO date reads honestly as "-3" and
- *  the footer can refuse the save. */
+ *  the blocking banner can refuse the save. */
 function parseWholeDays(raw: string): number | null {
   const t = raw.trim();
   if (t === '' || !/^-?\d+$/.test(t)) return null;
@@ -70,11 +76,30 @@ function parseWholeDays(raw: string): number | null {
  *  buyer picks on the PO. */
 const VENDOR_TBD_PLACEHOLDERS: ReadonlySet<string> = new Set(['TBD', '(VENDOR TBD)']);
 
+/** Create-mode opening lines: one per incoming PR (PR list "Create PO from
+ *  selected" → `?prIds=`, or the single `?prId=` from a PR card / page), each
+ *  holding only its sourcePrId — PoFormLine then loads the PR and fills item,
+ *  qty (the PR's open balance), rate and due date, the same way line 1 always
+ *  has. No PR → one blank line. */
+function initialLinesFor(prIds: string[] | undefined, prId: string | undefined): PoFormLineValue[] {
+  const ids = prIds && prIds.length > 0 ? [...new Set(prIds)] : prId ? [prId] : [];
+  if (ids.length === 0) return [{ ...NEW_PO_LINE }];
+  return ids.map((id) => ({ ...NEW_PO_LINE, sourcePrId: id }));
+}
+
+/** A tax % box the chosen Tax Type does not use: dimmed, still editable. */
+const DIM: React.CSSProperties = { opacity: 0.45 };
+
 export type PoFormProps =
   | {
       mode: 'create';
       /** Arrived from a PR page — line 1 opens with that PR already picked. */
       initialPrId?: string | undefined;
+      /** "Create PO from selected" on the PR list — one line per PR, each
+       *  seeded exactly like `initialPrId` seeds line 1. Wins over initialPrId. */
+      initialPrIds?: string[] | undefined;
+      /** "New PO" on a Vendor page — the Vendor box opens with that vendor. */
+      initialVendorId?: string | undefined;
     }
   | { mode: 'edit'; detail: PurchaseOrderDetail };
 
@@ -104,25 +129,22 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         : {
             header: {
               code: '',
-              poDate: todayLocal(),
+              poDate: todayIst(),
               poType: 'job_work',
               sgstPct: 0,
               cgstPct: 0,
               igstPct: 0,
+              ...(props.initialVendorId ? { vendorId: props.initialVendorId } : {}),
             },
-            lines: [
-              props.initialPrId
-                ? { ...NEW_PO_LINE, sourcePrId: props.initialPrId }
-                : { ...NEW_PO_LINE },
-            ],
+            lines: initialLinesFor(props.initialPrIds, props.initialPrId),
           },
   });
   const { register, control, handleSubmit, formState, setValue, watch, getValues } = form;
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
 
   // ── PO number. Built inline rather than via the shared <DocNumberInput>: the
-  //    10px label / 36px control / "✕ Already used" wording is local to this
-  //    screen, and restyling the shared component would move every other form.
+  //    "Already used" / "Number not used" wording and the type-driven refill
+  //    below are local to this screen.
   //
   //    The number depends on the PO TYPE (user, 2026-09-11): a material buy is
   //    IN-MPO-, job work IN-JWPO-, a service IN-SPO-, outsourcing IN-OPO-, and
@@ -166,7 +188,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // ── A line reports its loaded PR up here, so the header can seed itself from
   //    the FIRST PR picked. Both seeds are one-shot and overridable: a vendor or
   //    a remark the user has already set is never clobbered. Every PR seen is
-  //    also kept, so the footer can name a line whose PR belongs to a different
+  //    also kept, so the banner can name a line whose PR belongs to a different
   //    vendor than the header now holds.
   const [vendorSeedLabel, setVendorSeedLabel] = useState('');
   // The picked vendor's "CODE — Name", kept only so a line can say WHICH vendor
@@ -240,13 +262,29 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     setVendorSeedLabel(`${hit.code} — ${hit.name}`);
   }, [vendorSeedQ.data, seedVendorCode, getValues, setValue]);
 
+  // ── "New PO" from a Vendor page (`?vendorId=`): the id is already in the
+  //    header's default values; this only fetches the vendor so the Vendor box
+  //    can SHOW "CODE — Name" instead of a bare id. One-shot, and only while
+  //    the header still holds that same vendor — a vendor the buyer has since
+  //    picked is never relabelled.
+  const initialVendorId = props.mode === 'create' ? props.initialVendorId : undefined;
+  const { data: seedVendor } = useVendor(initialVendorId);
+  const vendorLabelSeeded = useRef(false);
+  useEffect(() => {
+    if (vendorLabelSeeded.current || !seedVendor) return;
+    vendorLabelSeeded.current = true;
+    if (getValues('header.vendorId') !== seedVendor.id) return;
+    setVendorSeedLabel(`${seedVendor.code} — ${seedVendor.name}`);
+  }, [seedVendor, getValues]);
+
   // ── Live money. Subtotal is the sum of the LINES, not the source PR.
   const lines = watch('lines') ?? [];
   const taxType = watch('header.taxType') ?? '';
   const isSplit = taxType === 'sgst_cgst';
   const isIgst = taxType === 'igst';
   const subtotal = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0);
-  const totalQty = lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+  // 3 places: line qtys may be decimal (KGS / MTR, 0172) — no 0.1 + 0.2 drift.
+  const totalQty = Math.round(lines.reduce((s, l) => s + (Number(l.qty) || 0), 0) * 1000) / 1000;
   const taxPct = isSplit
     ? (Number(watch('header.cgstPct')) || 0) + (Number(watch('header.sgstPct')) || 0)
     : isIgst
@@ -402,7 +440,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
   // Lines whose PR belongs to a DIFFERENT vendor than the header now names —
   // i.e. the buyer changed the vendor after picking PRs. Those lines are not
-  // wiped (that would throw away typing); they are named in the footer and the
+  // wiped (that would throw away typing); they are named in the banner and the
   // save stays blocked until they are fixed or removed. A PR with no vendor of
   // its own is never a mismatch — that covers an empty vendorCodeText AND the
   // placeholder text the generators write when Planning does not know the
@@ -429,18 +467,18 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       .map((x) => x.i + 1);
   }, [lines, prById, vendorId, vendorCode]);
 
-  // ── The ONE blocking message, shown bottom-left in amber. First problem wins,
+  // ── The ONE blocking message, shown under the header in amber. First problem wins,
   //    so the buyer is told what to do next rather than handed a list.
   const blocking = useMemo((): string | null => {
     if (!isEdit) {
-      if (code.trim() === '') return 'PO number is required';
+      if (code.trim() === '') return 'PO No. is required';
       if (docNo.duplicate) return 'That PO number is already used';
       if (docNo.formatInvalid) return docNo.error ?? 'PO number format is wrong';
     }
-    if (poDate.trim() === '') return 'PO date is required';
+    if (poDate.trim() === '') return 'PO Date is required';
     // 0 days (same-day delivery) is fine; earlier than the PO date is not.
     if (poDate && deliveryDate && deliveryDate < poDate) {
-      return 'Delivery Date is before the PO Date — check the delivery days';
+      return 'Due Date is before the PO Date — check the Delivery Days';
     }
     if (!vendorId && vendorCodeText.trim() === '') return 'Pick a vendor';
     if (wrongVendorLines.length > 0) {
@@ -534,7 +572,11 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
     try {
       if (props.mode === 'edit') {
-        const payload: UpdatePurchaseOrderInput = { header, lines: outLines };
+        // None on edit must CLEAR the stored tax type, so send null (not omit).
+        const payload: UpdatePurchaseOrderInput = {
+          header: { ...header, taxType: header.taxType ?? null },
+          lines: outLines,
+        };
         await updatePo.mutateAsync(payload);
         const editedId = props.detail.id;
         exit.leave(
@@ -567,73 +609,167 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         );
       }
     } catch (err) {
-      setSubmitError(
-        err instanceof Error
-          ? err.message
-          : isEdit
-            ? 'Failed to save the purchase order'
-            : 'Failed to create the purchase order',
-      );
+      setSubmitError(err instanceof Error ? err.message : 'Could not save PO. Try again.');
     }
   };
 
-  const colCount = isEdit ? 10 : 9;
+  // Eight data columns (Sr No. · PR No. · Item Code · Item Name · Qty · Rate ·
+  // Amount · Due Date) + the row-actions cell. Received (edit), RAM Remark and
+  // line Remarks live in each row's "▸ More" detail row.
+  const colCount = 9;
   // The ONE line that carries the shared PR notes — the first without a PR, or
   // line 1 when they all have one. Saying the same sentence under every row is
   // noise; saying it nowhere leaves a greyed-out control unexplained.
   const firstWithoutPr = lines.findIndex((l) => !l.sourcePrId);
   const hintLineIdx = lines.length === 0 ? -1 : Math.max(firstWithoutPr, 0);
 
+  // Ctrl+S runs the same Save as the header button — and is off whenever that
+  // button is disabled, so a held key can neither double-post nor bypass a block.
+  useSaveShortcut(() => void handleSubmit(onValid)(), !disabled);
+
+  const codeState = isEdit
+    ? undefined
+    : code.trim() === '' || docNo.error
+      ? 'is-bad'
+      : docNo.valid
+        ? 'is-ok'
+        : undefined;
+
   return (
-    <div className="pof-page pof-root">
+    <form onSubmit={handleSubmit(onValid)} style={{ maxWidth: 1280, margin: '0 auto' }}>
       {exit.dialog}
-      <style>{PO_FORM_CSS}</style>
 
-      {props.mode === 'edit' ? (
-        <Link
-          to="/purchase-orders/$id"
-          params={{ id: props.detail.id }}
-          className="btn btn-ghost btn-sm"
-          style={{ marginBottom: 10 }}
-        >
-          <ArrowLeft size={14} /> Back to PO
-        </Link>
-      ) : (
-        <Link to="/purchase-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-          <ArrowLeft size={14} /> Back to Purchase Orders
-        </Link>
-      )}
+      <PageHeader
+        sticky
+        title={isEdit ? 'Edit Purchase Order' : 'New Purchase Order'}
+        subtitle={
+          props.mode === 'edit' ? (
+            <span className="mono fw-700">{props.detail.code}</span>
+          ) : undefined
+        }
+        backLabel={isEdit ? 'Back to PO' : 'Back to Purchase Orders'}
+        onBack={goBack}
+        dirty={formState.isDirty}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={disabled}
+              title={blocking ?? 'Save (Ctrl+S)'}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Saving…
+                </>
+              ) : isEdit ? (
+                'Save Changes'
+              ) : (
+                'Save PO'
+              )}
+            </button>
+          </>
+        }
+      />
 
-      <form className="pof-card" onSubmit={handleSubmit(onValid)}>
-        <div className="pof-hdr">
-          <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8 }}>
-            <span className="pof-title">
-              {isEdit ? 'Edit Purchase Order' : 'Create Purchase Order'}
-            </span>
-            {props.mode === 'edit' ? <span className="pof-chip">{props.detail.code}</span> : null}
-          </span>
-          <span className="pof-hdr-note">
-            Fields marked <span className="pof-req">★</span> are required
-          </span>
-        </div>
+      {/* The ONE blocking message sits under the header, beside Save — first
+          problem wins, so the buyer is told what to do next. */}
+      {submitError ? (
+        <Banner tone="error" role="alert">
+          {submitError}
+        </Banner>
+      ) : null}
+      {blocking ? <Banner tone="warn">{blocking}</Banner> : null}
 
-        {/* ── Header: five fields, one row (six in edit — plus read-only Status). */}
-        <div className="pof-row">
-          <div className="pof-f-po">
-            <label className="pof-lbl" htmlFor="pof-code">
-              PO No.<span className="pof-req">★</span>
-            </label>
+      <Panel title="PO Details">
+        <FormGrid>
+          <VendorPicker
+            key={vendorSeedLabel}
+            id="pof-vendor"
+            className="form-grp f-lg"
+            labelText="Vendor"
+            value={vendorId}
+            // Changing this is a CASCADE, not just a field edit: every line's PR
+            // picker re-queries for the new vendor (the id flows down as
+            // `headerVendorId`), and a line still holding the OLD vendor's PR is
+            // named in the blocking banner — never wiped, that would throw away
+            // typing.
+            onChange={(id, label) => {
+              setVendorPickedLabel(label);
+              setValue('header.vendorId', id ?? undefined);
+            }}
+            initialLabel={
+              vendorSeedLabel || (props.mode === 'edit' ? (props.detail.vendorName ?? '') : '')
+            }
+            carriedText={vendorCodeText}
+          />
+
+          {/* standard (a buy) / job work (material out to a vendor) / service.
+              'outsource' is dead — it behaves like standard — so it stays
+              hidden to prevent mis-filing. */}
+          <FormField label="PO Type" size="md" htmlFor="pof-type">
+            <select id="pof-type" className="innovic-select" {...register('header.poType')}>
+              {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work' || t === 'service').map(
+                (t) => (
+                  <option key={t} value={t}>
+                    {PO_TYPE_LABELS[t]}
+                  </option>
+                ),
+              )}
+            </select>
+          </FormField>
+
+          {/* ── Delivery Days · Due Date — one controller pair.
+              Days is NOT stored anywhere: it is `Due Date − PO Date`, so an old
+              PO shows the right figure the moment it opens and the two can never
+              drift apart. Only the DATE is saved, in the same `dueDate` field it
+              has always used. */}
+          <FormField label="Delivery Days" size="xs" htmlFor="pof-delivery-days">
+            <input
+              id="pof-delivery-days"
+              type="number"
+              step="1"
+              className="innovic-input mono"
+              autoComplete="off"
+              placeholder="e.g. 10"
+              title="Days from the PO date. 0 means same day."
+              value={deliveryDays}
+              onChange={(e) => onDeliveryDaysChange(e.target.value)}
+            />
+          </FormField>
+
+          <FormField
+            label="PO No."
+            required
+            size="sm"
+            htmlFor="pof-code"
+            error={
+              isEdit
+                ? undefined
+                : code.trim() === ''
+                  ? 'PO No. is required'
+                  : docNo.checking
+                    ? undefined
+                    : docNo.duplicate
+                      ? 'Already used'
+                      : (docNo.error ?? undefined)
+            }
+            help={
+              isEdit ? undefined : docNo.checking ? (
+                'Checking…'
+              ) : (
+                <span style={{ color: 'var(--green2)' }}>
+                  <Check size={11} style={{ verticalAlign: -1 }} /> Number not used
+                </span>
+              )
+            }
+          >
             <input
               id="pof-code"
-              className={`pof-in pof-num ${
-                isEdit
-                  ? ''
-                  : code.trim() === '' || docNo.error
-                    ? 'pof-bad'
-                    : docNo.valid
-                      ? 'pof-ok'
-                      : ''
-              }`}
+              className={['innovic-input mono', codeState].filter(Boolean).join(' ')}
               autoComplete="off"
               readOnly={isEdit}
               // The shape the box expects follows the TYPE chosen beside it, so
@@ -647,173 +783,70 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                 if (!isEdit && code.trim()) setValue('header.code', docNo.padded);
               }}
             />
-            {isEdit ? null : code.trim() === '' ? (
-              <div className="pof-note pof-note-bad">
-                <X size={11} style={{ verticalAlign: -1 }} /> PO number is required
-              </div>
-            ) : docNo.checking ? (
-              <div className="pof-note">Checking…</div>
-            ) : docNo.duplicate ? (
-              <div className="pof-note pof-note-bad">
-                <X size={11} style={{ verticalAlign: -1 }} /> Already used
-              </div>
-            ) : docNo.error ? (
-              <div className="pof-note pof-note-bad">
-                <X size={11} style={{ verticalAlign: -1 }} /> {docNo.error}
-              </div>
-            ) : (
-              <div className="pof-note pof-note-ok">
-                <Check size={11} style={{ verticalAlign: -1 }} /> Available
-              </div>
-            )}
-          </div>
+          </FormField>
 
-          <div className="pof-f-date">
-            <label className="pof-lbl" htmlFor="pof-date">
-              PO Date<span className="pof-req">★</span>
-            </label>
+          <FormField label="PO Date" required size="sm" htmlFor="pof-date">
             <input
               id="pof-date"
               type="date"
-              className="pof-in pof-num"
+              className="innovic-input mono"
               {...register('header.poDate', { required: true })}
             />
-          </div>
+          </FormField>
 
-          <div className="pof-f-type">
-            <label className="pof-lbl" htmlFor="pof-type">
-              PO Type
-            </label>
-            {/* standard (a buy) / job work (material out to a vendor) / service.
-                'outsource' is dead — it behaves like standard — so it stays
-                hidden to prevent mis-filing. */}
-            <select id="pof-type" className="pof-in" {...register('header.poType')}>
-              {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work' || t === 'service').map(
-                (t) => (
-                  <option key={t} value={t}>
-                    {t.replaceAll('_', ' ')}
-                  </option>
-                ),
-              )}
-            </select>
-          </div>
-
-          <VendorPicker
-            key={vendorSeedLabel}
-            id="pof-vendor"
-            className="pof-f-vendor"
-            labelText="Vendor"
-            value={vendorId}
-            // Changing this is a CASCADE, not just a field edit: every line's PR
-            // picker re-queries for the new vendor (the id flows down as
-            // `headerVendorId`), and a line still holding the OLD vendor's PR is
-            // named in the footer — never wiped, that would throw away typing.
-            onChange={(id, label) => {
-              setVendorPickedLabel(label);
-              setValue('header.vendorId', id ?? undefined);
-            }}
-            initialLabel={
-              vendorSeedLabel || (props.mode === 'edit' ? (props.detail.vendorName ?? '') : '')
-            }
-            carriedText={vendorCodeText}
-          />
-
-          {/* ── Delivery Days · Delivery Date — one controller pair.
-              Days is NOT stored anywhere: it is `Delivery Date − PO Date`, so an
-              old PO shows the right figure the moment it opens and the two can
-              never drift apart. Only the DATE is saved, in the same `dueDate`
-              field it has always used. */}
-          <div className="pof-f-days">
-            <label className="pof-lbl" htmlFor="pof-delivery-days">
-              Delivery Days
-            </label>
-            <input
-              id="pof-delivery-days"
-              type="number"
-              step="1"
-              className="pof-in pof-num"
-              autoComplete="off"
-              placeholder="e.g. 10"
-              title="Days from the PO date. 0 means same day."
-              value={deliveryDays}
-              onChange={(e) => onDeliveryDaysChange(e.target.value)}
-            />
-          </div>
-
-          <div className="pof-f-date">
-            <label className="pof-lbl" htmlFor="pof-due">
-              Delivery Date
-            </label>
+          <FormField label="Due Date" size="sm" htmlFor="pof-due">
             <input
               id="pof-due"
               type="date"
-              className="pof-in pof-num"
+              className="innovic-input mono"
               {...register('header.dueDate')}
             />
-          </div>
+          </FormField>
 
-          {/* Status is read-only: it moves through Approve / Reject / Cancel and
-              the GRN cascade, never a plain edit. Absent on create — a new PO's
-              status is stamped by the server. */}
-          {props.mode === 'edit' ? (
-            <div className="pof-f-type">
-              <label className="pof-lbl" htmlFor="pof-status">
-                PO Status
-              </label>
-              <input
-                id="pof-status"
-                className="pof-in"
-                readOnly
-                title="Status changes via Approve / Reject / Cancel, not a plain edit"
-                value={props.detail.status.replaceAll('_', ' ')}
-              />
-            </div>
-          ) : null}
-
-          <div className="pof-f-full">
-            <label className="pof-lbl" htmlFor="pof-remarks">
-              PO Remarks
-            </label>
+          <FormField label="PO Remarks" size="full" htmlFor="pof-remarks">
             <input
               id="pof-remarks"
-              className="pof-in"
+              className="innovic-input"
               autoComplete="off"
-              placeholder="Notes for this purchase order"
               {...register('header.remarks')}
             />
-          </div>
-        </div>
+          </FormField>
+        </FormGrid>
+      </Panel>
 
-        {/* ── Lines. */}
-        <div className="pof-band">
-          <span className="pof-band-t">
-            PO Line Items
-            <span className="pof-band-sub">carried from PR — editable</span>
-          </span>
-          <span className="pof-band-r">
-            {fields.length} line{fields.length === 1 ? '' : 's'} · Qty {totalQty}
-          </span>
-        </div>
-
-        <div className="pof-tblwrap">
-          <table className="pof-tbl">
+      {/* ── Lines. */}
+      <Panel
+        title="Line Items"
+        bodyPadding="none"
+        actions={
+          <>
+            <span className="text3 mono">
+              {fields.length} line{fields.length === 1 ? '' : 's'} · Qty {totalQty}
+            </span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
+              + Add Line
+            </button>
+          </>
+        }
+      >
+        <div className="tbl-wrap">
+          <table className="innovic-table tbl-grid tbl-edit">
             <thead>
               <tr>
-                <th className="pof-sr" style={{ width: 52 }}>
+                <th className="th-num" style={{ width: 52 }}>
                   Sr No.
                 </th>
                 <th>PR No.</th>
                 <th>
-                  Item Code<span className="pof-req">★</span>
+                  Item Code<span className="req">★</span>
                 </th>
                 <th>Item Name</th>
-                <th className="pof-th-r">
-                  Order Qty<span className="pof-req">★</span>
+                <th className="th-num">
+                  Qty<span className="req">★</span>
                 </th>
-                <th className="pof-th-r">Rate ₹</th>
-                <th className="pof-th-r">Amount</th>
+                <th className="th-num">Rate (₹)</th>
+                <th className="th-num">Amount</th>
                 <th>Due Date</th>
-                {isEdit ? <th className="pof-th-r">Received</th> : null}
                 <th />
               </tr>
             </thead>
@@ -821,9 +854,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               {fields.length === 0 ? (
                 <tr>
                   <td colSpan={colCount}>
-                    <div className="pof-empty">
+                    <div className="empty-state">
                       No lines yet.{' '}
-                      <button type="button" className="pof-add" onClick={addLine}>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
                         + Add Line
                       </button>
                     </div>
@@ -856,7 +889,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                     itemsLoaded={itemsLoaded}
                     onPrLoaded={onPrLoaded}
                     onRemove={() => remove(idx)}
-                    onAddLine={addLine}
                     canRemove={fields.length > 1}
                   />
                 ))
@@ -864,101 +896,79 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             </tbody>
           </table>
         </div>
+      </Panel>
 
-        {/* ── Tax + running totals, one strip. */}
-        <div className="pof-tax">
-          <div className="pof-tax-f pof-tax-type">
-            <label className="pof-lbl" htmlFor="pof-taxtype">
-              Tax Type
-            </label>
-            <select id="pof-taxtype" className="pof-in" {...register('header.taxType')}>
-              <option value="">— None —</option>
+      {/* ── Tax + running totals. */}
+      <Panel title="Taxes and Totals">
+        <FormGrid>
+          <FormField label="Tax Type" size="md" htmlFor="pof-taxtype">
+            <select id="pof-taxtype" className="innovic-select" {...register('header.taxType')}>
+              <option value="">None</option>
               <option value="sgst_cgst">SGST + CGST</option>
               <option value="igst">IGST</option>
-              <option value="none">None</option>
             </select>
-          </div>
-          <div className={`pof-tax-f ${isSplit ? '' : 'pof-dim'}`}>
-            <label className="pof-lbl" htmlFor="pof-cgst">
-              CGST %
-            </label>
+          </FormField>
+          {/* The percentages the chosen Tax Type does not use are dimmed, never
+              disabled: a disabled registered input drops out of the form values. */}
+          <FormField label="CGST %" size="xs" htmlFor="pof-cgst">
             <input
               id="pof-cgst"
               type="number"
               step="0.01"
               min={0}
-              className="pof-in pof-num"
+              className="innovic-input mono"
+              style={isSplit ? undefined : DIM}
               {...register('header.cgstPct', { valueAsNumber: true })}
             />
-          </div>
-          <div className={`pof-tax-f ${isSplit ? '' : 'pof-dim'}`}>
-            <label className="pof-lbl" htmlFor="pof-sgst">
-              SGST %
-            </label>
+          </FormField>
+          <FormField label="SGST %" size="xs" htmlFor="pof-sgst">
             <input
               id="pof-sgst"
               type="number"
               step="0.01"
               min={0}
-              className="pof-in pof-num"
+              className="innovic-input mono"
+              style={isSplit ? undefined : DIM}
               {...register('header.sgstPct', { valueAsNumber: true })}
             />
-          </div>
-          <div className={`pof-tax-f ${isIgst ? '' : 'pof-dim'}`}>
-            <label className="pof-lbl" htmlFor="pof-igst">
-              IGST %
-            </label>
+          </FormField>
+          <FormField label="IGST %" size="xs" htmlFor="pof-igst">
             <input
               id="pof-igst"
               type="number"
               step="0.01"
               min={0}
-              className="pof-in pof-num"
+              className="innovic-input mono"
+              style={isIgst ? undefined : DIM}
               {...register('header.igstPct', { valueAsNumber: true })}
             />
-          </div>
+          </FormField>
+        </FormGrid>
 
-          {/* Preview of unsaved input: the server recomputes and stores the
-              figures itself — nothing here is transmitted as a total. */}
-          <div className="pof-tot">
-            <div className="pof-tot-l">Subtotal</div>
-            <div className="pof-tot-v">₹{inrFormat(subtotal)}</div>
-            <div className="pof-tot-l">Tax</div>
-            <div className="pof-tot-v">₹{inrFormat(taxAmt)}</div>
-            <div className="pof-tot-l pof-tot-big">PO Total</div>
-            <div className="pof-tot-v pof-tot-big">₹{inrFormat(poTotal)}</div>
-          </div>
+        {/* Preview of unsaved input: the server recomputes and stores the
+            figures itself — nothing here is transmitted as a total. */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'auto auto',
+            justifyContent: 'end',
+            alignItems: 'baseline',
+            gap: 'var(--sp-1) var(--sp-4)',
+            marginTop: 'var(--sp-3)',
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          <span className="form-label">Subtotal</span>
+          <span className="mono">₹{inrFormat(subtotal)}</span>
+          <span className="form-label">Tax</span>
+          <span className="mono">₹{inrFormat(taxAmt)}</span>
+          <span className="form-label fw-700">PO Total</span>
+          <span className="mono fw-700" style={{ fontSize: 'var(--fs-md)' }}>
+            ₹{inrFormat(poTotal)}
+          </span>
         </div>
-
-        {submitError ? (
-          <div className="pof-msg pof-msg-err" style={{ marginTop: 12, marginBottom: 0 }}>
-            {submitError}
-          </div>
-        ) : null}
-
-        <div className="pof-foot">
-          {blocking ? (
-            <span className="pof-foot-msg">{blocking}</span>
-          ) : (
-            <span className="pof-foot-hint">
-              {isEdit ? 'Ready to save' : 'Ready to create this purchase order'}
-            </span>
-          )}
-          <div className="pof-acts">
-            <button
-              type="button"
-              className="pof-btn pof-btn-cancel"
-              onClick={() => exit.leave(goBack)}
-            >
-              Cancel
-            </button>
-            <button type="submit" className="pof-btn pof-btn-go" disabled={disabled}>
-              {submitting ? <Loader2 size={13} className="animate-spin" /> : '✓'}{' '}
-              {isEdit ? 'Save Changes' : 'Create PO'}
-            </button>
-          </div>
-        </div>
-      </form>
+      </Panel>
 
       <datalist id={PO_FORM_ITEM_DATALIST_ID}>
         {items.map((it) => (
@@ -968,7 +978,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           </option>
         ))}
       </datalist>
-    </div>
+    </form>
   );
 }
 

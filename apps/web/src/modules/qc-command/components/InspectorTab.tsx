@@ -29,20 +29,24 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
         </div>
         {/* Legacy L18896 returns early with a bare line — no table — when empty. */}
         {perf.length === 0 ? (
-          <div className="empty-state">No inspections recorded yet</div>
+          <div className="empty-state">No inspections recorded yet.</div>
         ) : (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 {/* Legacy L18897 colours none of these headers. */}
                 <tr>
                   <th>Inspector</th>
-                  <th className="td-ctr">Inspections</th>
-                  <th className="td-ctr">JCs</th>
-                  <th className="td-ctr">Accepted</th>
-                  <th className="td-ctr">Rejected</th>
-                  <th className="td-ctr">Rejection Rate</th>
-                  <th className="td-ctr">Current Load</th>
+                  <th className="th-num">Inspections</th>
+                  <th className="th-num">JCs</th>
+                  <th className="th-num">Accepted</th>
+                  <th className="th-num">Rejected</th>
+                  <th className="th-num" title="Green ≤ 5%, Amber 6–15%, Red > 15%">
+                    Rejection Rate
+                  </th>
+                  <th className="th-num" title="Items now assigned to this inspector">
+                    Current Load
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -51,20 +55,20 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
                     <td className="fw-700" style={{ fontSize: 12 }}>
                       {p.name}
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td className="td-num mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {p.inspections}
                     </td>
-                    <td className="td-ctr mono">{p.jcs}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                    <td className="td-num mono">{p.jcs}</td>
+                    <td className="td-num mono" style={{ color: 'var(--green2)' }}>
                       {p.accepted}
                     </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                    <td className="td-num mono" style={{ color: 'var(--red2)' }}>
                       {p.rejected}
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: rejColor(p.rejRate) }}>
+                    <td className="td-num mono fw-700" style={{ color: rejColor(p.rejRate) }}>
                       {p.rejRate}%
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                    <td className="td-num mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {p.currentLoad}
                     </td>
                   </tr>
@@ -74,13 +78,6 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
           </div>
         )}
       </div>
-      {/* Legacy L18896 returns before emitting the tip when there are no rows. */}
-      {perf.length > 0 ? (
-        <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-          💡 Rejection Rate: Green ≤ 5%, Amber 6-15%, Red &gt; 15%. Current Load = items currently
-          assigned to the inspector.
-        </div>
-      ) : null}
     </div>
   );
 }

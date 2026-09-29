@@ -34,14 +34,10 @@
 //        — that JC is credited once, at PO close. See resolveGrnLineJobCardId.
 
 import { eq, sql } from 'drizzle-orm';
-import {
-  goodsReceiptNotes,
-  purchaseOrderLines,
-  purchaseOrders,
-  storeTransactions,
-} from '../../db/schema';
+import { goodsReceiptNotes, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { isProductionOrderLinkedJc } from '../../lib/production-order-link';
+import { postStockMove, roundQty } from '../../lib/stock-ledger';
 
 export async function recalcPoLineReceivedQty(
   tx: DbTransaction,
@@ -100,15 +96,20 @@ export async function recalcPoLineReceivedQty(
       COALESCE((
         SELECT SUM(nc.rejected_qty - nc.cleared_qty - nc.failed_qty)
         FROM public.nc_register nc
-        JOIN public.jc_ops o ON o.id = nc.jc_op_id
-        WHERE o.outsource_po_line_id = ${poLineId}::uuid
+        LEFT JOIN public.jc_ops o ON o.id = nc.jc_op_id
+        -- ADR-189: a bought-material NC (no job card) reaches its PO line
+        -- through the GRN line it was rejected on.
+        LEFT JOIN public.goods_receipt_note_lines ngl ON ngl.id = nc.grn_line_id
+        WHERE (o.outsource_po_line_id = ${poLineId}::uuid
+               OR (nc.job_card_id IS NULL AND ngl.purchase_order_line_id = ${poLineId}::uuid))
           AND nc.disposition = 'return_to_vendor'
           AND nc.delivery_challan_id IS NOT NULL
           AND nc.deleted_at IS NULL
       ), 0) AS total
   `);
   const row = (result as unknown as Array<{ total: unknown }>)[0];
-  const total = Math.max(0, Math.round(Number(row?.total ?? 0)));
+  // 3 places, not a whole number: a PO line may be in KGS / MTR (0172).
+  const total = Math.max(0, roundQty(Number(row?.total ?? 0)));
   await tx
     .update(purchaseOrderLines)
     .set({ receivedQty: total, updatedBy: adminUserId })
@@ -122,12 +123,19 @@ export async function recalcPoHeaderStatus(
 ): Promise<void> {
   // Pull the current header to check terminal/draft state.
   const headerRows = await tx
-    .select({ id: purchaseOrders.id, status: purchaseOrders.status })
+    .select({
+      id: purchaseOrders.id,
+      status: purchaseOrders.status,
+      shortClosedAt: purchaseOrders.shortClosedAt,
+    })
     .from(purchaseOrders)
     .where(eq(purchaseOrders.id, poId))
     .limit(1);
   const header = headerRows[0];
   if (!header) return;
+  // ADR-189 — a PO stopped by hand stays stopped: a late QC on its received
+  // lines must not walk it back to 'partial'.
+  if (header.shortClosedAt !== null) return;
   // Don't touch terminal or draft headers — the open/partial/qc_pending/closed
   // ladder only applies after the PO has been "opened" to vendors.
   if (header.status === 'cancelled' || header.status === 'draft') return;
@@ -185,46 +193,6 @@ export async function recalcPoHeaderStatus(
       .set({ status: nextStatus, updatedBy: adminUserId })
       .where(eq(purchaseOrders.id, poId));
   }
-}
-
-interface QcAcceptCascadeArgs {
-  tx: DbTransaction;
-  companyId: string;
-  adminUserId: string;
-  grnId: string;
-  grnLineId: string;
-  itemId: string | null;
-  qcAcceptedQty: number;
-  prevQcStatus: 'pending' | 'in_progress' | 'completed' | undefined;
-  nextQcStatus: 'pending' | 'in_progress' | 'completed';
-}
-
-export async function writeStoreTxnOnQcAccept(args: QcAcceptCascadeArgs): Promise<void> {
-  const {
-    tx,
-    companyId,
-    adminUserId,
-    grnId,
-    grnLineId,
-    itemId,
-    qcAcceptedQty,
-    prevQcStatus,
-    nextQcStatus,
-  } = args;
-  // Whole-GRN QC merge path: credit only on the non-completed → completed
-  // transition, with the full accepted qty. (The Incoming QC Register credits
-  // incrementally per inspect via creditGrnQcStock directly.)
-  if (nextQcStatus !== 'completed') return;
-  if (prevQcStatus === 'completed') return;
-  await creditGrnQcStock({
-    tx,
-    companyId,
-    adminUserId,
-    grnId,
-    grnLineId,
-    itemId,
-    qty: qcAcceptedQty,
-  });
 }
 
 /**
@@ -323,6 +291,24 @@ export async function resolveGrnLineJobCardId(
 }
 
 /**
+ * True when this GRN was raised by a JW DC Inward (0172: jw_dc_inward.
+ * goods_receipt_note_id). A JW DC is a plain store loop — the JW DC Outward
+ * took the material OUT of stock ('jw_out') and touched no Job Card op — so its
+ * receipt is a stock-in on QC accept, whatever PO line / op the GRN line would
+ * otherwise resolve to, and it never feeds the OSP op cascade (outsource
+ * returned qty, next-QC mirror, op NC). Job Card work goes out on the OSP DC.
+ */
+export async function isJwDcReceiptGrn(tx: DbTransaction, grnId: string): Promise<boolean> {
+  const rows = (await tx.execute(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM public.jw_dc_inward jdi
+      WHERE jdi.goods_receipt_note_id = ${grnId}::uuid AND jdi.deleted_at IS NULL
+    ) AS is_jw
+  `)) as unknown as Array<{ is_jw: boolean }>;
+  return rows[0]?.is_jw === true;
+}
+
+/**
  * Credit `qty` accepted pcs to stock via the grn_qc ledger — the single source
  * of truth for QC-accept stock movement. Locks the item row, reads current
  * on-hand, inserts one 'in' store_transaction. No-op when qty ≤ 0 (rejecting
@@ -345,29 +331,22 @@ export async function creditGrnQcStock(args: {
   const { tx, companyId, adminUserId, grnId, grnLineId, itemId, qty } = args;
   if (qty <= 0) return;
   if (!itemId) return;
-  // ADR-092: mid-route OSP returns are WIP, not finished goods. Store is
-  // credited once, by the JC's final QC op — not here.
-  if (await isMidRouteOutsourceReturn(tx, grnLineId)) return;
-  // ADR-170: an OSP return for a Job Card built by a Production Order (or a
-  // rework/repair child of one) is credited ONCE, when that Production Order
-  // is closed — not here, even when the OSP op is the JC's last op. A line
-  // that resolves to no jc_op (a plain purchase GRN) has no JC to be linked
-  // to, so it credits exactly as before; purchase_orders.po_type is never
-  // consulted.
-  const linkedJobCardId = await resolveGrnLineJobCardId(tx, grnLineId);
-  if (linkedJobCardId && (await isProductionOrderLinkedJc(tx, linkedJobCardId))) return;
-
-  // Lock the items row to serialize concurrent QC accepts on the same item.
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-
-  // Read current on-hand from v_item_stock; default to 0 when no prior txns.
-  const balanceRows = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
-  const stockAfter = stockBefore + qty;
+  // A JW DC receipt puts back what its JW DC Outward took out of stock — it is
+  // never Job Card WIP, so the two op-based skips below do not apply to it
+  // (see isJwDcReceiptGrn). Same stock-in the old 'jw_in' path wrote.
+  if (!(await isJwDcReceiptGrn(tx, grnId))) {
+    // ADR-092: mid-route OSP returns are WIP, not finished goods. Store is
+    // credited once, by the JC's final QC op — not here.
+    if (await isMidRouteOutsourceReturn(tx, grnLineId)) return;
+    // ADR-170: an OSP return for a Job Card built by a Production Order (or a
+    // rework/repair child of one) is credited ONCE, when that Production Order
+    // is closed — not here, even when the OSP op is the JC's last op. A line
+    // that resolves to no jc_op (a plain purchase GRN) has no JC to be linked
+    // to, so it credits exactly as before; purchase_orders.po_type is never
+    // consulted.
+    const linkedJobCardId = await resolveGrnLineJobCardId(tx, grnLineId);
+    if (linkedJobCardId && (await isProductionOrderLinkedJc(tx, linkedJobCardId))) return;
+  }
 
   // Look up the GRN code for the source_ref.
   const grnRows = await tx
@@ -377,17 +356,17 @@ export async function creditGrnQcStock(args: {
     .limit(1);
   const grnCode = grnRows[0]?.code ?? grnId;
 
-  await tx.insert(storeTransactions).values({
+  await postStockMove(tx, {
     companyId,
-    txnDate: new Date().toISOString().slice(0, 10),
     itemId,
     txnType: 'in',
     qty,
     sourceType: 'grn_qc',
     sourceRef: `${grnCode} / ln ${grnLineId.slice(0, 8)}`,
-    stockBefore,
-    stockAfter,
-    remarks: `GRN QC accept · ${qty} pcs`,
-    createdBy: adminUserId,
+    remarks: `GRN QC Accepted · ${qty} pcs`,
+    txnDate: new Date().toISOString().slice(0, 10),
+    userId: adminUserId,
+    itemCodeText: null,
+    guard: 'none',
   });
 }

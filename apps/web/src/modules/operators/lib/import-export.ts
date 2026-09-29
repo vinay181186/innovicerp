@@ -14,7 +14,7 @@ import { getCol, parseActiveStatus, readSheetRows } from '@/lib/xlsx-import';
 
 // No Code column — the server auto-generates the next OP-### on import.
 // No userId column — it links to a login and is not user-fillable.
-const COLUMNS = ['Name*', 'Department', 'Skills', 'Status (Active/Inactive)'] as const;
+const COLUMNS = ['Operator Name*', 'Department', 'Skills', 'Status (Active/Inactive)'] as const;
 
 export function downloadOperatorTemplate(): void {
   const sample = ['Ramesh Kumar', 'CNC', 'Turning, Milling', 'Active'];
@@ -22,7 +22,7 @@ export function downloadOperatorTemplate(): void {
   ws['!cols'] = [22, 16, 26, 18].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Operators');
-  XLSX.writeFile(wb, 'Operator_Import_Template.xlsx');
+  XLSX.writeFile(wb, 'Operator Import Template.xlsx');
 }
 
 export interface OperatorImportResult {
@@ -43,10 +43,11 @@ export async function parseOperatorImportFile(file: File): Promise<OperatorImpor
     // Code is optional — the server auto-generates the next OP-### when it is
     // omitted. A file that still carries a Code column is honoured if present.
     const code = getCol(r, ['Code*', 'Code', 'code', 'Operator ID', 'Operator Code']);
-    const name = getCol(r, ['Name*', 'Name', 'name', 'Operator Name']);
+    // 'Operator Name*' is the template header since 2026-09-26; older sheets carry 'Name*'.
+    const name = getCol(r, ['Operator Name*', 'Operator Name', 'Name*', 'Name', 'name']);
     if (!code && !name) return;
     if (!name) {
-      errors.push(`Row ${rowNum}: Name is required — skipped`);
+      errors.push(`Row ${rowNum}: Operator Name is required — skipped`);
       return;
     }
     if (code && seen.has(code)) {
