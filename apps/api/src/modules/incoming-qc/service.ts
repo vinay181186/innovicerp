@@ -14,6 +14,7 @@ import type {
   IncomingQcResponse,
   SubmitIncomingQcInput,
 } from '@innovic/shared';
+import { isTpiOp } from '@innovic/shared';
 import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
@@ -204,7 +205,7 @@ async function mirrorIncomingQcOntoNextQcOp(
   const src = srcRows[0];
   if (!src || src.opType !== 'outsource') return;
   const nextRows = await tx
-    .select({ id: jcOps.id, opType: jcOps.opType })
+    .select({ id: jcOps.id, opType: jcOps.opType, operation: jcOps.operation })
     .from(jcOps)
     .where(
       and(
@@ -217,6 +218,12 @@ async function mirrorIncomingQcOntoNextQcOp(
     .limit(1);
   const next = nextRows[0];
   if (!next || next.opType !== 'qc') return;
+  // A TPI op is NOT satisfied by our own Incoming QC (ADR-179 allows TPI
+  // directly after OSP). The third party must inspect the pieces: leave the
+  // TPI op at qc_pending so it shows on the TPI tab of the QC Call Register
+  // and is accepted only through the TPI submit (op-entry submitQcLog with
+  // isTpi), which also runs the last-op stock cascade.
+  if (isTpiOp(next)) return;
   const logDate = istToday();
   const inserted = await tx
     .insert(opLog)
