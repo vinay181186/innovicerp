@@ -266,7 +266,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const { data: partyMatData, isFetching: partyMatFetching } = useItemsList({
     itemType: 'party_supplied_material',
     ...(partyMatSearch.trim() ? { search: partyMatSearch.trim() } : {}),
-    limit: 50,
+    // Show ALL party-supplied materials, not a small page (user request): the
+    // dropdown loads the whole set (1000 = the query cap; party materials are a
+    // small catalogue), and server search still narrows as you type.
+    limit: 1000,
     offset: 0,
   });
   const partyMatItems = partyMatData?.items ?? [];
