@@ -5,6 +5,7 @@ import { AuthenticationError } from '../../lib/errors';
 import {
   closePurchaseRequestBalanceInputSchema,
   createPurchaseRequestInputSchema,
+  deletePurchaseRequestInputSchema,
   listPurchaseRequestsQuerySchema,
   updatePurchaseRequestInputSchema,
 } from './schema';
@@ -72,7 +73,9 @@ export async function purchaseRequestsRoutes(app: FastifyInstance): Promise<void
   app.delete('/purchase-requests/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.softDeletePurchaseRequest(id, req.user);
+    // ADR-197 — a reason is required to move a PR to Trash.
+    const { reason } = deletePurchaseRequestInputSchema.parse(req.body ?? {});
+    await service.softDeletePurchaseRequest(id, reason, req.user);
     reply.code(204);
     return null;
   });

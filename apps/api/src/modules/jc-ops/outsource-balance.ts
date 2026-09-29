@@ -14,13 +14,15 @@
 // mechanism the standalone PR form uses), which stamps the source op
 // (outsourceStatus='pr_raised' + outsourcePrId) atomically with the PR insert.
 
-import type { OutsourceOpBalanceInput } from '@innovic/shared';
+import { ActivityAction, type OutsourceOpBalanceInput } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { items, jcOps, jobCards, runningOps, vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { appendActivityLog } from '../activity-log/service';
+import { jcOpRef } from '../op-entry/audit';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { createPurchaseRequest } from '../purchase-requests/service';
 
@@ -59,7 +61,9 @@ export async function outsourceOpBalance(
       .select({
         id: jcOps.id,
         jobCardId: jcOps.jobCardId,
+        opSeq: jcOps.opSeq,
         operation: jcOps.operation,
+        oldVendorText: jcOps.outsourceVendorText,
       })
       .from(jcOps)
       .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
@@ -129,7 +133,7 @@ export async function outsourceOpBalance(
 
     // JC + item for the PR line.
     const jcRows = await tx
-      .select({ itemId: jobCards.itemId, itemName: items.name })
+      .select({ itemId: jobCards.itemId, itemName: items.name, jcCode: jobCards.code })
       .from(jobCards)
       .innerJoin(items, eq(items.id, jobCards.itemId))
       .where(and(eq(jobCards.id, op.jobCardId), eq(jobCards.companyId, companyId)))
@@ -156,6 +160,11 @@ export async function outsourceOpBalance(
       itemId: jc.itemId,
       itemName: jc.itemName,
       operation: op.operation,
+      jobCardId: op.jobCardId,
+      jcCode: jc.jcCode,
+      opSeq: op.opSeq,
+      oldVendorText: op.oldVendorText,
+      vendorCode: vendor.code,
     };
   });
 
@@ -178,6 +187,33 @@ export async function outsourceOpBalance(
     },
     user,
     { systemRaised: true },
+  );
+
+  // ADR-197 — SEND on the Job Card: the qty outsourced, the vendor, the PR.
+  // Its own transaction (the PR is committed by createPurchaseRequest above);
+  // the vendor change on the op rides along as before → after.
+  await appendActivityLog(
+    {
+      action: ActivityAction.Send,
+      entity: 'JobCard',
+      entityId: prep.jobCardId,
+      refId: prep.jcCode,
+      opRef: jcOpRef(prep.opSeq, prep.operation),
+      qty,
+      changes:
+        (prep.oldVendorText ?? null) !== prep.vendorCode
+          ? [
+              {
+                field: 'outsourceVendorId',
+                label: 'Vendor',
+                before: prep.oldVendorText ?? null,
+                after: prep.vendorCode,
+              },
+            ]
+          : null,
+      detail: `${prep.jcCode} ${jcOpRef(prep.opSeq, prep.operation)} — balance ${qty} outsourced to ${prep.vendorCode} (${pr.code})`,
+    },
+    user,
   );
 
   return { prId: pr.id, prCode: pr.code };

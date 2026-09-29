@@ -11,12 +11,13 @@ import type {
   ListJcOpsBoardQuery,
   ListJcOpsBoardResponse,
 } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import { ActivityAction, opSrNo } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { emitActivityLog } from '../activity-log/service';
+import { jcOpRef } from '../op-entry/audit';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -241,6 +242,7 @@ export async function changeJcOpMachine(
     // balance on CNC-02) are therefore allowed and BOTH records are kept.
     const opRows = (await tx.execute(sql`
       SELECT op.id,
+             op.job_card_id AS "jobCardId",
              op.op_seq AS "opSeq",
              op.operation,
              jc.code AS "jcCode",
@@ -256,6 +258,7 @@ export async function changeJcOpMachine(
         AND op.deleted_at IS NULL
       LIMIT 1
     `)) as unknown as Array<{
+      jobCardId: string;
       opSeq: number;
       operation: string;
       jcCode: string;
@@ -326,8 +329,18 @@ export async function changeJcOpMachine(
     await emitActivityLog(
       tx,
       {
-        action: 'EDIT',
-        entity: 'JC Operation',
+        action: ActivityAction.Edit,
+        entity: 'JobCard',
+        entityId: op.jobCardId,
+        opRef: jcOpRef(num(op.opSeq), op.operation),
+        changes: [
+          {
+            field: 'machineId',
+            label: 'Machine',
+            before: op.oldMachineCode ?? null,
+            after: machineRows[0].code,
+          },
+        ],
         detail:
           `Machine changed on ${op.jcCode} op ${opSrNo(num(op.opSeq))} ${op.operation} — ` +
           `${op.oldMachineCode ?? '(none)'} → ${machineRows[0].code}; ` +

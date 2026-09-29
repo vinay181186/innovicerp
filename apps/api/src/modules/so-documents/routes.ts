@@ -1,5 +1,10 @@
-import { createSoDocumentInputSchema, soDocumentDetailQuerySchema } from '@innovic/shared';
+import {
+  activityReasonSchema,
+  createSoDocumentInputSchema,
+  soDocumentDetailQuerySchema,
+} from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
 
@@ -27,6 +32,9 @@ export async function soDocumentsRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/so-documents/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = req.params as { id: string };
-    return service.deleteSoDocument(id, req.user);
+    // ADR-197 — a reason is required to delete a document (packages/shared is
+    // frozen, so the body schema lives here).
+    const { reason } = z.object({ reason: activityReasonSchema }).parse(req.body ?? {});
+    return service.deleteSoDocument(id, req.user, reason);
   });
 }

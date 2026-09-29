@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { activityReasonSchema } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
@@ -9,6 +10,9 @@ import {
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
+// ADR-197 — a delete says why (REASON_REQUIRED_ACTIONS). Module-local, so the
+// shared contract is untouched; the web sends it as the DELETE body.
+const deleteGrnBodySchema = z.object({ reason: activityReasonSchema });
 
 export async function goodsReceiptNotesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/goods-receipt-notes', async (req) => {
@@ -47,7 +51,8 @@ export async function goodsReceiptNotesRoutes(app: FastifyInstance): Promise<voi
   app.delete('/goods-receipt-notes/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.softDeleteGoodsReceiptNote(id, req.user);
+    const { reason } = deleteGrnBodySchema.parse(req.body ?? {});
+    await service.softDeleteGoodsReceiptNote(id, req.user, reason);
     reply.code(204);
     return null;
   });

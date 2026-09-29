@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const invoiceKeys = {
   all: ['invoices'] as const,
@@ -64,6 +65,7 @@ export function useCreateInvoice() {
     mutationFn: (input) => apiFetch<InvoiceDetail>('/invoices', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: invoiceKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
@@ -75,6 +77,7 @@ export function useAddPayment(invoiceId: string) {
       apiFetch<InvoiceDetail>(`/invoices/${invoiceId}/payments`, { method: 'POST', json: input }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: invoiceKeys.list() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(invoiceKeys.detail(invoiceId), updated);
     },
   });

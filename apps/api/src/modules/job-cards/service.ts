@@ -48,10 +48,16 @@ import {
   grandfatheredOspQcPairs,
 } from '../../lib/jc-osp-qc-rule';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { saveRouteCardForItem } from '../route-cards/service';
-import { opSrNo, stripStaleGeneratedTerminalQc } from '@innovic/shared';
+import {
+  ActivityAction,
+  type ActivityChange,
+  opSrNo,
+  stripStaleGeneratedTerminalQc,
+} from '@innovic/shared';
 import type {
   CreateRouteCardOpInput,
   DocumentTraceability,
@@ -2029,8 +2035,10 @@ export async function createJobCard(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
-        entity: 'Job Card',
+        action: ActivityAction.Create,
+        entity: 'JobCard',
+        entityId: jobCardId,
+        qty: input.orderQty,
         detail: `Created ${code} — ${item.code} x ${input.orderQty}${
           raisedPrCodes.length ? ` · raised OSP PR ${raisedPrCodes.join(', ')}` : ''
         }`,
@@ -2109,6 +2117,17 @@ async function runningOpIds(tx: DbTransaction, jobCardId: string): Promise<Set<s
   return new Set(rows.map((r) => r.id));
 }
 
+/** Header fields the Job Card form edits, with their screen labels (NAMING). */
+const JC_EDIT_FIELDS = [
+  { key: 'jcDate', label: 'JC Date' },
+  { key: 'itemCode', label: 'Item Code' },
+  { key: 'orderQty', label: 'JC Qty' },
+  { key: 'priority', label: 'Priority' },
+  { key: 'dueDate', label: 'Due Date' },
+  { key: 'remarks', label: 'Remarks' },
+  { key: 'drawingFilePath', label: 'Drawing' },
+] as const;
+
 export async function updateJobCard(
   id: string,
   input: JobCardWriteInput,
@@ -2142,6 +2161,15 @@ export async function updateJobCard(
         // ADR-193 phase 3a — kept when the edit payload leaves them out.
         rawMaterialItemId: jobCards.rawMaterialItemId,
         rmQtyPerPiece: jobCards.rmQtyPerPiece,
+        // ADR-197 — the before image of every header field the form edits.
+        jcDate: jobCards.jcDate,
+        priority: jobCards.priority,
+        dueDate: jobCards.dueDate,
+        remarks: jobCards.remarks,
+        drawingFilePath: jobCards.drawingFilePath,
+        itemCode: sql<
+          string | null
+        >`(SELECT i.code FROM public.items i WHERE i.id = ${jobCards.itemId})`,
       })
       .from(jobCards)
       .where(
@@ -2350,6 +2378,9 @@ export async function updateJobCard(
     // there was nothing to record; now it can, and a swap that leaves only the
     // generic "Updated <JC>" line is untraceable (ADR-125).
     const machineSwaps: string[] = [];
+    // ADR-197 — before → after of the routing, per op: machine / vendor /
+    // operation on a kept op, and ops added or removed.
+    const opChanges: ActivityChange[] = [];
 
     // Guard: a locked op may not be removed, retyped, or re-sequenced. `started`
     // wins over `committed` so its (logged-work) message shows when both apply.
@@ -2398,6 +2429,63 @@ export async function updateJobCard(
           `Op ${opSrNo(ex.opSeq)} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
         );
       }
+    }
+
+    for (let i = 0; i < ops.length; i += 1) {
+      const o = ops[i]!;
+      const t = types[i]!;
+      const ex = o.id ? existingById.get(o.id) : undefined;
+      const sr = opSrNo(i + 1);
+      if (!ex) {
+        opChanges.push({
+          field: `op.${i + 1}`,
+          label: `Op ${sr}`,
+          before: null,
+          after: o.operation,
+        });
+        continue;
+      }
+      if (t === 'process' && (ex.machineCodeText ?? '') !== (o.machineCode ?? '')) {
+        opChanges.push({
+          field: `op.${i + 1}.machine`,
+          label: `Op ${sr} Machine`,
+          before: ex.machineCodeText ?? null,
+          after: o.machineCode || null,
+        });
+      }
+      if (t === 'outsource' && (ex.outsourceVendorText ?? '') !== (o.outsourceVendorCode ?? '')) {
+        opChanges.push({
+          field: `op.${i + 1}.vendor`,
+          label: `Op ${sr} Vendor`,
+          before: ex.outsourceVendorText ?? null,
+          after: o.outsourceVendorCode || null,
+        });
+      }
+      if (ex.operation !== o.operation) {
+        opChanges.push({
+          field: `op.${i + 1}.operation`,
+          label: `Op ${sr} Operation`,
+          before: ex.operation,
+          after: o.operation,
+        });
+      }
+      if (ex.opType !== t) {
+        opChanges.push({
+          field: `op.${i + 1}.type`,
+          label: `Op ${sr} Type`,
+          before: ex.opType,
+          after: t,
+        });
+      }
+    }
+    for (const ex of existing) {
+      if (payloadIds.has(ex.id)) continue;
+      opChanges.push({
+        field: `op.removed.${ex.opSeq}`,
+        label: `Op ${opSrNo(ex.opSeq)} (removed)`,
+        before: ex.operation,
+        after: null,
+      });
     }
 
     const now = new Date();
@@ -2577,25 +2665,49 @@ export async function updateJobCard(
       );
     }
 
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'Job Card',
-        detail: `Updated ${head.code} — ${item.code} x ${input.orderQty}${
-          raisedPrCodes.length ? ` · raised OSP PR ${raisedPrCodes.join(', ')}` : ''
-        }${machineSwaps.length ? ` · machine changed: ${machineSwaps.join('; ')}` : ''}`,
-        refId: head.code,
-      },
-      companyId,
-      user,
-    );
+    const changes: ActivityChange[] = [
+      ...diffFields(
+        head,
+        {
+          jcDate: input.jcDate,
+          itemCode: item.code,
+          orderQty: input.orderQty,
+          priority: input.priority,
+          dueDate: input.dueDate ?? null,
+          remarks: input.remarks ?? null,
+          drawingFilePath: input.drawingFilePath ?? null,
+        },
+        JC_EDIT_FIELDS,
+      ),
+      ...opChanges,
+    ];
+    if (changes.length > 0 || raisedPrCodes.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'JobCard',
+          entityId: id,
+          changes,
+          detail: `Updated ${head.code} — ${item.code} x ${input.orderQty}${
+            raisedPrCodes.length ? ` · raised OSP PR ${raisedPrCodes.join(', ')}` : ''
+          }${machineSwaps.length ? ` · machine changed: ${machineSwaps.join('; ')}` : ''}`,
+          refId: head.code,
+        },
+        companyId,
+        user,
+      );
+    }
   });
 
   return { ...(await getJobCard(id, user)), routeCardWriteBack };
 }
 
-export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok: true }> {
+export async function deleteJobCard(
+  id: string,
+  user: AuthContext,
+  reason: string | null = null,
+): Promise<{ ok: true }> {
   // Delete = the edit+approve pair only L5 Department Admin and above hold. L3
   // Editor has edit but not approve; L4 Approver has approve but not edit.
   await requireFormAccess(user, 'jc_create', 'edit');
@@ -2614,22 +2726,26 @@ export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok
     await assertProductionOrderNotShortClosed(tx, id);
 
     const now = new Date();
+    // ADR-197 — deleted_by stamped with deleted_at (one stamp for card + ops).
+    const stamp = { ...softDeleteStamp(user), deletedAt: now };
     await tx
       .update(jobCards)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id })
       .where(eq(jobCards.id, id));
     // Soft-delete the ops too (op_log rows are preserved — FK is to jc_ops.id
     // which still exists; we never hard-delete to keep production history).
     await tx
       .update(jcOps)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id })
       .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
 
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
-        entity: 'Job Card',
+        action: ActivityAction.Delete,
+        entity: 'JobCard',
+        entityId: id,
+        reason,
         detail: `Deleted ${rows[0].code}`,
         refId: rows[0].code,
       },

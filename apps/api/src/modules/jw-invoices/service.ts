@@ -26,6 +26,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { ActivityAction } from '@innovic/shared';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -105,6 +106,7 @@ export async function createJwInvoice(
     const lineRows = await tx
       .select({
         id: jobWorkOrderLines.id,
+        lineNo: jobWorkOrderLines.lineNo,
         rate: jobWorkOrderLines.rate,
         returnedQty: jobWorkOrderLines.returnedQty,
         invoicedQty: jobWorkOrderLines.invoicedQty,
@@ -186,10 +188,12 @@ export async function createJwInvoice(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'JwInvoice',
-        detail: `${code} — billed ${input.qty} x ${money(rate)} + GST = ${money(total)} (${jw.code})`,
-        refId: row.id,
+        entityId: row.id,
+        refId: code,
+        qty: input.qty,
+        detail: `${code} — billed ${input.qty} x ${money(rate)} + GST = ${money(total)} (${jw.code} Ln ${line.lineNo})`,
       },
       companyId,
       user,
@@ -268,10 +272,13 @@ export async function cancelJwInvoice(
     await emitActivityLog(
       tx,
       {
-        action: 'CANCEL',
+        action: ActivityAction.Cancel,
         entity: 'JwInvoice',
-        detail: `${inv.code} cancelled: ${reason} — reversed ${inv.qty} billed on ${inv.jwCodeText ?? ''}`,
-        refId: inv.id,
+        entityId: inv.id,
+        refId: inv.code,
+        qty: inv.qty,
+        reason,
+        detail: `${inv.code} cancelled — reversed ${inv.qty} billed on ${inv.jwCodeText ?? ''}`,
       },
       companyId,
       user,

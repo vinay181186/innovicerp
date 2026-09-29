@@ -18,6 +18,7 @@ import type {
   UpdateUserInput,
   User,
 } from './schema';
+import { softDeleteStamp } from '../../lib/audit-trail';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -167,7 +168,9 @@ export async function createUser(input: CreateUserInput, user: AuthContext): Pro
     // never-signed-in user belonging to a DIFFERENT company still refuses.
     const existingAuth = await findAuthUserByEmail(email);
     if (!existingAuth) throw new ConflictError('A user with this email already exists');
-    const profile = (await db.select().from(users).where(eq(users.id, existingAuth.id)).limit(1))[0];
+    const profile = (
+      await db.select().from(users).where(eq(users.id, existingAuth.id)).limit(1)
+    )[0];
     const neverSignedIn = existingAuth.lastSignInAt === null;
     const canRevive =
       !profile ||
@@ -209,6 +212,7 @@ export async function createUser(input: CreateUserInput, user: AuthContext): Pro
         ? null
         : String(input.approvalLimit),
     deletedAt: null,
+    deletedBy: null,
     updatedBy: user.id,
     updatedAt: new Date(),
   };
@@ -343,7 +347,7 @@ export async function softDeleteUser(id: string, user: AuthContext): Promise<{ o
 
     await tx
       .update(users)
-      .set({ deletedAt: new Date(), isActive: false, updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), isActive: false, updatedBy: user.id })
       .where(eq(users.id, id));
     return { ok: true };
   });

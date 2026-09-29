@@ -6,6 +6,7 @@ import {
   createItemInputSchema,
   listItemsQuerySchema,
   updateItemInputSchema,
+  deleteItemInputSchema,
 } from './schema';
 import { getItemRelated } from './related';
 import * as service from './service';
@@ -66,7 +67,8 @@ export async function itemsRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/items/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.softDeleteItem(id, req.user);
+    const { reason } = deleteItemInputSchema.parse(req.body ?? {});
+    await service.softDeleteItem(id, reason, req.user);
     reply.code(204);
     return null;
   });

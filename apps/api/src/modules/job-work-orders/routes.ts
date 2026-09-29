@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { activityReasonSchema } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
@@ -11,6 +12,8 @@ import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 const lineIdParamSchema = z.object({ lineId: z.string().uuid() });
+// ADR-197: Move to Trash says why. Module-local (packages/shared is frozen).
+const deleteJobWorkOrderBodySchema = z.object({ reason: activityReasonSchema });
 
 export async function jobWorkOrdersRoutes(app: FastifyInstance): Promise<void> {
   app.get('/job-work-orders', async (req) => {
@@ -49,7 +52,8 @@ export async function jobWorkOrdersRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/job-work-orders/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.softDeleteJobWorkOrder(id, req.user);
+    const { reason } = deleteJobWorkOrderBodySchema.parse(req.body ?? {});
+    await service.softDeleteJobWorkOrder(id, req.user, reason);
     reply.code(204);
     return null;
   });

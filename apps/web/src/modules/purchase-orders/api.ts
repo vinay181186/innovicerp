@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 
 export const purchaseOrdersKeys = {
@@ -59,6 +60,8 @@ export function useUpdatePurchaseOrder(id: string) {
       apiFetch<PurchaseOrderDetail>(`/purchase-orders/${id}`, { method: 'PATCH', json: input }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      // ADR-197 — the document's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(id), updated);
     },
   });
@@ -66,12 +69,14 @@ export function useUpdatePurchaseOrder(id: string) {
 
 export function useSoftDeletePurchaseOrder() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (id) => {
-      await apiFetch<null>(`/purchase-orders/${id}`, { method: 'DELETE' });
+  return useMutation<void, Error, { id: string; reason: string }>({
+    mutationFn: async ({ id, reason }) => {
+      await apiFetch<null>(`/purchase-orders/${id}`, { method: 'DELETE', json: { reason } });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      // ADR-197 — the document's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.removeQueries({ queryKey: purchaseOrdersKeys.detail(id) });
     },
   });
@@ -91,6 +96,8 @@ export function useCreatePurchaseOrder() {
       apiFetch<PurchaseOrderDetail>('/purchase-orders', { method: 'POST', json: input }),
     onSuccess: (created, vars) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      // ADR-197 — the document's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(created.id), created);
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
       const prIds = new Set(
@@ -115,6 +122,8 @@ export function useCreatePurchaseOrderFromPr() {
       }),
     onSuccess: (created, vars) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      // ADR-197 — the document's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(created.id), created);
       // Refresh the PR detail + list (status flipped to po_created, poId set).
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
@@ -133,6 +142,8 @@ export function useApprovePurchaseOrder() {
       }),
     onSuccess: (po) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      // ADR-197 — the document's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
     },
   });
@@ -148,6 +159,8 @@ export function useRejectPurchaseOrder() {
       }),
     onSuccess: (po) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      // ADR-197 — the document's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
     },
   });
@@ -164,6 +177,8 @@ export function useShortClosePurchaseOrder() {
       }),
     onSuccess: (po) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      // ADR-197 — the document's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
       // Its PRs' Pending changes too.
       void qc.invalidateQueries({ queryKey: ['purchase-requests'] });

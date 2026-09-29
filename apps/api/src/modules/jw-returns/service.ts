@@ -8,13 +8,14 @@
 // every line is fully returned.
 
 import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
-import type {
-  CreateJwReturnChallanInput,
-  JwReturnChallan,
-  JwReturnChallanListItem,
-  JwReturnableResponse,
-  ListJwReturnChallansQuery,
-  ListJwReturnChallansResponse,
+import {
+  ActivityAction,
+  type CreateJwReturnChallanInput,
+  type JwReturnChallan,
+  type JwReturnChallanListItem,
+  type JwReturnableResponse,
+  type ListJwReturnChallansQuery,
+  type ListJwReturnChallansResponse,
 } from '@innovic/shared';
 import {
   clients,
@@ -309,6 +310,7 @@ export async function createJwReturnChallan(
     const lineRows = await tx
       .select({
         id: jobWorkOrderLines.id,
+        lineNo: jobWorkOrderLines.lineNo,
         orderQty: jobWorkOrderLines.orderQty,
         returnedQty: jobWorkOrderLines.returnedQty,
         jwId: jobWorkOrderLines.jobWorkOrderId,
@@ -452,13 +454,33 @@ export async function createJwReturnChallan(
         .where(and(eq(jobWorkOrders.id, jw.id), isNull(jobWorkOrders.deletedAt)));
     }
 
+    // ADR-197: one row per document — the challan, and the JWSO whose line
+    // the goods left against.
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'JwReturnChallan',
-        detail: `${code} — returned ${input.qty} to customer (${jw.code})`,
-        refId: row.id,
+        entityId: row.id,
+        refId: code,
+        qty: input.qty,
+        detail: `${code} — returned ${input.qty} to customer (${jw.code} Ln ${line.lineNo})`,
+      },
+      companyId,
+      user,
+    );
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Send,
+        entity: 'JobWorkOrder',
+        entityId: jw.id,
+        refId: jw.code,
+        lineRef: `Line ${line.lineNo}`,
+        qty: input.qty,
+        detail:
+          `${jw.code} Ln ${line.lineNo} — ${input.qty} returned to customer on ${code}` +
+          (allReturned ? ' (every line returned — JWSO Dispatched)' : ''),
       },
       companyId,
       user,
@@ -506,6 +528,7 @@ export async function cancelJwReturnChallan(
     const lineRows = await tx
       .select({
         id: jobWorkOrderLines.id,
+        lineNo: jobWorkOrderLines.lineNo,
         returnedQty: jobWorkOrderLines.returnedQty,
         invoicedQty: jobWorkOrderLines.invoicedQty,
         jwId: jobWorkOrderLines.jobWorkOrderId,
@@ -623,13 +646,34 @@ export async function cancelJwReturnChallan(
       }
     }
 
+    const jwCode = jw?.code ?? ret.jwCodeText ?? null;
     await emitActivityLog(
       tx,
       {
-        action: 'JW_RETURN_CANCEL',
+        action: ActivityAction.Cancel,
         entity: 'JwReturnChallan',
-        detail: `${ret.code} — cancelled, reversed ${ret.qty} on ${ret.jwCodeText ?? jw?.code ?? ''}`,
-        refId: ret.id,
+        entityId: ret.id,
+        refId: ret.code,
+        qty: ret.qty,
+        reason,
+        detail: `${ret.code} — cancelled, reversed ${ret.qty} on ${jwCode ?? ''}`,
+      },
+      companyId,
+      user,
+    );
+    // ADR-197: the JWSO line's Returned qty went back down — an opposite entry
+    // to the SEND the return wrote.
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Reverse,
+        entity: 'JobWorkOrder',
+        entityId: line.jwId,
+        refId: jwCode,
+        lineRef: `Line ${line.lineNo}`,
+        qty: ret.qty,
+        reason,
+        detail: `Reverses ${ret.code} — ${ret.qty} back to Pending on Ln ${line.lineNo}`,
       },
       companyId,
       user,

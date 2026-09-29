@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export type TrashEntityType =
   | 'Sales Order'
@@ -74,6 +75,8 @@ export function useRestoreFromTrash() {
       apiFetch<{ ok: true }>('/trash/restore', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: trashKeys.all });
+      // The RESTORE row lands on the document's History tab (ADR-197).
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }

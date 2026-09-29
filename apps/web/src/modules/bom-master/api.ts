@@ -11,6 +11,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const bomMastersKeys = {
   all: ['bom-masters'] as const,
@@ -75,6 +76,7 @@ export function useCreateBomMaster() {
       apiFetch<BomMasterDetail>('/bom-masters', { method: 'POST', json: input }),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: bomMastersKeys.lists() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(bomMastersKeys.detail(created.id), created);
     },
   });
@@ -87,6 +89,7 @@ export function useUpdateBomMaster(id: string) {
       apiFetch<BomMasterDetail>(`/bom-masters/${id}`, { method: 'PUT', json: input }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: bomMastersKeys.lists() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(bomMastersKeys.detail(updated.id), updated);
     },
   });
@@ -94,10 +97,13 @@ export function useUpdateBomMaster(id: string) {
 
 export function useDeleteBomMaster() {
   const qc = useQueryClient();
-  return useMutation<BomMaster, Error, string>({
-    mutationFn: (id) => apiFetch<BomMaster>(`/bom-masters/${id}`, { method: 'DELETE' }),
-    onSuccess: (_deleted, id) => {
+  // ADR-197: the reason is required by DELETE /bom-masters/:id.
+  return useMutation<BomMaster, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<BomMaster>(`/bom-masters/${id}`, { method: 'DELETE', json: { reason } }),
+    onSuccess: (_deleted, { id }) => {
       void qc.invalidateQueries({ queryKey: bomMastersKeys.lists() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: bomMastersKeys.detail(id) });
     },
   });

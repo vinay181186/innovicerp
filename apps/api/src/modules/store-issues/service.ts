@@ -19,6 +19,7 @@
 // Reads (list / one slip) live in read.ts.
 
 import {
+  ActivityAction,
   ITEM_TYPE_RULES,
   ISSUE_AGAINST_LABELS,
   STORE_ISSUE_REVERSE_REASON_MIN,
@@ -137,7 +138,7 @@ export async function createStoreIssue(
     if (!issueId) throw new ValidationError('Could not save the Item Issue. Try again.');
 
     // 4) One ledger 'out' + one line per item, in the order keyed.
-    const moved: string[] = [];
+    const lineLogs: { lineNo: number; qty: number; text: string }[] = [];
     for (const [idx, l] of input.lines.entries()) {
       const itemCode = itemCodes.get(l.itemId) ?? '';
       const mv = await postStockMove(tx, {
@@ -176,22 +177,30 @@ export async function createStoreIssue(
           lineRows[0]!.id,
         );
       }
-      moved.push(`${itemCode} × ${roundQty(l.qty)} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
+      const text = `${itemCode} × ${roundQty(l.qty)} (stock ${mv.stockBefore} → ${mv.stockAfter})`;
+      lineLogs.push({ lineNo: idx + 1, qty: roundQty(l.qty), text });
     }
 
-    await emitActivityLog(
-      tx,
-      {
-        action: 'ISSUE',
-        entity: 'Store Issue',
-        detail:
-          `${code} · ${target.label} · to ${issuedTo} — ${purpose}: ${moved.join(', ')}` +
-          (confirmed ? `. More than To Issue, confirmed: ${confirmed}` : ''),
-        refId: code,
-      },
-      companyId,
-      user,
-    );
+    // ADR-197 — one ISSUE row per slip line (lineRef + qty moved).
+    for (const ll of lineLogs) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Issue,
+          entity: 'StoreIssue',
+          entityId: issueId,
+          refId: code,
+          lineRef: `Line ${ll.lineNo}`,
+          qty: ll.qty,
+          operatorName: issuedTo,
+          detail:
+            `${code} · ${target.label} · to ${issuedTo} — ${purpose}: ${ll.text}` +
+            (confirmed ? `. More than To Issue, confirmed: ${confirmed}` : ''),
+        },
+        companyId,
+        user,
+      );
+    }
 
     return readStoreIssueDetail(tx, companyId, issueId);
   });
@@ -248,7 +257,7 @@ export async function returnStoreIssue(
     }
 
     const date = today();
-    const done: string[] = [];
+    const done: { lineNo: number; qty: number; text: string }[] = [];
     const order = [...want.keys()].sort((a, b) =>
       byId.get(a)!.itemId.localeCompare(byId.get(b)!.itemId),
     );
@@ -279,20 +288,31 @@ export async function returnStoreIssue(
         createdBy: user.id,
         updatedBy: user.id,
       });
-      done.push(`${line.itemCodeText} × ${qty} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
+      done.push({
+        lineNo: line.lineNo,
+        qty,
+        text: `${line.itemCodeText} × ${qty} (stock ${mv.stockBefore} → ${mv.stockAfter})`,
+      });
     }
 
-    await emitActivityLog(
-      tx,
-      {
-        action: 'RETURN',
-        entity: 'Store Issue',
-        detail: `${iss.code} returned ${done.join(', ')}. Reason: ${reason}`,
-        refId: iss.code,
-      },
-      companyId,
-      user,
-    );
+    // ADR-197 — one RETURN row per returned line (lineRef + qty put back).
+    for (const d of done.sort((a, b) => a.lineNo - b.lineNo)) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Return,
+          entity: 'StoreIssue',
+          entityId: iss.id,
+          refId: iss.code,
+          lineRef: `Line ${d.lineNo}`,
+          qty: d.qty,
+          reason,
+          detail: `${iss.code} returned ${d.text}`,
+        },
+        companyId,
+        user,
+      );
+    }
     return readStoreIssueDetail(tx, companyId, iss.id);
   });
 }
@@ -375,10 +395,13 @@ export async function reverseStoreIssue(
     await emitActivityLog(
       tx,
       {
-        action: 'REVERSE',
-        entity: 'Store Issue',
-        detail: `${iss.code} (${ISSUE_AGAINST_LABELS[iss.issueAgainst as IssueAgainst] ?? iss.issueAgainst}) put back ${done.join(', ')}. Reason: ${reason}`,
+        action: ActivityAction.Reverse,
+        entity: 'StoreIssue',
+        entityId: iss.id,
         refId: iss.code,
+        qty: roundQty(lines.reduce((sum, l) => sum + Number(l.qty), 0)),
+        reason,
+        detail: `${iss.code} (${ISSUE_AGAINST_LABELS[iss.issueAgainst as IssueAgainst] ?? iss.issueAgainst}) put back ${done.join(', ')}`,
       },
       companyId,
       user,

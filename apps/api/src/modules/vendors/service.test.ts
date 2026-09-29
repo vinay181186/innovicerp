@@ -116,7 +116,7 @@ describe('vendors service', () => {
       { code: `${TEST_PREFIX}D1`, name: 'Doomed', isActive: true },
       admin,
     );
-    await service.softDeleteVendor(created.id, admin);
+    await service.softDeleteVendor(created.id, 'test cleanup', admin);
     await expect(service.getVendor(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
   });
 });

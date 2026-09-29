@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const purchaseRequestsKeys = {
   all: ['purchase-requests'] as const,
@@ -63,6 +64,8 @@ export function useCreatePurchaseRequest() {
       apiFetch<PurchaseRequest>('/purchase-requests', { method: 'POST', json: input }),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      // ADR-197 — the PR's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseRequestsKeys.detail(created.id), created);
     },
   });
@@ -75,6 +78,8 @@ export function useUpdatePurchaseRequest(id: string) {
       apiFetch<PurchaseRequest>(`/purchase-requests/${id}`, { method: 'PATCH', json: input }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      // ADR-197 — the PR's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseRequestsKeys.detail(id), updated);
     },
   });
@@ -87,6 +92,8 @@ export function useApprovePr() {
       apiFetch<PurchaseRequest>(`/purchase-requests/${id}/approve`, { method: 'POST' }),
     onSuccess: (pr) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      // ADR-197 — the PR's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseRequestsKeys.detail(pr.id), pr);
     },
   });
@@ -102,6 +109,8 @@ export function useRejectPr() {
       }),
     onSuccess: (pr) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      // ADR-197 — the PR's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseRequestsKeys.detail(pr.id), pr);
     },
   });
@@ -121,6 +130,8 @@ export function useClosePurchaseRequestBalance() {
       }),
     onSuccess: (pr) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      // ADR-197 — the PR's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // The detail read carries joins (vendor name, PO code) the write-back
       // shape does not, so refetch it rather than overwriting the cache with a
       // narrower row — the same reason the page must show the closed banner
@@ -132,12 +143,15 @@ export function useClosePurchaseRequestBalance() {
 
 export function useSoftDeletePurchaseRequest() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (id) => {
-      await apiFetch<null>(`/purchase-requests/${id}`, { method: 'DELETE' });
+  // ADR-197 — a reason is required to move a PR to Trash.
+  return useMutation<void, Error, { id: string; reason: string }>({
+    mutationFn: async ({ id, reason }) => {
+      await apiFetch<null>(`/purchase-requests/${id}`, { method: 'DELETE', json: { reason } });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      // ADR-197 — the PR's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.removeQueries({ queryKey: purchaseRequestsKeys.detail(id) });
     },
   });

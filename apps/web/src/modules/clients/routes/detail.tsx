@@ -30,12 +30,14 @@ import type { Client } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Panel } from '@/ui/data';
 import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useClient, useSoftDeleteClient } from '../api';
+import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
 
 export const clientDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -95,8 +97,8 @@ function ClientDetailPage(): React.JSX.Element {
   // buttons disabled for as long as this promise is running, so a second
   // Confirm cannot fire a second delete, and a rejection is shown IN the
   // dialog instead of closing the question along with the error.
-  const onDelete = async (): Promise<void> => {
-    await softDelete.mutateAsync(client.id);
+  const onDelete = async (reason: string): Promise<void> => {
+    await softDelete.mutateAsync({ id: client.id, reason });
     setConfirmDelete(false);
     await navigate({ to: '/clients', replace: true });
   };
@@ -106,12 +108,6 @@ function ClientDetailPage(): React.JSX.Element {
   // Department Admin and above hold: edit AND approve. Unchanged.
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
-
-  const deleteError = softDelete.isError
-    ? softDelete.error instanceof Error
-      ? softDelete.error.message
-      : 'Could not move the customer to Trash. Try again.'
-    : null;
 
   return (
     <div>
@@ -153,15 +149,16 @@ function ClientDetailPage(): React.JSX.Element {
           (ADR-190). Hides when empty. */}
       <RelatedDocsPanel module="clients" id={client.id} />
 
+      {/* ADR-197 — who created / edited / deleted this customer, with Before → After. */}
+      <Panel title="History" bodyPadding="none">
+        <DocumentHistory entity="Client" entityId={client.id} refId={client.code} />
+      </Panel>
+
       {confirmDelete ? (
-        <ConfirmDialog
+        <TrashReasonDialog
           title={`Move Customer ${client.code} to Trash?`}
-          message="You can restore it from Trash."
-          confirmLabel="Move to Trash"
-          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
-          errorText={deleteError}
         />
       ) : null}
     </div>

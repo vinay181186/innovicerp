@@ -248,6 +248,10 @@ export const ACTIVITY_ENTITIES = [
   'Item',
   'BOM',
   'RouteCard',
+  'Vendor',
+  'Client',
+  'Machine',
+  'Operator',
   'Task',
 ] as const;
 export type ActivityEntity = (typeof ACTIVITY_ENTITIES)[number];
@@ -396,6 +400,10 @@ export const ACTIVITY_ENTITY_META: Record<ActivityEntity, ActivityEntityMeta> = 
     viewForm: 'routecard_create',
   },
   Task: { label: 'Task', aliases: [], searchKind: 'task', viewForm: null },
+  Vendor: { label: 'Vendor', aliases: [], searchKind: null, viewForm: 'vendor_create' },
+  Client: { label: 'Customer', aliases: ['Customer'], searchKind: null, viewForm: 'client_create' },
+  Machine: { label: 'Machine', aliases: [], searchKind: null, viewForm: 'machine_create' },
+  Operator: { label: 'Operator', aliases: [], searchKind: null, viewForm: 'operator_create' },
 };
 
 /** Stored entity (standard or legacy spelling) → the standard entity, or null

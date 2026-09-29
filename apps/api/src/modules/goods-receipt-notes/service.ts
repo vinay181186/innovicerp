@@ -40,10 +40,16 @@ import {
 } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty, resolveGrnLineJobCardId } from './cascades';
-import { type DocumentTraceability, poSendsMaterialOut, type RelatedDoc } from '@innovic/shared';
+import {
+  ActivityAction,
+  type DocumentTraceability,
+  poSendsMaterialOut,
+  type RelatedDoc,
+} from '@innovic/shared';
 import type {
   CreateGoodsReceiptNoteInput,
   GoodsReceiptNoteDetail,
@@ -62,6 +68,150 @@ const requireCompany = (user: AuthContext): string => {
 
 function grnDetail(code: string, vendorCodeText: string | null | undefined): string {
   return vendorCodeText ? `${code} — ${vendorCodeText}` : code;
+}
+
+// ─── Audit trail (ADR-197) ──────────────────────────────────────────────────
+// An Edit logs before → after as a person reads it: the PO / vendor / item
+// CODE (not a uuid), labels from docs/NAMING.md. Header and lines are compared
+// on a display snapshot read inside the edit's transaction, once before and
+// once after the UPDATE, so a code typed as text and a code picked from the
+// master compare the same.
+
+const GRN_HEADER_FIELDS: readonly DiffField[] = [
+  { key: 'grnDate', label: 'GRN Date' },
+  { key: 'poNo', label: 'PO No.' },
+  { key: 'vendor', label: 'Vendor' },
+  { key: 'dcNo', label: 'Vendor Challan No.' },
+  { key: 'invoiceNo', label: 'Vendor Invoice No.' },
+  { key: 'remarks', label: 'Remarks' },
+];
+
+const GRN_LINE_FIELDS: readonly DiffField[] = [
+  { key: 'itemCode', label: 'Item Code' },
+  { key: 'itemName', label: 'Item Name' },
+  { key: 'receivedQty', label: 'Received Qty' },
+  { key: 'dcRefNo', label: 'Vendor Challan No.' },
+  { key: 'remarks', label: 'Remarks' },
+];
+
+const EMPTY_GRN_LINE: Record<string, null> = Object.fromEntries(
+  GRN_LINE_FIELDS.map((f) => [f.key, null]),
+);
+
+type GrnAuditLine = Record<string, unknown> & { lineNo: number; receivedQty: number };
+
+interface GrnAuditSnapshot {
+  header: Record<string, unknown>;
+  lines: Map<string, GrnAuditLine>;
+}
+
+async function readGrnAuditSnapshot(tx: DbTransaction, grnId: string): Promise<GrnAuditSnapshot> {
+  const hdr = await tx
+    .select({
+      grnDate: goodsReceiptNotes.grnDate,
+      poNo: sql<string | null>`COALESCE(${purchaseOrders.code}, ${goodsReceiptNotes.poCodeText})`,
+      vendor: sql<string | null>`COALESCE(${vendors.code}, ${goodsReceiptNotes.vendorCodeText})`,
+      dcNo: goodsReceiptNotes.dcNo,
+      invoiceNo: goodsReceiptNotes.invoiceNo,
+      remarks: goodsReceiptNotes.remarks,
+    })
+    .from(goodsReceiptNotes)
+    .leftJoin(purchaseOrders, eq(purchaseOrders.id, goodsReceiptNotes.purchaseOrderId))
+    .leftJoin(vendors, eq(vendors.id, goodsReceiptNotes.vendorId))
+    .where(eq(goodsReceiptNotes.id, grnId))
+    .limit(1);
+  const lineRows = await tx
+    .select({
+      id: goodsReceiptNoteLines.id,
+      lineNo: goodsReceiptNoteLines.lineNo,
+      itemCode: sql<string | null>`COALESCE(${items.code}, ${goodsReceiptNoteLines.itemCodeText})`,
+      itemName: goodsReceiptNoteLines.itemName,
+      receivedQty: goodsReceiptNoteLines.receivedQty,
+      dcRefNo: goodsReceiptNoteLines.dcRefNo,
+      remarks: goodsReceiptNoteLines.remarks,
+    })
+    .from(goodsReceiptNoteLines)
+    .leftJoin(items, eq(items.id, goodsReceiptNoteLines.itemId))
+    .where(
+      and(
+        eq(goodsReceiptNoteLines.goodsReceiptNoteId, grnId),
+        isNull(goodsReceiptNoteLines.deletedAt),
+      ),
+    );
+  return {
+    header: hdr[0] ?? {},
+    lines: new Map(lineRows.map((r) => [r.id, r])),
+  };
+}
+
+/** One EDIT row for the header (when it changed) and one per added / removed /
+ *  changed line, each with its own `lineRef`. Nothing changed → no row. */
+async function logGrnEdit(
+  tx: DbTransaction,
+  grn: { id: string; code: string },
+  before: GrnAuditSnapshot,
+  after: GrnAuditSnapshot,
+  companyId: string,
+  user: AuthContext,
+): Promise<void> {
+  const base = {
+    action: ActivityAction.Edit,
+    entity: 'GoodsReceiptNote',
+    entityId: grn.id,
+    refId: grn.code,
+  } as const;
+  const headerChanges = diffFields(before.header, after.header, GRN_HEADER_FIELDS);
+  if (headerChanges.length > 0) {
+    await emitActivityLog(
+      tx,
+      { ...base, changes: headerChanges, detail: `Edited ${grn.code}` },
+      companyId,
+      user,
+    );
+  }
+  for (const [lineId, next] of after.lines) {
+    const prev = before.lines.get(lineId);
+    const lineRef = `Line ${next.lineNo}`;
+    if (!prev) {
+      await emitActivityLog(
+        tx,
+        {
+          ...base,
+          lineRef,
+          qty: next.receivedQty,
+          changes: diffFields(EMPTY_GRN_LINE, next, GRN_LINE_FIELDS),
+          detail: `${grn.code} ${lineRef} added`,
+        },
+        companyId,
+        user,
+      );
+      continue;
+    }
+    const changes = diffFields(prev, next, GRN_LINE_FIELDS);
+    if (changes.length === 0) continue;
+    await emitActivityLog(
+      tx,
+      { ...base, lineRef, changes, detail: `${grn.code} ${lineRef} edited` },
+      companyId,
+      user,
+    );
+  }
+  for (const [lineId, prev] of before.lines) {
+    if (after.lines.has(lineId)) continue;
+    const lineRef = `Line ${prev.lineNo}`;
+    await emitActivityLog(
+      tx,
+      {
+        ...base,
+        lineRef,
+        qty: prev.receivedQty,
+        changes: diffFields(prev, EMPTY_GRN_LINE, GRN_LINE_FIELDS),
+        detail: `${grn.code} ${lineRef} removed`,
+      },
+      companyId,
+      user,
+    );
+  }
 }
 
 // ─── FK helpers ───────────────────────────────────────────────────────────
@@ -924,10 +1074,12 @@ export async function createGoodsReceiptNote(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'GoodsReceiptNote',
-        detail: grnDetail(header.code, header.vendorCodeText),
+        entityId: header.id,
         refId: header.code,
+        qty: insertedLines.reduce((s, l) => s + Number(l.receivedQty), 0),
+        detail: grnDetail(header.code, header.vendorCodeText),
       },
       companyId,
       user,
@@ -1039,10 +1191,12 @@ export async function insertGrnForOspReceipt(
   await emitActivityLog(
     tx,
     {
-      action: 'CREATE',
+      action: ActivityAction.Create,
       entity: 'GoodsReceiptNote',
-      detail: `${code} — created from OSP receipt (DC ${args.dcNo ?? ''})`,
+      entityId: header.id,
       refId: code,
+      qty: insertedLines.reduce((s, l) => s + Number(l.receivedQty), 0),
+      detail: `${code} — created from OSP receipt (DC ${args.dcNo ?? ''})`,
     },
     companyId,
     user,
@@ -1083,6 +1237,9 @@ export async function updateGoodsReceiptNote(
       await assertPurchaseOrderExists(tx, input.header.purchaseOrderId, companyId);
     }
 
+    // Before → after (ADR-197): read inside this transaction, before the UPDATE.
+    const auditBefore = await readGrnAuditSnapshot(tx, id);
+
     const updates: Record<string, unknown> = { updatedBy: user.id };
     const h = input.header;
     if (h.grnDate !== undefined) updates['grnDate'] = h.grnDate;
@@ -1112,17 +1269,8 @@ export async function updateGoodsReceiptNote(
       .where(eq(goodsReceiptNotes.id, id))
       .limit(1);
     const updatedHdr = updatedHdrRows[0]!;
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'GoodsReceiptNote',
-        detail: grnDetail(updatedHdr.code, updatedHdr.vendorCodeText),
-        refId: updatedHdr.code,
-      },
-      companyId,
-      user,
-    );
+    const auditAfter = await readGrnAuditSnapshot(tx, id);
+    await logGrnEdit(tx, updatedHdr, auditBefore, auditAfter, companyId, user);
 
     // Refetch with joins to match getGoodsReceiptNote shape. Must run on `tx`
     // (ADR-057) — a nested withUserContext would read a connection that cannot
@@ -1442,6 +1590,8 @@ async function runCascades(
 export async function softDeleteGoodsReceiptNote(
   id: string,
   user: AuthContext,
+  /** Why it was moved to Trash — required at the route (ADR-197). */
+  reason?: string,
 ): Promise<{ ok: true }> {
   // Delete is not one of the four tier actions, so it is expressed as the pair
   // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
@@ -1502,10 +1652,12 @@ export async function softDeleteGoodsReceiptNote(
       if (l.purchaseOrderLineId) touchedPoLineIds.add(l.purchaseOrderLineId);
     }
 
-    const now = new Date();
+    // One stamp for header + lines, so Trash restores them together (ADR-197:
+    // deleted_by names who moved it to Trash).
+    const stamp = softDeleteStamp(user);
     await tx
       .update(goodsReceiptNoteLines)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id })
       .where(
         and(
           eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
@@ -1514,7 +1666,7 @@ export async function softDeleteGoodsReceiptNote(
       );
     await tx
       .update(goodsReceiptNotes)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id })
       .where(eq(goodsReceiptNotes.id, id));
 
     // Recompute received_qty + PO header status for every PO line that lost
@@ -1536,10 +1688,13 @@ export async function softDeleteGoodsReceiptNote(
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
+        action: ActivityAction.Delete,
         entity: 'GoodsReceiptNote',
-        detail: grnDetail(hdr.code, hdr.vendorCodeText),
+        entityId: hdr.id,
         refId: hdr.code,
+        qty: linesToDelete.reduce((s, l) => s + Number(l.receivedQty), 0),
+        reason: reason ?? null,
+        detail: grnDetail(hdr.code, hdr.vendorCodeText),
       },
       companyId,
       user,

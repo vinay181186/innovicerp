@@ -5,13 +5,15 @@ import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ConfirmDialog } from '@/ui/feedback';
-import { useExecutePlan, useFinalizePlan, usePlan, useSoftDeletePlan } from '../api';
+import { Panel } from '@/ui/data';
+import { useExecutePlan, useFinalizePlan, usePlan } from '../api';
+import { PlanDeleteModal } from '../components/plan-delete-modal';
 import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
 
 export const planDetailRoute = createRoute({
@@ -52,7 +54,6 @@ function PlanDetailPage(): React.JSX.Element {
   const { data: plan, isLoading, isError, error } = usePlan(id);
   const finalize = useFinalizePlan();
   const execute = useExecutePlan();
-  const softDelete = useSoftDeletePlan();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -110,11 +111,6 @@ function PlanDetailPage(): React.JSX.Element {
           e instanceof Error ? e.message : 'Could not create the Job Card / PR. Try again.',
         ),
     });
-  };
-  // ConfirmDialog owns the wait and shows a refusal inside the dialog.
-  const onDelete = async (): Promise<void> => {
-    await softDelete.mutateAsync(plan.id);
-    void navigate({ to: '/plans', replace: true });
   };
 
   if (eff && !perms.view) {
@@ -216,7 +212,7 @@ function PlanDetailPage(): React.JSX.Element {
                 type="button"
                 className="btn btn-danger btn-sm"
                 onClick={() => setConfirmDelete(true)}
-                disabled={softDelete.isPending}
+                disabled={confirmDelete}
               >
                 <Trash2 size={13} /> Delete
               </button>
@@ -410,15 +406,19 @@ function PlanDetailPage(): React.JSX.Element {
 
       <RelatedDocsPanel module="plans" id={plan.id} />
 
-      <ConfirmDialog
-        open={confirmDelete}
-        title={`Move Plan ${plan.code} to Trash?`}
-        message="You can restore it from Trash."
-        confirmLabel="Move to Trash"
-        pendingLabel="Moving to Trash…"
-        onCancel={() => setConfirmDelete(false)}
-        onConfirm={onDelete}
-      />
+      <Panel title="History" bodyPadding="none">
+        <DocumentHistory entity="Plan" entityId={plan.id} refId={plan.code} />
+      </Panel>
+
+      {confirmDelete ? (
+        // The modal owns the wait and shows a refusal inside itself.
+        <PlanDeleteModal
+          id={plan.id}
+          code={plan.code}
+          onClose={() => setConfirmDelete(false)}
+          onDeleted={() => void navigate({ to: '/plans', replace: true })}
+        />
+      ) : null}
     </div>
   );
 }

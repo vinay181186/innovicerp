@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const clientsKeys = {
   all: ['clients'] as const,
@@ -60,6 +61,7 @@ export function useCreateClient() {
   return useMutation<Client, Error, CreateClientInput>({
     mutationFn: (input) => apiFetch<Client>('/clients', { method: 'POST', json: input }),
     onSuccess: (created) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: clientsKeys.lists() });
       qc.setQueryData(clientsKeys.detail(created.id), created);
     },
@@ -79,6 +81,7 @@ export function useBulkCreateClients() {
     mutationFn: (input) =>
       apiFetch<BulkCreateClientsResponse>('/clients/bulk', { method: 'POST', json: input }),
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: clientsKeys.lists() });
     },
   });
@@ -89,6 +92,7 @@ export function useUpdateClient(id: string) {
   return useMutation<Client, Error, UpdateClientInput>({
     mutationFn: (input) => apiFetch<Client>(`/clients/${id}`, { method: 'PATCH', json: input }),
     onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: clientsKeys.lists() });
       qc.setQueryData(clientsKeys.detail(id), updated);
     },
@@ -97,11 +101,13 @@ export function useUpdateClient(id: string) {
 
 export function useSoftDeleteClient() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (id) => {
-      await apiFetch<null>(`/clients/${id}`, { method: 'DELETE' });
+  // ADR-197: a reason is required to move a record to Trash.
+  return useMutation<void, Error, { id: string; reason: string }>({
+    mutationFn: async ({ id, reason }) => {
+      await apiFetch<null>(`/clients/${id}`, { method: 'DELETE', json: { reason } });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: clientsKeys.lists() });
       qc.removeQueries({ queryKey: clientsKeys.detail(id) });
     },

@@ -7,10 +7,11 @@
 //               no stock moves until the Store In-charge decides (writeoffs.ts)
 // A return can never exceed what is Still Out; a cancelled issue takes none.
 
-import type {
-  RecordToolReturnInput,
-  ReturnInstrumentsInput,
-  ToolIssueDetail,
+import {
+  ActivityAction,
+  type RecordToolReturnInput,
+  type ReturnInstrumentsInput,
+  type ToolIssueDetail,
 } from '@innovic/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { toolIssueInstruments, toolIssueReturns, toolWriteoffs } from '../../db/schema';
@@ -173,10 +174,13 @@ export async function recordToolReturn(
     await emitActivityLog(
       tx,
       {
-        action: 'RETURN',
-        entity: 'Tool Issue',
-        detail: `${ti.code} · good ${parts.Good} · damaged ${parts.Damaged} · lost ${parts.Lost} · consumed ${parts.Consumed}${reason ? ` · ${reason}` : ''}`,
+        action: ActivityAction.Return,
+        entity: 'ToolIssue',
+        entityId: id,
         refId: ti.code,
+        qty: total,
+        reason,
+        detail: `${ti.code} · good ${parts.Good} · damaged ${parts.Damaged} · lost ${parts.Lost} · consumed ${parts.Consumed}`,
       },
       companyId,
       user,
@@ -292,10 +296,13 @@ export async function returnInstruments(
     await emitActivityLog(
       tx,
       {
-        action: 'RETURN',
-        entity: 'Tool Issue',
-        detail: `${ti.code} · good ${list(good)} · damaged ${list(damaged)} · lost ${list(lost)}${reason ? ` · ${reason}` : ''}`,
+        action: ActivityAction.Return,
+        entity: 'ToolIssue',
+        entityId: id,
         refId: ti.code,
+        qty: input.instruments.length,
+        reason,
+        detail: `${ti.code} · good ${list(good)} · damaged ${list(damaged)} · lost ${list(lost)}`,
       },
       companyId,
       user,

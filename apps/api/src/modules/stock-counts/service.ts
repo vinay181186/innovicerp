@@ -10,17 +10,20 @@
 //
 // Paper tests C1–C13: docs/specs/STORE_REDESIGN_ADR-193.md §10.
 
-import type {
-  ApproveStockCountInput,
-  CancelStockCountInput,
-  CreateStockCountInput,
-  ReplaceStockCountLinesInput,
-  StockCount,
+import {
+  ActivityAction,
+  type ActivityChange,
+  type ApproveStockCountInput,
+  type CancelStockCountInput,
+  type CreateStockCountInput,
+  type ReplaceStockCountLinesInput,
+  type StockCount,
 } from '@innovic/shared';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { items, stockCountLines, stockCounts } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
 import {
   AuthorizationError,
   ConflictError,
@@ -36,6 +39,13 @@ import { getStockCount } from './read';
 export { getStockCount, listStockCounts, resolveStockCountItems } from './read';
 
 const FORM = 'stockcount_create' as const;
+
+// ADR-197 — Edit before → after. Labels: docs/NAMING.md.
+const HEADER_FIELDS: readonly DiffField[] = [{ key: 'remarks', label: 'Remarks' }];
+const LINE_FIELDS: readonly DiffField[] = [
+  { key: 'countedQty', label: 'Counted Qty' },
+  { key: 'reason', label: 'Reason' },
+];
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -111,10 +121,11 @@ export async function createStockCount(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
-        entity: 'Stock Count',
-        detail: `${code} · ${input.lines.length} item(s) · ${input.purpose}`,
+        action: ActivityAction.Create,
+        entity: 'StockCount',
+        entityId: newId,
         refId: code,
+        detail: `${code} · ${input.lines.length} item(s) · ${input.purpose}`,
       },
       companyId,
       user,
@@ -147,7 +158,7 @@ export async function replaceStockCountLines(
     const now = new Date();
     await tx
       .update(stockCountLines)
-      .set({ deletedAt: now, updatedAt: now, updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedAt: now, updatedBy: user.id })
       .where(and(eq(stockCountLines.stockCountId, id), isNull(stockCountLines.deletedAt)));
     await writeLines(tx, companyId, id, input.lines, byId, user.id, keep);
     await tx
@@ -158,17 +169,64 @@ export async function replaceStockCountLines(
         updatedBy: user.id,
       })
       .where(eq(stockCounts.id, id));
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'Stock Count',
-        detail: `${h.code} · ${input.lines.length} item(s)`,
-        refId: h.code,
-      },
-      companyId,
-      user,
+    // ADR-197 — one EDIT row for the header, one per changed / added /
+    // removed line (lines are matched by item; lineRef = the saved line no.).
+    const edits: Array<{ lineRef: string | null; changes: ActivityChange[] }> = [];
+    const headerChanges = diffFields(
+      h,
+      input.remarks !== undefined ? { remarks: input.remarks || null } : {},
+      HEADER_FIELDS,
     );
+    if (headerChanges.length > 0) edits.push({ lineRef: null, changes: headerChanges });
+    const oldByItem = new Map(old.map((l) => [l.itemId, l]));
+    const newItems = new Set(input.lines.map((l) => l.itemId));
+    input.lines.forEach((l, i) => {
+      const prev = oldByItem.get(l.itemId);
+      const next = { countedQty: roundQty(l.countedQty), reason: l.reason ?? null };
+      const changes = prev
+        ? diffFields(prev, next, LINE_FIELDS)
+        : [
+            {
+              field: 'itemCode',
+              label: 'Item Code',
+              before: null,
+              after: byId.get(l.itemId)!.code,
+            },
+            ...diffFields({}, next, LINE_FIELDS),
+          ];
+      if (changes.length > 0) edits.push({ lineRef: `Line ${i + 1}`, changes });
+    });
+    for (const l of old) {
+      if (newItems.has(l.itemId)) continue;
+      edits.push({
+        lineRef: `Line ${l.lineNo}`,
+        changes: [
+          { field: 'itemCode', label: 'Item Code', before: l.itemCodeText, after: null },
+          {
+            field: 'countedQty',
+            label: 'Counted Qty',
+            before: roundQty(l.countedQty),
+            after: null,
+          },
+        ],
+      });
+    }
+    for (const e of edits) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'StockCount',
+          entityId: h.id,
+          refId: h.code,
+          lineRef: e.lineRef,
+          changes: e.changes,
+          detail: `Edited ${h.code}${e.lineRef ? ` · ${e.lineRef}` : ''}`,
+        },
+        companyId,
+        user,
+      );
+    }
   });
   return getStockCount(id, user);
 }
@@ -210,10 +268,11 @@ export async function submitStockCount(id: string, user: AuthContext): Promise<S
     await emitActivityLog(
       tx,
       {
-        action: 'SUBMIT',
-        entity: 'Stock Count',
-        detail: `${h.code} · ${ls.length} item(s) — system qty snapshotted`,
+        action: ActivityAction.Submit,
+        entity: 'StockCount',
+        entityId: h.id,
         refId: h.code,
+        detail: `${h.code} · ${ls.length} item(s) — system qty snapshotted`,
       },
       companyId,
       user,
@@ -322,10 +381,14 @@ export async function approveStockCount(
     await emitActivityLog(
       tx,
       {
-        action: 'POST',
-        entity: 'Stock Count',
-        detail: `${h.code} posted · ${changed} of ${plans.length} item(s) changed${input.confirmReason ? ` · below booked confirmed: ${input.confirmReason}` : ''}`,
+        action: ActivityAction.Post,
+        entity: 'StockCount',
+        entityId: h.id,
         refId: h.code,
+        // Net qty the count moved (sum of counted − system over changed lines).
+        qty: roundQty(plans.reduce((s, p) => s + p.diff, 0)),
+        reason: input.confirmReason ?? null,
+        detail: `${h.code} posted · ${changed} of ${plans.length} item(s) changed${input.confirmReason ? ' · below booked confirmed' : ''}`,
       },
       companyId,
       user,
@@ -362,10 +425,12 @@ export async function cancelStockCount(
     await emitActivityLog(
       tx,
       {
-        action: 'CANCEL',
-        entity: 'Stock Count',
-        detail: `${h.code} · ${input.reason}`,
+        action: ActivityAction.Cancel,
+        entity: 'StockCount',
+        entityId: h.id,
         refId: h.code,
+        reason: input.reason,
+        detail: `${h.code} cancelled (${h.status})`,
       },
       companyId,
       user,

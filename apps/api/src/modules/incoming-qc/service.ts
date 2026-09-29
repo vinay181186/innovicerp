@@ -14,7 +14,7 @@ import type {
   IncomingQcResponse,
   SubmitIncomingQcInput,
 } from '@innovic/shared';
-import { isTpiOp } from '@innovic/shared';
+import { ActivityAction, isTpiOp } from '@innovic/shared';
 import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
@@ -813,11 +813,18 @@ export async function submitIncomingQc(
 
     await emitActivityLog(
       tx,
+      // ADR-197 — an inspection is its own QC action on the GRN (never a
+      // generic EDIT): the line, the accepted qty and the inspector named on
+      // the entry (who may not be the user pressing Submit).
       {
-        action: 'EDIT',
+        action: ActivityAction.QC,
         entity: 'GoodsReceiptNote',
-        detail: `${line.grnCode} Row #${line.lineNo} — Incoming QC: Accepted ${input.acceptedQty}, Rejected ${input.rejectedQty}`,
+        entityId: line.grnId,
         refId: line.grnCode,
+        lineRef: `Line ${line.lineNo}`,
+        qty: input.acceptedQty,
+        operatorName: input.qcInspectedByName,
+        detail: `${line.grnCode} Line ${line.lineNo} — Incoming QC: ${input.acceptedQty} accepted, ${input.rejectedQty} rejected`,
       },
       companyId,
       user,

@@ -9,8 +9,13 @@
 //                        No Drawing card: the header's Drawing row + thumbnail
 //                        already open the drawing (Round 5, one way in).
 //   Related Records      the shared Related Documents panel, as before.
-//   History              the completion-log feed (op_log ∪ NC ∪ dispositions ∪
-//                        OSP), as before — server-merged, real total.
+//   History              the document's own History (ADR-197, DocumentHistory:
+//                        User + Operator, Action, op, Activity Qty, Before →
+//                        After, Reason) first; below it, under "Floor entries —
+//                        ops, NCs, OSP", the completion-log feed (op_log ∪ NC ∪
+//                        dispositions ∪ OSP), as before — server-merged, real
+//                        total. A negative op_log row is a reversal and reads
+//                        "Reversed", never "Completed" with a minus number.
 //
 // Presentation only. Every figure is one the page already loaded.
 import type {
@@ -27,6 +32,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { JcMaterialPanel } from '@/modules/material/components/jc-material-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -63,14 +69,25 @@ interface FeedRow {
   title: string;
   detail: string;
   remarks: string;
-  qtyKind: 'none' | 'complete' | 'qc' | 'nc';
+  qtyKind: 'none' | 'complete' | 'qc' | 'nc' | 'reversal';
   qty: number | null;
 }
 
 // Mirrors legacy _allEvents shaping (L11091-11131) per event kind.
 function mapEvent(e: JobCardCompletionEvent): FeedRow {
   if (e.kind === 'op') {
-    const label = e.logType === 'start' ? 'Started' : e.logType === 'qc' ? 'QC Entry' : 'Completed';
+    // A reversal (POST /op-entry/op-log/:id/reverse) is an opposite op_log row:
+    // negative qty / reject qty, same logType as the entry it cancels.
+    const reversal = e.logType !== 'start' && ((e.qty ?? 0) < 0 || (e.rejectQty ?? 0) < 0);
+    const label = reversal
+      ? e.logType === 'qc'
+        ? 'QC Entry Reversed'
+        : 'Completion Reversed'
+      : e.logType === 'start'
+        ? 'Started'
+        : e.logType === 'qc'
+          ? 'QC Entry'
+          : 'Completed';
     // ADR-164 — machineCode is the machine ACTUALLY used; plannedMachineCode is
     // the op's plan. Name the plan only when the two differ.
     const machine = e.machineCode ?? '?';
@@ -84,7 +101,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       e.logType === 'start'
         ? `on ${machineLabel} by ${operator}`
         : e.logType === 'qc'
-          ? [(e.rejectQty ?? 0) > 0 ? `${e.rejectQty} rejected` : '', operator]
+          ? [(e.rejectQty ?? 0) !== 0 ? `${e.rejectQty} rejected` : '', operator]
               .filter(Boolean)
               .join(' — ')
           : operator;
@@ -92,12 +109,18 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       id: e.id,
       date: e.date,
       time: e.time,
-      icon: e.logType === 'start' ? '▶' : e.logType === 'qc' ? '🔬' : '✔',
-      color: e.logType === 'start' ? 'var(--amber)' : 'var(--green)',
+      icon: reversal ? '↩' : e.logType === 'start' ? '▶' : e.logType === 'qc' ? '🔬' : '✔',
+      color: reversal ? 'var(--red2)' : e.logType === 'start' ? 'var(--amber)' : 'var(--green)',
       title: `Op ${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}: ${e.operation ?? '?'} — ${label}`,
       detail: [detail, e.shift ? labelOf(SHIFT_LABELS, e.shift) : ''].filter(Boolean).join(' • '),
       remarks: e.remarks ?? '',
-      qtyKind: e.logType === 'start' ? 'none' : e.logType === 'qc' ? 'qc' : 'complete',
+      qtyKind: reversal
+        ? 'reversal'
+        : e.logType === 'start'
+          ? 'none'
+          : e.logType === 'qc'
+            ? 'qc'
+            : 'complete',
       qty: e.qty ?? 0,
     };
   }
@@ -265,7 +288,9 @@ function HistoryFeed({
                   </div>
                   {e.qtyKind !== 'none' ? (
                     <div className="mono fw-700" style={{ fontSize: 13, flexShrink: 0 }}>
-                      {e.qtyKind === 'qc' ? (
+                      {e.qtyKind === 'reversal' ? (
+                        <span style={{ color: 'var(--red2)' }}>{e.qty}</span>
+                      ) : e.qtyKind === 'qc' ? (
                         `+${e.qty}`
                       ) : e.qtyKind === 'nc' ? (
                         <span style={{ color: 'var(--red2)' }}>-{e.qty}</span>
@@ -568,7 +593,18 @@ export function JcViewTabs({
         ) : tab === 'related' ? (
           <RelatedDocsPanel module="job-cards" id={jc.id} />
         ) : (
-          <HistoryFeed completionLog={extras?.completionLog} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <DocumentHistory entity="JobCard" entityId={jc.id} refId={jc.code} />
+            <div>
+              <div
+                className="fw-700"
+                style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}
+              >
+                Floor entries — ops, NCs, OSP
+              </div>
+              <HistoryFeed completionLog={extras?.completionLog} />
+            </div>
+          </div>
         )}
       </div>
     </div>

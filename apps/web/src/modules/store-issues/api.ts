@@ -10,6 +10,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const storeIssuesKeys = {
   all: ['store-issues'] as const,
@@ -66,6 +67,7 @@ function invalidate(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: ['store-inventory'] });
   void qc.invalidateQueries({ queryKey: ['store-transactions'] });
   void qc.invalidateQueries({ queryKey: ['items'] });
+  void qc.invalidateQueries({ queryKey: activityLogKeys.all });
 }
 
 export function useCreateStoreIssue() {

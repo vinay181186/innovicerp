@@ -17,7 +17,7 @@ import {
 import { and, desc, eq, inArray, or, type SQL } from 'drizzle-orm';
 import { activityLog, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { getMyAccess } from '../access-control/service';
 
@@ -41,6 +41,18 @@ async function requireHistoryAccess(entity: string, user: AuthContext): Promise<
   throw new AuthorizationError('Your access does not let you open the Activity Log.');
 }
 
+/** Money fields in a before → after list. A reader who may not see prices on
+ *  the document's form (ADR "Can See Price") must not learn them from History
+ *  either, so these change rows are dropped for them. */
+const MONEY_FIELD = /(rate|price|amount|value|cost|subtotal|total|tax|gst|discount|payment)/i;
+
+async function mayReadMoney(entity: string, user: AuthContext): Promise<boolean> {
+  if (user.role === 'admin') return true;
+  const std = canonicalActivityEntity(entity);
+  const viewForm = std ? ACTIVITY_ENTITY_META[std].viewForm : null;
+  return viewForm ? canSeeFormPrice(user, viewForm) : true;
+}
+
 /** jsonb `changes` → the contract's array (defensive: an old or hand-written
  *  row that is not an array reads as no changes). */
 function readChanges(v: unknown): ActivityChange[] {
@@ -62,6 +74,9 @@ export async function getActivityHistory(
 ): Promise<ActivityHistoryResponse> {
   const companyId = requireCompany(user);
   await requireHistoryAccess(input.entity, user);
+  const showMoney = await mayReadMoney(input.entity, user);
+  const visible = (cs: ActivityChange[]): ActivityChange[] =>
+    showMoney ? cs : cs.filter((c) => !MONEY_FIELD.test(`${c.field} ${c.label}`));
   return withUserContext(user, async (tx) => {
     const match: SQL[] = [];
     if (input.entityId) {
@@ -117,7 +132,7 @@ export async function getActivityHistory(
         lineRef: r.lineRef,
         opRef: r.opRef,
         qty: r.qty === null ? null : Number(r.qty),
-        changes: readChanges(r.changes),
+        changes: visible(readChanges(r.changes)),
         reason: r.reason,
         detail: r.detail,
       })),

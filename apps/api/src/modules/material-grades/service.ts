@@ -1,3 +1,4 @@
+import { ActivityAction } from '@innovic/shared';
 // Raw-material GRADE master (migration 0105). One half of the "Raw Material
 // Master" menu entry; the other is ../material-sizes. The two are deliberately
 // INDEPENDENT — a size is not scoped to a grade, so picking EN24 does not
@@ -24,6 +25,8 @@ import type {
   MaterialGrade,
   UpdateMaterialGradeInput,
 } from './schema';
+import { softDeleteStamp } from '../../lib/audit-trail';
+import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -333,7 +336,7 @@ export async function softDeleteMaterialGrade(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: materialGrades.id })
+      .select({ id: materialGrades.id, code: materialGrades.code })
       .from(materialGrades)
       .where(
         and(
@@ -348,8 +351,20 @@ export async function softDeleteMaterialGrade(
     // their text snapshot, so nothing they print changes.
     await tx
       .update(materialGrades)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(materialGrades.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Delete,
+        entity: 'MaterialGrade',
+        entityId: id,
+        refId: existing[0]?.code ?? null,
+        detail: `Deleted Grade ${existing[0]?.code ?? id}`,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

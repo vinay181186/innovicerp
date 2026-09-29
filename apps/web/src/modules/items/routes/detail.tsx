@@ -40,6 +40,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
@@ -49,8 +50,8 @@ import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transa
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
 import { STORE_TXN_SOURCE_LABELS } from '@/modules/store-transactions/lib/txn-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ConfirmDialog } from '@/ui/feedback';
 import { useItem, useSoftDeleteItem } from '../api';
+import { TrashReasonDialog } from '../components/trash-reason-dialog';
 import { printItemDrawing } from '../lib/print-drawing';
 
 // Rows pulled for the ledger sub-panel. The panel discloses the cap against the
@@ -112,8 +113,8 @@ function ItemDetailPage(): React.JSX.Element {
 
   // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
   // shows a rejection in the dialog instead of closing it.
-  const onDelete = async (): Promise<void> => {
-    await softDelete.mutateAsync(item.id);
+  const onDelete = async (reason: string): Promise<void> => {
+    await softDelete.mutateAsync({ id: item.id, reason });
     setConfirmDelete(false);
     await navigate({ to: '/items', replace: true });
   };
@@ -184,13 +185,17 @@ function ItemDetailPage(): React.JSX.Element {
 
       <StockHistoryCard itemId={item.id} />
 
+      {/* ADR-197 — who created / edited / deleted this item, with Before → After. */}
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title">History</div>
+        </div>
+        <DocumentHistory entity="Item" entityId={item.id} refId={item.code} />
+      </div>
+
       {confirmDelete ? (
-        <ConfirmDialog
+        <TrashReasonDialog
           title={`Move Item ${item.code} to Trash?`}
-          message="You can restore it from Trash."
-          confirmLabel="Move to Trash"
-          pendingLabel="Moving to Trash…"
-          tone="danger"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
         />

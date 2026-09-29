@@ -33,12 +33,14 @@ import { PAYMENT_MODES, type PaymentMode } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { fmtDate, todayIst } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
+import { Panel } from '@/ui/data';
 import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
@@ -437,6 +439,10 @@ function InvoiceDetailPage(): React.JSX.Element {
       ) : null}
 
       <RelatedDocsPanel module="invoices" id={inv.id} />
+
+      <Panel title="History" bodyPadding="none">
+        <DocumentHistory entity="Invoice" entityId={inv.id} refId={inv.code} />
+      </Panel>
     </div>
   );
 }

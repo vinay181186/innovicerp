@@ -15,6 +15,7 @@ import type {
   InvoiceableSoResponse,
   ListInvoicesResponse,
 } from '@innovic/shared';
+import { ActivityAction } from '@innovic/shared';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
   clients,
@@ -725,10 +726,12 @@ export async function createInvoice(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'Invoice',
-        detail: `${code} — ${so.code} ₹${grand.toFixed(0)}`,
+        entityId: header.id,
         refId: code,
+        qty: input.lines.reduce((sum, l) => sum + l.qty, 0),
+        detail: `${code} — ${so.code} ₹${grand.toFixed(0)}`,
       },
       companyId,
       user,
@@ -815,8 +818,9 @@ export async function addPayment(
     await emitActivityLog(
       tx,
       {
-        action: 'PAYMENT',
+        action: ActivityAction.Payment,
         entity: 'Invoice',
+        entityId: inv.id,
         detail:
           `${inv.code} — ₹${input.amount.toFixed(0)} via ${input.mode}` +
           (tdsAmount > 0 ? ` + TDS / short ₹${tdsAmount.toFixed(0)}` : ''),

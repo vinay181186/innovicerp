@@ -37,9 +37,11 @@ import {
 import { useEffect, useId } from 'react';
 import { apiFetch } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
+import { activityLogKeys } from '@/modules/activity-log/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
 import { jobQueueKeys } from '@/modules/job-queue/api';
+import { opLogKeys } from '@/modules/op-log/api';
 import { shopFloorKeys } from '@/modules/shop-floor/api';
 
 export const opEntryKeys = {
@@ -239,6 +241,36 @@ export function useUpdateOpLogTiming() {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'time-changes'] });
+      invalidateProductionViews(qc);
+    },
+  });
+}
+
+// Reverse one completion / QC entry (ADR-197). The original op_log row stays;
+// the server adds an OPPOSITE row (negative qty / reject qty, same logType)
+// and every derived figure recalculates from the ledger. The server refuses
+// with a readable 400 when the pieces were already used by the next op, an NC
+// was raised on the entry, the JC / Production Order is closed, or the entry
+// is already reversed — that message comes back through onError. Allowed for
+// edit AND approve on the 'op_entry' Access Control form (admin bypasses).
+export interface ReverseOpLogInput {
+  id: string;
+  /** Required — trimmed, 1..500 characters. */
+  reason: string;
+}
+
+export function useReverseOpLog() {
+  const qc = useQueryClient();
+  return useMutation<OpLog, Error, ReverseOpLogInput>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<OpLog>(`/op-entry/op-log/${id}/reverse`, {
+        method: 'POST',
+        json: { reason },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: opEntryKeys.all });
+      void qc.invalidateQueries({ queryKey: opLogKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       invalidateProductionViews(qc);
     },
   });

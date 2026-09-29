@@ -39,6 +39,7 @@ import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateClients, useClientsList, useSoftDeleteClient } from '../api';
+import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
 import { downloadClientTemplate, parseClientImportFile } from '../lib/import-export';
 
 // No pagination — Clients is a master list, so it mirrors the SO/WO list: one
@@ -113,6 +114,8 @@ function ClientsListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useClientsList(query);
   const softDelete = useSoftDeleteClient();
+  // ADR-197: Delete asks for a reason — the row's Delete opens this dialog.
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; code: string } | null>(null);
   const canAdd = perms.entry;
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
@@ -338,24 +341,12 @@ function ClientsListPage(): React.JSX.Element {
                 // ROUTE, so it stays a real link for ctrl-click / new tab.
                 editTo={canEdit ? `/clients/${c.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
-                // The PROMISE is handed back, not swallowed. The confirm
-                // dialog then owns the wait: both its buttons go dead, "Moving
-                // to Trash…" shows on the button, and it closes only once the
-                // client really is in the Trash. A failure stays on screen as
-                // an error in the dialog.
-                // An `if (softDelete.isPending) return;` here instead would
-                // close the dialog and delete NOTHING — a silent no-op, which
-                // is worse than the greyed-out button it replaced.
-                onDelete={canDelete ? (): Promise<void> => softDelete.mutateAsync(c.id) : undefined}
+                // Delete opens the Trash dialog below, which asks for a reason
+                // (ADR-197) and owns the wait until the record is in the Trash.
+                onDelete={canDelete ? () => setDeleteTarget({ id: c.id, code: c.code }) : undefined}
                 // And every OTHER row's Delete greys out while one is in
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
-                deleteConfirm={{
-                  title: `Move Customer ${c.code} to Trash?`,
-                  message: 'You can restore it from Trash.',
-                  confirmLabel: 'Move to Trash',
-                  pendingLabel: 'Moving to Trash…',
-                }}
               />
             )}
           />
@@ -403,6 +394,16 @@ function ClientsListPage(): React.JSX.Element {
           ) : null
         }
       />
+      {deleteTarget ? (
+        <TrashReasonDialog
+          title={`Move Customer ${deleteTarget.code} to Trash?`}
+          onConfirm={async (reason) => {
+            await softDelete.mutateAsync({ id: deleteTarget.id, reason });
+            setDeleteTarget(null);
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

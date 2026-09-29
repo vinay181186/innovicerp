@@ -15,9 +15,10 @@
 //    legacy "BOM is linked to N SOs" message; the BOM-8 cascade gives
 //    that linkage real teeth.
 //
-// 3. Audit emission. CREATE / EDIT / DELETE rows land in activity_log
-//    with entity='BOM' so the activity-log viewer can filter for BOM
-//    changes (the legacy logActivity('CREATE','BOM',...) at L8602).
+// 3. Audit emission (ADR-197). CREATE / EDIT / DELETE rows land in
+//    activity_log with entity='BOM' + entityId, so the BOM's History panel
+//    finds them. An edit writes one header row (fields + BOM Rev) and one row
+//    per added / removed / changed line (`Line N`) — see ./audit.ts.
 //
 // 4. Service writes all-or-nothing in a single tx via withUserContext;
 //    a partial failure (e.g. duplicate child item) rolls back BOTH the
@@ -45,9 +46,12 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { softDeleteStamp } from '../../lib/audit-trail';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import { ActivityAction } from '@innovic/shared';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import { type BomAuditLine, bomHeaderChanges, bomLineAuditRows } from './audit';
 import type {
   BomMaster,
   BomMasterDetail,
@@ -479,11 +483,7 @@ export async function getBomMasterRelated(
       })
       .from(plans)
       .where(
-        and(
-          eq(plans.bomMasterId, id),
-          eq(plans.companyId, companyId),
-          isNull(plans.deletedAt),
-        ),
+        and(eq(plans.bomMasterId, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)),
       )
       .orderBy(desc(plans.planDate));
 
@@ -712,8 +712,9 @@ export async function createBomMaster(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'BOM',
+        entityId: header.id,
         detail: bomDetailString(header.bomNo, header.bomName),
         refId: header.bomNo,
       },
@@ -848,23 +849,83 @@ export async function updateBomMaster(
       createdBy: user.id,
     });
 
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'BOM',
-        detail: `${bomDetailString(input.bomNo, input.bomName)} (Rev ${header.revision} → ${newRevision})`,
-        refId: input.bomNo,
-      },
-      companyId,
-      user,
+    // Audit (ADR-197): header row (fields + BOM Rev) then one row per line
+    // added / removed / changed. Nothing moved → no row at all.
+    const codeById = new Map<string, string>();
+    for (const [itemId, it] of itemsLookup.byId) codeById.set(itemId, it.code);
+    for (const r of oldLineRows) if (r.itemCode) codeById.set(r.line.childItemId, r.itemCode);
+    if (header.parentItemId && !codeById.has(header.parentItemId)) {
+      const prev = (await loadItemsByIds(tx, [header.parentItemId], companyId)).byId.get(
+        header.parentItemId,
+      );
+      if (prev) codeById.set(header.parentItemId, prev.code);
+    }
+    const oldAuditLines: BomAuditLine[] = oldLineRows.map((r) => ({
+      lineNo: r.line.lineNo,
+      childItemId: r.line.childItemId,
+      qtyPerSet: r.line.qtyPerSet,
+      bomType: r.line.bomType,
+      rawMaterialGradeText: r.line.rawMaterialGradeText,
+      rawMaterialSizeText: r.line.rawMaterialSizeText,
+    }));
+    const newAuditLines: BomAuditLine[] = lineValues.map((l) => ({
+      lineNo: l.lineNo,
+      childItemId: l.childItemId,
+      qtyPerSet: l.qtyPerSet,
+      bomType: l.bomType,
+      rawMaterialGradeText: l.rawMaterialGradeText ?? null,
+      rawMaterialSizeText: l.rawMaterialSizeText ?? null,
+    }));
+    const lineRows = bomLineAuditRows(oldAuditLines, newAuditLines, codeById);
+    const headerFieldChanges = bomHeaderChanges(
+      header,
+      { ...input, revision: header.revision },
+      codeById,
     );
+    if (headerFieldChanges.length > 0 || lineRows.length > 0) {
+      const headerChanges = bomHeaderChanges(header, { ...input, revision: newRevision }, codeById);
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'BOM',
+          entityId: id,
+          refId: input.bomNo,
+          changes: headerChanges,
+          detail: `Edited ${bomDetailString(input.bomNo, input.bomName)}${
+            input.revisionNote?.trim() ? ` — ${input.revisionNote.trim()}` : ''
+          }`,
+        },
+        companyId,
+        user,
+      );
+      for (const row of lineRows) {
+        await emitActivityLog(
+          tx,
+          {
+            action: row.action,
+            entity: 'BOM',
+            entityId: id,
+            refId: input.bomNo,
+            lineRef: row.lineRef,
+            changes: row.changes,
+            detail: `${input.bomNo} ${row.detail}`,
+          },
+          companyId,
+          user,
+        );
+      }
+    }
 
     return loadBomMasterDetail(tx, id, companyId);
   });
 }
 
-export async function softDeleteBomMaster(id: string, user: AuthContext): Promise<BomMaster> {
+export async function softDeleteBomMaster(
+  id: string,
+  user: AuthContext,
+  reason?: string | null,
+): Promise<BomMaster> {
   if (user.role !== 'admin') {
     throw new AuthorizationError('You do not have permission to delete BOMs. Ask an admin.');
   }
@@ -905,18 +966,24 @@ export async function softDeleteBomMaster(id: string, user: AuthContext): Promis
       );
     }
 
+    const stamp = softDeleteStamp(user);
     await tx
       .update(bomMasters)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id, updatedAt: stamp.deletedAt })
       .where(eq(bomMasters.id, id));
+    // Lines are deliberately NOT stamped: Trash → Restore brings back the
+    // header row only (trash/service.ts), and stamped lines would come back
+    // as an empty BOM. The lines are unreachable while the header is deleted.
 
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
+        action: ActivityAction.Delete,
         entity: 'BOM',
+        entityId: id,
         detail: bomDetailString(header.bomNo, header.bomName),
         refId: header.bomNo,
+        reason: reason ?? null,
       },
       companyId,
       user,

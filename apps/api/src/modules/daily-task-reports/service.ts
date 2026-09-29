@@ -271,7 +271,7 @@ export async function updateDailyReport(
     const now = new Date();
     await tx
       .update(dailyReportLines)
-      .set({ deletedAt: now, updatedBy: user.id, updatedAt: now })
+      .set({ deletedAt: now, deletedBy: user.id, updatedBy: user.id, updatedAt: now })
       .where(and(eq(dailyReportLines.dailyReportId, id), isNull(dailyReportLines.deletedAt)));
     await insertLines(tx, companyId, id, input, user);
 

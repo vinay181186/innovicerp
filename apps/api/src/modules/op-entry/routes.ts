@@ -15,6 +15,7 @@ import {
   submitQcLogInputSchema,
   updateOpLogTimingInputSchema,
 } from './schema';
+import { reverseOpLog, reverseOpLogInputSchema } from './reverse-op-log';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -71,6 +72,17 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamSchema.parse(req.params);
     const body = updateOpLogTimingInputSchema.parse({ ...(req.body as object), id });
     return service.updateOpLogTiming(body, req.user);
+  });
+
+  // Correct a wrong entry (ADR-197, req. 3.2): the original stays, an opposite
+  // entry is added. Reason mandatory; edit + approve on Op Entry (service).
+  app.post('/op-entry/op-log/:id/reverse', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = reverseOpLogInputSchema.parse(req.body ?? {});
+    const row = await reverseOpLog(id, body, req.user);
+    reply.code(201);
+    return row;
   });
 
   // The approvals inbox (Settings → Approvals → Log Entry tab) and the ⏳

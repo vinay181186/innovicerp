@@ -11,6 +11,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -53,6 +54,8 @@ function BomMasterDetailPage(): React.JSX.Element {
   // Legacy _bomViewSnapshot (L8812) — which revision's archived part list is open.
   const [snapshotRev, setSnapshotRev] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-197: a delete carries a reason — it is the Reason on the History row.
+  const [deleteReason, setDeleteReason] = useState('');
 
   // Delete button: the linked-SO guard runs first; only then does the app's
   // ConfirmDialog open (replaces the browser's window.confirm).
@@ -65,6 +68,7 @@ function BomMasterDetailPage(): React.JSX.Element {
       return;
     }
     setDelError(null);
+    setDeleteReason('');
     setConfirmDelete(true);
   };
 
@@ -72,7 +76,10 @@ function BomMasterDetailPage(): React.JSX.Element {
   // and shows a rejection inside the dialog instead of closing it.
   const onDelete = async (): Promise<void> => {
     if (!detail) return;
-    await del.mutateAsync(detail.id);
+    const reason = deleteReason.trim();
+    // Thrown, so ConfirmDialog shows it inside the dialog and stays open.
+    if (!reason) throw new Error('Reason is required.');
+    await del.mutateAsync({ id: detail.id, reason });
     setConfirmDelete(false);
     void navigate({ to: '/bom-masters' });
   };
@@ -354,6 +361,13 @@ function BomMasterDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title">History</div>
+        </div>
+        <DocumentHistory entity="BOM" entityId={detail.id} refId={detail.bomNo} />
+      </div>
+
       <RelatedDocsPanel module="bom-masters" id={detail.id} />
 
       {showLinked ? (
@@ -423,7 +437,24 @@ function BomMasterDetailPage(): React.JSX.Element {
       {confirmDelete ? (
         <ConfirmDialog
           title={`Move BOM ${detail.bomNo} to Trash?`}
-          message="You can restore it from Trash."
+          message={
+            <>
+              You can restore it from Trash.
+              <span className="form-grp" style={{ display: 'block', marginTop: 10 }}>
+                <label className="form-label" htmlFor="bom-delete-reason">
+                  Reason <span className="req">★</span>
+                </label>
+                <textarea
+                  id="bom-delete-reason"
+                  className="innovic-input"
+                  rows={3}
+                  maxLength={500}
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                />
+              </span>
+            </>
+          }
           confirmLabel="Move to Trash"
           pendingLabel="Moving to Trash…"
           onConfirm={onDelete}

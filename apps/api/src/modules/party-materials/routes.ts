@@ -1,4 +1,5 @@
 import {
+  activityReasonSchema,
   createPartyMaterialInputSchema,
   listPartyMaterialsQuerySchema,
   returnPartyMaterialInputSchema,
@@ -10,6 +11,8 @@ import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
 
 const idParam = z.object({ id: z.string().uuid() });
+// ADR-197: a delete says why. Module-local (packages/shared is frozen).
+const deletePartyMaterialBodySchema = z.object({ reason: activityReasonSchema });
 
 export async function partyMaterialsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/party-materials', async (req) => {
@@ -47,7 +50,8 @@ export async function partyMaterialsRoutes(app: FastifyInstance): Promise<void> 
   app.delete('/party-materials/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParam.parse(req.params);
-    await service.softDeletePartyMaterial(id, req.user);
+    const { reason } = deletePartyMaterialBodySchema.parse(req.body ?? {});
+    await service.softDeletePartyMaterial(id, req.user, reason);
     reply.code(204);
     return null;
   });

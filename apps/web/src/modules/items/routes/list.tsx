@@ -75,6 +75,7 @@ import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
+import { TrashReasonDialog } from '../components/trash-reason-dialog';
 import { downloadItemTemplate, parseItemImportFile } from '../lib/import-export';
 
 // No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next),
@@ -193,6 +194,8 @@ function ItemsListPage(): React.JSX.Element {
   const canDelete = perms.edit && perms.approve;
 
   const softDelete = useSoftDeleteItem();
+  // ADR-197: Delete asks for a reason — the row's Delete opens this dialog.
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; code: string } | null>(null);
 
   // Excel import — parse the workbook, then send the WHOLE sheet in one request.
   // It used to POST one item at a time and wait for each answer, and every
@@ -475,23 +478,14 @@ function ItemsListPage(): React.JSX.Element {
                 // ROUTE, so it stays a real link — ctrl/middle-click work.
                 editTo={canEdit ? `/items/${it.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
-                // The PROMISE is handed back, not swallowed: the confirm
-                // dialog owns the wait, both its buttons go dead, and it
-                // closes only once the item really is in the Trash. An
-                // `if (softDelete.isPending) return;` here instead would close
-                // the dialog and delete NOTHING — a silent no-op.
+                // Delete opens the Trash dialog below, which asks for a reason
+                // (ADR-197) and owns the wait until the record is in the Trash.
                 onDelete={
-                  canDelete ? (): Promise<void> => softDelete.mutateAsync(it.id) : undefined
+                  canDelete ? () => setDeleteTarget({ id: it.id, code: it.code }) : undefined
                 }
                 // And every OTHER row's Delete greys out while one is in
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
-                deleteConfirm={{
-                  title: `Move Item ${it.code} to Trash?`,
-                  message: 'You can restore it from Trash.',
-                  confirmLabel: 'Move to Trash',
-                  pendingLabel: 'Moving to Trash…',
-                }}
               />
             )}
           />
@@ -540,6 +534,16 @@ function ItemsListPage(): React.JSX.Element {
           ) : null
         }
       />
+      {deleteTarget ? (
+        <TrashReasonDialog
+          title={`Move Item ${deleteTarget.code} to Trash?`}
+          onConfirm={async (reason) => {
+            await softDelete.mutateAsync({ id: deleteTarget.id, reason });
+            setDeleteTarget(null);
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

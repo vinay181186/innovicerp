@@ -9,12 +9,14 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
 import { useClient } from '@/modules/clients/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { PageHeader, PageState } from '@/ui/layout';
 import { useDispatchDetail } from '../api';
 import { dispatchSheetHtml, printDispatchChallan } from '../lib/print-dc';
@@ -124,6 +126,10 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
           borderRadius: 4,
         }}
       />
+
+      <Panel title="History" bodyPadding="none">
+        <DocumentHistory entity="Dispatch" entityId={d.id} refId={d.code} />
+      </Panel>
     </div>
   );
 }

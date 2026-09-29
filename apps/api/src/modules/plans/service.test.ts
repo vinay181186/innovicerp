@@ -364,7 +364,7 @@ describe('plans service — softDelete + dashboard', () => {
       },
       admin,
     );
-    await service.softDeletePlan(created.id, admin);
+    await service.softDeletePlan(created.id, 'Test delete', admin);
     await expect(service.getPlan(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
 
     // Verify ops also soft-deleted

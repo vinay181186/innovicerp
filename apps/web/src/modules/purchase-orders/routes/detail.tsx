@@ -48,6 +48,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Send, X } from 'lucide-react';
 import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
+import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -92,6 +93,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const rejectMut = useRejectPurchaseOrder();
   const { data: approvalCfg } = useApprovalConfig();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-197 — Move to Trash asks why; the reason lands on the PO's History.
+  const [deleteReason, setDeleteReason] = useState('');
   const [approveOpen, setApproveOpen] = useState(false);
   const [approveRemarks, setApproveRemarks] = useState('');
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -102,6 +105,13 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const [scReason, setScReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  // ADR-197 — the PO's own History tab. Called before the early returns
+  // (hooks rule); it waits for the id / code to arrive.
+  const historyTab = useHistoryTab({
+    entity: 'PurchaseOrder',
+    entityId: detail?.id,
+    refId: detail?.code,
+  });
 
   if (isLoading) {
     return (
@@ -143,7 +153,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   // mutateAsync: ConfirmDialog stays pending while it runs and shows a
   // rejection inside the dialog instead of closing.
   const onDelete = async (): Promise<void> => {
-    await softDelete.mutateAsync(detail.id);
+    const reason = deleteReason.trim();
+    if (!reason) throw new Error('Give a reason to move this PO to Trash.');
+    await softDelete.mutateAsync({ id: detail.id, reason });
     setConfirmDelete(false);
     await navigate({ to: '/purchase-orders', replace: true });
   };
@@ -359,6 +371,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                   hidden: !canDelete,
                   onClick: () => {
                     softDelete.reset();
+                    setDeleteReason('');
                     setConfirmDelete(true);
                   },
                 },
@@ -439,12 +452,27 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <RelatedDocsTabs module="purchase-orders" id={detail.id} />
+      <RelatedDocsTabs module="purchase-orders" id={detail.id} extraTabs={[historyTab]} />
 
       {canDelete && confirmDelete ? (
         <ConfirmDialog
           title={`Move PO ${detail.code} to Trash?`}
-          message="You can restore it from Trash."
+          message={
+            <>
+              <div style={{ marginBottom: 8 }}>You can restore it from Trash.</div>
+              <div className="form-grp">
+                <label className="form-label">
+                  Reason <span className="req">★</span>
+                </label>
+                <textarea
+                  className="innovic-input"
+                  rows={2}
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                />
+              </div>
+            </>
+          }
           confirmLabel="Move to Trash"
           pendingLabel="Moving to Trash…"
           tone="danger"

@@ -18,7 +18,9 @@
 import type { PartyGrnListItem } from '@innovic/shared';
 import { ChevronDown, ChevronRight, Loader2, XCircle } from 'lucide-react';
 import { useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
+import { Panel } from '@/ui/data';
 import { usePartyGrnDetail } from '../api';
 
 /** One cell of the card's metric strip — big number over a small caps label,
@@ -277,6 +279,12 @@ export function PartyGrnCard({
                 </table>
               </div>
             )}
+            {/* ADR-197: this receipt's own History (create + compulsory QC). */}
+            <div style={{ marginTop: 10 }}>
+              <Panel title="History" bodyPadding="none">
+                <DocumentHistory entity="PartyGrn" entityId={g.id} refId={g.code} />
+              </Panel>
+            </div>
           </div>
         ) : null}
       </div>

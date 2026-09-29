@@ -17,12 +17,8 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
-import {
-  uploadSoDocFile,
-  useCreateSoDocument,
-  useDeleteSoDocument,
-  useSoDocDetail,
-} from '../api';
+import { ConfirmDialog } from '@/ui/feedback';
+import { uploadSoDocFile, useCreateSoDocument, useDeleteSoDocument, useSoDocDetail } from '../api';
 
 function fmtSize(bytes: number | null): string {
   const b = bytes ?? 0;
@@ -43,6 +39,11 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
   const { data: me } = useSession();
   const canWrite = !!me && me.role !== 'viewer';
   const deleteDoc = useDeleteSoDocument();
+  // ADR-197 — the file being deleted and why (required; lands on the SO's
+  // History). Asked through the ONE ConfirmDialog, never window.confirm.
+  const [deleting, setDeleting] = useState<SoDocumentFile | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const deletingId = deleteDoc.isPending ? deleteDoc.variables?.id : undefined;
   const [uploadOpen, setUploadOpen] = useState(false);
   // The file the user asked to look at, or null when nothing is open. Viewing
   // used to `window.open` a signed URL and let the browser decide — which, with
@@ -86,7 +87,8 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
 
   function onDelete(f: SoDocumentFile): void {
     if (f.source !== 'registry') return;
-    if (confirm(`Delete "${f.fileName}"?`)) deleteDoc.mutate(f.id);
+    setDeleteReason('');
+    setDeleting(f);
   }
 
   return (
@@ -116,7 +118,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
           line={line}
           files={byLine.get(line.lineNo) ?? []}
           canWrite={canWrite}
-          deletingId={deleteDoc.isPending ? deleteDoc.variables : undefined}
+          deletingId={deletingId}
           onDelete={onDelete}
           onView={setPreview}
         />
@@ -134,7 +136,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
                 key={`${f.source}-${f.id}`}
                 file={f}
                 canWrite={canWrite}
-                deleting={deleteDoc.isPending && deleteDoc.variables === f.id}
+                deleting={deletingId === f.id}
                 onDelete={onDelete}
                 onView={setPreview}
                 idx={fi}
@@ -153,6 +155,36 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
           onClose={() => setUploadOpen(false)}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={deleting !== null}
+        title={`Delete "${deleting?.fileName ?? ''}"?`}
+        message={
+          <>
+            The file is removed from this Sales Order.
+            <textarea
+              className="innovic-input"
+              aria-label="Reason"
+              placeholder="Reason (required)"
+              rows={2}
+              maxLength={500}
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              style={{ display: 'block', width: '100%', marginTop: 8 }}
+            />
+          </>
+        }
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        onCancel={() => setDeleting(null)}
+        onConfirm={async () => {
+          if (!deleting) return;
+          const reason = deleteReason.trim();
+          if (!reason) throw new Error('Enter a reason — it is kept on the SO History.');
+          await deleteDoc.mutateAsync({ id: deleting.id, reason });
+          setDeleting(null);
+        }}
+      />
 
       {preview ? (
         // Only files filed under the `drawing` category are drawings. Everything
@@ -419,7 +451,11 @@ function UploadDialog({
       }}
       onClick={busy ? undefined : onClose}
     >
-      <div className="panel" style={{ width: 'min(1100px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="panel"
+        style={{ width: 'min(1100px, 96vw)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="panel-hdr">
           <span className="panel-title">📤 Upload Documents to {soCode}</span>
           <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onClose}>
@@ -490,8 +526,14 @@ function UploadDialog({
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
               Cancel
             </button>
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void submit()}>
-              {busy ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Upload size={14} />} Upload
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => void submit()}
+            >
+              {busy ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Upload size={14} />}{' '}
+              Upload
             </button>
           </div>
         </div>

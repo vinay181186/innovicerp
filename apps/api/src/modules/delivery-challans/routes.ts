@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
+  cancelDeliveryChallanInputSchema,
   createDeliveryChallanInputSchema,
   createDeliveryChallanReceiptInputSchema,
   listDeliveryChallansQuerySchema,
@@ -50,7 +51,8 @@ export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void
   app.post('/delivery-challans/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.cancelDeliveryChallan(id, req.user);
+    const { reason } = cancelDeliveryChallanInputSchema.parse(req.body ?? {});
+    return service.cancelDeliveryChallan(id, req.user, reason);
   });
 
   // T-059b — receive-back. Auto-generates receipt code, fires stock IN +

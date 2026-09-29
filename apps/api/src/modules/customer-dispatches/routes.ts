@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { createCustomerDispatchInputSchema } from '@innovic/shared';
+import { activityReasonSchema, createCustomerDispatchInputSchema } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
+// ADR-197 — a cancel carries its reason (module-local: the shared contract is frozen).
+const cancelDispatchBodySchema = z.object({ reason: activityReasonSchema });
 
 export async function customerDispatchesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/customer-dispatches', async (req) => {
@@ -50,6 +52,7 @@ export async function customerDispatchesRoutes(app: FastifyInstance): Promise<vo
   app.post('/customer-dispatches/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.cancelDispatch(id, req.user);
+    const { reason } = cancelDispatchBodySchema.parse(req.body ?? {});
+    return service.cancelDispatch(id, reason, req.user);
   });
 }

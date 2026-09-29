@@ -146,6 +146,10 @@ function DecideModal({
   const own = me?.id === w.requestedBy;
   const decide = (decision: 'approve' | 'reject'): void => {
     setErr(null);
+    if (decision === 'reject' && !remarks.trim()) {
+      setErr('Give a reason in Remarks to reject this write-off.');
+      return;
+    }
     mut.mutate(
       { id: w.id, decision, ...(remarks.trim() ? { remarks: remarks.trim() } : {}) },
       { onSuccess: onClose, onError: (e) => setErr(e.message || 'Could not save the decision.') },
@@ -189,7 +193,7 @@ function DecideModal({
           <input
             type="text"
             className="innovic-input"
-            placeholder="Remarks (optional)"
+            placeholder="Remarks (required to Reject)"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
           />

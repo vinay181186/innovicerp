@@ -7,6 +7,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const partyGrnKeys = {
   all: ['party-grn'] as const,
@@ -67,10 +68,10 @@ export function useNextPartyGrnCode() {
 export function useCreatePartyGrn() {
   const qc = useQueryClient();
   return useMutation<PartyGrn, Error, CreatePartyGrnInput>({
-    mutationFn: (input) =>
-      apiFetch<PartyGrn>('/party-grn', { method: 'POST', json: input }),
+    mutationFn: (input) => apiFetch<PartyGrn>('/party-grn', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // Party material stocks changed
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
     },
@@ -92,6 +93,7 @@ export function useCancelPartyGrn() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
     },
   });

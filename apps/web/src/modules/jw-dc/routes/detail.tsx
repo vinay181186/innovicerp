@@ -17,10 +17,12 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
@@ -203,6 +205,10 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
       </div>
 
       <RelatedDocsPanel module="jw-dc" id={dc.id} />
+
+      <Panel title="History" bodyPadding="none">
+        <DocumentHistory entity="JwDcOutward" entityId={dc.id} refId={dc.code} />
+      </Panel>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { activityReasonSchema } from '@innovic/shared';
 import { AuthenticationError } from '../../lib/errors';
 import {
   jobCardCreateInputSchema,
@@ -7,6 +8,8 @@ import {
   listJobCardsQuerySchema,
 } from './schema';
 import * as service from './service';
+
+const deleteJobCardBodySchema = z.object({ reason: activityReasonSchema.optional() });
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -72,7 +75,10 @@ export async function jobCardsRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/job-cards/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.deleteJobCard(id, req.user);
+    // ADR-197 — DELETE takes a reason. Optional for now: the delete button
+    // does not ask for one yet (reported as a follow-up); logged when sent.
+    const body = deleteJobCardBodySchema.parse(req.body ?? {});
+    await service.deleteJobCard(id, req.user, body.reason ?? null);
     reply.code(204);
     return null;
   });

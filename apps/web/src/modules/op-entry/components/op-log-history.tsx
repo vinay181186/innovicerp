@@ -10,6 +10,11 @@
 // until a manager decides. A manager/admin editing here still applies
 // immediately (they are the approver), and can decide a pending request from
 // this card without walking to Settings → Approvals.
+//
+// ADR-197 — each card names the operator on the floor AND the logged-in user
+// who typed the entry (Logged By). A reversal (an opposite entry added by
+// Reverse on the Operation Log; negative qty / reject) reads "Reversal" with
+// its reason instead of the plain type label.
 
 import { SHIFT_LABELS, type OpLog, type OpLogTimeChangeRequest } from '@innovic/shared';
 import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
@@ -18,8 +23,20 @@ import { fmtDate, fmtDateAndTime, fmtDateTime, todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests, useUpdateOpLogTiming } from '../api';
 
+/** GET /op-entry/op-log rows carry three fields the shared OpLog type does not
+ *  declare yet (ADR-197). Optional so a plain OpLog[] still fits. */
+type OpLogRow = OpLog & {
+  createdByName?: string | null;
+  reversalOfId?: string | null;
+  reversalReason?: string | null;
+};
+
+function isReversal(l: OpLogRow): boolean {
+  return Boolean(l.reversalOfId) || l.qty < 0 || l.rejectQty < 0;
+}
+
 interface Props {
-  logs: OpLog[];
+  logs: OpLogRow[];
   isLoading: boolean;
   /** Scopes the pending-change lookup to this operation. Omit and no ⏳
    *  markers are fetched — the cards still edit normally. */
@@ -132,7 +149,8 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
         logs.map((l) => {
           const editing = editingId === l.id;
           const req = pendingByLog.get(l.id) ?? null;
-          const ts = TYPE_STYLE[l.logType];
+          const reversal = isReversal(l);
+          const ts = reversal ? { bg: 'var(--red3)', fg: 'var(--red2)' } : TYPE_STYLE[l.logType];
           return (
             <div
               key={l.id}
@@ -176,7 +194,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {TYPE_LABEL[l.logType]}
+                    {reversal ? 'Reversal' : TYPE_LABEL[l.logType]}
                   </span>
                   {editing ? (
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -207,7 +225,11 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="mono" style={{ fontSize: 12 }} title="Completed / Rejected">
+                  <span
+                    className="mono"
+                    style={{ fontSize: 12, color: l.qty < 0 ? 'var(--red2)' : undefined }}
+                    title="Completed / Rejected"
+                  >
                     {l.qty}
                     {l.rejectQty ? (
                       <span style={{ color: 'var(--red2)' }}> · Rejected {l.rejectQty}</span>
@@ -297,10 +319,26 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   );
                 })()}
                 <span>·</span>
-                <span style={{ color: 'var(--text2)' }}>{l.operatorName ?? '—'}</span>
+                <span>
+                  Operator: <span style={{ color: 'var(--text2)' }}>{l.operatorName ?? '—'}</span>
+                </span>
+                {l.createdByName ? (
+                  <>
+                    <span>·</span>
+                    <span>
+                      Logged By: <span style={{ color: 'var(--text2)' }}>{l.createdByName}</span>
+                    </span>
+                  </>
+                ) : null}
                 <span>·</span>
                 <span>{SHIFT_LABELS[l.shift]}</span>
               </div>
+
+              {reversal && l.reversalReason ? (
+                <div style={{ fontSize: 11, color: 'var(--red2)', wordBreak: 'break-word' }}>
+                  Reason: {l.reversalReason}
+                </div>
+              ) : null}
 
               {/* Remarks + retimed marker (display only, not while editing) */}
               {!editing && (l.remarks || l.timingEditedAt) ? (

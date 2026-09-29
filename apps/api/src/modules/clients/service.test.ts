@@ -101,7 +101,7 @@ describe('clients service', () => {
       { code: `${TEST_PREFIX}D1`, name: 'Doomed', isActive: true },
       admin,
     );
-    await service.softDeleteClient(created.id, admin);
+    await service.softDeleteClient(created.id, 'test cleanup', admin);
     await expect(service.getClient(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
     const list = await service.listClients({ limit: 200, offset: 0 }, admin);
     expect(list.clients.find((c) => c.id === created.id)).toBeUndefined();

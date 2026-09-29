@@ -66,6 +66,28 @@ function ItemCells({ r }: { r: RunningOp }): React.JSX.Element {
   );
 }
 
+/** GET /op-entry/running-ops rows carry `startedByName` — the logged-in user
+ *  who pressed Start (ADR-197) — which the shared RunningOp type does not
+ *  declare yet. `operatorName` is the operator on the floor. */
+type RunningOpRow = RunningOp & { startedByName?: string | null };
+
+/** Operator on the floor, plus "Started By" when someone else pressed Start. */
+function OperatorCell({ r }: { r: RunningOpRow }): React.JSX.Element {
+  const startedBy = r.startedByName?.trim() ?? '';
+  const differs =
+    startedBy !== '' && startedBy.toLowerCase() !== (r.operatorName ?? '').trim().toLowerCase();
+  return (
+    <td style={{ fontSize: 12 }}>
+      {r.operatorName ?? '—'}
+      {differs ? (
+        <div className="text3" style={{ fontSize: 11 }}>
+          Started By: {startedBy}
+        </div>
+      ) : null}
+    </td>
+  );
+}
+
 export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
   const stop = useStopOp();
   // Stopping a session commits produced qty to op_log → op_entry entry (Production).
@@ -154,7 +176,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                         />
                       )}
                     </td>
-                    <td style={{ fontSize: 12 }}>{r.operatorName ?? '—'}</td>
+                    <OperatorCell r={r} />
                     <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {fmtDateAndTime(r.startDate, r.startTime)}
                     </td>
@@ -236,7 +258,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                         />
                       )}
                     </td>
-                    <td style={{ fontSize: 12 }}>{r.operatorName ?? '—'}</td>
+                    <OperatorCell r={r} />
                     <td className="mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {fmtDateTime(r.endedAt)}
                     </td>

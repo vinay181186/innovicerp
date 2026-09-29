@@ -11,10 +11,19 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
-import { ITEM_TYPE_RULES, type ItemType, itemTypeLabel, withPartyMaterialSuffix } from '@innovic/shared';
+import {
+  ActivityAction,
+  ITEM_PROCUREMENT_TYPE_LABEL,
+  ITEM_TYPE_RULES,
+  type ItemProcurementType,
+  type ItemType,
+  itemTypeLabel,
+  withPartyMaterialSuffix,
+} from '@innovic/shared';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
@@ -51,6 +60,40 @@ const PARTY_OWNED_ITEM_TYPES = (Object.keys(ITEM_TYPE_RULES) as ItemType[]).filt
  *  Deliberately a local copy of the sales-orders / purchase-orders helper
  *  rather than an export across modules: it is three lines, and each list must
  *  be free to change its own search behaviour without dragging the others. */
+/** File path → just the file name, for the History tab's Before → After. */
+function fileName(v: unknown): string | null {
+  if (typeof v !== 'string' || v.trim() === '') return null;
+  return v.split('/').pop() ?? v;
+}
+
+/** Every user-editable Item Master field, with its screen label (NAMING.md),
+ *  for the Edit row's Before → After (ADR-197). */
+const ITEM_FIELDS: readonly DiffField[] = [
+  { key: 'name', label: 'Item Name' },
+  { key: 'description', label: 'Description' },
+  { key: 'drawingNo', label: 'Drawing No.' },
+  { key: 'revision', label: 'Item Master Rev' },
+  { key: 'material', label: 'Material' },
+  { key: 'uom', label: 'UOM' },
+  {
+    key: 'itemType',
+    label: 'Item Type',
+    format: (v) => (typeof v === 'string' && v ? itemTypeLabel(v as ItemType) : null),
+  },
+  {
+    key: 'procurementType',
+    label: 'Make / Buy',
+    format: (v) =>
+      typeof v === 'string' && v
+        ? (ITEM_PROCUREMENT_TYPE_LABEL[v as ItemProcurementType] ?? v)
+        : null,
+  },
+  { key: 'trackSerial', label: 'Track by Serial No.' },
+  { key: 'hsnCode', label: 'HSN Code' },
+  { key: 'drawingFilePath', label: 'Old Drawing', format: fileName },
+  { key: 'imagePath', label: 'Product image', format: fileName },
+];
+
 function escapeLikeTerm(raw: string): string {
   return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
@@ -193,9 +236,7 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
       // item types keep the code exactly as given / generated.
       const baseCode = input.code?.trim() || (await nextItemCode(tx, companyId));
       const code =
-        input.itemType === 'party_supplied_material'
-          ? withPartyMaterialSuffix(baseCode)
-          : baseCode;
+        input.itemType === 'party_supplied_material' ? withPartyMaterialSuffix(baseCode) : baseCode;
       const existing = await tx
         .select({ id: items.id, deletedAt: items.deletedAt })
         .from(items)
@@ -235,7 +276,13 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
       const row = inserted[0] as unknown as Item;
       await emitActivityLog(
         tx,
-        { action: 'CREATE', entity: 'Item', detail: `${row.code} — ${row.name}`, refId: row.code },
+        {
+          action: ActivityAction.Create,
+          entity: 'Item',
+          entityId: row.id,
+          refId: row.code,
+          detail: `${row.code} — ${row.name}`,
+        },
         companyId,
         user,
       );
@@ -383,7 +430,7 @@ export async function createItemsBulk(
       await emitActivityLog(
         tx,
         {
-          action: 'CREATE',
+          action: ActivityAction.Create,
           entity: 'Item',
           detail: `Excel import — ${values.length} item(s): ${codes[0]}…${codes[codes.length - 1]}`,
         },
@@ -405,13 +452,10 @@ export async function updateItem(
   await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // The whole row, read BEFORE the update — it is the "before" of the
+    // History tab's Before → After (ADR-197).
     const existing = await tx
-      .select({
-        id: items.id,
-        code: items.code,
-        itemType: items.itemType,
-        trackSerial: items.trackSerial,
-      })
+      .select()
       .from(items)
       .where(and(eq(items.id, id), isNull(items.deletedAt)))
       .for('update')
@@ -430,8 +474,7 @@ export async function updateItem(
     if (
       input.itemType !== undefined &&
       input.itemType !== cur.itemType &&
-      (input.itemType === 'party_supplied_material' ||
-        cur.itemType === 'party_supplied_material')
+      (input.itemType === 'party_supplied_material' || cur.itemType === 'party_supplied_material')
     ) {
       throw new ConflictError(
         `${cur.code}: Item Type cannot be changed to or from Party Supplied Material — the item code (with its -rm suffix) is permanent. Create a new item instead.`,
@@ -455,28 +498,33 @@ export async function updateItem(
     // Product image: a string sets it, null clears it, undefined leaves it alone.
     if (input.imagePath !== undefined) updates.imagePath = input.imagePath ?? null;
 
+    const changes = diffFields(cur, updates, ITEM_FIELDS);
     const updated = await tx.update(items).set(updates).where(eq(items.id, id)).returning();
     const row = updated[0] as unknown as Item;
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'Item',
-        detail:
-          `${row.code} — ${row.name}` +
-          (input.itemType !== undefined && input.itemType !== cur.itemType
-            ? ` · Item Type ${itemTypeLabel(cur.itemType)} → ${itemTypeLabel(input.itemType)}`
-            : ''),
-        refId: row.code,
-      },
-      companyId,
-      user,
-    );
+    if (changes.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'Item',
+          entityId: row.id,
+          refId: row.code,
+          changes,
+          detail: `Edited ${row.code} — ${row.name}`,
+        },
+        companyId,
+        user,
+      );
+    }
     return row;
   });
 }
 
-export async function softDeleteItem(id: string, user: AuthContext): Promise<{ ok: true }> {
+export async function softDeleteItem(
+  id: string,
+  reason: string,
+  user: AuthContext,
+): Promise<{ ok: true }> {
   // Delete is not one of the four tier actions, so it is expressed as the pair
   // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
   // has edit but not approve; L4 Approver has approve but not edit. The owner
@@ -496,11 +544,18 @@ export async function softDeleteItem(id: string, user: AuthContext): Promise<{ o
     }
     await tx
       .update(items)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(items.id, id));
     await emitActivityLog(
       tx,
-      { action: 'DELETE', entity: 'Item', detail: `${row.code} — ${row.name}`, refId: row.code },
+      {
+        action: ActivityAction.Delete,
+        entity: 'Item',
+        entityId: row.id,
+        refId: row.code,
+        reason,
+        detail: `${row.code} — ${row.name}`,
+      },
       companyId,
       user,
     );

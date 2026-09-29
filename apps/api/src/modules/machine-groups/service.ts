@@ -1,3 +1,4 @@
+import { ActivityAction } from '@innovic/shared';
 // Machine GROUP master (migration 0116). The second tab of the Machine Master
 // screen; the first is ../machines. The two are one screen in the user's head,
 // so everything here is gated on the SAME form key the machines module uses —
@@ -25,6 +26,8 @@ import type {
   MachineGroup,
   UpdateMachineGroupInput,
 } from './schema';
+import { softDeleteStamp } from '../../lib/audit-trail';
+import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -193,7 +196,7 @@ export async function softDeleteMachineGroup(id: string, user: AuthContext): Pro
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: machineGroups.id })
+      .select({ id: machineGroups.id, code: machineGroups.code })
       .from(machineGroups)
       .where(
         and(
@@ -228,8 +231,20 @@ export async function softDeleteMachineGroup(id: string, user: AuthContext): Pro
 
     await tx
       .update(machineGroups)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(machineGroups.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Delete,
+        entity: 'MachineGroup',
+        entityId: id,
+        refId: existing[0]?.code ?? null,
+        detail: `Deleted Machine Group ${existing[0]?.code ?? id}`,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

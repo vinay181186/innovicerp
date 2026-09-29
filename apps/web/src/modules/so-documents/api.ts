@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 import { signedUrl, uploadFile } from '@/lib/storage';
 
 export const soDocumentsKeys = {
@@ -50,15 +51,21 @@ export function useSoDocDetail(salesOrderId: string | undefined) {
 export function useCreateSoDocument() {
   const qc = useQueryClient();
   return useMutation<SoDocumentFile, Error, CreateSoDocumentInput>({
-    mutationFn: (input) => apiFetch<SoDocumentFile>('/so-documents', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      apiFetch<SoDocumentFile>('/so-documents', { method: 'POST', json: input }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: soDocumentsKeys.all }),
   });
 }
 
 export function useDeleteSoDocument() {
   const qc = useQueryClient();
-  return useMutation<{ id: string }, Error, string>({
-    mutationFn: (id) => apiFetch<{ id: string }>(`/so-documents/${id}`, { method: 'DELETE' }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: soDocumentsKeys.all }),
+  // ADR-197 — a reason is required; the delete lands on the SO's History tab.
+  return useMutation<{ id: string }, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<{ id: string }>(`/so-documents/${id}`, { method: 'DELETE', json: { reason } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: soDocumentsKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+    },
   });
 }

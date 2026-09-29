@@ -16,6 +16,7 @@ import { deliveryChallansKeys } from '@/modules/delivery-challans/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { opEntryKeys } from '@/modules/op-entry/api';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const ncRegisterKeys = {
   all: ['nc-register'] as const,
@@ -77,6 +78,7 @@ export function useCreateNcRegister() {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(ncRegisterKeys.detail(created.id), created);
     },
   });
@@ -90,20 +92,23 @@ export function useUpdateNcRegister(id: string) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(ncRegisterKeys.detail(id), updated);
     },
   });
 }
 
+/** Move an NC to Trash. `reason` is required (ADR-197 — a delete says why). */
 export function useSoftDeleteNcRegister() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (id) => {
-      await apiFetch<null>(`/nc-register/${id}`, { method: 'DELETE' });
+  return useMutation<void, Error, { id: string; reason: string }>({
+    mutationFn: async ({ id, reason }) => {
+      await apiFetch<null>(`/nc-register/${id}`, { method: 'DELETE', json: { reason } });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.removeQueries({ queryKey: ncRegisterKeys.detail(id) });
     },
   });
@@ -118,6 +123,7 @@ function useInvalidateNcCascade(id: string) {
   return (nc: NcRegister) => {
     void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
     void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
+    void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     qc.setQueryData(ncRegisterKeys.detail(id), nc);
     void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
     // Prefix of every `opEntryKeys.jcOps(q)` key, whatever the query was.
@@ -175,6 +181,7 @@ export function useCloseNcRework(id: string) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(ncRegisterKeys.detail(id), updated);
     },
   });
@@ -191,6 +198,7 @@ export function useCloseNcReturn(id: string) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(ncRegisterKeys.detail(id), updated);
       void qc.invalidateQueries({ queryKey: ['op-entry'] });
       void qc.invalidateQueries({ queryKey: ['job-cards'] });

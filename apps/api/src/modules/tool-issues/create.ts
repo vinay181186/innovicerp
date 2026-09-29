@@ -12,7 +12,7 @@
 // Numbering: TIS-NNNNN under a per-company advisory lock (live series kept).
 
 import type { CreateToolIssueInput, ToolIssueDetail } from '@innovic/shared';
-import { INSTRUMENT_STATUS_LABELS } from '@innovic/shared';
+import { ActivityAction, INSTRUMENT_STATUS_LABELS } from '@innovic/shared';
 import { eq, sql } from 'drizzle-orm';
 import { toolIssueInstruments, toolIssues } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -212,10 +212,13 @@ export async function createToolIssue(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
-        entity: 'Tool Issue',
-        detail: `${code} · ${itm.code} × ${qty}${serials ? ` (${serials})` : ''} → ${holder.issuedTo}${jcCode ? ` · ${jcCode}` : ''}`,
+        action: ActivityAction.Issue,
+        entity: 'ToolIssue',
+        entityId: id,
         refId: code,
+        qty,
+        operatorName: holder.issuedTo,
+        detail: `${code} · ${itm.code} × ${qty}${serials ? ` (${serials})` : ''} → ${holder.issuedTo}${jcCode ? ` · ${jcCode}` : ''}`,
       },
       companyId,
       user,

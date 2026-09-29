@@ -36,6 +36,16 @@ import {
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { ActivityAction } from '@innovic/shared';
+
+/** One document the cascade spawned — logged as its own CREATE (ADR-197). */
+interface SpawnedDoc {
+  entity: 'JobCard' | 'PurchaseRequest';
+  id: string;
+  code: string;
+  qty: number;
+  bomLineNo: number;
+}
 
 export interface CascadeBomToSoLineResult {
   /** True when at least one child row was inserted (false on idempotent no-op). */
@@ -162,6 +172,7 @@ export async function cascadeBomToSoLine(
   // 4. Walk each BOM line and spawn the appropriate child.
   const createdJobCardCodes: string[] = [];
   const createdPrCodes: string[] = [];
+  const spawned: SpawnedDoc[] = [];
   const today = new Date().toISOString().slice(0, 10);
 
   for (const bl of bomLines) {
@@ -170,55 +181,76 @@ export async function cascadeBomToSoLine(
 
     if (bl.bomType === 'manufacture') {
       const code = await nextJobCardCode(tx, soLine.companyId, soLineId);
-      await tx.insert(jobCards).values({
-        companyId: soLine.companyId,
-        code,
-        jcDate: today,
-        itemId: bl.childItemId,
-        orderQty: childQty,
-        priority: 'normal',
-        sourceSoLineId: soLineId,
-        // Raw material (0107) from the BOM LINE, not from the parent. A child
-        // is a different part and is generally cut from different stock, so
-        // there is nothing to inherit — the BOM line is where the grade and
-        // size for this child were set. Id and text both copied from the line's
-        // own snapshot, so the child JC prints what the BOM said.
-        rawMaterialGradeId: bl.rawMaterialGradeId,
-        rawMaterialGradeText: bl.rawMaterialGradeText,
-        rawMaterialSizeId: bl.rawMaterialSizeId,
-        rawMaterialSizeText: bl.rawMaterialSizeText,
-        createdBy: user.id,
-        updatedBy: user.id,
-      });
+      const jc = await tx
+        .insert(jobCards)
+        .values({
+          companyId: soLine.companyId,
+          code,
+          jcDate: today,
+          itemId: bl.childItemId,
+          orderQty: childQty,
+          priority: 'normal',
+          sourceSoLineId: soLineId,
+          // Raw material (0107) from the BOM LINE, not from the parent. A child
+          // is a different part and is generally cut from different stock, so
+          // there is nothing to inherit — the BOM line is where the grade and
+          // size for this child were set. Id and text both copied from the line's
+          // own snapshot, so the child JC prints what the BOM said.
+          rawMaterialGradeId: bl.rawMaterialGradeId,
+          rawMaterialGradeText: bl.rawMaterialGradeText,
+          rawMaterialSizeId: bl.rawMaterialSizeId,
+          rawMaterialSizeText: bl.rawMaterialSizeText,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning({ id: jobCards.id });
       createdJobCardCodes.push(code);
+      spawned.push({
+        entity: 'JobCard',
+        id: jc[0]!.id,
+        code,
+        qty: childQty,
+        bomLineNo: bl.lineNo,
+      });
     } else {
       // purchase OR outsource → both go to purchase_requests; outsource
       // is differentiated by operation = 'OUTSOURCE' so procurement knows
       // to convert it to a job_work PO instead of a standard PO.
       const code = await nextPrCode(tx, soLine.companyId, soLineId);
-      await tx.insert(purchaseRequests).values({
-        companyId: soLine.companyId,
-        code,
-        prDate: today,
-        status: 'open',
-        // purchase_requests CHECK requires ≥1 of vendor_id / vendor_code_text;
-        // cascade-generated PRs don't know the vendor yet (procurement picks),
-        // so we plant 'TBD' as the placeholder text. Procurement converts to
-        // a real vendor + PO via the existing PR-to-PO flow.
-        vendorCodeText: 'TBD',
-        itemId: bl.childItemId,
-        qty: childQty,
-        sourceSoLineId: soLineId,
-        operation: bl.bomType === 'outsource' ? 'OUTSOURCE' : null,
-        remarks: `Auto from BOM cascade (line ${bl.lineNo})`,
-        createdBy: user.id,
-        updatedBy: user.id,
-      });
+      const pr = await tx
+        .insert(purchaseRequests)
+        .values({
+          companyId: soLine.companyId,
+          code,
+          prDate: today,
+          status: 'open',
+          // purchase_requests CHECK requires ≥1 of vendor_id / vendor_code_text;
+          // cascade-generated PRs don't know the vendor yet (procurement picks),
+          // so we plant 'TBD' as the placeholder text. Procurement converts to
+          // a real vendor + PO via the existing PR-to-PO flow.
+          vendorCodeText: 'TBD',
+          itemId: bl.childItemId,
+          qty: childQty,
+          sourceSoLineId: soLineId,
+          operation: bl.bomType === 'outsource' ? 'OUTSOURCE' : null,
+          remarks: `Auto from BOM cascade (line ${bl.lineNo})`,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning({ id: purchaseRequests.id });
       createdPrCodes.push(code);
+      spawned.push({
+        entity: 'PurchaseRequest',
+        id: pr[0]!.id,
+        code,
+        qty: childQty,
+        bomLineNo: bl.lineNo,
+      });
     }
   }
 
-  // 5. Resolve the BOM code for the audit detail + emit one row.
+  // 5. Resolve the BOM code for the audit detail + one CREATE row per spawned
+  //    document (ADR-197: one row per document touched).
   const bomRows = await tx
     .select({ bomNo: bomMasters.bomNo })
     .from(bomMasters)
@@ -226,19 +258,7 @@ export async function cascadeBomToSoLine(
     .limit(1);
   const bomNo = bomRows[0]?.bomNo ?? bomMasterId.slice(0, 8);
 
-  if (createdJobCardCodes.length > 0 || createdPrCodes.length > 0) {
-    await emitActivityLog(
-      tx,
-      {
-        action: 'BOM_CASCADE',
-        entity: 'BOM',
-        detail: `${bomNo} → SO line ${soLine.partName}: ${createdJobCardCodes.length} JC + ${createdPrCodes.length} PR`,
-        refId: bomNo,
-      },
-      soLine.companyId,
-      user,
-    );
-  }
+  await logSpawned(tx, spawned, bomNo, `SO line ${soLine.partName}`, soLine.companyId, user);
 
   return {
     fired: createdJobCardCodes.length > 0 || createdPrCodes.length > 0,
@@ -390,6 +410,7 @@ export async function cascadeBomToJwLine(
     .orderBy(asc(bomMasterLines.lineNo));
 
   const createdJobCardCodes: string[] = [];
+  const spawned: SpawnedDoc[] = [];
   const today = new Date().toISOString().slice(0, 10);
 
   for (const bl of bomLines) {
@@ -418,6 +439,7 @@ export async function cascadeBomToJwLine(
       })
       .returning({ id: jobCards.id });
     createdJobCardCodes.push(code);
+    spawned.push({ entity: 'JobCard', id: jc[0]!.id, code, qty: childQty, bomLineNo: bl.lineNo });
 
     // An outsourced component gets its OSP op seeded now, with no vendor —
     // procurement picks the vendor and raises the PR through the existing
@@ -442,19 +464,7 @@ export async function cascadeBomToJwLine(
     .limit(1);
   const bomNo = bomRows[0]?.bomNo ?? bomMasterId.slice(0, 8);
 
-  if (createdJobCardCodes.length > 0) {
-    await emitActivityLog(
-      tx,
-      {
-        action: 'BOM_CASCADE',
-        entity: 'BOM',
-        detail: `${bomNo} → JW line ${jwLine.partName}: ${createdJobCardCodes.length} JC`,
-        refId: bomNo,
-      },
-      jwLine.companyId,
-      user,
-    );
-  }
+  await logSpawned(tx, spawned, bomNo, `JWSO line ${jwLine.partName}`, jwLine.companyId, user);
 
   return {
     fired: createdJobCardCodes.length > 0,
@@ -462,6 +472,33 @@ export async function cascadeBomToJwLine(
     bomMasterId,
     createdJobCardCodes,
   };
+}
+
+/** One CREATE row per JC / PR the cascade raised, on that document's own
+ *  History (it replaces the old single `BOM_CASCADE` row on the BOM). */
+async function logSpawned(
+  tx: DbTransaction,
+  spawned: readonly SpawnedDoc[],
+  bomNo: string,
+  forWhat: string,
+  companyId: string,
+  user: AuthContext,
+): Promise<void> {
+  for (const d of spawned) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Create,
+        entity: d.entity,
+        entityId: d.id,
+        refId: d.code,
+        qty: d.qty,
+        detail: `${d.code} from ${bomNo} line ${d.bomLineNo} for ${forWhat}`,
+      },
+      companyId,
+      user,
+    );
+  }
 }
 
 // Silence unused-import false positive — sql is reserved for future

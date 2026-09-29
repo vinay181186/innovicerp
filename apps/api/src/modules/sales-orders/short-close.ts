@@ -24,6 +24,7 @@
 // The header "Close" (closeSalesOrder) short-closes every live line that still
 // has qty undelivered, with one reason, in one transaction.
 
+import { ActivityAction } from '@innovic/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { salesOrderLines, salesOrders } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -264,10 +265,15 @@ async function shortCloseLinesTx(
     await emitActivityLog(
       tx,
       {
-        action: 'SHORT_CLOSE',
-        entity: 'SalesOrderLine',
-        detail: `${hdr.code} Ln ${l.lineNo} closed short (${undelivered} of ${l.orderQty} not delivered): ${reason}`,
-        refId: l.id,
+        action: ActivityAction.CloseShort,
+        entity: 'SalesOrder',
+        entityId: salesOrderId,
+        refId: hdr.code,
+        lineRef: `Line ${l.lineNo}`,
+        // ADR-197 — the qty the close dropped (Order Qty − Dispatched).
+        qty: undelivered,
+        reason,
+        detail: `${hdr.code} Ln ${l.lineNo} closed short (${undelivered} of ${l.orderQty} not delivered)`,
       },
       companyId,
       user,
@@ -290,10 +296,13 @@ async function shortCloseLinesTx(
       await emitActivityLog(
         tx,
         {
-          action: 'SO_CLOSED',
+          action: ActivityAction.Close,
           entity: 'SalesOrder',
-          detail: `${hdr.code} — every line closed${mode === 'header' ? ` short: ${reason}` : ''}`,
-          refId: salesOrderId,
+          entityId: salesOrderId,
+          refId: hdr.code,
+          changes: [{ field: 'status', label: 'SO Status', before: 'Open', after: 'Closed' }],
+          reason,
+          detail: `${hdr.code} — every line closed${mode === 'header' ? ' short' : ''}`,
         },
         companyId,
         user,

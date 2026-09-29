@@ -38,7 +38,7 @@ import type {
   UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import { ActivityAction, opSrNo, type ActivityChange } from '@innovic/shared';
 import {
   bomMasters,
   items,
@@ -93,6 +93,8 @@ import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { labelOf, PLAN_STATUS_LABEL, PLAN_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
+import { fmtDate } from '../../lib/format-date';
 import { nextJcCode } from '../job-cards/service';
 import { saveRouteCardForItem } from '../route-cards/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
@@ -154,6 +156,149 @@ function numericToString(v: number | null | undefined): string | null {
 
 function detail(plan: { code: string; planType: string; itemNameText: string | null }): string {
   return `${plan.code} — ${plan.itemNameText ?? labelOf(PLAN_TYPE_LABEL, plan.planType)}`;
+}
+
+// ─── Audit trail (ADR-197) ────────────────────────────────────────────────
+
+const dateLabel = (v: unknown): string | null =>
+  v == null || v === '' ? null : fmtDate(String(v));
+
+/** The plan fields an Edit compares (screen labels of the Plan form / detail).
+ *  Money (Unit Cost, Rate, OSP Cost) is deliberately NOT here: a Viewer who may
+ *  not see prices can still open the History tab, so a cost change would leak
+ *  through the before → after column. */
+function planEditFields(rmItemCodeById: Map<string, string>): readonly DiffField[] {
+  return [
+    { key: 'planDate', label: 'Plan Date', format: dateLabel },
+    {
+      key: 'planType',
+      label: 'Plan Type',
+      format: (v) => (v == null ? null : labelOf(PLAN_TYPE_LABEL, String(v))),
+    },
+    { key: 'orderQty', label: 'Order Qty' },
+    { key: 'planQty', label: 'Plan Qty' },
+    { key: 'plannedStartDate', label: 'Planned Start Date', format: dateLabel },
+    { key: 'plannedEndDate', label: 'Planned End Date', format: dateLabel },
+    { key: 'customerDispatchDate', label: 'Customer Dispatch Date', format: dateLabel },
+    { key: 'rawMaterialGradeText', label: 'RM Grade' },
+    { key: 'rawMaterialSizeText', label: 'RM Size' },
+    {
+      key: 'rawMaterialItemId',
+      label: 'RM Item',
+      format: (v) => (v == null ? null : (rmItemCodeById.get(String(v)) ?? String(v))),
+    },
+    { key: 'rmQtyPerPiece', label: 'RM Qty per piece' },
+    { key: 'dpVendorCodeText', label: 'Vendor' },
+    { key: 'dpRemarks', label: 'Buy Remarks' },
+    { key: 'foVendorCodeText', label: 'JW Vendor' },
+    { key: 'foProcess', label: 'Process' },
+    { key: 'foMaterialSrc', label: 'Material Source' },
+    { key: 'foDeliveryDate', label: 'Due Date', format: dateLabel },
+    { key: 'foCostCenter', label: 'Cost Centre' },
+    { key: 'foRemarks', label: 'Outsource Remarks' },
+    {
+      key: 'requiredDocs',
+      label: 'Required Documents',
+      // [{ name, mandatory }] → "Material cert (mandatory), Dim report"
+      format: (v) =>
+        Array.isArray(v) && v.length > 0
+          ? (v as PlanRequiredDoc[])
+              .map((d) => (d.mandatory ? `${d.name} (mandatory)` : d.name))
+              .join(', ')
+          : null,
+    },
+    { key: 'remarks', label: 'Plan Remarks' },
+  ];
+}
+
+/** "10 Turning, 20 Milling" — the op list as one readable value, so an ops
+ *  replace shows as a single Operations before → after entry. */
+function opsSummary(ops: ReadonlyArray<{ opSeq: number; operation: string }>): string | null {
+  if (ops.length === 0) return null;
+  return [...ops]
+    .sort((a, b) => a.opSeq - b.opSeq)
+    .map((o) => `${opSrNo(o.opSeq)} ${o.operation}`)
+    .join(', ');
+}
+
+function planStatusChange(before: PlanStatus, after: PlanStatus): ActivityChange {
+  return {
+    field: 'planStatus',
+    label: 'Status',
+    before: labelOf(PLAN_STATUS_LABEL, before),
+    after: labelOf(PLAN_STATUS_LABEL, after),
+  };
+}
+
+/** Execute touched up to three documents: the plan (status moved on), the Job
+ *  Card it built and the PR(s) it raised. One row per document (ADR-197). */
+async function logPlanExecuted(
+  tx: DbTransaction,
+  plan: typeof plans.$inferSelect,
+  out: {
+    newStatus: PlanStatus;
+    jc: { id: string; code: string } | null;
+    prCodes: string[];
+    summary: string;
+  },
+  user: AuthContext,
+): Promise<void> {
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Edit,
+      entity: 'Plan',
+      entityId: plan.id,
+      refId: plan.code,
+      qty: plan.planQty,
+      changes: [planStatusChange(plan.planStatus, out.newStatus)],
+      detail: out.summary,
+    },
+    plan.companyId,
+    user,
+  );
+  if (out.jc) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Create,
+        entity: 'JobCard',
+        entityId: out.jc.id,
+        refId: out.jc.code,
+        qty: plan.planQty,
+        detail: `${out.jc.code} from Plan ${plan.code}`,
+      },
+      plan.companyId,
+      user,
+    );
+  }
+  if (out.prCodes.length > 0) {
+    const prs = await tx
+      .select({ id: purchaseRequests.id, code: purchaseRequests.code, qty: purchaseRequests.qty })
+      .from(purchaseRequests)
+      .where(
+        and(
+          eq(purchaseRequests.companyId, plan.companyId),
+          inArray(purchaseRequests.code, out.prCodes),
+          isNull(purchaseRequests.deletedAt),
+        ),
+      );
+    for (const pr of prs) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Create,
+          entity: 'PurchaseRequest',
+          entityId: pr.id,
+          refId: pr.code,
+          qty: pr.qty,
+          detail: `${pr.code} from Plan ${plan.code}`,
+        },
+        plan.companyId,
+        user,
+      );
+    }
+  }
 }
 
 /** The customer's drawing revision for whichever SO line a plan hangs on.
@@ -860,10 +1005,12 @@ async function createPlanInTx(
   await emitActivityLog(
     tx,
     {
-      action: 'CREATE',
+      action: ActivityAction.Create,
       entity: 'Plan',
-      detail: detail(plan),
+      entityId: plan.id,
       refId: plan.code,
+      qty: plan.planQty,
+      detail: detail(plan),
     },
     companyId,
     user,
@@ -1024,6 +1171,21 @@ export async function updatePlan(
     if (input.requiredDocs !== undefined) updates['requiredDocs'] = input.requiredDocs;
     if (input.remarks !== undefined) updates['remarks'] = input.remarks;
 
+    // ADR-197 — before → after: the row locked above (stored values) against
+    // what is about to be written.
+    const rmIds = [row.rawMaterialItemId, updates['rawMaterialItemId']].filter(
+      (v): v is string => typeof v === 'string',
+    );
+    const rmItemCodeById = new Map<string, string>();
+    if (rmIds.length > 0) {
+      const rmRows = await tx
+        .select({ id: items.id, code: items.code })
+        .from(items)
+        .where(inArray(items.id, rmIds));
+      for (const r of rmRows) rmItemCodeById.set(r.id, r.code);
+    }
+    const changes = diffFields(row, updates, planEditFields(rmItemCodeById));
+
     await tx.update(plans).set(updates).where(eq(plans.id, id));
 
     // Ops replace-all when provided. The edit form payload does NOT carry the
@@ -1044,6 +1206,7 @@ export async function updatePlan(
       const priorOps = await tx
         .select({
           opSeq: planOps.opSeq,
+          operation: planOps.operation,
           program: planOps.program,
           toolNo: planOps.toolNo,
           toolDetails: planOps.toolDetails,
@@ -1054,10 +1217,15 @@ export async function updatePlan(
         .from(planOps)
         .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
       const priorBySeq = new Map(priorOps.map((op) => [op.opSeq, op]));
+      const opsBefore = opsSummary(priorOps);
+      const opsAfter = opsSummary(input.ops);
+      if (opsBefore !== opsAfter) {
+        changes.push({ field: 'ops', label: 'Operations', before: opsBefore, after: opsAfter });
+      }
 
       await tx
         .update(planOps)
-        .set({ deletedAt: new Date(), updatedBy: user.id })
+        .set({ ...softDeleteStamp(user), updatedBy: user.id })
         .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
       if (input.ops.length > 0) {
         const preservedOps = input.ops.map((op) => {
@@ -1079,17 +1247,21 @@ export async function updatePlan(
       }
     }
 
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'Plan',
-        detail: detail(row),
-        refId: row.code,
-      },
-      companyId,
-      user,
-    );
+    if (changes.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'Plan',
+          entityId: row.id,
+          refId: row.code,
+          changes,
+          detail: `Edited ${row.code}`,
+        },
+        companyId,
+        user,
+      );
+    }
 
     return getPlanInTx(tx, id, companyId);
   });
@@ -1149,10 +1321,12 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
     await emitActivityLog(
       tx,
       {
-        action: 'PLAN_FINALIZED',
+        action: ActivityAction.Edit,
         entity: 'Plan',
-        detail: `${row.code} — ${labelOf(PLAN_TYPE_LABEL, row.planType)} marked Planned`,
+        entityId: row.id,
         refId: row.code,
+        changes: [planStatusChange(row.planStatus, 'planned')],
+        detail: `${row.code} — ${labelOf(PLAN_TYPE_LABEL, row.planType)} marked Planned`,
       },
       companyId,
       user,
@@ -1162,7 +1336,11 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
   });
 }
 
-export async function softDeletePlan(id: string, user: AuthContext): Promise<{ ok: true }> {
+export async function softDeletePlan(
+  id: string,
+  reason: string,
+  user: AuthContext,
+): Promise<{ ok: true }> {
   requireWriteRole(user);
   // Delete = the L5 pair (edit AND approve), matching every other soft-delete.
   await requireFormAccess(user, 'plan_create', 'edit');
@@ -1216,20 +1394,25 @@ export async function softDeletePlan(id: string, user: AuthContext): Promise<{ o
       );
     }
 
-    const now = new Date();
+    const stamp = softDeleteStamp(user);
     await tx
       .update(planOps)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id })
       .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
-    await tx.update(plans).set({ deletedAt: now, updatedBy: user.id }).where(eq(plans.id, id));
+    await tx
+      .update(plans)
+      .set({ ...stamp, updatedBy: user.id })
+      .where(eq(plans.id, id));
 
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
+        action: ActivityAction.Delete,
         entity: 'Plan',
-        detail: detail(row),
+        entityId: row.id,
         refId: row.code,
+        reason,
+        detail: detail(row),
       },
       companyId,
       user,
@@ -1757,18 +1940,18 @@ async function executeManufacture(
     })
     .where(eq(plans.id, plan.id));
 
-  await emitActivityLog(
+  await logPlanExecuted(
     tx,
+    plan,
     {
-      action: 'PLAN_EXECUTED',
-      entity: 'Plan',
-      detail:
+      newStatus: 'jc_created',
+      jc,
+      prCodes: raisedPrCodes,
+      summary:
         raisedPrCodes.length > 0
           ? `${plan.code} → JC ${jc.code} (${labelOf(PLAN_TYPE_LABEL, plan.planType)}, ${ops.length} operations) + OSP PR ${raisedPrCodes.join(', ')}`
           : `${plan.code} → JC ${jc.code} (${labelOf(PLAN_TYPE_LABEL, plan.planType)}, ${ops.length} operations)`,
-      refId: plan.code,
     },
-    plan.companyId,
     user,
   );
 
@@ -1822,15 +2005,15 @@ async function executeDirectPurchase(
     })
     .where(eq(plans.id, plan.id));
 
-  await emitActivityLog(
+  await logPlanExecuted(
     tx,
+    plan,
     {
-      action: 'PLAN_EXECUTED',
-      entity: 'Plan',
-      detail: `${plan.code} → PR ${pr.code} (Buy)`,
-      refId: plan.code,
+      newStatus: 'pr_created',
+      jc: null,
+      prCodes: [pr.code],
+      summary: `${plan.code} → PR ${pr.code} (Buy)`,
     },
-    plan.companyId,
     user,
   );
 
@@ -1974,15 +2157,15 @@ async function executeFullOutsource(
     })
     .where(eq(plans.id, plan.id));
 
-  await emitActivityLog(
+  await logPlanExecuted(
     tx,
+    plan,
     {
-      action: 'PLAN_EXECUTED',
-      entity: 'Plan',
-      detail: `${plan.code} → ${jc ? `JC ${jc.code} + ` : ''}PR ${jwPr.code} (Full Outsource)`,
-      refId: plan.code,
+      newStatus: jc ? 'jc_created' : 'pr_created',
+      jc,
+      prCodes: [jwPr.code],
+      summary: `${plan.code} → ${jc ? `JC ${jc.code} + ` : ''}PR ${jwPr.code} (Full Outsource)`,
     },
-    plan.companyId,
     user,
   );
 
@@ -2651,6 +2834,16 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
 // `lib/stock-reservation.ts`, so the planning screen, the production close and
 // the dispatch path can never disagree about what is reserved.
 
+/** The Sales Order a line belongs to — the document a reservation row logs on. */
+async function soIdOfLine(tx: DbTransaction, soLineId: string): Promise<string | null> {
+  const r = await tx
+    .select({ soId: salesOrderLines.salesOrderId })
+    .from(salesOrderLines)
+    .where(eq(salesOrderLines.id, soLineId))
+    .limit(1);
+  return r[0]?.soId ?? null;
+}
+
 export async function reserveStock(
   input: ReserveStockInput,
   user: AuthContext,
@@ -2686,11 +2879,16 @@ export async function reserveStock(
       return { reservations: [], qtyMoved: 0, ...position };
     }
 
+    // ADR-197 — a booking is logged on its Sales Order (the document), at the
+    // line it was booked to.
     await emitActivityLog(
       tx,
       {
-        action: 'UPDATE',
-        entity: 'Reservation',
+        action: ActivityAction.Create,
+        entity: 'SalesOrder',
+        entityId: await soIdOfLine(tx, input.soLineId),
+        lineRef: `Line ${input.lineNo}`,
+        qty: input.qty,
         detail:
           `${input.soCodeText} L${input.lineNo} — reserved ${input.qty} of ${itemCode ?? 'item'} ` +
           `(available ${created.position.availableQty}, physical unchanged at ${created.position.physicalQty})`,
@@ -2777,8 +2975,13 @@ export async function releaseReservationsForLine(
       await emitActivityLog(
         tx,
         {
-          action: 'UPDATE',
-          entity: 'Reservation',
+          // Giving a booking back cancels (part of) it; the reason is required.
+          action: ActivityAction.Cancel,
+          entity: 'SalesOrder',
+          entityId: await soIdOfLine(tx, input.soLineId),
+          lineRef: `Line ${touched[0].lineNo}`,
+          qty: released,
+          reason: input.reason,
           detail:
             `${touched[0].soCodeText} L${touched[0].lineNo} — released ${released} back to free stock ` +
             `(reason: ${input.reason}; physical unchanged at ${position.physicalQty})`,

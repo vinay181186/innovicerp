@@ -1,4 +1,5 @@
 import {
+  activityReasonSchema,
   createPlanInputSchema,
   createPlansBatchInputSchema,
   defaultRouteOpsQuerySchema,
@@ -13,6 +14,8 @@ import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
 
 const idParamsSchema = z.object({ id: z.string().uuid() });
+// ADR-197 — a delete carries its reason (module-local: the shared contract is frozen).
+const deletePlanBodySchema = z.object({ reason: activityReasonSchema });
 
 export async function plansRoutes(app: FastifyInstance): Promise<void> {
   app.get('/plans', async (req) => {
@@ -71,7 +74,8 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/plans/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamsSchema.parse(req.params);
-    return service.softDeletePlan(id, req.user);
+    const { reason } = deletePlanBodySchema.parse(req.body ?? {});
+    return service.softDeletePlan(id, reason, req.user);
   });
 
   app.post('/plans/:id/execute', async (req) => {

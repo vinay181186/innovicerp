@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const jobWorkOrdersKeys = {
   all: ['job-work-orders'] as const,
@@ -57,6 +58,7 @@ export function useCreateJobWorkOrder() {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
       qc.setQueryData(jobWorkOrdersKeys.detail(created.id), created);
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
@@ -69,6 +71,7 @@ export function useUpdateJobWorkOrder(id: string) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
       qc.setQueryData(jobWorkOrdersKeys.detail(id), updated);
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
@@ -84,26 +87,30 @@ export function useShortCloseJobWorkOrderLine(jwId: string) {
     { lineId: string } & ShortCloseJobWorkOrderLineInput
   >({
     mutationFn: ({ lineId, reason }) =>
-      apiFetch<JobWorkOrderDetail>(
-        `/job-work-order-lines/${lineId}/short-close`,
-        { method: 'POST', json: { reason } },
-      ),
+      apiFetch<JobWorkOrderDetail>(`/job-work-order-lines/${lineId}/short-close`, {
+        method: 'POST',
+        json: { reason },
+      }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
       qc.setQueryData(jobWorkOrdersKeys.detail(jwId), updated);
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
 
+/** Move a JWSO to Trash. ADR-197: the reason is required and lands on the
+ *  JWSO's History row. */
 export function useSoftDeleteJobWorkOrder() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (id) => {
-      await apiFetch<null>(`/job-work-orders/${id}`, { method: 'DELETE' });
+  return useMutation<void, Error, { id: string; reason: string }>({
+    mutationFn: async ({ id, reason }) => {
+      await apiFetch<null>(`/job-work-orders/${id}`, { method: 'DELETE', json: { reason } });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
       qc.removeQueries({ queryKey: jobWorkOrdersKeys.detail(id) });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }

@@ -10,6 +10,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const soPlanningKeys = {
   all: ['so-planning'] as const,
@@ -81,6 +82,8 @@ export function useRaisePlanningPr() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+      // ADR-197 — the new PR's History row.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }

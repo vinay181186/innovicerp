@@ -4,7 +4,7 @@
 // an opposite ledger entry ('in', tool_return, "<TIS> cancel") — ADR-189,
 // never an edit of the 'out' — and every instrument goes back In Store.
 
-import type { CancelToolIssueInput, ToolIssueDetail } from '@innovic/shared';
+import { ActivityAction, type CancelToolIssueInput, type ToolIssueDetail } from '@innovic/shared';
 import { eq, sql } from 'drizzle-orm';
 import { toolIssueInstruments, toolIssues } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -102,10 +102,13 @@ export async function cancelToolIssue(
     await emitActivityLog(
       tx,
       {
-        action: 'CANCEL',
-        entity: 'Tool Issue',
-        detail: `${ti.code} · ${item.code} × ${qty} back to stock · ${input.reason}`,
+        action: ActivityAction.Cancel,
+        entity: 'ToolIssue',
+        entityId: id,
         refId: ti.code,
+        qty,
+        reason: input.reason,
+        detail: `${ti.code} · ${item.code} × ${qty} back to stock`,
       },
       companyId,
       user,

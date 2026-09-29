@@ -4,6 +4,8 @@
 // pieces have already been dispatched; that message flows back to the toast/
 // error line here. A reversal row is shown as "Reversal of …" and cannot itself
 // be reversed; a close already undone by a reversal offers no Reverse button.
+// The reason is REQUIRED (the server refuses a blank one, ADR-197): Confirm
+// stays disabled until one is typed, and it is always sent as `remarks`.
 
 import type { ProductionOrderClose, ProductionOrderDetail } from '@innovic/shared';
 import { Loader2, Undo2 } from 'lucide-react';
@@ -39,9 +41,14 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
   }, [po.closes]);
 
   const onReverse = (closeId: string): void => {
+    const remarks = reason.trim();
+    if (!remarks) {
+      setError('Type the reason for reversing this close.');
+      return;
+    }
     setError(null);
     reverseMut.mutate(
-      { id: po.id, input: { closeId, ...(reason.trim() ? { remarks: reason.trim() } : {}) } },
+      { id: po.id, input: { closeId, remarks } },
       {
         onSuccess: () => {
           setOpenId(null);
@@ -169,13 +176,17 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
                               className="innovic-input"
                               value={reason}
                               onChange={(e) => setReason(e.target.value)}
-                              placeholder="Reason (optional)"
+                              placeholder="Reason (required)"
+                              aria-label="Reason (required)"
+                              maxLength={500}
+                              required
                               style={{ width: 160, fontSize: 12 }}
                             />
                             <button
                               type="button"
                               className="btn btn-danger btn-sm"
-                              disabled={reverseMut.isPending}
+                              disabled={reverseMut.isPending || !reason.trim()}
+                              title={reason.trim() ? undefined : 'Type a reason first'}
                               onClick={() => onReverse(c.id)}
                             >
                               {reverseMut.isPending ? (

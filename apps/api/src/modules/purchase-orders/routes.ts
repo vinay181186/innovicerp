@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
+  activityReasonSchema,
   createPurchaseOrderFromPrBatchInputSchema,
   shortClosePurchaseOrderInputSchema,
 } from '@innovic/shared';
@@ -81,7 +82,10 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
   app.delete('/purchase-orders/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.softDeletePurchaseOrder(id, req.user);
+    // ADR-197 — the reason is optional here so an old client still deletes;
+    // the web's Move-to-Trash dialog always asks for one.
+    const body = z.object({ reason: activityReasonSchema.optional() }).parse(req.body ?? {});
+    await service.softDeletePurchaseOrder(id, req.user, body.reason ?? null);
     reply.code(204);
     return null;
   });
@@ -96,7 +100,7 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
   app.post('/purchase-orders/:id/reject', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    const body = z.object({ reason: z.string().min(1).max(500) }).parse(req.body);
+    const body = z.object({ reason: activityReasonSchema }).parse(req.body);
     return service.rejectPurchaseOrder(id, body.reason, req.user);
   });
 

@@ -13,6 +13,7 @@
 // Query plan: batched. List endpoint = 2 round-trips. Detail = 3.
 // BOM endpoint = 5.
 
+import { ActivityAction } from '@innovic/shared';
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   ItemProcurementType,
@@ -1448,10 +1449,12 @@ export async function raisePlanningPr(
       await emitActivityLog(
         tx,
         {
-          action: 'CREATE',
+          action: ActivityAction.Create,
           entity: 'PurchaseRequest',
-          detail: `${pr.code} — ${row.itemName ?? itemCode} x ${input.qty} (from Planning, SO ${row.soCode} Ln ${row.line.lineNo})`,
+          entityId: pr.id,
           refId: pr.code,
+          qty: input.qty,
+          detail: `${pr.code} — ${row.itemName ?? itemCode} x ${input.qty} (from Planning, SO ${row.soCode} Ln ${row.line.lineNo})`,
         },
         companyId,
         user,

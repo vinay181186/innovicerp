@@ -1297,12 +1297,22 @@ export const opLog = pgTable(
     // other column moved — qty stays immutable. Null = never edited.
     timingEditedAt: timestamp('timing_edited_at', { withTimezone: true }),
     timingEditedBy: uuid('timing_edited_by').references(() => users.id),
+    // Migration 0179 (ADR-197, req. 3.2 "Correct a wrong entry"). Set on a
+    // REVERSAL row only: the entry it cancels. The reversal carries the
+    // NEGATIVE of that entry's qty / reject_qty with the same log_type, so every
+    // SUM over op_log nets without a filter. One reversal per entry (partial
+    // unique index); a reason is mandatory (CHECK).
+    reversalOfId: uuid('reversal_of_id').references((): AnyPgColumn => opLog.id),
+    reversalReason: text('reversal_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
   },
   (t) => [
+    uniqueIndex('op_log_reversal_of_uq')
+      .on(t.reversalOfId)
+      .where(sql`${t.reversalOfId} is not null`),
     index('op_log_company_op_date_idx').on(t.companyId, t.jcOpId, t.logDate),
     index('op_log_company_tpi_idx')
       .on(t.companyId, t.logDate)
@@ -1316,8 +1326,18 @@ export const opLog = pgTable(
     index('op_log_machine_date_idx')
       .on(t.machineId, t.logDate)
       .where(sql`${t.machineId} is not null`),
-    check('op_log_qty_nonneg', sql`${t.qty} >= 0`),
-    check('op_log_reject_qty_nonneg', sql`${t.rejectQty} >= 0`),
+    check(
+      'op_log_qty_nonneg',
+      sql`(${t.reversalOfId} is null and ${t.qty} >= 0) or (${t.reversalOfId} is not null and ${t.qty} <= 0)`,
+    ),
+    check(
+      'op_log_reject_qty_nonneg',
+      sql`(${t.reversalOfId} is null and ${t.rejectQty} >= 0) or (${t.reversalOfId} is not null and ${t.rejectQty} <= 0)`,
+    ),
+    check(
+      'op_log_reversal_reason_required',
+      sql`${t.reversalOfId} is null or length(btrim(coalesce(${t.reversalReason}, ''))) > 0`,
+    ),
     pgPolicy('op_log_company_read', {
       for: 'select',
       to: 'authenticated',

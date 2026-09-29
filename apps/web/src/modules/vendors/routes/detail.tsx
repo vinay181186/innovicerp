@@ -23,12 +23,14 @@ import type { Vendor } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Panel } from '@/ui/data';
 import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useSoftDeleteVendor, useVendor } from '../api';
+import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
 
 export const vendorDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -74,8 +76,8 @@ function VendorDetailPage(): React.JSX.Element {
     );
   }
 
-  const onDelete = async (): Promise<void> => {
-    await softDelete.mutateAsync(vendor.id);
+  const onDelete = async (reason: string): Promise<void> => {
+    await softDelete.mutateAsync({ id: vendor.id, reason });
     setConfirmDelete(false);
     await navigate({ to: '/vendors', replace: true });
   };
@@ -100,12 +102,6 @@ function VendorDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return <PageState state="noaccess" as="page" />;
   }
-
-  const deleteError = softDelete.isError
-    ? softDelete.error instanceof Error
-      ? softDelete.error.message
-      : 'Could not delete Vendor. Try again.'
-    : null;
 
   return (
     <div>
@@ -158,15 +154,16 @@ function VendorDetailPage(): React.JSX.Element {
           (ADR-190). Hides when empty. */}
       <RelatedDocsPanel module="vendors" id={vendor.id} />
 
+      {/* ADR-197 — who created / edited / deleted this vendor, with Before → After. */}
+      <Panel title="History" bodyPadding="none">
+        <DocumentHistory entity="Vendor" entityId={vendor.id} refId={vendor.code} />
+      </Panel>
+
       {confirmDelete ? (
-        <ConfirmDialog
+        <TrashReasonDialog
           title={`Move Vendor ${vendor.code} to Trash?`}
-          message="You can restore it from Trash."
-          confirmLabel="Move to Trash"
-          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
-          errorText={deleteError}
         />
       ) : null}
     </div>

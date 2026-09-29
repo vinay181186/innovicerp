@@ -10,6 +10,18 @@
 // the master record.
 
 import { emitActivityLog } from '../activity-log/service';
+import { ActivityAction } from '@innovic/shared';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
+
+/** Party Material fields compared on Edit — labels as on the Party Material Master. */
+const PARTY_MATERIAL_FIELDS: readonly DiffField[] = [
+  { key: 'name', label: 'Material Name' },
+  { key: 'description', label: 'Description' },
+  { key: 'material', label: 'Grade' },
+  { key: 'uom', label: 'UOM' },
+  { key: 'clientCodeText', label: 'Customer' },
+  { key: 'itemCodeText', label: 'Item Code' },
+];
 import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePartyMaterialInput,
@@ -162,7 +174,9 @@ export async function ensurePartyMaterialForClientItem(
   const clientRows = await tx
     .select({ id: clients.id, code: clients.code })
     .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)))
+    .where(
+      and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
+    )
     .limit(1);
   const cl = clientRows[0];
   if (!cl) return null;
@@ -198,10 +212,11 @@ export async function ensurePartyMaterialForClientItem(
   await emitActivityLog(
     tx,
     {
-      action: 'CREATE',
-      entity: 'Party Material',
-      detail: `${pmCode} — ${item.name} (auto-created from JWSO customer material)`,
+      action: ActivityAction.Create,
+      entity: 'PartyMaterial',
+      entityId: row.id,
       refId: pmCode,
+      detail: `${pmCode} — ${item.name} (auto-created from JWSO customer material)`,
     },
     companyId,
     user,
@@ -405,10 +420,11 @@ export async function createPartyMaterial(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
-        entity: 'Party Material',
-        detail: `${row.code} — ${row.name}`,
+        action: ActivityAction.Create,
+        entity: 'PartyMaterial',
+        entityId: row.id,
         refId: row.code,
+        detail: `${row.code} — ${row.name}`,
       },
       companyId,
       user,
@@ -494,6 +510,8 @@ export async function updatePartyMaterial(
       }
     }
 
+    // ADR-197: before → after, read before the update; no row when nothing changed.
+    const changes = diffFields(existing, patch, PARTY_MATERIAL_FIELDS);
     const updated = await tx
       .update(partyMaterials)
       .set(patch)
@@ -501,22 +519,31 @@ export async function updatePartyMaterial(
       .returning();
     const row = updated[0];
     if (!row) throw new ValidationError('Could not save Party Material. Try again.');
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'Party Material',
-        detail: `${row.code} — ${row.name}`,
-        refId: row.code,
-      },
-      companyId,
-      user,
-    );
+    if (changes.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'PartyMaterial',
+          entityId: row.id,
+          refId: row.code,
+          changes,
+          detail: `Edited ${row.code} — ${row.name}`,
+        },
+        companyId,
+        user,
+      );
+    }
     return rowToPartyMaterial(row);
   });
 }
 
-export async function softDeletePartyMaterial(id: string, user: AuthContext): Promise<void> {
+export async function softDeletePartyMaterial(
+  id: string,
+  user: AuthContext,
+  /** ADR-197: why it was deleted (the route requires it). */
+  reason?: string,
+): Promise<void> {
   // Delete is not one of the four tier actions, so it is expressed as the pair
   // only L5 Department Admin and above hold: edit AND approve. L3 Editor has
   // edit without approve; L4 Approver has approve without edit. Previously there
@@ -551,11 +578,18 @@ export async function softDeletePartyMaterial(id: string, user: AuthContext): Pr
     }
     await tx
       .update(partyMaterials)
-      .set({ deletedAt: new Date(), updatedAt: new Date(), updatedBy: userId })
+      .set({ ...softDeleteStamp(user), updatedAt: new Date(), updatedBy: userId })
       .where(eq(partyMaterials.id, existing.id));
     await emitActivityLog(
       tx,
-      { action: 'DELETE', entity: 'Party Material', detail: existing.code, refId: existing.code },
+      {
+        action: ActivityAction.Delete,
+        entity: 'PartyMaterial',
+        entityId: existing.id,
+        refId: existing.code,
+        reason: reason?.trim() || null,
+        detail: existing.code,
+      },
       companyId,
       user,
     );
@@ -643,10 +677,13 @@ export async function returnPartyMaterial(
     await emitActivityLog(
       tx,
       {
-        action: 'RETURN',
-        entity: 'Party Material',
-        detail: `${row.code} — returned ${input.qty} to customer: ${input.reason}`,
+        action: ActivityAction.Return,
+        entity: 'PartyMaterial',
+        entityId: row.id,
         refId: row.code,
+        qty: input.qty,
+        reason: input.reason,
+        detail: `${row.code} — returned ${input.qty} to customer`,
       },
       companyId,
       user,

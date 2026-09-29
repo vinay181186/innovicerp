@@ -33,7 +33,7 @@ import type {
   ListJwDcOutwardQuery,
   ListJwDcOutwardResponse,
 } from '@innovic/shared';
-import { poSendsMaterialOut } from '@innovic/shared';
+import { ActivityAction, poSendsMaterialOut } from '@innovic/shared';
 import {
   items,
   jwDcInward,
@@ -921,13 +921,17 @@ export async function createJwDcOutward(
       });
     }
 
+    // ADR-197: issuing the challan IS the send — one SEND row on the challan,
+    // qty = everything that left on it.
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
-        entity: 'JW DC Outward',
-        detail: `${code} · ${input.lines.length} line(s) to ${vendorNameText ?? po.vendorCodeText ?? ''}`,
+        action: ActivityAction.Send,
+        entity: 'JwDcOutward',
+        entityId: header.id,
         refId: code,
+        qty: roundQty(input.lines.reduce((sum, ln) => sum + ln.sentQty, 0)),
+        detail: `${code} · ${input.lines.length} line(s) to ${vendorNameText ?? po.vendorCodeText ?? ''}`,
       },
       companyId,
       user,
@@ -1200,13 +1204,32 @@ export async function createJwDcInward(
       });
     }
 
+    // ADR-197: one RECEIVE row per document touched — the receipt itself and
+    // the outward challan the pieces came back against.
+    const receivedTotal = roundQty(input.lines.reduce((sum, ln) => sum + ln.receivedQty, 0));
+    const receiveDetail = `${code} · ${input.lines.length} line(s) back from ${out.vendorNameText ?? out.vendorCodeText ?? ''} → Incoming QC on ${grn.code}`;
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
-        entity: 'JW DC Inward',
-        detail: `${code} · ${input.lines.length} line(s) back from ${out.vendorNameText ?? out.vendorCodeText ?? ''} → Incoming QC on ${grn.code}`,
+        action: ActivityAction.Receive,
+        entity: 'JwDcInward',
+        entityId: header.id,
         refId: code,
+        qty: receivedTotal,
+        detail: receiveDetail,
+      },
+      companyId,
+      user,
+    );
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Receive,
+        entity: 'JwDcOutward',
+        entityId: out.id,
+        refId: out.code,
+        qty: receivedTotal,
+        detail: receiveDetail,
       },
       companyId,
       user,

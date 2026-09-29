@@ -8,7 +8,7 @@
 
 import { type SQL, type SQLWrapper, and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import { ActivityAction, type DocumentTraceability, type RelatedDoc } from '@innovic/shared';
 import {
   items,
   jcOps,
@@ -30,6 +30,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
@@ -70,6 +71,36 @@ function prDetail(
   const label = itemName ?? itemCodeText ?? '—';
   return `${code} — ${label} x ${qty}`;
 }
+
+/** Vendor id → code, for the Vendor row of an EDIT's before → after. */
+async function loadVendorCodes(
+  tx: DbTransaction,
+  companyId: string,
+  ids: (string | null)[],
+): Promise<Map<string, string>> {
+  const wanted = [...new Set(ids.filter((v): v is string => Boolean(v)))];
+  if (wanted.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: vendors.id, code: vendors.code })
+    .from(vendors)
+    .where(and(eq(vendors.companyId, companyId), inArray(vendors.id, wanted)));
+  return new Map(rows.map((r) => [r.id, r.code]));
+}
+
+/** The PR fields the edit form changes, with their screen labels (ADR-197,
+ *  labels as on purchase-request-form.tsx / docs/NAMING.md). `vendor` is the
+ *  vendor code as shown (picker or typed), computed by the caller. */
+const PR_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'prDate', label: 'PR Date' },
+  { key: 'vendor', label: 'Vendor' },
+  { key: 'itemCodeText', label: 'Item Code' },
+  { key: 'itemName', label: 'Item Name' },
+  { key: 'qty', label: 'PR Qty' },
+  { key: 'estCost', label: 'Est. Rate (₹)' },
+  { key: 'requiredDate', label: 'Due Date' },
+  { key: 'operation', label: 'Operation' },
+  { key: 'remarks', label: 'Remarks' },
+];
 
 // ─── FK validation helpers ────────────────────────────────────────────────
 
@@ -1051,10 +1082,12 @@ export async function insertPurchaseRequestTx(
   await emitActivityLog(
     tx,
     {
-      action: 'CREATE',
+      action: ActivityAction.Create,
       entity: 'PurchaseRequest',
-      detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+      entityId: row.id,
       refId: row.code,
+      qty: row.qty,
+      detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
     },
     companyId,
     user,
@@ -1167,6 +1200,35 @@ export async function updatePurchaseRequest(
     if (input.operation !== undefined) updates['operation'] = input.operation ?? null;
     if (input.remarks !== undefined) updates['remarks'] = input.remarks ?? null;
 
+    // ADR-197 — before → after of every field the edit form can change, read
+    // from the row as it was BEFORE this UPDATE (same transaction).
+    const vendorCodeById = await loadVendorCodes(tx, companyId, [
+      existing[0]!.vendorId,
+      (updates['vendorId'] as string | null | undefined) ?? null,
+    ]);
+    // The Vendor is ONE fact on screen (the picker id, or an older PR's typed
+    // code), so it is compared as the code a person reads, not as two columns.
+    const vendorShown = (vid: string | null | undefined, text: string | null | undefined) =>
+      (vid ? vendorCodeById.get(vid) : undefined) ?? text ?? null;
+    const before = existing[0]!;
+    const changes = diffFields(
+      { ...before, vendor: vendorShown(before.vendorId, before.vendorCodeText) },
+      {
+        ...updates,
+        ...('vendorId' in updates || 'vendorCodeText' in updates
+          ? {
+              vendor: vendorShown(
+                'vendorId' in updates ? (updates['vendorId'] as string | null) : before.vendorId,
+                'vendorCodeText' in updates
+                  ? (updates['vendorCodeText'] as string | null)
+                  : before.vendorCodeText,
+              ),
+            }
+          : {}),
+      },
+      PR_EDIT_FIELDS,
+    );
+
     await tx.update(purchaseRequests).set(updates).where(eq(purchaseRequests.id, id));
 
     const reread = await tx
@@ -1175,17 +1237,22 @@ export async function updatePurchaseRequest(
       .where(eq(purchaseRequests.id, id))
       .limit(1);
     const row = reread[0]!;
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'PurchaseRequest',
-        detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
-        refId: row.code,
-      },
-      companyId,
-      user,
-    );
+    // Nothing actually changed → no EDIT row (a Save with no edits).
+    if (changes.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'PurchaseRequest',
+          entityId: row.id,
+          refId: row.code,
+          changes,
+          detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+        },
+        companyId,
+        user,
+      );
+    }
     // The guard above proved this PR has nothing on a live PO, and this
     // transaction has not created one.
     return toPurchaseRequest(row, orderedQty);
@@ -1253,10 +1320,12 @@ export async function approvePurchaseRequest(
     await emitActivityLog(
       tx,
       {
-        action: 'APPROVE',
+        action: ActivityAction.Approve,
         entity: 'PurchaseRequest',
-        detail: `${row.code} approved by ${user.fullName || user.email}`,
+        entityId: row.id,
         refId: row.code,
+        qty: row.qty,
+        detail: `${row.code} approved by ${user.fullName || user.email}`,
       },
       companyId,
       user,
@@ -1312,8 +1381,10 @@ export async function rejectPurchaseRequest(
     // reject did not.
     assertNotSelfApproval(user, pr.createdBy, `PR ${pr.code}`);
 
-    // PR has no dedicated rejection columns (unlike PO) — record the reason in
-    // remarks so it survives on the cancelled row.
+    // ADR-197 (0178): who / when / why are stamped on the dedicated columns.
+    // The reason is ALSO still appended to remarks, because the PR screens read
+    // the rejection from there (the shared PR contract does not carry the new
+    // columns yet).
     const stampedRemarks = pr.remarks
       ? `${pr.remarks}\n[Rejected] ${trimmedReason}`
       : `[Rejected] ${trimmedReason}`;
@@ -1324,6 +1395,9 @@ export async function rejectPurchaseRequest(
       .set({
         status: 'cancelled',
         remarks: stampedRemarks,
+        rejectedBy: user.id,
+        rejectedAt: now,
+        rejectionReason: trimmedReason,
         updatedBy: user.id,
         updatedAt: now,
       })
@@ -1340,12 +1414,15 @@ export async function rejectPurchaseRequest(
     await emitActivityLog(
       tx,
       {
-        action: 'REJECT',
+        action: ActivityAction.Reject,
         entity: 'PurchaseRequest',
+        entityId: row.id,
+        refId: row.code,
+        qty: row.qty,
+        reason: trimmedReason,
         detail:
           `${row.code} rejected: ${trimmedReason}` +
           (released > 0 ? ` — JC operation freed; it can now be changed or removed` : ''),
-        refId: row.code,
       },
       companyId,
       user,
@@ -1447,10 +1524,14 @@ export async function closePurchaseRequestBalance(
     await emitActivityLog(
       tx,
       {
-        action: 'BALANCE_CLOSE',
+        action: ActivityAction.CloseShort,
         entity: 'PurchaseRequest',
-        detail: `${row.code} Short Closed — ${balanceQty} of ${row.qty} not ordered: ${trimmedReason}`,
+        entityId: row.id,
         refId: row.code,
+        // The quantity abandoned — what will no longer be ordered.
+        qty: balanceQty,
+        reason: trimmedReason,
+        detail: `${row.code} Short Closed — ${balanceQty} of ${row.qty} not ordered: ${trimmedReason}`,
       },
       companyId,
       user,
@@ -1495,6 +1576,7 @@ async function releaseSourceJcOps(
 
 export async function softDeletePurchaseRequest(
   id: string,
+  reason: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
   // Delete is not one of the four tier actions, so it is expressed as the pair
@@ -1538,17 +1620,20 @@ export async function softDeletePurchaseRequest(
     }
     await tx
       .update(purchaseRequests)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id, updatedAt: new Date() })
       .where(eq(purchaseRequests.id, id));
     // ADR-101 — a deleted PR commits nothing; free its source op too.
     await releaseSourceJcOps(tx, id, user);
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
+        action: ActivityAction.Delete,
         entity: 'PurchaseRequest',
-        detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+        entityId: row.id,
         refId: row.code,
+        qty: row.qty,
+        reason: reason.trim(),
+        detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
       },
       companyId,
       user,

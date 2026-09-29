@@ -12,11 +12,13 @@ import {
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { Select } from '@/ui/forms';
 import { useSaveShortcut } from '@/ui/layout';
 import {
@@ -393,6 +395,14 @@ function StockCountPage(): React.JSX.Element {
           </button>
         ) : null}
       </div>
+
+      {!isNew && sc ? (
+        <div style={{ marginTop: 14 }}>
+          <Panel title="History" bodyPadding="none">
+            <DocumentHistory entity="StockCount" entityId={sc.id} refId={sc.code} />
+          </Panel>
+        </div>
+      ) : null}
     </div>
   );
 }

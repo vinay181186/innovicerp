@@ -1,9 +1,12 @@
 import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import { ActivityAction } from '@innovic/shared';
 import { vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import type {
   BulkCreateVendorsInput,
   BulkCreateVendorsResponse,
@@ -19,6 +22,27 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+const activeLabel = (v: unknown): string | null =>
+  v === true ? 'Active' : v === false ? 'Inactive' : null;
+
+/** Every user-editable Vendor Master field, with its screen label, for the
+ *  Edit row's Before → After (ADR-197). Entity 'Vendor' is not yet in the
+ *  shared ACTIVITY_ENTITIES list (shared frozen for this build). */
+const VENDOR_FIELDS: readonly DiffField[] = [
+  { key: 'name', label: 'Vendor Name' },
+  { key: 'contactPerson', label: 'Contact Person' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'email', label: 'Email' },
+  { key: 'gstNumber', label: 'GST No.' },
+  { key: 'addressLine1', label: 'Address' },
+  { key: 'city', label: 'City' },
+  { key: 'state', label: 'State' },
+  { key: 'pincode', label: 'Pincode' },
+  { key: 'materialsSupplied', label: 'Materials Supplied' },
+  { key: 'rating', label: 'Rating' },
+  { key: 'isActive', label: 'Vendor Status', format: activeLabel },
+];
 
 function emptyToNull(s: string | undefined): string | null {
   if (s === undefined) return null;
@@ -186,7 +210,20 @@ export async function createVendor(input: CreateVendorInput, user: AuthContext):
           updatedBy: user.id,
         })
         .returning();
-      return inserted[0] as unknown as Vendor;
+      const row = inserted[0] as unknown as Vendor;
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Create,
+          entity: 'Vendor',
+          entityId: row.id,
+          refId: row.code,
+          detail: `${row.code} — ${row.name}`,
+        },
+        companyId,
+        user,
+      );
+      return row;
     }),
   );
 }
@@ -305,6 +342,17 @@ export async function createVendorsBulk(
       for (let i = 0; i < values.length; i += CHUNK) {
         await tx.insert(vendors).values(values.slice(i, i + CHUNK));
       }
+      // One line for the whole import, as the Item Master import does.
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Create,
+          entity: 'Vendor',
+          detail: `Excel import — ${values.length} vendor(s): ${codes[0]}…${codes[codes.length - 1]}`,
+        },
+        companyId,
+        user,
+      );
     }
 
     return { created: values.length, skipped, codes };
@@ -318,15 +366,16 @@ export async function updateVendor(
 ): Promise<Vendor> {
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
   await requireFormAccess(user, 'vendor_create', 'edit');
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // The whole row, read BEFORE the update — the "before" of Before → After.
     const existing = await tx
-      .select({ id: vendors.id })
+      .select()
       .from(vendors)
       .where(and(eq(vendors.id, id), isNull(vendors.deletedAt)))
       .limit(1);
-    if (existing.length === 0)
-      throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
+    const before = existing[0];
+    if (!before) throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.name !== undefined) updates.name = input.name;
@@ -343,12 +392,33 @@ export async function updateVendor(
     if (input.rating !== undefined) updates.rating = emptyToNull(input.rating);
     if (input.isActive !== undefined) updates.isActive = input.isActive;
 
+    const changes = diffFields(before, updates, VENDOR_FIELDS);
     const updated = await tx.update(vendors).set(updates).where(eq(vendors.id, id)).returning();
-    return updated[0] as unknown as Vendor;
+    const row = updated[0] as unknown as Vendor;
+    if (changes.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'Vendor',
+          entityId: row.id,
+          refId: row.code,
+          changes,
+          detail: `Edited ${row.code} — ${row.name}`,
+        },
+        companyId,
+        user,
+      );
+    }
+    return row;
   });
 }
 
-export async function softDeleteVendor(id: string, user: AuthContext): Promise<{ ok: true }> {
+export async function softDeleteVendor(
+  id: string,
+  reason: string,
+  user: AuthContext,
+): Promise<{ ok: true }> {
   // Delete is not one of the four tier actions, so it is expressed as the pair
   // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
   // has edit but not approve; L4 Approver has approve but not edit. The screen
@@ -356,19 +426,33 @@ export async function softDeleteVendor(id: string, user: AuthContext): Promise<{
   // tier meant to run the department — the owner decided L5 gets delete rights.
   await requireFormAccess(user, 'vendor_create', 'edit');
   await requireFormAccess(user, 'vendor_create', 'approve');
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // The whole row, read BEFORE the update — the "before" of Before → After.
     const existing = await tx
-      .select({ id: vendors.id })
+      .select()
       .from(vendors)
       .where(and(eq(vendors.id, id), isNull(vendors.deletedAt)))
       .limit(1);
-    if (existing.length === 0)
-      throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
+    const before = existing[0];
+    if (!before) throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
     await tx
       .update(vendors)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(vendors.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Delete,
+        entity: 'Vendor',
+        entityId: before.id,
+        refId: before.code,
+        reason,
+        detail: `${before.code} — ${before.name}`,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

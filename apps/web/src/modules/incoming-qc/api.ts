@@ -1,6 +1,7 @@
 import type { IncomingQcResponse, SubmitIncomingQcInput } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const incomingQcKeys = {
   all: ['incoming-qc'] as const,
@@ -39,6 +40,8 @@ export function useSubmitIncomingQc() {
       void qc.invalidateQueries({ queryKey: ['store-inventory'] });
       // A reject raises an NC — the NC Register must show it.
       void qc.invalidateQueries({ queryKey: ['nc-register'] });
+      // The inspection is a QC row on the GRN's History (ADR-197).
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }

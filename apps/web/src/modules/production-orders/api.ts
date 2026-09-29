@@ -28,6 +28,7 @@ import type {
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { activityLogKeys } from '@/modules/activity-log/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { plansKeys } from '@/modules/plans/api';
 import { soPlanningKeys } from '@/modules/so-planning/api';
@@ -143,7 +144,8 @@ export function useNextProductionOrderCode(enabled = true) {
 
 /** Everything a Create / Close changes elsewhere in the app: the plan's
  *  derived status + PO code (plans lists, SO planning detail), the Job Card
- *  (born on create, closed on close) and this module's own lists. */
+ *  (born on create, closed on close), this module's own lists and the
+ *  document History tab (ADR-197 — every PO mutation writes an activity row). */
 function invalidateNeighbours(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: productionOrdersKeys.lists() });
   void qc.invalidateQueries({ queryKey: productionOrdersKeys.forJobCards() });
@@ -151,6 +153,7 @@ function invalidateNeighbours(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: plansKeys.all });
   void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
   void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+  void qc.invalidateQueries({ queryKey: activityLogKeys.all });
 }
 
 export function useCreateProductionOrder() {
