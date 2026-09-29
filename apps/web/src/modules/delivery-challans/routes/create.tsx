@@ -642,7 +642,17 @@ function PoDcFormBody({
           <div>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>Process</span>
             <br />
-            <b style={{ color: 'var(--purple)' }}>{po.remarks || ''}</b>
+            {/* The operation the vendor does: an OSP PO line carries it in
+                lineRemarks (written from the JC op / PR operation, and read the
+                same way as the JW DC's processText) — NOT the PO header's
+                Remarks, which is free text about the order. */}
+            <b style={{ color: 'var(--purple)' }}>
+              {[
+                ...new Set(
+                  po.lines.map((l) => (l.lineRemarks ?? '').trim()).filter((t) => t !== ''),
+                ),
+              ].join(', ') || '—'}
+            </b>
           </div>
           <div>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>Lines</span>

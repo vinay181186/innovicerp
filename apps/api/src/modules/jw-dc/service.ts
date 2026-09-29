@@ -785,7 +785,7 @@ export async function createJwDcOutward(
       FROM public.purchase_order_lines pol
       JOIN public.purchase_orders po ON po.id = pol.purchase_order_id
       LEFT JOIN public.purchase_requests pr ON pr.id = po.pr_id
-      WHERE pol.id = ANY(${poLineIds}::uuid[])
+      WHERE pol.id = ANY(${sql.param(poLineIds)}::uuid[])
         AND (
           pol.source_jc_op_id IS NOT NULL
           OR pr.source_jc_op_id IS NOT NULL
@@ -1113,7 +1113,7 @@ export async function createJwDcInward(
         SUM(jdil.received_qty)::float8 AS total_returned
       FROM public.jw_dc_inward_lines jdil
       WHERE jdil.deleted_at IS NULL
-        AND jdil.jw_dc_outward_line_id = ANY(${outLineIds}::uuid[])
+        AND jdil.jw_dc_outward_line_id = ANY(${sql.param(outLineIds)}::uuid[])
       GROUP BY jdil.jw_dc_outward_line_id
     `)) as unknown as Array<{ line_id: string; total_returned: number }>;
     const returnedMap = new Map(returnedSoFar.map((r) => [r.line_id, Number(r.total_returned)]));

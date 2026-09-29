@@ -26,6 +26,7 @@ import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { partyMaterialFitsJwLine } from '../party-materials/service';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -122,6 +123,9 @@ export async function createPartyMaterialIssue(
         id: jobWorkOrders.id,
         code: jobWorkOrders.code,
         clientId: jobWorkOrders.clientId,
+        // ADR-195: the JWSO's own customer material (-rm item code) is a valid
+        // part for any of its job cards in the identity check below.
+        clientMaterial: jobWorkOrders.clientMaterial,
       })
       .from(jobWorkOrders)
       .where(
@@ -214,7 +218,8 @@ export async function createPartyMaterialIssue(
           `Party Material can only be issued against its own Customer's order.`,
       );
     }
-    if (pm.itemId != null && jc.lineItemId != null && pm.itemId !== jc.lineItemId) {
+    // ADR-195: a material pinned to the JWSO's customer material also fits.
+    if (!partyMaterialFitsJwLine(pm, jc.lineItemId, jw.clientMaterial)) {
       throw new ValidationError(
         `${pm.code} is "${pm.name}"${pm.itemCodeText ? ` (Item Code ${pm.itemCodeText})` : ''}, but ` +
           `${jc.code} makes "${jc.linePartName}". Issue the material for this part.`,

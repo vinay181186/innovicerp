@@ -61,6 +61,9 @@ export interface RouteCardFormOpDraft {
   // OSP-only fields. Resolved on vendor-code change.
   ospVendorId: string;
   ospVendorCodeText: string;
+  // DISPLAY-ONLY, never sent: the picked vendor's name, so the box reads
+  // "CODE — Name" even when that vendor is not on the current search page.
+  ospVendorName?: string;
   ospLeadDays: string;
 }
 
@@ -125,6 +128,7 @@ export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpD
     qcRequired: op.qcRequired,
     ospVendorId: op.ospVendorId ?? '',
     ospVendorCodeText: op.ospVendorCode ?? op.ospVendorCodeText ?? '',
+    ospVendorName: op.ospVendorName ?? '',
     ospLeadDays: op.ospLeadDays != null ? String(op.ospLeadDays) : '',
   }));
 }
@@ -209,10 +213,11 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     limit: 50,
     offset: 0,
   });
-  // machines & vendors list-query schemas cap `limit` at 200 — 500 makes the
-  // route 400, leaving the pickers empty. Stay ≤ 200.
+  // machines list-query schema caps `limit` at 200 — 500 makes the route
+  // 400, leaving the picker empty. Stay ≤ 200. Vendors are NOT loaded here:
+  // each OSP row's vendor box searches the server itself (RouteCardVendorCell),
+  // so a vendor past the first page (e.g. VND-760) can still be picked.
   const { data: machinesList } = useMachinesList({ limit: 200, offset: 0 });
-  const { data: vendorsList } = useVendorsList({ limit: 200, offset: 0 });
   // Machine groups exist only to label and narrow the machine picker; the id
   // → code map lets a row show "VMC" for the group its machine belongs to.
   const { data: machineGroups } = useMachineGroupsList({ limit: 200, offset: 0 });
@@ -239,12 +244,6 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     for (const x of machinesList?.machines ?? []) m.set(x.code.toUpperCase(), x);
     return m;
   }, [machinesList]);
-
-  const vendorsByCode = useMemo(() => {
-    const m = new Map<string, Vendor>();
-    for (const x of vendorsList?.vendors ?? []) m.set(x.code.toUpperCase(), x);
-    return m;
-  }, [vendorsList]);
 
   // The picker returns the master item's id. Snapshot its code (shown in the
   // field) and name (shown underneath) so both survive a later search that
@@ -433,9 +432,12 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     });
   }, [machinesList]);
 
-  const onOpVendorChange = (idx: number, code: string): void => {
-    const match = vendorsByCode.get(code.trim().toUpperCase());
-    updateOp(idx, { ospVendorCodeText: code, ospVendorId: match?.id ?? '' });
+  const onOpVendorChange = (idx: number, v: Vendor | null): void => {
+    updateOp(idx, {
+      ospVendorId: v?.id ?? '',
+      ospVendorCodeText: v?.code ?? '',
+      ospVendorName: v?.name ?? '',
+    });
   };
 
   const addOp = (kind: RouteCardOpType): void => {
@@ -884,11 +886,10 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                     op={op}
                     machinesList={machinesList?.machines ?? []}
                     machineGroupCodeById={machineGroupCodeById}
-                    vendorsList={vendorsList?.vendors ?? []}
                     onChange={(patch) => updateOp(idx, patch)}
                     onMachineChange={(code) => onOpMachineChange(idx, code)}
                     onGroupChange={(gid) => onOpGroupChange(idx, gid)}
-                    onVendorChange={(code) => onOpVendorChange(idx, code)}
+                    onVendorChange={(v) => onOpVendorChange(idx, v)}
                     onRemove={() => removeOp(idx)}
                   />
                 ))
@@ -936,11 +937,10 @@ interface RouteCardOpRowProps {
   op: RouteCardFormOpDraft;
   machinesList: Machine[];
   machineGroupCodeById: Map<string, string>;
-  vendorsList: Vendor[];
   onChange: (patch: Partial<RouteCardFormOpDraft>) => void;
   onMachineChange: (code: string) => void;
   onGroupChange: (groupId: string | null) => void;
-  onVendorChange: (code: string) => void;
+  onVendorChange: (vendor: Vendor | null) => void;
   onRemove: () => void;
 }
 
@@ -950,7 +950,6 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
     op,
     machinesList,
     machineGroupCodeById,
-    vendorsList,
     onChange,
     onMachineChange,
     onGroupChange,
@@ -1014,32 +1013,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
       <td>
         {op.opType === 'outsource' ? (
           <>
-            <SearchableSelect
-              id={`rc-vend-${idx}`}
-              value={
-                vendorsList.find(
-                  (v) => v.code.toUpperCase() === op.ospVendorCodeText.trim().toUpperCase(),
-                )?.id ?? null
-              }
-              onChange={(id) =>
-                onVendorChange(id ? (vendorsList.find((v) => v.id === id)?.code ?? '') : '')
-              }
-              onSearch={() => {}}
-              options={vendorsList.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
-              placeholder="🔍 Vendor"
-              // Show "CODE — Name" for the picked vendor so the name is visible, not just the code.
-              valueLabel={
-                op.ospVendorCodeText.trim()
-                  ? (() => {
-                      const v = vendorsList.find(
-                        (x) => x.code.toUpperCase() === op.ospVendorCodeText.trim().toUpperCase(),
-                      );
-                      return v ? `${v.code} — ${v.name}` : op.ospVendorCodeText;
-                    })()
-                  : undefined
-              }
-              selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
-            />
+            <RouteCardVendorCell id={`rc-vend-${idx}`} op={op} onChange={onVendorChange} />
             {vendorLabel ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                 {vendorLabel}
@@ -1215,4 +1189,46 @@ export function opsToInput(ops: RouteCardFormOpDraft[]): CreateRouteCardOpInput[
     ospLeadDays:
       o.opType === 'outsource' && o.ospLeadDays.trim() ? Number(o.ospLeadDays) || null : null,
   }));
+}
+
+/** The OSP row's Vendor box. Searches the vendor master on the server as the
+ *  user types (`?search=`, 50 per page), the same way the shared VendorPicker
+ *  does — the old version loaded the first 200 vendors in code order and only
+ *  filtered those in the browser, so any vendor after them could never be
+ *  picked. The table cell has no room for VendorPicker's label/field-group
+ *  wrapper, hence this cell-sized twin. */
+function RouteCardVendorCell({
+  id,
+  op,
+  onChange,
+}: {
+  id: string;
+  op: RouteCardFormOpDraft;
+  onChange: (vendor: Vendor | null) => void;
+}): React.JSX.Element {
+  const [search, setSearch] = useState('');
+  const { data, isFetching } = useVendorsList({
+    ...(search.trim() ? { search: search.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const vendors = data?.vendors ?? [];
+  const code = op.ospVendorCodeText.trim();
+  const name = op.ospVendorName?.trim() ?? '';
+  // "CODE — Name" for the picked vendor, from the row's own snapshot so it
+  // still reads correctly when that vendor is not on the current search page.
+  const valueLabel = code ? (name ? `${code} — ${name}` : code) : undefined;
+  return (
+    <SearchableSelect
+      id={id}
+      value={op.ospVendorId || null}
+      onChange={(next) => onChange(next ? (vendors.find((v) => v.id === next) ?? null) : null)}
+      onSearch={setSearch}
+      loading={isFetching}
+      options={vendors.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
+      placeholder="🔍 Vendor"
+      valueLabel={valueLabel}
+      selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
+    />
+  );
 }

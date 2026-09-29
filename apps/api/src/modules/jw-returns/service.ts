@@ -194,7 +194,7 @@ async function producedForLines(
         AND bml.deleted_at IS NULL
         AND bml.qty_per_set > 0
     ) bom ON TRUE
-    WHERE l.id = ANY(${unique}::uuid[])
+    WHERE l.id = ANY(${sql.param(unique)}::uuid[])
   `)) as unknown as Array<{ line_id: string; produced: number | string | null }>;
   for (const r of rows) out.set(r.line_id, Number(r.produced ?? 0));
   return out;

@@ -17,8 +17,9 @@ import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobCardsList } from '@/modules/job-cards/api';
-import { useJobWorkOrdersList } from '@/modules/job-work-orders/api';
+import { useJobWorkOrder, useJobWorkOrdersList } from '@/modules/job-work-orders/api';
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
+import { partyMaterialFitsJwLine } from '@/modules/party-materials/fits-jw-line';
 import { useDiscardGuard } from '@/modules/store-inventory/components/discard-guard';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import {
@@ -398,8 +399,15 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
     [jcQuery.data, jobWorkOrderId],
   );
 
+  // ADR-195: the JWSO's own customer material (-rm item code) — a material
+  // pinned to it is valid for every job card on this JWSO.
+  const jwDetailQ = useJobWorkOrder(jobWorkOrderId ?? undefined);
+  const jwClientMaterial =
+    jwDetailQ.data && jwDetailQ.data.id === jobWorkOrderId ? jwDetailQ.data.clientMaterial : null;
+
   // Only the JWSO customer's materials, and — once a JC is picked — only the
-  // ones for the part that JC makes (a material with no Item Code still shows).
+  // ones for the part that JC makes or the JWSO's customer material (a
+  // material with no Item Code still shows). Same rule the API enforces.
   const {
     data: pmData,
     isFetching: pmFetching,
@@ -415,10 +423,10 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
   );
   const pmAll = useMemo(
     () =>
-      (pmData?.items ?? []).filter(
-        (p) => !pickedJcItemId || !p.itemId || p.itemId === pickedJcItemId,
+      (pmData?.items ?? []).filter((p) =>
+        partyMaterialFitsJwLine(p, pickedJcItemId, jwClientMaterial),
       ),
-    [pmData, pickedJcItemId],
+    [pmData, pickedJcItemId, jwClientMaterial],
   );
   const selectedPm = useMemo(
     () => pmAll.find((p) => p.id === partyMaterialId) ?? null,

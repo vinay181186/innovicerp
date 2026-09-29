@@ -19,6 +19,7 @@ import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api
 import { usePartyMaterialsList } from '../../party-materials/api';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { useCreatePartyGrn, useNextPartyGrnCode } from '../api';
+import { partyMaterialFitsJwLine } from '@/modules/party-materials/fits-jw-line';
 import { LineRow, MATERIAL_DATALIST_ID, makeEmptyLine, type UiLine } from './party-grn-line-row';
 
 export function NewPartyGrnModal({
@@ -63,6 +64,9 @@ export function NewPartyGrnModal({
   const jwClientId = selectedJw?.clientId ?? jwDetail?.clientId ?? null;
   const jwCustomerName = selectedJw?.customerName ?? jwDetail?.customerName ?? '';
   const jwClientPoNo = selectedJw?.clientPoNo ?? jwDetail?.clientPoNo ?? '';
+  // ADR-195: the JWSO's own customer material (-rm item code). A party material
+  // pinned to it fits every line of this JWSO, not only the part's own item.
+  const jwClientMaterial = jwDetail?.clientMaterial ?? null;
 
   // ADR-102: only the selected JWSO's client's materials. Party material is
   // customer-owned — showing every client's codes invited receiving one
@@ -122,7 +126,11 @@ export function NewPartyGrnModal({
         .filter((p) => !have.has(p.id))
         .map((p): UiLine => {
           const forPart =
-            p.itemId != null ? jwLinesForSelected.filter((j) => j.itemId === p.itemId) : [];
+            p.itemId != null
+              ? jwLinesForSelected.filter(
+                  (j) => j.itemId != null && partyMaterialFitsJwLine(p, j.itemId, jwClientMaterial),
+                )
+              : [];
           const only = forPart.length === 1 ? forPart[0] : undefined;
           return {
             ...makeEmptyLine(),
@@ -174,15 +182,10 @@ export function NewPartyGrnModal({
         return;
       }
       const jwLine = jwLinesForSelected.find((j) => String(j.lineNo) === lnNo);
-      // ADR-102: refuse a material that is not that line's part.
+      // ADR-102: refuse a material that is not that line's part — or, per
+      // ADR-195, this JWSO's own customer material.
       const pm = pmAll.find((p) => p.id === pmId);
-      if (
-        jwLine &&
-        pm &&
-        pm.itemId != null &&
-        jwLine.itemId != null &&
-        pm.itemId !== jwLine.itemId
-      ) {
+      if (jwLine && pm && !partyMaterialFitsJwLine(pm, jwLine.itemId, jwClientMaterial)) {
         setErr(
           `Line ${i + 1}: ${pm.code} is "${pm.name}", but JWSO line ${lnNo} is "${jwLine.partName}". Pick the material for this part, or pick the line this material belongs to.`,
         );
@@ -466,6 +469,7 @@ export function NewPartyGrnModal({
                     line={l}
                     pmAll={pmAll}
                     jwLines={jwLinesForSelected}
+                    jwClientMaterial={jwClientMaterial}
                     onChange={(patch) => setLine(i, patch)}
                     onRemove={() => removeLine(i)}
                   />
