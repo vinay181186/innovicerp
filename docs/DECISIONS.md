@@ -10463,3 +10463,18 @@ Party GRN is COMPULSORY**; everything else "as suggested".
   serial correction while never issued; no future / back-dated dates that dodge calibration.
 - Verified on TEST: 31 scenarios pass; 3b 25/25 and 3c 27/27 again; 972 + 1369 cross-screen figures, 0 mismatches.
 
+### ADR-193 phase 5 — reorder level, one-click PR, consumption report (2026-09-29)
+- Owner decision Q5: Reorder Level + Reorder Qty per item; alert + one-click PR, never automatic.
+- "Min Qty" is renamed **Reorder Level** (same column, now decimal). **Below Reorder** = reorderable item type, Reorder
+  Level > 0 and Available + On PO < Reorder Level (Available leaves out reserved stock) — the same rule on Store
+  Inventory, the Reorder List, AL-019, the production dashboard and stock valuation.
+- **Reorder List** (Store): suggested PR qty = max(Reorder Qty, shortfall to the level), whole for NOS / SET; suggested
+  vendor = last live PO's active vendor (no OSP / service POs). Raise PRs → one Open PR per item through the PR
+  module's own insert (`insertPurchaseRequestTx`), so numbering, approval (ADR-189) and the activity log are the
+  same as a hand-raised PR; per-company lock; an item with an open standard PR balance is skipped. The Store row's
+  Raise PR now opens the Reorder List so there is one path.
+- Tools are reorderable (inserts and bits wear out); assemblies are not.
+- Report **Material Consumption**: Item Issue lines net of returns, reversed slips excluded, by month / item /
+  issue against / reference / department / issued to.
+- Verified on TEST: 13 scenarios pass; 3b 25/25, 3c 27/27, 4 31/31 again; 1148 + 1547 cross-screen figures, 0 mismatches.
+

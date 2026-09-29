@@ -30,6 +30,7 @@ import { al013MachinesIdle } from './definitions/al-013-machines-idle';
 import { al014PoOverdue } from './definitions/al-014-po-overdue';
 import { al015OspPrsPendingPo } from './definitions/al-015-osp-prs-pending-po';
 import { al018NcPendingDisposition } from './definitions/al-018-nc-pending-disposition';
+import { al019BelowReorderLevel } from './definitions/al-019-below-reorder-level';
 import { al020InstrumentsCalibrationDue } from './definitions/al-020-instruments-calibration-due';
 import { al021ToolsNotReturned } from './definitions/al-021-tools-not-returned';
 
@@ -63,6 +64,7 @@ export const ALERTS: Record<string, RegisteredAlert> = {
   [al014PoOverdue.definition.code]: al014PoOverdue,
   [al015OspPrsPendingPo.definition.code]: al015OspPrsPendingPo,
   [al018NcPendingDisposition.definition.code]: al018NcPendingDisposition,
+  [al019BelowReorderLevel.definition.code]: al019BelowReorderLevel,
   [al020InstrumentsCalibrationDue.definition.code]: al020InstrumentsCalibrationDue,
   [al021ToolsNotReturned.definition.code]: al021ToolsNotReturned,
 };

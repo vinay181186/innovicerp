@@ -255,9 +255,11 @@ export const items = pgTable(
      *  private bucket under `<companyId>/item-images/…`. A product picture, not
      *  a controlled drawing: shown as a thumbnail next to code · name. */
     imagePath: text('image_path'),
-    /** PL-SI-1 (migration 0028) — low-stock alert threshold per item.
-     *  Drives the "Low Stock" tile + per-row red tint on Store/Inventory. */
-    minStockQty: integer('min_stock_qty').notNull().default(0),
+    /** Reorder Level (PL-SI-1 0028; numeric since 0160, ADR-193 phase 5).
+     *  Below Reorder = Available + On PO < this, when > 0. */
+    minStockQty: stockQty('min_stock_qty').notNull().default(0),
+    /** Reorder Qty (0160) — how much one reorder buys; 0 = buy the shortfall. */
+    reorderQty: stockQty('reorder_qty').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

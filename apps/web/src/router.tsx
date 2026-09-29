@@ -131,6 +131,7 @@ import { stockCountDetailRoute } from './modules/stock-counts/routes/detail';
 import { stockCountsListRoute } from './modules/stock-counts/routes/list';
 import { instrumentsListRoute } from './modules/instruments/routes/list';
 import { storeInventoryRoute } from './modules/store-inventory/routes/list';
+import { reorderListRoute } from './modules/store-inventory/routes/reorder-list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
 import { partyStockLedgerListRoute } from './modules/party-stock-ledger/routes/list';
@@ -209,6 +210,7 @@ const routeTree = rootRoute.addChildren([
     stockCountDetailRoute,
     instrumentsListRoute,
     storeInventoryRoute,
+    reorderListRoute,
     partyMaterialsListRoute,
     partyGrnListRoute,
     partyStockLedgerListRoute,

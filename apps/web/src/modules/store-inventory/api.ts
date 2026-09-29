@@ -2,7 +2,10 @@ import type {
   AdjustStockInput,
   ListStoreInventoryQuery,
   ListStoreInventoryResponse,
-  SetMinStockInput,
+  ReorderListRow,
+  ReorderPrInput,
+  ReorderPrResult,
+  SetReorderInput,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -47,16 +50,39 @@ export function useAdjustStock() {
   });
 }
 
-export function useSetMinStock() {
+/** ADR-193 phase 5 — Reorder Level + Reorder Qty of one item. */
+export function useSetReorder() {
   const qc = useQueryClient();
-  return useMutation<{ ok: true; minQty: number }, Error, SetMinStockInput>({
-    mutationFn: (input) =>
-      apiFetch<{ ok: true; minQty: number }>('/store-inventory/set-min', {
-        method: 'POST',
-        json: input,
+  return useMutation<unknown, Error, SetReorderInput>({
+    mutationFn: ({ itemId, ...body }) =>
+      apiFetch(`/store-inventory/items/${itemId}/reorder`, {
+        method: 'PATCH',
+        json: { itemId, ...body },
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: storeInventoryKeys.all });
+      void qc.invalidateQueries({ queryKey: ['items'] });
+    },
+  });
+}
+
+/** Every item Below Reorder, with suggested PR qty and vendor. */
+export function useReorderList() {
+  return useQuery<ReorderListRow[]>({
+    queryKey: [...storeInventoryKeys.all, 'reorder-list'],
+    queryFn: () => apiFetch<ReorderListRow[]>('/store-inventory/reorder-list'),
+  });
+}
+
+/** One-click PRs — one Open PR per ticked item (approval as usual). */
+export function useRaiseReorderPrs() {
+  const qc = useQueryClient();
+  return useMutation<ReorderPrResult, Error, ReorderPrInput>({
+    mutationFn: (input) =>
+      apiFetch<ReorderPrResult>('/store-inventory/reorder-pr', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: storeInventoryKeys.all });
+      void qc.invalidateQueries({ queryKey: ['purchase-requests'] });
     },
   });
 }

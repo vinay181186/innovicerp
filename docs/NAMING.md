@@ -129,6 +129,11 @@
 | Tool qty still with the holder (ADR-193) | `Still Out` | `stillOutQty` | computed — Qty − Good − Consumed − Damaged − Lost | `Outstanding`, `Pending` |
 | Condition of a returned instrument (ADR-193) | `Return Condition`: Good / Damaged / Lost | `returnCondition` | `tool_issue_instruments.return_condition` | `Status` |
 | Why a tool leaves the books (ADR-193) | `Write-off Kind`: Damaged / Lost / Scrap; `Write-off Status` | `kind` / `status` | `tool_writeoffs` | `Loss`, bare `Status` |
+| Stock level that triggers a reorder (ADR-193) | `Reorder Level` | `reorderLevel` | `items.min_stock_qty` | `Min Qty`, `Min Stock`, `Minimum` |
+| How much one reorder buys (ADR-193) | `Reorder Qty` | `reorderQty` | `items.reorder_qty` | `Order Qty` (that is the SO line) |
+| Available + On PO under the Reorder Level (ADR-193) | `Below Reorder` | `belowReorder` | computed — lib store-inventory/reorder-rule.ts | `Low Stock`, `Below Min` |
+| Qty suggested for a reorder PR (ADR-193) | `PR Qty` (prefilled) | `suggestedQty` | computed — max(Reorder Qty, shortfall) | `Suggested` |
+| Issued material not returned, by month (ADR-193) | `Net Consumed` | `netConsumed` | computed — Issued − Returned (reversed excluded) | `Consumption`, `Used` |
 
 **Snapshot rule.** `xxxText` means "the value as it was, when the live row may be gone".
 It is only ever a fallback: read `xxx ?? xxxText`, never the snapshot alone. A `xxxText`

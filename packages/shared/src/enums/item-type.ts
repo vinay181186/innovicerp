@@ -59,7 +59,7 @@ export const ITEM_TYPE_RULES: Record<ItemType, ItemTypeRule> = {
     jobMaterial: false,
     bomParent: false,
     generalIssue: false,
-    reorderable: false,
+    reorderable: true,
     returnable: true,
   },
 };

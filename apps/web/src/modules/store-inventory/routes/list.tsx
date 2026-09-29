@@ -1,7 +1,7 @@
 // Store / Inventory (PL-SI-1) — per-item current stock dashboard.
 // Mirrors legacy renderStore (HTML L24803). 4-tile KPI strip + filter +
-// per-item table with In Stock, Min Qty, On PO, Mfg Pending, + actions:
-// ± Adjust (modal), Min Qty (modal).
+// per-item table with In Stock, Reorder Level, On PO, Mfg Pending, + actions:
+// ± Adjust (modal), Reorder (modal).
 //
 // Two legacy features are NOT ported (reported as parity gaps):
 //   - per-row History button (legacy L24847/24953) — needs a per-item txn
@@ -12,7 +12,6 @@ import type {
   AdjustStockInput,
   ListStoreInventoryResponse,
   ManualReceiptSource,
-  SetMinStockInput,
   StoreInventoryRow,
 } from '@innovic/shared';
 import { MANUAL_RECEIPT_SOURCE_LABEL } from '@innovic/shared';
@@ -23,15 +22,16 @@ import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListHeader } from '@/ui/layout';
-import { useAdjustStock, useSetMinStock, useStoreInventory } from '../api';
+import { useAdjustStock, useStoreInventory } from '../api';
 import { useItemsList } from '@/modules/items/api';
 import { SearchableSelect } from '@/ui/forms';
 import { useDiscardGuard } from '../components/discard-guard';
 import { ModalShell } from '../components/modal-shell';
+import { ReorderModal } from '../components/reorder-modal';
 import { ReservationDrilldown } from '../components/reservation-drilldown';
 import { StockLedger } from '@/modules/store-transactions/components/stock-ledger';
 
-type FilterKey = 'all' | 'low' | 'zero';
+type FilterKey = 'all' | 'below' | 'zero';
 
 export const storeInventoryRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -41,7 +41,7 @@ export const storeInventoryRoute = createRoute({
 
 function StoreInventoryPage(): React.JSX.Element {
   // Tier-driven, per department (Store). Was admin/manager on `users.role`.
-  // Every write on this screen — ± Adjust, Min Qty and Manual Receipt, which
+  // Every write on this screen — ± Adjust, Reorder and Manual Receipt, which
   // posts through the same adjust-stock endpoint — moves a saved balance, so
   // all three sit on `edit`: an L2 Data Entry hand cannot restate stock.
   const { data: eff } = useMyAccess();
@@ -112,7 +112,7 @@ function StoreInventoryPage(): React.JSX.Element {
             count={data?.rows.length}
             noun="item"
             filterNote={
-              filter === 'low' ? 'Low Stock' : filter === 'zero' ? 'Zero Stock' : undefined
+              filter === 'below' ? 'Below Reorder' : filter === 'zero' ? 'Zero Stock' : undefined
             }
             search={search}
             onSearch={setSearch}
@@ -128,8 +128,8 @@ function StoreInventoryPage(): React.JSX.Element {
                 onChange={(e) => setFilter(e.target.value as FilterKey)}
               >
                 <option value="all">{withCount('All Items', data?.summary.totalItems)}</option>
-                <option value="low">
-                  {withCount('Low Stock Alert', data?.summary.lowStockCount)}
+                <option value="below">
+                  {withCount('Below Reorder', data?.summary.belowReorderCount)}
                 </option>
                 <option value="zero">
                   {withCount('Zero Stock', data?.summary.zeroStockCount)}
@@ -209,7 +209,7 @@ function StoreInventoryPage(): React.JSX.Element {
                         >
                           Available
                         </th>
-                        <th className="th-num">Min Qty</th>
+                        <th className="th-num">Reorder Level</th>
                         <th className="th-num" style={{ color: 'var(--blue)' }}>
                           On PO
                         </th>
@@ -273,11 +273,11 @@ function StoreInventoryPage(): React.JSX.Element {
                               >
                                 {row.inStock}
                               </span>
-                              {row.lowStock ? (
+                              {row.belowReorder ? (
                                 <div
                                   style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}
                                 >
-                                  ⚠ Low Stock
+                                  ⚠ Below Reorder
                                 </div>
                               ) : null}
                             </td>
@@ -316,7 +316,7 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.availableQty}
                               </span>
                             </td>
-                            <td className="mono text3 td-num">{row.minQty || '—'}</td>
+                            <td className="mono text3 td-num">{row.reorderLevel || '—'}</td>
                             <td className="td-num">
                               <span
                                 className="mono"
@@ -349,20 +349,15 @@ function StoreInventoryPage(): React.JSX.Element {
                             {showActions ? (
                               <td>
                                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                  {/* Low stock → buy the shortfall: Min Qty less
-                                      what is on the shelf and already on PO. The
-                                      PR form opens with item + qty filled, both
-                                      still editable. */}
-                                  {canRaisePr && row.lowStock ? (
+                                  {/* Below Reorder → the Reorder List (ADR-193 phase 5,
+                                      review): the one place PRs are raised for it, so an
+                                      item that already has an open PR is never bought twice. */}
+                                  {canRaisePr && row.belowReorder ? (
                                     <Link
-                                      to="/purchase-requests/new"
-                                      search={{
-                                        itemId: row.itemId,
-                                        qty: Math.max(0, row.minQty - row.inStock - row.onPoQty),
-                                      }}
+                                      to="/reorder-list"
                                       className="btn btn-primary btn-sm"
                                       style={{ fontSize: 11 }}
-                                      title="Raise a Purchase Request for the shortfall"
+                                      title="Open the Reorder List — one PR per item, open PRs shown"
                                     >
                                       Raise PR
                                     </Link>
@@ -381,9 +376,10 @@ function StoreInventoryPage(): React.JSX.Element {
                                         type="button"
                                         className="btn btn-ghost btn-sm"
                                         onClick={() => setMinRow(row)}
+                                        title="Reorder Level and Reorder Qty"
                                         style={{ fontSize: 11 }}
                                       >
-                                        Min Qty
+                                        Reorder
                                       </button>
                                     </>
                                   ) : null}
@@ -401,7 +397,7 @@ function StoreInventoryPage(): React.JSX.Element {
           ) : null}
 
           {adjustRow ? <AdjustModal row={adjustRow} onClose={() => setAdjustRow(null)} /> : null}
-          {minRow ? <SetMinModal row={minRow} onClose={() => setMinRow(null)} /> : null}
+          {minRow ? <ReorderModal row={minRow} onClose={() => setMinRow(null)} /> : null}
           {showManualReceipt ? (
             <ManualReceiveModal onClose={() => setShowManualReceipt(false)} />
           ) : null}
@@ -580,81 +576,6 @@ function AdjustModal({
             </>
           ) : (
             'Adjust'
-          )}
-        </button>
-      </div>
-    </ModalShell>
-  );
-}
-
-function SetMinModal({
-  row,
-  onClose,
-}: {
-  row: StoreInventoryRow;
-  onClose: () => void;
-}): React.JSX.Element {
-  const [val, setVal] = useState(String(row.minQty));
-  const [err, setErr] = useState<string | null>(null);
-  const mut = useSetMinStock();
-
-  const onSave = (): void => {
-    setErr(null);
-    const n = Number(val);
-    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
-      setErr('Min Qty must be 0 or a whole number.');
-      return;
-    }
-    const input: SetMinStockInput = { itemId: row.itemId, minQty: n };
-    mut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save Min Qty. Try again.'),
-    });
-  };
-
-  return (
-    <ModalShell onClose={onClose} title={`Min Qty — ${row.itemCode}`}>
-      <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
-        Low Stock shows at or below this. 0 = off.
-      </div>
-      <div className="form-grid">
-        <div className="form-grp form-full">
-          <label className="form-label">Min Qty</label>
-          <input
-            type="number"
-            min={0}
-            className="innovic-input"
-            value={val}
-            onChange={(e) => setVal(e.target.value)}
-            style={{ fontSize: 16, fontWeight: 700 }}
-          />
-        </div>
-      </div>
-      {err ? (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 8,
-            background: 'rgba(239,68,68,0.08)',
-            color: 'var(--red2)',
-            fontSize: 12,
-            borderRadius: 4,
-          }}
-        >
-          {err}
-        </div>
-      ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
-          {mut.isPending ? (
-            <>
-              <Loader2 size={14} className="inline animate-spin" /> Saving…
-            </>
-          ) : (
-            'Save'
           )}
         </button>
       </div>

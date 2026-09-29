@@ -540,3 +540,69 @@ another user waited was invisible) · **Mark Missing** (In Store piece not found
 Lost + OUT 1) so a stock count on a serial item is never stuck · Instrument Serial No. correctable while never
 issued · future Issue / Return Dates refused; calibration check uses the later of Issue Date and today ·
 Issue Tool keeps the picked item across searches. Re-run: 31 / 31.
+
+## 15. Phase 5 — reorder level, reorder alert, one-click PR, consumption report (R10, R11, Q5)
+
+Live check 2026-09-29: items with a min stock set — TEST 1, PROD 0; consumables — TEST 16, PROD 0; PRs — TEST 12,
+PROD 2. Items carry no default vendor; a new PR is Open and goes through approval (ADR-189).
+Today: `items.min_stock_qty` (integer) set by the Store "Min Qty" button; a row is "low" when In Stock ≤ Min Qty;
+a "Raise PR" link opens the PR form prefilled with Min Qty − In Stock − On PO.
+
+### Requirements (plain)
+
+- Per item: **Reorder Level** (the old Min Qty, renamed, decimals by UOM) and **Reorder Qty** (how much to buy).
+- An item is **Below Reorder** when Reorder Level > 0 and Available + On PO < Reorder Level (Available already
+  leaves out stock reserved for orders).
+- A **Reorder List** in Store: every Below Reorder item with its suggested PR qty and suggested vendor (the vendor
+  of its last PO); tick rows, adjust qty / vendor, **Raise PRs** — one PR per item, status Open (approval as usual).
+  Items that already have an open PR show it and cannot be ticked.
+- Alert AL-019 "Below Reorder Level" (store).
+- Report **Material Consumption**: Item Issue lines net of returns (reversed slips excluded) by month, item,
+  department, issued to, and what it was issued against (Job Card / Assembly SO / General).
+
+### Data (0160)
+
+- `items.min_stock_qty` → numeric(14,3) (screen name **Reorder Level**; column kept); += `reorder_qty numeric(14,3)
+  NOT NULL default 0` (**Reorder Qty**).
+
+### API
+
+```
+PATCH /store-inventory/items/:id/reorder  { reorderLevel, reorderQty }      (store edit — was set-min-stock)
+GET   /store-inventory/reorder-list                                           (store view)
+       → [{ itemId, itemCode, itemName, uom, reorderLevel, reorderQty, availableQty, onPoQty, suggestedQty,
+            openPrs:[{code, qty}], suggestedVendor:{id, code, name}|null }]
+POST  /store-inventory/reorder-pr  { lines:[{ itemId, qty, vendorId, requiredDate? }] }     (pr_create entry)
+       → { created:[{itemCode, prCode}], skipped:[{itemCode, reason}] }
+Report  material-consumption  (filters: from / to date, item, department, issue against)
+Alert   AL-019 Below Reorder Level
+```
+
+### Paper tests (API "running")
+
+| #   | Scenario                                                        | v1 result                  | Problem → fix                                                               |
+| --- | --------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
+| R1  | Level 10, Reorder Qty 25, Available 4, On PO 0                  | below; suggest 25 ✓        | —                                                                           |
+| R2  | Level 10, Reorder Qty 5, Available 0                            | suggest 5 → still below    | **P44** suggest max(Reorder Qty, Level − (Available + On PO))               |
+| R3  | Available 4, On PO 8                                            | below (v1 used In Stock)   | **P19** Available + On PO (12 ≥ 10 → not below)                             |
+| R4  | 30 in stock, 28 reserved for SOs, level 10                      | not below (In Stock 30)    | P19 uses Available (2) → below                                              |
+| R5  | Open PR already raised for the item                             | second PR created          | **P18** listed with its PR code, not tickable; POST skips it                |
+| R6  | NOS item, shortfall 7.5                                         | PR qty 7.5 → refused       | **P45** round the suggestion up to a whole number for NOS / SET             |
+| R7  | No PO history → no vendor                                        | PR refused (vendor)        | **P46** vendor picker required on that row; POST 400 names the item         |
+| R8  | Two users press Raise PRs together                              | two PRs per item           | **P47** per-item lock + re-check open PR inside the same transaction        |
+| R9  | Reorder Level on an Assembly item                               | allowed                    | **P48** refused (ITEM_TYPE_RULES.reorderable); Tool made reorderable (inserts wear out) |
+| R10 | Reorder Level 2.5 on a NOS item                                  | saved                      | assertQtyFitsUom refuses it ✓                                                |
+| R11 | Consumption: slip 10, returned 3, another slip reversed          | 13 counted                 | **P49** net of returns, reversed slips excluded → 7                         |
+| R12 | PR created from the list                                        | —                          | status Open → PR approval inbox ✓ (ADR-189); PR remarks "Reorder: level L, available A, On PO P" |
+
+### Phase 5 — as built
+
+Scenario test on TEST (`verify-5.ts`): 13 / 13 — Level 10 / Qty 25 / Available 4 → suggest 25 · Qty 5 → top-up 6 ·
+NOS level 10.5 refused · MTR 7.5 suggested as 7.5 · Assembly refused · 30 in stock then 28 issued → listed with
+Available 2 · unknown vendor 400 · Raise PR → IN-PR Open with "Reorder: …" remark · second raise skipped (open PR) ·
+two batches at the same moment → exactly one PR · Store filter / flag · consumption 10 − 3 returned, reversed slip
+excluded → Net 7 · ledger = balances. Regression: 3b 25/25, 3c 27/27, 4 31/31.
+Review fixes (5): a partly-ordered PR ('po_created' with balance) counts as open, OSP PRs don't; suggested vendor only
+from live non-OSP POs and active vendors; dashboard + stock valuation use the same Below Reorder rule; the Store row's
+Raise PR goes through the Reorder List; production-dashboard quantities decimal.
+

@@ -8,6 +8,7 @@ import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
+import { readBelowReorder } from '../store-inventory/reorder-rule';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -66,7 +67,7 @@ export async function getStockValuation(user: AuthContext): Promise<StockValuati
           COALESCE(lg.rate, lp.rate, 0) AS rate,
           (lg.rate IS NOT NULL OR lp.rate IS NOT NULL) AS has_rate,
           lg.grn_date::text AS last_grn_date,
-          i.min_stock_qty AS min_stock
+          i.min_stock_qty::float8 AS min_stock
         FROM items i
         LEFT JOIN item_stock_balances sb ON sb.item_id = i.id
         LEFT JOIN last_grn_rate lg ON lg.item_id = i.id
@@ -76,6 +77,9 @@ export async function getStockValuation(user: AuthContext): Promise<StockValuati
       `),
     );
 
+    // lowStock = Below Reorder, the ONE rule (store-inventory/reorder-rule.ts,
+    // ADR-193 phase 5) — so this screen flags exactly what Store flags.
+    const below = new Set((await readBelowReorder(tx, companyId)).map((b) => b.itemId));
     const rows: StockValuationRow[] = (res as unknown as Row[]).map((r) => {
       const stockQty = Number(r.stock_qty) || 0;
       const rate = Number(r.rate) || 0;
@@ -92,7 +96,7 @@ export async function getStockValuation(user: AuthContext): Promise<StockValuati
         value: stockQty * rate,
         lastGrnDate: r.last_grn_date,
         minStock,
-        lowStock: minStock > 0 && stockQty <= minStock,
+        lowStock: below.has(r.item_id),
       };
     });
 

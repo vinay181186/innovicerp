@@ -1,6 +1,6 @@
 // Projected stock & shortage — per item: Physical / Reserved / Available
 // (v_item_stock_availability), plus what is still coming on open purchase
-// orders and open Production Orders, against the item's Min Stock.
+// orders and open Production Orders, against the item's Reorder Level.
 // Modelled on ERPNext's "Stock Projected Qty" report.
 
 import { sql } from 'drizzle-orm';
@@ -12,7 +12,7 @@ export const projectedStockReport: RegisteredReport = {
     slug: 'projected-stock',
     title: 'Projected stock & shortage',
     description:
-      'Per item: Physical, Reserved, Available, qty still due on open material POs (short-closed POs owe nothing) and on open Production Orders, the Projected total, and the Shortage against Min Stock.',
+      'Per item: Physical, Reserved, Available, qty still due on open material POs (short-closed POs owe nothing) and on open Production Orders, the Projected total, and the Shortage against the Reorder Level.',
     group: 'Store',
     dept: 'store',
     filters: [
@@ -28,7 +28,7 @@ export const projectedStockReport: RegisteredReport = {
       { key: 'on_po_qty', label: 'On Open PO', type: 'number' },
       { key: 'production_qty', label: 'Pending from Production', type: 'number' },
       { key: 'projected_qty', label: 'Projected', type: 'number' },
-      { key: 'min_stock_qty', label: 'Min Stock', type: 'number' },
+      { key: 'min_stock_qty', label: 'Reorder Level', type: 'number' },
       { key: 'shortage_qty', label: 'Shortage', type: 'number' },
       { key: 'flag', label: 'Stock Flag', type: 'text' },
     ],
@@ -51,7 +51,7 @@ export const projectedStockReport: RegisteredReport = {
         GREATEST(0, x.min_stock_qty - x.projected_qty)::float8 AS shortage_qty,
         CASE
           WHEN x.projected_qty < 0 OR x.available_qty < 0 THEN 'Negative'
-          WHEN x.min_stock_qty > 0 AND x.projected_qty < x.min_stock_qty THEN 'Below Min'
+          WHEN x.min_stock_qty > 0 AND x.projected_qty < x.min_stock_qty THEN 'Projected Below Reorder'
           ELSE ''
         END AS flag
       FROM (
@@ -65,7 +65,7 @@ export const projectedStockReport: RegisteredReport = {
           COALESCE(m.production_qty, 0)::int        AS production_qty,
           (COALESCE(a.available_qty, 0) + COALESCE(p.on_po_qty, 0)
             + COALESCE(m.production_qty, 0))::float8   AS projected_qty,
-          i.min_stock_qty                           AS min_stock_qty
+          i.min_stock_qty::float8                   AS min_stock_qty
         FROM public.items i
         LEFT JOIN public.v_item_stock_availability a
           ON a.item_id = i.id AND a.company_id = i.company_id
