@@ -1,6 +1,7 @@
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { activityActionLabel as actionLabel } from '@innovic/shared';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDateTime } from '@/lib/date';
@@ -8,6 +9,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useActivityLog } from '../api';
 import { DocRefLink } from '../components/doc-ref-link';
+import { activityActionBadge } from '../lib/activity-entity';
 
 const PAGE_SIZE = 50;
 
@@ -27,105 +29,11 @@ export const activityLogListRoute = createRoute({
   component: ActivityLogListPage,
 });
 
-// Theme badge class keyed by action label — replaces the Tailwind map.
-//
-// Legacy `actionColors` (L11283) is a hex map; the port is a LIGHT theme
-// (ISSUE-067) so the hex values are MAPPED to tokens, never copied:
-//   CREATE      #22c55e → b-green   EDIT        #3b82f6 → b-blue
-//   DELETE      #ef4444 → b-red     RESTORE     #f59e0b → b-amber
-//   OP START    #f59e0b → b-amber   OP COMPLETE #22c55e → b-green
-//   DISPATCH    #06b6d4 → b-cyan    PERM DELETE #b91c1c → b-red
-// (--red2 IS #b91c1c, so PERM DELETE lands exactly; legacy's lighter
-//  DELETE red has no separate token, so the two share b-red here.)
-//
-// The underscore forms + cross-module actions below have NO legacy
-// counterpart — they are emitted by our own services (T-051a) and keep the
-// colour the port already gave them. Legacy's space forms are kept beside
-// them so migrated rows render identically.
-//
-// Unmapped actions fall back to b-grey. Legacy's default was `var(--text2)`
-// text with `background:var(--text2)22` — an invalid declaration that never
-// painted (ISSUE-063), so legacy's default chip is a bare muted label.
-const ACTION_BADGE: Record<string, string> = {
-  // CRUD baseline
-  CREATE: 'b-green',
-  EDIT: 'b-blue',
-  DELETE: 'b-red',
-  RESTORE: 'b-amber',
-  DISPATCH: 'b-cyan',
-  'PERM DELETE': 'b-red',
-  // Op-entry (new — T-051a #4)
-  OP_START: 'b-amber',
-  OP_STOP: 'b-orange',
-  OP_COMPLETE: 'b-green',
-  // Legacy space-form variants (migrated rows render with the same colour)
-  'OP START': 'b-amber',
-  'OP COMPLETE': 'b-green',
-  // Cross-module + NC dispositions (T-051a #6, #8)
-  PR_CONVERT: 'b-cyan',
-  NC_DISPOSE: 'b-amber',
-  NC_CLOSE_REWORK: 'b-green',
-  // Auto-cascade (T-051a #9) — line-close intermediate, header-close terminal
-  JC_COMPLETE: 'b-green',
-  SO_LINE_CLOSED: 'b-blue',
-  SO_CLOSED: 'b-green',
-  JW_LINE_CLOSED: 'b-blue',
-  JW_CLOSED: 'b-green',
-};
-
-// The words shown for each action code. The codes stay as stored (they are
-// the filter values); only the text changes. Unmapped codes read as Title
-// Case with document abbreviations (SO, JC, PR, …) kept upper-case.
-const ACTION_LABEL: Record<string, string> = {
-  CREATE: 'Created',
-  EDIT: 'Edited',
-  DELETE: 'Deleted',
-  RESTORE: 'Restored',
-  DISPATCH: 'Dispatched',
-  'PERM DELETE': 'Deleted Permanently',
-  OP_START: 'Operation Started',
-  OP_STOP: 'Operation Stopped',
-  OP_COMPLETE: 'Operation Completed',
-  'OP START': 'Operation Started',
-  'OP COMPLETE': 'Operation Completed',
-  PR_CONVERT: 'PR Converted to PO',
-  NC_DISPOSE: 'NC Disposition Set',
-  NC_CLOSE_REWORK: 'NC Closed after Rework',
-  JC_COMPLETE: 'JC Completed',
-  SO_LINE_CLOSED: 'SO Line Closed',
-  SO_CLOSED: 'SO Closed',
-  JW_LINE_CLOSED: 'JWSO Line Closed',
-  JW_CLOSED: 'JWSO Closed',
-};
-const ACTION_ABBR = new Set([
-  'SO',
-  'JC',
-  'PR',
-  'PO',
-  'NC',
-  'GRN',
-  'DC',
-  'QC',
-  'JWSO',
-  'BOM',
-  'OSP',
-  'TPI',
-  'CAPA',
-]);
-function actionLabel(action: string): string {
-  return (
-    ACTION_LABEL[action] ??
-    action
-      .split(/[_ ]+/)
-      .filter(Boolean)
-      .map((w) =>
-        ACTION_ABBR.has(w.toUpperCase())
-          ? w.toUpperCase()
-          : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
-      )
-      .join(' ')
-  );
-}
+// Action words and badge colours come from ONE place (ADR-197): the label
+// from @innovic/shared `activityActionLabel` (standard, legacy and ad-hoc
+// names alike — legacy rows keep their old wording), the colour from
+// lib/activity-entity.ts `activityActionBadge` (legacy hex map → tokens,
+// ISSUE-067; unmapped names are grey). The stored codes stay the filter values.
 
 function ActivityLogListPage() {
   const search = activityLogListRoute.useSearch();
@@ -313,7 +221,7 @@ function ActivityLogListPage() {
                 data.entries.map((e) => {
                   // `26-Sep-2026 14:05` IST, split across the Date and Time columns.
                   const [date = '—', time = ''] = fmtDateTime(e.ts).split(' ');
-                  const badgeClass = ACTION_BADGE[e.action] ?? 'b-grey';
+                  const badgeClass = activityActionBadge(e.action);
                   return (
                     <tr key={e.id}>
                       <td className="mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
@@ -332,10 +240,10 @@ function ActivityLogListPage() {
                         {e.detail}
                       </td>
                       <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        <DocRefLink entity={e.entity} refId={e.refId} />
+                        <DocRefLink entity={e.entity} refId={e.refId} entityId={e.entityId} />
                       </td>
-                      <td className="amber" style={{ fontSize: 11 }}>
-                        {e.userName}
+                      <td className="amber" style={{ fontSize: 11 }} title={e.userName}>
+                        {e.userFullName}
                         {e.userId === null ? (
                           <span className="text3" style={{ fontSize: 11, marginLeft: 4 }}>
                             (snapshot)

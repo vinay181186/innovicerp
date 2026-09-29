@@ -32,6 +32,7 @@ import {
   UOMS,
   USER_ROLES,
 } from '@innovic/shared';
+import type { ActivityChange } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -163,6 +164,7 @@ export const companies = pgTable(
       .notNull()
       .references((): AnyPgColumn => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('companies_slug_uniq')
@@ -206,6 +208,7 @@ export const users = pgTable(
       .notNull()
       .references((): AnyPgColumn => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('users_company_id_idx')
@@ -269,6 +272,7 @@ export const items = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('items_company_code_uniq')
@@ -331,6 +335,7 @@ export const clients = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('clients_company_code_uniq')
@@ -382,6 +387,7 @@ export const vendors = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('vendors_company_code_uniq')
@@ -432,6 +438,7 @@ export const machineGroups = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('machine_groups_company_code_uniq')
@@ -487,6 +494,7 @@ export const machines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('machines_company_code_uniq')
@@ -537,6 +545,7 @@ export const operators = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('operators_company_code_uniq')
@@ -594,6 +603,7 @@ export const materialGrades = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     // Live rows only: a deleted code is not re-issued by the series but also
@@ -640,6 +650,7 @@ export const materialSizes = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('material_sizes_company_code_uniq')
@@ -688,6 +699,7 @@ export const qcProcesses = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('qc_processes_company_code_uniq')
@@ -748,6 +760,7 @@ export const tpiMasters = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('tpi_masters_company_code_uniq')
@@ -797,6 +810,7 @@ export const costCenters = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('cost_centers_company_code_uniq')
@@ -878,6 +892,7 @@ export const routeCards = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check(
@@ -942,6 +957,7 @@ export const routeCardOps = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('route_card_ops_card_seq_uniq')
@@ -1093,6 +1109,7 @@ export const jobCards = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check(
@@ -1192,6 +1209,7 @@ export const jcOps = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('jc_ops_card_seq_uniq')
@@ -1368,6 +1386,7 @@ export const opLogTimeChangeRequests = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     // One open request per entry — a second edit before the first is decided
@@ -1490,6 +1509,7 @@ export const salesOrders = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('sales_orders_company_code_uniq')
@@ -1581,6 +1601,7 @@ export const salesOrderLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('sales_order_lines_so_line_uniq')
@@ -1713,6 +1734,7 @@ export const soMilestones = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('so_milestones_so_idx')
@@ -1764,6 +1786,7 @@ export const jobWorkOrders = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('job_work_orders_company_code_uniq')
@@ -1851,6 +1874,7 @@ export const jobWorkOrderLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('job_work_order_lines_jw_line_uniq')
@@ -1930,6 +1954,10 @@ export const purchaseRequests = pgTable(
     balanceClosedAt: timestamp('balance_closed_at', { withTimezone: true }),
     balanceClosedBy: uuid('balance_closed_by').references(() => users.id),
     balanceClosedReason: text('balance_closed_reason'),
+    // ADR-197 (0178) — who rejected the PR, when and why (as purchase_orders).
+    rejectedBy: uuid('rejected_by').references(() => users.id),
+    rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+    rejectionReason: text('rejection_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -1939,6 +1967,7 @@ export const purchaseRequests = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('purchase_requests_company_code_uniq')
@@ -2038,6 +2067,7 @@ export const purchaseOrders = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     // ADR-189 (0151) — who / when / why of a short close, all or none.
@@ -2116,6 +2146,7 @@ export const purchaseOrderLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('purchase_order_lines_po_line_uniq')
@@ -2186,6 +2217,7 @@ export const jcOpPoLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     // One link per (op, line): a second PO for the same op on the SAME line is a
@@ -2254,6 +2286,7 @@ export const goodsReceiptNotes = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('goods_receipt_notes_company_code_uniq')
@@ -2325,6 +2358,7 @@ export const goodsReceiptNoteLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('goods_receipt_note_lines_grn_line_uniq')
@@ -2467,6 +2501,7 @@ export const soStockReservations = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('so_stock_reservations_company_line_idx').on(t.companyId, t.soLineId),
@@ -2572,6 +2607,10 @@ export const ncRegister = pgTable(
     dispositionDate: date('disposition_date'),
     dispositionByText: text('disposition_by_text'),
     dispositionRemarks: text('disposition_remarks'),
+    // ADR-197 (0178) — the user who decided the disposition; read
+    // dispositionBy ?? dispositionByText (the typed snapshot).
+    dispositionBy: uuid('disposition_by').references(() => users.id),
+    dispositionAt: timestamp('disposition_at', { withTimezone: true }),
     reworkJcCodeText: text('rework_jc_code_text'),
     reworkOpSeq: integer('rework_op_seq'),
     reworkDoneQty: numeric('rework_done_qty', { precision: 12, scale: 2 }),
@@ -2622,6 +2661,7 @@ export const ncRegister = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     // ADR-189 (0151) — a bought-material NC has no job card but a GRN line.
@@ -2701,6 +2741,13 @@ export const deliveryChallans = pgTable(
     }),
     reason: text('reason'),
     status: dcStatusEnum('status').notNull().default('issued'),
+    // ADR-197 (0178) — who issued (sent) / received / cancelled the challan.
+    issuedBy: uuid('issued_by').references(() => users.id),
+    issuedAt: timestamp('issued_at', { withTimezone: true }),
+    receivedBy: uuid('received_by').references(() => users.id),
+    receivedAt: timestamp('received_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -2710,6 +2757,7 @@ export const deliveryChallans = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('delivery_challans_company_code_uniq')
@@ -2773,6 +2821,7 @@ export const deliveryChallanLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('delivery_challan_lines_dc_line_uniq')
@@ -2826,6 +2875,7 @@ export const deliveryChallanReceipts = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('delivery_challan_receipts_company_code_uniq')
@@ -2877,6 +2927,7 @@ export const deliveryChallanReceiptLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('delivery_challan_receipt_lines_receipt_idx')
@@ -2938,6 +2989,7 @@ export const bomMasters = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('bom_masters_company_no_uniq')
@@ -3002,6 +3054,7 @@ export const bomMasterLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('bom_master_lines_bom_item_uniq')
@@ -3102,6 +3155,7 @@ export const savedReports = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('saved_reports_company_owner_name_uniq')
@@ -3283,11 +3337,34 @@ export const activityLog = pgTable(
     refId: text('ref_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by').references(() => users.id),
+    // ── ADR-197 (0178) accountability — see docs/AUDIT-TRAIL.md ──
+    // The DOCUMENT (header row) the action is about; null on legacy rows.
+    // No FK: it points into whichever table `entity` names.
+    entityId: uuid('entity_id'),
+    // Where inside the document: a line ("Line 2") / an op ("Op 20 · Turning").
+    lineRef: text('line_ref'),
+    opRef: text('op_ref'),
+    // The quantity this one action moved.
+    qty: numeric('qty', { precision: 14, scale: 3 }),
+    // Before → after per edited field: [{field,label,before,after}].
+    changes: jsonb('changes').$type<ActivityChange[]>(),
+    // Why — required for reject / reverse / close short / cancel / delete.
+    reason: text('reason'),
+    // Operator / inspector named on the entry when not the logged-in user.
+    operatorName: text('operator_name'),
+    // Snapshot of users.full_name at the time (user_name keeps the e-mail).
+    userFullName: text('user_full_name'),
   },
   (t) => [
     index('activity_log_company_ts_idx').on(t.companyId, t.ts),
     index('activity_log_company_action_idx').on(t.companyId, t.action),
     index('activity_log_company_user_idx').on(t.companyId, t.userId),
+    index('activity_log_company_entity_doc_idx').on(t.companyId, t.entity, t.entityId, t.ts.desc()),
+    index('activity_log_company_ref_idx').on(t.companyId, t.refId),
+    check(
+      'activity_log_changes_is_array',
+      sql`${t.changes} IS NULL OR jsonb_typeof(${t.changes}) = 'array'`,
+    ),
     pgPolicy('activity_log_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -3417,6 +3494,7 @@ export const plans = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check(
@@ -3501,6 +3579,7 @@ export const planOps = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('plan_ops_plan_seq_uniq')
@@ -3576,6 +3655,7 @@ export const assemblyUnits = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('assembly_units_so_unit_uniq')
@@ -3630,6 +3710,7 @@ export const assemblyTracking = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('assembly_tracking_so_child_uniq')
@@ -3701,6 +3782,7 @@ export const toolIssues = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('tool_issues_company_code_uniq')
@@ -3756,6 +3838,7 @@ export const toolIssueReturns = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('tool_issue_returns_issue_idx')
@@ -3805,6 +3888,7 @@ export const instruments = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check(
@@ -3856,6 +3940,7 @@ export const instrumentCalibrations = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check('instrument_calibrations_result_check', sql`${t.result} IN ('pass', 'fail')`),
@@ -3896,6 +3981,7 @@ export const toolIssueInstruments = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check(
@@ -3950,6 +4036,7 @@ export const toolWriteoffs = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check('tool_writeoffs_kind_check', sql`${t.kind} IN ('damaged', 'lost', 'scrap')`),
@@ -4011,6 +4098,7 @@ export const stockCounts = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check('stock_counts_purpose_check', sql`${t.purpose} IN ('opening', 'periodic')`),
@@ -4072,6 +4160,7 @@ export const stockCountLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check('stock_count_lines_counted_qty_check', sql`${t.countedQty} >= 0`),
@@ -4152,6 +4241,7 @@ export const storeIssues = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check(
@@ -4221,6 +4311,7 @@ export const storeIssueLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check('store_issue_lines_qty_check', sql`${t.qty} > 0`),
@@ -4268,6 +4359,7 @@ export const storeIssueReturns = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check('store_issue_returns_qty_check', sql`${t.qty} > 0`),
@@ -4316,6 +4408,7 @@ export const assemblyPartReservations = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check('assembly_part_reservations_qty_check', sql`${t.qty} > 0`),
@@ -4374,6 +4467,7 @@ export const assemblyUnitConsumptions = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check('assembly_unit_consumptions_qty_check', sql`${t.qty} > 0`),
@@ -4429,6 +4523,7 @@ export const partyMaterials = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('party_materials_company_code_uniq')
@@ -4487,6 +4582,7 @@ export const partyGrn = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('party_grn_company_code_uniq')
@@ -4553,6 +4649,7 @@ export const partyGrnLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('party_grn_lines_grn_idx')
@@ -4618,6 +4715,7 @@ export const partyStockLedger = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('party_stock_ledger_material_idx')
@@ -4626,7 +4724,10 @@ export const partyStockLedger = pgTable(
     index('party_stock_ledger_jw_line_idx')
       .on(t.jwLineId)
       .where(sql`${t.deletedAt} is null AND ${t.jwLineId} is not null`),
-    check('party_stock_ledger_movement_check', sql`${t.movement} IN ('receive','issue','consume','return','reversal')`),
+    check(
+      'party_stock_ledger_movement_check',
+      sql`${t.movement} IN ('receive','issue','consume','return','reversal')`,
+    ),
     check('party_stock_ledger_direction_check', sql`${t.direction} IN ('in','out')`),
     check('party_stock_ledger_qty_positive', sql`${t.qty} > 0`),
     pgPolicy('party_stock_ledger_company_read', {
@@ -4682,6 +4783,7 @@ export const partyMaterialIssues = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('party_material_issues_company_code_uniq')
@@ -4745,6 +4847,7 @@ export const jwReturnChallans = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('jw_return_challans_company_code_uniq')
@@ -4814,6 +4917,7 @@ export const jwInvoices = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('jw_invoices_company_code_uniq')
@@ -4868,6 +4972,7 @@ export const jwDcOutward = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('jw_dc_outward_company_code_uniq')
@@ -4930,6 +5035,7 @@ export const jwDcOutwardLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('jw_dc_outward_lines_dc_idx')
@@ -4983,6 +5089,7 @@ export const jwDcInward = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('jw_dc_inward_company_code_uniq')
@@ -5045,6 +5152,7 @@ export const jwDcInwardLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('jw_dc_inward_lines_inward_idx')
@@ -5109,6 +5217,7 @@ export const designTracker = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('design_tracker_company_code_uniq')
@@ -5157,6 +5266,7 @@ export const designTimeLog = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('design_time_log_tracker_idx')
@@ -5213,6 +5323,7 @@ export const designProjects = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('design_projects_company_code_uniq')
@@ -5265,6 +5376,7 @@ export const designTasks = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('design_tasks_project_idx')
@@ -5318,6 +5430,7 @@ export const designIssues = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('design_issues_project_idx')
@@ -5370,6 +5483,7 @@ export const designWorkLog = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('design_work_log_company_date_idx')
@@ -5426,6 +5540,7 @@ export const designDcrs = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('design_dcrs_company_code_uniq')
@@ -5475,6 +5590,7 @@ export const designDcns = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('design_dcns_company_code_uniq')
@@ -5549,6 +5665,7 @@ export const invoices = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('invoices_company_code_uniq')
@@ -5606,6 +5723,7 @@ export const invoiceLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('invoice_lines_invoice_line_uniq')
@@ -5658,6 +5776,7 @@ export const invoicePayments = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('invoice_payments_invoice_idx')
@@ -5708,6 +5827,7 @@ export const customerDispatches = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('customer_dispatches_company_code_uq')
@@ -5760,6 +5880,7 @@ export const customerDispatchLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('customer_dispatch_lines_line_uq')
@@ -5829,6 +5950,7 @@ export const tasks = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('tasks_company_code_uq')
@@ -5880,6 +6002,7 @@ export const taskComments = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('task_comments_task_idx')
@@ -5968,6 +6091,7 @@ export const dailyReports = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('daily_reports_company_user_idx')
@@ -6015,6 +6139,7 @@ export const dailyReportLines = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('daily_report_lines_line_uq')
@@ -6059,6 +6184,7 @@ export const dashboardConfig = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('dashboard_config_company_user_uq')
@@ -6235,6 +6361,7 @@ export const capaRecords = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('capa_records_company_code_uniq')
@@ -6283,6 +6410,7 @@ export const reportTypes = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('report_types_company_status_idx')
@@ -6343,6 +6471,7 @@ export const qcDocuments = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('qc_documents_company_jc_idx')
@@ -6427,6 +6556,7 @@ export const fileRegistry = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('file_registry_company_so_idx')
@@ -6490,6 +6620,7 @@ export const qcAssignments = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('qc_assignments_company_op_uq')
@@ -6538,6 +6669,7 @@ export const printTemplates = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('print_templates_company_key_uq')
@@ -6649,6 +6781,7 @@ export const userAccess = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('user_access_user_uq')
@@ -6712,6 +6845,7 @@ export const approvalConfig = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('approval_config_company_uq')
@@ -6807,6 +6941,7 @@ export const ospProcesses = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('osp_processes_company_name_uq')
@@ -6880,6 +7015,7 @@ export const servicePos = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('service_pos_company_no_uq')
@@ -7033,6 +7169,7 @@ export const productionOrders = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('production_orders_company_code_uniq')
@@ -7112,6 +7249,7 @@ export const productionOrderCloses = pgTable(
       .notNull()
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     index('production_order_closes_po_idx')

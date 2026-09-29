@@ -128,6 +128,7 @@ export * from './schemas/print-template';
 export * from './schemas/user';
 export * from './schemas/company';
 export * from './enums/access-control';
+export * from './enums/activity';
 export * from './enums/production-order-status';
 export * from './enums/plan-ops-source';
 export * from './enums/plan-derived-status';

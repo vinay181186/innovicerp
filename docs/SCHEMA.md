@@ -1703,6 +1703,32 @@ RLS:
 
 `saved_reports` gets `before update` → `set_updated_at()`. `alert_config` doesn't currently have one — drizzle-gen didn't emit it, and the audit cols are only loosely-tracked here (admin self-edits are visible via `updated_at`/`updated_by` already set in service code on each upsert; a trigger would be belt-and-braces but isn't required). `alert_subscriptions` does get one (`alert_subscriptions_set_updated_at`) so subscription channel changes (when more channels land) bump the audit timestamp without service-layer ceremony. `alert_deliveries` is append-only — no trigger.
 
+### `activity_log` — accountability columns (ADR-197, migration 0178)
+
+The table stays append-only (no UPDATE / DELETE policy, no `updated_at` / `deleted_at`). 0178 adds, all NULLable:
+
+| Column           | Type            | Meaning                                                                                                   |
+| ---------------- | --------------- | --------------------------------------------------------------------------------------------------------- |
+| `entity_id`      | `uuid`          | The DOCUMENT (header row) the action is about. No FK — `entity` names the table. NULL on pre-0178 rows.  |
+| `line_ref`       | `text`          | Where inside the document: a line (`Line 2`).                                                             |
+| `op_ref`         | `text`          | Which operation (`Op 20 · Turning`).                                                                      |
+| `qty`            | `numeric(14,3)` | Activity Qty — the quantity this one action moved.                                                        |
+| `changes`        | `jsonb`         | Before → after list `[{field,label,before,after}]`; CHECK `activity_log_changes_is_array` (array or NULL). |
+| `reason`         | `text`          | Why — required (by the service) for REJECT / REVERSE / CLOSE_SHORT / CANCEL / DELETE.                    |
+| `operator_name`  | `text`          | Operator / inspector named on the entry when not the logged-in user.                                      |
+| `user_full_name` | `text`          | Snapshot of `users.full_name` at the time (`user_name` keeps the e-mail).                                 |
+
+Indexes: `activity_log_company_entity_doc_idx (company_id, entity, entity_id, ts DESC)` — the History tab; `activity_log_company_ref_idx (company_id, ref_id)` — legacy rows found by document code.
+
+Standard `action` / `entity` names: `packages/shared/src/enums/activity.ts`. Writer: `emitActivityLog` (apps/api/src/modules/activity-log/service.ts). Developer guide: `docs/AUDIT-TRAIL.md`.
+
+**Other "who" columns added by 0178:**
+
+- `purchase_requests.rejected_by uuid → users`, `rejected_at timestamptz`, `rejection_reason text` (same three as `purchase_orders`).
+- `delivery_challans` (OSP DC) `.issued_by / issued_at`, `.received_by / received_at`, `.cancelled_by / cancelled_at` (uuid → users / timestamptz).
+- `nc_register.disposition_by uuid → users`, `disposition_at timestamptz` — the user who decided the disposition; `disposition_by_text` stays as the snapshot fallback (read `disposition_by ?? disposition_by_text`).
+- `deleted_by uuid → users` on **every** base table that has `deleted_at` (96 tables on 2026-09-29), added by a DO block over `information_schema`. Set it with `softDeleteStamp(user)`; clear it with `restoreStamp()`.
+
 ---
 
 ## Migration Notes (Phase 1 bootstrap)
@@ -1816,4 +1842,4 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-09-29 | `0160_reorder_qty.sql` (hand-written, idempotent) | **ADR-193 phase 5.** `items.min_stock_qty` integer → numeric(14,3) (screen name **Reorder Level**; CHECK ≥ 0); += `reorder_qty numeric(14,3) NOT NULL DEFAULT 0 CHECK ≥ 0` (**Reorder Qty**). Rollback in the file header. |
 | 2026-09-28 | `0171_invoice_tax_type_and_payment_tds.sql` (hand-written, idempotent) | SO invoice Tax Type + TDS / Short Amount. `invoices` += `tax_type text NULL` CHECK in (`sgst_cgst`,`igst`) (same codes as `jw_invoices.tax_type`, 0148; NULL = raised before 0171, prints as before) and `total_tds numeric(14,2) NOT NULL DEFAULT 0` (Σ payment TDS). `invoice_payments` += `tds_amount numeric(14,2) NOT NULL DEFAULT 0` CHECK ≥ 0 — TDS / short amount deducted by the customer, counts toward settling. Outstanding Amount = grand_total − total_paid − total_tds. Existing rows get 0 / NULL: no figure changes. Rollback in the file header. |
 | 2026-09-28 | `0172_purchase_qty_decimal_jw_inward_qc.sql` (hand-written, idempotent, the widening in one DO block) | **High-findings fix, purchase chain.** Decimal quantities (KGS / MTR, 3 places) on the PR → PO → GRN / JW DC chain, integer → `numeric(14,3)`: `purchase_requests.qty`; `purchase_order_lines.qty`, `received_qty`; `goods_receipt_note_lines.received_qty`, `qc_accepted_qty`, `qc_rejected_qty`; `jw_dc_outward_lines.po_qty`, `sent_qty`; `jw_dc_inward_lines.sent_qty`, `received_qty`, `ok_qty`, `rejected_qty` (Drizzle: the `stockQty` custom type, so code keeps JS numbers). Every view reading one of those columns (and every view on top of it) is dropped and re-created from its own stored definition, options, grants and comment in the same DO block. NOS / SET stay whole by the API rule (`lib/qty-uom.ts` + `lib/stock-ledger.ts`). `purchase_order_lines_received_qty_check` → `received_qty <= qty * 1.1` (was `qty + (qty * 0.1)::int`). JW DC Inward goes to Incoming QC (ADR-189): `jw_dc_inward` += `goods_receipt_note_id uuid → goods_receipt_notes ON DELETE SET NULL` (the QC-pending GRN the receipt raises; NULL before 0172); `jw_dc_inward_lines_split_total` → `ok_qty + rejected_qty <= received_qty` (new rows carry 0 / 0; QC decides on the GRN). `delivery_challan_lines.qty` is already `numeric(12,2)` and unchanged. Rollback in the file header. |
-|
+| 2026-09-29 | `0178_activity_log_accountability.sql` (hand-written, idempotent, additive) | **ADR-197 accountability.** `activity_log` += `entity_id uuid`, `line_ref`, `op_ref`, `qty numeric(14,3)`, `changes jsonb` (CHECK array), `reason`, `operator_name`, `user_full_name`; indexes (company_id, entity, entity_id, ts DESC) and (company_id, ref_id). `purchase_requests` += rejected_by / rejected_at / rejection_reason. `delivery_challans` += issued_by/at, received_by/at, cancelled_by/at. `nc_register` += disposition_by / disposition_at. `deleted_by uuid → users` on every table with `deleted_at` (DO block). Run on BOTH databases. |
