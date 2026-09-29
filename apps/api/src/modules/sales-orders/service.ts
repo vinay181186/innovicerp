@@ -12,9 +12,11 @@
 // avoids the footgun where a header-only PATCH would wipe lines.
 
 import {
+  deriveSoFulfilmentStatus,
   normalizeRevision,
   revisionBackwardsMessage,
   revisionGoesBackwards,
+  soFulfilmentFactsFromLines,
 } from '@innovic/shared';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
@@ -521,20 +523,49 @@ export async function listSalesOrders(
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int AS "totalQty",
         COALESCE(line_agg.dispatched_qty, 0)::int AS "dispatchedQty",
+        COALESCE(line_agg.short_closed_qty, 0)::int AS "shortClosedQty",
+        COALESCE(line_agg.live_count, 0)::int AS "liveLineCount",
+        COALESCE(line_agg.any_to_deliver, false) AS "anyToDeliver",
+        COALESCE(line_agg.any_to_bill, false)    AS "anyToBill",
+        COALESCE(line_agg.all_short_closed, false) AS "allShortClosed",
         line_agg.earliest_due_date::text      AS "earliestDueDate",
         COALESCE(jc_agg.jc_qty, 0)::int       AS "jcQty",
         cpo_file.storage_path                 AS "clientPoFilePath"
       FROM public.sales_orders so
       LEFT JOIN public.users cu ON cu.id = so.created_by
       LEFT JOIN (
-        SELECT sales_order_id,
+        SELECT l.sales_order_id,
                COUNT(*) AS line_count,
-               SUM(order_qty) AS total_qty,
-               SUM(dispatched_qty) AS dispatched_qty,
-               MIN(due_date) AS earliest_due_date
-        FROM public.sales_order_lines
-        WHERE deleted_at IS NULL
-        GROUP BY sales_order_id
+               SUM(l.order_qty) AS total_qty,
+               SUM(l.dispatched_qty) AS dispatched_qty,
+               MIN(l.due_date) AS earliest_due_date,
+               -- ADR-196 — the facts the fulfilment status is read off
+               -- (@innovic/shared deriveSoFulfilmentStatus; the detail read
+               -- builds the same facts from its lines). Cancelled lines are
+               -- out of the order; a short-closed line's undelivered qty is done.
+               SUM(CASE WHEN l.short_closed_at IS NOT NULL
+                        THEN GREATEST(l.order_qty - l.dispatched_qty, 0) ELSE 0 END) AS short_closed_qty,
+               COUNT(*) FILTER (WHERE l.status <> 'cancelled') AS live_count,
+               BOOL_OR(l.status <> 'cancelled' AND l.short_closed_at IS NULL
+                       AND l.dispatched_qty < l.order_qty) AS any_to_deliver,
+               BOOL_OR(l.status <> 'cancelled'
+                       AND COALESCE(b.billed, 0) < l.dispatched_qty) AS any_to_bill,
+               BOOL_AND(l.short_closed_at IS NOT NULL)
+                 FILTER (WHERE l.status <> 'cancelled') AS all_short_closed
+        FROM public.sales_order_lines l
+        -- Billed = Σ live invoice-line qty per SO line (the detail's billedQty).
+        LEFT JOIN (
+          SELECT il.sales_order_line_id, SUM(il.qty) AS billed
+          FROM public.invoice_lines il
+          JOIN public.invoices inv ON inv.id = il.invoice_id AND inv.deleted_at IS NULL
+          WHERE il.company_id = ${companyId}::uuid
+            AND il.deleted_at IS NULL
+            AND il.sales_order_line_id IS NOT NULL
+          GROUP BY il.sales_order_line_id
+        ) b ON b.sales_order_line_id = l.id
+        WHERE l.deleted_at IS NULL
+          AND l.company_id = ${companyId}::uuid
+        GROUP BY l.sales_order_id
       ) line_agg ON line_agg.sales_order_id = so.id
       LEFT JOIN (
         SELECT sol.sales_order_id, SUM(${jcEffectiveQtySql('jc')}) AS jc_qty
@@ -633,6 +664,14 @@ function toListItem(r: Record<string, unknown>): SalesOrderListItem {
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     dispatchedQty: Number(r['dispatchedQty'] ?? 0),
+    shortClosedQty: Number(r['shortClosedQty'] ?? 0),
+    fulfilmentStatus: deriveSoFulfilmentStatus({
+      soStatus: String(r['status']),
+      liveLineCount: Number(r['liveLineCount'] ?? 0),
+      anyToDeliver: r['anyToDeliver'] === true,
+      anyToBill: r['anyToBill'] === true,
+      allShortClosed: r['allShortClosed'] === true,
+    }),
     jcQty: Number(r['jcQty'] ?? 0),
     earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
     clientPoFilePath: (r['clientPoFilePath'] as string | null) ?? null,
@@ -757,10 +796,19 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
     }
 
     const headerOut = toSalesOrder(header);
+    const linesOut = lineRows.map((r) => ({
+      ...toSalesOrderLine(r.row, r.itemCode, r.itemImagePath ?? null),
+      billedQty: billedByLine.get(r.row.id) ?? 0,
+      jcQty: jcByLine.get(r.row.id) ?? 0,
+    }));
     return {
       ...(showMoney ? headerOut : hideSoHeaderMoney(headerOut)),
       createdByName,
       bomMasterCode,
+      // ADR-196 — ERPNext-style fulfilment status, from the lines just read.
+      fulfilmentStatus: deriveSoFulfilmentStatus(
+        soFulfilmentFactsFromLines(header.status, linesOut),
+      ),
       // ADR-190 — totals are the server's arithmetic, never the browser's.
       totals: showMoney
         ? computeSoTotals(
@@ -768,14 +816,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
             header.gstPercent,
           )
         : null,
-      lines: lineRows.map((r) => {
-        const line = {
-          ...toSalesOrderLine(r.row, r.itemCode, r.itemImagePath ?? null),
-          billedQty: billedByLine.get(r.row.id) ?? 0,
-          jcQty: jcByLine.get(r.row.id) ?? 0,
-        };
-        return showMoney ? line : hideSoLineMoney(line);
-      }),
+      lines: showMoney ? linesOut : linesOut.map(hideSoLineMoney),
       milestones,
       clientPoFilePath,
     };
@@ -1273,6 +1314,14 @@ function toSalesOrderLine(
     dueDate: row.dueDate,
     clientPoLineNo: row.clientPoLineNo,
     status: row.status,
+    shortClosedAt:
+      row.shortClosedAt instanceof Date
+        ? row.shortClosedAt.toISOString()
+        : row.shortClosedAt
+          ? String(row.shortClosedAt)
+          : null,
+    shortClosedBy: row.shortClosedBy,
+    shortCloseReason: row.shortCloseReason,
     sourceBomMasterId: row.sourceBomMasterId,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
@@ -1560,6 +1609,9 @@ export async function createSalesOrder(
       return {
         ...toSalesOrder(header),
         createdByName: await resolveUserName(tx, header.createdBy),
+        // ADR-196 — only the detail read works the fulfilment status out (it
+        // needs Billed); the write-back leaves it null and the client re-reads.
+        fulfilmentStatus: null,
         lines: insertedLines.map((row) =>
           toSalesOrderLine(
             row,
@@ -1749,6 +1801,9 @@ export async function updateSalesOrder(
     return {
       ...toSalesOrder(updatedHdr),
       createdByName: await resolveUserName(tx, updatedHdr.createdBy),
+      // ADR-196 — only the detail read works the fulfilment status out (it
+      // needs Billed); the write-back leaves it null and the client re-reads.
+      fulfilmentStatus: null,
       lines: lineRows.map((row) =>
         toSalesOrderLine(
           row,
@@ -1928,6 +1983,8 @@ async function mergeLines(
       revision: salesOrderLines.revision,
       // ADR-184 — the stored item, so an item swap on a committed line is refused.
       itemId: salesOrderLines.itemId,
+      // ADR-196 — a line closed short keeps its Order Qty and status.
+      shortClosedAt: salesOrderLines.shortClosedAt,
     })
     .from(salesOrderLines)
     .where(and(eq(salesOrderLines.salesOrderId, salesOrderId), isNull(salesOrderLines.deletedAt)));
@@ -1976,6 +2033,21 @@ async function mergeLines(
   for (const u of toUpdate) {
     const c = commitments.get(u.id);
     if (!c) continue;
+    // ADR-196 — a line closed short is finished business: its Order Qty and
+    // its 'closed' status are what the close recorded. Re-sending them
+    // unchanged (every form save does) is fine; changing them is not.
+    if (existingById.get(u.id)?.shortClosedAt) {
+      if (u.data.orderQty !== undefined && u.data.orderQty !== c.orderQty) {
+        throw new ValidationError(
+          `${lineLabel(c)} was closed short — its Order Qty can no longer change. Add a new line for more.`,
+        );
+      }
+      if (u.data.status !== undefined && u.data.status !== c.status) {
+        throw new ValidationError(
+          `${lineLabel(c)} was closed short — its status can no longer change.`,
+        );
+      }
+    }
     // Only a REDUCTION is checked: saving a line unchanged must keep working
     // even on old data whose qty already sits below a downstream figure.
     if (u.data.orderQty !== undefined && u.data.orderQty < c.orderQty) {

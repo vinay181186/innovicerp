@@ -268,13 +268,14 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         // ADR-185 — per line, by the one shared rule (lib/so-line-coverage.ts):
         // Plan Qty = plans + a Buy line's PRs (the detail pane's totalPlanned);
         // the % uses covered (+ direct cards) capped at the line qty, so one
-        // over-covered line cannot hide another's gap.
+        // over-covered line cannot hide another's gap. ADR-196 — a line
+        // closed short counts as fully covered: nothing more is wanted on it.
         plannedQty:
           sql<number>`coalesce(sum(${sql.raw(soLinePlannedRaw('"sales_order_lines"'))}), 0)::numeric`.as(
             'planned_qty',
           ),
         coveredQty:
-          sql<number>`coalesce(sum(LEAST(${sql.raw(soLineCoveredRaw('"sales_order_lines"'))}, ${salesOrderLines.orderQty})), 0)::numeric`.as(
+          sql<number>`coalesce(sum(CASE WHEN ${salesOrderLines.shortClosedAt} IS NOT NULL THEN ${salesOrderLines.orderQty} ELSE LEAST(${sql.raw(soLineCoveredRaw('"sales_order_lines"'))}, ${salesOrderLines.orderQty}) END), 0)::numeric`.as(
             'covered_qty',
           ),
         maxDueDate: sql<string | null>`max(${salesOrderLines.dueDate})::text`.as('max_due'),
@@ -731,7 +732,10 @@ export async function getPlanningSoDetail(
       const directJcQty = direct?.qty ?? 0;
       const directJcCodes = direct?.codes ?? [];
       const coveredQty = totalPlanned + directJcQty;
-      const remaining = Math.max(0, orderQty - coveredQty);
+      // ADR-196 — a line closed short (SO "Close") wants nothing more made or
+      // bought: nothing left to plan, and it reads fully planned.
+      const shortClosed = r.line.shortClosedAt !== null;
+      const remaining = shortClosed ? 0 : Math.max(0, orderQty - coveredQty);
       const position = r.line.itemId ? positionByItem.get(r.line.itemId) : undefined;
       const physicalQty = Math.max(0, position?.physicalQty ?? 0);
       const totalReservedQty = Math.max(0, position?.reservedQty ?? 0);
@@ -740,8 +744,8 @@ export async function getPlanningSoDetail(
       const dispatchedQty = Math.max(0, Number(r.line.dispatchedQty ?? 0));
       // What still has to be made or bought. Stock already booked to THIS line
       // covers part of the order, so planning it again would double-count it.
-      const balanceToPlan = Math.max(0, orderQty - dispatchedQty - reservedQty);
-      const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
+      const balanceToPlan = shortClosed ? 0 : Math.max(0, orderQty - dispatchedQty - reservedQty);
+      const pct = shortClosed ? 100 : orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
       const hasEquipmentBom = isEquipmentSo && equipBomId !== null;
       const hasAssemblyBom =
@@ -1382,6 +1386,13 @@ export async function raisePlanningPr(
       if (toProcurementType(row.itemProcurementType) !== 'buy') {
         throw new ValidationError(
           `Item ${itemCode} is set to Make — plan it instead, or set its Source to Buy in Item Master`,
+        );
+      }
+
+      // ADR-196 — a line closed short wants nothing more bought.
+      if (row.line.shortClosedAt !== null) {
+        throw new ValidationError(
+          `SO ${row.soCode} Ln ${row.line.lineNo} was closed short — no PR can be raised on it.`,
         );
       }
 

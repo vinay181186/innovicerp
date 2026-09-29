@@ -42,6 +42,7 @@ import {
 } from '../api';
 import { SoSheetTable } from '../components/so-sheet-table';
 import { SoStatusBadge } from '../components/so-status-badge';
+import { SoFulfilmentBadge, SoLineShortClosedBadge } from '../components/so-fulfilment-badge';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
 import { fmtDate, todayIst } from '@/lib/date';
@@ -526,6 +527,8 @@ function SalesOrdersListPage(): React.JSX.Element {
                       no map entry for either SO type and falls through to grey. */}
                   <span className="badge b-grey">{SO_TYPE_LABEL[so.type]}</span>
                   <SoStatusBadge status={so.status} />
+                  {/* ADR-196 — To Deliver / To Bill / Completed / Closed. */}
+                  <SoFulfilmentBadge status={so.fulfilmentStatus} />
                   {so.type === 'equipment' && so.bomStatus ? (
                     <span
                       className={`badge ${so.bomStatus === 'BOM Pending' ? 'b-amber' : so.bomStatus === 'BOM Planned' ? 'b-green' : 'b-blue'}`}
@@ -1023,7 +1026,8 @@ function ComponentSoExpand({
             </tr>
           ) : (
             so.lines.map((l) => {
-              const balance = Math.max(0, l.orderQty - l.dispatchedQty);
+              // ADR-196 — a line closed short owes nothing more.
+              const balance = l.shortClosedAt ? 0 : Math.max(0, l.orderQty - l.dispatchedQty);
               return (
                 <tr key={l.id} style={{ background: 'var(--bg)' }}>
                   <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>
@@ -1079,13 +1083,26 @@ function ComponentSoExpand({
                     className="td-num mono fw-700"
                     style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
                   >
-                    {balance <= 0 ? '✅ Dispatched' : balance}
+                    {l.shortClosedAt ? 0 : balance <= 0 ? '✅ Dispatched' : balance}
                   </td>
                   <td className="text2" style={{ fontSize: 11 }}>
                     {fmtDate(l.dueDate)}
                   </td>
                   <td>
-                    <SoStatusBadge status={l.status} />
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 4,
+                        justifyContent: 'center',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <SoStatusBadge status={l.status} />
+                      <SoLineShortClosedBadge
+                        shortClosedAt={l.shortClosedAt}
+                        shortCloseReason={l.shortCloseReason}
+                      />
+                    </div>
                   </td>
                   {canEdit ? (
                     <td>

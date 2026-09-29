@@ -2,13 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
+  closeSalesOrderInputSchema,
   createSalesOrderInputSchema,
   listSalesOrdersQuerySchema,
+  shortCloseSalesOrderLineInputSchema,
   updateSalesOrderInputSchema,
 } from './schema';
 import * as service from './service';
+import * as shortClose from './short-close';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
+const lineIdParamSchema = z.object({ lineId: z.string().uuid() });
 
 export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
   app.get('/sales-orders', async (req) => {
@@ -59,6 +63,22 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamSchema.parse(req.params);
     const body = updateSalesOrderInputSchema.parse(req.body);
     return service.updateSalesOrder(id, body, req.user);
+  });
+
+  // ADR-196 — ERPNext "Close": the header closes short every line that still
+  // has qty undelivered; the line route closes one line.
+  app.post('/sales-orders/:id/close', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = closeSalesOrderInputSchema.parse(req.body);
+    return shortClose.closeSalesOrder(id, body, req.user);
+  });
+
+  app.post('/sales-order-lines/:lineId/short-close', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { lineId } = lineIdParamSchema.parse(req.params);
+    const body = shortCloseSalesOrderLineInputSchema.parse(req.body);
+    return shortClose.shortCloseSalesOrderLine(lineId, body, req.user);
   });
 
   app.delete('/sales-orders/:id', async (req, reply) => {

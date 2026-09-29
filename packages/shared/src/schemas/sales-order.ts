@@ -26,12 +26,15 @@
 
 import { z } from 'zod';
 import { REVISION_PATTERN } from '../lib/revision';
+import { SO_FULFILMENT_STATUSES } from '../enums/so-fulfilment-status';
 import { SO_STATUSES } from '../enums/so-status';
 import { SO_TYPES } from '../enums/so-type';
 import { uomSchema } from './item';
 
 export const soTypeSchema = z.enum(SO_TYPES);
 export const soStatusSchema = z.enum(SO_STATUSES);
+/** ADR-196 — read-time, ERPNext-style (enums/so-fulfilment-status.ts). */
+export const soFulfilmentStatusSchema = z.enum(SO_FULFILMENT_STATUSES);
 
 const codeRegex = /^[A-Za-z0-9._/-]+$/; // legacy soNo allows '/' (e.g. SO-436/A)
 
@@ -83,6 +86,13 @@ export const salesOrderLineSchema = z.object({
   dueDate: z.string().nullable(), // ISO date
   clientPoLineNo: z.string().nullable(),
   status: soStatusSchema,
+  /** ADR-196 — the line was CLOSED short (ERPNext "Close"): status is 'closed'
+   *  and its undelivered qty (Order Qty − Dispatched) is dropped from every
+   *  Pending / to-plan / dispatchable figure. All three set together, all
+   *  null otherwise — the same columns as a JWSO line (ADR-194 R6). */
+  shortClosedAt: z.string().nullable().default(null),
+  shortClosedBy: z.string().uuid().nullable().default(null),
+  shortCloseReason: z.string().nullable().default(null),
   sourceBomMasterId: z.string().uuid().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -167,6 +177,10 @@ export const salesOrderDetailSchema = salesOrderSchema.extend({
   /** Only the detail read (GET /sales-orders/:id) fills it. Null when the
    *  caller's access hides prices (priceVisible false). */
   totals: soTotalsSchema.nullable().optional(),
+  /** ADR-196 — To Deliver and Bill / To Deliver / To Bill / Completed /
+   *  Closed, worked out on the server from the lines. Null for a draft or
+   *  cancelled order. */
+  fulfilmentStatus: soFulfilmentStatusSchema.nullable().default(null),
 });
 export type SalesOrderDetail = z.infer<typeof salesOrderDetailSchema>;
 
@@ -181,6 +195,12 @@ export const salesOrderListItemSchema = salesOrderSchema.extend({
    *  (sales_order_lines.dispatched_qty). The list's Dispatched column; Balance
    *  is totalQty minus this. */
   dispatchedQty: z.number().int().nonnegative().default(0),
+  /** ADR-196 — pieces dropped by closing lines short: Σ (Order Qty −
+   *  Dispatched) over the short-closed lines. The list's Pending is
+   *  totalQty − dispatchedQty − shortClosedQty. */
+  shortClosedQty: z.number().int().nonnegative().default(0),
+  /** ADR-196 — see salesOrderDetailSchema.fulfilmentStatus. */
+  fulfilmentStatus: soFulfilmentStatusSchema.nullable().default(null),
   earliestDueDate: z.string().nullable(),
   // 📎 client-PO file link (ISSUE-013): latest active file_registry row with
   // category 'client_po' for this SO; null when none. Mirrors legacy
@@ -335,6 +355,20 @@ export const updateSalesOrderInputSchema = z.object({
   milestones: z.array(salesOrderMilestoneInputSchema).optional(),
 });
 export type UpdateSalesOrderInput = z.infer<typeof updateSalesOrderInputSchema>;
+
+/** ADR-196 — Close ONE SO line short (ERPNext "Close"): the undelivered qty is
+ *  dropped; what was dispatched stays (and can still be billed). Status becomes
+ *  'closed' and shortClosedAt/By + reason are stamped. Reason required. Same
+ *  shape as the JWSO line short close (ADR-194 R6). */
+export const shortCloseSalesOrderLineInputSchema = z.object({
+  reason: z.string().trim().min(1, 'Reason is required').max(500),
+});
+export type ShortCloseSalesOrderLineInput = z.infer<typeof shortCloseSalesOrderLineInputSchema>;
+
+/** ADR-196 — header "Close": closes short every open line that still has
+ *  undelivered qty, with one reason. */
+export const closeSalesOrderInputSchema = shortCloseSalesOrderLineInputSchema;
+export type CloseSalesOrderInput = ShortCloseSalesOrderLineInput;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

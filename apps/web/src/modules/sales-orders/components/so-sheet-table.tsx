@@ -18,6 +18,7 @@ import { fmtDate } from '@/lib/date';
 import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { SoStatusBadge } from './so-status-badge';
+import { SoFulfilmentBadge } from './so-fulfilment-badge';
 import { soTypeLabel } from '../lib/so-status-label';
 
 /** Column count — the expanded row's <td colSpan> must always match the
@@ -231,7 +232,8 @@ export function SoSheetTable({
                     {so.dispatchedQty}
                   </td>
                   <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
-                    {Math.max(0, so.totalQty - so.dispatchedQty)}
+                    {/* ADR-196 — qty dropped by closing lines short is not Pending. */}
+                    {Math.max(0, so.totalQty - so.dispatchedQty - so.shortClosedQty)}
                   </td>
                   <td
                     className="mono"
@@ -247,7 +249,18 @@ export function SoSheetTable({
                       : '—'}
                   </td>
                   <td>
-                    <SoStatusBadge status={so.status} />
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 2,
+                      }}
+                    >
+                      <SoStatusBadge status={so.status} />
+                      {/* ADR-196 — To Deliver / To Bill / Completed / Closed. */}
+                      <SoFulfilmentBadge status={so.fulfilmentStatus} />
+                    </div>
                   </td>
                   {/* The card's actions, same gates: View is the code link;
                       + Line needs edit; Assign needs edit on a non-closed

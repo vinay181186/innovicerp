@@ -544,6 +544,7 @@ async function assertPlanQtyWithinRemaining(
     // a Buy line's PRs + direct cards) — the figure Needs Planning shows.
     const r = (await tx.execute(sql`
       SELECT sol.order_qty AS "orderQty", so.status AS "soStatus", so.code AS "soCode",
+             sol.line_no AS "lineNo", sol.short_closed_at IS NOT NULL AS "shortClosed",
              ${sql.raw(soLineCoveredRaw('sol'))} AS "covered",
              COALESCE((SELECT p_x.plan_qty FROM public.plans p_x
                        WHERE p_x.id = ${excludePlanId ?? null}::uuid
@@ -558,6 +559,8 @@ async function assertPlanQtyWithinRemaining(
       orderQty: number;
       soStatus: string;
       soCode: string;
+      lineNo: number;
+      shortClosed: boolean;
       covered: number;
       own: number;
     }>;
@@ -568,6 +571,12 @@ async function assertPlanQtyWithinRemaining(
     // line or a cancelled order, so a planner can fix an over-plan.
     if (Number(line.own) > 0 && planQty <= Number(line.own)) return;
     assertSoAcceptsWork(line.soStatus, line.soCode, 'it cannot be planned');
+    // ADR-196 — a line closed short wants nothing more planned.
+    if (line.shortClosed) {
+      throw new ValidationError(
+        `${line.soCode} line ${line.lineNo} was closed short — it cannot be planned.`,
+      );
+    }
     const covered = Number(line.covered) - Number(line.own);
     const toPlan = Math.max(0, Number(line.orderQty) - covered);
     if (planQty > toPlan) {

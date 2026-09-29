@@ -1,8 +1,10 @@
 import type {
+  CloseSalesOrderInput,
   CreateSalesOrderInput,
   ListSalesOrdersQuery,
   ListSalesOrdersResponse,
   SalesOrderDetail,
+  ShortCloseSalesOrderLineInput,
   UpdateSalesOrderInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -95,6 +97,8 @@ export function useCreateSalesOrder() {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
       qc.setQueryData(salesOrdersKeys.detail(created.id), created);
+      // ADR-196 — re-read for the fulfilment status the write-back leaves null.
+      void qc.invalidateQueries({ queryKey: salesOrdersKeys.detail(created.id) });
     },
   });
 }
@@ -107,6 +111,43 @@ export function useUpdateSalesOrder(id: string) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
       qc.setQueryData(salesOrdersKeys.detail(id), updated);
+      // ADR-196 — the write-back carries no fulfilment status or Billed (only
+      // the detail read works them out), so re-read the detail behind it.
+      void qc.invalidateQueries({ queryKey: salesOrdersKeys.detail(id) });
+    },
+  });
+}
+
+/** ADR-196 — ERPNext "Close" on ONE line: drops its undelivered qty. Reason
+ *  required; needs edit + approve on SO Master. Returns the refreshed detail. */
+export function useShortCloseSalesOrderLine(soId: string) {
+  const qc = useQueryClient();
+  return useMutation<SalesOrderDetail, Error, { lineId: string } & ShortCloseSalesOrderLineInput>({
+    mutationFn: ({ lineId, reason }) =>
+      apiFetch<SalesOrderDetail>(`/sales-order-lines/${lineId}/short-close`, {
+        method: 'POST',
+        json: { reason },
+      }),
+    onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
+      qc.setQueryData(salesOrdersKeys.detail(soId), updated);
+    },
+  });
+}
+
+/** ADR-196 — ERPNext "Close" on the whole SO: every line with qty still
+ *  undelivered is closed short with the one reason. */
+export function useCloseSalesOrder(soId: string) {
+  const qc = useQueryClient();
+  return useMutation<SalesOrderDetail, Error, CloseSalesOrderInput>({
+    mutationFn: ({ reason }) =>
+      apiFetch<SalesOrderDetail>(`/sales-orders/${soId}/close`, {
+        method: 'POST',
+        json: { reason },
+      }),
+    onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
+      qc.setQueryData(salesOrdersKeys.detail(soId), updated);
     },
   });
 }

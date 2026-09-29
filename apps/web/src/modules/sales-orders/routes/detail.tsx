@@ -36,6 +36,8 @@ import { DataTable, Panel, QtyStrip, type DataTableColumn } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
+import { SoCloseModal, closableQty } from '../components/so-close-modal';
+import { SoFulfilmentBadge, SoLineShortClosedBadge } from '../components/so-fulfilment-badge';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
@@ -90,6 +92,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const softDelete = useSoftDeleteSalesOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  // ADR-196 — the Close dialog: `line` null = the whole SO (Actions ▾ → Close).
+  const [closeTarget, setCloseTarget] = useState<{ line: SalesOrderLine | null } | null>(null);
   // One preview slot for the whole page — the client PO bar, the email
   // references and the per-line drawings all feed the same modal.
   const [preview, setPreview] = useState<PreviewFile | null>(null);
@@ -124,6 +128,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // Access matrix (so_create) replaces the old admin/manager role flags.
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
+  // ADR-196 — Close (short) is a department-admin decision, the same edit +
+  // approve pair the JWSO line short close takes (ADR-194 R8). The server
+  // enforces it; this only hides the buttons.
+  // A draft or cancelled order has nothing to close (the server refuses too).
+  const canClose =
+    perms.edit && perms.approve && detail.status !== 'draft' && detail.status !== 'cancelled';
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   // Money hidden for L1 Viewers: the API nulls the SO's GST % and every line
@@ -132,12 +142,10 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = detail.priceVisible === false;
   const totalValue = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
-  // Still to ship = ordered − already dispatched, per line (never below zero).
-  // Drives whether "Dispatch" is offered as the next step.
-  const pendingDispatchQty = detail.lines.reduce(
-    (s, l) => s + Math.max(0, l.orderQty - l.dispatchedQty),
-    0,
-  );
+  // Still to ship = ordered − already dispatched, per line (never below zero);
+  // a line closed short (ADR-196) ships nothing more. Drives whether
+  // "Dispatch" is offered as the next step, and whether Close is.
+  const pendingDispatchQty = detail.lines.reduce((s, l) => s + closableQty(l), 0);
 
   return (
     <div>
@@ -148,7 +156,11 @@ function SalesOrderDetailPage(): React.JSX.Element {
         code={detail.code}
         name={detail.customerName ?? 'Untitled customer'}
         badges={
-          <StatusBadge kind="so" status={detail.status} label={SO_STATUS_LABEL[detail.status]} />
+          <>
+            <StatusBadge kind="so" status={detail.status} label={SO_STATUS_LABEL[detail.status]} />
+            {/* ADR-196 — ERPNext's To Deliver / To Bill / Completed / Closed. */}
+            <SoFulfilmentBadge status={detail.fulfilmentStatus} />
+          </>
         }
         actions={
           /* ONE primary next step (Dispatch, while anything is left to ship),
@@ -177,6 +189,14 @@ function SalesOrderDetailPage(): React.JSX.Element {
                   hidden: !canEdit,
                   onClick: () =>
                     void navigate({ to: '/sales-orders/$id/edit', params: { id: detail.id } }),
+                },
+                {
+                  // ADR-196 — ERPNext "Close": every line still to dispatch is
+                  // closed short. Offered only while something is left to ship.
+                  label: 'Close',
+                  title: 'Close this SO — drop the qty not yet dispatched',
+                  hidden: !canClose || pendingDispatchQty === 0,
+                  onClick: () => setCloseTarget({ line: null }),
                 },
                 {
                   label: 'Delete',
@@ -259,7 +279,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
       >
         <DataTable<SalesOrderLine>
-          columns={lineColumns({ priceHidden, soCode: detail.code, onPreview: setPreview })}
+          columns={lineColumns({
+            priceHidden,
+            soCode: detail.code,
+            onPreview: setPreview,
+            onCloseLine: canClose ? (line) => setCloseTarget({ line }) : null,
+          })}
           rows={detail.lines}
           empty="No lines on this SO yet."
         />
@@ -298,6 +323,14 @@ function SalesOrderDetailPage(): React.JSX.Element {
       <SoDocumentsSection soId={detail.id} />
 
       {preview ? <FilePreviewModal {...preview} onClose={() => setPreview(null)} /> : null}
+
+      {closeTarget ? (
+        <SoCloseModal
+          detail={detail}
+          line={closeTarget.line}
+          onClose={() => setCloseTarget(null)}
+        />
+      ) : null}
 
       {assignOpen ? (
         <AssignTaskModal
@@ -346,8 +379,11 @@ function lineColumns(opts: {
    *  instead of a storage path nobody recognises. */
   soCode: string;
   onPreview: (file: PreviewFile) => void;
+  /** ADR-196 — opens the Close dialog for one line; null when the viewer may
+   *  not close (then no button is drawn). */
+  onCloseLine: ((line: SalesOrderLine) => void) | null;
 }): DataTableColumn<SalesOrderLine>[] {
-  const { priceHidden, soCode, onPreview } = opts;
+  const { priceHidden, soCode, onPreview, onCloseLine } = opts;
   return [
     {
       header: 'Ln',
@@ -457,18 +493,19 @@ function lineColumns(opts: {
     },
     {
       // Order − Billed: still to invoice (NAMING.md "To Bill"), not the
-      // qty still owed on the order ("Pending").
+      // qty still owed on the order ("Pending"). A line closed short
+      // (ADR-196) will ship nothing more, so only its dispatched qty is left
+      // to bill.
       header: 'To Bill',
       align: 'right',
       width: '7%',
       headColor: 'var(--red)',
       className: 'mono fw-700',
       nowrap: true,
-      render: (l) => (
-        <span style={{ color: l.orderQty - l.billedQty > 0 ? 'var(--red)' : 'var(--green)' }}>
-          {l.orderQty - l.billedQty}
-        </span>
-      ),
+      render: (l) => {
+        const toBill = Math.max(0, (l.shortClosedAt ? l.dispatchedQty : l.orderQty) - l.billedQty);
+        return <span style={{ color: toBill > 0 ? 'var(--red)' : 'var(--green)' }}>{toBill}</span>;
+      },
     },
     { header: 'UOM', key: 'uom', width: '5%', nowrap: true },
     ...(priceHidden
@@ -494,7 +531,33 @@ function lineColumns(opts: {
     {
       header: 'SO Status',
       width: '10%',
-      render: (l) => <StatusBadge kind="so" status={l.status} label={SO_STATUS_LABEL[l.status]} />,
+      render: (l) => (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 'var(--sp-1)',
+          }}
+        >
+          <StatusBadge kind="so" status={l.status} label={SO_STATUS_LABEL[l.status]} />
+          {/* ADR-196 — closed short: the undelivered qty was dropped. */}
+          <SoLineShortClosedBadge
+            shortClosedAt={l.shortClosedAt}
+            shortCloseReason={l.shortCloseReason}
+          />
+          {onCloseLine && closableQty(l) > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              title={`Close line ${l.lineNo} — drop the ${closableQty(l)} not yet dispatched`}
+              onClick={() => onCloseLine(l)}
+            >
+              Close
+            </Button>
+          ) : null}
+        </div>
+      ),
     },
   ];
 }

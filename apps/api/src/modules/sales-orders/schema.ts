@@ -2,18 +2,21 @@
 // schemas or re-export from @innovic/shared; we re-export so the source of
 // truth stays in the shared package and frontend uses the same types.
 export {
+  closeSalesOrderInputSchema,
   createSalesOrderInputSchema,
   listSalesOrdersQuerySchema,
   salesOrderDetailSchema,
   salesOrderLineSchema,
   salesOrderListItemSchema,
   salesOrderSchema,
+  shortCloseSalesOrderLineInputSchema,
   soDrawingHistoryLineSchema,
   soDrawingHistorySchema,
   soDrawingRevisionSchema,
   updateSalesOrderInputSchema,
 } from '@innovic/shared';
 export type {
+  CloseSalesOrderInput,
   CreateSalesOrderInput,
   DocumentTraceability,
   ListSalesOrdersQuery,
@@ -25,6 +28,7 @@ export type {
   SalesOrderLineInput,
   SalesOrderListItem,
   SalesOrderMilestoneInput,
+  ShortCloseSalesOrderLineInput,
   SoDrawingAction,
   SoDrawingHistory,
   SoDrawingHistoryLine,

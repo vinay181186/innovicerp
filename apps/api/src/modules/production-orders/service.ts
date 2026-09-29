@@ -744,6 +744,24 @@ export async function createProductionOrder(
           `Plan ${plan.code} cannot make a Production Order. Use Execute on the plan.`,
         );
       }
+      // ADR-196 — a plan whose SO line was closed short makes no new order.
+      // FOR SHARE on the line: the SO Close locks it FOR UPDATE before it
+      // looks for running orders, so the two cannot both pass.
+      if (plan.soLineId) {
+        const sc = (await tx.execute(sql`
+          SELECT sol.line_no AS "lineNo", so.code AS "soCode",
+                 sol.short_closed_at IS NOT NULL AS "shortClosed"
+          FROM public.sales_order_lines sol
+          JOIN public.sales_orders so ON so.id = sol.sales_order_id
+          WHERE sol.id = ${plan.soLineId}::uuid
+          FOR SHARE OF sol
+        `)) as unknown as Array<{ lineNo: number; soCode: string; shortClosed: boolean }>;
+        if (sc[0]?.shortClosed) {
+          throw new ValidationError(
+            `${sc[0].soCode} line ${sc[0].lineNo} was closed short — plan ${plan.code} makes no new Production Order.`,
+          );
+        }
+      }
       // ADR-182 — the qty cap, read INSIDE the plan's row lock above so two
       // concurrent creates can never both fit. ADR-184 — Covered is the ONE
       // definition in lib/plan-order-coverage.ts: an open / partly closed order

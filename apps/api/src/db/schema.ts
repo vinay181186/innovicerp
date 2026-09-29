@@ -1558,6 +1558,14 @@ export const salesOrderLines = pgTable(
     dispatchedQty: integer('dispatched_qty').notNull().default(0),
     clientPoLineNo: text('client_po_line_no'),
     status: soStatusEnum('status').notNull().default('open'),
+    // ADR-196 (0177): the line was CLOSED short (ERPNext Sales Order "Close").
+    // status stays 'closed' (so_status is NOT widened, as ADR-194 R6); these
+    // record who / when / why, all or none (CHECK). Every Pending / to-plan /
+    // dispatchable reader drops the undelivered qty of a line with
+    // short_closed_at set.
+    shortClosedAt: timestamp('short_closed_at', { withTimezone: true }),
+    shortClosedBy: uuid('short_closed_by').references(() => users.id),
+    shortCloseReason: text('short_close_reason'),
     // BOM-8 cascade source: when set, SO line creation walks the BOM lines
     // and spawns child JCs / PRs based on bom_type. Forward-ref to bomMasters
     // defined later in this file.
@@ -1588,6 +1596,16 @@ export const salesOrderLines = pgTable(
       .on(t.sourceBomMasterId)
       .where(sql`${t.sourceBomMasterId} is not null`),
     check('sales_order_lines_order_qty_positive', sql`${t.orderQty} > 0`),
+    // ADR-196 (0177) — who / when / why of a short close, all or none.
+    check(
+      'sales_order_lines_short_close_all_or_none',
+      sql`(${t.shortClosedAt} is null and ${t.shortClosedBy} is null and ${t.shortCloseReason} is null)
+        or (${t.shortClosedAt} is not null and ${t.shortClosedBy} is not null
+            and length(btrim(${t.shortCloseReason})) > 0)`,
+    ),
+    index('sales_order_lines_short_closed_idx')
+      .on(t.salesOrderId)
+      .where(sql`${t.deletedAt} is null and ${t.shortClosedAt} is not null`),
     pgPolicy('sales_order_lines_company_read', {
       for: 'select',
       to: 'authenticated',

@@ -45,10 +45,21 @@ export const PLAN_COVERED_QTY_SQL = sql<number>`COALESCE((
     AND po.deleted_at IS NULL
 ), 0)::int`;
 
+/** ADR-196 — true when the plan's Sales Order line was closed short (ERPNext
+ *  "Close"). Its undelivered qty is no longer wanted, so nothing is Pending. */
+export const PLAN_SO_LINE_SHORT_CLOSED_SQL = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.sales_order_lines sol_sc
+  WHERE sol_sc.id = ${plans.soLineId}
+    AND sol_sc.short_closed_at IS NOT NULL
+)`;
+
 /** `Pending` — Plan Qty − Covered, floored at 0. What a new order may still be
- *  raised for; the Create screen defaults Order Qty to it and caps it there. */
-export const PLAN_PENDING_QTY_SQL = sql<number>`GREATEST(
-  ${plans.planQty} - ${PLAN_COVERED_QTY_SQL}, 0)::int`;
+ *  raised for; the Create screen defaults Order Qty to it and caps it there.
+ *  ADR-196 — 0 once the plan's SO line is closed short: an ADR-184 re-opened
+ *  plan must not keep asking for a Production Order the customer no longer
+ *  wants (the plan then reads Completed, not Ready for Production Order). */
+export const PLAN_PENDING_QTY_SQL = sql<number>`(CASE WHEN ${PLAN_SO_LINE_SHORT_CLOSED_SQL} THEN 0
+  ELSE GREATEST(${plans.planQty} - ${PLAN_COVERED_QTY_SQL}, 0) END)::int`;
 
 /** How many live, non-short-closed orders the plan has. Informational since
  *  ADR-184: planDerivedStatusSql no longer branches on it (Pending and the
