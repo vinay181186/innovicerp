@@ -29,6 +29,7 @@ import {
   readSoHead,
 } from '../../lib/material-requirement';
 import { roundQty } from '../../lib/stock-ledger';
+import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 
 export interface IssueTarget {
   jobCardId: string | null;
@@ -62,6 +63,12 @@ export async function resolveTargetAndCap(
   if (input.issueAgainst === 'job_card') {
     const jc = await readJcHead(tx, companyId, input.jobCardId!);
     if (!jc) throw new NotFoundError('Job Card not found. Pick the Job Card again.');
+    // A closed card, or one whose Production Order was short-closed (ADR-182),
+    // takes no new material. Returns of what is still out stay allowed.
+    if (jc.closed) {
+      throw new ValidationError(`${jc.code} is closed — it takes no more material issues`);
+    }
+    await assertProductionOrderNotShortClosed(tx, jc.id);
     const req = jcRequirement(jc);
     if (req) {
       const line = input.lines.find((l) => l.itemId === req.itemId);
