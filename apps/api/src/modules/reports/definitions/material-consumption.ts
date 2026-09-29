@@ -14,6 +14,9 @@ import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 import { enumFilter, isoDateFilter, likeFilter, numCell, textCell } from './report-helpers';
 
+/** Most rows one run returns; the rest are named in a note. */
+const ROW_CAP = 2000;
+
 export const materialConsumptionReport: RegisteredReport = {
   definition: {
     slug: 'material-consumption',
@@ -104,10 +107,13 @@ export const materialConsumptionReport: RegisteredReport = {
         ${againstFrag}
       GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
       ORDER BY 1 DESC, 2, 5, 6, 8
-      LIMIT 2000
+      LIMIT ${ROW_CAP + 1}
     `);
 
-    const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => {
+    const raw = result as unknown as Array<Record<string, unknown>>;
+    // One row past the cap tells us the result was cut off — say so.
+    const cut = raw.length > ROW_CAP;
+    const rows = raw.slice(0, ROW_CAP).map((r) => {
       const ia = String(r['issue_against'] ?? '');
       return {
         month: String(r['month'] ?? ''),
@@ -124,6 +130,14 @@ export const materialConsumptionReport: RegisteredReport = {
       };
     });
 
-    return { columns: materialConsumptionReport.definition.columns, rows };
+    return {
+      columns: materialConsumptionReport.definition.columns,
+      rows,
+      ...(cut
+        ? {
+            note: `Showing the latest ${ROW_CAP.toLocaleString('en-IN')} rows only — narrow the dates or pick an item to see the rest.`,
+          }
+        : {}),
+    };
   },
 };

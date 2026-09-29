@@ -175,6 +175,8 @@ export interface JcHead {
   productionOrderId: string | null;
   rmItemId: string | null;
   rmQtyPerPiece: number | null;
+  /** The card is closed (job_cards.closed_at) — no new issues. */
+  closed: boolean;
 }
 
 export async function readJcHead(
@@ -184,7 +186,7 @@ export async function readJcHead(
 ): Promise<JcHead | null> {
   const rows = (await tx.execute(sql`
     SELECT id, code, order_qty, production_order_id,
-           raw_material_item_id, rm_qty_per_piece
+           raw_material_item_id, rm_qty_per_piece, closed_at
     FROM public.job_cards
     WHERE id = ${jobCardId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
   `)) as unknown as Array<Record<string, unknown>>;
@@ -197,6 +199,7 @@ export async function readJcHead(
     productionOrderId: (r['production_order_id'] as string | null) ?? null,
     rmItemId: (r['raw_material_item_id'] as string | null) ?? null,
     rmQtyPerPiece: r['rm_qty_per_piece'] != null ? num(r['rm_qty_per_piece']) : null,
+    closed: r['closed_at'] != null,
   };
 }
 

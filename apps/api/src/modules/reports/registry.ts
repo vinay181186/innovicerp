@@ -63,6 +63,8 @@ export interface ReportRunContext {
 export interface ReportRunResult {
   columns: ReportColumn[];
   rows: ReportRow[];
+  /** Shown above the grid (e.g. the result was cut off at a row cap). */
+  note?: string;
 }
 
 export interface RegisteredReport {

@@ -65,6 +65,7 @@ export async function runReport(
       generatedAt: new Date().toISOString(),
       filters,
       ...(report.definition.rowLink ? { rowLink: report.definition.rowLink } : {}),
+      ...(result.note ? { note: result.note } : {}),
     };
   });
 }

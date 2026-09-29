@@ -10477,4 +10477,7 @@ Party GRN is COMPULSORY**; everything else "as suggested".
 - Report **Material Consumption**: Item Issue lines net of returns, reversed slips excluded, by month / item /
   issue against / reference / department / issued to.
 - Verified on TEST: 13 scenarios pass; 3b 25/25, 3c 27/27, 4 31/31 again; 1148 + 1547 cross-screen figures, 0 mismatches.
+- Follow-up (2026-09-29): a closed Job Card, or one whose Production Order was short-closed (ADR-182), takes no
+  new Item Issues (returns still allowed). Reports can carry a plain-words `note`; Material Consumption says so when
+  it stops at 2,000 rows.
 

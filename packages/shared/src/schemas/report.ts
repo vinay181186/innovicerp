@@ -101,6 +101,9 @@ export const runReportResponseSchema = z.object({
   filters: z.record(z.string()),
   /** The definition's rowLink, echoed so the run page needs no second read. */
   rowLink: reportRowLinkSchema.optional(),
+  /** A plain-words note shown above the grid, e.g. "Showing the first 2,000 rows —
+   *  narrow the dates". Absent when there is nothing to say. */
+  note: z.string().optional(),
 });
 export type RunReportResponse = z.infer<typeof runReportResponseSchema>;
 
