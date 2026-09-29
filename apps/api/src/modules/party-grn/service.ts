@@ -26,6 +26,7 @@ import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { partyMaterialFitsJwLine } from '../party-materials/service';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -304,6 +305,9 @@ export async function createPartyGrn(
         code: jobWorkOrders.code,
         clientId: jobWorkOrders.clientId,
         clientPoNo: jobWorkOrders.clientPoNo,
+        // ADR-195: the JWSO's own customer material (-rm item code) also counts
+        // as a valid part for every line in the ADR-102 check below.
+        clientMaterial: jobWorkOrders.clientMaterial,
       })
       .from(jobWorkOrders)
       .where(
@@ -452,7 +456,9 @@ export async function createPartyGrn(
       // cascade); without this check a LEVER could be received against the
       // SINGLE FIRE CHECK LEVER line, inflating one part's material gate while
       // the real part shows none received.
-      if (pm.itemId != null && lineItemId != null && pm.itemId !== lineItemId) {
+      // ADR-195: a material pinned to this JWSO's customer material (the -rm
+      // item the JWSO save bridged into the party store) is also accepted.
+      if (!partyMaterialFitsJwLine(pm, lineItemId, jw.clientMaterial)) {
         throw new ValidationError(
           `Row #${idx + 1}: ${pm.code} is "${pm.name}"` +
             `${pm.itemCodeText ? ` (Item Code ${pm.itemCodeText})` : ''}, but ${jw.code} Ln ${lnKey} is ` +

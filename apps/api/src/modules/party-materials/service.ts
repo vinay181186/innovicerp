@@ -71,6 +71,24 @@ export async function getNextPartyMaterialCode(user: AuthContext): Promise<{ cod
   });
 }
 
+/** ADR-102 part-identity rule, widened for ADR-195. A party material fits a
+ *  JWSO line when it is pinned to that line's part (the ADR-102 case) OR when
+ *  it is pinned to the JWSO's own customer material (`clientMaterial`, the -rm
+ *  item code the ADR-195 bridge created it from). Without the second arm the
+ *  material the JWSO itself creates could never be received or issued.
+ *  Legacy rows with no item link on either side are not checkable and pass. */
+export function partyMaterialFitsJwLine(
+  pm: { itemId: string | null; itemCodeText: string | null },
+  lineItemId: string | null,
+  jwClientMaterial: string | null,
+): boolean {
+  if (pm.itemId == null || lineItemId == null) return true;
+  if (pm.itemId === lineItemId) return true;
+  const cm = (jwClientMaterial ?? '').trim().toLowerCase();
+  const pmCode = (pm.itemCodeText ?? '').trim().toLowerCase();
+  return cm !== '' && pmCode === cm;
+}
+
 /** ADR-195 bridge — ensure a party_materials record exists for one customer +
  *  one party-supplied item, so the Party GRN / QC / party-stock chain (ADR-194)
  *  can attach to a JWSO's customer material.

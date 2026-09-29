@@ -11,6 +11,7 @@ import type { JobWorkOrderLine, PartyMaterialListItem } from '@innovic/shared';
 import { Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { partyMaterialFitsJwLine } from '@/modules/party-materials/fits-jw-line';
 
 export interface UiLine {
   partyMaterialId: string | null;
@@ -48,6 +49,7 @@ export function LineRow({
   line,
   pmAll,
   jwLines,
+  jwClientMaterial,
   onChange,
   onRemove,
 }: {
@@ -55,6 +57,8 @@ export function LineRow({
   line: UiLine;
   pmAll: PartyMaterialListItem[];
   jwLines: JobWorkOrderLine[];
+  /** ADR-195: the JWSO's customer material (-rm item code), which fits any line. */
+  jwClientMaterial: string | null;
   onChange: (patch: Partial<UiLine>) => void;
   onRemove: () => void;
 }): React.JSX.Element {
@@ -66,14 +70,13 @@ export function LineRow({
     () => jwLines.find((j) => String(j.lineNo) === line.jwLineNoText) ?? null,
     [jwLines, line.jwLineNoText],
   );
-  // ADR-102: the material must BE the picked line's part. Mirrors the API
-  // guard so the user sees it while typing, not after Save.
+  // ADR-102: the material must BE the picked line's part (or, ADR-195, the
+  // JWSO's own customer material). Mirrors the API guard so the user sees it
+  // while typing, not after Save.
   const mismatch =
     selected != null &&
     pickedLine != null &&
-    selected.itemId != null &&
-    pickedLine.itemId != null &&
-    selected.itemId !== pickedLine.itemId;
+    !partyMaterialFitsJwLine(selected, pickedLine.itemId, jwClientMaterial);
 
   // R2 (ADR-194): incoming QC split. Accepted + Rejected must equal Received.
   // Typing Received seeds Accepted = Received / Rejected = 0; editing either of

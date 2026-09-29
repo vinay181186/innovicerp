@@ -106,7 +106,7 @@ export async function lockPoLinesForSend(
     SELECT pol.id
     FROM public.purchase_order_lines pol
     WHERE pol.company_id = ${companyId}::uuid
-      AND pol.id = ANY(${unique}::uuid[])
+      AND pol.id = ANY(${sql.param(unique)}::uuid[])
     ORDER BY pol.id
     FOR UPDATE
   `);
@@ -125,7 +125,7 @@ export async function sumSentOnPoLines(
     SELECT pol.id AS "poLineId", ${sql.raw(poLineSentRaw('pol.id'))}::float8 AS "sent"
     FROM public.purchase_order_lines pol
     WHERE pol.company_id = ${companyId}::uuid
-      AND pol.id = ANY(${unique}::uuid[])
+      AND pol.id = ANY(${sql.param(unique)}::uuid[])
   `)) as unknown as Array<{ poLineId: string; sent: number | string | null }>;
   for (const r of rows) {
     const sent = Number(r.sent ?? 0);
