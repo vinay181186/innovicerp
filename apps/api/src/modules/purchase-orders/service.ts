@@ -52,6 +52,8 @@ import { emitActivityLog } from '../activity-log/service';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
 import { loadPrBalances } from '../purchase-requests/service';
 import {
+  ITEM_TYPE_RULES,
+  type ItemType,
   type PoType,
   bumpDocRevision,
   opSrNo,
@@ -309,6 +311,31 @@ async function assertItemIdsExist(
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
     throw new ValidationError('Item not found. Please select the Item Code again.');
+  }
+}
+
+/** ADR-195: Party Supplied Material is the CUSTOMER's own material — never
+ *  bought on a Purchase Order. Reject any PO line that resolves to such an item,
+ *  whether it was picked by itemId or matched by code. Reads the item type's
+ *  `partyOwned` flag (ITEM_TYPE_RULES) so a future party-owned type is covered
+ *  without touching this guard. Called on both create and update after the line
+ *  items have been resolved to their master ids. */
+async function assertNoPartyMaterialLines(
+  tx: DbTransaction,
+  itemIds: Array<string | null | undefined>,
+  companyId: string,
+): Promise<void> {
+  const unique = Array.from(new Set(itemIds.filter((x): x is string => Boolean(x))));
+  if (unique.length === 0) return;
+  const rows = await tx
+    .select({ code: items.code, itemType: items.itemType })
+    .from(items)
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
+  const offending = rows.find((r) => ITEM_TYPE_RULES[r.itemType as ItemType]?.partyOwned);
+  if (offending) {
+    throw new ValidationError(
+      `${offending.code} is Party Supplied Material (the customer's own material) and cannot be bought on a Purchase Order. Remove it from the PO.`,
+    );
   }
 }
 
@@ -1057,6 +1084,8 @@ export async function createPurchaseOrder(
       .filter((l) => !l.itemId && l.itemCodeText)
       .map((l) => l.itemCodeText!.trim());
     const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
+    // ADR-195: a customer's party-supplied material must never go on a PO.
+    await assertNoPartyMaterialLines(tx, [...directIds, ...resolved.values()], companyId);
     const lineNos = assignLineNos(input.lines, 1);
 
     // ── The PRs this PO is raised against ─────────────────────────
@@ -1882,6 +1911,8 @@ async function mergeLines(
     .filter((l) => !l.itemId && l.itemCodeText)
     .map((l) => l.itemCodeText!.trim());
   const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
+  // ADR-195: a customer's party-supplied material must never go on a PO.
+  await assertNoPartyMaterialLines(tx, [...directIds, ...resolved.values()], companyId);
 
   const seenInputIds = new Set<string>();
   const toInsert: PurchaseOrderLineInput[] = [];

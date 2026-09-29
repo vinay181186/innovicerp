@@ -50,6 +50,7 @@ import {
   UOMS,
   createItemInputSchema,
   updateItemInputSchema,
+  withPartyMaterialSuffix,
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useRef } from 'react';
@@ -189,18 +190,49 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
   // Prefill the next ITM-#### in the series (editable). The user may keep it,
   // type their own (e.g. a customer part number — still validated by the code
   // rules), or clear it to let the server auto-assign on save.
+  //
+  // ADR-195: a Party Supplied Material item's code carries an `-rm` suffix
+  // (ITM-####-rm). While the code is still the value WE auto-filled (never a
+  // hand-typed one), picking that Item Type adds `-rm`, and switching the type
+  // away drops it again. `autoCodeRef` remembers the last value we set so we can
+  // tell an auto value from one the user typed.
   const { data: nextCode } = useNextItemCode();
+  const itemType = watch('itemType');
+  const autoCodeRef = useRef<string | null>(null);
   useEffect(() => {
-    if (nextCode?.code && !form.getValues('code')) {
-      form.setValue('code', nextCode.code);
+    const base = nextCode?.code;
+    if (!base) return;
+    const withRm = withPartyMaterialSuffix(base);
+    const desired = itemType === 'party_supplied_material' ? withRm : base;
+    const current = form.getValues('code');
+    if (autoCodeRef.current === null) {
+      // First prefill — only into an empty field, mirroring the original.
+      if (!current) {
+        form.setValue('code', desired);
+        autoCodeRef.current = desired;
+      }
+      return;
     }
-  }, [nextCode, form]);
+    // Already prefilled once: re-sync the suffix on an Item Type change, but only
+    // while the field still holds an auto value (the plain code or its -rm form).
+    // A hand-typed or cleared code is never rewritten.
+    if ((current === base || current === withRm) && current !== desired) {
+      form.setValue('code', desired);
+      autoCodeRef.current = desired;
+    }
+  }, [nextCode, itemType, form]);
 
   return (
     <form
       ref={formRef}
       onSubmit={form.handleSubmit(async (values) => {
-        await props.onSubmit(values);
+        // Safety net mirroring the shared helper: a Party Supplied Material code
+        // always ends with -rm on save, even if a hand-typed one slipped through.
+        const out: CreateItemInput =
+          values.itemType === 'party_supplied_material' && values.code
+            ? { ...values, code: withPartyMaterialSuffix(values.code) }
+            : values;
+        await props.onSubmit(out);
       })}
     >
       <ItemFormHeader

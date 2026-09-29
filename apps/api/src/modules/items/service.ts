@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
-import { itemTypeLabel } from '@innovic/shared';
+import { itemTypeLabel, withPartyMaterialSuffix } from '@innovic/shared';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -121,21 +121,27 @@ export async function getItem(id: string, user: AuthContext): Promise<Item> {
 
 /** Next ITM-#### code in the company series. Server-authoritative so item
  *  codes auto-generate in a series (users may still type/override their own,
- *  e.g. customer part numbers). Highest numeric suffix on an ITM- code + 1. */
+ *  e.g. customer part numbers). Highest numeric suffix on an ITM- code + 1.
+ *
+ *  ADR-195: `ITM-####` and `ITM-####-rm` (party-supplied material) share ONE
+ *  counter. An optional `-rm` suffix is stripped before the number is read, so
+ *  the plain and the -rm forms can never land on the same integer. The whole
+ *  series is scanned for the max (like the bulk-import path below) rather than
+ *  ordering-then-parsing a single row, because with mixed suffixes a string
+ *  sort no longer puts the highest NUMBER first (`ITM-0009-rm` sorts after
+ *  `ITM-0010`). */
 async function nextItemCode(tx: DbTransaction, companyId: string): Promise<string> {
   const rows = await tx
     .select({ code: items.code })
     .from(items)
-    .where(and(eq(items.companyId, companyId), like(items.code, 'ITM-%')))
-    .orderBy(sql`length(${items.code}) desc`, sql`${items.code} desc`)
-    .limit(1);
-  const last = rows[0]?.code ?? null;
-  let next = 1;
-  if (last) {
-    const m = /^ITM-(\d+)$/i.exec(last);
-    if (m) next = Number(m[1]) + 1;
+    .where(and(eq(items.companyId, companyId), like(items.code, 'ITM-%')));
+  let max = 0;
+  for (const r of rows) {
+    const base = r.code.trim().replace(/-rm$/i, '');
+    const m = /^ITM-(\d+)$/i.exec(base);
+    if (m) max = Math.max(max, Number(m[1]));
   }
-  return `ITM-${String(next).padStart(4, '0')}`;
+  return `ITM-${String(max + 1).padStart(4, '0')}`;
 }
 
 /** Preview the next ITM-#### for the create form (prefilled, editable). Reuses
@@ -155,7 +161,14 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
   // the same ITM-#### — so the loser retries with the next code.
   return withUniqueRetry(() =>
     withUserContext(user, async (tx) => {
-      const code = input.code?.trim() || (await nextItemCode(tx, companyId));
+      // ADR-195: a Party Supplied Material item always carries the `-rm` suffix,
+      // whether the code was auto-generated (blank input) or hand-typed. Other
+      // item types keep the code exactly as given / generated.
+      const baseCode = input.code?.trim() || (await nextItemCode(tx, companyId));
+      const code =
+        input.itemType === 'party_supplied_material'
+          ? withPartyMaterialSuffix(baseCode)
+          : baseCode;
       const existing = await tx
         .select({ id: items.id, deletedAt: items.deletedAt })
         .from(items)
@@ -259,7 +272,9 @@ export async function createItemsBulk(
     // the highest code; doing that per row is one extra query per item.
     let nextSeq = 0;
     for (const r of existingRows) {
-      const m = /^ITM-(\d+)$/i.exec(r.code.trim());
+      // ADR-195: ITM-#### and ITM-####-rm share one counter — strip an optional
+      // -rm suffix before reading the number so the series never collides.
+      const m = /^ITM-(\d+)$/i.exec(r.code.trim().replace(/-rm$/i, ''));
       if (m) nextSeq = Math.max(nextSeq, Number(m[1]));
     }
 
