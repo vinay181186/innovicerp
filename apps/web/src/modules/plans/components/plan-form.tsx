@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { RmItemFields, rmItemToInput } from '@/components/shared/rm-item-fields';
 import { VendorPicker } from '@/components/shared/vendor-picker';
-import { useItemsList } from '@/modules/items/api';
+import { findItemByExactCode, useItemCodeSearch } from '@/modules/items/use-item-code-search';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
@@ -322,16 +322,17 @@ export function PlanForm({
 
   // Item master drives the code autosuggest + name/id auto-fill. Plans still
   // accept off-master free text, so a non-matching code is left as typed.
-  const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
-  const items = itemsData?.items ?? [];
-  const itemsByCode = useMemo(() => {
-    const m = new Map<string, (typeof items)[number]>();
-    for (const it of items) m.set(it.code.toUpperCase(), it);
-    return m;
-  }, [items]);
+  // Searched on the SERVER with the typed code — it used to be one preloaded
+  // page of 1000, so a later item could neither be suggested nor linked. The
+  // item is fixed on edit, so nothing is fetched there.
+  const { items, match: matchedItem } = useItemCodeSearch(values.itemCodeText, {
+    enabled: !isEdit,
+  });
 
   const onItemCodeChange = (code: string): void => {
-    const match = itemsByCode.get(code.trim().toUpperCase());
+    // A match already on the current suggestion page links at once; otherwise
+    // the effect below links it when the server answers for this code.
+    const match = findItemByExactCode(items, code);
     setValues((v) => ({
       ...v,
       itemCodeText: code,
@@ -340,6 +341,18 @@ export function PlanForm({
       ...(match ? { itemId: match.id, itemNameText: match.name } : { itemId: null }),
     }));
   };
+
+  // The server's exact match for the typed code arrived after the keystroke:
+  // link it now, exactly as a match at type-time would have.
+  useEffect(() => {
+    if (isEdit || !matchedItem) return;
+    setValues((v) =>
+      v.itemId === matchedItem.id ||
+      v.itemCodeText.trim().toUpperCase() !== matchedItem.code.trim().toUpperCase()
+        ? v
+        : { ...v, itemId: matchedItem.id, itemNameText: matchedItem.name },
+    );
+  }, [isEdit, matchedItem]);
 
   const handleLoadDefaultOps = (): void => {
     if (!defaultOps || defaultOps.ops.length === 0) return;

@@ -891,6 +891,9 @@ Per-line items on a sales order.
 | `due_date`           | `date`          | nullable                                                                        |
 | `client_po_line_no`  | `text`          | nullable                                                                        |
 | `status`             | `so_status`     | not null, default `'open'`. Per-line status (auto-closed when JCs satisfy line) |
+| `short_closed_at`    | `timestamptz`   | nullable. ADR-196 (0177) — line closed short (ERPNext "Close"): status set `'closed'`, undelivered qty (order − dispatched) dropped from every Pending / to-plan / dispatchable figure |
+| `short_closed_by`    | `uuid`          | nullable, FK → `users(id)`. ADR-196                                             |
+| `short_close_reason` | `text`          | nullable. ADR-196 — required when closed; CHECK `sales_order_lines_short_close_all_or_none` (all three or none) |
 | audit + `deleted_at` | (audit pattern) |                                                                                 |
 
 Indexes:
@@ -898,6 +901,7 @@ Indexes:
 - `unique (sales_order_id, line_no) where deleted_at is null`
 - `(item_id) where deleted_at is null`
 - `(company_id, status) where deleted_at is null`
+- `sales_order_lines_short_closed_idx (sales_order_id) where deleted_at is null and short_closed_at is not null` (0177)
 
 RLS: same pattern as parent.
 

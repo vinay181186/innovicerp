@@ -69,7 +69,7 @@ export const soLineAnalysisReport: RegisteredReport = {
       ? sql`AND sol.status = ${status}::so_status`
       : sql`AND sol.status IN ('open', 'closed', 'dispatched')`;
     const pendingFrag = onlyPending
-      ? sql`AND (q.dispatched < sol.order_qty OR q.dispatched > q.invoiced)`
+      ? sql`AND ((sol.short_closed_at IS NULL AND q.dispatched < sol.order_qty) OR q.dispatched > q.invoiced)`
       : sql``;
 
     const result = await tx.execute(sql`
@@ -84,7 +84,9 @@ export const soLineAnalysisReport: RegisteredReport = {
         sol.status::text                           AS line_status,
         sol.order_qty                              AS order_qty,
         q.dispatched                               AS dispatched_qty,
-        GREATEST(sol.order_qty - q.dispatched, 0)  AS to_dispatch_qty,
+        -- ADR-196 — a line closed short has nothing left to dispatch.
+        CASE WHEN sol.short_closed_at IS NOT NULL THEN 0
+             ELSE GREATEST(sol.order_qty - q.dispatched, 0) END AS to_dispatch_qty,
         q.invoiced                                 AS invoiced_qty,
         GREATEST(q.dispatched - q.invoiced, 0)     AS to_bill_qty,
         sol.rate                                   AS rate,
@@ -97,7 +99,8 @@ export const soLineAnalysisReport: RegisteredReport = {
          END * sol.rate)::numeric(14, 2)         AS value_not_invoiced,
         sol.due_date::text                         AS due_date,
         CASE
-          WHEN sol.order_qty - q.dispatched > 0 AND sol.due_date < CURRENT_DATE
+          WHEN sol.short_closed_at IS NULL
+           AND sol.order_qty - q.dispatched > 0 AND sol.due_date < CURRENT_DATE
             THEN (CURRENT_DATE - sol.due_date)
           ELSE 0
         END::int                                   AS days_late

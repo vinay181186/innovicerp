@@ -42,7 +42,6 @@ import { addDaysLocal, daysBetweenLocal, todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useDocNumber } from '@/lib/use-doc-number';
-import { useItemsList } from '@/modules/items/api';
 import { useVendor, useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -50,13 +49,8 @@ import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreatePurchaseOrder, useUpdatePurchaseOrder } from '../api';
 import { PO_TYPE_LABELS } from '../lib/po-labels';
-import { PoFormLine, type PoItemMasterRow } from './po-form-line';
-import {
-  NEW_PO_LINE,
-  PO_FORM_ITEM_DATALIST_ID,
-  type PoFormLineValue,
-  type PoFormValues,
-} from './po-form-types';
+import { PoFormLine } from './po-form-line';
+import { NEW_PO_LINE, type PoFormLineValue, type PoFormValues } from './po-form-types';
 
 /** The Delivery Days box as a number, or null when it does not hold one yet —
  *  blank, a lone "-", "1e". Whole days only: half a day is not a delivery term.
@@ -130,7 +124,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             header: {
               code: '',
               poDate: todayIst(),
-              poType: 'job_work',
+              // No PR yet → a plain buy (IN-MPO-), the same default the API
+              // applies. The first PR picked re-seeds it — see onPrLoaded.
+              poType: 'standard',
               sgstPct: 0,
               cgstPct: 0,
               igstPct: 0,
@@ -176,20 +172,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     if (current !== next) setValue('header.code', next);
   }, [isEdit, docNo.nextCode, poType, getValues, setValue]);
 
-  // ── Item Master, for the per-line code suggestions + name courtesy fill.
-  // excludePartyOwned (ADR-195): a customer's own -rm material is never purchased,
-  // so it must not appear in the PO line picker.
-  const { data: itemsData, isSuccess: itemsLoaded } = useItemsList({
-    excludePartyOwned: true,
-    limit: 1000,
-    offset: 0,
-  });
-  const items = useMemo(() => itemsData?.items ?? [], [itemsData]);
-  const itemsByCode = useMemo(() => {
-    const m = new Map<string, PoItemMasterRow>();
-    for (const it of items) m.set(it.code.toUpperCase(), it);
-    return m;
-  }, [items]);
+  // ── Item Master: each line's Item Code box searches the server itself
+  // (PoFormLine → useItemCodeSearch), so an item past any first page can be
+  // suggested and auto-filled. No master page is preloaded here any more.
 
   // ── A line reports its loaded PR up here, so the header can seed itself from
   //    the FIRST PR picked. Both seeds are one-shot and overridable: a vendor or
@@ -206,9 +191,28 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // again.
   const [seedVendorCode, setSeedVendorCode] = useState('');
   const autoRemark = useRef('');
+  // PO Type is seeded ONCE, from the first PR seen, and only while the buyer has
+  // not picked a type himself. Same mapping the API uses when it converts a PR
+  // (createPurchaseOrderFromPr): a job-work / OSP PR is Job Work, a service PR
+  // is Service, anything else is Standard. Create mode only; edit never retypes.
+  const poTypeSeeded = useRef(false);
+  // Set when the buyer changes the PO Type dropdown themselves.
+  const poTypePicked = useRef(false);
   const onPrLoaded = useCallback(
     (pr: PurchaseRequestDetail) => {
       setPrById((m) => (m[pr.id] ? m : { ...m, [pr.id]: pr }));
+      if (!isEdit && !poTypeSeeded.current) {
+        poTypeSeeded.current = true;
+        if (!poTypePicked.current) {
+          const fromPr =
+            pr.prType === 'jw_osp' || pr.sourceJcOpId
+              ? 'job_work'
+              : pr.prType === 'service'
+                ? 'service'
+                : 'standard';
+          if (getValues('header.poType') !== fromPr) setValue('header.poType', fromPr);
+        }
+      }
       if (pr.vendorId && !getValues('header.vendorId')) {
         setValue('header.vendorId', pr.vendorId);
         setValue('header.vendorCodeText', undefined);
@@ -231,7 +235,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         autoRemark.current = remark;
       }
     },
-    [getValues, setValue],
+    [isEdit, getValues, setValue],
   );
 
   // ── Resolve that code to a real vendor. Uses the vendors module's OWN list
@@ -717,7 +721,15 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               'outsource' is dead — it behaves like standard — so it stays
               hidden to prevent mis-filing. */}
           <FormField label="PO Type" size="md" htmlFor="pof-type">
-            <select id="pof-type" className="innovic-select" {...register('header.poType')}>
+            <select
+              id="pof-type"
+              className="innovic-select"
+              {...register('header.poType', {
+                onChange: () => {
+                  poTypePicked.current = true;
+                },
+              })}
+            >
               {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work' || t === 'service').map(
                 (t) => (
                   <option key={t} value={t}>
@@ -891,8 +903,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                       .filter((_, i) => i !== idx)
                       .map((l) => l.sourcePrId)
                       .filter((x): x is string => Boolean(x))}
-                    itemsByCode={itemsByCode}
-                    itemsLoaded={itemsLoaded}
                     onPrLoaded={onPrLoaded}
                     onRemove={() => remove(idx)}
                     canRemove={fields.length > 1}
@@ -975,15 +985,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           </span>
         </div>
       </Panel>
-
-      <datalist id={PO_FORM_ITEM_DATALIST_ID}>
-        {items.map((it) => (
-          <option key={it.id} value={it.code}>
-            {it.code} — {it.name}
-            {it.material ? ` [${it.material}]` : ''}
-          </option>
-        ))}
-      </datalist>
     </form>
   );
 }

@@ -12,8 +12,8 @@
 // query is deduped across every row by TanStack Query's cache. Mirrors the long-standing
 // PO line pattern (purchase-order-form.tsx) so the rule reads identically everywhere.
 
-import { useId, useMemo } from 'react';
-import { useItemsList } from '@/modules/items/api';
+import { useEffect, useId, useRef } from 'react';
+import { findItemByExactCode, useItemCodeSearch } from '@/modules/items/use-item-code-search';
 
 export interface LineItemPickerValue {
   code: string;
@@ -44,24 +44,29 @@ export function LineItemPicker({
   nameError,
   onChange,
 }: LineItemPickerProps): React.JSX.Element {
-  // Item master drives the code autosuggest + name auto-fill. Off-master free text is
-  // left untouched (itemId null). Deduped across rows by the query cache.
+  // Item master drives the code autosuggest + name auto-fill, searched on the
+  // SERVER with the typed code (it used to be one preloaded page of 1000, so a
+  // later item could neither be suggested nor auto-filled). Off-master free text
+  // is left untouched (itemId null).
   // ADR-195: GRN/PO buying/receiving lines must not offer the customer's own material.
-  const { data: itemsData } = useItemsList({ excludePartyOwned: true, limit: 1000, offset: 0 });
-  const items = itemsData?.items ?? [];
-  const itemsByCode = useMemo(() => {
-    const m = new Map<string, (typeof items)[number]>();
-    for (const it of items) m.set(it.code.toUpperCase(), it);
-    return m;
-  }, [items]);
+  const { items, match: matchedItem } = useItemCodeSearch(code, { excludePartyOwned: true });
+
+  // The server's exact match can arrive after the keystroke that typed the code.
+  // Link it then, exactly as a match at type-time would — but only for a code
+  // the user typed in this session, never for a saved line on load.
+  const typedRef = useRef(false);
+  useEffect(() => {
+    if (readOnly || !typedRef.current || !matchedItem || matchedItem.id === itemId) return;
+    onChange({ code, itemId: matchedItem.id, name: matchedItem.name });
+  }, [readOnly, matchedItem, itemId, code, onChange]);
 
   // Unique datalist id per instance — keeps the DOM valid when many rows mount.
   const dlId = useId();
-  const matchedItem = itemsByCode.get(code.trim().toUpperCase());
   const nameLocked = readOnly || Boolean(matchedItem);
 
   const handleCodeChange = (nextCode: string): void => {
-    const match = itemsByCode.get(nextCode.trim().toUpperCase());
+    typedRef.current = true;
+    const match = findItemByExactCode(items, nextCode);
     if (match) {
       onChange({ code: nextCode, itemId: match.id, name: match.name });
     } else {

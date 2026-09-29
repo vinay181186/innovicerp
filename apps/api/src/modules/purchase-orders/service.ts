@@ -1221,9 +1221,13 @@ export async function createPurchaseOrder(
     // Carry both off the source PR unless the caller named one explicitly.
     const jcOpIdByPrId = new Map<string, string>();
     const soLineIdByPrId = new Map<string, string>();
+    // An OSP PR's operation is the vendor's process; the OSP DC shows it as
+    // "Process" and the JW DC copies it as processText — both from lineRemarks.
+    const operationByPrId = new Map<string, string>();
     for (const pr of sourcePrs) {
       if (pr.sourceJcOpId) jcOpIdByPrId.set(pr.id, pr.sourceJcOpId);
       if (pr.sourceSoLineId) soLineIdByPrId.set(pr.id, pr.sourceSoLineId);
+      if (pr.operation?.trim()) operationByPrId.set(pr.id, pr.operation.trim());
     }
 
     const lineValues = input.lines.map((l, i) => {
@@ -1245,7 +1249,9 @@ export async function createPurchaseOrder(
           l.sourceJcOpId ?? (l.sourcePrId ? (jcOpIdByPrId.get(l.sourcePrId) ?? null) : null),
         sourcePrId: l.sourcePrId ?? null,
         ramRemark: l.ramRemark ?? null,
-        lineRemarks: l.lineRemarks ?? null,
+        lineRemarks:
+          l.lineRemarks?.trim() ||
+          (l.sourcePrId ? (operationByPrId.get(l.sourcePrId) ?? null) : null),
         createdBy: user.id,
         updatedBy: user.id,
       };
@@ -1992,6 +1998,7 @@ async function mergeLines(
             id: purchaseRequests.id,
             sourceJcOpId: purchaseRequests.sourceJcOpId,
             sourceSoLineId: purchaseRequests.sourceSoLineId,
+            operation: purchaseRequests.operation,
           })
           .from(purchaseRequests)
           .where(
@@ -2030,7 +2037,9 @@ async function mergeLines(
           (l.sourcePrId ? (prLinkById.get(l.sourcePrId)?.sourceJcOpId ?? null) : null),
         sourcePrId: l.sourcePrId ?? null,
         ramRemark: l.ramRemark ?? null,
-        lineRemarks: l.lineRemarks ?? null,
+        lineRemarks:
+          l.lineRemarks?.trim() ||
+          (l.sourcePrId ? (prLinkById.get(l.sourcePrId)?.operation?.trim() ?? null) : null),
         createdBy: user.id,
         updatedBy: user.id,
       };
@@ -2650,7 +2659,8 @@ export async function createPurchaseOrderFromPr(
         // PO line in the system can answer "which PR?" the same way, whether it
         // came from here, the batch convert, or the PO form.
         sourcePrId: pr.id,
-        lineRemarks: null,
+        // Same as the batch convert: the PR's operation is the line's process.
+        lineRemarks: pr.operation ?? null,
         createdBy: user.id,
         updatedBy: user.id,
       })

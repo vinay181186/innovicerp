@@ -181,6 +181,7 @@ type DispatchableRow = {
   rate: string | number;
   ready_qty: string | number;
   customer_dispatch_date: string | null;
+  short_closed: boolean;
 };
 
 // Which BOM does this SO line build? Two places carry it and BOTH are load-
@@ -248,6 +249,8 @@ async function loadDispatchable(
         -- POL: the line number on the CUSTOMER's own purchase order, not ours.
         sol.client_po_line_no,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
+        -- ADR-196 — a line closed short takes no more dispatch.
+        (sol.short_closed_at IS NOT NULL) AS short_closed,
         -- The plan's Customer Dispatch Date (migration 0137): earliest across
         -- this line's live plans — the date the dispatch team works to. ::text
         -- so it arrives as YYYY-MM-DD; NULL when no plan carries one.
@@ -367,7 +370,10 @@ async function loadDispatchable(
     const ready = Math.max(0, Math.round(n(r.ready_qty)));
     const reserved = reservedByLine.get(r.so_line_id) ?? 0;
     const dispatched = Math.round(n(r.dispatched_qty));
+    // ADR-196 — a line closed short (SO "Close") owes the customer nothing
+    // more: its undelivered qty was dropped, so Pending and Dispatchable are 0.
     const orderQty = Math.round(n(r.order_qty));
+    const owed = r.short_closed ? 0 : Math.max(0, orderQty - dispatched);
     const position = r.item_id ? positions.get(r.item_id) : undefined;
     return {
       salesOrderLineId: r.so_line_id,
@@ -399,14 +405,11 @@ async function loadDispatchable(
       // dispatch that works today.
       availableQty: Math.max(
         0,
-        Math.min(
-          position ? reserved + Math.max(0, position.availableQty) : ready + reserved,
-          Math.max(0, orderQty - dispatched),
-        ),
+        Math.min(position ? reserved + Math.max(0, position.availableQty) : ready + reserved, owed),
       ),
       // Still owed to the customer on this line — the hard ceiling on any one
       // dispatch, independent of how ready the goods are.
-      pendingQty: Math.max(0, orderQty - dispatched),
+      pendingQty: owed,
       physicalQty: Math.max(0, position?.physicalQty ?? 0),
       // Free stock of this item: on the shelf minus everything booked to ANY
       // line. A dispatch ships this line's own booking first and only then digs

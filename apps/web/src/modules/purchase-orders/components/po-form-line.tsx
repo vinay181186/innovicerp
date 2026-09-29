@@ -33,7 +33,7 @@
 
 import type { ListItemsResponse } from '@innovic/shared';
 import type { PurchaseRequestDetail } from '@innovic/shared';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import type { Path, PathValue, SetValueConfig, UseFormReturn } from 'react-hook-form';
 import { inrFormat } from '@/lib/print/doc-print';
 import {
@@ -42,11 +42,12 @@ import {
   cascadeField,
   useFieldCascade,
 } from '@/lib/use-field-cascade';
+import { useItemCodeResolver, useItemCodeSearch } from '@/modules/items/use-item-code-search';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
 import { prOrderBalance } from '@/modules/purchase-requests/lib/pr-balance';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
-import { PO_FORM_ITEM_DATALIST_ID, type PoFormLineValue, type PoFormValues } from './po-form-types';
+import type { PoFormLineValue, PoFormValues } from './po-form-types';
 import { PICK_VENDOR_FIRST_PLACEHOLDER, noOpenPrsMessage, PrPicker } from './pr-picker';
 
 export type PoItemMasterRow = ListItemsResponse['items'][number];
@@ -97,11 +98,6 @@ export interface PoFormLineProps {
   /** True for the ONE line that carries the shared PR hints, so a vendor with no
    *  open PRs says so once instead of once per row. */
   showPrHints: boolean;
-  /** Item Master indexed by UPPERCASE code. */
-  itemsByCode: Map<string, PoItemMasterRow>;
-  /** False until that list has actually arrived — an empty map must not read as
-   *  "this code is off-master" and reset the names. */
-  itemsLoaded: boolean;
   /** Reports the loaded PR up, so the form can seed Vendor + PO Remarks. */
   onPrLoaded: (pr: PurchaseRequestDetail) => void;
   onRemove: () => void;
@@ -118,8 +114,6 @@ export function PoFormLine({
   headerVendorId,
   vendorName,
   showPrHints,
-  itemsByCode,
-  itemsLoaded,
   onPrLoaded,
   onRemove,
   canRemove,
@@ -137,16 +131,23 @@ export function PoFormLine({
   // it, with the same "is this still ours?" test: a name the buyer typed for an
   // off-master part is theirs and survives, because a PO may legitimately be
   // raised for something the Item Master has never heard of.
+  //
+  // The master is searched on the SERVER with the typed code (it used to be one
+  // preloaded page of 1000, so later items could neither be suggested nor
+  // auto-filled). excludePartyOwned (ADR-195): a customer's own -rm material is
+  // never purchased, so it is neither suggested nor matched.
   const codeText = line?.itemCodeText ?? '';
-  const matched = itemsByCode.get(codeText.trim().toUpperCase());
+  const { items: codeSuggestions, match: matched } = useItemCodeSearch(codeText, {
+    excludePartyOwned: true,
+  });
+  const resolveItemCode = useItemCodeResolver({ excludePartyOwned: true });
   const matchedName = matched?.name;
+  const itemDatalistId = useId();
   useFieldCascade<PoFormValues, PoItemMasterRow>({
     form,
     value: codeText,
-    // Inert until the master list has actually arrived, or an empty map would
-    // read as "no such code" and reset every name on the form.
-    enabled: itemsLoaded,
-    resolve: (code) => itemsByCode.get(code.trim().toUpperCase()) ?? null,
+    // Async exact-code lookup; a failed request leaves the name as it is.
+    resolve: resolveItemCode,
     // Name only. `itemId` is deliberately NOT a dependent here: the save path
     // sends the code TEXT whenever there is any and the API resolves it back to
     // the master itself, so writing an id would change what goes over the wire
@@ -335,12 +336,20 @@ export function PoFormLine({
         <td style={{ width: 168 }}>
           <input
             className="innovic-input mono"
-            list={PO_FORM_ITEM_DATALIST_ID}
+            list={itemDatalistId}
             autoComplete="off"
             placeholder="Item code…"
             aria-label={`Item Code, line ${idx + 1}`}
             {...register(`lines.${idx}.itemCodeText` as const)}
           />
+          <datalist id={itemDatalistId}>
+            {codeSuggestions.map((it) => (
+              <option key={it.id} value={it.code}>
+                {it.code} — {it.name}
+                {it.material ? ` [${it.material}]` : ''}
+              </option>
+            ))}
+          </datalist>
         </td>
         <td style={{ minWidth: 200 }}>
           <input

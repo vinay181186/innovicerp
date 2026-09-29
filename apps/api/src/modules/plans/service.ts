@@ -544,6 +544,7 @@ async function assertPlanQtyWithinRemaining(
     // a Buy line's PRs + direct cards) — the figure Needs Planning shows.
     const r = (await tx.execute(sql`
       SELECT sol.order_qty AS "orderQty", so.status AS "soStatus", so.code AS "soCode",
+             sol.line_no AS "lineNo", sol.short_closed_at IS NOT NULL AS "shortClosed",
              ${sql.raw(soLineCoveredRaw('sol'))} AS "covered",
              COALESCE((SELECT p_x.plan_qty FROM public.plans p_x
                        WHERE p_x.id = ${excludePlanId ?? null}::uuid
@@ -558,6 +559,8 @@ async function assertPlanQtyWithinRemaining(
       orderQty: number;
       soStatus: string;
       soCode: string;
+      lineNo: number;
+      shortClosed: boolean;
       covered: number;
       own: number;
     }>;
@@ -568,6 +571,12 @@ async function assertPlanQtyWithinRemaining(
     // line or a cancelled order, so a planner can fix an over-plan.
     if (Number(line.own) > 0 && planQty <= Number(line.own)) return;
     assertSoAcceptsWork(line.soStatus, line.soCode, 'it cannot be planned');
+    // ADR-196 — a line closed short wants nothing more planned.
+    if (line.shortClosed) {
+      throw new ValidationError(
+        `${line.soCode} line ${line.lineNo} was closed short — it cannot be planned.`,
+      );
+    }
     const covered = Number(line.covered) - Number(line.own);
     const toPlan = Math.max(0, Number(line.orderQty) - covered);
     if (planQty > toPlan) {
@@ -1778,7 +1787,9 @@ async function executeDirectPurchase(
     throw new ValidationError('Vendor is required for a Buy plan.');
   }
   const today = todayIso();
-  const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
+  // A Buy plan raises a STANDARD (material) PR, so it takes the standard
+  // IN-PR- series (docs/NAMING.md). IN-JWPR- is for job-work / OSP PRs only.
+  const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-PR-');
 
   const prRows = await tx
     .insert(purchaseRequests)
@@ -1910,7 +1921,10 @@ async function executeFullOutsource(
       code: jwCode,
       prDate: today,
       status: 'open',
-      ...(ospOpId ? { prType: 'jw_osp' as const, sourceJcOpId: ospOpId } : {}),
+      // Always job work (IN-JWPR- series), so it converts to a Job Work PO
+      // even when no JC op was seeded; the op link is added when there is one.
+      prType: 'jw_osp' as const,
+      ...(ospOpId ? { sourceJcOpId: ospOpId } : {}),
       vendorId: plan.foVendorId ?? null,
       vendorCodeText: plan.foVendorCodeText ?? null,
       itemId: plan.itemId ?? null,

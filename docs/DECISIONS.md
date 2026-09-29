@@ -10481,3 +10481,68 @@ Party GRN is COMPULSORY**; everything else "as suggested".
   new Item Issues (returns still allowed). Reports can carry a plain-words `note`; Material Consumption says so when
   it stops at 2,000 rows.
 
+## ADR-196: Sales Order fulfilment status and Close, the ERPNext way
+
+**Date:** 2026-09-29
+**Status:** Accepted (code on the `layout-fix` branch; migration `0177_so_line_short_close.sql` must be run on TEST, then on PROD before test → main)
+
+### Context
+E2E findings on the Sales Order: an order dispatched 10 and billed 10 (IN-SO-00420) still read only
+"Open", and an order the customer will never take the rest of (IN-SO-00419: ordered 10, dispatched 8,
+billed 8) had no way to stop — its 2 kept showing as Pending on the SO, To Plan in Planning, Dispatchable
+on the dispatch screen, and an ADR-184 re-opened plan kept asking for "+ Production Order". Owner:
+solve it "as per the ERPNext GitHub repo".
+
+ERPNext: `erpnext/selling/doctype/sales_order/sales_order.py` + `erpnext/controllers/status_updater.py`
+derive the Sales Order status from `per_delivered` / `per_billed` — **To Deliver and Bill**, **To Bill**,
+**To Deliver**, **Completed** — and the **Close** action (`update_status("Closed")`) sets **Closed**, after
+which the remainder is neither delivered nor billed (Delivery Note / Sales Invoice refuse a closed order).
+
+### Decision
+1. **Fulfilment status, read-time only.** `fulfilmentStatus` on the SO list and detail reads, worked out
+   on the server by `deriveSoFulfilmentStatus` (packages/shared `enums/so-fulfilment-status.ts`; the list
+   builds the same facts in SQL). The stored `so_status` enum is NOT changed. Per live (not cancelled) line:
+   To Deliver = not closed short and Dispatched < Order Qty; To Bill = Billed < Dispatched. Both →
+   To Deliver and Bill; neither → Completed, or Closed when every live line was closed short. Draft /
+   cancelled orders get null. Shown as a badge beside SO Status on the list (sheet + cards) and detail.
+   - **Departure from ERPNext:** ERPNext's per_billed measures against the ordered amount; here an invoice
+     can only bill what was dispatched (invoices/service.ts), so To Bill = dispatched not yet billed and
+     unshipped qty is To Deliver only. IN-SO-00419 therefore reads **To Deliver**, not To Deliver and Bill.
+2. **Close, per SO line — ADR-194 R6 copied.** `sales_order_lines.short_closed_at / short_closed_by /
+   short_close_reason` (0177, all-or-none CHECK); the line's status becomes `'closed'` (enum not widened);
+   reason required. `POST /sales-order-lines/:lineId/short-close` closes one line;
+   `POST /sales-orders/:id/close` (detail Actions ▾ → Close) closes every live line that still has qty
+   undelivered, with one reason. When no live line of an Open order is left open, the header becomes
+   `closed` (ERPNext's Closed; same roll-up as the JC-completion cascade). Stock booked to the line
+   (ADR-180) for the dropped qty is released.
+3. **What the close drops is Order Qty − Dispatched.** It leaves: SO list Pending (`shortClosedQty`),
+   the detail's Dispatch button, SO Planning (to plan 0, line reads fully planned; no Planning PR),
+   dispatchable / Pending on the dispatch screen and its save cap, the SO Line Analysis report (To Dispatch,
+   Days Late), and a linked plan's leftover **Pending** is capped at 0 (`PLAN_PENDING_QTY_SQL`,
+   lib/plan-order-coverage.ts — every Pending reader and the derived plan status go through it), so it
+   stops asking for a Production Order. New plans and Production Orders on a closed-short line are refused
+   (the PO create reads the line `FOR SHARE` after locking the plan; Close locks the line `FOR UPDATE`
+   before looking for running work). What was dispatched stays billable.
+4. **Refused while work is running.** An open Job Card (not closed, v_jc_status not complete / closed,
+   and its Production Order not stopped) or an `open` / `partially_closed` Production Order on the line
+   blocks the close, with every one named in the message.
+5. **Permission (ADR-194's choice).** Closing with qty unmet is a department-admin decision: write role +
+   `so_create` edit AND approve. No new permission key.
+6. **Edit guard.** A closed-short line's Order Qty and status can no longer be changed through SO edit.
+
+### Alternatives considered
+- Widen `so_status` with `short_closed` / `to_bill` … — rejected, as in ADR-194: the enum is shared by
+  SO and JWSO and read by every SO code path; flag columns + a read-time status keep the change contained.
+- Store `fulfilment_status` — rejected: it would be one more figure to keep in step with dispatches and
+  invoices (ADR-185 "one fact, one number"); derived at read time it cannot drift.
+- Header-only Close (ERPNext's grain) — rejected: orders here are multi-line and one line is often
+  short while the others ship; the header Close is the per-line close applied to every open line.
+
+### Consequences
+- Migration 0177 is additive; run it on TEST, then PROD before this reaches main. The API reads the new
+  columns, so it must not deploy to a database without them.
+- Not changed (follow-ups): the Job Card source picker (job-cards/service.ts `listJobCardSourceOptions`)
+  still lists a closed-short line when its SO header is open; a cancelled dispatch on a closed-short line
+  lowers Dispatched and the extra qty simply stays undelivered (it is not re-opened); the SO header only
+  flips to `dispatched` when every line is fully shipped (a closed-short line never is — the fulfilment
+  badge says Completed / Closed instead).

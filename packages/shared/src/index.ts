@@ -20,6 +20,7 @@ export * from './enums/jc-computed-status';
 export * from './enums/so-gst';
 export * from './enums/so-type';
 export * from './enums/so-status';
+export * from './enums/so-fulfilment-status';
 export * from './enums/po-status';
 export * from './enums/pr-status';
 export * from './enums/po-type';

@@ -250,13 +250,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const { data: bomData } = useBomMastersList({ status: 'active', limit: 200, offset: 0 });
   const jwUsableBoms = bomData?.items ?? [];
 
-  // excludePartyOwned (ADR-195): the line auto-fill map feeds NORMAL produced
-  // line items — a customer's own -rm material is never a line we make, so it is
-  // kept out of the code→item map and the on-master detection below.
-  const { data: itemsData } = useItemsList({ excludePartyOwned: true, limit: 200, offset: 0 });
-  const items = itemsData?.items ?? [];
-  // Code → master item, for auto-filling the line from the item master (bug 2.1).
-  const itemsByCode = new Map(items.map((it) => [it.code.trim().toUpperCase(), it]));
+  // (The old fixed 200-row item preload that fed a code→item map is gone: the
+  // line picker below searches the server and hands the PICKED record straight
+  // to fillLineFromItem, so an item past the first page auto-fills too.)
 
   // ── Customer Material picker: the party-supplied item the client ships us ──
   // Server-side filtered to itemType=party_supplied_material (ADR-195), searched
@@ -275,7 +271,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const partyMatItems = partyMatData?.items ?? [];
   const [showAddPartyMat, setShowAddPartyMat] = useState(false);
   // Line Item Code picker: the shared SearchableSelect, server-searched like the
-  // SO form's, so a code beyond the 200-row page above can still be picked.
+  // SO form's, so a code beyond any first page can still be picked.
   const [lineItemSearch, setLineItemSearch] = useState('');
   const { data: lineItemsData, isFetching: lineItemsFetching } = useItemsList({
     ...(lineItemSearch.trim() ? { search: lineItemSearch.trim() } : {}),
@@ -392,9 +388,15 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
    *  Rate, Qty, Drawing No. and Rev are always user-entered and are never
    *  touched here — the drawing lives on the JWSO line, not the item master
    *  (user decision 2026-09-21). */
-  function fillLineFromItem(idx: number, codeValue: string, picked?: (typeof items)[number]): void {
+  function fillLineFromItem(
+    idx: number,
+    codeValue: string,
+    picked?: (typeof lineItems)[number],
+  ): void {
     const lineKey = fields[idx]?.id ?? String(idx);
-    const it = picked ?? itemsByCode.get(codeValue.trim().toUpperCase());
+    // The picked master record (from the server-searched picker page). A cleared
+    // box passes none, and an empty code never matches a master item.
+    const it = codeValue.trim() ? picked : undefined;
     if (it) {
       // Matched a master item — the code is the key, so the master wins: refresh
       // all three derived fields (replace, not fill-only), even across a change
@@ -510,9 +512,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     try {
       const { rows, errors: errs } = await parseJwLineFile(file);
       // Every Item Code in the sheet must exist in Item Master (parity with the
-      // SO form). The in-memory `items` list is only the current 200-row page,
-      // so resolve each unique code against the server (search + exact-code
-      // match) rather than silently accepting unknown codes as item_id=null.
+      // SO form). No item list is preloaded in memory, so resolve each unique
+      // code against the server (search + exact-code match) rather than
+      // silently accepting unknown codes as item_id=null.
       const uniqueCodes = Array.from(
         new Set(
           rows
@@ -1251,10 +1253,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   (Number(watchedLines?.[idx]?.rate) || 0);
                 // On-master item → name is derived + read-only; an older
                 // off-master line (code with no master link) keeps it editable.
-                const lineItemCode = (watchedLines?.[idx]?.itemCodeText ?? '').trim().toUpperCase();
-                const lineOnMaster =
-                  Boolean(watchedLines?.[idx]?.itemId) ||
-                  (lineItemCode ? itemsByCode.has(lineItemCode) : false);
+                // Every pick from the master sets itemId, so the link alone says
+                // "on master" — no preloaded page to consult.
+                const lineOnMaster = Boolean(watchedLines?.[idx]?.itemId);
                 const isOpen = openMore.has(field.id);
                 // How many of the folded fields hold a value — shown on the
                 // toggle so a filled Material / BOM is never hidden silently.

@@ -8,17 +8,15 @@ import {
 } from '@innovic/shared';
 import { todayIst } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { inrFormat } from '@/lib/print/doc-print';
-import { useItemsList } from '@/modules/items/api';
 import {
-  PO_ITEM_DATALIST_ID,
   type PoFormValues as FormValues,
   type PoLineFormValue as LineFormValue,
 } from './po-form-values';
-import { type PoItemMaster, PoLineRow } from './po-line-row';
+import { PoLineRow } from './po-line-row';
 import { PoVendorField } from './po-vendor-field';
 import { PO_TYPE_LABELS, poStatusLabel } from '../lib/po-labels';
 
@@ -85,19 +83,10 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
   // two. Dropping it would make those POs unsaveable.
   const carriedVendorText = isEdit ? (props.detail.vendorCodeText?.trim() ?? '') : '';
 
-  // Item master drives the per-line code autosuggest + name auto-fill. PO still
-  // accepts off-master free text, so a non-matching code is left untouched.
-  // excludePartyOwned (ADR-195): a customer's own -rm material is never purchased.
-  const { data: itemsData } = useItemsList({ excludePartyOwned: true, limit: 1000, offset: 0 });
-  const items = itemsData?.items ?? [];
-  // Until this has actually arrived, every code looks off-master — so the line
-  // cascade stays inert rather than resetting names against a master it can't see.
-  const itemsLoaded = itemsData !== undefined;
-  const itemsByCode = useMemo(() => {
-    const m = new Map<string, PoItemMaster>();
-    for (const it of items) m.set(it.code.toUpperCase(), it);
-    return m;
-  }, [items]);
+  // Item master drives the per-line code autosuggest + name auto-fill. Each line
+  // searches the server itself (PoLineRow → useItemCodeSearch) instead of this
+  // form preloading one fixed page, so every item is reachable. PO still accepts
+  // off-master free text, so a non-matching code is left untouched.
 
   // Live totals — mirror of legacy `_poUpdateTotal()` L25502. Preview only; see the
   // note at the summary panel. Legacy falls back to 9/9/18 when a pct box is blank;
@@ -205,10 +194,11 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
                 to prevent mis-filing. */}
             {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work' || t === 'service').map(
               (t) => (
-              <option key={t} value={t}>
-                {PO_TYPE_LABELS[t]}
-              </option>
-            ))}
+                <option key={t} value={t}>
+                  {PO_TYPE_LABELS[t]}
+                </option>
+              ),
+            )}
           </select>
         </div>
         {/* Status is not a field on CREATE any more: a new PO is always 'open',
@@ -243,7 +233,12 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
           <label className="form-label" htmlFor="dueDate">
             Due Date
           </label>
-          <input id="dueDate" type="date" className="innovic-input" {...register('header.dueDate')} />
+          <input
+            id="dueDate"
+            type="date"
+            className="innovic-input"
+            {...register('header.dueDate')}
+          />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="prCodeText">
@@ -344,8 +339,6 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
                       line={watchedLines?.[idx]}
                       isEdit={isEdit}
                       receivedQty={field.receivedQty}
-                      itemsByCode={itemsByCode}
-                      itemsLoaded={itemsLoaded}
                       remarksSpan={remarksSpan}
                       rowBg={idx % 2 === 0 ? 'var(--bg)' : 'var(--bg3)'}
                       onRemove={() => remove(idx)}
@@ -524,15 +517,6 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             header field to bind to. Shipping it would describe constraints nothing
             enforces (ISSUE-100). */}
       </div>
-
-      <datalist id={PO_ITEM_DATALIST_ID}>
-        {items.map((it) => (
-          <option key={it.id} value={it.code}>
-            {it.code} — {it.name}
-            {it.material ? ` [${it.material}]` : ''}
-          </option>
-        ))}
-      </datalist>
 
       <div style={{ marginTop: 16 }}>
         {props.submitError ? (

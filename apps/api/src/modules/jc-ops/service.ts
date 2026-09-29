@@ -79,7 +79,11 @@ export async function listJcOpsBoard(
         op.qc_required AS "qcRequired",
         op.op_type::text AS "opType",
         COALESCE(s.input_avail, 0)::int AS "inputAvail",
-        COALESCE(s.completed_qty, 0)::int AS "completed",
+        -- A QC op never gets a complete log (view completed_qty is always 0
+        -- there); its done count is the qty ACCEPTED at inspection. Same rule
+        -- as the op-entry list and the Job Card op cards.
+        COALESCE(CASE WHEN op.op_type = 'qc' THEN s.qc_accepted_qty
+                      ELSE s.completed_qty END, 0)::int AS "completed",
         COALESCE(s.qc_accepted_qty, 0)::int AS "qcAccepted",
         COALESCE(s.qc_pending, 0)::int AS "qcPending",
         COALESCE(s.available, 0)::int AS "available",

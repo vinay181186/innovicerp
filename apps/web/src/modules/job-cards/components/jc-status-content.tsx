@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
@@ -152,7 +153,14 @@ function JcStatusEditForm({
   const [drawingPreviewOpen, setDrawingPreviewOpen] = useState(false);
   const [flowOpen, setFlowOpen] = useState(true);
 
-  const { data: itemsData } = useItemsList({ limit: 500, offset: 0 });
+  // Item Code picker searches the SERVER (?search=), like the create form's —
+  // a fixed first page (was 500) left every item after it unpickable.
+  const [itemSearch, setItemSearch] = useState('');
+  const { data: itemsData, isFetching: itemsFetching } = useItemsList({
+    ...(itemSearch.trim() ? { search: itemSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
   // machines & vendors list-query schemas cap `limit` at 200 — asking for 500
   // makes the route's zod .parse() 400, so the picker got ZERO options and the
   // machine dropdown showed "No matches". Stay within the cap.
@@ -533,13 +541,6 @@ function JcStatusEditForm({
     <div>
       {exit.dialog}
       <RecoveryBanner jc={jc} />
-      <datalist id="dlJcEditItem">
-        {items.map((i) => (
-          <option key={i.id} value={i.code}>
-            {i.code} — {i.name}
-          </option>
-        ))}
-      </datalist>
 
       {/* Same restyled header the VIEW shows — the shared JcViewSummary (image
           tile, code · name · Material · Size, 5 KPI tiles, references, meta),
@@ -591,12 +592,23 @@ function JcStatusEditForm({
               <label className="form-label">
                 Item Code <span className="req">★</span>
               </label>
-              <input
-                className="innovic-input"
-                list="dlJcEditItem"
-                value={itemCode}
+              {/* Stores the item CODE, exactly as before; the label comes from
+                  the code itself so it survives the search page moving on. */}
+              <SearchableSelect
+                id="jc-edit-item"
+                value={
+                  items.find((i) => i.code.toUpperCase() === itemCode.trim().toUpperCase())?.id ??
+                  null
+                }
+                onChange={(pickedId) =>
+                  setItemCode(items.find((i) => i.id === pickedId)?.code ?? '')
+                }
+                onSearch={setItemSearch}
+                loading={itemsFetching}
+                options={items.map((i) => ({ id: i.id, code: i.code, name: i.name }))}
+                valueLabel={itemCode || undefined}
+                selectedLabel={(o) => o.code ?? o.name}
                 placeholder="🔍 Search item code or name…"
-                onChange={(e) => setItemCode(e.target.value)}
               />
             </div>
             <div className="form-grp">

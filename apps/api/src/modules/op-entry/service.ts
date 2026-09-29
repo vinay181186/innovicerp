@@ -203,7 +203,12 @@ export async function listJcOpsEnriched(
         o.qc_required          AS "qcRequired",
         o.rework_qty           AS "reworkQty",
         o.outsource_status     AS "outsourceStatus",
-        s.completed_qty        AS "completedQty",
+        -- A QC op never gets a complete log, so the view completed_qty is
+        -- always 0 there; its done count is the qty ACCEPTED at inspection.
+        -- Same rule as lastOpCompletedQty (job-cards/service.ts) and the op
+        -- cards. Process ops keep completed_qty, even when qc_required.
+        CASE WHEN o.op_type = 'qc' THEN s.qc_accepted_qty
+             ELSE s.completed_qty END AS "completedQty",
         s.qc_accepted_qty      AS "qcAcceptedQty",
         s.qc_rejected_qty      AS "qcRejectedQty",
         s.input_avail          AS "inputAvail",

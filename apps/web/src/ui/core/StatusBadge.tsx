@@ -38,10 +38,13 @@ import type { BadgeTone } from './Badge';
  * planderived (ADR-170 derived plan status) · machine (shop-floor machine
  * state) · masteractive (a quality master: Active/Inactive, amber not red) ·
  * active (Active/Inactive) ·
- * rating (⭐A–D) · doc (the generic related-docs fallback).
+ * rating (⭐A–D) · doc (the generic related-docs fallback) ·
+ * sofulfil (ADR-196 SO fulfilment status: To Deliver and Bill / To Deliver /
+ * To Bill / Completed / Closed).
  */
 export type StatusKind =
   | 'so'
+  | 'sofulfil'
   | 'jc'
   | 'jcop'
   | 'pr'
@@ -76,6 +79,16 @@ type StatusTone = BadgeTone | '';
 
 const MAP: Record<StatusKind, Record<string, StatusTone>> = {
   so: { draft: 'grey', open: 'blue', closed: 'green', dispatched: 'green', cancelled: 'grey' },
+  // ADR-196 — ERPNext's Sales Order progress. Work still owed amber (billing)
+  // or blue (delivery only), done green, closed short grey (as short_closed
+  // reads everywhere else).
+  sofulfil: {
+    to_deliver_and_bill: 'amber',
+    to_deliver: 'blue',
+    to_bill: 'amber',
+    completed: 'green',
+    closed: 'grey',
+  },
   // Wave 2 (owner): one colour per state across Plan / Production Order / JC /
   // Op badges — open/pending neutral or blue, in progress amber, finished green,
   // stopped red or grey. Hence JC complete green, op waiting grey.
@@ -246,6 +259,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
 // uppercases it on screen). Labels follow the wording rules (2026-09-26):
 // finished = Completed, part-way = Partly <verb>, QC waiting = QC Pending.
 const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
+  sofulfil: { to_deliver_and_bill: 'To Deliver and Bill' },
   jc: { qc_pending: 'QC Pending', complete: 'Completed', no_ops: 'No Operations' },
   jcop: {
     in_progress: 'Partly Completed',
