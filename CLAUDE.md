@@ -1047,3 +1047,16 @@ database column, a document code prefix, an Excel header, a print heading:
 **Verify before you finish.** Grep the label you added across `apps/web/src`. If the same
 words already appear on another screen meaning something else, you have created the fault
 this section exists to stop.
+
+---
+
+## Section 19 — Releasing to Production (owner decision 2026-09-29)
+
+"Push to main" means: push your work to `test`, then run
+`sh "C:/Innovic_projects/innovic-erp/release/release-prod.sh" --dry-run` and then
+`sh "C:/Innovic_projects/innovic-erp/release/release-prod.sh"` yourself. The script applies
+the migrations that are on `test` but not on `main` to the production database (in order,
+stops on the first error), merges `test` into `main`, pushes, and waits for the production
+deploy. It is pre-approved in the owner's Claude Code settings. Never run migrations or
+`git push … main` against production any other way, and never ask the owner to type
+production commands.
