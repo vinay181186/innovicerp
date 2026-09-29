@@ -128,7 +128,9 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
 
   // Item master drives the code autosuggest + name auto-fill. PR still accepts
   // off-master free text, so a non-matching code is left as-is.
-  const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
+  // excludePartyOwned (ADR-195): a customer's own -rm material is never purchased,
+  // so it must not appear in the PR line picker.
+  const { data: itemsData } = useItemsList({ excludePartyOwned: true, limit: 1000, offset: 0 });
   const items = itemsData?.items ?? [];
   // Until this has actually arrived, every code looks off-master — so the
   // cascade stays inert rather than resetting the name against a master it

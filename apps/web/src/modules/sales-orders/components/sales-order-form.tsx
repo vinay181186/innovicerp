@@ -251,6 +251,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   );
   const { data: itemsData, isFetching: itemsFetching } = useItemsList({
     ...(itemSearch.trim() ? { search: itemSearch.trim() } : {}),
+    // excludePartyOwned (ADR-195): an SO line is what we SELL — a customer's own
+    // -rm material is never a saleable line item, so keep it out of this picker.
+    excludePartyOwned: true,
     limit: 50,
     offset: 0,
   });

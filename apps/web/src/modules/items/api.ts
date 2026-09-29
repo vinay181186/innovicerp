@@ -22,6 +22,7 @@ function toQueryString(q: ListItemsQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.itemType) params.set('itemType', q.itemType);
+  if (q.excludePartyOwned) params.set('excludePartyOwned', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

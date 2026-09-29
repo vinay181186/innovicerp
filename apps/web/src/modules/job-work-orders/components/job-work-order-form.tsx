@@ -11,6 +11,7 @@
 
 import {
   type CreateJobWorkOrderInput,
+  type Item,
   type JobWorkOrderDetail,
   type ListItemsResponse,
   normalizeRevision,
@@ -21,7 +22,6 @@ import {
   type Uom,
   UOMS,
 } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm, type UseFormRegisterReturn } from 'react-hook-form';
@@ -39,6 +39,7 @@ import { Banner } from '@/ui/feedback';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { downloadJwLineTemplate, parseJwLineFile } from '../lib/import-export';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
+import { QuickAddPartyMaterial } from './quick-add-party-material';
 
 interface LineFormValue {
   id?: string | undefined;
@@ -249,16 +250,39 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const { data: bomData } = useBomMastersList({ status: 'active', limit: 200, offset: 0 });
   const jwUsableBoms = bomData?.items ?? [];
 
-  const { data: itemsData } = useItemsList({ limit: 200, offset: 0 });
+  // excludePartyOwned (ADR-195): the line auto-fill map feeds NORMAL produced
+  // line items — a customer's own -rm material is never a line we make, so it is
+  // kept out of the code→item map and the on-master detection below.
+  const { data: itemsData } = useItemsList({ excludePartyOwned: true, limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
-  const rmItems = items.filter((it) => it.code.toLowerCase().includes('-rm'));
   // Code → master item, for auto-filling the line from the item master (bug 2.1).
   const itemsByCode = new Map(items.map((it) => [it.code.trim().toUpperCase(), it]));
+
+  // ── Customer Material picker: the party-supplied item the client ships us ──
+  // Server-side filtered to itemType=party_supplied_material (ADR-195), searched
+  // like the line Item Code picker so a code beyond the first page is reachable.
+  // Replaces the old free-text + 200-row `-rm` datalist.
+  const [partyMatSearch, setPartyMatSearch] = useState('');
+  const { data: partyMatData, isFetching: partyMatFetching } = useItemsList({
+    itemType: 'party_supplied_material',
+    ...(partyMatSearch.trim() ? { search: partyMatSearch.trim() } : {}),
+    // Show ALL party-supplied materials, not a small page (user request): the
+    // dropdown loads the whole set (1000 = the query cap; party materials are a
+    // small catalogue), and server search still narrows as you type.
+    limit: 1000,
+    offset: 0,
+  });
+  const partyMatItems = partyMatData?.items ?? [];
+  const [showAddPartyMat, setShowAddPartyMat] = useState(false);
   // Line Item Code picker: the shared SearchableSelect, server-searched like the
   // SO form's, so a code beyond the 200-row page above can still be picked.
   const [lineItemSearch, setLineItemSearch] = useState('');
   const { data: lineItemsData, isFetching: lineItemsFetching } = useItemsList({
     ...(lineItemSearch.trim() ? { search: lineItemSearch.trim() } : {}),
+    // excludePartyOwned (ADR-195): a JWSO line is the part we MAKE, so a
+    // customer's own -rm material must not be pickable here (it belongs only in
+    // the Customer Material picker above).
+    excludePartyOwned: true,
     limit: 50,
     offset: 0,
   });
@@ -282,12 +306,59 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
   const gstPercent = Number(watch('header.gstPercent')) || 0;
 
-  // Legacy `_jwFillRmItem` (L12746): resolve the typed Client Material code
-  // against the item master to confirm the pick inline.
+  // The picker writes the picked item's CODE to header.clientMaterial (kept — the
+  // backend bridge reads the code). Confirm the pick inline (green ✅) and show it
+  // selected.
   const clientMaterialCode = watch('header.clientMaterial') ?? '';
-  const matchedRmItem = clientMaterialCode.trim()
-    ? itemsByCode.get(clientMaterialCode.trim().toUpperCase())
+  const clientMaterialKey = clientMaterialCode.trim().toUpperCase();
+  const partyMatInPage = clientMaterialKey
+    ? partyMatItems.find((it) => it.code.trim().toUpperCase() === clientMaterialKey)
     : undefined;
+
+  // ISSUE-5: on edit, the stored Customer Material code can sit beyond the first
+  // 50 party-supplied items, so it is absent from the page above and the picker
+  // would render blank with no ✅. Resolve it with a targeted exact-code search
+  // (only while it is not already in the page) and seed it as a known option —
+  // mirrors the Job Card form's `linkedSourceOption`.
+  const needPartyMatLookup = Boolean(clientMaterialKey) && !partyMatInPage;
+  const { data: partyMatLookupData } = useItemsList(
+    {
+      itemType: 'party_supplied_material',
+      search: clientMaterialCode.trim(),
+      limit: 50,
+      offset: 0,
+    },
+    { enabled: needPartyMatLookup },
+  );
+  const partyMatLookupItem = needPartyMatLookup
+    ? (partyMatLookupData?.items ?? []).find(
+        (it) => it.code.trim().toUpperCase() === clientMaterialKey,
+      )
+    : undefined;
+
+  const selectedPartyMat = partyMatInPage ?? partyMatLookupItem;
+  const matchedRmItem = selectedPartyMat;
+
+  // What the picker offers: the current page, plus the seeded stored item when it
+  // is not in that page, so the selected value is a real, re-selectable option.
+  const partyMatOptions = (() => {
+    const base = partyMatItems.map((it) => ({ id: it.id, code: it.code, name: it.name }));
+    if (partyMatLookupItem && !base.some((o) => o.id === partyMatLookupItem.id)) {
+      return [
+        { id: partyMatLookupItem.id, code: partyMatLookupItem.code, name: partyMatLookupItem.name },
+        ...base,
+      ];
+    }
+    return base;
+  })();
+
+  // A new party-supplied item created in the +New pop-up: select its code into
+  // the picker and close. The half-filled JWSO is untouched — the modal never
+  // navigated away.
+  function onPartyMaterialCreated(item: Item): void {
+    setValue('header.clientMaterial', item.code, { shouldDirty: true });
+    setShowAddPartyMat(false);
+  }
 
   // Per-line memory of the master code we last auto-filled a line from, keyed by
   // the react-hook-form field id (stable as lines are added/removed). This is
@@ -705,15 +776,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           {errorBanners}
         </>
       ) : null}
-      <datalist id="dlRmItems">
-        {rmItems.map((it) => (
-          <option key={it.id} value={it.code}>
-            {it.name}
-            {it.material ? ` [${it.material}]` : ''}
-          </option>
-        ))}
-      </datalist>
-
       {/* Header on the 12-column grid, in reading order: Customer + Client PO
           first, the Customer Material the client supplies right after the
           customer, then JWSO No. / dates, GST % and (edit) status, then
@@ -908,34 +970,48 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             ) : null}
           </div>
 
-          {/* Client Material Details (legacy L12839) — right after the customer,
-            since it is the customer who supplies it. */}
+          {/* Customer Material (ADR-195) — right after the customer, since it is
+            the customer who supplies it. A picker of party-supplied items only
+            (server-filtered to itemType=party_supplied_material), so a code
+            beyond the first page is still searchable. The +New pop-up creates a
+            party-supplied item without leaving this half-filled JWSO. */}
           <div className="form-grp f-lg">
-            <label className="form-label">Customer Material</label>
+            <label className="form-label">Customer Material (Item -rm)</label>
             <div style={{ display: 'flex', gap: 6 }}>
-              <input
-                className="innovic-input"
-                style={{ flex: 1 }}
-                autoComplete="off"
-                list="dlRmItems"
-                placeholder="🔍 Search raw material…"
-                {...register('header.clientMaterial')}
-              />
-              <Link
-                to="/items/new"
+              <div style={{ flex: 1 }}>
+                <SearchableSelect
+                  id="clientMaterial"
+                  value={selectedPartyMat?.id ?? null}
+                  onChange={(id) => {
+                    const it = id ? partyMatOptions.find((x) => x.id === id) : undefined;
+                    setValue('header.clientMaterial', it?.code ?? undefined, { shouldDirty: true });
+                  }}
+                  onSearch={setPartyMatSearch}
+                  loading={partyMatFetching}
+                  options={partyMatOptions}
+                  placeholder="🔍 Search customer material (Item -rm)…"
+                  valueLabel={
+                    selectedPartyMat
+                      ? `${selectedPartyMat.code} — ${selectedPartyMat.name}`
+                      : clientMaterialCode || undefined
+                  }
+                  selectedLabel={(o) => o.code ?? o.name}
+                />
+              </div>
+              <button
+                type="button"
                 className="btn btn-ghost btn-sm"
-                title="Create a new raw material item"
+                title="Create a new Party Supplied Material item without leaving this form"
                 style={{ whiteSpace: 'nowrap' }}
+                onClick={() => setShowAddPartyMat(true)}
               >
                 + New
-              </Link>
+              </button>
             </div>
-            {/* Legacy `fJwRmItemInfo` (L12849 / _jwFillRmItem L12746): confirms the
-              typed code against the item master. Legacy also shows a "⚠ Item not
-              found in master" branch; that is NOT ported — legacy searched the
-              whole client-side `db.items`, whereas `items` here is one 200-row
-              page, so absence from the page does not prove absence from the
-              master and the warning would fire falsely. Positive match only. */}
+            {/* Positive match only: confirms the picked party-supplied item inline.
+              (Legacy's "⚠ not found" branch is deliberately not ported — the page
+              holds one server page, so absence from it does not prove absence from
+              the master and the warning would fire falsely.) */}
             {matchedRmItem ? (
               <div className="form-help" style={{ color: 'var(--green2)' }}>
                 ✅ <b>{matchedRmItem.name}</b>
@@ -1407,6 +1483,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
       {showAddClient ? (
         <QuickAddClient onClose={() => setShowAddClient(false)} onCreated={onClientCreated} />
+      ) : null}
+
+      {showAddPartyMat ? (
+        <QuickAddPartyMaterial
+          onClose={() => setShowAddPartyMat(false)}
+          onCreated={onPartyMaterialCreated}
+        />
       ) : null}
     </form>
   );

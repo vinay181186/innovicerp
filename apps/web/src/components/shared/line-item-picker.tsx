@@ -46,7 +46,8 @@ export function LineItemPicker({
 }: LineItemPickerProps): React.JSX.Element {
   // Item master drives the code autosuggest + name auto-fill. Off-master free text is
   // left untouched (itemId null). Deduped across rows by the query cache.
-  const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
+  // ADR-195: GRN/PO buying/receiving lines must not offer the customer's own material.
+  const { data: itemsData } = useItemsList({ excludePartyOwned: true, limit: 1000, offset: 0 });
   const items = itemsData?.items ?? [];
   const itemsByCode = useMemo(() => {
     const m = new Map<string, (typeof items)[number]>();

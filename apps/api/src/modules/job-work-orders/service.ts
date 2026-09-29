@@ -37,8 +37,10 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { logger } from '../../lib/logger';
 import { emitActivityLog } from '../activity-log/service';
 import { assertBomUsableForJobWork, cascadeBomToJwLine } from '../bom-master/cascade';
+import { ensurePartyMaterialForClientItem } from '../party-materials/service';
 import type {
   CreateJobWorkOrderInput,
   JobWorkOrder,
@@ -213,6 +215,46 @@ async function sumPartyReceivedQty(tx: DbTransaction, jobWorkOrderId: string): P
     WHERE g.job_work_order_id = ${jobWorkOrderId}::uuid AND g.deleted_at IS NULL
   `);
   return Number((rows as unknown as Array<{ qty: number }>)[0]?.qty ?? 0);
+}
+
+/** ADR-195 bridge: when a JWSO names customer-supplied material in its
+ *  `clientMaterial` header field (which holds a party-supplied item CODE), make
+ *  sure a party_materials record exists for this JWSO's customer + that item, so
+ *  the Party GRN / QC / party-stock chain (ADR-194) has something to attach to.
+ *
+ *  It runs in a SAVEPOINT (a nested transaction) so that if the bridge hits a
+ *  database error, only the bridge's own work rolls back — the outer JWSO save
+ *  stays intact and commits. Any failure is logged and swallowed: a JWSO must
+ *  never fail to save because of the bridge. Blank clientMaterial, a code that is
+ *  not in the Item Master, or an item that is not party-owned are all no-ops
+ *  (handled inside ensurePartyMaterialForClientItem). */
+async function bridgeClientMaterialToPartyStore(
+  tx: DbTransaction,
+  params: {
+    companyId: string;
+    clientId: string | null;
+    clientMaterial: string | null;
+    jwCode: string;
+    user: AuthContext;
+  },
+): Promise<void> {
+  const { companyId, clientId, clientMaterial, jwCode, user } = params;
+  if (!clientId || !clientMaterial || !clientMaterial.trim()) return;
+  try {
+    await tx.transaction(async (sp) => {
+      await ensurePartyMaterialForClientItem(sp, {
+        companyId,
+        clientId,
+        itemCode: clientMaterial,
+        user,
+      });
+    });
+  } catch (err) {
+    logger.warn(
+      { err, jwCode, clientMaterial },
+      'JWSO → Party Material bridge failed; JWSO saved without the party material',
+    );
+  }
 }
 
 // ─── Reads ────────────────────────────────────────────────────────────────
@@ -949,6 +991,16 @@ export async function createJobWorkOrder(
         user,
       );
 
+      // ADR-195: ensure the customer-material item has a party_materials record
+      // for this customer, in the same transaction as the JWSO save.
+      await bridgeClientMaterialToPartyStore(tx, {
+        companyId,
+        clientId: header.clientId,
+        clientMaterial: header.clientMaterial,
+        jwCode: header.code,
+        user,
+      });
+
       return {
         ...toJobWorkOrder(header),
         // A freshly created JWSO cannot have any Party GRNs yet.
@@ -1035,6 +1087,17 @@ export async function updateJobWorkOrder(
       .orderBy(asc(jobWorkOrderLines.lineNo));
 
     const updatedHdr = updatedHdrRows[0]!;
+
+    // ADR-195: keep the customer-material → party_materials bridge in step with
+    // the (possibly changed) client + clientMaterial, in the same transaction.
+    await bridgeClientMaterialToPartyStore(tx, {
+      companyId,
+      clientId: updatedHdr.clientId,
+      clientMaterial: updatedHdr.clientMaterial,
+      jwCode: updatedHdr.code,
+      user,
+    });
+
     const codeMap = await resolveItemCodesById(
       tx,
       lineRows.map((l) => l.itemId),

@@ -110,6 +110,11 @@ export type ItemSortField = z.infer<typeof itemSortFieldSchema>;
 export const listItemsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   itemType: itemTypeSchema.optional(),
+  /** ADR-195: when true, hide party-owned item types (Party Supplied Material)
+   *  from the list. The general "what are we making / selling / buying" line-item
+   *  pickers pass this so a customer's own material can't be chosen on a normal
+   *  line; the Item Master list and the JWSO Customer Material picker do not. */
+  excludePartyOwned: z.coerce.boolean().optional(),
   procurementType: itemProcurementTypeSchema.optional(),
   sortBy: itemSortFieldSchema.optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),

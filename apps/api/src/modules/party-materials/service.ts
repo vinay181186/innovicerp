@@ -20,8 +20,9 @@ import type {
   ReturnPartyMaterialInput,
   UpdatePartyMaterialInput,
 } from '@innovic/shared';
+import { ITEM_TYPE_RULES, type ItemType, PARTY_MATERIAL_UOMS } from '@innovic/shared';
 import { clients, items, jobWorkOrderLines, partyMaterials } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
@@ -68,6 +69,126 @@ export async function getNextPartyMaterialCode(user: AuthContext): Promise<{ cod
     const code = await nextPartyMaterialCode(tx, companyId);
     return { code };
   });
+}
+
+/** ADR-195 bridge — ensure a party_materials record exists for one customer +
+ *  one party-supplied item, so the Party GRN / QC / party-stock chain (ADR-194)
+ *  can attach to a JWSO's customer material.
+ *
+ *  Runs inside the CALLER's transaction (the JWSO save) and does NO permission
+ *  check of its own — the caller has already gated the write. It reuses the
+ *  PM-#### generator so party codes never diverge from the ones the master form
+ *  assigns.
+ *
+ *  Returns the id of the existing or newly-created party material, or null when
+ *  it cannot resolve (item code not found, not a party-supplied item, or the
+ *  customer is missing). The caller treats every outcome as best-effort — a JWSO
+ *  save must not fail because of the bridge.
+ *
+ *  Respects the (company, code) uniqueness (via the generator) and the
+ *  (company, item, client) index (via the existence check before insert).
+ *  Note there is NO DB-level unique on (company, item, client) — that shape is
+ *  an ordinary index — so this existence check is what keeps it single. */
+export async function ensurePartyMaterialForClientItem(
+  tx: DbTransaction,
+  params: { companyId: string; clientId: string; itemCode: string; user: AuthContext },
+): Promise<string | null> {
+  const { companyId, clientId, user } = params;
+  const code = params.itemCode.trim();
+  if (!code) return null;
+
+  // The picked item must exist in this company's Item Master AND be a
+  // party-owned type (ADR-195). Anything else is left alone.
+  const itemRows = await tx
+    .select({
+      id: items.id,
+      code: items.code,
+      name: items.name,
+      uom: items.uom,
+      itemType: items.itemType,
+    })
+    .from(items)
+    .where(and(eq(items.companyId, companyId), eq(items.code, code), isNull(items.deletedAt)))
+    .limit(1);
+  const item = itemRows[0];
+  if (!item) return null;
+  if (!ITEM_TYPE_RULES[item.itemType as ItemType]?.partyOwned) return null;
+
+  // Concurrency guard: there is NO DB unique on (company, item, client), so two
+  // concurrent JWSO saves for the same trio could both pass the existence SELECT
+  // below and both INSERT, leaving duplicate PM- rows. A transaction-scoped
+  // advisory lock keyed on a stable hash of (company, client, item) serialises
+  // the bridge for that trio — the second caller blocks here, then sees the first
+  // caller's row in the existence check and reuses it. The lock releases
+  // automatically when the (JWSO) transaction commits or rolls back.
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${companyId}:${clientId}:${item.id}`}, 0))`,
+  );
+
+  // Already bridged for this (company, item, client)? Reuse it.
+  const existing = await tx
+    .select({ id: partyMaterials.id })
+    .from(partyMaterials)
+    .where(
+      and(
+        eq(partyMaterials.companyId, companyId),
+        eq(partyMaterials.itemId, item.id),
+        eq(partyMaterials.clientId, clientId),
+        isNull(partyMaterials.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (existing[0]) return existing[0].id;
+
+  // Snapshot the client's code (mirrors createPartyMaterial's client_code_text).
+  const clientRows = await tx
+    .select({ id: clients.id, code: clients.code })
+    .from(clients)
+    .where(and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)))
+    .limit(1);
+  const cl = clientRows[0];
+  if (!cl) return null;
+
+  const pmCode = await nextPartyMaterialCode(tx, companyId);
+  // The party store only knows the coarse UOM set (NOS/KG/MTR/SET/LOT); map the
+  // item's UOM onto it, falling back to NOS when it is not one of those.
+  const uom = (PARTY_MATERIAL_UOMS as readonly string[]).includes(item.uom) ? item.uom : 'NOS';
+
+  const inserted = await tx
+    .insert(partyMaterials)
+    .values({
+      companyId,
+      code: pmCode,
+      name: item.name,
+      description: null,
+      material: null,
+      uom,
+      clientId: cl.id,
+      clientCodeText: cl.code,
+      itemId: item.id,
+      itemCodeText: item.code,
+      stockQty: 0,
+      issuedQty: 0,
+      receivedQty: 0,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning({ id: partyMaterials.id });
+  const row = inserted[0];
+  if (!row) return null;
+
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'Party Material',
+      detail: `${pmCode} — ${item.name} (auto-created from JWSO customer material)`,
+      refId: pmCode,
+    },
+    companyId,
+    user,
+  );
+  return row.id;
 }
 
 export async function listPartyMaterials(
