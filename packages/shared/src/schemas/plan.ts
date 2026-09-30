@@ -212,6 +212,10 @@ export const listPlansResponseSchema = z.object({
        *  row has no SO line behind it (a job-work line, a hand-raised card).
        *  Read-only: the Sales Order is the only place it is typed. */
       clientPoLineNo: z.string().nullable().default(null),
+      /** The Due Date of the SO / JWSO line this plan is for — the date the
+       *  customer wants it (shown as "Customer Dispatch Date" on Create Production
+       *  Order). Read live, null on an ad-hoc plan. */
+      lineDueDate: z.string().nullable().default(null),
       itemName: z.string().nullable(),
       opsCount: z.number().int().nonnegative(),
       /** Computed for `opsSource='route_card'` plans, null for old plans (they

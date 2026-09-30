@@ -1,6 +1,7 @@
 // Create Production Order (ADR-170, ADR-182): Plan + Route Card + Order Qty +
-// Customer Dispatch Date (labelled so on screen; the wire field stays
-// `targetDate`) → Create JC.
+// PRO Target Date (owner label 2026-09-30, was "Customer Dispatch Date"; the
+// wire field stays `targetDate`) → Create JC. The customer's own date shows
+// read-only as "Customer Dispatch Date" in the plan summary.
 //
 // ADR-182 added three things to this screen:
 //   • Order Qty — a plan may be covered by SEVERAL orders now (50 = 20+20+10),
@@ -111,8 +112,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const onPickPlan = (p: PlanPickerItem | null): void => {
     setPlan(p);
     setRouteCardId(null);
-    // Customer Dispatch Date on the plan is the PO's date; an older plan
-    // without one falls back to its Planned End, as before.
+    // PRO Target Date starts at the plan's Customer Dispatch Date; an older
+    // plan without one falls back to its Planned End, as before.
     setTargetDate(p?.customerDispatchDate ?? p?.plannedEndDate ?? '');
     // ADR-182 — the usual answer is "all that is left", so Order Qty starts at
     // the plan's Pending and the user only types when ordering less.
@@ -200,7 +201,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
         : directPurchase
           ? 'Buy item — no Production Order.'
           : !targetDate
-            ? 'Customer Dispatch Date is required.'
+            ? 'PRO Target Date is required.'
             : orderQtyError
               ? orderQtyError
               : !rawMaterialAvailable
@@ -306,7 +307,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
       ) : null}
 
       <Panel title="Production Order Details">
-        {/* 12-column grid: PO No · Plan · Customer Dispatch Date, the plan
+        {/* 12-column grid: PO No · Plan · PRO Target Date, the plan
             recap, then Route Card · Order Qty · Actual Size, the raw material
             confirmation and Remarks. */}
         <div className="form-grid-12">
@@ -335,7 +336,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
 
           <div className="form-grp f-sm">
             <label className="form-label" htmlFor="po-target-date">
-              Customer Dispatch Date<span className="req">★</span>
+              PRO Target Date<span className="req">★</span>
             </label>
             <input
               id="po-target-date"
@@ -558,6 +559,9 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
         <Fact label="Covered" value={String(plan.coveredQty)} mono />
         <Fact label="Pending" value={String(plan.pendingQty)} mono />
         <Fact label="SO / JWSO No." value={so} mono />
+        {/* The customer's wanted date — the SO / JWSO line's Due Date, read-only
+            here; the PRO Target Date above is this order's own date. */}
+        <Fact label="Customer Dispatch Date" value={fmtDate(plan.lineDueDate)} mono />
         <Fact label="Planned Start Date" value={fmtDate(plan.plannedStartDate)} mono />
         <Fact label="Planned End Date" value={fmtDate(plan.plannedEndDate)} mono />
         <Fact label="RM Grade" value={plan.rawMaterialGradeText ?? '—'} />
