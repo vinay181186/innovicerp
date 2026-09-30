@@ -66,7 +66,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/so-overview', label: 'SO Overview', icon: '📊' },
           { to: '/so-status', label: 'SO Status Detail', icon: '📊' },
           { to: '/assemblies', label: 'Assembly Tracker', icon: '📦' },
-          { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
+          { to: '/plans', label: 'Plans Available for Production', icon: '📋', formKey: 'plan_create' },
         ],
       },
       {
@@ -165,9 +165,9 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Master',
         items: [
           // In the order the work flows: a plan becomes a Production Order,
-          // which becomes a Job Card. Plans also stays under Planning; one
-          // screen, one name (wording clean-up 2026-09-26).
-          { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
+          // which becomes a Job Card. Same screen and same name under Planning
+          // (owner decision 2026-09-30: "Plans Available for Production" in both menus).
+          { to: '/plans', label: 'Plans Available for Production', icon: '📋', formKey: 'plan_create' },
           { to: '/production-orders', label: 'Production Orders', icon: '🏭', formKey: 'prodorder_create' },
           { to: '/job-cards', label: 'Job Cards', icon: '▭', formKey: 'jc_create' },
           { to: '/machines', label: 'Machine Master', icon: '⚙', formKey: 'machine_create' },
