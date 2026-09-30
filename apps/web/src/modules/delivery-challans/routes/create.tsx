@@ -343,7 +343,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
   return (
     <>
       <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
-        Pick a PO — its lines load below.
+        Pick a PO.
       </div>
 
       <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
@@ -745,7 +745,6 @@ function PoDcFormBody({
           className="btn btn-ghost btn-sm"
           onClick={fillAllPending}
           disabled={!sendable}
-          title="Put each line's “Can send now” quantity into its Send Now box"
         >
           Fill all pending
         </button>
@@ -988,10 +987,6 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
 
   return (
     <>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
-        Shows NCs set to Return to Vendor with no challan yet.
-      </div>
-
       <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
         <label className="form-label" htmlFor="dc-nc-search">
           Search this list

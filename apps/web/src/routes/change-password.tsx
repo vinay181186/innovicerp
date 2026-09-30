@@ -110,8 +110,7 @@ function ChangePasswordPage(): React.JSX.Element {
       ) : (
         <div className="panel" style={{ padding: 20 }}>
           <div className="text2" style={{ fontSize: 12, marginBottom: 14 }}>
-            Signed in as <span className="fw-700">{me?.email ?? '—'}</span>. Enter your current
-            password, then choose a new one.
+            Signed in as <span className="fw-700">{me?.email ?? '—'}</span>.
           </div>
           <form onSubmit={form.handleSubmit((v) => void onSubmit(v))} style={{ display: 'grid', gap: 14 }}>
             <Field

@@ -302,12 +302,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
       <Panel>
         <FormGrid>
           {/* ── Row 1: PR Type · PR No. · PR Date */}
-          <FormField
-            label="PR Type"
-            size="md"
-            htmlFor="prType"
-            help={isEdit ? undefined : 'Service = work done outside (DC out).'}
-          >
+          <FormField label="PR Type" size="md" htmlFor="prType">
             {/* What this PR is FOR, and therefore what the PO it becomes can do:
                 standard ends in a GRN (goods in), service sends the item out on
                 a DC and receives it back (the job-work chain). 'jw_osp' is NOT

@@ -451,19 +451,17 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                     id="operatorText"
                     className="innovic-input"
                     autoComplete="off"
-                    placeholder="Operator who ran the op"
                     {...register('operatorText')}
                   />
                 </div>
                 <div className="form-grp">
                   <label className="form-label" htmlFor="machineCodeText">
-                    Machine
+                    Actual Machine
                   </label>
                   <input
                     id="machineCodeText"
                     className="innovic-input"
                     autoComplete="off"
-                    placeholder="Machine"
                     {...register('machineCodeText')}
                   />
                 </div>
@@ -532,7 +530,6 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                 id="reason"
                 className="innovic-textarea"
                 rows={3}
-                placeholder="Describe the defect or problem in detail..."
                 {...register('reason', {
                   validate: (v) => (v?.trim().length ?? 0) > 0 || 'Defect Description is required.',
                 })}

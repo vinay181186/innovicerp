@@ -483,7 +483,7 @@ function JobCardsListPage(): React.JSX.Element {
         },
       },
       {
-        header: 'SO No.',
+        header: 'SO / JWSO No.',
         nowrap: true,
         render: (jc) => {
           const s = jc.sourceLink;

@@ -22,7 +22,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
 import {
   useDeliveryChallan,
@@ -435,9 +434,9 @@ export function GrnAgainstDcForm({
           decimal={lines.some((l) => !isWholeNumberUom(l.uom))}
           emptyText={
             !jwpoId && !dcId
-              ? 'Pick a DC (or a JW PO, then one of its DCs) to load its lines.'
+              ? 'Select a DC'
               : !dcId
-                ? 'Pick a DC to load its lines.'
+                ? 'Select a DC'
                 : !dc
                   ? 'Loading challan lines…'
                   : 'Every line on this DC is already received.'

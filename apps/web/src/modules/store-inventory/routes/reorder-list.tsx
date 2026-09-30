@@ -127,11 +127,6 @@ function ReorderListPage(): React.JSX.Element {
           ) : null
         }
       />
-      <div className="text3" style={{ fontSize: 12, margin: '0 0 8px' }}>
-        Items whose Available + On PO is under the Reorder Level. Each ticked item gets one Purchase
-        Request (Open — approved as usual). Set the levels with the Reorder button on Store
-        Inventory.
-      </div>
       {result ? (
         <div className="panel" style={{ marginBottom: 10 }}>
           <div className="panel-body" style={{ fontSize: 12 }}>
@@ -179,7 +174,9 @@ function ReorderListPage(): React.JSX.Element {
                   <th>UOM</th>
                   <th className="th-num">Available</th>
                   <th className="th-num">On PO</th>
-                  <th className="th-num">Reorder Level</th>
+                  <th className="th-num" title="Listed when Available + On PO is under this level">
+                    Reorder Level
+                  </th>
                   <th className="th-num">Reorder Qty</th>
                   <th className="th-num">PR Qty</th>
                   <th>Vendor</th>

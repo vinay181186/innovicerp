@@ -406,7 +406,7 @@ function OperationView({
         <span className="panel-title">
           {selMachineCode
             ? `${selMachineCode} — Job Queue`
-            : 'All Open Operations — sorted by Priority → Due Date'}
+            : 'All Open Operations'}
         </span>
         <span className="mono" style={{ color: 'var(--amber2)', fontSize: 12 }}>
           {ops.length} ops

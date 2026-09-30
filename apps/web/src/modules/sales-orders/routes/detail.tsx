@@ -264,9 +264,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
             })
           }
         >
-          SO {detail.code} was saved, but the {uploadFailed} did not upload. Upload it again here —
-          Client PO with the Upload button just below, Email Reference with Upload Document under SO
-          Documents.
+          SO {detail.code} was saved but {uploadFailed} did not upload. Re-upload it below.
         </Banner>
       ) : null}
 

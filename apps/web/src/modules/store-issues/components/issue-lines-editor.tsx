@@ -107,7 +107,7 @@ export function IssueLinesEditor({
             {lines.length === 0 ? (
               <tr>
                 <td colSpan={5} className="empty-state">
-                  No items yet — fill from the material list above or add an item below.
+                  No items yet.
                 </td>
               </tr>
             ) : null}

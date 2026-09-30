@@ -155,7 +155,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
             htmlFor="raise-pr-qty"
             style={{ color: 'var(--purple)', fontWeight: 700, fontSize: 14 }}
           >
-            Qty ★
+            PR Qty ★
           </label>
           <input
             id="raise-pr-qty"
@@ -202,7 +202,6 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
           maxLength={500}
           value={remarks}
           onChange={(e) => setRemarks(e.target.value)}
-          placeholder="Notes for Purchase"
           style={{ width: '100%', resize: 'vertical' }}
         />
       </div>

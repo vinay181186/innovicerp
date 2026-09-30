@@ -21,7 +21,7 @@ export const vendorPoSummaryReport: RegisteredReport = {
       { key: 'toDate', label: 'PO Date To', kind: 'date' },
     ],
     columns: [
-      { key: 'vendor_code', label: 'Code', type: 'text' },
+      { key: 'vendor_code', label: 'Vendor Code', type: 'text' },
       { key: 'vendor_name', label: 'Vendor', type: 'text' },
       { key: 'po_count', label: 'PO Count', type: 'number' },
       { key: 'open_count', label: 'Open / Partial', type: 'number' },

@@ -50,8 +50,8 @@ export function ReorderModal({
   return (
     <ModalShell onClose={onClose} title={`Reorder — ${row.itemCode}`}>
       <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
-        Below Reorder shows when Available + On PO is under the Reorder Level. 0 = off. Available
-        now <b className="mono">{row.availableQty}</b>, On PO <b className="mono">{row.onPoQty}</b>.
+        0 = off. Available now <b className="mono">{row.availableQty}</b>, On PO{' '}
+        <b className="mono">{row.onPoQty}</b>.
       </div>
       <div className="form-grid">
         <div className="form-grp">

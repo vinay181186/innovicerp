@@ -264,7 +264,7 @@ export function JcViewSummary({
           >
             <div style={{ marginTop: 6, fontSize: 12.5, lineHeight: 1.5 }}>
               <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
-                <span style={{ color: 'var(--text3)', flexShrink: 0 }}>Material:</span>
+                <span style={{ color: 'var(--text3)', flexShrink: 0 }}>RM Grade:</span>
                 <span
                   className="mono fw-700"
                   style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
@@ -274,7 +274,7 @@ export function JcViewSummary({
                 </span>
               </div>
               <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
-                <span style={{ color: 'var(--text3)', flexShrink: 0 }}>Size:</span>
+                <span style={{ color: 'var(--text3)', flexShrink: 0 }}>RM Size:</span>
                 <span
                   className="mono fw-700"
                   style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}

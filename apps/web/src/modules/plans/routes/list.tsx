@@ -357,7 +357,7 @@ function Table({
                     number (that stays in the SO column as "Ln"). */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
-                <th>SO No.</th>
+                <th>SO / JWSO No.</th>
                 <th className="th-num">Order Qty</th>
                 <th className="th-num">Plan Qty</th>
                 <th>Production Order No.</th>

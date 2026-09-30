@@ -847,7 +847,7 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                 <th>Raised By</th>
                 <th>Assigned To</th>
                 <th>Raised Date</th>
-                <th>Age</th>
+                <th>Days Open</th>
                 {canEdit ? <th></th> : null}
               </tr>
             </thead>
@@ -1531,8 +1531,7 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                 {fDcrs.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="empty-state">
-                      No DCRs yet. Create a Design Change Request when a post-release change is
-                      needed.
+                      No DCRs yet.
                     </td>
                   </tr>
                 ) : (

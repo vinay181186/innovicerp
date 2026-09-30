@@ -123,8 +123,7 @@ const PROCUREMENT_OPTIONS = ITEM_PROCUREMENT_TYPES.map((t) => ({
   label: ITEM_PROCUREMENT_TYPE_LABEL[t],
 }));
 
-const SOURCE_HELP =
-  'Make = planned & produced (Plan → Production Order → Route Card). Buy = purchased finished (+ PR from the Planning line).';
+const SOURCE_HELP = 'Make = produced in-house; Buy = purchased from a vendor.';
 
 const TRACK_SERIAL_LABEL =
   'Track by Serial No. (instruments — one register row per piece, calibration)';
@@ -331,7 +330,6 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             <Input
               id="name"
               autoComplete="off"
-              placeholder="Full item name"
               {...register('name')}
             />
           </FormField>
@@ -345,7 +343,6 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             <Input
               id="description"
               autoComplete="off"
-              placeholder="Short description"
               {...register('description')}
             />
           </FormField>
@@ -488,7 +485,6 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             <Input
               id="name"
               autoComplete="off"
-              placeholder="Full item name"
               {...register('name')}
             />
           </FormField>
@@ -502,7 +498,6 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             <Input
               id="description"
               autoComplete="off"
-              placeholder="Short description"
               {...register('description')}
             />
           </FormField>

@@ -339,7 +339,6 @@ function ClientFields(props: {
               className="innovic-input"
               autoFocus={props.autoFocusName}
               autoComplete="off"
-              placeholder="Full company name"
               {...register('name')}
             />
           </FormField>
@@ -367,7 +366,6 @@ function ClientFields(props: {
               id="addressLine1"
               className="innovic-input"
               autoComplete="off"
-              placeholder="Street address"
               {...register('addressLine1')}
             />
           </FormField>
@@ -421,7 +419,6 @@ function ClientFields(props: {
               id="contactPerson"
               className="innovic-input"
               autoComplete="off"
-              placeholder="Contact name"
               {...register('contactPerson')}
             />
           </FormField>
@@ -497,7 +494,7 @@ function PaymentDaysField(props: {
       size="md"
       htmlFor="paymentDays"
       error={props.error}
-      help="Days the customer has to pay an invoice. Blank = not set."
+      help="Blank = not set."
     >
       <input
         id="paymentDays"

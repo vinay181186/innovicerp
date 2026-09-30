@@ -442,7 +442,6 @@ function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element 
                   <tr
                     key={`${r.soLineId}-${r.jobCardId ?? 'nojc'}`}
                     style={{ cursor: r.jobCardId ? 'pointer' : 'default' }}
-                    title={r.jobCardId ? 'Click to view/upload QC documents' : undefined}
                     onClick={() => r.jobCardId && setDetailJcId(r.jobCardId)}
                   >
                     <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>

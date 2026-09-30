@@ -102,8 +102,8 @@ export function RegisterInstrumentModal({
         </div>
         <div className="modal-body">
           <div className="text3" style={{ fontSize: 11, marginBottom: 10 }}>
-            Registering does not move stock — it names a piece already received by GRN or Stock
-            Count. One row per piece.
+            Registering does not move stock — the piece must already be received by GRN or Stock
+            Count.
           </div>
           <div className="form-grid">
             <div className="form-grp form-full">

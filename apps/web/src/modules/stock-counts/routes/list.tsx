@@ -138,7 +138,7 @@ function StockCountsListPage(): React.JSX.Element {
                 {(data?.items ?? []).length === 0 ? (
                   <tr>
                     <td colSpan={8} className="empty-state">
-                      No stock counts yet — start with an Opening Stock count.
+                      No stock counts yet.
                     </td>
                   </tr>
                 ) : null}

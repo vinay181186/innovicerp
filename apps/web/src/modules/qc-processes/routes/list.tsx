@@ -282,15 +282,6 @@ function QcProcessesListPage(): React.JSX.Element {
             }
           />
 
-          {/* What this master is for. It sits ABOVE the sheet, not in the
-              ListFooter hint, because it is read once before the first row is
-              created — not a hint about operating the list. */}
-          <Panel>
-            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
-              QC checks used as operations on Route Cards and Job Cards.
-            </span>
-          </Panel>
-
           {/* Why a banner and not a toast: the delete is refused for a reason the
           user has to act on (retire it as Inactive instead), and that sentence
           names the documents holding it. It stays on screen until the next

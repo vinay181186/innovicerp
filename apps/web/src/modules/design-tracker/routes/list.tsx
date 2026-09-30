@@ -171,7 +171,7 @@ function DesignTrackerListPage(): React.JSX.Element {
                   <th>Item Code</th>
                   <th>Design Engineer</th>
                   <th>Start Date</th>
-                  <th>Target Date</th>
+                  <th>Due Date</th>
                   <th>Design Status</th>
                   <th className="td-ctr">Design Rev</th>
                   <th className="td-ctr">Hours</th>
@@ -440,7 +440,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
       return;
     }
     if (!targetDate) {
-      setErr('Target Date is required.');
+      setErr('Due Date is required.');
       return;
     }
     const input: CreateDesignTrackerInput = {
@@ -535,7 +535,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
             onChange={(e) => setStartDate(e.target.value)}
           />
         </Field>
-        <Field label="Target Date" req>
+        <Field label="Due Date" req>
           <input
             type="date"
             className="innovic-input"
@@ -660,7 +660,7 @@ function EditDesignModal({
             onChange={(e) => setEstHours(e.target.value)}
           />
         </Field>
-        <Field label="Target Date">
+        <Field label="Due Date">
           <input
             type="date"
             className="innovic-input"

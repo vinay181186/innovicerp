@@ -1,6 +1,6 @@
 // New Invoice — pick an SO, then add invoice lines (card-per-line, like the
 // dispatch editor). Type an item code to pick from the SO's invoiceable lines;
-// Item Name + Order/Dispatched/Invoiced/Available auto-fill. Invoice up to the
+// Item Name + Order/Dispatched/Billed/Available auto-fill. Invoice up to the
 // available (dispatched − invoiced) qty per line.
 // `?dispatchId=` (Create Invoice button on the Dispatch Register) preselects the
 // dispatch's SO and prefills the lines from that dispatch.
@@ -256,7 +256,7 @@ function InvoiceNewPage(): React.JSX.Element {
     return o ? `${o.code} — ${o.name}` : undefined;
   }, [soOptions, soId]);
 
-  // ▸ More — the reference quantities (Order / Dispatched / Invoiced) per card.
+  // ▸ More — the reference quantities (Order / Dispatched / Billed) per card.
   const [openMore, setOpenMore] = useState<ReadonlySet<number>>(new Set());
   const toggleMore = (id: number): void =>
     setOpenMore((prev) => {
@@ -314,17 +314,19 @@ function InvoiceNewPage(): React.JSX.Element {
 
       <Panel title="Invoice Details">
         {fromDispatch && fromDispatch.status !== 'cancelled' ? (
-          <div
-            style={{
-              background: 'var(--bg3)',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              padding: '8px 12px',
-              marginBottom: 12,
-            }}
-          >
-            Invoicing Dispatch <b style={{ color: 'var(--cyan)' }}>{fromDispatch.code}</b> — SO and
-            quantities filled from it.
+          <div style={{ marginBottom: 12 }}>
+            <span
+              style={{
+                display: 'inline-block',
+                background: 'var(--bg3)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '4px 10px',
+                fontSize: 'var(--fs-xs)',
+              }}
+            >
+              From Dispatch <b style={{ color: 'var(--cyan)' }}>{fromDispatch.code}</b>
+            </span>
           </div>
         ) : null}
         <FormGrid>
@@ -449,7 +451,6 @@ function InvoiceNewPage(): React.JSX.Element {
             <input
               id="invoiceRemarks"
               className="innovic-input"
-              placeholder="Notes..."
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
             />
@@ -484,7 +485,7 @@ function InvoiceNewPage(): React.JSX.Element {
                 Item Code<span className="req">★</span>
               </span>
               <span>Item Name</span>
-              <span style={{ textAlign: 'right', color: 'var(--amber2)' }}>Pending</span>
+              <span style={{ textAlign: 'right', color: 'var(--amber2)' }}>To Invoice</span>
               <span style={{ textAlign: 'right', color: 'var(--green2)' }}>
                 Invoice Qty<span className="req">★</span>
               </span>
@@ -618,7 +619,7 @@ function InvoiceNewPage(): React.JSX.Element {
                   type="button"
                   className="btn btn-ghost btn-sm"
                   aria-expanded={moreOpen}
-                  title="Order, Dispatched and Invoiced qty for this line"
+                  title="Order, Dispatched and Billed qty for this line"
                   onClick={() => toggleMore(card.id)}
                 >
                   {moreOpen ? '▾' : '▸ More'}
@@ -650,7 +651,7 @@ function InvoiceNewPage(): React.JSX.Element {
                       Dispatched <b className="mono green">{line ? line.dispatchedQty : '—'}</b>
                     </span>
                     <span>
-                      Invoiced <b className="mono text2">{line ? line.invoicedQty : '—'}</b>
+                      Billed <b className="mono text2">{line ? line.invoicedQty : '—'}</b>
                     </span>
                   </div>
                 ) : null}
@@ -685,7 +686,7 @@ function InvoiceNewPage(): React.JSX.Element {
                 <b className="mono fw-700 amber">₹{inrFormat(gstSplit.cgst)}</b>
               </>
             )}
-            <span className="text3">Total</span>
+            <span className="text3">Grand Total</span>
             <b className="mono fw-700 green">₹{inrFormat(grand)}</b>
           </div>
         </Panel>

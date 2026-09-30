@@ -477,7 +477,7 @@ function JwDocumentsPanel(props: {
             ) : files.length === 0 ? (
               <tr>
                 <td colSpan={5} className="empty-state">
-                  No documents yet. Upload a Client PO with the Upload button above.
+                  No documents yet.
                 </td>
               </tr>
             ) : (
@@ -712,7 +712,7 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
         }
       />
       <StripItem label="Customer Material" value={detail.clientMaterial ?? '—'} />
-      <StripItem label="Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
+      <StripItem label="Customer Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
       <div style={{ flex: '1 1 240px', minWidth: 200 }}>
         <span className="form-label">Remarks</span>
         <div style={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>

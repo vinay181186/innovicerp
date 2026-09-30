@@ -447,7 +447,6 @@ function ProductionOrderNewPage(): React.JSX.Element {
               value={actualSize}
               maxLength={120}
               onChange={(e) => setActualSize(e.target.value)}
-              placeholder="size actually cut"
             />
           </div>
 

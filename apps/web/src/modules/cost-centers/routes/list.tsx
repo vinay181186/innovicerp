@@ -129,7 +129,7 @@ function CostCentersListPage(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<CostCenter>[]>(
     () => [
       {
-        header: 'Code',
+        header: 'Cost Centre Code',
         width: '11%',
         nowrap: true,
         // A real link, so the code can be ctrl/middle-clicked into a new tab.
@@ -149,7 +149,7 @@ function CostCentersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Name',
+        header: 'Cost Centre Name',
         width: '27%',
         align: 'left',
         className: 'fw-700',

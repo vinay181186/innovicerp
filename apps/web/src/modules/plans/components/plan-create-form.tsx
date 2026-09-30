@@ -100,7 +100,7 @@ export function PlanCreateForm({
       (so?.lines ?? []).map((l) => ({
         id: l.soLineId,
         code: `Ln ${l.lineNo}${l.clientPoLineNo ? ` · POL ${l.clientPoLineNo}` : ''}`,
-        name: `${itemCodeWithRev(l.itemCode, l.itemRevision, l.itemName ?? '')} · Pending to Plan ${l.remaining}`,
+        name: `${itemCodeWithRev(l.itemCode, l.itemRevision, l.itemName ?? '')} · To Plan ${l.remaining}`,
       })),
     [so],
   );
@@ -201,7 +201,6 @@ export function PlanCreateForm({
       <PageHeader
         title="New Plan"
         icon="📅"
-        subtitle="Same plan as SO Planning “+ Plan” — operations come from the item's Route Card"
         backLabel="Back to Plans"
         onBack={onCancel}
         sticky
@@ -308,7 +307,7 @@ export function PlanCreateForm({
                   {line.totalPlanned}
                 </b>
               </Fact>
-              <Fact label="Pending to Plan">
+              <Fact label="To Plan">
                 <b className="mono" style={{ color: 'var(--green2)' }}>
                   {line.remaining}
                 </b>
@@ -419,23 +418,19 @@ export function PlanCreateForm({
                   maxLength={500}
                   value={remarks}
                   onChange={(e) => edit(setRemarks)(e.target.value)}
-                  placeholder="Planning notes, special instructions"
                 />
               </Field>
             </div>
           </div>
-          <div className="panel">
-            <div className="panel-body text3" style={{ fontSize: 12 }}>
-              Operations come from the item&apos;s Route Card — create a Production Order after
-              saving to build the Job Card.
-              {defaultOps && !hasRouteCard ? (
+          {defaultOps && !hasRouteCard ? (
+            <div className="panel">
+              <div className="panel-body text3" style={{ fontSize: 12 }}>
                 <span style={{ color: 'var(--amber2)' }}>
-                  {' '}
                   This item has no Route Card yet — make one before the Production Order.
                 </span>
-              ) : null}
+              </div>
             </div>
-          </div>
+          ) : null}
         </>
       ) : null}
     </div>

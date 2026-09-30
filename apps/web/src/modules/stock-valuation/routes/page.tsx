@@ -119,7 +119,7 @@ function StockValuationPage(): React.JSX.Element {
           items={[
             {
               key: 'all',
-              label: 'All Categories',
+              label: 'All Item Types',
               count: priceHidden ? data.grandItems : inr(data.grandTotal),
               color: 'var(--cyan)',
               sub: `${data.grandStockItems} / ${data.grandItems} items in stock`,
@@ -146,7 +146,7 @@ function StockValuationPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Category</th>
+                <th>Item Type</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>UOM</th>

@@ -36,7 +36,7 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
               <thead>
                 {/* Legacy L18897 colours none of these headers. */}
                 <tr>
-                  <th>Inspector</th>
+                  <th>Inspected By</th>
                   <th className="th-num">Inspections</th>
                   <th className="th-num">JCs</th>
                   <th className="th-num">Accepted</th>

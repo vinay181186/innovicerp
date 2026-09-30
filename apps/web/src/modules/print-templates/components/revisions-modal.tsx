@@ -54,7 +54,6 @@ export function RevisionsModal({ templateKey, blockName, onClose, onRestore }: P
         </div>
         <div style={{ padding: 16 }}>
           <div className="text3" style={{ fontSize: 11, marginBottom: 10 }}>
-            Showing the {items.length} most recent version{items.length === 1 ? '' : 's'} (max 5).
             Restore loads that version into the editor — you still need to Save it.
           </div>
           {isLoading ? (

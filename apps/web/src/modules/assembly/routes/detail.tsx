@@ -157,9 +157,6 @@ function AssemblyDetailPage(): React.JSX.Element {
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-hdr">
           <div className="panel-title">Material</div>
-          <span className="text3" style={{ fontSize: 11 }}>
-            Parts come from the store by Item Issue against this SO.
-          </span>
         </div>
         <div className="panel-body">
           <SoMaterialPanel salesOrderId={soId} />
@@ -169,9 +166,6 @@ function AssemblyDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title">Start Assembly</div>
-          <span className="text3" style={{ fontSize: 11 }}>
-            Start units, then Complete each batch.
-          </span>
         </div>
         <div className="panel-body" style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
           <div>
@@ -531,7 +525,7 @@ function ComponentsPanel({
               <th>BOM Type</th>
               {/* Qty/Set + Stock have no legacy counterpart — kept (live system). */}
               <th>Qty / Set</th>
-              <th>Need</th>
+              <th>Required</th>
               <th>Stock</th>
               <th>In Assembly</th>
               <th>Assembled</th>

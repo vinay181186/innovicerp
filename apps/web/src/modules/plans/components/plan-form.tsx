@@ -790,8 +790,6 @@ export function PlanForm({
         <div className="panel">
           <div className="panel-body">
             <div className="text3" style={{ fontSize: 12 }}>
-              Operations come from the item's Route Card. Create a Production Order to build the Job
-              Card.{' '}
               <Link
                 to="/production-orders/new"
                 // Open the form on THIS plan (same search the Plans list

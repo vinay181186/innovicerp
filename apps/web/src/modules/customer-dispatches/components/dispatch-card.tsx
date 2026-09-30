@@ -159,7 +159,6 @@ export function DispatchCard(props: {
                   search={{ dispatchId: g.dispatchId }}
                   className="btn btn-ghost btn-sm"
                   style={{ color: 'var(--green2)' }}
-                  title="Raise an invoice against this dispatch"
                 >
                   🧾 Invoice
                 </Link>

@@ -246,9 +246,6 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                       }
                     />
                   )}
-                  <div className="form-help">
-                    Pieces go back to the chosen operation for rework.
-                  </div>
                 </div>
               ) : null}
 

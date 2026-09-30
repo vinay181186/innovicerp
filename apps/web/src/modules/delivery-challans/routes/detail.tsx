@@ -431,7 +431,6 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
               to="/nc-register/$id"
               params={{ id: dc.ncId }}
               className="badge b-red"
-              title="Open the non-conformance this challan returns pieces for"
             >
               {dc.ncCode ?? dc.poCodeText}
             </Link>

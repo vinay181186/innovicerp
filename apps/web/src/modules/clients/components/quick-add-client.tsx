@@ -103,7 +103,6 @@ export function QuickAddClient({
     id: string,
     value: string,
     set: (v: string) => void,
-    placeholder = 'Optional',
   ): React.JSX.Element => (
     <input
       id={`${formId}-${id}`}
@@ -111,7 +110,6 @@ export function QuickAddClient({
       autoComplete="off"
       value={value}
       onChange={(e) => set(e.target.value)}
-      placeholder={placeholder}
     />
   );
 
@@ -186,7 +184,6 @@ export function QuickAddClient({
               setName(e.target.value);
               setExisting(null);
             }}
-            placeholder="Company / customer name"
           />
         </FormField>
         <FormField label="Contact Person" htmlFor={`${formId}-contact`}>

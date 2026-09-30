@@ -225,7 +225,7 @@ function MachineFacts(props: { machine: Machine }): React.JSX.Element {
       <ReadField label="Product Code" size="md" mono value={machine.productCode} />
 
       <ReadField
-        label="Capacity / Shift (hrs)"
+        label="Hours per Shift"
         size="lg"
         mono
         value={machine.capacityPerShift !== null ? String(machine.capacityPerShift) : null}

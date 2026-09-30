@@ -321,7 +321,7 @@ function PlanDetailPage(): React.JSX.Element {
             </Grid>
           ) : null}
 
-          {fromRouteCard ? (
+          {fromRouteCard && perms.entry && plan.planStatus === 'planned' && !plan.jcId ? (
             <div
               className="text3"
               style={{
@@ -333,18 +333,14 @@ function PlanDetailPage(): React.JSX.Element {
                 fontSize: 12,
               }}
             >
-              Operations come from the item's Route Card. Create a Production Order to build the Job
-              Card.{' '}
-              {perms.entry && plan.planStatus === 'planned' && !plan.jcId ? (
-                <Link
-                  to="/production-orders/new"
-                  // Open the form on THIS plan (same search the Plans list sends).
-                  search={{ planId: plan.id, planCode: plan.code }}
-                  style={{ color: 'var(--cyan)', fontWeight: 600 }}
-                >
-                  Create Production Order →
-                </Link>
-              ) : null}
+              <Link
+                to="/production-orders/new"
+                // Open the form on THIS plan (same search the Plans list sends).
+                search={{ planId: plan.id, planCode: plan.code }}
+                style={{ color: 'var(--cyan)', fontWeight: 600 }}
+              >
+                Create Production Order →
+              </Link>
             </div>
           ) : null}
 

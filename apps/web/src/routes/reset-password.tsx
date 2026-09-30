@@ -283,9 +283,6 @@ function ResetPasswordPage() {
           <>
             <div className="space-y-2">
               <h1 className="text-2xl font-semibold tracking-tight">Choose a new password</h1>
-              <p className="text-sm text-muted-foreground">
-                Enter a new password for your account.
-              </p>
             </div>
             <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
               <div className="space-y-2">

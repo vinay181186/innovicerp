@@ -148,7 +148,7 @@ export function PoHeaderBand({
           ) : null}
           {vendor?.gstNumber ? (
             <div style={{ fontSize: 11 }}>
-              <span className="text3">GSTIN/UIN </span>
+              <span className="text3">GSTIN </span>
               <span className="mono fw-700">{vendor.gstNumber}</span>
             </div>
           ) : null}

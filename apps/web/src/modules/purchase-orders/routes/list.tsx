@@ -471,14 +471,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         })
       )}
 
-      <ListFooter
-        total={total}
-        noun="purchase order"
-        limit={LIST_LIMIT}
-        hint={
-          view === 'list' && rows.length > 0 ? 'Click a row to open the purchase order.' : undefined
-        }
-      />
+      <ListFooter total={total} noun="purchase order" limit={LIST_LIMIT} />
     </div>
   );
 }

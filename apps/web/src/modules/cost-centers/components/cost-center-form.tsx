@@ -85,7 +85,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Code{!isEdit ? <span className="req">★</span> : null}
+            Cost Centre Code{!isEdit ? <span className="req">★</span> : null}
           </label>
           <input
             id="code"
@@ -103,7 +103,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="name">
-            Name<span className="req">★</span>
+            Cost Centre Name<span className="req">★</span>
           </label>
           <input
             id="name"
@@ -152,7 +152,6 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             id="description"
             className="innovic-input"
             autoComplete="off"
-            {...(isEdit ? {} : { placeholder: 'Brief description of this cost centre' })}
             {...register('description', {
               maxLength: {
                 value: 1000,

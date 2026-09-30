@@ -14,6 +14,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useStockReservations } from '@/modules/plans/api';
 import { ModalShell } from './modal-shell';
 
@@ -91,8 +92,10 @@ export function ReservationDrilldown({
                   {/* POL — the CUSTOMER's own purchase-order line number, an
                       extra value beside our SO line number. */}
                   <th style={{ color: 'var(--purple)' }}>POL</th>
-                  {/* REV — the drawing revision on that SO line. */}
-                  <th>REV</th>
+                  {/* CODE/REV — the item code with the customer's drawing
+                      revision on that SO line; the revision is never shown
+                      alone (NAMING section A). */}
+                  <th>CODE/REV</th>
                   <th>Customer</th>
                   <th className="th-num" style={{ color: 'var(--purple)' }}>
                     Reserved
@@ -137,7 +140,7 @@ export function ReservationDrilldown({
                       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                         {row.clientPoLineNo ?? '—'}
                       </td>
-                      <td className="mono fw-700">{row.itemRevision ?? '—'}</td>
+                      <td className="mono fw-700">{itemCodeWithRev(itemCode, row.itemRevision)}</td>
                       <td
                         style={{
                           maxWidth: 160,
@@ -196,9 +199,6 @@ export function ReservationDrilldown({
                 )}
               </tbody>
             </table>
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-            💡 Release a booking from the SO Planning screen — it asks for a reason.
           </div>
         </>
       )}

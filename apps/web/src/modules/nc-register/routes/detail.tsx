@@ -667,7 +667,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
             ) : null}
           </>
         ) : isReworkDisp ? (
-          <InlinePair label="Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
+          <InlinePair label="Actual Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
         ) : (
           <InlinePair label="Operation:">
             {/* Op numbers show in tens (display rule, see opSrNo). */}

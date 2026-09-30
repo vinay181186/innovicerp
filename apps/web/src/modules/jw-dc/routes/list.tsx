@@ -611,11 +611,6 @@ function NewOutwardModal({
         >
           For JWSO <span className="td-code">{forJw.code}</span>
           {forJw.customerName ? <> · {forJw.customerName}</> : null}
-          {forJwPos && forJwPos.length === 1
-            ? ' — the PO carrying this JWSO’s work is picked below.'
-            : forJwPos && forJwPos.length > 1
-              ? ` — ${forJwPos.length} POs carry this JWSO’s work; pick one below.`
-              : ' — pick the job-work PO that carries this JWSO’s work.'}
         </div>
       ) : null}
       <div className="form-grid" style={{ marginBottom: 14 }}>
@@ -828,7 +823,6 @@ function NewOutwardModal({
               setTouched(true);
               setRemarks(e.target.value);
             }}
-            placeholder="Packing, handling notes..."
           />
         </div>
       </div>
@@ -956,10 +950,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
     >
       {/* ADR-189 — Incoming QC is the only inspector. The store records what
           came back; accept / reject happens at Incoming QC, as for DC Receive. */}
-      <Banner tone="info">
-        Enter only the quantity received. It goes to Incoming QC on a GRN (QC pending); QC accepts
-        it into stock or rejects it with an NC.
-      </Banner>
+      <Banner tone="info">Received qty goes to Incoming QC — no accept/reject here.</Banner>
       <div className="form-grid" style={{ marginBottom: 14 }}>
         <div className="form-grp">
           <label className="form-label">Inward No.</label>
@@ -1146,7 +1137,6 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             setTouched(true);
             setRemarks(e.target.value);
           }}
-          placeholder="Condition notes, issues..."
         />
       </div>
 

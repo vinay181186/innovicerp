@@ -168,7 +168,7 @@ export function NewPartyGrnModal({
       }
       if (!pmId) {
         setErr(
-          `Line ${i + 1}: pick a material from the list, or type an exact material code. Not listed? Add it in Party Material Master first.`,
+          `Line ${i + 1}: pick a material from the list, or type an exact material code. Not listed? Add it in Customer Material Master first.`,
         );
         return;
       }
@@ -365,7 +365,6 @@ export function NewPartyGrnModal({
               autoComplete="off"
               value={dcNo}
               onChange={(e) => setDcNo(e.target.value)}
-              placeholder="Customer's challan no."
             />
           </div>
           <div className="form-grp">
@@ -411,9 +410,9 @@ export function NewPartyGrnModal({
                 type="button"
                 className="btn btn-ghost btn-sm"
                 onClick={addClientMaterials}
-                title="Add one line for every party material of this JWSO's customer (Received left blank)"
+                title="Add one line for every Customer Material of this JWSO's customer (Received left blank)"
               >
-                + Add this client&apos;s materials
+                + Add this customer&apos;s materials
               </button>
             ) : null}
             <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
@@ -436,9 +435,9 @@ export function NewPartyGrnModal({
                   JWSO Line<span className="req">★</span>
                 </th>
                 <th style={{ width: '12%' }}>
-                  Material<span className="req">★</span>
+                  Customer Material<span className="req">★</span>
                 </th>
-                <th style={{ width: '16%' }}>Material Name</th>
+                <th style={{ width: '16%' }}>Customer Material Name</th>
                 <th style={{ width: '8%', color: 'var(--green2)' }} className="th-num">
                   Received<span className="req">★</span>
                 </th>

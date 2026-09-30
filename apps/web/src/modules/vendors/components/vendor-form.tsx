@@ -177,7 +177,6 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
             id="name"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Company name"
             {...register('name')}
           />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
@@ -191,7 +190,6 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
             id="contactPerson"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Name"
             {...register('contactPerson')}
           />
         </div>
@@ -245,7 +243,6 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
             id="addressLine1"
             className="innovic-textarea"
             rows={2}
-            placeholder="Full address"
             {...register('addressLine1')}
           />
         </div>
@@ -371,7 +368,6 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
             id="name"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Company name"
             {...register('name')}
           />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
@@ -385,7 +381,6 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
             id="contactPerson"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Name"
             {...register('contactPerson')}
           />
         </div>
@@ -439,7 +434,6 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
             id="addressLine1"
             className="innovic-textarea"
             rows={2}
-            placeholder="Full address"
             {...register('addressLine1')}
           />
         </div>

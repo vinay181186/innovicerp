@@ -124,7 +124,7 @@ function InvoiceListPage(): React.JSX.Element {
               },
               {
                 key: 'outstanding',
-                label: 'Outstanding',
+                label: 'Outstanding Amount',
                 count: inr(s.outstanding ?? 0),
                 color: 'var(--amber2)',
               },
@@ -157,7 +157,7 @@ function InvoiceListPage(): React.JSX.Element {
     ? []
     : [
         {
-          header: 'Amount',
+          header: 'Grand Total',
           width: '9%',
           align: 'right',
           className: 'mono fw-700',
@@ -175,7 +175,7 @@ function InvoiceListPage(): React.JSX.Element {
           render: (inv) => <span style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</span>,
         },
         {
-          header: 'Outstanding',
+          header: 'Outstanding Amount',
           width: '9%',
           align: 'right',
           className: 'mono fw-700',

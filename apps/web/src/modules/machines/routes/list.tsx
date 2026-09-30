@@ -245,7 +245,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         render: (m) => (m.machineGroupId ? groupLookup.get(m.machineGroupId)?.code : null) ?? '—',
       },
       {
-        header: 'Capacity / Shift (hrs)',
+        header: 'Hours per Shift',
         align: 'right',
         className: 'mono',
         nowrap: true,
@@ -256,7 +256,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         ? []
         : [
             {
-              header: 'Rate (₹/hr)',
+              header: 'Hour Rate (₹/hr)',
               align: 'right' as const,
               headColor: 'var(--green)',
               className: 'mono green',

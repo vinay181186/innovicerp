@@ -77,9 +77,6 @@ function LoginPage() {
     );
   }
 
-  const subtitle =
-    mode === 'reset' ? "Enter your email and we'll send you a link to reset your password." : null;
-
   return (
     <main className="container max-w-md py-16">
       <div className="rounded-lg border bg-card p-8 text-card-foreground space-y-6">
@@ -87,7 +84,6 @@ function LoginPage() {
           <h1 className="text-2xl font-semibold tracking-tight">
             {mode === 'reset' ? 'Reset your password' : 'Sign in to Innovic ERP'}
           </h1>
-          {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
         </div>
 
         {resetDone && mode === 'password' ? (

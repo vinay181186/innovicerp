@@ -47,10 +47,10 @@ function GroupPanel({
           <thead>
             <tr>
               <th>{label}</th>
-              <th className="th-num">Total</th>
+              <th className="th-num">Inspected</th>
               <th className="th-num">Accepted</th>
               <th className="th-num" title={FPY_HELP}>
-                FPY
+                First-Pass Yield %
               </th>
             </tr>
           </thead>
@@ -112,10 +112,10 @@ export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
               <tr>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="th-num">Total Inspected</th>
+                <th className="th-num">Inspected</th>
                 <th className="th-num">First-Pass</th>
                 <th className="th-num" title={FPY_HELP}>
-                  FPY
+                  First-Pass Yield %
                 </th>
               </tr>
             </thead>

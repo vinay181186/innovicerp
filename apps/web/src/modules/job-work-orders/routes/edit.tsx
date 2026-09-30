@@ -129,7 +129,6 @@ function JobWorkOrderNewPage(): React.JSX.Element {
       <JobWorkOrderForm
         mode="create"
         pageTitle="New JWSO"
-        pageSubtitle="Customer-supplied raw material → we machine and deliver."
         backLabel="Back to JWSO Master"
         onBack={goBack}
         onSubmit={onSubmit}

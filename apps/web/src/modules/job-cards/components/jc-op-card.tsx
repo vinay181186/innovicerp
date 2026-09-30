@@ -593,7 +593,7 @@ export function JcOpCard({
                 `Already produced on this operation: ${rmAvailable.consumedQty}. ` +
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`
-                  : 'Issue more customer material from Party Material Issue to continue.')
+                  : 'Issue more customer material from Customer Material Issue to continue.')
               }
               sub={
                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>

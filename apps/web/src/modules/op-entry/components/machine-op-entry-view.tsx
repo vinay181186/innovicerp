@@ -355,7 +355,7 @@ export function MachineOpEntryView({
             ⬅
           </div>
           <div className="text3" style={{ fontSize: 14 }}>
-            Select a machine from above to view status and enter production data
+            Select a machine.
           </div>
         </div>
       )}
