@@ -21,6 +21,7 @@ import type {
   EffectivePrintTemplate,
   Vendor,
 } from '@innovic/shared';
+import { roundQty } from '@innovic/shared';
 import {
   type SheetField,
   type SheetPrintModel,
@@ -68,8 +69,8 @@ export function printOspDc(args: {
   };
 
   const blocks = templatesToBlocks('OSP DC', templates);
-  // Vendor master first: `vendorCodeText` is the ISSUE-TIME snapshot and on
-  // every production challan it holds the PO number, not the vendor's code.
+  // Vendor master first: `vendorCodeText` is the ISSUE-TIME snapshot. Challans
+  // saved before A32 / migration 0182 held the PO number there.
   const vendorAddressLines = [
     vendor?.addressLine1 ?? '',
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
@@ -84,6 +85,10 @@ export function printOspDc(args: {
     },
     { label: 'GSTIN', value: vendor?.gstNumber ?? '', variant: 'mono' },
   ];
+  // Vendor contact (A33): contact person and phone off the vendor master, the
+  // same pair the GRN prints. Printed only when the master has one.
+  const vendorContact = [vendor?.contactPerson, vendor?.phone].filter(Boolean).join(', ');
+  if (vendorContact) recipientFields.push({ label: 'Contact', value: vendorContact });
 
   const documentFields: SheetField[] = [
     { label: 'DC No.', value: dc.code, variant: 'mono' },
@@ -133,10 +138,10 @@ export function printOspDc(args: {
       // HSN lives on the item master and the challan line does not carry it,
       // so the column prints blank. Only 3 of 46 items have one today anyway.
       hsn: null,
-      qty: String(Number(Number(l.qty).toFixed(2))),
+      qty: String(roundQty(Number(l.qty))),
       remarks: l.dcRemarks,
     })),
-    totalQty: String(Number(totalQty.toFixed(2))),
+    totalQty: String(roundQty(totalQty)),
     totalUom: uoms.length === 1 ? (uoms[0] ?? '') : '',
   };
 

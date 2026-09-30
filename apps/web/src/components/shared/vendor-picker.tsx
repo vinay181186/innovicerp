@@ -64,8 +64,12 @@ export function VendorPicker({
   children,
 }: VendorPickerProps): React.JSX.Element {
   const [search, setSearch] = useState('');
+  // Active vendors only (A10): the server refuses an inactive vendor on a new
+  // document, so the picker does not offer one. The current value's label is
+  // held separately below, so an edit on an old document still reads right.
   const { data, isFetching } = useVendorsList({
     ...(search.trim() ? { search: search.trim() } : {}),
+    isActive: true,
     limit: 50,
     offset: 0,
   });

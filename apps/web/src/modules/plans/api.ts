@@ -18,6 +18,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { soPlanningKeys } from '@/modules/so-planning/api';
 
@@ -102,14 +103,17 @@ export function useUnplannedOrders(enabled: boolean) {
 }
 
 /** BOM Planning "Save N Plans" — every plan in one call, one transaction. */
-export function useCreatePlansBatch() {
+export function useCreatePlansBatch(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreatePlansBatchInput) =>
-      apiFetch<{ plans: PlanDetail[] }>('/plans/batch', {
-        method: 'POST',
-        json: input,
-      }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<{ plans: PlanDetail[] }>('/plans/batch', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
@@ -117,14 +121,17 @@ export function useCreatePlansBatch() {
   });
 }
 
-export function useCreatePlan() {
+export function useCreatePlan(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreatePlanInput) =>
-      apiFetch<PlanDetail>('/plans', {
-        method: 'POST',
-        json: input,
-      }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PlanDetail>('/plans', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
@@ -213,14 +220,17 @@ export function useStockReservations(query: ListReservationsQuery, enabled = tru
   });
 }
 
-export function useUpdatePlan(id: string) {
+export function useUpdatePlan(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: UpdatePlanInput) =>
-      apiFetch<PlanDetail>(`/plans/${id}`, {
-        method: 'PATCH',
-        json: input,
-      }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PlanDetail>(`/plans/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

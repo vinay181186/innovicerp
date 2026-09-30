@@ -562,8 +562,8 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
                   >
                     {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
                   </td>
-                  <td className="td-left" title={l.itemName}>
-                    {l.itemName}
+                  <td className="td-left" title={l.masterItemName ?? l.itemName}>
+                    {l.masterItemName ?? l.itemName}
                   </td>
                   <td className="mono fw-700 td-num">{l.receivedQty}</td>
                   <td

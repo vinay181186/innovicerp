@@ -27,6 +27,7 @@
 // autoCreateNcFromOutsourceReject helper here was deleted along with the
 // receive-time reject field.
 
+import { opSrNo } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   deliveryChallanLines,
@@ -36,6 +37,7 @@ import {
   jobCards,
 } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
+import { ValidationError } from '../../lib/errors';
 
 /**
  * Σ received (+ rejected, legacy column) across every active receipt line on
@@ -190,6 +192,15 @@ export async function applyReceiveToJcOp(args: ReceiveCascadeArgs): Promise<Rece
     .where(eq(jobCards.id, op.jobCardId))
     .limit(1);
   const jcCode = jcRows[0]?.code ?? '';
+
+  // S9 — a receipt line may carry 3 decimals (KGS / MTR), but a job-card
+  // operation counts whole pieces. Refuse a fraction coming back to an op.
+  if (!Number.isInteger(args.qtyAdded)) {
+    throw new ValidationError(
+      `Received Qty (${args.qtyAdded}) must be a whole number — it comes back for JC ${jcCode} ` +
+        `Op ${opSrNo(op.opSeq)}, which counts whole pieces.`,
+    );
+  }
 
   // Cumulative received + rejected across ALL active (non-cancelled,
   // non-deleted) receipt lines on ORDINARY challans whose dc_line is linked to

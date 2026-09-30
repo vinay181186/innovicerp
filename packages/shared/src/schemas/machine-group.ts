@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 
 // Machine GROUP master (e.g. VMC, CNC, Lathe, Grinding) — migration 0116.
 //
@@ -54,7 +55,7 @@ export type UpdateMachineGroupInput = z.infer<typeof updateMachineGroupInputSche
 
 export const listMachineGroupsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean().optional(),
   // 1000 so the master loads in one scrolling fetch (no Prev/Next), matching
   // the Raw Material masters.
   limit: z.coerce.number().int().positive().max(1000).default(50),

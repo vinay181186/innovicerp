@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
 export const operatorsKeys = {
   all: ['operators'] as const,
@@ -55,10 +56,17 @@ export function useOperator(id: string | undefined) {
   });
 }
 
-export function useCreateOperator() {
+export function useCreateOperator(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<Operator, Error, CreateOperatorInput>({
-    mutationFn: (input) => apiFetch<Operator>('/operators', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<Operator>('/operators', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: operatorsKeys.lists() });
       qc.setQueryData(operatorsKeys.detail(created.id), created);

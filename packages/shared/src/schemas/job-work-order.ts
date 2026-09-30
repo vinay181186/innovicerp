@@ -27,6 +27,7 @@
 //   - JWs always require ≥ 1 line (no Equipment exception).
 
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { SO_STATUSES } from '../enums/so-status';
 import { uomSchema } from './item';
@@ -251,6 +252,7 @@ export const updateJobWorkOrderInputSchema = z.object({
       message: 'A client (from the client master) is required for a Job Work order.',
     }),
   lines: z.array(jobWorkOrderLineInputSchema).optional(),
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type UpdateJobWorkOrderInput = z.infer<typeof updateJobWorkOrderInputSchema>;
 

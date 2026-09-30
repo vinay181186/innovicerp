@@ -40,6 +40,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { resolveRmItem } from '../../lib/rm-item';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
@@ -56,6 +57,7 @@ import {
   ActivityAction,
   type ActivityChange,
   opSrNo,
+  roundQty,
   stripStaleGeneratedTerminalQc,
 } from '@innovic/shared';
 import type {
@@ -234,7 +236,7 @@ export async function listJobCards(
         COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
           WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
             AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
-        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
+        COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
         -- Raw material the JC was raised with. The TEXT snapshots are read, not
@@ -462,7 +464,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
           WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
             AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
-        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
+        COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
         -- Raw material the JC was raised with. The TEXT snapshots are read, not
@@ -633,11 +635,12 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
   const cmReturned = Number(r['cmReturned'] ?? 0);
   const customerMaterial: JobCardListItem['customerMaterial'] = jwLineId
     ? {
-        needed: rmQtyPerPiece == null ? null : Math.round(rmQtyPerPiece * orderQty),
-        received: Math.max(0, cmReceived),
-        issued: Math.max(0, cmIssued),
-        returned: Math.max(0, cmReturned),
-        balance: cmReceived - cmIssued - cmReturned,
+        // S9 — 3 decimals, never a whole-number round (2.4 KG stayed 2).
+        needed: rmQtyPerPiece == null ? null : roundQty(rmQtyPerPiece * orderQty),
+        received: roundQty(Math.max(0, cmReceived)),
+        issued: roundQty(Math.max(0, cmIssued)),
+        returned: roundQty(Math.max(0, cmReturned)),
+        balance: roundQty(cmReceived - cmIssued - cmReturned),
       }
     : null;
   return {
@@ -740,7 +743,7 @@ async function resolveLinkedSource(
             sol.line_no AS "lineNo", sol.part_name AS "partName",
             COALESCE(i.code, sol.item_code_text) AS "itemCode",
             sol.item_id AS "itemId",
-            COALESCE(so.customer_name, cli.name) AS "customerName",
+            COALESCE(cli.name, so.customer_name) AS "customerName",
             sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
             sol.client_po_line_no AS "clientPoLineNo",
             -- "Already in JCs" excludes rework/repair children, exactly as
@@ -761,7 +764,7 @@ async function resolveLinkedSource(
             jwl.line_no AS "lineNo", jwl.part_name AS "partName",
             COALESCE(i.code, jwl.item_code_text) AS "itemCode",
             jwl.item_id AS "itemId",
-            COALESCE(jw.customer_name, cli.name) AS "customerName",
+            COALESCE(cli.name, jw.customer_name) AS "customerName",
             jwl.order_qty AS "orderQty", jwl.due_date AS "dueDate",
             NULL AS "clientPoLineNo",
             COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
@@ -785,7 +788,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
       SELECT 'so' AS type, so.id AS "orderId", sol.id AS "lineId", so.code,
         sol.line_no AS "lineNo", sol.part_name AS "partName",
         COALESCE(i.code, sol.item_code_text) AS "itemCode",
-        COALESCE(so.customer_name, cli.name) AS "customerName",
+        COALESCE(cli.name, so.customer_name) AS "customerName",
         sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE((SELECT SUM(${jcEffectiveQtySql('jc')}) FROM public.job_cards jc
@@ -800,7 +803,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
       UNION ALL
       SELECT 'jw' AS type, jw.id, jwl.id, jw.code, jwl.line_no, jwl.part_name,
         COALESCE(i2.code, jwl.item_code_text),
-        COALESCE(jw.customer_name, cli2.name),
+        COALESCE(cli2.name, jw.customer_name),
         jwl.order_qty, jwl.due_date, NULL,
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
           WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
@@ -1404,6 +1407,8 @@ const NUM = (v: number): string => String(v);
  *  IN-JC-YY-##### codes count toward the sequence, so legacy JC-PLN-… and the old
  *  yearless IN-JC-##### codes never corrupt the next number. */
 export async function nextJcCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'job_cards');
   const yy = new Date().toISOString().slice(2, 4);
   const prefix = `IN-JC-${yy}-`;
   const rows = await tx
@@ -1587,7 +1592,7 @@ async function loadBomComponentBudget(
       ON bml.bom_master_id = COALESCE(
            sol.source_bom_master_id,
            CASE WHEN so.type = 'equipment'
-                 AND so.bom_master_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+                 AND so.bom_master_id::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
                 THEN so.bom_master_id::uuid END)
      AND bml.company_id = sol.company_id
      AND bml.deleted_at IS NULL

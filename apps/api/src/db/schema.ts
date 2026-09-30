@@ -37,6 +37,7 @@ import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  char,
   check,
   customType,
   date,
@@ -155,6 +156,13 @@ export const companies = pgTable(
     city: text('city'),
     state: text('state'),
     pincode: text('pincode'),
+    // Master data rule settings (migration 0183, plan v3 Step 2).
+    // 'warn' | 'enforce' — CHECK companies_master_rules_mode_check.
+    masterRulesMode: text('master_rules_mode').notNull().default('warn'),
+    // Check HSN: an item we sell (Component / Assembly) needs an HSN Code.
+    checkHsn: boolean('check_hsn').notNull().default(false),
+    // HSN Min Digits: 4 / 6 / 8 — CHECK companies_hsn_min_digits_check.
+    hsnMinDigits: integer('hsn_min_digits').notNull().default(6),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -318,9 +326,13 @@ export const clients = pgTable(
     email: text('email'),
     phone: text('phone'),
     gstNumber: text('gst_number'),
+    // GST Category (migration 0183, plan D1) — GST_CATEGORIES; NULL = not chosen.
+    gstCategory: text('gst_category'),
     addressLine1: text('address_line1'),
     city: text('city'),
     state: text('state'),
+    // GST State Code, 2 digits (INDIAN_STATES) — migration 0183.
+    stateCode: char('state_code', { length: 2 }),
     pincode: text('pincode'),
     // Payment Days (ADR-188): days allowed to pay an invoice; the default for a
     // new invoice's Payment Terms. Null = not set. DB check 0..365 (0150).
@@ -371,12 +383,19 @@ export const vendors = pgTable(
     email: text('email'),
     phone: text('phone'),
     gstNumber: text('gst_number'),
+    // GST Category (migration 0183, plan D1) — GST_CATEGORIES; NULL = not chosen.
+    gstCategory: text('gst_category'),
     addressLine1: text('address_line1'),
     city: text('city'),
     state: text('state'),
+    // GST State Code, 2 digits (INDIAN_STATES) — migration 0183.
+    stateCode: char('state_code', { length: 2 }),
     pincode: text('pincode'),
     materialsSupplied: text('materials_supplied'),
     rating: text('rating'),
+    // Payment Terms (days) (migration 0183, plan D6): days we may take to pay
+    // this vendor. Null = not set. DB check 0..365.
+    paymentTermsDays: integer('payment_terms_days'),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -1516,7 +1535,9 @@ export const salesOrders = pgTable(
     type: soTypeEnum('type').notNull(),
     status: soStatusEnum('status').notNull().default('open'),
     gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18.00'),
-    bomMasterId: text('bom_master_id'),
+    // 0184: uuid FK (was text holding a uuid). Only an Active BOM may be
+    // linked — checked by the SO service when the link is set or changed.
+    bomMasterId: uuid('bom_master_id').references((): AnyPgColumn => bomMasters.id),
     bomStatus: text('bom_status'),
     costCenter: text('cost_center'),
     remarks: text('remarks'),
@@ -2049,7 +2070,8 @@ export const purchaseOrders = pgTable(
     vendorCodeText: text('vendor_code_text'),
     status: poStatusEnum('status').notNull().default('draft'),
     dueDate: date('due_date'),
-    taxType: text('tax_type'),
+    // 'sgst_cgst' | 'igst' | null — CHECK purchase_orders_tax_type_check (0182).
+    taxType: text('tax_type').$type<'sgst_cgst' | 'igst'>(),
     sgstPct: numeric('sgst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
     cgstPct: numeric('cgst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
     igstPct: numeric('igst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
@@ -2227,7 +2249,7 @@ export const jcOpPoLines = pgTable(
       .notNull()
       .references(() => purchaseOrderLines.id, { onDelete: 'cascade' }),
     /** How much of this operation this particular PO line covers. */
-    qty: integer('qty').notNull(),
+    qty: numeric('qty', { precision: 14, scale: 3 }).notNull(), // 0184: was integer
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -2616,11 +2638,13 @@ export const ncRegister = pgTable(
       .references(() => items.id),
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
+    // 0184: the live SO link; soCodeText stays as its snapshot (read soId first).
+    soId: uuid('so_id').references((): AnyPgColumn => salesOrders.id, { onDelete: 'set null' }),
     soCodeText: text('so_code_text'),
     machineCodeText: text('machine_code_text'),
     // Operator who ran the rejected op — legacy Report-NC captured this. Mig 0043.
     operatorText: text('operator_text'),
-    rejectedQty: numeric('rejected_qty', { precision: 12, scale: 2 }).notNull(),
+    rejectedQty: numeric('rejected_qty', { precision: 14, scale: 3 }).notNull(),
     reasonCategory: ncReasonCategoryEnum('reason_category').notNull().default('other'),
     reason: text('reason'),
     disposition: ncDispositionEnum('disposition'),
@@ -2633,7 +2657,7 @@ export const ncRegister = pgTable(
     dispositionAt: timestamp('disposition_at', { withTimezone: true }),
     reworkJcCodeText: text('rework_jc_code_text'),
     reworkOpSeq: integer('rework_op_seq'),
-    reworkDoneQty: numeric('rework_done_qty', { precision: 12, scale: 2 }),
+    reworkDoneQty: numeric('rework_done_qty', { precision: 14, scale: 3 }),
     scrapCost: numeric('scrap_cost', { precision: 12, scale: 2 }).notNull().default('0'),
     status: ncStatusEnum('status').notNull().default('pending'),
     // ── QC–NC handling (migration 0122, docs/QC-NC-HANDLING-DESIGN.md §3) ──
@@ -2664,10 +2688,10 @@ export const ncRegister = pgTable(
     // The quantity ledger. rejected_qty is what this row owes; cleared+failed
     // is what recovery has resolved; the difference is the open qty every
     // gate reads. rtv_* track the return-to-vendor round trip.
-    rtvSentQty: numeric('rtv_sent_qty', { precision: 12, scale: 2 }).notNull().default('0'),
-    rtvReceivedQty: numeric('rtv_received_qty', { precision: 12, scale: 2 }).notNull().default('0'),
-    clearedQty: numeric('cleared_qty', { precision: 12, scale: 2 }).notNull().default('0'),
-    failedQty: numeric('failed_qty', { precision: 12, scale: 2 }).notNull().default('0'),
+    rtvSentQty: numeric('rtv_sent_qty', { precision: 14, scale: 3 }).notNull().default('0'),
+    rtvReceivedQty: numeric('rtv_received_qty', { precision: 14, scale: 3 }).notNull().default('0'),
+    clearedQty: numeric('cleared_qty', { precision: 14, scale: 3 }).notNull().default('0'),
+    failedQty: numeric('failed_qty', { precision: 14, scale: 3 }).notNull().default('0'),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     closedBy: uuid('closed_by').references(() => users.id),
     reportedByText: text('reported_by_text'),
@@ -2825,7 +2849,7 @@ export const deliveryChallanLines = pgTable(
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
-    qty: numeric('qty', { precision: 12, scale: 2 }).notNull(),
+    qty: numeric('qty', { precision: 14, scale: 3 }).notNull(),
     uom: uomEnum('uom').notNull(),
     materialText: text('material_text'),
     dcRemarks: text('dc_remarks'),
@@ -2934,8 +2958,8 @@ export const deliveryChallanReceiptLines = pgTable(
     deliveryChallanLineId: uuid('delivery_challan_line_id')
       .notNull()
       .references(() => deliveryChallanLines.id, { onDelete: 'cascade' }),
-    receivedQty: numeric('received_qty', { precision: 12, scale: 2 }).notNull(),
-    rejectedQty: numeric('rejected_qty', { precision: 12, scale: 2 }).notNull().default('0'),
+    receivedQty: numeric('received_qty', { precision: 14, scale: 3 }).notNull(),
+    rejectedQty: numeric('rejected_qty', { precision: 14, scale: 3 }).notNull().default('0'),
     rejectReason: text('reject_reason'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -3049,7 +3073,7 @@ export const bomMasterLines = pgTable(
     childItemId: uuid('child_item_id')
       .notNull()
       .references(() => items.id),
-    qtyPerSet: numeric('qty_per_set', { precision: 12, scale: 2 }).notNull(),
+    qtyPerSet: numeric('qty_per_set', { precision: 14, scale: 3 }).notNull(),
     bomType: bomLineTypeEnum('bom_type').notNull(),
     // Raw material for THIS child part (migration 0107). A BOM child is a
     // different part from its parent and is generally cut from different stock,
@@ -4854,6 +4878,19 @@ export const jwReturnChallans = pgTable(
     transport: text('transport'),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
+    clientNameText: text('client_name_text'),
+    clientGstText: text('client_gst_text'),
+    // Legal copy of the customer (migration 0186, plan D7 — ERPNext
+    // address_display): taken when the paper is made; the print reads it.
+    // clientCopyAt NULL = no copy (older row) → print falls back to the master.
+    clientAddressLine1: text('client_address_line1'),
+    clientCity: text('client_city'),
+    clientState: text('client_state'),
+    clientStateCode: char('client_state_code', { length: 2 }),
+    clientPincode: text('client_pincode'),
+    // Place of Supply (0186, plan D2): GST State Code billed / shipped to.
+    placeOfSupply: char('place_of_supply', { length: 2 }),
+    clientCopyAt: timestamp('client_copy_at', { withTimezone: true }),
     // R10 (ADR-194, migration 0174): cancel audit trail, symmetric with jw_invoices.
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     cancelledBy: uuid('cancelled_by').references(() => users.id),
@@ -4922,6 +4959,23 @@ export const jwInvoices = pgTable(
     // 'sgst_cgst' | 'igst' (same codes as purchase_orders.tax_type), migration
     // 0148. NULL on rows raised before it: those print a single GST row.
     taxType: text('tax_type'),
+    clientNameText: text('client_name_text'),
+    clientGstText: text('client_gst_text'),
+    // Legal copy of the customer (migration 0186, plan D7 — ERPNext
+    // address_display): taken when the paper is made; the print reads it.
+    // clientCopyAt NULL = no copy (older row) → print falls back to the master.
+    clientAddressLine1: text('client_address_line1'),
+    clientCity: text('client_city'),
+    clientState: text('client_state'),
+    clientStateCode: char('client_state_code', { length: 2 }),
+    clientPincode: text('client_pincode'),
+    // Place of Supply (0186, plan D2): GST State Code billed / shipped to.
+    placeOfSupply: char('place_of_supply', { length: 2 }),
+    clientCopyAt: timestamp('client_copy_at', { withTimezone: true }),
+    // Payment Terms (days) + Due Date (0186, plan D6) from the customer's
+    // Payment Days. NULL on JW invoices raised before 0186. CHECK 0..365.
+    paymentTermsDays: integer('payment_terms_days'),
+    dueDate: date('due_date'),
     remarks: text('remarks'),
     // R5 (ADR-194): a JW Invoice can be cancelled. 'issued' | 'cancelled'.
     status: text('status').notNull().default('issued'),
@@ -5661,6 +5715,17 @@ export const invoices = pgTable(
     clientNameText: text('client_name_text'),
     clientCodeText: text('client_code_text'),
     clientGstText: text('client_gst_text'),
+    // Legal copy of the customer (migration 0186, plan D7 — ERPNext
+    // address_display): taken when the paper is made; the print reads it.
+    // clientCopyAt NULL = no copy (older row) → print falls back to the master.
+    clientAddressLine1: text('client_address_line1'),
+    clientCity: text('client_city'),
+    clientState: text('client_state'),
+    clientStateCode: char('client_state_code', { length: 2 }),
+    clientPincode: text('client_pincode'),
+    // Place of Supply (0186, plan D2): GST State Code billed / shipped to.
+    placeOfSupply: char('place_of_supply', { length: 2 }),
+    clientCopyAt: timestamp('client_copy_at', { withTimezone: true }),
     subtotal: numeric('subtotal', { precision: 14, scale: 2 }).notNull().default('0'),
     gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
     gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
@@ -5834,6 +5899,19 @@ export const customerDispatches = pgTable(
       .references(() => salesOrders.id),
     soCodeText: text('so_code_text'),
     customerText: text('customer_text'),
+    // Legal copy (0186): the name copy is customerText above.
+    clientGstText: text('client_gst_text'),
+    // Legal copy of the customer (migration 0186, plan D7 — ERPNext
+    // address_display): taken when the paper is made; the print reads it.
+    // clientCopyAt NULL = no copy (older row) → print falls back to the master.
+    clientAddressLine1: text('client_address_line1'),
+    clientCity: text('client_city'),
+    clientState: text('client_state'),
+    clientStateCode: char('client_state_code', { length: 2 }),
+    clientPincode: text('client_pincode'),
+    // Place of Supply (0186, plan D2): GST State Code billed / shipped to.
+    placeOfSupply: char('place_of_supply', { length: 2 }),
+    clientCopyAt: timestamp('client_copy_at', { withTimezone: true }),
     transport: text('transport'),
     vehicleNo: text('vehicle_no'),
     status: customerDispatchStatusEnum('status').notNull().default('dispatched'),

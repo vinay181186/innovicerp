@@ -3,6 +3,7 @@ import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
 import { isUniqueViolation } from '../lib/db-retry';
 import { AccountDeactivatedError, AppError, AuthenticationError } from '../lib/errors';
+import { dbGuardConflictMessage } from '../lib/row-lock';
 import { captureUnhandledError } from '../lib/sentry';
 
 const isFastifyClientError = (e: unknown): e is FastifyError =>
@@ -52,6 +53,15 @@ export const errorHandlerPlugin = fp(async (app) => {
         error: err.code ?? 'request_error',
         message: err.message,
       });
+      return;
+    }
+
+    // Migration 0181 backstops (one active return-to-vendor DC per NC, OSP
+    // returned ≤ sent, stock ≥ 0) and a deadlock between two crossing saves:
+    // a plain 409 the user can act on, not a 500.
+    const guardMessage = dbGuardConflictMessage(err);
+    if (guardMessage) {
+      reply.code(409).send({ error: 'conflict', message: guardMessage });
       return;
     }
 

@@ -7,6 +7,7 @@ import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
@@ -45,7 +46,9 @@ function toInt(v: string | undefined): number | undefined {
 function NcRegisterNewPage(): React.JSX.Element {
   const search = ncRegisterNewRoute.useSearch();
   const navigate = useNavigate();
-  const create = useCreateNcRegister();
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const create = useCreateNcRegister(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/nc-register' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });

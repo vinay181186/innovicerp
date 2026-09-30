@@ -96,10 +96,10 @@ export function DcReceiptsPanel({
                           ) : null}
                         </td>
                         <td className="mono td-num" style={{ color: 'var(--green2)' }}>
-                          {Number(rl.receivedQty).toFixed(2)}
+                          {Number(rl.receivedQty)}
                         </td>
                         <td className="mono td-num" style={{ color: 'var(--red2)' }}>
-                          {Number(rl.rejectedQty).toFixed(2)}
+                          {Number(rl.rejectedQty)}
                         </td>
                         <td className="text3">{rl.rejectReason ?? '—'}</td>
                       </tr>

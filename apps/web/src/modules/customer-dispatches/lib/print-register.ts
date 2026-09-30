@@ -30,7 +30,7 @@ export function printCustomerDispatchRegister(args: {
       <td style="color:#7c3aed;font-family:monospace">${esc(itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision))}</td>
       <td>${esc(r.itemName)}</td>
       <td style="text-align:center;font-weight:700;color:#16a34a">${r.qty}</td>
-      <td style="text-align:center">${esc(r.uom ?? 'NOS')}</td>
+      <td style="text-align:center">${esc(r.uom ?? '')}</td>
       <td>${esc(r.customer ?? '—')}</td>
       <td>${esc(r.dispatchedBy ?? '—')}</td>
       <td style="font-size:10px">${esc(r.remarks ?? '—')}</td>

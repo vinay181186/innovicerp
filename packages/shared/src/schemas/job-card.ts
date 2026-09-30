@@ -137,9 +137,10 @@ export const jobCardListItemSchema = z.object({
   clientPoLineNo: z.string().nullable(),
   lastOpCompletedQty: z.number().int().nonnegative(),
   runningCount: z.number().int().nonnegative(),
-  /** Customer name surfaced for the list view: prefers SO/JW source link's
-   *  `customer_name`; falls back to the linked client's name when the source
-   *  uses `client_id`. Null when no source link or no customer info at all. */
+  /** Customer name surfaced for the list view: the LIVE clients.name via the
+   *  SO/JW source's `client_id` (plan v3 Step 4); falls back to the source's
+   *  saved `customer_name` only when it has no client_id. Null when no source
+   *  link or no customer info at all. */
   customerName: z.string().nullable(),
   /** The item's active route card (code + current revision), resolved by item_id
    *  — the routing this item is built from. Null if the item has no route card.
@@ -162,13 +163,15 @@ export const jobCardListItemSchema = z.object({
   // regular (own-material) JC. Needed = rmQtyPerPiece × orderQty (from the
   // ADR-193 route-card RM); Received/Issued/Returned come from the party store
   // ledger for this JWSO line; Balance = received − issued − returned.
+  // Fix wave 2 (S9): up to 3 decimals — customer material is often KG / MTR,
+  // and "RM needed" was rounded to a whole number (2.4 KG → 2).
   customerMaterial: z
     .object({
-      needed: z.number().int().nonnegative().nullable(),
-      received: z.number().int().nonnegative(),
-      issued: z.number().int().nonnegative(),
-      returned: z.number().int().nonnegative(),
-      balance: z.number().int(),
+      needed: z.number().nonnegative().nullable(),
+      received: z.number().nonnegative(),
+      issued: z.number().nonnegative(),
+      returned: z.number().nonnegative(),
+      balance: z.number(),
     })
     .nullable()
     .default(null),

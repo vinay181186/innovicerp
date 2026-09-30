@@ -5,6 +5,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateMachine, useMachine, useUpdateMachine } from '../api';
 import { MachineForm } from '../components/machine-form';
@@ -23,7 +24,8 @@ export const machineEditRoute = createRoute({
 
 function MachineNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreateMachine();
+  const saveKey = useSaveKey();
+  const create = useCreateMachine(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/machines' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });

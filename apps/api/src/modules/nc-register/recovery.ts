@@ -15,12 +15,23 @@
 // everything sent has come back). Closure happens automatically from the QC
 // hooks; the manual Close button goes through the same gate.
 
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { ActivityAction, SHIFTS, opSrNo } from '@innovic/shared';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import {
+  ActivityAction,
+  NC_STATUS_LABELS,
+  NC_STATUS_MOVES,
+  SHIFTS,
+  opSrNo,
+  roundQty,
+  statusesThatMayMoveTo,
+} from '@innovic/shared';
 import { jcOps, jobCards, machines, ncRegister, opLog, purchaseOrderLines } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { assertRowUpdated } from '../../lib/row-lock';
+import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
@@ -51,11 +62,12 @@ const n = (v: string | number | null | undefined): number => {
   return Number.isFinite(x) ? x : 0;
 };
 
-/** Numeric columns come back as "5.00"; the ledger is whole pieces, so every
- *  message and every comparison works on the rounded integer. */
+/** Numeric columns come back as "5.000"; the ledger keeps 3 decimals (0184 —
+ *  a KG reject stays 2.5, never rounded to 3), so every message and every
+ *  comparison works on the value rounded to 3 places (roundQty). */
 export const ncOpenQty = (
   nc: Pick<NcGateInput, 'rejectedQty' | 'clearedQty' | 'failedQty'>,
-): number => Math.round(n(nc.rejectedQty) - n(nc.clearedQty) - n(nc.failedQty));
+): number => roundQty(n(nc.rejectedQty) - n(nc.clearedQty) - n(nc.failedQty));
 
 /** The name written into op_log.operator_name and nc.disposition_by_text when
  *  the system acts on a user's behalf. users has no name column beyond
@@ -79,10 +91,10 @@ export function ncCloseBlockedReason(nc: NcGateInput): string | null {
   if (nc.status === 'closed') return null;
   if (nc.status === 'pending') return 'Please select a Disposition first.';
 
-  const rejected = Math.round(n(nc.rejectedQty));
+  const rejected = roundQty(n(nc.rejectedQty));
   const open = ncOpenQty(nc);
-  const sent = Math.round(n(nc.rtvSentQty));
-  const received = Math.round(n(nc.rtvReceivedQty));
+  const sent = roundQty(n(nc.rtvSentQty));
+  const received = roundQty(n(nc.rtvReceivedQty));
 
   if (nc.status === 'under_rework' || nc.status === 'under_repair') {
     if (open > 0) {
@@ -94,11 +106,11 @@ export function ncCloseBlockedReason(nc: NcGateInput): string | null {
   }
 
   if (nc.status === 'sent_to_vendor' || nc.status === 'received_qc_pending') {
-    const atVendor = sent - received;
+    const atVendor = roundQty(sent - received);
     if (atVendor > 0) {
       return `${atVendor} pcs still at vendor (sent ${sent}, received ${received})`;
     }
-    const awaitingQc = received - Math.round(n(nc.clearedQty)) - Math.round(n(nc.failedQty));
+    const awaitingQc = roundQty(received - n(nc.clearedQty) - n(nc.failedQty));
     if (awaitingQc > 0) {
       return `${awaitingQc} pcs received from vendor awaiting Incoming QC`;
     }
@@ -133,7 +145,8 @@ export async function markNcClosed(
   user: AuthContext,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
-  await tx
+  // Close once (S3): an NC someone else closed first is refused, not re-stamped.
+  const rows = await tx
     .update(ncRegister)
     .set({
       ...extra,
@@ -142,7 +155,14 @@ export async function markNcClosed(
       closedBy: user.id,
       updatedBy: user.id,
     })
-    .where(eq(ncRegister.id, ncId));
+    .where(
+      and(
+        eq(ncRegister.id, ncId),
+        inArray(ncRegister.status, statusesThatMayMoveTo(NC_STATUS_MOVES, 'closed')),
+      ),
+    )
+    .returning({ code: ncRegister.code });
+  assertRowUpdated(rows, 'This NC');
 }
 
 // ─── Child rework / repair job card (design §4) ───────────────────────────
@@ -354,6 +374,8 @@ async function nextRecoveryJcCode(
   parentCode: string,
   kind: RecoveryKind,
 ): Promise<string> {
+  // S2: queue behind any other save numbering a job card (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'job_cards');
   const suffix = kind === 'rework' ? 'RW' : 'RP';
   const countRows = await tx
     .select({ c: sql<number>`count(*)::int` })
@@ -387,6 +409,11 @@ async function nextRecoveryJcCode(
 
 // ─── Shared pieces of the two QC hooks ────────────────────────────────────
 
+/** Every recovery step (QC credit, climb, challan receive / cancel) reads the
+ *  NC LOCKED (S3): two steps on one NC — two GRN lines inspected at once, a
+ *  receive racing a cancel — serialize here, and the second one re-reads the
+ *  ledger the first committed instead of overwriting it. Locks only ever climb
+ *  child → ancestor, the same direction disposeNcCascade takes. */
 async function loadNc(tx: DbTransaction, ncId: string, companyId: string): Promise<NcRow> {
   const rows = await tx
     .select()
@@ -398,7 +425,8 @@ async function loadNc(tx: DbTransaction, ncId: string, companyId: string): Promi
         isNull(ncRegister.deletedAt),
       ),
     )
-    .limit(1);
+    .limit(1)
+    .for('update');
   const nc = rows[0];
   if (!nc) throw new NotFoundError('NC not found. Refresh the page.');
   return nc;
@@ -409,9 +437,9 @@ async function loadNc(tx: DbTransaction, ncId: string, companyId: string): Promi
  *  rather than a sentence the inspector can act on. */
 function assertWithinOpen(nc: NcRow, accepted: number, rejected: number): void {
   const open = ncOpenQty(nc);
-  if (accepted + rejected > open) {
+  if (roundQty(accepted + rejected) > open) {
     throw new ConflictError(
-      `Accepted + Rejected (${accepted + rejected}) cannot be more than Open (${open}) on ${nc.code}.`,
+      `Accepted + Rejected (${roundQty(accepted + rejected)}) cannot be more than Open (${open}) on ${nc.code}.`,
     );
   }
 }
@@ -465,10 +493,10 @@ async function creditRecovery(
   rejected: number,
   user: AuthContext,
 ): Promise<{ cleared: number; failed: number; closed: boolean }> {
-  const cleared = Math.round(n(nc.clearedQty)) + accepted;
-  const failed = Math.round(n(nc.failedQty)) + rejected;
-  const closed = cleared + failed >= Math.round(n(nc.rejectedQty));
-  const ledger = { clearedQty: cleared.toFixed(2), failedQty: failed.toFixed(2) };
+  const cleared = roundQty(n(nc.clearedQty) + accepted);
+  const failed = roundQty(n(nc.failedQty) + rejected);
+  const closed = roundQty(cleared + failed) >= roundQty(n(nc.rejectedQty));
+  const ledger = { clearedQty: cleared.toFixed(3), failedQty: failed.toFixed(3) };
   if (closed) {
     await markNcClosed(tx, nc.id, user, ledger);
   } else {
@@ -520,7 +548,7 @@ export async function climbRecoveryToAncestors(
     if (nc.status === 'closed') return; // already settled above — do not re-touch
     const open = ncOpenQty(nc);
     const a = Math.max(0, Math.min(accepted, open));
-    const f = Math.max(0, Math.min(failed, open - a));
+    const f = Math.max(0, Math.min(failed, roundQty(open - a)));
     if (a + f > 0) {
       const credited = await creditRecovery(tx, nc, a, f, user);
       if (a > 0) {
@@ -618,8 +646,8 @@ export async function onRecoveryJobCardQc(
   if (!jc.parentNcId) {
     throw new NotFoundError(`Recovery JC ${jc.code} has no NC linked. Refresh the page.`);
   }
-  const accepted = Math.max(0, Math.round(args.acceptedQty));
-  const rejected = Math.max(0, Math.round(args.rejectedQty));
+  const accepted = Math.max(0, roundQty(args.acceptedQty));
+  const rejected = Math.max(0, roundQty(args.rejectedQty));
   if (accepted + rejected === 0) return;
 
   // Climb the ACCEPTED pieces up the entire parent chain. The child's rejected
@@ -682,24 +710,42 @@ export async function onNcChallanReceived(
   if (nc.deliveryChallanId && nc.deliveryChallanId !== args.deliveryChallanId) {
     throw new ConflictError(`This DC is not the return-to-vendor DC for ${nc.code}.`);
   }
-  const received = Math.max(0, Math.round(args.receivedQty));
+  const received = Math.max(0, roundQty(args.receivedQty));
   if (received === 0) return;
-  const sent = Math.round(n(nc.rtvSentQty));
-  const already = Math.round(n(nc.rtvReceivedQty));
-  const total = already + received;
-  if (total > sent) {
+  // S3 — pieces can only come back while they are out.
+  if (nc.status !== 'sent_to_vendor' && nc.status !== 'received_qc_pending') {
     throw new ConflictError(
-      `Received Qty (${received}) cannot be more than Pending (${sent - already}) on ${nc.code}.`,
+      `NC ${nc.code} is ${labelOf(NC_STATUS_LABELS, nc.status)}; nothing is at the vendor on it. Reload the page.`,
     );
   }
-  await tx
+  const sent = roundQty(n(nc.rtvSentQty));
+  const already = roundQty(n(nc.rtvReceivedQty));
+  const total = roundQty(already + received);
+  if (total > sent) {
+    throw new ConflictError(
+      `Received Qty (${received}) cannot be more than Pending (${roundQty(sent - already)}) on ${nc.code}.`,
+    );
+  }
+  const receivedRows = await tx
     .update(ncRegister)
     .set({
-      rtvReceivedQty: total.toFixed(2),
+      rtvReceivedQty: total.toFixed(3),
       status: 'received_qc_pending',
       updatedBy: user.id,
     })
-    .where(eq(ncRegister.id, nc.id));
+    .where(
+      and(
+        eq(ncRegister.id, nc.id),
+        // S8 — the map's moves into received_qc_pending, plus a second receipt
+        // on an NC already there (same status, not a move).
+        inArray(ncRegister.status, [
+          ...statusesThatMayMoveTo(NC_STATUS_MOVES, 'received_qc_pending'),
+          'received_qc_pending',
+        ]),
+      ),
+    )
+    .returning({ id: ncRegister.id });
+  assertRowUpdated(receivedRows, `NC ${nc.code}`);
 
   await emitActivityLog(
     tx,
@@ -793,24 +839,28 @@ export async function onNcChallanCancelled(
   if (nc.deliveryChallanId !== args.deliveryChallanId) {
     throw new ConflictError(`This DC is not the return-to-vendor DC for ${nc.code}.`);
   }
-  const alreadyReceived = Math.round(n(nc.rtvReceivedQty));
+  const alreadyReceived = roundQty(n(nc.rtvReceivedQty));
   if (alreadyReceived > 0) {
     throw new ConflictError(
       `${alreadyReceived} pcs already came back from the vendor on ${nc.code}; ` +
         `its return-to-vendor challan cannot be cancelled`,
     );
   }
-  const sent = Math.round(n(nc.rtvSentQty));
+  const sent = roundQty(n(nc.rtvSentQty));
 
-  await tx
+  // S3 — only a challan still out can be taken back; the NC row is locked
+  // (loadNc) and the write requires the status it was read at.
+  const reverted = await tx
     .update(ncRegister)
     .set({
-      rtvSentQty: '0.00',
+      rtvSentQty: '0.000',
       deliveryChallanId: null,
       status: 'disposed',
       updatedBy: user.id,
     })
-    .where(eq(ncRegister.id, nc.id));
+    .where(and(eq(ncRegister.id, nc.id), eq(ncRegister.status, 'sent_to_vendor')))
+    .returning({ id: ncRegister.id });
+  assertRowUpdated(reverted, `NC ${nc.code}`);
 
   await emitActivityLog(
     tx,
@@ -933,8 +983,8 @@ export async function onNcReplacementQc(
   user: AuthContext,
 ): Promise<void> {
   const nc = await loadNc(tx, args.ncId, companyId);
-  const accepted = Math.max(0, Math.round(args.acceptedQty));
-  const rejected = Math.max(0, Math.round(args.rejectedQty));
+  const accepted = Math.max(0, roundQty(args.acceptedQty));
+  const rejected = Math.max(0, roundQty(args.rejectedQty));
   if (accepted + rejected === 0) return;
   assertWithinOpen(nc, accepted, rejected);
 
@@ -1016,7 +1066,7 @@ export async function onNcReplacementQc(
       qty: accepted,
       detail:
         `${nc.code} — ${viaText} Incoming QC: accepted ${accepted}, rejected ${rejected}; ` +
-        `cleared ${ledger.cleared}/${Math.round(n(nc.rejectedQty))}, failed ${ledger.failed}` +
+        `cleared ${ledger.cleared}/${roundQty(n(nc.rejectedQty))}, failed ${ledger.failed}` +
         (ledger.closed ? '; Closed' : ''),
     },
     companyId,

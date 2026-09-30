@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateTpiMaster } from '../api';
 import { TpiMasterForm } from '../components/tpi-master-form';
@@ -16,7 +17,8 @@ export const tpiMasterNewRoute = createRoute({
 
 function TpiMasterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreateTpiMaster();
+  const saveKey = useSaveKey();
+  const create = useCreateTpiMaster(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/tpi-masters' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });

@@ -1,4 +1,10 @@
 // Vendor create + edit form (UI-003-03).
+//
+// Master rules (plan v3 Step 2): GST Category, a State pick-list (saving the
+// 2-digit State Code) and Payment Terms (days) join the form. GSTIN / State /
+// GST Category problems show live under the fields — amber in Warn mode, red
+// in Enforce mode — and an enforce-mode refusal's field errors land under the
+// same fields. A valid GSTIN fills a blank State. See settings/master-rules-ui.
 
 import {
   type CreateVendorInput,
@@ -9,8 +15,21 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useCallback, useEffect } from 'react';
+import { type FieldErrors, type UseFormRegister, useForm } from 'react-hook-form';
+import {
+  GST_CATEGORY_OPTIONS,
+  type PartyGstNotes,
+  RuleNoteLine,
+  RuleWarning,
+  STATE_OPTIONS,
+  type ServerFieldErrors,
+  blankToNull,
+  initialStateCode,
+  oldStateHint,
+  unmappedOldState,
+  usePartyGstNotes,
+} from '@/modules/settings/master-rules-ui';
 import { useNextVendorCode } from '../api';
 
 type CreateMode = {
@@ -19,6 +38,8 @@ type CreateMode = {
   onSubmit: (values: CreateVendorInput) => Promise<void> | void;
   submitLabel?: string;
   submitError?: string | null;
+  /** Field errors from an enforce-mode 400 (master rules), shown under the fields. */
+  serverFieldErrors?: ServerFieldErrors | null;
   onCancel?: () => void;
 };
 
@@ -28,6 +49,7 @@ type EditMode = {
   onSubmit: (values: UpdateVendorInput) => Promise<void> | void;
   submitLabel?: string;
   submitError?: string | null;
+  serverFieldErrors?: ServerFieldErrors | null;
   onCancel?: () => void;
 };
 
@@ -42,10 +64,12 @@ const CREATE_DEFAULTS: CreateVendorInput = {
   email: undefined,
   phone: undefined,
   gstNumber: undefined,
+  gstCategory: null,
   addressLine1: undefined,
   city: undefined,
-  state: undefined,
+  stateCode: null,
   pincode: undefined,
+  paymentTermsDays: null,
   materialsSupplied: undefined,
   rating: undefined,
   isActive: true,
@@ -58,10 +82,14 @@ function vendorToUpdateDefaults(v: Vendor): UpdateVendorInput {
     email: v.email ?? undefined,
     phone: v.phone ?? undefined,
     gstNumber: v.gstNumber ?? undefined,
+    gstCategory: v.gstCategory ?? null,
     addressLine1: v.addressLine1 ?? undefined,
     city: v.city ?? undefined,
-    state: v.state ?? undefined,
+    // The State pick-list saves the State Code; the free-text `state` is no
+    // longer sent (the server stores the list name for the code).
+    stateCode: initialStateCode(v.stateCode, v.state),
     pincode: v.pincode ?? undefined,
+    paymentTermsDays: v.paymentTermsDays ?? null,
     materialsSupplied: v.materialsSupplied ?? undefined,
     rating: v.rating ?? undefined,
     isActive: v.isActive,
@@ -78,8 +106,27 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
     resolver: zodResolver(createVendorInputSchema),
     defaultValues: { ...CREATE_DEFAULTS, ...props.defaultValues },
   });
-  const { register, formState } = form;
+  const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
+  // Create and edit carry the same fields with the same types; the shared
+  // field components take the update-form types (same cast as client-form).
+  const fieldRegister = register as unknown as UseFormRegister<UpdateVendorInput>;
+  const fieldErrors = errors as unknown as FieldErrors<UpdateVendorInput>;
+  const setStateCode = useCallback(
+    (code: string) => setValue('stateCode', code, { shouldDirty: true }),
+    [setValue],
+  );
+  const stateCode = watch('stateCode');
+  const notes = usePartyGstNotes({
+    gstNumber: watch('gstNumber'),
+    gstCategory: watch('gstCategory'),
+    stateCode,
+    setStateCode,
+    // An untouched new form does not open covered in amber.
+    show: formState.isDirty || formState.isSubmitted,
+    serverFieldErrors: props.serverFieldErrors,
+  });
+  const oldState = null;
 
   // Prefill the read-only code with the next server-assigned VND-### so it is
   // visible before save. Only seed while still blank (don't clobber edits).
@@ -93,7 +140,13 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
   return (
     <form
       onSubmit={form.handleSubmit(async (values) => {
-        await props.onSubmit(values);
+        // A blank pick-list is simply not sent on a new vendor.
+        const { stateCode: code, gstCategory, ...rest } = values;
+        await props.onSubmit({
+          ...rest,
+          ...(code ? { stateCode: code } : {}),
+          ...(gstCategory ? { gstCategory } : {}),
+        });
       })}
     >
       <div className="form-grid">
@@ -171,7 +224,7 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="gstNumber">
-            GST No.
+            GSTIN
           </label>
           <input
             id="gstNumber"
@@ -180,7 +233,9 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
             placeholder="24XXXXX1234X1Z5"
             {...register('gstNumber')}
           />
+          <RuleNoteLine note={notes.gstNumber} />
         </div>
+        <VendorTermsFields register={fieldRegister} errors={fieldErrors} notes={notes} />
 
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="addressLine1">
@@ -201,12 +256,13 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
           </label>
           <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
         </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="state">
-            State
-          </label>
-          <input id="state" className="innovic-input" autoComplete="off" {...register('state')} />
-        </div>
+        <VendorStateField
+          register={fieldRegister}
+          errors={fieldErrors}
+          notes={notes}
+          oldState={oldState}
+          stateChosen={!!stateCode}
+        />
 
         <div className="form-grp">
           <label className="form-label" htmlFor="pincode">
@@ -271,13 +327,33 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
     resolver: zodResolver(updateVendorInputSchema),
     defaultValues: vendorToUpdateDefaults(props.vendor),
   });
-  const { register, formState } = form;
+  const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
+  const { vendor } = props;
+  const fieldRegister = register;
+  const fieldErrors = errors;
+  const setStateCode = useCallback(
+    (code: string) => setValue('stateCode', code, { shouldDirty: true }),
+    [setValue],
+  );
+  const stateCode = watch('stateCode');
+  const notes = usePartyGstNotes({
+    gstNumber: watch('gstNumber'),
+    gstCategory: watch('gstCategory'),
+    stateCode,
+    setStateCode,
+    show: true,
+    serverFieldErrors: props.serverFieldErrors,
+  });
+  const oldState = unmappedOldState(vendor.stateCode, vendor.state);
 
   return (
     <form
       onSubmit={form.handleSubmit(async (values) => {
-        await props.onSubmit(values);
+        // A State left blank on an old record that never had a State Code is
+        // not sent, so its old free-text State is kept rather than cleared.
+        const { stateCode: code, ...rest } = values;
+        await props.onSubmit(code || vendor.stateCode ? values : rest);
       })}
     >
       <div className="form-grid">
@@ -342,7 +418,7 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="gstNumber">
-            GST No.
+            GSTIN
           </label>
           <input
             id="gstNumber"
@@ -351,7 +427,9 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
             placeholder="24XXXXX1234X1Z5"
             {...register('gstNumber')}
           />
+          <RuleNoteLine note={notes.gstNumber} />
         </div>
+        <VendorTermsFields register={fieldRegister} errors={fieldErrors} notes={notes} />
 
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="addressLine1">
@@ -372,12 +450,13 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
           </label>
           <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
         </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="state">
-            State
-          </label>
-          <input id="state" className="innovic-input" autoComplete="off" {...register('state')} />
-        </div>
+        <VendorStateField
+          register={fieldRegister}
+          errors={fieldErrors}
+          notes={notes}
+          oldState={oldState}
+          stateChosen={!!stateCode}
+        />
 
         <div className="form-grp">
           <label className="form-label" htmlFor="pincode">
@@ -437,6 +516,107 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
   );
 }
 
+/** GST Category + Payment Terms (days) — one row of the two-column grid,
+ *  right under GSTIN. Payment Terms (days) copies the customer's Payment Days
+ *  box: optional, blank saves as null, the 0–365 range is the shared schema's. */
+function VendorTermsFields(props: {
+  register: UseFormRegister<UpdateVendorInput>;
+  errors: FieldErrors<UpdateVendorInput>;
+  notes: PartyGstNotes;
+}): React.JSX.Element {
+  const { register, errors, notes } = props;
+  return (
+    <>
+      <div className="form-grp">
+        <label className="form-label" htmlFor="gstCategory">
+          GST Category
+        </label>
+        <select
+          id="gstCategory"
+          className="innovic-select"
+          {...register('gstCategory', { setValueAs: blankToNull })}
+        >
+          <option value="">— choose —</option>
+          {GST_CATEGORY_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        {errors.gstCategory?.message ? (
+          <div className="form-error">{errors.gstCategory.message}</div>
+        ) : (
+          <RuleNoteLine note={notes.gstCategory} />
+        )}
+      </div>
+      <div className="form-grp">
+        <label className="form-label" htmlFor="paymentTermsDays">
+          Payment Terms (days)
+        </label>
+        <input
+          id="paymentTermsDays"
+          className="innovic-input"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={365}
+          step={1}
+          autoComplete="off"
+          placeholder="e.g. 30"
+          style={{ textAlign: 'right' }}
+          {...register('paymentTermsDays', {
+            setValueAs: (v: string | number | null | undefined) =>
+              v === '' || v == null ? null : Number(v),
+          })}
+        />
+        {errors.paymentTermsDays?.message ? (
+          <div className="form-error">{errors.paymentTermsDays.message}</div>
+        ) : (
+          <div className="form-help">Days we have to pay this vendor. Blank = not set.</div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** State pick-list ("Gujarat (24)"), saving the State Code. An old record's
+ *  free-text State that matches no list entry is shown under it. */
+function VendorStateField(props: {
+  register: UseFormRegister<UpdateVendorInput>;
+  errors: FieldErrors<UpdateVendorInput>;
+  notes: PartyGstNotes;
+  oldState: string | null;
+  stateChosen: boolean;
+}): React.JSX.Element {
+  const { register, errors, notes } = props;
+  const oldHint = props.stateChosen ? null : oldStateHint(props.oldState);
+  const error = errors.stateCode?.message ?? notes.stateCode.error;
+  return (
+    <div className="form-grp">
+      <label className="form-label" htmlFor="stateCode">
+        State
+      </label>
+      <select
+        id="stateCode"
+        className="innovic-select"
+        {...register('stateCode', { setValueAs: blankToNull })}
+      >
+        <option value="">— choose —</option>
+        {STATE_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      {error ? <div className="form-error">{error}</div> : null}
+      {!error && notes.stateCode.warning ? (
+        <RuleWarning>{notes.stateCode.warning}</RuleWarning>
+      ) : null}
+      {oldHint ? <div className="form-help">{oldHint}</div> : null}
+    </div>
+  );
+}
+
 function FormFooter(props: {
   isSubmitting: boolean;
   submitLabel: string;
@@ -468,7 +648,7 @@ function FormFooter(props: {
         ) : null}
         <button type="submit" className="btn btn-primary" disabled={props.isSubmitting}>
           {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-          {props.submitLabel}
+          {props.isSubmitting ? 'Saving…' : props.submitLabel}
         </button>
       </div>
     </div>

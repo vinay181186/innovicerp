@@ -66,6 +66,8 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   createReservation,
@@ -129,6 +131,8 @@ function requireCompany(user: AuthContext): string {
  * timestamp/random codes are ignored and the series stays clean.
  */
 async function nextPlanCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'plans');
   const rows = await tx
     .select({ code: plans.code })
     .from(plans)
@@ -817,6 +821,8 @@ async function createPlanInTx(
 ): Promise<PlanDetail> {
   // Blank/omitted code → auto-number the next PLN-NNNN. A user-supplied code
   // is still honoured (and dup-checked).
+  // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'plans');
   const code =
     input.code && input.code.trim().length > 0
       ? input.code.trim()
@@ -1046,6 +1052,8 @@ export async function updatePlan(
       .for('update');
     const row = existing[0];
     if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
+    // R5: refuse the save if someone else edited the plan after this form opened it.
+    assertUnchangedSinceOpened(row.updatedAt, input.expectedUpdatedAt);
 
     if (!EDITABLE_STATUSES.includes(row.planStatus)) {
       throw new ValidationError(
@@ -1190,6 +1198,9 @@ export async function updatePlan(
       for (const r of rmRows) rmItemCodeById.set(r.id, r.code);
     }
     const changes = diffFields(row, updates, planEditFields(rmItemCodeById));
+    // R5: plans has no set_updated_at trigger until 0187, so bump the version
+    // here — every edit must move updated_at for the next edit-conflict check.
+    updates['updatedAt'] = new Date();
 
     await tx.update(plans).set(updates).where(eq(plans.id, id));
 
@@ -2307,7 +2318,9 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
         -- number: on live data our line 11 is the customer's line 20.
         sol.client_po_line_no AS client_po_line_no,
         sol.part_name     AS part_name,
-        so.customer_name  AS customer_name,
+        -- Live customer name off the client master (plan v3 Step 4); the SO's
+        -- saved customer_name only when the SO has no client_id.
+        COALESCE(cli.name, so.customer_name) AS customer_name,
         sol.due_date::text AS due_date,
         sol.order_qty     AS order_qty,
         -- ADR-185 — the one "covered / to plan" rule (lib/so-line-coverage.ts),
@@ -2318,6 +2331,7 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
         GREATEST(sol.order_qty - cov.covered, 0)::numeric AS remaining_qty
       FROM public.sales_order_lines sol
       JOIN public.sales_orders so ON so.id = sol.sales_order_id
+      LEFT JOIN public.clients cli ON cli.id = so.client_id AND cli.deleted_at IS NULL
       CROSS JOIN LATERAL (SELECT ${sql.raw(soLineCoveredRaw('sol'))} AS covered) cov
       WHERE so.company_id = ${companyId}::uuid
         AND so.status = 'open'

@@ -3,6 +3,8 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useRouteCard, useUpdateRouteCard } from '../api';
 import {
@@ -24,7 +26,11 @@ function RouteCardEditPage(): React.JSX.Element {
   const { id } = routeCardEditRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useRouteCard(id);
-  const update = useUpdateRouteCard(id);
+  const saveKey = useSaveKey();
+  const update = useUpdateRouteCard(id, saveKey);
+  // R5 — the version this form opened with; a save over someone else's newer
+  // edit is refused (409 edit_conflict) and its message shows in the banner.
+  const opened = useOpenedVersion(detail?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
@@ -54,7 +60,9 @@ function RouteCardEditPage(): React.JSX.Element {
         planType: header.planType,
         ops: opsToInput(ops),
         revisionNote,
+        expectedUpdatedAt: opened.expected(),
       });
+      opened.saved(updated.updatedAt);
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: updated.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');

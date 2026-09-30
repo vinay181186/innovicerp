@@ -16,6 +16,8 @@
 //   - query: list filters (search, status, vendor, jc-op link, date range).
 
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
+import { queryBoolean } from '../lib/query-boolean';
 import { PR_STATUSES, PR_TYPES } from '../enums/pr-status';
 
 export const prStatusSchema = z.enum(PR_STATUSES);
@@ -230,7 +232,8 @@ export type CreatePurchaseRequestInput = z.infer<typeof createPurchaseRequestInp
 // form from ever skipping the approvedBy/approvedAt stamp.
 export const updatePurchaseRequestInputSchema = _prInputBase
   .partial()
-  .omit({ code: true, prType: true, status: true });
+  .omit({ code: true, prType: true, status: true })
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdatePurchaseRequestInput = z.infer<typeof updatePurchaseRequestInputSchema>;
 
 /** SHORT-CLOSE the balance — stop expecting the unordered remainder.
@@ -269,7 +272,7 @@ export const listPurchaseRequestsQuerySchema = z.object({
    *  which was a BOOLEAN "has a PO at all" and so hid a PR the moment one PO was
    *  raised, even for 10 of 100. The server owns this filter because the balance
    *  is a SUM over purchase_order_lines that the browser cannot compute. */
-  convertibleOnly: z.coerce.boolean().optional(),
+  convertibleOnly: queryBoolean().optional(),
   /** Inclusive lower bound on pr_date (YYYY-MM-DD). */
   fromDate: z
     .string()

@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const invoiceKeys = {
@@ -59,10 +60,17 @@ export function useInvoiceableSo(soId: string | undefined) {
   });
 }
 
-export function useCreateInvoice() {
+export function useCreateInvoice(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<InvoiceDetail, Error, CreateInvoiceInput>({
-    mutationFn: (input) => apiFetch<InvoiceDetail>('/invoices', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<InvoiceDetail>('/invoices', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: invoiceKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

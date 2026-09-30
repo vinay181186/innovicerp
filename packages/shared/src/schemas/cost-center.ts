@@ -6,6 +6,7 @@
 // so adding a department doesn't need a migration.
 
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 
 const codeRegex = /^[A-Za-z0-9._-]+$/;
 
@@ -63,7 +64,7 @@ export type UpdateCostCenterInput = z.infer<typeof updateCostCenterInputSchema>;
 
 export const listCostCentersQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean().optional(),
   department: z.string().max(64).optional(),
   type: z.string().max(64).optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),

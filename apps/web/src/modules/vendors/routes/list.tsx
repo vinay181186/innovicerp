@@ -1,7 +1,7 @@
 // Vendor Master list (UI-003-02; legacy parity pass 2026-07-15).
 // Ports legacy renderVendors (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
 // L27734) to Innovic chrome. Legacy columns, in order: Code | Name | Contact |
-// Phone | Email | GST No. | Address | Rating | Status | PO/GRN | Actions.
+// Phone | Email | GSTIN | Address | Rating | Status | PO/GRN | Actions.
 //
 // Two legacy columns/behaviours are DELTA (blocked on backend, not faked here):
 //   * PO/GRN — legacy counts db.purchaseOrders/db.grn client-side because it
@@ -19,7 +19,7 @@
 //
 //   <ListHeader>            title · count · ⟳ Updating… · primary, then the
 //                           filter bar: SearchInput · status (with counts) · Clear
-//   <Banner>                import result (dismissible)
+//   <MasterImportDialog>    Excel import: Import Type → preview → import
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint · Excel template / import
 //   <PageState>             no-access and load-failure
@@ -38,14 +38,14 @@
 
 import type { ListVendorsQuery, Vendor } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateVendors, useSoftDeleteVendor, useVendorsList } from '../api';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
@@ -56,14 +56,6 @@ import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-exp
 // vendors list endpoint caps `limit` at 1000 (packages/shared vendor schema,
 // raised from 200 to match the SO master); ListFooter flags a larger set.
 const LIST_LIMIT = 1000;
-
-// Join a list of import warnings/failures for the status line, capping at 50 so
-// a huge sheet can't produce an unbounded banner, but still showing far more
-// than the old 3-item cap that hid most problems.
-function fmtList(items: string[]): string {
-  const shown = items.slice(0, 50).join('; ');
-  return items.length > 50 ? `${shown} … (+${items.length - 50} more)` : shown;
-}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -120,8 +112,9 @@ function VendorsListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useVendorsList(query);
   // Tier-driven, per department (vendor_create sits in Purchase). Replaces the
   // old admin/manager flag, which collapsed all seven tiers into two.
-  //   Add / Excel import -> entry  (L2 Data Entry and up)
-  //   Edit               -> edit   (L3 Editor and up; L2 creates but cannot alter)
+  //   Add / Excel import (Insert new)      -> entry  (L2 Data Entry and up)
+  //   Edit / Excel import (Update existing) -> edit   (L3 Editor and up; L2
+  //     creates but cannot alter)
   //   Del                -> edit AND approve. Delete is not one of the four tier
   //     actions, so it is expressed as the pair only L5 Department Admin and
   //     above hold: L3 has edit without approve, L4 has approve without edit.
@@ -143,50 +136,13 @@ function VendorsListPage(): React.JSX.Element {
   // ADR-197: Delete asks for a reason — the row's Delete opens this dialog.
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; code: string } | null>(null);
 
-  // Excel import — the WHOLE sheet goes in one request, and the list reloads
-  // once at the end.
-  //
-  // It used to loop the single-create mutation over the rows: one round trip per
-  // vendor, and because each success invalidated the list query, the browser
-  // re-downloaded the entire vendor master after every row — so the import got
-  // slower the longer it ran. Measured on the live system at ~1 vendor/second,
-  // which put a 500-row sheet at about nine minutes.
-  //
-  // The duplicate-name guard moved to the server with it. It used to compare
-  // against `data.vendors`, i.e. the page of vendors currently loaded on screen,
-  // so anything past that page read as "new" and was created a second time.
+  // Excel import — ONE shared dialog (components/shared/master-import-dialog):
+  // Import Type (Insert new / Update existing by Code) → preview (dryRun, the
+  // server checks every row and writes nothing) → import. The whole sheet goes
+  // in one request and the list reloads once at the end; a bad row (one bad
+  // email, say) is left out with its reason and the rest go in (finding 35).
   const bulkCreate = useBulkCreateVendors();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [importMsg, setImportMsg] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-
-  async function onImportFile(file: File): Promise<void> {
-    setImporting(true);
-    setImportMsg(null);
-    try {
-      const { payloads, errors } = await parseVendorImportFile(file);
-      if (payloads.length === 0) {
-        setImportMsg(
-          errors.length
-            ? `Nothing to import. ${errors.length} row issue(s): ${fmtList(errors)}`
-            : 'Nothing to import — the sheet has no vendor rows.',
-        );
-        return;
-      }
-      const res = await bulkCreate.mutateAsync({ vendors: payloads });
-      const skips = res.skipped.map((s) => `Row ${s.index} "${s.name}": ${s.reason}`);
-      setImportMsg(
-        `Imported ${res.created}/${payloads.length} vendor(s).` +
-          (skips.length ? ` ${skips.length} skipped: ${fmtList(skips)}` : '') +
-          (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
-      );
-    } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');
-    } finally {
-      setImporting(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  }
+  const [importOpen, setImportOpen] = useState(false);
 
   // All rows matching the search; the Active/Inactive filter is client-side.
   const allRows = useMemo(() => data?.vendors ?? [], [data?.vendors]);
@@ -201,7 +157,7 @@ function VendorsListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
 
   // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+8+15+9+8+11+12+10+6+6 = 89, + 11 = 100,
+  // column (rowActionsWidth below): 4+8+12+9+8+10+12+6+8+6+6 = 89, + 11 = 100,
   // so the table never scrolls sideways. Centred by the standard; only Name is
   // left-aligned so the vendor names share one edge, and the long free-text
   // columns ellipsize with the full value on hover rather than wrapping the
@@ -230,7 +186,7 @@ function VendorsListPage(): React.JSX.Element {
       },
       {
         header: 'Vendor Name',
-        width: '15%',
+        width: '12%',
         align: 'left',
         className: 'fw-700',
         ellipsis: true,
@@ -246,16 +202,23 @@ function VendorsListPage(): React.JSX.Element {
       { header: 'Phone', width: '8%', nowrap: true, render: (v) => v.phone ?? '—' },
       {
         header: 'Email',
-        width: '11%',
+        width: '10%',
         className: 'text3',
         ellipsis: true,
         render: (v) => v.email ?? '—',
         title: (v) => v.email ?? '',
       },
-      { header: 'GST No.', width: '12%', nowrap: true, render: (v) => v.gstNumber ?? '—' },
+      { header: 'GSTIN', width: '12%', nowrap: true, render: (v) => v.gstNumber ?? '—' },
+      {
+        header: 'Payment Terms (days)',
+        width: '6%',
+        align: 'right',
+        nowrap: true,
+        render: (v) => v.paymentTermsDays ?? '—',
+      },
       {
         header: 'Address',
-        width: '10%',
+        width: '8%',
         className: 'text3',
         ellipsis: true,
         render: (v) => v.addressLine1 ?? '—',
@@ -337,12 +300,6 @@ function VendorsListPage(): React.JSX.Element {
         }
       />
 
-      {importMsg ? (
-        <Banner tone="info" onDismiss={() => setImportMsg(null)}>
-          {importMsg}
-        </Banner>
-      ) : null}
-
       {isError ? (
         <PageState
           state="error"
@@ -381,9 +338,10 @@ function VendorsListPage(): React.JSX.Element {
         noun="vendor"
         limit={LIST_LIMIT}
         // Legacy L27776-27779: Excel template + import sit below the count
-        // line. The file input is hidden and only opened by the button.
+        // line. Import opens the shared import dialog; Insert new needs Add,
+        // Update existing needs Edit.
         actions={
-          canAdd ? (
+          canAdd || canEdit ? (
             <>
               <Button
                 size="sm"
@@ -397,25 +355,31 @@ function VendorsListPage(): React.JSX.Element {
                 size="sm"
                 variant="ghost"
                 icon={<Icon name="upload" size={12} />}
-                loading={importing}
-                onClick={() => fileRef.current?.click()}
+                onClick={() => setImportOpen(true)}
               >
                 Import from Excel
               </Button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onImportFile(f);
-                }}
-              />
             </>
           ) : null
         }
       />
+      {importOpen ? (
+        <MasterImportDialog
+          title="Import Vendors from Excel"
+          noun="vendor"
+          codeLabel="Code"
+          nameLabel="Vendor Name"
+          allowInsert={canAdd}
+          allowUpdate={canEdit}
+          parse={parseVendorImportFile}
+          submit={(rows, mode, dryRun, saveKey) =>
+            bulkCreate.mutateAsync({ vendors: rows, mode, dryRun, saveKey })
+          }
+          onDownloadTemplate={downloadVendorTemplate}
+          errorsFileName="Vendor Import Errors.xlsx"
+          onClose={() => setImportOpen(false)}
+        />
+      ) : null}
       {deleteTarget ? (
         <TrashReasonDialog
           title={`Move Vendor ${deleteTarget.code} to Trash?`}

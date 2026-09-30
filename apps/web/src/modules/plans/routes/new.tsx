@@ -1,6 +1,7 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePlan } from '../api';
 import { PlanCreateForm } from '../components/plan-create-form';
@@ -16,7 +17,8 @@ export const planNewRoute = createRoute({
 // Production Order is raised (ADR-170). See plan-create-form.tsx.
 function PlanNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreatePlan();
+  const saveKey = useSaveKey();
+  const create = useCreatePlan(saveKey);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
   const goBack = (): void => void navigate({ to: '/plans' });

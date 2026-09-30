@@ -17,6 +17,7 @@
 // superseded — the value is minutes per piece everywhere.)
 
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { OP_TYPES } from '../enums/op-type';
 import { PLAN_TYPES } from '../enums/plan-type';
 
@@ -261,5 +262,6 @@ export const updateRouteCardInputSchema = z.object({
   planType: routeCardPlanTypeSchema.optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),
   revisionNote: z.string().max(2000).nullable().optional(),
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type UpdateRouteCardInput = z.infer<typeof updateRouteCardInputSchema>;

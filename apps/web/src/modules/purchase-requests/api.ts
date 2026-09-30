@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const purchaseRequestsKeys = {
@@ -57,11 +58,17 @@ export function usePurchaseRequest(id: string | undefined) {
   });
 }
 
-export function useCreatePurchaseRequest() {
+export function useCreatePurchaseRequest(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<PurchaseRequest, Error, CreatePurchaseRequestInput>({
     mutationFn: (input) =>
-      apiFetch<PurchaseRequest>('/purchase-requests', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PurchaseRequest>('/purchase-requests', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
       // ADR-197 — the PR's History tab reads the activity log.
@@ -71,11 +78,17 @@ export function useCreatePurchaseRequest() {
   });
 }
 
-export function useUpdatePurchaseRequest(id: string) {
+export function useUpdatePurchaseRequest(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<PurchaseRequest, Error, UpdatePurchaseRequestInput>({
     mutationFn: (input) =>
-      apiFetch<PurchaseRequest>(`/purchase-requests/${id}`, { method: 'PATCH', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PurchaseRequest>(`/purchase-requests/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
       // ADR-197 — the PR's History tab reads the activity log.

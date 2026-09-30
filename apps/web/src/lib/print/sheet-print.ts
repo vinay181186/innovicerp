@@ -603,7 +603,13 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   // column printed a blank dotted rule on every row of every challan.
   const showHsn = !po && !grn && lines.some((l) => (l.hsn ?? '').trim() !== '');
   const hsnDropped = !po && !grn && !showHsn;
-  const cols = (showPol ? COLS + 1 : COLS) - (hsnDropped ? 1 : 0);
+  // A tax invoice (PO column set) carries HSN per line (A4); a GRN carries the
+  // item's UOM (A26). Each earns its column only when a line has one, so a
+  // purchase order / old GRN prints exactly as before.
+  const showHsnPo = po && lines.some((l) => (l.hsn ?? '').trim() !== '');
+  const showUomGrn = grn && lines.some((l) => (l.uom ?? '').trim() !== '');
+  const extra = (showHsnPo ? 1 : 0) + (showUomGrn ? 1 : 0);
+  const cols = (showPol ? COLS + 1 : COLS) - (hsnDropped ? 1 : 0) + extra;
   const polHead = showPol ? '<td class="colh ctr" style="width:13mm">POL</td>' : '';
 
   const columnHeads = po
@@ -611,6 +617,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       polHead +
       '<td class="colh">Item Code</td>' +
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
+      (showHsnPo ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
       '<td class="colh ctr" style="width:26mm">Rate</td>' +
       '<td class="colh ctr" style="width:30mm">Amount</td>'
@@ -618,6 +625,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       ? '<td class="colh ctr" style="width:11mm">Sr No</td>' +
         polHead +
         '<td class="colh">Item Code</td>' +
+        (showUomGrn ? '<td class="colh ctr" style="width:14mm">UOM</td>' : '') +
         '<td class="colh ctr" style="width:24mm">Received</td>' +
         '<td class="colh ctr" style="width:22mm">Accepted</td>' +
         '<td class="colh ctr" style="width:22mm">Rejected</td>' +
@@ -636,11 +644,13 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         `<tr><td class="num">${i + 1}</td>` +
         (showPol ? `<td class="ctr">${esc(l.pol ?? '—')}</td>` : '') +
         `<td>${itemCellHtml(l)}</td>` +
-        // The GRN has no UOM column -- its lines do not carry one.
-        (grn ? '' : `<td class="ctr">${esc(l.uom ?? '')}</td>`);
+        // The GRN prints UOM only when its lines carry one (from the item).
+        (grn && !showUomGrn ? '' : `<td class="ctr">${esc(l.uom ?? '')}</td>`);
       if (po) {
         return (
-          `${lead}<td class="qty">${esc(l.qty)}</td>` +
+          lead +
+          (showHsnPo ? `<td class="ctr">${esc(l.hsn ?? '')}</td>` : '') +
+          `<td class="qty">${esc(l.qty)}</td>` +
           `<td class="money">${esc(l.rate ?? '')}</td>` +
           `<td class="money">${esc(l.amount ?? '')}</td></tr>`
         );
@@ -670,7 +680,8 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   const qtyLabel = `Total quantity &mdash; ${lines.length} line${lines.length === 1 ? '' : 's'}`;
   // Every label colspan below counts the leading columns, so each grows by one
   // when the POL column is there.
-  const lbl = (n: number): number => (showPol ? n + 1 : n);
+  // …and by one more when the invoice's HSN / the GRN's UOM column is there.
+  const lbl = (n: number): number => (showPol ? n + 1 : n) + extra;
   // The unit prints IN the quantity cell ("120 NOS"): on its own it landed
   // under Rate / Remarks and read as a rate.
   const totalQtyText = esc([model.totalQty, model.totalUom].filter(Boolean).join(' '));

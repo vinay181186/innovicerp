@@ -16,6 +16,7 @@ import {
   type JwReturnableResponse,
   type ListJwReturnChallansQuery,
   type ListJwReturnChallansResponse,
+  roundQty,
 } from '@innovic/shared';
 import {
   clients,
@@ -33,6 +34,8 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
+import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -101,6 +104,8 @@ function dateLike(v: unknown): string {
 }
 
 async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'jw_return_challans');
   const prefix = 'IN-JWRC-';
   const rows = await tx
     .select({ code: jwReturnChallans.code })
@@ -329,7 +334,12 @@ export async function createJwReturnChallan(
     if (!line) throw new NotFoundError('Selected JWSO line was not found. Please pick it again.');
 
     const jwRows = await tx
-      .select({ id: jobWorkOrders.id, code: jobWorkOrders.code, clientId: jobWorkOrders.clientId })
+      .select({
+        id: jobWorkOrders.id,
+        code: jobWorkOrders.code,
+        clientId: jobWorkOrders.clientId,
+        customerName: jobWorkOrders.customerName,
+      })
       .from(jobWorkOrders)
       .where(and(eq(jobWorkOrders.id, line.jwId), isNull(jobWorkOrders.deletedAt)))
       .limit(1);
@@ -371,7 +381,11 @@ export async function createJwReturnChallan(
       jobCardId = jcRows[0].id;
     }
 
-    // 4) Insert return challan
+    // 4) Insert return challan — with its legal copy of the customer (plan D7,
+    // 0186): the print reads this copy, not the live master.
+    const copy = clientCopyValues(await loadClientForCopy(tx, jw.clientId, companyId));
+    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+    await lockDocSeries(tx, companyId, 'jw_return_challans');
     const code = input.code ?? (await nextReturnCode(tx, companyId));
     const inserted = await tx
       .insert(jwReturnChallans)
@@ -384,6 +398,15 @@ export async function createJwReturnChallan(
         jwCodeText: jw.code,
         jobCardId,
         clientId: jw.clientId ?? null,
+        clientNameText: copy.clientName ?? jw.customerName ?? null,
+        clientGstText: copy.clientGstText,
+        clientAddressLine1: copy.clientAddressLine1,
+        clientCity: copy.clientCity,
+        clientState: copy.clientState,
+        clientStateCode: copy.clientStateCode,
+        clientPincode: copy.clientPincode,
+        placeOfSupply: copy.placeOfSupply,
+        clientCopyAt: copy.clientCopyAt,
         qty: input.qty,
         transport: input.transport ?? null,
         vehicleNo: input.vehicleNo ?? null,
@@ -410,7 +433,7 @@ export async function createJwReturnChallan(
           code,
           input.returnDate,
           c.childItemId,
-          Math.round(input.qty * c.qtyPerSet),
+          roundQty(input.qty * c.qtyPerSet), // S9: keep BOM decimals, never round to 0
           { code: c.childItemCode },
         );
       }
@@ -772,6 +795,7 @@ function selectListItems(tx: DbTransaction) {
       itemCodeText: jobWorkOrderLines.itemCodeText,
       itemRevision: jobWorkOrderLines.revision,
       uom: sql<string | null>`${jobWorkOrderLines.uom}::text`,
+      hsnCode: items.hsnCode,
       clientPoNo: jobWorkOrders.clientPoNo,
     })
     .from(jwReturnChallans)
@@ -789,6 +813,7 @@ function toListItem(r: {
   itemCodeText: string | null;
   itemRevision: string | null;
   uom: string | null;
+  hsnCode: string | null;
   clientPoNo: string | null;
 }): JwReturnChallanListItem {
   return {
@@ -798,7 +823,10 @@ function toListItem(r: {
     itemCode: r.itemCode ?? r.itemCodeText ?? null,
     itemRevision: r.itemRevision ?? null,
     uom: r.uom ?? null,
+    hsnCode: r.hsnCode ?? null,
     clientPoNo: r.clientPoNo ?? null,
+    // The paper's own copy of the customer (0186) — the print reads it.
+    clientCopy: readClientCopy({ ...r.ret, clientName: r.ret.clientNameText }),
   };
 }
 

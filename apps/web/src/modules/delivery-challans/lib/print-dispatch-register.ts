@@ -16,28 +16,23 @@
 // columns the list exposes (DC no / date / vendor / PO / SO / lines / qty /
 // status). See `docs/...` if a per-line register is added later.
 
-import type { Company, DeliveryChallanListItem, DispatchSummary } from '@innovic/shared';
+import type { Company, DcStatus, DeliveryChallanListItem, DispatchSummary } from '@innovic/shared';
 import { esc, fmtDate } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
+import { DC_STATUS_LABEL } from './dc-status-label';
 
-const STATUS_BADGE: Record<string, string> = {
-  open: 'b-blue',
-  partially_received: 'b-amber',
+// The real DC statuses (DC_STATUSES) — same colours as DcStatusBadge on screen.
+// The old map carried open / partially_received, which no challan ever has.
+const STATUS_BADGE: Record<DcStatus, string> = {
+  issued: 'b-amber',
   received: 'b-green',
   cancelled: 'b-grey',
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  open: 'Open',
-  issued: 'Issued',
-  partially_received: 'Partly Received',
-  received: 'Received',
-  cancelled: 'Cancelled',
-};
-
 function statusBadge(status: string): string {
-  const cls = STATUS_BADGE[status] ?? 'b-grey';
-  return `<span class="badge ${cls}">${esc(STATUS_LABEL[status] ?? status.replaceAll('_', ' '))}</span>`;
+  const cls = STATUS_BADGE[status as DcStatus] ?? 'b-grey';
+  const label = DC_STATUS_LABEL[status as DcStatus] ?? status.replaceAll('_', ' ');
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
 }
 
 export function printDispatchRegister(args: {

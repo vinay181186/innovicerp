@@ -4,7 +4,11 @@
 // route so it can render inside the Invoices screen as a tab. Behavior, hooks,
 // modals and price/money display are identical to the original screen.
 
-import { type CreateJwInvoiceInput, type ListJwInvoicesQuery } from '@innovic/shared';
+import {
+  type CreateJwInvoiceInput,
+  type ListJwInvoicesQuery,
+  PLACE_OF_SUPPLY_UNKNOWN_NOTE,
+} from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
@@ -13,6 +17,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
 import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader } from '@/ui/layout';
@@ -178,6 +183,15 @@ export function JwInvoiceView({
                       <span className="td-code" style={{ color: 'var(--cyan)' }}>
                         {r.code}
                       </span>
+                      {/* Screen only, never printed (plan D2, 0186). */}
+                      {r.status !== 'cancelled' && !r.placeOfSupply ? (
+                        <div
+                          title={PLACE_OF_SUPPLY_UNKNOWN_NOTE}
+                          style={{ fontSize: 10, color: 'var(--amber2)', whiteSpace: 'nowrap' }}
+                        >
+                          ⚠ Place of Supply unknown
+                        </div>
+                      ) : null}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
                       {fmtDate(r.invoiceDate)}
@@ -317,9 +331,10 @@ function NewJwInvoiceModal({
   const [qty, setQty] = useState('');
   const [rate, setRate] = useState('');
   const [remarks, setRemarks] = useState('');
-  // Same-state supply by default: the print splits the GST into SGST + CGST.
-  // IGST for an inter-state customer. Totals do not change either way.
-  const [taxType, setTaxType] = useState<'sgst_cgst' | 'igst'>('sgst_cgst');
+  // '' = Auto: the server decides from the Place of Supply (the customer's
+  // State vs ours; SEZ / Overseas → IGST — plan D2). A manual choice is only
+  // accepted while the Place of Supply is unknown. Totals do not change.
+  const [taxType, setTaxType] = useState<'' | 'sgst_cgst' | 'igst'>('');
   const [err, setErr] = useState<string | null>(null);
 
   // ADR-104: NO status filter — see jw-returns. A JWSO closes at final QC, so
@@ -345,7 +360,8 @@ function NewJwInvoiceModal({
   );
   const pickedBillable = lineId ? toInvoiceById.get(lineId) : undefined;
 
-  const createMut = useCreateJwInvoice();
+  const saveKey = useSaveKey();
+  const createMut = useCreateJwInvoice(saveKey);
 
   const onPickLine = (id: string): void => {
     setLineId(id || null);
@@ -388,7 +404,7 @@ function NewJwInvoiceModal({
       invoiceDate: date,
       jobWorkOrderLineId: lineId,
       qty: qtyNum,
-      taxType,
+      ...(taxType ? { taxType } : {}),
     };
     if (Number.isFinite(rateNum) && rate.trim()) input.rate = rateNum;
     if (remarks.trim()) input.remarks = remarks.trim();
@@ -534,9 +550,18 @@ function NewJwInvoiceModal({
             <select
               className="innovic-input"
               value={taxType}
-              onChange={(e) => setTaxType(e.target.value === 'igst' ? 'igst' : 'sgst_cgst')}
+              onChange={(e) =>
+                setTaxType(
+                  e.target.value === 'igst'
+                    ? 'igst'
+                    : e.target.value === 'sgst_cgst'
+                      ? 'sgst_cgst'
+                      : '',
+                )
+              }
               style={{ width: '100%' }}
             >
+              <option value="">Auto (from customer&apos;s State)</option>
               <option value="sgst_cgst">SGST + CGST</option>
               <option value="igst">IGST</option>
             </select>

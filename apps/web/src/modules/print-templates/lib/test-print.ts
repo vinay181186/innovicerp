@@ -252,6 +252,9 @@ const SAMPLE_COMPANY: Company = {
   name: CO_NAME,
   slug: 'innovic',
   gstNumber: CO_GSTIN,
+  masterRulesMode: 'warn',
+  checkHsn: false,
+  hsnMinDigits: 6,
   phone: CO_PHONE,
   email: CO_EMAIL,
   addressLine1: 'V.U. Nagar',
@@ -430,9 +433,11 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     email: null,
     phone: '+91 90000 00000',
     gstNumber: '24AAACS1234D1Z5',
+    gstCategory: 'registered_regular',
     addressLine1: 'GIDC Estate, Phase 1',
     city: 'Vadodara',
     state: 'Gujarat',
+    stateCode: '24',
     pincode: '390010',
     paymentDays: null,
     isActive: true,
@@ -468,6 +473,11 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     totalAmount: 5900,
     // Same-state sample: the sheet prints SGST 9% + CGST 9%.
     taxType: 'sgst_cgst',
+    paymentTermsDays: 45,
+    dueDate: null,
+    placeOfSupply: '24',
+    // No copy on the sample: the sheet reads the sample client above.
+    clientCopy: null,
     remarks: 'Sample invoice — turning and grinding on client-supplied blanks.',
     // ADR-194: a live (issued) sample invoice.
     status: 'issued',

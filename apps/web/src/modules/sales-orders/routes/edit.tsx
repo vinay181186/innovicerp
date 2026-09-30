@@ -5,6 +5,8 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -26,7 +28,8 @@ export const salesOrderEditRoute = createRoute({
 
 function SalesOrderNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreateSalesOrder();
+  const saveKey = useSaveKey();
+  const create = useCreateSalesOrder(saveKey);
   const createDoc = useCreateSoDocument();
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
@@ -141,7 +144,11 @@ function SalesOrderEditPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'so_create');
   const { data: detail, isLoading, isError, error } = useSalesOrder(id);
-  const update = useUpdateSalesOrder(id);
+  const saveKey = useSaveKey();
+  const update = useUpdateSalesOrder(id, saveKey);
+  // R5 — the version this form opened with; a save over someone else's newer
+  // edit is refused (409 edit_conflict) and its message shows in the banner.
+  const opened = useOpenedVersion(detail?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(
     () => void navigate({ to: '/sales-orders/$id', params: { id } }),
@@ -179,7 +186,8 @@ function SalesOrderEditPage(): React.JSX.Element {
   const onSubmit = async (values: UpdateSalesOrderInput): Promise<void> => {
     setSubmitError(null);
     try {
-      await update.mutateAsync(values);
+      const saved = await update.mutateAsync({ ...values, expectedUpdatedAt: opened.expected() });
+      opened.saved(saved.updatedAt);
       exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');

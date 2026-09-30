@@ -34,6 +34,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useRouteCardsList } from '@/modules/route-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -66,7 +67,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const search = productionOrderNewRoute.useSearch();
   const preselected = usePreselectedPlan(search.planId, search.planCode, 'create');
-  const create = useCreateProductionOrder();
+  const saveKey = useSaveKey();
+  const create = useCreateProductionOrder(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/production-orders' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -273,8 +275,13 @@ function ProductionOrderNewPage(): React.JSX.Element {
               disabled={!canSubmit || create.isPending}
               title={saveBlockedReason}
             >
-              {create.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Save
-              Production Order &amp; Create JC
+              {create.isPending ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" /> Saving…
+                </>
+              ) : (
+                <>Save Production Order &amp; Create JC</>
+              )}
             </button>
           </>
         }

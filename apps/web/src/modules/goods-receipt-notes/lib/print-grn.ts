@@ -6,7 +6,8 @@
 // challans print on, so every document in the set carries one letterhead, one
 // type scale, one border and one page-numbering scheme.
 //
-// It uses the sheet's `grn` column set: Sr | Item detail | UOM | Received |
+// It uses the sheet's `grn` column set: Sr | Item detail | UOM (when the
+// lines carry one, from the item master) | Received |
 // Accepted | Rejected | QC status. A GRN is the only document here whose line
 // carries THREE quantities, which is why it needed its own column set rather
 // than being squeezed into the challan's.
@@ -46,7 +47,7 @@ import type {
   Vendor,
 } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
+import { buildDocCompany, companyAddressLines, partyAddressLines } from '@/lib/print/company';
 import { todayIst } from '@/lib/date';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 import {
@@ -76,6 +77,9 @@ export interface GrnPrintLine {
    *  Optional so the Print Templates sample lines need not carry one. */
   itemRevision?: string | null;
   itemName: string | null;
+  /** The item's unit (items.uom, A26). Optional so the Print Templates sample
+   *  lines need not carry one; the UOM column prints only when a line has one. */
+  uom?: string | null;
   receivedQty: number;
   qcAcceptedQty: number;
   qcRejectedQty: number;
@@ -87,6 +91,8 @@ export interface GrnPrintModel {
   code: string;
   grnDate: string;
   vendorName: string;
+  /** Vendor Code (A26). Optional so the Print Templates sample need not carry one. */
+  vendorCode?: string | null;
   poNo: string;
   dcNo: string | null;
   invoiceNo: string | null;
@@ -123,9 +129,19 @@ export function printGrnDoc(args: {
   // not "Recipient". Address / GSTIN / contact come from the same substitution
   // bag the template blocks read, which is where both entry points resolve them.
   const vendorName = model.vendorName || (data.vendorName ?? '');
+  // The full address (street, then City, State, Pincode) arrives joined by
+  // " · " in the bag; it prints as stacked lines (A26).
+  const addressLines = (data.vendorAddress ?? '').split(' · ').filter(Boolean);
   const supplierFields: SheetField[] = [
+    ...(model.vendorCode
+      ? [{ label: 'Vendor Code', value: model.vendorCode, variant: 'mono' as const }]
+      : []),
     { label: 'Name', value: vendorName, variant: 'name' },
-    { label: 'Address', value: data.vendorAddress ?? '' },
+    {
+      label: 'Address',
+      value: addressLines[0] ?? '',
+      ...(addressLines.length > 1 ? { extra: addressLines.slice(1) } : {}),
+    },
     { label: 'GSTIN', value: data.vendorGSTIN ?? '', variant: 'mono' },
   ];
   if (data.vendorContact)
@@ -159,7 +175,7 @@ export function printGrnDoc(args: {
       itemCode: itemCodeWithRev(l.itemCode, l.itemRevision, ''),
       pol: l.clientPoLineNo ?? null,
       itemName: l.itemName,
-      uom: null,
+      uom: l.uom?.trim() || null,
       qty: String(l.receivedQty),
       acceptedQty: String(l.qcAcceptedQty),
       rejectedQty: String(l.qcRejectedQty),
@@ -199,6 +215,7 @@ export function printGrn(args: {
     code: grn.code,
     grnDate: grn.grnDate,
     vendorName,
+    vendorCode: vendor?.code ?? grn.vendorCode ?? grn.vendorCodeText ?? null,
     poNo,
     dcNo: grn.dcNo,
     invoiceNo: grn.invoiceNo,
@@ -210,6 +227,7 @@ export function printGrn(args: {
       itemRevision: l.itemRevision,
       clientPoLineNo: l.clientPoLineNo,
       itemName: l.itemName,
+      uom: l.uom ?? null,
       receivedQty: l.receivedQty,
       qcAcceptedQty: l.qcAcceptedQty,
       qcRejectedQty: l.qcRejectedQty,
@@ -231,7 +249,7 @@ export function printGrn(args: {
     grnNo: grn.code,
     grnDate: fmtDate(grn.grnDate),
     vendorName,
-    vendorAddress: vendor?.addressLine1 ?? '',
+    vendorAddress: partyAddressLines(vendor).join(' · '),
     vendorGSTIN: vendor?.gstNumber ?? '',
     vendorContact: [vendor?.contactPerson, vendor?.phone].filter(Boolean).join(', '),
     poNo,

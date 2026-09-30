@@ -5,7 +5,8 @@
 //
 // Legacy groups by `nc.soNo || nc.jcNo || 'Unknown'` and splits each group's
 // count into Pending (status === 'Pending') vs Closed (everything else).
-// We mirror that with so_code_text → job_cards.code → 'Unknown', and treat
+// We mirror that with the live SO code (nc.so_id, 0184) → so_code_text →
+// job_cards.code → 'Unknown', and treat
 // any non-'pending' status (disposed / rework_done / closed) as "closed".
 //
 // Deliberately carries NO Drawing Rev column. The grain here is one row per
@@ -47,18 +48,20 @@ export const ncBySoJcReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
-        COALESCE(NULLIF(nc.so_code_text, ''), jc.code, 'Unknown') AS so_jc,
+        COALESCE(so.code, NULLIF(nc.so_code_text, ''), jc.code, 'Unknown') AS so_jc,
         COUNT(*)::int AS nc_count,
         COALESCE(SUM(nc.rejected_qty), 0)::float AS total_rejected_qty,
         SUM(CASE WHEN nc.status = 'pending' THEN 1 ELSE 0 END)::int AS pending_count,
         SUM(CASE WHEN nc.status <> 'pending' THEN 1 ELSE 0 END)::int AS closed_count
       FROM public.nc_register nc
       LEFT JOIN public.job_cards jc ON jc.id = nc.job_card_id
+      -- 0184: the NC's live SO (so_id), before the typed snapshot.
+      LEFT JOIN public.sales_orders so ON so.id = nc.so_id
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
         ${fromFrag}
         ${toFrag}
-      GROUP BY COALESCE(NULLIF(nc.so_code_text, ''), jc.code, 'Unknown')
+      GROUP BY COALESCE(so.code, NULLIF(nc.so_code_text, ''), jc.code, 'Unknown')
       ORDER BY nc_count DESC, so_jc
     `);
 

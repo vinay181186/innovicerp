@@ -5,6 +5,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateOperator, useOperator, useUpdateOperator } from '../api';
@@ -24,7 +25,8 @@ export const operatorEditRoute = createRoute({
 
 function OperatorNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreateOperator();
+  const saveKey = useSaveKey();
+  const create = useCreateOperator(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Tier gate (operator_create sits in Production). The list's Add button is
   // hidden without entry rights, but this URL-reachable form had no gate of its

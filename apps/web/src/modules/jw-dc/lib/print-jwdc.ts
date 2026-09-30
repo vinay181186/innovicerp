@@ -34,10 +34,11 @@ export function printJwDc(args: {
   const recipientName = vendor?.name ?? dc.vendorNameText ?? dc.vendorCodeText ?? '';
   const recipientAddress = vendor?.addressLine1 ?? '';
   const vehicleNo = dc.vehicleNo ?? '';
-  // UOM off the items master for each line; NOS only when a line has none.
-  const uomOf = (u: string | null | undefined): string => u?.trim() || 'NOS';
+  // UOM off the items master for each line; blank when a line has none —
+  // never an invented 'NOS' (A29).
+  const uomOf = (u: string | null | undefined): string => u?.trim() ?? '';
   const lineUoms = [...new Set(dc.lines.map((l) => uomOf(l.uom)))];
-  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? 'NOS') : '';
+  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? '') : '';
   const purpose = [...new Set(dc.lines.map((l) => l.processText).filter(Boolean))].join(', ');
 
   const data: Record<string, string> = {
@@ -71,6 +72,10 @@ export function printJwDc(args: {
     },
     { label: 'GSTIN', value: vendor?.gstNumber ?? '', variant: 'mono' },
   ];
+  // Vendor contact (A33): contact person and phone off the vendor master, the
+  // same pair the GRN prints. Printed only when the master has one.
+  const vendorContact = [vendor?.contactPerson, vendor?.phone].filter(Boolean).join(', ');
+  if (vendorContact) recipientFields.push({ label: 'Contact', value: vendorContact });
 
   const documentFields: SheetField[] = [
     { label: 'DC No.', value: dc.code, variant: 'mono' },

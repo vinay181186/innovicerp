@@ -17,9 +17,16 @@
 //   - the thing being charged is LABOUR. There is no material value on this
 //     document, and the sheet says so out loud (see MATERIAL_NOTE).
 
-import type { Client, Company, EffectivePrintTemplate, JwInvoiceListItem } from '@innovic/shared';
+import {
+  type Client,
+  type Company,
+  type EffectivePrintTemplate,
+  type JwInvoiceListItem,
+  placeOfSupplyLabel,
+} from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
+import { partyForPrint } from '@/lib/print/party-copy';
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 import {
   type SheetField,
@@ -30,7 +37,6 @@ import {
 
 // The unit comes off the JWSO line being billed (`uom` on the register row).
 // NOS — the unit the whole system assumes — only when that is blank.
-const FALLBACK_UOM = 'NOS';
 
 // The one statement this document must never print without.
 //
@@ -104,19 +110,17 @@ export function printJwInvoice(args: {
               { label: `CGST @ ${gstPct / 2}%`, value: money(cgstAmount) },
             ]
           : [{ label: `GST @ ${gstPct}%`, value: money(gstAmount) }];
-  const uom = invoice.uom?.trim() || FALLBACK_UOM;
+  // Blank when there is no unit — never an invented 'NOS' (A29).
+  const uom = invoice.uom?.trim() ?? '';
 
-  const clientName = client?.name ?? invoice.clientName ?? '';
-  // Full postal address for the party box — line 1 plus city / state / pincode,
-  // the same join the client master shows. Most client rows carry the whole
-  // address inside line 1 today, so the second line is usually empty and is
-  // dropped rather than printed as a stray comma.
-  const clientAddressLines = [
-    client?.addressLine1 ?? '',
-    [client?.city, client?.state, client?.pincode].filter(Boolean).join(', '),
-  ].filter(Boolean);
-  const clientGstin = client?.gstNumber ?? '';
-  const clientContact = [client?.contactPerson, client?.phone].filter(Boolean).join(', ');
+  // The customer as BILLED: the invoice's own copy (0186, plan D7) — a reprint
+  // after a master change still shows what was billed. Only an invoice raised
+  // before 0186 reads the live master. Line 1, then "City, State, Pincode".
+  const party = partyForPrint(invoice.clientCopy, client, invoice.clientName);
+  const clientName = party.name;
+  const clientAddressLines = party.addressLines;
+  const clientGstin = party.gstNumber;
+  const clientContact = party.contact;
 
   // The {placeholder} bag for the four template blocks.
   //
@@ -153,7 +157,7 @@ export function printJwInvoice(args: {
   // the challan and the PO use for their vendor, so a reader who handles all
   // three documents reads them the same way — only the party changes.
   const recipientFields: SheetField[] = [
-    { label: 'Customer Code', value: client?.code ?? '', variant: 'mono' },
+    { label: 'Customer Code', value: party.code, variant: 'mono' },
     { label: 'Name', value: clientName, variant: 'name' },
     {
       label: 'Address',
@@ -166,6 +170,7 @@ export function printJwInvoice(args: {
     // where an omitted row would say nothing at all.
     { label: 'GSTIN', value: clientGstin, variant: 'mono' },
   ];
+  if (party.stateLine) recipientFields.push({ label: 'State', value: party.stateLine });
   if (clientContact) recipientFields.push({ label: 'Contact', value: clientContact });
 
   // The right box: the facts about the invoice itself. `jwCodeText` is the
@@ -176,6 +181,25 @@ export function printJwInvoice(args: {
     { label: 'Invoice Date', value: challanDate(invoice.invoiceDate), variant: 'mono' },
     { label: 'JWSO No.', value: invoice.jwCodeText ?? '', variant: 'mono' },
   ];
+  // Place of Supply prints only when known — an unknown one is a screen-only
+  // note, never printed on the legal copy (plan D2).
+  if (invoice.placeOfSupply) {
+    documentFields.push({
+      label: 'Place of Supply',
+      value: placeOfSupplyLabel(invoice.placeOfSupply),
+    });
+  }
+  // Payment Terms + Due Date from the customer's Payment Days (0186, plan D6).
+  if (invoice.paymentTermsDays != null) {
+    documentFields.push({ label: 'Payment Terms', value: `${invoice.paymentTermsDays} Days` });
+  }
+  if (invoice.dueDate) {
+    documentFields.push({
+      label: 'Due Date',
+      value: challanDate(invoice.dueDate),
+      variant: 'mono',
+    });
+  }
 
   const model: SheetPrintModel = {
     title: 'Job Work Invoice',

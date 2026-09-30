@@ -59,8 +59,11 @@ export function OutsourceBalanceModal({
   // the vendor master runs past that, so a static first page could not reach
   // later vendors. The saved value is still the vendor CODE (see onSave).
   const [vendorSearch, setVendorSearch] = useState('');
+  // Active vendors only, filtered by the server (A10) so a page of 200 is not
+  // spent on disabled rows. The op's current vendor keeps its label (vendorLabel).
   const { data: vendorsData, isFetching: vendorsFetching } = useVendorsList({
     ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    isActive: true,
     limit: 200,
     offset: 0,
   });

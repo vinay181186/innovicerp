@@ -19,6 +19,7 @@
 import { Loader2 } from 'lucide-react';
 import { useId, useState } from 'react';
 import { ApiError } from '@/lib/api';
+import { useSaveKey } from '@/lib/use-save-key';
 import { Banner, Modal } from '@/ui/feedback';
 import { FormField } from '@/ui/forms';
 import { useCreateClient } from '../api';
@@ -49,7 +50,9 @@ export function QuickAddClient({
   onCreated: (id: string, label: string) => void;
 }): React.JSX.Element {
   const formId = useId();
-  const create = useCreateClient();
+  // One save key per pop-up open (the SO / JWSO forms mount it only while open).
+  const saveKey = useSaveKey();
+  const create = useCreateClient(saveKey);
   const [name, setName] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [phone, setPhone] = useState('');
@@ -130,7 +133,13 @@ export function QuickAddClient({
             className="btn btn-primary"
             disabled={create.isPending}
           >
-            {create.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Add Customer
+            {create.isPending ? (
+              <>
+                <Loader2 size={13} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              'Add Customer'
+            )}
           </button>
         </>
       }

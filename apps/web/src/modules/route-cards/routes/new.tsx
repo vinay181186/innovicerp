@@ -3,8 +3,10 @@ import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCreateRouteCard } from '../api';
+import { docCodeToSend } from '@/lib/use-doc-number';
+import { useCreateRouteCard, useNextRouteCardCode } from '../api';
 import {
   RouteCardForm,
   type RouteCardFormHeaderDraft,
@@ -33,7 +35,11 @@ export const routeCardNewRoute = createRoute({
 function RouteCardNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const search = routeCardNewRoute.useSearch();
-  const create = useCreateRouteCard();
+  const saveKey = useSaveKey();
+  const create = useCreateRouteCard(saveKey);
+  // S2: the number the form pre-filled is only a preview; it is sent only when
+  // the user changed it (docCodeToSend), else the server numbers the record.
+  const { data: nextRc } = useNextRouteCardCode();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
@@ -47,7 +53,7 @@ function RouteCardNewPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync({
-        code: header.code.trim() || undefined,
+        code: docCodeToSend(header.code, nextRc?.code ?? ''),
         itemId: header.itemId,
         ...rawMaterialToInput(header),
         notes: header.notes.trim() || null,

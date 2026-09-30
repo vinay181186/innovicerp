@@ -3,7 +3,7 @@
 // screen's "Against JWPO / DC" tab. One copy so "how much of this line is
 // still out at the vendor" is the same number on both screens.
 
-import type { DeliveryChallanWithLines } from '@innovic/shared';
+import { type DeliveryChallanWithLines, roundQty } from '@innovic/shared';
 
 /** Qty already booked back per DC line id, summed over every receipt on the
  *  challan. Historical receipts may carry a legacy rejected_qty; it counts
@@ -16,7 +16,7 @@ export function computeReceivedByLine(detail: DeliveryChallanWithLines): Map<str
       const prev = out.get(rl.deliveryChallanLineId) ?? 0;
       out.set(
         rl.deliveryChallanLineId,
-        prev + Number(rl.receivedQty) + Number(rl.rejectedQty ?? 0),
+        roundQty(prev + Number(rl.receivedQty) + Number(rl.rejectedQty ?? 0)),
       );
     }
   }

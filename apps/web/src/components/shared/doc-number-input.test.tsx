@@ -73,4 +73,21 @@ describe('DocNumberInput', () => {
     fireEvent.blur(input);
     expect(input.value).toBe('IN-SO-00126');
   });
+
+  it('S2: an untouched suggestion someone else just used stays savable', async () => {
+    mockApi.mockImplementation((url: string) =>
+      Promise.resolve(
+        String(url).includes('code=')
+          ? { exists: true, nextCode: 'IN-SO-00126', formatValid: true }
+          : { exists: false, nextCode: 'IN-SO-00126', formatValid: false },
+      ),
+    );
+    render(<Harness initial="" />);
+    await waitFor(() =>
+      expect(
+        screen.getByText('Just used by someone else — the next free number is given on save.'),
+      ).toBeTruthy(),
+    );
+    expect(screen.getByTestId('valid').textContent).toBe('true');
+  });
 });

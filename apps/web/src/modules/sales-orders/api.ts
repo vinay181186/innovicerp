@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const salesOrdersKeys = {
@@ -90,11 +91,17 @@ export function useNextSoCode(enabled = true) {
   });
 }
 
-export function useCreateSalesOrder() {
+export function useCreateSalesOrder(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<SalesOrderDetail, Error, CreateSalesOrderInput>({
     mutationFn: (input) =>
-      apiFetch<SalesOrderDetail>('/sales-orders', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<SalesOrderDetail>('/sales-orders', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
       // ADR-197 — the SO's History tab reads the activity log.
@@ -106,13 +113,19 @@ export function useCreateSalesOrder() {
   });
 }
 
-export function useUpdateSalesOrder(id: string) {
+export function useUpdateSalesOrder(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   // `reason` (ADR-197) rides beside the shared payload: required by the server
   // when the save cancels the SO, and written on a removed / cancelled line.
   return useMutation<SalesOrderDetail, Error, UpdateSalesOrderInput & { reason?: string }>({
     mutationFn: (input) =>
-      apiFetch<SalesOrderDetail>(`/sales-orders/${id}`, { method: 'PATCH', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<SalesOrderDetail>(`/sales-orders/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
       // ADR-197 — the SO's History tab reads the activity log.

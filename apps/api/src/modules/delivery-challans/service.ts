@@ -23,14 +23,17 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
+import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
   ConflictError,
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosedForPoLine } from '../../lib/production-order-stop';
 import { lockPoLinesForSend, sumSentOnPoLines } from '../../lib/po-line-sent';
+import { assertRowUpdated } from '../../lib/row-lock';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
@@ -43,7 +46,14 @@ import {
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
-import { ActivityAction, opSrNo, parseDocRevision, withDocRevision } from '@innovic/shared';
+import {
+  ActivityAction,
+  opSrNo,
+  parseDocRevision,
+  qtyUomProblem,
+  roundQty,
+  withDocRevision,
+} from '@innovic/shared';
 import type { DocumentTraceability, ReceiveDeliveryChallanResponse } from '@innovic/shared';
 import type {
   CreateDeliveryChallanInput,
@@ -679,7 +689,8 @@ export async function getSendableForPo(
     for (const l of poLines) {
       const poQty = Number(l.qty ?? 0);
       const sentOnDcs = alreadyOnDcs.get(l.id) ?? 0;
-      const poBalance = Math.max(0, poQty - sentOnDcs);
+      // roundQty: a KGS / MTR line keeps 3 decimals without 0.1 + 0.2 drift.
+      const poBalance = Math.max(0, roundQty(poQty - sentOnDcs));
       const s = await loadOutwardSendable(tx, companyId, l.id);
 
       // A job-work line with no operation behind it can never be checked, so
@@ -802,20 +813,14 @@ function dcDetail(code: string, vendorCodeText: string | null | undefined): stri
   return vendorCodeText ? `${code} — ${vendorCodeText}` : code;
 }
 
+/** Vendor exists, is in this company and is ACTIVE (A10 — a new challan is a
+ *  new link). Returns the vendor's code for the challan's vendor-code column. */
 async function assertVendorExists(
   tx: DbTransaction,
   vendorId: string,
   companyId: string,
-): Promise<void> {
-  const rows = await tx
-    .select({ id: vendors.id })
-    .from(vendors)
-    .where(
-      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
-    )
-    .limit(1);
-  if (rows.length === 0)
-    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
+): Promise<string> {
+  return (await assertActiveParty(tx, 'vendor', vendorId, companyId)).code;
 }
 
 async function assertPurchaseOrderExists(
@@ -997,6 +1002,9 @@ function assignLineNos(
  *
  *  A new challan is born at revision 1 — IN-DC-00006/R1. */
 async function nextDcCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering a challan — OSP and NC return
+  // challans share this series and this lock (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'delivery_challans');
   const prefix = 'IN-DC-';
   const rows = await tx
     .select({ code: deliveryChallans.code })
@@ -1040,6 +1048,7 @@ export async function createDeliveryChallan(
     // edit path is ever added, it must bump the code the way updatePurchaseOrder
     // does: bumpDocRevision, and rewrite every stored text copy of the old
     // number in the same transaction.
+    await lockDocSeries(tx, companyId, 'delivery_challans');
     const supplied = input.header.code?.trim();
     const suppliedRev = supplied ? parseDocRevision(supplied) : null;
     const code = suppliedRev
@@ -1063,8 +1072,14 @@ export async function createDeliveryChallan(
     // Vendor/item may be an FK OR free text (ADR-015 / ADR-012 #10), mirroring
     // the Job-Work PO this DC is generated from. Only validate the FK when set;
     // vendor_code_text / item_code_text always carry the human identifier.
+    // The vendor-code column holds the VENDOR's code (A32) — the master's code
+    // when the vendor is linked, never the PO number the screen used to send.
+    let vendorCodeText = input.header.vendorCodeText?.trim() || null;
     if (input.header.vendorId) {
-      await assertVendorExists(tx, input.header.vendorId, companyId);
+      vendorCodeText = await assertVendorExists(tx, input.header.vendorId, companyId);
+    }
+    if (!vendorCodeText) {
+      throw new ValidationError('Vendor is required. Please select the Vendor.');
     }
     if (input.header.purchaseOrderId) {
       await assertPurchaseOrderExists(tx, input.header.purchaseOrderId, companyId);
@@ -1103,12 +1118,12 @@ export async function createDeliveryChallan(
         );
       }
       const prev = incomingByPoLine.get(l.purchaseOrderLineId) ?? 0;
-      incomingByPoLine.set(l.purchaseOrderLineId, prev + l.qty);
+      incomingByPoLine.set(l.purchaseOrderLineId, roundQty(prev + l.qty));
     }
     for (const [poLineId, inc] of incomingByPoLine) {
       const pol = poLines.get(poLineId)!;
       const already = alreadySent.get(poLineId) ?? 0;
-      const remaining = pol.qty - already;
+      const remaining = roundQty(pol.qty - already);
       if (inc > remaining) {
         throw new ConflictError(
           `Ln ${pol.lineNo}${pol.itemCodeText ? ` (${pol.itemCodeText})` : ''}: ` +
@@ -1119,6 +1134,22 @@ export async function createDeliveryChallan(
 
     const lineNos = assignLineNos(input.lines, 1);
 
+    // The item master's unit wins over whatever the form sent: the line is
+    // what the print and the vendor go by (dc-create-po#1). Decimals follow
+    // that unit (S9): KGS / MTR take up to 3, NOS / SET must be whole. The form
+    // checked its own unit already; this checks the one that is stored.
+    const lineUoms = input.lines.map(
+      (l) => (l.itemId ? itemUoms.get(l.itemId) : undefined) ?? l.uom,
+    );
+    input.lines.forEach((l, i) => {
+      const problem = qtyUomProblem(l.qty, lineUoms[i], 'Qty');
+      if (problem) {
+        throw new ValidationError(
+          `Ln ${lineNos[i]}${l.itemCodeText ? ` (${l.itemCodeText})` : ''}: ${problem}`,
+        );
+      }
+    });
+
     const inserted = await tx
       .insert(deliveryChallans)
       .values({
@@ -1128,7 +1159,7 @@ export async function createDeliveryChallan(
         purchaseOrderId: input.header.purchaseOrderId ?? null,
         poCodeText: input.header.poCodeText,
         vendorId: input.header.vendorId ?? null,
-        vendorCodeText: input.header.vendorCodeText,
+        vendorCodeText,
         salesOrderLineId: input.header.salesOrderLineId ?? null,
         soRefText: input.header.soRefText ?? null,
         transport: input.header.transport ?? null,
@@ -1150,10 +1181,8 @@ export async function createDeliveryChallan(
       itemId: l.itemId ?? null,
       itemCodeText: l.itemCodeText,
       itemNameText: l.itemNameText ?? null,
-      qty: String(l.qty),
-      // The item master's unit wins over whatever the form sent: the line is
-      // what the print and the vendor go by (dc-create-po#1).
-      uom: (l.itemId ? itemUoms.get(l.itemId) : undefined) ?? l.uom,
+      qty: roundQty(l.qty).toFixed(3),
+      uom: lineUoms[i]!,
       materialText: l.materialText ?? null,
       dcRemarks: l.dcRemarks ?? null,
       purchaseOrderLineId: l.purchaseOrderLineId ?? null,
@@ -1165,7 +1194,10 @@ export async function createDeliveryChallan(
     // Cascades: stock OUT ledger + jc_op flip per line.
     const opCascades: Array<{ jcCode: string; jobCardId: string; opSeq: number; qty: number }> = [];
     for (const dl of insertedLines) {
-      const qtyInt = Math.round(Number(dl.qty));
+      // Kept to 3 decimals: a buying PO line in KGS / MTR goes out as 12.5. A
+      // line tied to a JC operation is whole pieces — applyOutwardToJcOp
+      // refuses a fraction there rather than truncating it.
+      const lineQty = roundQty(Number(dl.qty));
       // Option A (ADR-067): OSP send is stock-neutral — issuing an outward JW
       // DC no longer debits finished stock. Material out for processing is
       // tracked as "at vendor" via v_osp_wip (jc_op counters); production is
@@ -1180,14 +1212,14 @@ export async function createDeliveryChallan(
           dcCode: header.code,
           dcDate: header.dcDate,
           purchaseOrderLineId: dl.purchaseOrderLineId,
-          qty: qtyInt,
+          qty: lineQty,
         });
         if (result.fired && result.jcCode && result.jobCardId && result.opSeq) {
           opCascades.push({
             jcCode: result.jcCode,
             jobCardId: result.jobCardId,
             opSeq: result.opSeq,
-            qty: qtyInt,
+            qty: lineQty,
           });
         }
       }
@@ -1195,7 +1227,7 @@ export async function createDeliveryChallan(
 
     // Audit emissions in the same tx (ADR-197): one SEND on the challan (qty =
     // everything that left on it), one SEND per Job Card op it moved.
-    const sentTotal = insertedLines.reduce((sum, dl) => sum + Number(dl.qty), 0);
+    const sentTotal = roundQty(insertedLines.reduce((sum, dl) => sum + Number(dl.qty), 0));
     await emitActivityLog(
       tx,
       {
@@ -1246,6 +1278,9 @@ export async function cancelDeliveryChallan(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // S6 — lock the challan first. A cancel racing a receive (or a second
+    // cancel) waits here, then re-reads the committed status / receipts and is
+    // refused by the checks below, so the op's sent qty is reversed only once.
     const headerRows = await tx
       .select()
       .from(deliveryChallans)
@@ -1256,11 +1291,14 @@ export async function cancelDeliveryChallan(
           isNull(deliveryChallans.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const header = headerRows[0];
     if (!header) throw new NotFoundError('DC not found. Refresh the page.');
     if (header.status === 'cancelled') {
-      throw new ConflictError(`DC ${header.code} is already Cancelled.`);
+      throw new ConflictError(
+        `DC ${header.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
+      );
     }
     if (header.status === 'received') {
       throw new ConflictError(`Cannot cancel DC ${header.code}: it is Received.`);
@@ -1280,7 +1318,9 @@ export async function cancelDeliveryChallan(
       .from(deliveryChallanLines)
       .where(
         and(eq(deliveryChallanLines.deliveryChallanId, id), isNull(deliveryChallanLines.deletedAt)),
-      );
+      )
+      .orderBy(asc(deliveryChallanLines.id))
+      .for('update');
 
     const opCascades: Array<{ jcCode: string; jobCardId: string; opSeq: number; qty: number }> = [];
     if (header.ncId) {
@@ -1300,7 +1340,9 @@ export async function cancelDeliveryChallan(
       );
     }
     for (const dl of lineRows) {
-      const qtyInt = Math.round(Number(dl.qty));
+      // reverseOutwardFromJcOp takes back whole pieces from the op (its sent
+      // counter is a piece count); a buying line's decimals never reach it.
+      const lineQty = roundQty(Number(dl.qty));
       // Option A (ADR-067): OSP send no longer touches stock, so cancel has no
       // ledger movement to reverse — only the jc_op sent-qty is unwound below.
       if (dl.purchaseOrderLineId && !header.ncId) {
@@ -1311,21 +1353,21 @@ export async function cancelDeliveryChallan(
           dcCode: header.code,
           dcDate: header.dcDate,
           purchaseOrderLineId: dl.purchaseOrderLineId,
-          qty: qtyInt,
+          qty: lineQty,
         });
         if (result.fired && result.jcCode && result.jobCardId && result.opSeq) {
           opCascades.push({
             jcCode: result.jcCode,
             jobCardId: result.jobCardId,
             opSeq: result.opSeq,
-            qty: qtyInt,
+            qty: Math.round(lineQty),
           });
         }
       }
     }
 
     const cancelledAt = new Date();
-    await tx
+    const cancelledRows = await tx
       .update(deliveryChallans)
       .set({
         status: 'cancelled',
@@ -1335,9 +1377,12 @@ export async function cancelDeliveryChallan(
         updatedBy: user.id,
         updatedAt: cancelledAt,
       })
-      .where(eq(deliveryChallans.id, id));
+      // Cancel once: only from the status read under the lock above.
+      .where(and(eq(deliveryChallans.id, id), eq(deliveryChallans.status, header.status)))
+      .returning({ id: deliveryChallans.id });
+    assertRowUpdated(cancelledRows, `DC ${header.code}`);
 
-    const cancelledQty = lineRows.reduce((sum, dl) => sum + Number(dl.qty), 0);
+    const cancelledQty = roundQty(lineRows.reduce((sum, dl) => sum + Number(dl.qty), 0));
     await emitActivityLog(
       tx,
       {
@@ -1386,6 +1431,8 @@ async function generateReceiptCode(
   // Format: RCPT-<dcCode>-NN (zero-padded, 1-based per DC). Read the existing
   // count + 1 inside the same tx. Re-checks with a uniqueness probe loop in
   // case of concurrent inserts (extremely rare; bail after 5 attempts).
+  // S2: the receipt series lock makes two receipts on one DC queue up.
+  await lockDocSeries(tx, companyId, 'delivery_challan_receipts');
   for (let attempt = 0; attempt < 5; attempt++) {
     const countRows = (await tx.execute(sql`
       SELECT COUNT(*)::int AS n
@@ -1430,6 +1477,10 @@ export async function receiveAgainstDeliveryChallan(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // S6 — lock the challan and its lines before reading what was already
+    // received: two receipts (or a receipt and a cancel) on one DC serialize,
+    // and the second re-reads the first one's receipt lines, so Received can
+    // never pass Sent.
     const headerRows = await tx
       .select()
       .from(deliveryChallans)
@@ -1440,7 +1491,8 @@ export async function receiveAgainstDeliveryChallan(
           isNull(deliveryChallans.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const dcHeader = headerRows[0];
     if (!dcHeader) throw new NotFoundError('DC not found. Refresh the page.');
     if (dcHeader.status === 'cancelled') {
@@ -1462,7 +1514,9 @@ export async function receiveAgainstDeliveryChallan(
           eq(deliveryChallanLines.companyId, companyId),
           isNull(deliveryChallanLines.deletedAt),
         ),
-      );
+      )
+      .orderBy(asc(deliveryChallanLines.id))
+      .for('update');
     const dcLineById = new Map(dcLineRows.map((l) => [l.id, l]));
 
     const inputLineIds = input.lines.map((l) => l.deliveryChallanLineId);
@@ -1510,16 +1564,29 @@ export async function receiveAgainstDeliveryChallan(
     const priorByLine = new Map<string, number>();
     for (const r of priorRows) priorByLine.set(r.dcLineId, Number(r.sumQty));
 
+    // Decimals follow the challan line's unit (S9): the receipt line carries
+    // no unit of its own, so a NOS / SET line must come back in whole pieces
+    // while a KGS / MTR line takes up to 3 decimals.
+    for (const il of input.lines) {
+      const dcLine = dcLineById.get(il.deliveryChallanLineId)!;
+      const problem = qtyUomProblem(il.receivedQty, dcLine.uom, 'Received Qty');
+      if (problem) {
+        throw new ValidationError(
+          `Ln ${dcLine.lineNo}${dcLine.itemCodeText ? ` (${dcLine.itemCodeText})` : ''}: ${problem}`,
+        );
+      }
+    }
+
     const incomingByLine = new Map<string, number>();
     for (const il of input.lines) {
       const prev = incomingByLine.get(il.deliveryChallanLineId) ?? 0;
-      incomingByLine.set(il.deliveryChallanLineId, prev + il.receivedQty);
+      incomingByLine.set(il.deliveryChallanLineId, roundQty(prev + il.receivedQty));
     }
     for (const [dcLineId, incReceived] of incomingByLine) {
       const dcLine = dcLineById.get(dcLineId)!;
       const sentQty = Number(dcLine.qty);
       const prior = priorByLine.get(dcLineId) ?? 0;
-      const totalAfter = prior + incReceived;
+      const totalAfter = roundQty(prior + incReceived);
       if (totalAfter > sentQty) {
         throw new ConflictError(
           `Ln ${dcLine.lineNo}: Received (${totalAfter}) cannot be more than Sent Qty (${sentQty}). Reduce the Qty.`,
@@ -1549,7 +1616,7 @@ export async function receiveAgainstDeliveryChallan(
       companyId,
       receiptId: receiptHeader.id,
       deliveryChallanLineId: il.deliveryChallanLineId,
-      receivedQty: il.receivedQty.toFixed(2),
+      receivedQty: roundQty(il.receivedQty).toFixed(3),
       // No reject at receive — rejected_qty defaults to 0, reject_reason null.
       // Quality accept/reject is decided at Incoming QC on the auto-GRN below.
       remarks: il.remarks ?? null,
@@ -1578,21 +1645,24 @@ export async function receiveAgainstDeliveryChallan(
     }> = [];
     for (const rl of insertedLines) {
       const dcLine = dcLineById.get(rl.deliveryChallanLineId)!;
-      const receivedInt = Math.round(Number(rl.receivedQty));
+      // 3 decimals kept (S9): 2.5 KGS back from the vendor lands on the GRN as
+      // 2.5, not 3. A JC operation's whole-piece rule is applied in
+      // applyReceiveToJcOp.
+      const receivedQty = roundQty(Number(rl.receivedQty));
 
-      if (receivedInt > 0) {
+      if (receivedQty > 0) {
         grnLines.push({
           purchaseOrderLineId: dcLine.purchaseOrderLineId,
           itemId: dcLine.itemId,
           itemCodeText: dcLine.itemCodeText,
           itemName: dcLine.itemNameText ?? dcLine.itemCodeText ?? 'Item',
-          receivedQty: receivedInt,
+          receivedQty,
         });
       }
 
       if (dcLine.purchaseOrderLineId) {
         const prev = poLineQtyAdded.get(dcLine.purchaseOrderLineId) ?? 0;
-        poLineQtyAdded.set(dcLine.purchaseOrderLineId, prev + receivedInt);
+        poLineQtyAdded.set(dcLine.purchaseOrderLineId, roundQty(prev + receivedQty));
       }
     }
 
@@ -1603,12 +1673,24 @@ export async function receiveAgainstDeliveryChallan(
     // "Against JWPO / DC" tab can land on the GRN it just raised.
     let autoGrn: { id: string; code: string } | null = null;
     if (grnLines.length > 0) {
+      // The GRN's vendor-code copy is the VENDOR's code (A32): the master's
+      // code when the challan has a linked vendor — never the challan's old
+      // text, which on pre-0182 challans held the PO number.
+      let grnVendorCodeText = dcHeader.vendorCodeText;
+      if (dcHeader.vendorId) {
+        const [v] = await tx
+          .select({ code: vendors.code })
+          .from(vendors)
+          .where(and(eq(vendors.id, dcHeader.vendorId), eq(vendors.companyId, companyId)))
+          .limit(1);
+        if (v) grnVendorCodeText = v.code;
+      }
       const grn = await insertGrnForOspReceipt(tx, companyId, user, {
         grnDate: input.receiptDate,
         purchaseOrderId: dcHeader.purchaseOrderId,
         poCodeText: dcHeader.poCodeText,
         vendorId: dcHeader.vendorId,
-        vendorCodeText: dcHeader.vendorCodeText,
+        vendorCodeText: grnVendorCodeText,
         dcNo: dcHeader.code,
         deliveryChallanId: dcHeader.id,
         invoiceNo: receiptHeader.vendorInvoiceText,
@@ -1628,9 +1710,8 @@ export async function receiveAgainstDeliveryChallan(
     // over-receive check above, and the NC's own DB check
     // (rtv_received_qty <= rtv_sent_qty) backs it.
     if (dcHeader.ncId) {
-      const totalReceivedThisCall = insertedLines.reduce(
-        (sum, rl) => sum + Math.round(Number(rl.receivedQty)),
-        0,
+      const totalReceivedThisCall = roundQty(
+        insertedLines.reduce((sum, rl) => sum + Number(rl.receivedQty), 0),
       );
       if (totalReceivedThisCall > 0) {
         await onNcChallanReceived(

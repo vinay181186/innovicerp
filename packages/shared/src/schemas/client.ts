@@ -1,4 +1,13 @@
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
+import { queryBoolean } from '../lib/query-boolean';
+import { GST_CATEGORIES } from '../lib/gst';
+import type { MasterRuleWarnings } from '../lib/master-rules';
+import {
+  type MasterImportResult,
+  type MasterImportRowResult,
+  masterImportOptionsSchema,
+} from './master-import';
 
 const codeRegex = /^[A-Za-z0-9._&-]+$/;
 
@@ -11,9 +20,15 @@ export const clientSchema = z.object({
   email: z.string().email().max(255).nullable(),
   phone: z.string().max(32).nullable(),
   gstNumber: z.string().max(32).nullable(),
+  /** GST Category (plan D1, migration 0183) — NULL = not chosen yet. */
+  gstCategory: z.enum(GST_CATEGORIES).nullable(),
   addressLine1: z.string().max(500).nullable(),
   city: z.string().max(100).nullable(),
+  /** State name — always the INDIAN_STATES name for `stateCode` once chosen
+   *  from the pick-list; older rows may still hold free text. */
   state: z.string().max(100).nullable(),
+  /** GST State Code, 2 digits (INDIAN_STATES), migration 0183. */
+  stateCode: z.string().length(2).nullable(),
   pincode: z.string().max(12).nullable(),
   /** Payment Days — days this customer is allowed to pay an invoice in. The
    *  default for a new invoice's Payment Terms (ADR-188). Null = not set. */
@@ -26,6 +41,8 @@ export const clientSchema = z.object({
   deletedAt: z.string().nullable(),
 });
 export type Client = z.infer<typeof clientSchema>;
+/** A create / update answer: the saved customer + any warn-mode rule problems. */
+export type ClientSaveResponse = Client & MasterRuleWarnings;
 
 export const createClientInputSchema = z.object({
   // Optional: the server auto-generates the next CLI-### in the company series
@@ -41,9 +58,19 @@ export const createClientInputSchema = z.object({
   email: z.string().email().max(255).optional().or(z.literal('')),
   phone: z.string().max(32).optional(),
   gstNumber: z.string().max(32).optional(),
+  /** GST Category (D1). null clears it on update. */
+  gstCategory: z.enum(GST_CATEGORIES).nullable().optional(),
   addressLine1: z.string().max(500).optional(),
   city: z.string().max(100).optional(),
+  /** Free text is still accepted (import, old callers) and resolved to a
+   *  State Code on the server; the form sends `stateCode`. */
   state: z.string().max(100).optional(),
+  /** GST State Code from the pick-list — wins over `state`. null clears it. */
+  stateCode: z
+    .string()
+    .regex(/^[0-9]{2}$/, 'State Code is 2 digits')
+    .nullable()
+    .optional(),
   pincode: z.string().max(12).optional(),
   /** Payment Days (ADR-188). null clears it on update. */
   paymentDays: z.number().int().min(0).max(365).nullable().optional(),
@@ -51,35 +78,35 @@ export const createClientInputSchema = z.object({
 });
 export type CreateClientInput = z.infer<typeof createClientInputSchema>;
 
-export const updateClientInputSchema = createClientInputSchema.partial().omit({ code: true });
+export const updateClientInputSchema = createClientInputSchema
+  .partial()
+  .omit({ code: true })
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateClientInput = z.infer<typeof updateClientInputSchema>;
 
-/** BULK CREATE — the Excel importer's whole sheet in ONE request.
+/** BULK IMPORT — the Excel importer's whole sheet in ONE request.
  *
- *  The importer used to POST /clients once per row and wait for each answer,
- *  and every answer invalidated the on-screen client list, so the browser also
- *  re-downloaded the entire master after every single row. Measured on the live
- *  system the identical vendor importer ran at ~1 row per second; a 500-row
- *  sheet took nine minutes. One request, one transaction, one list reload puts
- *  the same sheet in in seconds.
- *
- *  Capped at 2000 rows — comfortably past the largest master anyone would paste
- *  in, and small enough that the whole insert stays one sane transaction. */
-export const bulkCreateClientsInputSchema = z.object({
-  clients: z.array(createClientInputSchema).min(1).max(2000),
+ *  One request, one transaction, one list reload (the per-row POST loop took
+ *  ~1 row per second). Each row is checked on its own on the server — a bad
+ *  row is reported and left out, the rest go in (ERPNext Data Import; audit
+ *  finding 35: one bad email used to reject the whole sheet). `mode` 'update'
+ *  matches rows by Code and writes only the filled cells; `dryRun` is the
+ *  preview (see master-import.ts). Capped at 2000 rows. */
+export const bulkCreateClientsInputSchema = masterImportOptionsSchema.extend({
+  clients: z.array(z.unknown()).min(1).max(2000),
 });
-export type BulkCreateClientsInput = z.infer<typeof bulkCreateClientsInputSchema>;
+export type BulkCreateClientsInput = z.input<typeof bulkCreateClientsInputSchema>;
 
-/** One row the bulk create refused, with the reason in the user's words. */
-export interface BulkClientSkip {
-  /** 1-based position in the submitted array, so the UI can name the sheet row. */
-  index: number;
-  name: string;
-  reason: string;
-}
+/** Update Existing: one row — Code required, every other field optional
+ *  (a missing field is left as it is). */
+export const updateClientImportRowSchema = createClientInputSchema
+  .partial()
+  .extend({ code: z.string().trim().min(1, 'Code is required to update') });
 
-export interface BulkCreateClientsResponse {
-  created: number;
+/** One row the bulk import refused, with the reason in the user's words. */
+export type BulkClientSkip = Pick<MasterImportRowResult, 'index' | 'name'> & { reason: string };
+
+export interface BulkCreateClientsResponse extends MasterImportResult {
   /** Rows that were not written, each with a plain-English reason. */
   skipped: BulkClientSkip[];
   /** Codes assigned to the rows that were created, in insert order. */
@@ -91,7 +118,7 @@ export type ClientSortField = z.infer<typeof clientSortFieldSchema>;
 
 export const listClientsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean().optional(),
   sortBy: clientSortFieldSchema.optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
   // 1000 so the Client Master can load the whole master in one scrolling fetch

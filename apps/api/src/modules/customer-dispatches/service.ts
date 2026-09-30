@@ -17,6 +17,7 @@ import type {
 import { ActivityAction } from '@innovic/shared';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  clients,
   customerDispatchLines,
   customerDispatches,
   items,
@@ -25,6 +26,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { assertActiveParty } from '../../lib/active-party';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -32,6 +34,8 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertRowUpdated } from '../../lib/row-lock';
 import { postStockMove } from '../../lib/stock-ledger';
 import {
   consumeForLine,
@@ -42,6 +46,7 @@ import {
 import { emitActivityLog } from '../activity-log/service';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
+import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -179,6 +184,7 @@ type DispatchableRow = {
   item_revision: string | null;
   client_po_line_no: string | null;
   item_name: string;
+  master_item_name: string | null;
   order_qty: string | number;
   dispatched_qty: string | number;
   rate: string | number;
@@ -191,8 +197,9 @@ type DispatchableRow = {
 // bearing:
 //
 //   * assembly lines  -> sales_order_lines.source_bom_master_id (uuid)
-//   * EQUIPMENT SOs   -> sales_orders.bom_master_id, on the HEADER, and typed
-//                        text rather than uuid (legacy column)
+//   * EQUIPMENT SOs   -> sales_orders.bom_master_id, on the HEADER (text until
+//                        0184, a uuid FK since — the ::text regex guard below
+//                        keeps the query valid on either side of that change)
 //
 // Keying only on the line column silently skipped every equipment SO — all five
 // in the database had a header BOM and a NULL line BOM — so those orders fell
@@ -204,7 +211,7 @@ type DispatchableRow = {
 const UUID_SQL_RE = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
 const EFFECTIVE_BOM_ID = `COALESCE(
   sol.source_bom_master_id,
-  CASE WHEN so.type = 'equipment' AND so.bom_master_id ~ '${UUID_SQL_RE}'
+  CASE WHEN so.type = 'equipment' AND so.bom_master_id::text ~ '${UUID_SQL_RE}'
        THEN so.bom_master_id::uuid END
 )`;
 
@@ -252,6 +259,8 @@ async function loadDispatchable(
         -- POL: the line number on the CUSTOMER's own purchase order, not ours.
         sol.client_po_line_no,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
+        -- The item master's name, shown beside a differing line name (plan v3 Step 4).
+        i.name AS master_item_name,
         -- ADR-196 — a line closed short takes no more dispatch.
         (sol.short_closed_at IS NOT NULL) AS short_closed,
         -- The plan's Customer Dispatch Date (migration 0137): earliest across
@@ -385,6 +394,7 @@ async function loadDispatchable(
       itemRevision: r.item_revision ?? null,
       clientPoLineNo: r.client_po_line_no ?? null,
       itemName: r.item_name,
+      masterItemName: r.master_item_name ?? null,
       orderQty,
       readyQty: ready,
       reservedQty: reserved,
@@ -460,13 +470,20 @@ async function loadSo(
   tx: DbTransaction,
   companyId: string,
   soId: string,
-): Promise<{ id: string; code: string; customer: string | null; status: string }> {
+): Promise<{
+  id: string;
+  code: string;
+  customer: string | null;
+  status: string;
+  clientId: string | null;
+}> {
   const rows = await tx
     .select({
       id: salesOrders.id,
       code: salesOrders.code,
       customer: salesOrders.customerName,
       status: salesOrders.status,
+      clientId: salesOrders.clientId,
     })
     .from(salesOrders)
     .where(
@@ -518,6 +535,8 @@ export async function getDispatchableSo(
 }
 
 async function nextCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'customer_dispatches');
   const rows = await tx
     .select({ code: customerDispatches.code })
     .from(customerDispatches)
@@ -583,6 +602,18 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
       .groupBy(customerDispatchLines.customerDispatchId);
     const agg = new Map(aggRows.map((a) => [a.id, { cnt: Number(a.cnt), qty: Number(a.qty) }]));
     const billed = await loadBilledQtyByDispatch(tx, companyId);
+    // Live customer name per SO off the client master (plan v3 Step 4) — the
+    // list shows it; the dispatch's saved customer_text is the fallback when
+    // the SO has no client_id, and stays the copy the DC print reads.
+    const soIds = [...new Set(headers.map((h) => h.salesOrderId))];
+    const liveCustomerRows = soIds.length
+      ? await tx
+          .select({ soId: salesOrders.id, name: clients.name })
+          .from(salesOrders)
+          .innerJoin(clients, and(eq(clients.id, salesOrders.clientId), isNull(clients.deletedAt)))
+          .where(inArray(salesOrders.id, soIds))
+      : [];
+    const liveCustomer = new Map(liveCustomerRows.map((r) => [r.soId, r.name]));
 
     return {
       dispatches: headers.map((h) => {
@@ -590,6 +621,7 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
         const billedQty = billed.get(h.id) ?? 0;
         return {
           ...rowToHeader(h, a.cnt, a.qty),
+          customer: liveCustomer.get(h.salesOrderId) ?? h.customerText,
           billedQty,
           billedStatus: billedStatusOf(billedQty, a.qty),
         };
@@ -633,7 +665,9 @@ export async function listDispatchRegister(
     const res = await tx.execute(sql`
       SELECT h.id AS dispatch_id, h.code AS dispatch_code, h.status,
         h.dispatch_date::text AS dispatch_date, h.so_code_text AS so_no,
-        h.customer_text AS customer, h.remarks,
+        -- Live customer name off the client master via the SO (plan v3 Step 4);
+        -- the dispatch's saved customer_text only when the SO has no client_id.
+        COALESCE(cli.name, h.customer_text) AS customer, h.remarks,
         i.code AS item_code, l.item_code_text AS item_code_text,
         l.item_name, l.qty,
         -- The customer's drawing revision, off the SO line this dispatch line
@@ -651,6 +685,8 @@ export async function listDispatchRegister(
         jcs.jc_codes AS jc_no
       FROM customer_dispatch_lines l
       JOIN customer_dispatches h ON h.id = l.customer_dispatch_id
+      LEFT JOIN public.sales_orders cso ON cso.id = h.sales_order_id
+      LEFT JOIN public.clients cli ON cli.id = cso.client_id AND cli.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = l.item_id AND i.deleted_at IS NULL
       LEFT JOIN sales_order_lines sol ON sol.id = l.sales_order_line_id
       LEFT JOIN public.users u ON u.id = h.created_by
@@ -746,10 +782,15 @@ async function getDispatchInternal(
       itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
       itemCodeText: customerDispatchLines.itemCodeText,
       itemName: customerDispatchLines.itemName,
+      // The item master's name — the detail screen notes it when the line's
+      // saved name differs (plan v3 Step 4). Display only; the print keeps itemName.
+      masterItemName: items.name,
       qty: customerDispatchLines.qty,
       // POL + unit off the same SO line — the DC print carries both.
       clientPoLineNo: salesOrderLines.clientPoLineNo,
       uom: sql<string | null>`${salesOrderLines.uom}::text`,
+      // HSN off the item master for the DC print (A4). Display only.
+      hsnCode: items.hsnCode,
     })
     .from(customerDispatchLines)
     .leftJoin(items, and(eq(items.id, customerDispatchLines.itemId), isNull(items.deletedAt)))
@@ -773,9 +814,11 @@ async function getDispatchInternal(
     itemRevision: l.itemRevision ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemName,
+    masterItemName: l.masterItemName ?? null,
     qty: l.qty,
     clientPoLineNo: l.clientPoLineNo ?? null,
     uom: l.uom ?? null,
+    hsnCode: l.hsnCode ?? null,
   }));
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
   // The SO's customer + Client PO No. — the DC print reads the customer's
@@ -792,6 +835,9 @@ async function getDispatchInternal(
     billedStatus: billedStatusOf(billedQty, totalQty),
     clientId: soRows[0]?.clientId ?? null,
     clientPoNo: soRows[0]?.clientPoNo ?? null,
+    // The DC's own copy of the customer (0186, plan D7) — the print reads it;
+    // null only on a dispatch made before 0186 (print falls back to the master).
+    clientCopy: readClientCopy({ ...h, clientName: h.customerText }),
     lines,
   };
 }
@@ -814,6 +860,9 @@ export async function createDispatch(
     // ADR-185 — nothing ships against a draft or cancelled order (the SO
     // picker already hides a cancelled one; the server now says so too).
     assertSoAcceptsWork(so.status, so.code, 'nothing can be dispatched against it');
+    // A new dispatch to a customer switched off in the master is refused
+    // (A10 inactive-master rule — 409 "Customer X is disabled", as in ERPNext).
+    if (so.clientId) await assertActiveParty(tx, 'customer', so.clientId, companyId);
     // Lock the SO lines being dispatched BEFORE reading availability, so two
     // concurrent dispatches on the same line serialize instead of both passing
     // the qty check and over-dispatching.
@@ -879,6 +928,8 @@ export async function createDispatch(
     }
 
     const code = await nextCode(tx, companyId);
+    // Legal copy of the customer (plan D7, 0186) — the DC print reads it.
+    const copy = clientCopyValues(await loadClientForCopy(tx, so.clientId, companyId));
     const inserted = await tx
       .insert(customerDispatches)
       .values({
@@ -887,7 +938,15 @@ export async function createDispatch(
         dispatchDate: input.dispatchDate,
         salesOrderId: so.id,
         soCodeText: so.code,
-        customerText: so.customer,
+        customerText: copy.clientName ?? so.customer,
+        clientGstText: copy.clientGstText,
+        clientAddressLine1: copy.clientAddressLine1,
+        clientCity: copy.clientCity,
+        clientState: copy.clientState,
+        clientStateCode: copy.clientStateCode,
+        clientPincode: copy.clientPincode,
+        placeOfSupply: copy.placeOfSupply,
+        clientCopyAt: copy.clientCopyAt,
         transport: input.transport ?? null,
         vehicleNo: input.vehicleNo ?? null,
         status: 'dispatched',
@@ -1008,6 +1067,9 @@ export async function cancelDispatch(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // S4 — cancel once. The dispatch row is locked FIRST, so a second Cancel
+    // (double click, another tab) waits here, then reads 'cancelled' and is
+    // refused — the SO dispatched qty and the stock go back exactly once.
     const rows = await tx
       .select()
       .from(customerDispatches)
@@ -1018,11 +1080,14 @@ export async function cancelDispatch(
           isNull(customerDispatches.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const h = rows[0];
     if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
     if (h.status === 'cancelled')
-      throw new ValidationError(`Dispatch ${h.code} is already Cancelled.`);
+      throw new ConflictError(
+        `Dispatch ${h.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
+      );
 
     const lineRows = await tx
       .select()
@@ -1033,6 +1098,23 @@ export async function cancelDispatch(
           isNull(customerDispatchLines.deletedAt),
         ),
       );
+
+    // Lock the SO lines being given back, in the same id order dispatch and
+    // invoice create use (no deadlock), so an invoice cannot be raised on
+    // them between the "already invoiced?" check below and the reversal.
+    const soLineIds = [
+      ...new Set(lineRows.flatMap((l) => (l.salesOrderLineId ? [l.salesOrderLineId] : []))),
+    ];
+    if (soLineIds.length > 0) {
+      await tx
+        .select({ id: salesOrderLines.id })
+        .from(salesOrderLines)
+        .where(
+          and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, soLineIds)),
+        )
+        .orderBy(asc(salesOrderLines.id))
+        .for('update');
+    }
 
     // Guard: don't cancel a dispatch that has already been invoiced — reversing
     // dispatched_qty below invoiced_qty leaves a live invoice billing goods no
@@ -1116,10 +1198,12 @@ export async function cancelDispatch(
     // from `dispatched` back to closed/open to match.
     await syncSoDispatchStatus(tx, companyId, h.salesOrderId, h.soCodeText ?? h.code, user);
 
-    await tx
+    const cancelledRows = await tx
       .update(customerDispatches)
       .set({ status: 'cancelled', updatedBy: user.id, updatedAt: new Date() })
-      .where(eq(customerDispatches.id, id));
+      .where(and(eq(customerDispatches.id, id), eq(customerDispatches.status, h.status)))
+      .returning({ id: customerDispatches.id });
+    assertRowUpdated(cancelledRows, `Dispatch ${h.code}`);
 
     await emitActivityLog(
       tx,

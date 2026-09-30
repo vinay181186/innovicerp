@@ -26,6 +26,7 @@ import { requireFormAccess } from '../../lib/access';
 import { ActivityAction } from '@innovic/shared';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 import { partyMaterialFitsJwLine } from '../party-materials/service';
@@ -52,6 +53,8 @@ async function nextPartyGrnCode(
   tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
   companyId: string,
 ): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'party_grn');
   const rows = (await tx.execute(sql`
     SELECT COALESCE(
       MAX(NULLIF(regexp_replace(code, '^${sql.raw(CODE_PREFIX)}', ''), '')::int),

@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 
@@ -53,11 +54,17 @@ export function usePurchaseOrder(id: string | undefined) {
   });
 }
 
-export function useUpdatePurchaseOrder(id: string) {
+export function useUpdatePurchaseOrder(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<PurchaseOrderDetail, Error, UpdatePurchaseOrderInput>({
     mutationFn: (input) =>
-      apiFetch<PurchaseOrderDetail>(`/purchase-orders/${id}`, { method: 'PATCH', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PurchaseOrderDetail>(`/purchase-orders/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
       // ADR-197 — the document's History tab reads the activity log.
@@ -89,11 +96,17 @@ export function useSoftDeletePurchaseOrder() {
  *  PR, a PO created here may cover several — one per line — so EVERY referenced
  *  PR's detail cache is invalidated. Miss one and that PR's page keeps showing
  *  "no PO raised" after the PO exists. */
-export function useCreatePurchaseOrder() {
+export function useCreatePurchaseOrder(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<PurchaseOrderDetail, Error, CreatePurchaseOrderInput>({
     mutationFn: (input) =>
-      apiFetch<PurchaseOrderDetail>('/purchase-orders', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PurchaseOrderDetail>('/purchase-orders', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created, vars) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
       // ADR-197 — the document's History tab reads the activity log.

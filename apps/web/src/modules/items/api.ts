@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const itemsKeys = {
@@ -64,10 +65,13 @@ export function useItem(id: string | undefined) {
   });
 }
 
-export function useCreateItem() {
+export function useCreateItem(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<Item, Error, CreateItemInput>({
-    mutationFn: (input) => apiFetch<Item>('/items', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<Item>('/items', { method: 'POST', json: input, ...(headers ? { headers } : {}) }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
@@ -84,20 +88,43 @@ export function useCreateItem() {
  *  vendor import measured about one row per second. */
 export function useBulkCreateItems() {
   const qc = useQueryClient();
-  return useMutation<BulkCreateItemsResponse, Error, BulkCreateItemsInput>({
-    mutationFn: (input) =>
-      apiFetch<BulkCreateItemsResponse>('/items/bulk', { method: 'POST', json: input }),
-    onSuccess: () => {
+  return useMutation<
+    BulkCreateItemsResponse,
+    Error,
+    BulkCreateItemsInput & { saveKey?: SaveKey | undefined }
+  >({
+    // A big sheet can take over a minute — give it three. Only the real import
+    // (dryRun: false) carries the dialog's save key; a preview is not a save,
+    // and sharing the key would make the server replay the preview's answer.
+    mutationFn: ({ saveKey, ...input }) =>
+      withSaveKey(input.dryRun ? undefined : saveKey, (headers) =>
+        apiFetch<BulkCreateItemsResponse>('/items/bulk', {
+          method: 'POST',
+          json: input,
+          timeoutMs: 180_000,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (_res, input) => {
+      // A preview (dryRun) writes nothing — nothing to reload.
+      if (input.dryRun) return;
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
     },
   });
 }
 
-export function useUpdateItem(id: string) {
+export function useUpdateItem(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<Item, Error, UpdateItemInput>({
-    mutationFn: (input) => apiFetch<Item>(`/items/${id}`, { method: 'PATCH', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<Item>(`/items/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });

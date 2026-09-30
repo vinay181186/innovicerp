@@ -129,7 +129,7 @@ export function CreateNcDcPanel(props: {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 16 }}>
             <button type="submit" className="btn btn-primary" disabled={pending || !canSubmit}>
               {pending ? <Loader2 size={13} className="animate-spin" /> : <Truck size={13} />}
-              Save DC
+              {pending ? 'Saving…' : 'Save DC'}
             </button>
           </div>
         </form>

@@ -28,6 +28,7 @@ import type {
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { plansKeys } from '@/modules/plans/api';
@@ -156,11 +157,17 @@ function invalidateNeighbours(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: activityLogKeys.all });
 }
 
-export function useCreateProductionOrder() {
+export function useCreateProductionOrder(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<ProductionOrderDetail, Error, CreateProductionOrderInput>({
     mutationFn: (input) =>
-      apiFetch<ProductionOrderDetail>('/production-orders', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<ProductionOrderDetail>('/production-orders', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       invalidateNeighbours(qc);
       qc.setQueryData(productionOrdersKeys.detail(created.id), created);

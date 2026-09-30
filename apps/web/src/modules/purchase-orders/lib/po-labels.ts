@@ -2,7 +2,7 @@
 // the stored codes (`partial`, `job_work`, `sgst_cgst`, …) are unchanged; these
 // maps only decide what the user reads.
 
-import type { PoStatus, PoType } from '@innovic/shared';
+import { type PoStatus, type PoTaxType, type PoType, poTaxTypeSchema } from '@innovic/shared';
 
 export const PO_STATUS_LABELS: Record<PoStatus, string> = {
   draft: 'Draft',
@@ -31,7 +31,14 @@ export function poStatusLabel(status: string): string {
   return (PO_STATUS_LABELS as Record<string, string>)[status] ?? status.replaceAll('_', ' ');
 }
 
-/** Tax Type is a free string column; unknown values are shown as stored.
+/** The form's Tax Type select value as the fixed list the API accepts (S1):
+ *  'sgst_cgst' | 'igst', or undefined for None / anything else. */
+export function toPoTaxType(v: string | null | undefined): PoTaxType | undefined {
+  const parsed = poTaxTypeSchema.safeParse(v?.trim());
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Tax Type — one fixed list since 0182; any other stored value shows as is.
  *  No tax type (NULL / blank) reads "None" — the same word the form offers. */
 export function taxTypeLabel(taxType: string | null | undefined): string {
   if (!taxType) return 'None';

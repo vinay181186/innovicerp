@@ -12,6 +12,7 @@
 
 import { z } from 'zod';
 import { DC_STATUSES } from '../enums/dc-status';
+import { positiveQtySchema, qtyUomProblem } from '../lib/qty-rule';
 import { uomSchema } from './item';
 
 export const dcStatusSchema = z.enum(DC_STATUSES);
@@ -185,19 +186,26 @@ export interface ListDeliveryChallansResponse {
 
 // ─── Write shapes (T-059a) ─────────────────────────────────────────────────
 
-export const createDeliveryChallanLineInputSchema = z.object({
-  lineNo: z.number().int().positive().optional(),
-  // FK when the line item is in the master, else null with itemCodeText as the
-  // human identifier (ADR-012 #10) — mirrors the Job-Work PO line this DC copies.
-  itemId: z.string().uuid().nullable().optional(),
-  itemCodeText: z.string().min(1),
-  itemNameText: z.string().nullable().optional(),
-  qty: z.number().int().positive(),
-  uom: uomSchema,
-  materialText: z.string().nullable().optional(),
-  dcRemarks: z.string().nullable().optional(),
-  purchaseOrderLineId: z.string().uuid().nullable().optional(),
-});
+export const createDeliveryChallanLineInputSchema = z
+  .object({
+    lineNo: z.number().int().positive().optional(),
+    // FK when the line item is in the master, else null with itemCodeText as the
+    // human identifier (ADR-012 #10) — mirrors the Job-Work PO line this DC copies.
+    itemId: z.string().uuid().nullable().optional(),
+    itemCodeText: z.string().min(1),
+    itemNameText: z.string().nullable().optional(),
+    /** Decimals follow the unit (S9): up to 3 places (numeric(14,3), 0184);
+     *  a whole-number unit (NOS / SET) is refused a fraction. */
+    qty: positiveQtySchema,
+    uom: uomSchema,
+    materialText: z.string().nullable().optional(),
+    dcRemarks: z.string().nullable().optional(),
+    purchaseOrderLineId: z.string().uuid().nullable().optional(),
+  })
+  .superRefine((l, ctx) => {
+    const problem = qtyUomProblem(l.qty, l.uom, `${l.itemCodeText}: Qty`);
+    if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['qty'], message: problem });
+  });
 export type CreateDeliveryChallanLineInput = z.infer<typeof createDeliveryChallanLineInputSchema>;
 
 export const createDeliveryChallanInputSchema = z.object({
@@ -210,7 +218,9 @@ export const createDeliveryChallanInputSchema = z.object({
     // FK when the vendor is in the master, else null with vendorCodeText as the
     // human identifier (ADR-015) — mirrors the Job-Work PO this DC is issued from.
     vendorId: z.string().uuid().nullable().optional(),
-    vendorCodeText: z.string().min(1),
+    /** The VENDOR's code — never the PO number (A32). Optional when vendorId is
+     *  set: the server stores the vendor master's code. Required otherwise. */
+    vendorCodeText: z.string().min(1).optional(),
     salesOrderLineId: z.string().uuid().nullable().optional(),
     soRefText: z.string().nullable().optional(),
     transport: z.string().nullable().optional(),
@@ -264,7 +274,8 @@ export type DeliveryChallanReceipt = z.infer<typeof deliveryChallanReceiptSchema
 
 export const createDeliveryChallanReceiptLineInputSchema = z.object({
   deliveryChallanLineId: z.string().uuid(),
-  receivedQty: z.number().int().positive(),
+  /** Up to 3 decimals (S9); the service refuses a fraction for a NOS / SET line. */
+  receivedQty: positiveQtySchema,
   remarks: z.string().nullable().optional(),
 });
 export type CreateDeliveryChallanReceiptLineInput = z.infer<

@@ -220,7 +220,7 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
           ) : null}
           <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? 'Save'}
+            {formState.isSubmitting ? 'Saving…' : (props.submitLabel ?? 'Save')}
           </button>
         </div>
       </div>

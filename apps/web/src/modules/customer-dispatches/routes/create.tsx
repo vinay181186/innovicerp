@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayIst } from '@/lib/date';
 import { Panel } from '@/ui/data';
@@ -53,7 +54,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   const { so: preselectSo } = customerDispatchNewRoute.useSearch();
   const { data: soOpts } = useFinanceSoOptions();
   const { data: next } = useNextDispatchCode();
-  const create = useCreateDispatch();
+  const saveKey = useSaveKey();
+  const create = useCreateDispatch(saveKey);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   // Where Cancel goes, and where ESC -> Exit goes. Every other way off the

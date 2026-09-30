@@ -3,6 +3,8 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlan, useUpdatePlan } from '../api';
 import { PlanForm, type PlanFormValues, toCreateInput } from '../components/plan-form';
@@ -18,7 +20,11 @@ function PlanEditPage(): React.JSX.Element {
   const { id } = planEditRoute.useParams();
   const navigate = useNavigate();
   const { data: plan, isLoading, isError, error } = usePlan(id);
-  const update = useUpdatePlan(id);
+  const saveKey = useSaveKey();
+  const update = useUpdatePlan(id, saveKey);
+  // R5 — the version this form opened with; a save over someone else's newer
+  // edit is refused (409 edit_conflict) and its message shows in the form.
+  const opened = useOpenedVersion(plan?.updatedAt);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
   // No Cancel button on this screen, so ESC → Exit falls back to history.
@@ -126,9 +132,11 @@ function PlanEditPage(): React.JSX.Element {
               foRemarks: ci.foRemarks,
               remarks: ci.remarks,
               ...(plan.opsSource === 'route_card' ? {} : { ops: ci.ops }),
+              expectedUpdatedAt: opened.expected(),
             },
             {
-              onSuccess: () => {
+              onSuccess: (saved) => {
+                opened.saved(saved.updatedAt);
                 exit.leave(() => void navigate({ to: '/plans/$id', params: { id: plan.id } }));
               },
             },

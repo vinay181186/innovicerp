@@ -11,7 +11,7 @@
 //   <ListHeader>            title · count · ⟳ Updating… · primary, then the
 //                           filter bar: SearchInput · status (counts in the
 //                           option labels) · Clear
-//   <Banner>                import result (dismissible)
+//   <MasterImportDialog>    Excel import: Import Type → preview → import
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint · Excel template / import
 //   <PageState>             no-access and load-failure
@@ -29,14 +29,14 @@
 
 import type { Client, ListClientsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateClients, useClientsList, useSoftDeleteClient } from '../api';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
@@ -47,14 +47,6 @@ import { downloadClientTemplate, parseClientImportFile } from '../lib/import-exp
 // clients list endpoint caps `limit` at 1000 (packages/shared client schema,
 // raised from 200 to match the SO master); ListFooter flags a larger set.
 const LIST_LIMIT = 1000;
-
-// Join a list of import warnings/failures for the status line, capping at 50 so
-// a huge sheet cannot produce an unbounded banner, but still showing far more
-// than the old 3-item cap that hid most problems.
-function fmtList(items: string[]): string {
-  const shown = items.slice(0, 50).join('; ');
-  return items.length > 50 ? `${shown} … (+${items.length - 50} more)` : shown;
-}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -120,56 +112,13 @@ function ClientsListPage(): React.JSX.Element {
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
 
-  // Excel import — the WHOLE sheet goes in one request, and the list reloads
-  // once at the end.
-  //
-  // It used to loop the single-create mutation over the rows: one round trip per
-  // client, and because each success invalidated the list query, the browser
-  // re-downloaded the entire client master after every row — so the import got
-  // slower the longer it ran. Measured on the live system (the identical vendor
-  // import) at ~1 row/second, which put a 500-row sheet at about nine minutes.
-  //
-  // The duplicate-NAME guard moved to the server with it — name is the key this
-  // page has always de-duplicated on, because the template carries no Code
-  // column. It used to compare against `data.clients`, i.e. the page of clients
-  // currently loaded on screen, so anything past that page read as "new" and was
-  // created a second time. The server now compares against the whole company.
+  // Excel import — ONE shared dialog (components/shared/master-import-dialog):
+  // Import Type (Insert new / Update existing by Code) → preview (dryRun, the
+  // server checks every row and writes nothing) → import. The whole sheet goes
+  // in one request and the list reloads once at the end; a bad row is left out
+  // with its reason and the rest go in.
   const bulkCreate = useBulkCreateClients();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [importMsg, setImportMsg] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-
-  async function onImportFile(file: File): Promise<void> {
-    setImporting(true);
-    setImportMsg(null);
-    try {
-      const { payloads, rowNums, errors } = await parseClientImportFile(file);
-      if (payloads.length === 0) {
-        setImportMsg(
-          errors.length
-            ? `Nothing to import. ${errors.length} row issue(s): ${fmtList(errors)}`
-            : 'Nothing to import — the sheet has no customer rows.',
-        );
-        return;
-      }
-      const res = await bulkCreate.mutateAsync({ clients: payloads });
-      // s.index is the 1-based position in the array sent; map it back to the
-      // sheet row, since rows with bad values were already left out above.
-      const skips = res.skipped.map(
-        (s) => `Row ${rowNums[s.index - 1] ?? s.index} "${s.name}": ${s.reason}`,
-      );
-      setImportMsg(
-        `Imported ${res.created}/${payloads.length} customer(s).` +
-          (skips.length ? ` ${skips.length} skipped: ${fmtList(skips)}` : '') +
-          (errors.length ? ` ${errors.length} row issue(s): ${fmtList(errors)}` : ''),
-      );
-    } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');
-    } finally {
-      setImporting(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  }
+  const [importOpen, setImportOpen] = useState(false);
 
   const setStatus = useCallback(
     (status: 'active' | 'inactive' | undefined) => {
@@ -315,12 +264,6 @@ function ClientsListPage(): React.JSX.Element {
         }
       />
 
-      {importMsg ? (
-        <Banner tone="info" onDismiss={() => setImportMsg(null)}>
-          {importMsg}
-        </Banner>
-      ) : null}
-
       {isError ? (
         <PageState
           state="error"
@@ -359,9 +302,10 @@ function ClientsListPage(): React.JSX.Element {
         noun="customer"
         limit={LIST_LIMIT}
         // Excel template + import sit below the count line (mirror of Vendor
-        // Master). The file input is hidden and only opened by the button.
+        // Master). Import opens the shared import dialog; Insert new needs Add,
+        // Update existing needs Edit.
         actions={
-          canAdd ? (
+          canAdd || canEdit ? (
             <>
               <Button
                 size="sm"
@@ -375,25 +319,31 @@ function ClientsListPage(): React.JSX.Element {
                 size="sm"
                 variant="ghost"
                 icon={<Icon name="upload" size={12} />}
-                loading={importing}
-                onClick={() => fileRef.current?.click()}
+                onClick={() => setImportOpen(true)}
               >
                 Import from Excel
               </Button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onImportFile(f);
-                }}
-              />
             </>
           ) : null
         }
       />
+      {importOpen ? (
+        <MasterImportDialog
+          title="Import Customers from Excel"
+          noun="customer"
+          codeLabel="Code"
+          nameLabel="Customer Name"
+          allowInsert={canAdd}
+          allowUpdate={canEdit}
+          parse={parseClientImportFile}
+          submit={(rows, mode, dryRun, saveKey) =>
+            bulkCreate.mutateAsync({ clients: rows, mode, dryRun, saveKey })
+          }
+          onDownloadTemplate={downloadClientTemplate}
+          errorsFileName="Customer Import Errors.xlsx"
+          onClose={() => setImportOpen(false)}
+        />
+      ) : null}
       {deleteTarget ? (
         <TrashReasonDialog
           title={`Move Customer ${deleteTarget.code} to Trash?`}

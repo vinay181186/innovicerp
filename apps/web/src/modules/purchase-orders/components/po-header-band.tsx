@@ -98,7 +98,10 @@ export function PoHeaderBand({
   totalQty: number;
   receivedQty: number;
 }): React.JSX.Element {
-  const address = [vendor?.addressLine1, vendor?.city, vendor?.state].filter(Boolean).join(', ');
+  // Full address incl. pincode (A38 / A39) — street, city, state, pincode.
+  const address = [vendor?.addressLine1, vendor?.city, vendor?.state, vendor?.pincode]
+    .filter(Boolean)
+    .join(', ');
   const rejected = Boolean(detail.rejectedAt ?? detail.rejectedBy ?? detail.rejectionReason);
   const gstParts = (
     [
@@ -127,12 +130,12 @@ export function PoHeaderBand({
       >
         {/* ── Vendor ── */}
         <Col caption="Vendor">
-          {detail.vendorCodeText ? (
+          {(detail.vendorCode ?? detail.vendorCodeText) ? (
             <div
               className="mono fw-700"
               style={{ color: 'var(--purple)', fontSize: 13, marginBottom: 2 }}
             >
-              {detail.vendorCodeText}
+              {detail.vendorCode ?? detail.vendorCodeText}
             </div>
           ) : null}
           <div className="fw-700" style={{ fontSize: 14, marginBottom: 4 }}>

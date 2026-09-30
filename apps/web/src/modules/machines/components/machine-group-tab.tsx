@@ -20,6 +20,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useSaveKey } from '@/lib/use-save-key';
 import { ConfirmDialog } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListHeader } from '@/ui/layout';
@@ -62,7 +63,10 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
     [term],
   );
   const list = useMachineGroupsList(query);
-  const create = useCreateMachineGroup();
+  // R2: one save key per Add-modal open — rotated when the modal opens, since
+  // the create hook lives here rather than in the modal.
+  const saveKey = useSaveKey();
+  const create = useCreateMachineGroup(saveKey);
   const update = useUpdateMachineGroup();
   const softDelete = useSoftDeleteMachineGroup();
 
@@ -117,7 +121,10 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => setModal({ kind: 'new' })}
+              onClick={() => {
+                saveKey.rotate();
+                setModal({ kind: 'new' });
+              }}
             >
               <Plus size={14} /> Add Machine Group
             </button>
@@ -474,7 +481,7 @@ function MachineGroupModal({
               onClick={() => void submit()}
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{' '}
-              {row ? 'Save Changes' : 'Save Machine Group'}
+              {saving ? 'Saving…' : row ? 'Save Changes' : 'Save Machine Group'}
             </button>
           </div>
         </div>

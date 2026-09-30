@@ -89,7 +89,7 @@ export const GLOBAL_SEARCH_KIND_META: Record<GlobalSearchKind, GlobalSearchKindM
   'route-card': { label: 'Route Card', gate: { formKey: 'routecard_create' } },
   'design-project': { label: 'Design Project', gate: { formKey: 'dsnproj_create' } },
   'jw-dc-outward': { label: 'JW DC Out', gate: { formKey: 'ospdc_create' } },
-  client: { label: 'Client', gate: { formKey: 'client_create' } },
+  client: { label: 'Customer', gate: { formKey: 'client_create' } },
   vendor: { label: 'Vendor', gate: { formKey: 'vendor_create' } },
   item: { label: 'Item', gate: { formKey: 'item_create' } },
   'customer-dispatch': { label: 'Dispatch', gate: { formKey: 'dispatch_create' } },

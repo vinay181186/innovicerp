@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 
 // Raw-material SIZE master (e.g. 'Ø30 × 1000', '50 × 6 FLAT'). One of the two
 // masters behind the single "Raw Material Master" menu entry; the other is
@@ -73,7 +74,7 @@ export interface BulkCreateMaterialSizesResponse {
 
 export const listMaterialSizesQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean().optional(),
   // 1000 so the master list loads in one scrolling fetch (no Prev/Next),
   // matching the Vendor Master.
   limit: z.coerce.number().int().positive().max(1000).default(50),

@@ -21,10 +21,11 @@
 //   - milestones[] (#8, no current data)
 //   - clientPoFileUrl / clientPoFileName (file upload, Phase 6)
 //   - dispatchedQty / SO Total Value (derived; needs dispatch + BOM modules)
-//   - bom_master_id / bom_status are kept as nullable text fields (forward FK
-//     when BOM module ships).
+//   - bom_master_id is a uuid FK to bom_masters since 0184; bom_status stays
+//     free text ("BOM Assigned" / "BOM Pending").
 
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { SO_FULFILMENT_STATUSES } from '../enums/so-fulfilment-status';
 import { SO_STATUSES } from '../enums/so-status';
@@ -52,6 +53,11 @@ export const salesOrderLineSchema = z.object({
   // only display value). UI renders `itemCode ?? itemCodeText ?? '—'`.
   itemCode: z.string().nullable().default(null),
   partName: z.string(),
+  /** The item master's name (items.name by itemId). The line's own Item Name
+   *  (`partName`) stays editable; the SO detail screen shows a grey
+   *  "Master: …" note when the two differ (plan v3 Step 4). Only the detail
+   *  read fills it; null when the line has no item. */
+  masterItemName: z.string().nullable().optional(),
   material: z.string().nullable(),
   drawingNo: z.string().nullable(),
   // The CUSTOMER'S drawing revision, exactly as written on the drawing they
@@ -309,7 +315,10 @@ const _soHeaderInputBase = z.object({
   type: soTypeSchema.default('component_manufacturing'),
   status: soStatusSchema.default('open'),
   gstPercent: z.coerce.number().nonnegative().max(99.99).default(18),
-  bomMasterId: z.string().max(64).optional(),
+  /** The BOM (bom_masters.id) this equipment SO builds — a real uuid FK since
+   *  0184. Only an Active BOM may be linked (checked by the server when the
+   *  link is set or changed). '' / absent = no BOM. */
+  bomMasterId: z.union([z.string().uuid(), z.literal('')]).optional(),
   bomStatus: z.string().max(32).optional(),
   costCenter: z.string().max(64).optional(),
   remarks: z.string().max(2000).optional(),
@@ -353,6 +362,7 @@ export const updateSalesOrderInputSchema = z.object({
     }),
   lines: z.array(salesOrderLineInputSchema).optional(),
   milestones: z.array(salesOrderMilestoneInputSchema).optional(),
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type UpdateSalesOrderInput = z.infer<typeof updateSalesOrderInputSchema>;
 

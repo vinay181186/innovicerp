@@ -6,6 +6,7 @@
 // JC cascade fires server-side.
 
 import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
+import { QTY_DECIMALS, qtyStepForUom, qtyUomProblem, roundQty } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -13,6 +14,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
@@ -28,6 +30,10 @@ export const deliveryChallanReceiveRoute = createRoute({
 
 const RECEIVE_FORM_ID = 'dc-receive-form';
 
+/** Up to 3 decimals (S9): 2.5 KGS reads 2.5, 10 NOS reads 10. */
+const fmtQty = (n: number): string =>
+  n.toLocaleString('en-IN', { maximumFractionDigits: QTY_DECIMALS });
+
 interface LineDraft {
   dcLineId: string;
   lineNo: number;
@@ -40,6 +46,8 @@ interface LineDraft {
   /** The CUSTOMER's PO line number off the SO line behind this challan line. */
   clientPoLineNo: string | null;
   itemNameText: string | null;
+  /** The challan line's unit — decides whether Receive Now takes decimals. */
+  uom: string;
   sentQty: number;
   /** ADR-189 — good pieces back so far; rejects are their own column, as on
    *  the DC detail page, so "Received" means one thing on both screens. */
@@ -53,7 +61,9 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   const { id } = deliveryChallanReceiveRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
-  const receive = useReceiveDeliveryChallan();
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const receive = useReceiveDeliveryChallan(saveKey);
   // Booking material back is `entry` on ospdc_create (Purchase) — the same right
   // that raised the DC. Checked here too because the route is reachable by URL.
   const { data: eff } = useMyAccess();
@@ -98,10 +108,11 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           itemRevision: l.itemRevision,
           clientPoLineNo: l.clientPoLineNo,
           itemNameText: l.itemNameText,
+          uom: l.uom,
           sentQty: sent,
-          alreadyReceived: already - rejected,
+          alreadyReceived: roundQty(already - rejected),
           alreadyRejected: rejected,
-          remaining: Math.max(0, sent - already),
+          remaining: Math.max(0, roundQty(sent - already)),
           receivedQty: '',
         };
       }),
@@ -117,8 +128,10 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     let anyQty = false;
     for (const d of lineDrafts) {
       const recv = Number(d.receivedQty || '0');
-      if (recv < 0) return false;
+      if (Number.isNaN(recv) || recv < 0) return false;
       if (recv > d.remaining) return false;
+      // Decimals follow the unit (S9) — the server refuses 2.5 NOS too.
+      if (recv > 0 && qtyUomProblem(recv, d.uom) !== null) return false;
       if (recv > 0) anyQty = true;
     }
     return anyQty && !submitting;
@@ -324,14 +337,15 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                         </div>
                       ) : null}
                     </td>
-                    <td className="mono td-num">{d.sentQty.toFixed(0)}</td>
-                    <td className="mono td-num">{d.alreadyReceived.toFixed(0)}</td>
-                    <td className="mono td-num">{d.alreadyRejected.toFixed(0)}</td>
-                    <td className="mono td-num fw-700">{d.remaining.toFixed(0)}</td>
+                    <td className="mono td-num">{fmtQty(d.sentQty)}</td>
+                    <td className="mono td-num">{fmtQty(d.alreadyReceived)}</td>
+                    <td className="mono td-num">{fmtQty(d.alreadyRejected)}</td>
+                    <td className="mono td-num fw-700">{fmtQty(d.remaining)}</td>
                     <td className="td-num">
                       <input
                         type="number"
-                        inputMode="numeric"
+                        inputMode="decimal"
+                        step={qtyStepForUom(d.uom)}
                         min={0}
                         max={d.remaining}
                         className="innovic-input"
@@ -339,6 +353,10 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                         onChange={(e) => updateDraft(idx, { receivedQty: e.target.value })}
                         disabled={d.remaining === 0}
                         style={{ width: 90 }}
+                        title={
+                          qtyUomProblem(Number(d.receivedQty || '0'), d.uom, 'Receive Now') ??
+                          undefined
+                        }
                       />
                     </td>
                   </tr>

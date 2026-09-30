@@ -6,6 +6,7 @@
 // job_work_order_lines.invoiced_qty. Numbering: IN-JWINV-#####.
 
 import { z } from 'zod';
+import { clientCopySchema } from './party-copy';
 import { servicePoTaxTypeSchema } from './service-po';
 
 /** How the GST on a JW invoice splits on paper: 'sgst_cgst' (same state — half
@@ -33,6 +34,13 @@ export const jwInvoiceSchema = z.object({
   /** Migration 0148. Null on invoices raised before it — those print a single
    *  "GST @ n%" row, as they always did. */
   taxType: jwInvoiceTaxTypeSchema.nullable().default(null),
+  /** Payment Terms (days) + Due Date (0186, plan D6) — from the customer's
+   *  Payment Days, like the SO invoice. Null on JW invoices raised before 0186. */
+  paymentTermsDays: z.number().int().nonnegative().nullable().default(null),
+  dueDate: z.string().nullable().default(null),
+  /** Place of Supply (0186, plan D2): GST State Code billed to. Null = unknown
+   *  — the screen shows an amber note (never printed). */
+  placeOfSupply: z.string().nullable().default(null),
   remarks: z.string().nullable(),
   /** R5 (ADR-194): 'issued' | 'cancelled'. A cancelled invoice reverses the
    *  billed qty (drops job_work_order_lines.invoiced_qty) so the line can be
@@ -63,6 +71,10 @@ export const jwInvoiceListItemSchema = jwInvoiceSchema.extend({
   /** Unit of the JWSO line being billed (job_work_order_lines.uom). Null only
    *  when the line cannot be read; the print then falls back to NOS. */
   uom: z.string().nullable().default(null),
+  /** Legal copy of the customer taken when this paper was made (0186, plan
+   *  D7). The print reads it; null only on a row made before 0186 (the print
+   *  then falls back to the live customer master). */
+  clientCopy: clientCopySchema.nullable().default(null),
 });
 export type JwInvoiceListItem = z.infer<typeof jwInvoiceListItemSchema>;
 
@@ -73,8 +85,11 @@ export const createJwInvoiceInputSchema = z.object({
   qty: z.number().int().positive(),
   // Optional override; defaults to the JW line's rate when omitted.
   rate: z.number().nonnegative().optional(),
-  /** Defaults to 'sgst_cgst' (same-state supply) when omitted. */
+  /** Omitted → the server decides from the Place of Supply (the customer's
+   *  State) against the company's State; SEZ / Overseas → IGST. */
   taxType: jwInvoiceTaxTypeSchema.optional(),
+  /** Omitted → the customer's Payment Days (else 45), like the SO invoice. */
+  paymentTermsDays: z.coerce.number().int().min(0).max(365).optional(),
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreateJwInvoiceInput = z.infer<typeof createJwInvoiceInputSchema>;

@@ -28,6 +28,7 @@ import {
   vendors,
 } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
@@ -90,6 +91,8 @@ export async function nextSeriesCode(
   companyId: string,
   prefix: string,
 ): Promise<string> {
+  // S2: queue behind any other save numbering this series (see doc-series-lock).
+  await lockDocSeries(tx, companyId, kind === 'pr' ? 'purchase_requests' : 'purchase_orders');
   const rows =
     kind === 'pr'
       ? await tx
@@ -132,6 +135,11 @@ export async function generateOspPrForOp(
   companyId: string,
   user: AuthContext,
 ): Promise<GenerateOspPrResult> {
+  // 0. Take the PR series lock FIRST, before the duplicate guard in step 3.
+  //    Two clicks on "Generate PR" for the same op used to be stopped only by
+  //    both picking the same PR number; now that numbers no longer clash, the
+  //    lock is what makes the second click wait and then see the first PR.
+  await lockDocSeries(tx, companyId, 'purchase_requests');
   // 1. Load the op.
   const opRows = await tx
     .select({

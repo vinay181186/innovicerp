@@ -10,6 +10,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
+import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
@@ -106,6 +107,25 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
           </>
         }
       />
+
+      {/* Plan v3 Step 4 — the challan below keeps each line's saved Item Name;
+          where that differs from the item master, say so here (screen only). */}
+      {d.lines.some((l) => l.masterItemName && l.masterItemName.trim() !== l.itemName.trim()) ? (
+        <div style={{ maxWidth: 860, margin: '0 auto 10px' }}>
+          {d.lines.map((l) => (
+            <div key={l.id} style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+              {l.masterItemName && l.masterItemName.trim() !== l.itemName.trim() ? (
+                <>
+                  <span className="text3" style={{ fontSize: 11 }}>
+                    Ln {l.lineNo} · {l.itemName} —
+                  </span>
+                  <MasterItemNameNote lineName={l.itemName} masterItemName={l.masterItemName} />
+                </>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {/* A4-portrait paper preview — identical markup to the print output. */}
       <iframe

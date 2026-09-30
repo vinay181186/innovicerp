@@ -8,10 +8,11 @@
 //   [ncNo, date, jcNo, soNo, itemCode, operation, rejectedQty,
 //    reasonCategory, reason, disposition, status, closedDate]
 //
-// Data note: legacy `nc.closedDate` has no dedicated column in nc_register.
-// The closest equivalent is `disposition_date` (set when QC disposes the NC),
-// which is what populates the "Closed" column here.
+// Closed Date = nc_register.closed_at (IST date); an NC closed before closed_at
+// existed falls back to its disposition_date. An NC that is not closed shows
+// no Closed Date (before, every disposed NC showed its disposition date).
 
+import { NC_FILTER_STATUSES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 
@@ -36,7 +37,8 @@ export const ncRegisterAllReport: RegisteredReport = {
         key: 'status',
         label: 'NC Status',
         kind: 'enum',
-        options: ['pending', 'disposed', 'rework_done', 'closed'],
+        // S8 — every status NCs are written in (rework_done is legacy, hidden).
+        options: [...NC_FILTER_STATUSES],
       },
     ],
     columns: [
@@ -62,7 +64,7 @@ export const ncRegisterAllReport: RegisteredReport = {
       : sql``;
     const toFrag = filters['toDate'] ? sql`AND nc.nc_date <= ${filters['toDate']}::date` : sql``;
     const status = filters['status'];
-    const validStatus = ['pending', 'disposed', 'rework_done', 'closed'];
+    const validStatus: readonly string[] = NC_FILTER_STATUSES;
     const statusFrag =
       status && validStatus.includes(status) ? sql`AND nc.status = ${status}::nc_status` : sql``;
 
@@ -72,7 +74,8 @@ export const ncRegisterAllReport: RegisteredReport = {
         nc.code                              AS nc_no,
         nc.nc_date                           AS nc_date,
         jc.code                              AS jc_code,
-        nc.so_code_text                      AS so_code,
+        -- 0184: the live SO code, else the typed snapshot.
+        COALESCE(so.code, nc.so_code_text)   AS so_code,
         nc.item_code_text                    AS item_code,
         nc.operation_text                    AS operation,
         nc.rejected_qty                      AS rejected_qty,
@@ -80,9 +83,14 @@ export const ncRegisterAllReport: RegisteredReport = {
         nc.reason                            AS details,
         nc.disposition::text                 AS disposition,
         nc.status::text                      AS status,
-        nc.disposition_date                  AS closed_date
+        -- The real close date (IST); older closed rows have no closed_at.
+        COALESCE(
+          (nc.closed_at AT TIME ZONE 'Asia/Kolkata')::date,
+          CASE WHEN nc.status = 'closed' THEN nc.disposition_date END
+        )                                    AS closed_date
       FROM public.nc_register nc
       LEFT JOIN public.job_cards jc ON jc.id = nc.job_card_id
+      LEFT JOIN public.sales_orders so ON so.id = nc.so_id
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
         ${fromFrag}

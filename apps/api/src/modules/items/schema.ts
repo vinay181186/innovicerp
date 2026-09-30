@@ -8,6 +8,7 @@ export {
   createItemInputSchema,
   itemSchema,
   listItemsQuerySchema,
+  updateItemImportRowSchema,
   updateItemInputSchema,
 } from '@innovic/shared';
 export type {
@@ -16,6 +17,7 @@ export type {
   BulkItemSkip,
   CreateItemInput,
   Item,
+  ItemSaveResponse,
   ListItemsQuery,
   ListItemsResponse,
   UpdateItemInput,

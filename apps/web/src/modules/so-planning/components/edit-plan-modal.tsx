@@ -23,6 +23,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import {
   MaterialGradePicker,
@@ -162,7 +164,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
 
   const [err, setErr] = useState<string | null>(null);
 
-  const update = useUpdatePlan(plan.id);
+  const saveKey = useSaveKey();
+  const update = useUpdatePlan(plan.id, saveKey);
+  // R5 — the version this modal opened with; a save over someone else's newer
+  // edit is refused (409 edit_conflict) and its message shows in the modal.
+  const opened = useOpenedVersion(plan.updatedAt);
   const finalize = useFinalizePlan();
 
   // Searchable master pickers (server-searched via ?search=; one shared search
@@ -195,16 +201,30 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     () => machineRows.map((m) => ({ id: m.id, code: m.code, name: m.name })),
     [machineRows],
   );
-  const vendorOpts = useMemo(
-    () => (vendors.data?.vendors ?? []).map((v) => ({ id: v.id, code: v.code, name: v.name })),
+  // Every vendor row fetched (active or not) resolves a label / heals a saved
+  // link; only ACTIVE ones are offered for a new pick (A10). A plan whose vendor
+  // was disabled later still shows and keeps that vendor.
+  const vendorRows = useMemo(
+    () =>
+      (vendors.data?.vendors ?? []).map((v) => ({
+        id: v.id,
+        code: v.code,
+        name: v.name,
+        isActive: v.isActive,
+      })),
     [vendors.data],
+  );
+  const vendorOpts = useMemo(
+    () =>
+      vendorRows.filter((v) => v.isActive).map((v) => ({ id: v.id, code: v.code, name: v.name })),
+    [vendorRows],
   );
   const machineById = useMemo(() => new Map(machineRows.map((m) => [m.id, m])), [machineRows]);
   // A plan op stores the machine CODE snapshot and may carry a null machineId
   // (older rows, and anything typed before the picker existed), so the machine
   // has to be findable by either key.
   const machineByCode = useMemo(() => new Map(machineRows.map((m) => [m.code, m])), [machineRows]);
-  const vendorById = useMemo(() => new Map(vendorOpts.map((o) => [o.id, o])), [vendorOpts]);
+  const vendorById = useMemo(() => new Map(vendorRows.map((o) => [o.id, o])), [vendorRows]);
   const machineIdByCode = (code: string): string | null => machineByCode.get(code)?.id ?? null;
 
   // The whole Machine Group master in one fetch — groups scroll, they do not
@@ -222,7 +242,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     [machineGroups.data],
   );
   const vendorIdByCode = (code: string): string | null =>
-    vendorOpts.find((v) => v.code === code)?.id ?? null;
+    vendorRows.find((v) => v.code === code)?.id ?? null;
 
   // What a picked row reads as once the box is closed: "CODE — Name", the shape
   // <SearchableSelect> uses in its own dropdown. These fields used to collapse to
@@ -419,7 +439,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     }
     setErr(null);
     try {
-      await update.mutateAsync(buildPayload());
+      const saved = await update.mutateAsync({
+        ...buildPayload(),
+        expectedUpdatedAt: opened.expected(),
+      });
+      // A failed Finalize leaves the modal open; the next Save must carry the
+      // version our own save just wrote, not the one the modal opened with.
+      opened.saved(saved.updatedAt);
       if (finalizeAfter) await finalize.mutateAsync(plan.id);
       onSaved();
     } catch (e) {

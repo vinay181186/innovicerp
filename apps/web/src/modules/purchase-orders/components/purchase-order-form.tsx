@@ -11,6 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { docCodeToSend } from '@/lib/use-doc-number';
 import { inrFormat } from '@/lib/print/doc-print';
 import {
   type PoFormValues as FormValues,
@@ -18,7 +19,7 @@ import {
 } from './po-form-values';
 import { PoLineRow } from './po-line-row';
 import { PoVendorField } from './po-vendor-field';
-import { PO_TYPE_LABELS, poStatusLabel } from '../lib/po-labels';
+import { PO_TYPE_LABELS, poStatusLabel, toPoTaxType } from '../lib/po-labels';
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
@@ -70,6 +71,9 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
   const { register, control, handleSubmit, formState, setValue, watch } = form;
   const isCreate = !isEdit;
   const [docNoValid, setDocNoValid] = useState(true);
+  // S2: the number the field auto-filled. It is only a preview — the form
+  // sends a number only when the user changed it (docCodeToSend).
+  const [suggestedCode, setSuggestedCode] = useState('');
   // Line-level errors are rendered by <PoLineRow>, which reads them off the same
   // `form` — the formState proxy subscribes wherever it is read.
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
@@ -117,10 +121,10 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
       ...values.header,
       // Blank → undefined so the server auto-generates IN-PO-#####; '' fails
       // the schema's code.min(1) → "request validation failed" (T22/T20).
-      code: values.header.code?.trim() || undefined,
+      code: docCodeToSend(values.header.code, suggestedCode),
       vendorId: values.header.vendorId || undefined,
       vendorCodeText: values.header.vendorCodeText?.trim() || undefined,
-      taxType: values.header.taxType?.trim() || undefined,
+      taxType: toPoTaxType(values.header.taxType),
       dueDate: values.header.dueDate || undefined,
       prCodeText: values.header.prCodeText?.trim() || undefined,
       approvalRemarks: values.header.approvalRemarks?.trim() || undefined,
@@ -168,6 +172,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
           value={watch('header.code') ?? ''}
           onChange={(v) => setValue('header.code', v)}
           onValidityChange={setDocNoValid}
+          onSuggestedChange={setSuggestedCode}
           // The series follows the type chosen below (IN-MPO- / IN-JWPO- /
           // IN-SPO- / IN-OPO-), so the suggested number changes with it.
           poType={watch('header.poType')}

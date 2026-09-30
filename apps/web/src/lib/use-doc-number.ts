@@ -38,6 +38,25 @@ export interface DocNumberState {
   error: string | null;
 }
 
+/**
+ * The document number a CREATE form sends (S2). The box shows the suggested
+ * next number, but a suggestion is only a preview: two people opening the form
+ * together see the same one. So the form sends a number ONLY when the user
+ * changed it; an empty box or the untouched suggestion sends nothing, and the
+ * server numbers the document itself, under its series lock — the second save
+ * simply gets the next number instead of "already exists".
+ *
+ * `suggested` is the value the form last auto-filled ('' if none). A number
+ * typed by hand is sent as typed and still refused with a clear message if
+ * someone else holds it.
+ */
+export function docCodeToSend(value: string | undefined, suggested: string): string | undefined {
+  const v = (value ?? '').trim();
+  if (!v) return undefined;
+  if (suggested && v === suggested.trim()) return undefined;
+  return v;
+}
+
 export function useDocNumber(
   type: DocNumberType,
   value: string,

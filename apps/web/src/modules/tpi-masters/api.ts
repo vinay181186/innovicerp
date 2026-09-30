@@ -14,6 +14,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
 export const tpiMastersKeys = {
   all: ['tpi-masters'] as const,
@@ -52,10 +53,17 @@ export function useTpiMaster(id: string | undefined) {
   });
 }
 
-export function useCreateTpiMaster() {
+export function useCreateTpiMaster(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<TpiMaster, Error, CreateTpiMasterInput>({
-    mutationFn: (input) => apiFetch<TpiMaster>('/tpi-masters', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<TpiMaster>('/tpi-masters', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: tpiMastersKeys.lists() });
       qc.setQueryData(tpiMastersKeys.detail(created.id), created);

@@ -13,6 +13,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useJcMaterial, useSoMaterial } from '../../material/api';
 import { JcMaterialTable } from '../../material/components/jc-material-table';
 import { SoMaterialTable } from '../../material/components/so-material-table';
@@ -56,7 +57,9 @@ export function NewIssueModal({
   const [confirmReason, setConfirmReason] = useState('');
   const [lastSaved, setLastSaved] = useState<string | null>(null);
 
-  const createMut = useCreateStoreIssue();
+  // R2 — one idempotency key per open modal, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const createMut = useCreateStoreIssue(saveKey);
   const { data: eff } = useMyAccess();
   const canApprove = effectiveFormPerms(eff, 'issue_create').approve;
   // Any edit after a 409 drops the more-than-To-Issue box — the list it showed no

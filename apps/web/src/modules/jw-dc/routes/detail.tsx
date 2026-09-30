@@ -108,7 +108,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              {dc.vendorNameText ?? dc.vendorCodeText ?? '—'}
+              {dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '—'}
               <span className={`badge ${statusClass}`}>{statusLabel}</span>
             </div>
           </div>
@@ -223,7 +223,7 @@ function DetailGrid(props: { dc: JwDcOutwardDetail }): React.JSX.Element {
       <Pair label="DC Date" value={fmtDate(dc.dcDate)} />
       <Pair label="PO No." value={dc.jwpoCodeText ?? '—'} />
       <Pair label="SO No." value={dc.soCode ?? '—'} />
-      <Pair label="Vendor" value={dc.vendorNameText ?? dc.vendorCodeText ?? '—'} />
+      <Pair label="Vendor" value={dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '—'} />
       <Pair label="Total Sent" value={`${dc.totalSentQty} pcs`} />
       <Pair label="Vehicle No." value={dc.vehicleNo ?? '—'} />
     </div>

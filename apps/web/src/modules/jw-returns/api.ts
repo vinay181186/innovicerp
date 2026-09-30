@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const jwReturnsKeys = {
@@ -41,11 +42,17 @@ export function useJwReturnsList(query: ListJwReturnChallansQuery) {
   });
 }
 
-export function useCreateJwReturnChallan() {
+export function useCreateJwReturnChallan(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<JwReturnChallan, Error, CreateJwReturnChallanInput>({
     mutationFn: (input) =>
-      apiFetch<JwReturnChallan>('/jw-returns', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<JwReturnChallan>('/jw-returns', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwReturnsKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

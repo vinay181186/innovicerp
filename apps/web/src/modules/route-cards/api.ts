@@ -11,6 +11,7 @@ import type {
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const routeCardsKeys = {
@@ -76,11 +77,17 @@ export function useNextRouteCardCode(
   });
 }
 
-export function useCreateRouteCard() {
+export function useCreateRouteCard(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<RouteCardDetail, Error, CreateRouteCardInput>({
     mutationFn: (input) =>
-      apiFetch<RouteCardDetail>('/route-cards', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<RouteCardDetail>('/route-cards', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
@@ -89,11 +96,17 @@ export function useCreateRouteCard() {
   });
 }
 
-export function useUpdateRouteCard(id: string) {
+export function useUpdateRouteCard(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<RouteCardDetail, Error, UpdateRouteCardInput>({
     mutationFn: (input) =>
-      apiFetch<RouteCardDetail>(`/route-cards/${id}`, { method: 'PUT', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<RouteCardDetail>(`/route-cards/${id}`, {
+          method: 'PUT',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

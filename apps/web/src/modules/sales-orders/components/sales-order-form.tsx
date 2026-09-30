@@ -57,6 +57,7 @@ import {
   type UseFormReturn,
 } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { docCodeToSend } from '@/lib/use-doc-number';
 import { todayLocal } from '@/lib/date';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { Panel } from '@/ui/data';
@@ -229,8 +230,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
   // ── Searchable master pickers (server-searched; scales past the 200 cap) ──
   const [clientSearch, setClientSearch] = useState('');
+  // Active customers only (A10) — the server refuses a newly linked inactive
+  // one; an edit keeps its current customer's label via clientLabel below.
   const { data: clientsData, isFetching: clientsFetching } = useClientsList({
     ...(clientSearch.trim() ? { search: clientSearch.trim() } : {}),
+    isActive: true,
     limit: 50,
     offset: 0,
   });
@@ -271,6 +275,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // ── SO No.: reusable document-number field (prefill + live duplicate check) ──
   const isCreate = !isEdit;
   const [docNoValid, setDocNoValid] = useState(true);
+  // S2: the number the field auto-filled. It is only a preview — the form
+  // sends a number only when the user changed it (docCodeToSend).
+  const [suggestedCode, setSuggestedCode] = useState('');
   const selectedClientId = watch('header.clientId') ?? null;
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   // Keep a stable label for the selected client even when it scrolls out of the
@@ -603,7 +610,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       const headerOut = {
         ...values.header,
         status: asDraft ? ('draft' as SoStatus) : values.header.status,
-        code: values.header.code?.trim() || undefined,
+        code: docCodeToSend(values.header.code, suggestedCode),
         customerName: undefined,
         clientId: values.header.clientId || undefined,
         clientPoNo: values.header.clientPoNo?.trim() || undefined,
@@ -821,7 +828,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 with no explicit saveLabel, so the label is "Save SO". */}
             <button type="submit" className="btn btn-primary" disabled={saveDisabled}>
               {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              {props.submitLabel ?? (isCreate ? 'Save SO' : 'Save Changes')}
+              {formState.isSubmitting
+                ? 'Saving…'
+                : (props.submitLabel ?? (isCreate ? 'Save SO' : 'Save Changes'))}
             </button>
           </>
         }
@@ -919,6 +928,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               value={watch('header.code') ?? ''}
               onChange={(v) => setValue('header.code', v)}
               onValidityChange={setDocNoValid}
+              onSuggestedChange={setSuggestedCode}
             />
           </div>
           <FormField

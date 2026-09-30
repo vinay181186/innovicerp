@@ -25,12 +25,15 @@
 // `.pof-` palette (po-form-css.ts) is gone.
 
 import {
+  companyStateCodeFor,
   type CreatePurchaseOrderInput,
+  placeOfSupplyFor,
   poCodePrefix,
   PO_TYPES,
   type PurchaseOrderDetail,
   type PurchaseOrderLineInput,
   type PurchaseRequestDetail,
+  taxTypeForSupply,
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
@@ -41,14 +44,17 @@ import { VendorPicker } from '@/components/shared/vendor-picker';
 import { addDaysLocal, daysBetweenLocal, todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { inrFormat } from '@/lib/print/doc-print';
-import { useDocNumber } from '@/lib/use-doc-number';
+import { docCodeToSend, useDocNumber } from '@/lib/use-doc-number';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useSaveKey } from '@/lib/use-save-key';
+import { useMyCompany } from '@/modules/settings/api';
 import { useVendor, useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreatePurchaseOrder, useUpdatePurchaseOrder } from '../api';
-import { PO_TYPE_LABELS } from '../lib/po-labels';
+import { PO_TYPE_LABELS, toPoTaxType } from '../lib/po-labels';
 import { PoFormLine } from './po-form-line';
 import { NEW_PO_LINE, type PoFormLineValue, type PoFormValues } from './po-form-types';
 
@@ -100,8 +106,12 @@ export type PoFormProps =
 export function PoForm(props: PoFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const navigate = useNavigate();
-  const createPo = useCreatePurchaseOrder();
-  const updatePo = useUpdatePurchaseOrder(props.mode === 'edit' ? props.detail.id : '');
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const createPo = useCreatePurchaseOrder(saveKey);
+  const updatePo = useUpdatePurchaseOrder(props.mode === 'edit' ? props.detail.id : '', saveKey);
+  // R5 — the PO's version as it was when this edit form opened.
+  const opened = useOpenedVersion(props.mode === 'edit' ? props.detail.updatedAt : undefined);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Where Cancel goes — and therefore where ESC → Exit goes too. The exit guard
   // asks "Are you sure?" on every other way off this screen (Back link,
@@ -171,6 +181,11 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     suggested.current = next;
     if (current !== next) setValue('header.code', next);
   }, [isEdit, docNo.nextCode, poType, getValues, setValue]);
+  // S2: the box still holds OUR suggestion and someone else has just saved
+  // that number. Not an error for the buyer — an untouched suggestion is not
+  // sent (docCodeToSend), so the server gives this PO the next free number.
+  const suggestionTaken =
+    !isEdit && code.trim() !== '' && code.trim() === suggested.current && docNo.duplicate;
 
   // ── Item Master: each line's Item Code box searches the server itself
   // (PoFormLine → useItemCodeSearch), so an item past any first page can be
@@ -332,6 +347,32 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
   const vendorId = watch('header.vendorId') ?? null;
   const vendorCodeText = watch('header.vendorCodeText') ?? '';
+
+  // ── Tax Type SUGGESTED from the vendor's State (plan v3 Step 3, D2): the
+  //    shared Place-of-Supply rule — vendor State Code (else GSTIN prefix) vs
+  //    the company's State; SEZ / Overseas → IGST. Filled only while the buyer
+  //    has not picked a Tax Type himself on this form; the buyer can always
+  //    override. Unknown State → no suggestion (never a guessed state).
+  const { data: pickedVendor } = useVendor(vendorId ?? undefined);
+  const { data: myCompany } = useMyCompany();
+  const suggestedTaxType =
+    pickedVendor && pickedVendor.id === vendorId && myCompany
+      ? taxTypeForSupply({
+          placeOfSupply: placeOfSupplyFor(pickedVendor),
+          companyStateCode: companyStateCodeFor(myCompany),
+          gstCategory: pickedVendor.gstCategory,
+        })
+      : null;
+  const taxTypeTouched = useRef(false);
+  const lastSuggestedFor = useRef<string | null>(isEdit ? (vendorId ?? null) : null);
+  useEffect(() => {
+    if (!suggestedTaxType || !vendorId || taxTypeTouched.current) return;
+    if (lastSuggestedFor.current === vendorId) return;
+    lastSuggestedFor.current = vendorId;
+    if (getValues('header.taxType') !== suggestedTaxType) {
+      setValue('header.taxType', suggestedTaxType, { shouldDirty: true });
+    }
+  }, [suggestedTaxType, vendorId, getValues, setValue]);
   const poDate = watch('header.poDate') ?? '';
   const deliveryDate = watch('header.dueDate') ?? '';
 
@@ -482,7 +523,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const blocking = useMemo((): string | null => {
     if (!isEdit) {
       if (code.trim() === '') return 'PO No. is required';
-      if (docNo.duplicate) return 'That PO number is already used';
+      if (docNo.duplicate && !suggestionTaken) return 'That PO number is already used';
       if (docNo.formatInvalid) return docNo.error ?? 'PO number format is wrong';
     }
     if (poDate.trim() === '') return 'PO Date is required';
@@ -519,6 +560,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     isEdit,
     code,
     docNo,
+    suggestionTaken,
     poDate,
     deliveryDate,
     vendorId,
@@ -546,7 +588,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       vendorId: values.header.vendorId || undefined,
       vendorCodeText: values.header.vendorCodeText?.trim() || undefined,
       dueDate: values.header.dueDate || undefined,
-      taxType: values.header.taxType?.trim() || undefined,
+      taxType: toPoTaxType(values.header.taxType),
       sgstPct: Number(values.header.sgstPct) || 0,
       cgstPct: Number(values.header.cgstPct) || 0,
       igstPct: Number(values.header.igstPct) || 0,
@@ -586,8 +628,10 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         const payload: UpdatePurchaseOrderInput = {
           header: { ...header, taxType: header.taxType ?? null },
           lines: outLines,
+          expectedUpdatedAt: opened.expected(),
         };
-        await updatePo.mutateAsync(payload);
+        const saved = await updatePo.mutateAsync(payload);
+        opened.saved(saved?.updatedAt);
         const editedId = props.detail.id;
         exit.leave(
           () =>
@@ -599,12 +643,15 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         // branch. The cast is only because the schema gives `status` a default,
         // which makes it required in the INFERRED (output) type even though the
         // request may legitimately omit it.
+        const sendCode = docCodeToSend(values.header.code, suggested.current);
         const payload = {
           header: {
             ...header,
             // Blank → omitted so the server auto-generates IN-PO-#####; sending
             // '' fails the schema's code.min(1) → "request validation failed".
-            ...(values.header.code.trim() ? { code: values.header.code.trim() } : {}),
+            // S2: the untouched suggestion is omitted too — the server numbers
+            // the PO under its series lock; only a number the buyer typed goes.
+            ...(sendCode ? { code: sendCode } : {}),
           },
           lines: outLines,
         } as CreatePurchaseOrderInput;
@@ -639,7 +686,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
   const codeState = isEdit
     ? undefined
-    : code.trim() === '' || docNo.error
+    : code.trim() === '' || (docNo.error && !suggestionTaken)
       ? 'is-bad'
       : docNo.valid
         ? 'is-ok'
@@ -769,7 +816,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                 ? undefined
                 : code.trim() === ''
                   ? 'PO No. is required'
-                  : docNo.checking
+                  : docNo.checking || suggestionTaken
                     ? undefined
                     : docNo.duplicate
                       ? 'Already used'
@@ -778,6 +825,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             help={
               isEdit ? undefined : docNo.checking ? (
                 'Checking…'
+              ) : suggestionTaken ? (
+                'Just used by someone else — the next free number is given on save.'
               ) : (
                 <span style={{ color: 'var(--green2)' }}>
                   <Check size={11} style={{ verticalAlign: -1 }} /> Number not used
@@ -917,8 +966,25 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       {/* ── Tax + running totals. */}
       <Panel title="Taxes and Totals">
         <FormGrid>
-          <FormField label="Tax Type" size="md" htmlFor="pof-taxtype">
-            <select id="pof-taxtype" className="innovic-select" {...register('header.taxType')}>
+          <FormField
+            label="Tax Type"
+            size="md"
+            htmlFor="pof-taxtype"
+            help={
+              suggestedTaxType && suggestedTaxType !== taxType
+                ? `Vendor's State suggests ${suggestedTaxType === 'igst' ? 'IGST' : 'SGST + CGST'}.`
+                : undefined
+            }
+          >
+            <select
+              id="pof-taxtype"
+              className="innovic-select"
+              {...register('header.taxType', {
+                onChange: () => {
+                  taxTypeTouched.current = true;
+                },
+              })}
+            >
               <option value="">None</option>
               <option value="sgst_cgst">SGST + CGST</option>
               <option value="igst">IGST</option>

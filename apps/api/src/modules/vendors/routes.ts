@@ -54,7 +54,8 @@ export async function vendorsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const body = bulkCreateVendorsInputSchema.parse(req.body);
     const result = await service.createVendorsBulk(body, req.user);
-    reply.code(201);
+    // A preview (dryRun) writes nothing — 200; a real import creates — 201.
+    reply.code(body.dryRun ? 200 : 201);
     return result;
   });
 

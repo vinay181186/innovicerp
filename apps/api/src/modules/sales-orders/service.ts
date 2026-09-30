@@ -44,6 +44,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
   AuthorizationError,
   ConflictError,
@@ -53,6 +54,7 @@ import {
 import { readStockPositionLocked, reconcileLineReservations } from '../../lib/stock-reservation';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { assertActiveParty } from '../../lib/active-party';
 import { emitActivityLog } from '../activity-log/service';
 import { cascadeBomToSoLine } from '../bom-master/cascade';
 import {
@@ -65,6 +67,12 @@ import {
 } from './line-commitments';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { logSoEdit } from './edit-log';
+import {
+  assertBomLinkable,
+  assertSoCreateStatus,
+  assertSoStatusMove,
+  normBomId,
+} from './status-rules';
 
 function soDetail(code: string, customerName: string | null | undefined): string {
   return customerName ? `${code} — ${customerName}` : code;
@@ -103,18 +111,11 @@ async function assertClientExists(
   tx: DbTransaction,
   clientId: string,
   companyId: string,
+  /** The document's current customer on an edit — an inactive customer is
+   *  refused only when it is being newly linked (A10 inactive-master rule). */
+  keepClientId?: string | null,
 ): Promise<string> {
-  const rows = await tx
-    .select({ id: clients.id, name: clients.name })
-    .from(clients)
-    .where(
-      and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
-    )
-    .limit(1);
-  if (rows.length === 0) {
-    throw new ValidationError('Selected Customer was not found. Please select the Customer again.');
-  }
-  return rows[0]!.name;
+  return (await assertActiveParty(tx, 'customer', clientId, companyId, keepClientId)).name;
 }
 
 /** For a batch of line inputs, resolve itemId from itemCodeText where the
@@ -723,6 +724,9 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         row: salesOrderLines,
         itemCode: items.code,
         itemImagePath: items.imagePath,
+        // The item master's name — the detail screen notes it beside a line
+        // whose own (editable) Item Name differs (plan v3 Step 4).
+        masterItemName: items.name,
       })
       .from(salesOrderLines)
       .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
@@ -800,6 +804,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
     const headerOut = toSalesOrder(header);
     const linesOut = lineRows.map((r) => ({
       ...toSalesOrderLine(r.row, r.itemCode, r.itemImagePath ?? null),
+      masterItemName: r.masterItemName ?? null,
       billedQty: billedByLine.get(r.row.id) ?? 0,
       jcQty: jcByLine.get(r.row.id) ?? 0,
     }));
@@ -1488,6 +1493,17 @@ export async function createSalesOrder(
 
       // Insert header
       const headerStatus = input.header.status ?? 'open';
+      // S8 — a new SO starts as Draft or Open only; so does each of its lines.
+      assertSoCreateStatus(headerStatus, 'A Sales Order');
+      for (const l of input.lines) {
+        if (l.status) assertSoCreateStatus(l.status, 'A Sales Order line');
+      }
+      // S8 — only an Active BOM may be linked (was checked only by the web).
+      const headerBomId = normBomId(input.header.bomMasterId);
+      if (headerBomId) await assertBomLinkable(tx, companyId, headerBomId);
+      for (const bomId of new Set(input.lines.map((l) => normBomId(l.sourceBomMasterId)))) {
+        if (bomId) await assertBomLinkable(tx, companyId, bomId);
+      }
       const headerType = input.header.type ?? 'component_manufacturing';
       const inserted = await tx
         .insert(salesOrders)
@@ -1501,7 +1517,7 @@ export async function createSalesOrder(
           type: headerType,
           status: headerStatus,
           gstPercent: gstToString(input.header.gstPercent ?? 18),
-          bomMasterId: input.header.bomMasterId ?? null,
+          bomMasterId: headerBomId,
           bomStatus: input.header.bomStatus ?? null,
           costCenter: input.header.costCenter ?? null,
           remarks: input.header.remarks ?? null,
@@ -1663,14 +1679,22 @@ export async function updateSalesOrder(
           isNull(salesOrders.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError('SO not found. It may have been moved to Trash.');
+    // R5: refuse the save if someone else edited the SO after this form opened it.
+    assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;
     if (input.header.clientId !== undefined && input.header.clientId !== null) {
-      snapshotClientName = await assertClientExists(tx, input.header.clientId, companyId);
+      snapshotClientName = await assertClientExists(
+        tx,
+        input.header.clientId,
+        companyId,
+        existingHdr.clientId,
+      );
     }
 
     // Header update — only set the fields the caller provided.
@@ -1683,17 +1707,12 @@ export async function updateSalesOrder(
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     if (h.type !== undefined) updates['type'] = h.type;
     // ADR-184 — 'closed' and 'dispatched' are set by the system (dispatch
-    // roll-up), never by hand. A manual change may only move among
-    // draft / open / cancelled; re-sending the stored value is a no-op and
-    // always allowed, so an unchanged form still saves.
+    // roll-up), never by hand. S8: a manual change must be one the shared
+    // SO_STATUS_MOVES map allows (Draft ↔ Open, either → Cancelled; Cancelled
+    // is final — D13 "cancel once"); anything else is a 409. Re-sending the
+    // stored value is a no-op and always allowed, so an unchanged form saves.
     if (h.status !== undefined && h.status !== existingHdr.status) {
-      const manual = ['draft', 'open', 'cancelled'];
-      if (!manual.includes(h.status) || !manual.includes(existingHdr.status)) {
-        throw new ValidationError(
-          `SO status cannot be changed by hand from '${existingHdr.status}' to '${h.status}' — ` +
-            `'closed' and 'dispatched' are set by the system from dispatches.`,
-        );
-      }
+      assertSoStatusMove(existingHdr.code, existingHdr.status, h.status);
       // Review fix — back to 'draft' ("not yet committed") is refused on the
       // same grounds as 'cancelled': production / dispatch already runs on it.
       if (h.status === 'cancelled' && !reason?.trim()) {
@@ -1710,7 +1729,15 @@ export async function updateSalesOrder(
       updates['status'] = h.status;
     }
     if (h.gstPercent !== undefined && showMoney) updates['gstPercent'] = gstToString(h.gstPercent);
-    if (h.bomMasterId !== undefined) updates['bomMasterId'] = h.bomMasterId ?? null;
+    if (h.bomMasterId !== undefined) {
+      // S8 — only an Active BOM may be linked; checked only when the link is
+      // set or changed, so an SO keeps a BOM that was later made Obsolete.
+      const nextBomId = normBomId(h.bomMasterId);
+      if (nextBomId && nextBomId !== existingHdr.bomMasterId) {
+        await assertBomLinkable(tx, companyId, nextBomId);
+      }
+      updates['bomMasterId'] = nextBomId;
+    }
     if (h.bomStatus !== undefined) updates['bomStatus'] = h.bomStatus ?? null;
     if (h.costCenter !== undefined) updates['costCenter'] = h.costCenter ?? null;
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
@@ -1971,6 +1998,9 @@ async function mergeLines(
       itemId: salesOrderLines.itemId,
       // ADR-196 — a line closed short keeps its Order Qty and status.
       shortClosedAt: salesOrderLines.shortClosedAt,
+      // S8 — the stored status / BOM, so a hand-made change is checked.
+      status: salesOrderLines.status,
+      sourceBomMasterId: salesOrderLines.sourceBomMasterId,
     })
     .from(salesOrderLines)
     .where(and(eq(salesOrderLines.salesOrderId, salesOrderId), isNull(salesOrderLines.deletedAt)));
@@ -1999,6 +2029,25 @@ async function mergeLines(
   }
 
   const absentIds = existing.map((e) => e.id).filter((eid) => !seenInputIds.has(eid));
+
+  // S8 — a line's status moves only as SO_STATUS_MOVES allows (a closed-short
+  // line is refused further down with its own sentence); a new line starts as
+  // Draft or Open; a BOM newly set on a line must be Active.
+  for (const u of toUpdate) {
+    const was = existingById.get(u.id)!;
+    if (u.data.status !== undefined && !was.shortClosedAt) {
+      assertSoStatusMove(`Line ${was.lineNo}`, was.status, u.data.status);
+    }
+    const nextBom = normBomId(u.data.sourceBomMasterId);
+    if (u.data.sourceBomMasterId !== undefined && nextBom && nextBom !== was.sourceBomMasterId) {
+      await assertBomLinkable(tx, companyId, nextBom);
+    }
+  }
+  for (const l of toInsert) {
+    if (l.status) assertSoCreateStatus(l.status, 'A new Sales Order line');
+    const bomId = normBomId(l.sourceBomMasterId);
+    if (bomId) await assertBomLinkable(tx, companyId, bomId);
+  }
 
   // ADR-184 — refuse any edit that would orphan downstream work, BEFORE a
   // single row is written. The lines are locked FOR UPDATE by the read, so a

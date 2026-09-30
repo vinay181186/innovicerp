@@ -10,6 +10,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const storeIssuesKeys = {
@@ -70,11 +71,17 @@ function invalidate(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: activityLogKeys.all });
 }
 
-export function useCreateStoreIssue() {
+export function useCreateStoreIssue(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<StoreIssueDetail, Error, CreateStoreIssueInput>({
     mutationFn: (input) =>
-      apiFetch<StoreIssueDetail>('/store-issues', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<StoreIssueDetail>('/store-issues', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => invalidate(qc),
   });
 }

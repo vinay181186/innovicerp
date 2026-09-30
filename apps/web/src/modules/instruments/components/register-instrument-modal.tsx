@@ -6,6 +6,7 @@ import type { CreateInstrumentInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { addDaysLocal } from '@/lib/date';
+import { useSaveKey } from '@/lib/use-save-key';
 import { SearchableSelect } from '@/ui/forms';
 import { useItemsList } from '../../items/api';
 import { useCreateInstrument } from '../api';
@@ -35,7 +36,9 @@ export function RegisterInstrumentModal({
   const [location, setLocation] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  const create = useCreateInstrument();
+  // One save key per modal open (the list mounts it only while open).
+  const saveKey = useSaveKey();
+  const create = useCreateInstrument(saveKey);
 
   const { data, isFetching } = useItemsList({
     search: search.trim() || undefined,

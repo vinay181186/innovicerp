@@ -32,6 +32,8 @@ import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
   ConflictError,
@@ -74,18 +76,11 @@ async function assertClientExists(
   tx: DbTransaction,
   clientId: string,
   companyId: string,
+  /** The document's current customer on an edit — an inactive customer is
+   *  refused only when it is being newly linked (A10 inactive-master rule). */
+  keepClientId?: string | null,
 ): Promise<string> {
-  const rows = await tx
-    .select({ id: clients.id, name: clients.name })
-    .from(clients)
-    .where(
-      and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
-    )
-    .limit(1);
-  if (rows.length === 0) {
-    throw new ValidationError('Selected Customer was not found. Please select the Customer again.');
-  }
-  return rows[0]!.name;
+  return (await assertActiveParty(tx, 'customer', clientId, companyId, keepClientId)).name;
 }
 
 async function resolveItemCodes(
@@ -1052,14 +1047,22 @@ export async function updateJobWorkOrder(
           isNull(jobWorkOrders.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
+    // R5: refuse the save if someone else edited the JWSO after this form opened it.
+    assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;
     if (input.header.clientId !== undefined && input.header.clientId !== null) {
-      snapshotClientName = await assertClientExists(tx, input.header.clientId, companyId);
+      snapshotClientName = await assertClientExists(
+        tx,
+        input.header.clientId,
+        companyId,
+        existingHdr.clientId,
+      );
     }
 
     const updates: Record<string, unknown> = { updatedBy: user.id };

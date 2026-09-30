@@ -1,20 +1,41 @@
-// Item Master — Excel template + import parsing. Mirror of legacy
-// itemImportTemplate (download a blank template) + itemImportExcel (parse an
-// .xlsx of item rows into create payloads). Uses SheetJS, same shape as the
-// SO importer (sales-orders/lib/import-export.ts).
+// Item Master — Excel template + import parsing (ERPNext Data Import
+// behaviour, see packages/shared/src/schemas/master-import.ts). Uses SheetJS.
 //
-// DELTA vs legacy: legacy's template carried a "Stock Qty" column — dropped
-// here because Item Master defines items only; stock lives in Store. UOM and
-// Item Type are validated against the shared enums. UOM: invalid → NOS. Item
-// Type (ADR-193 Q2): blank or unknown → the row is refused, never guessed.
+// The template carries every item master field the import may set, plus a
+// "Lists" tab with the allowed Item Type, UOM and Source values. The parser
+// only does the structural checks (blank Item Code / Item Name, an Item Code
+// repeated in the file, an Item Type / UOM / Source that cannot be read); every
+// field rule is the server's, answered per row by the preview (dryRun).
+//
+// Insert new: Item Code, Item Name and Item Type are required. Item Type
+// (ADR-193 Q2): blank or unknown → the row is refused, never guessed. UOM:
+// unknown → NOS with a warning; Source: blank → Make.
+// Update existing: matched by Item Code; a BLANK cell is left out of the
+// payload, so it keeps the current value. Import never changes an Item Type —
+// the server skips the row if the sheet's type differs from the item's.
 //
 // No "Drawing No." / "Revision" columns (user decision 2026-09-21): both belong
 // to the SO / JWSO line, not the item. Older sheets that still carry those two
 // columns import fine — they are simply ignored.
 
-import { ITEM_PROCUREMENT_TYPES, ITEM_TYPES, type CreateItemInput, UOMS } from '@innovic/shared';
+import {
+  ITEM_PROCUREMENT_TYPE_LABEL,
+  ITEM_PROCUREMENT_TYPES,
+  ITEM_TYPES,
+  itemTypeLabel,
+  type ItemType,
+  type MasterImportMode,
+  UOMS,
+} from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
+import {
+  appendListsSheet,
+  putIfFilled,
+  type MasterImportParse,
+  type ParsedImportRow,
+  type ParsedImportSkip,
+} from '@/lib/master-import';
 import { coerceEnum, getCol, readSheetRows } from '@/lib/xlsx-import';
 
 // Template header row (the "*" marks required columns, legacy convention).
@@ -26,6 +47,7 @@ const COLUMNS = [
   'UOM',
   'Item Type*',
   'Source',
+  'HSN Code',
 ] as const;
 
 export function downloadItemTemplate(): void {
@@ -37,101 +59,117 @@ export function downloadItemTemplate(): void {
     'NOS',
     'Component',
     'Make',
+    '84834000',
   ];
   const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
-  ws['!cols'] = [14, 22, 28, 18, 8, 12, 8].map((wch) => ({ wch }));
+  ws['!cols'] = [14, 22, 28, 18, 8, 22, 8, 12].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Items');
+  appendListsSheet(wb, [
+    { header: 'Item Type', values: ITEM_TYPES.map((t) => itemTypeLabel(t)) },
+    { header: 'UOM', values: UOMS },
+    { header: 'Source', values: ITEM_PROCUREMENT_TYPES.map((p) => ITEM_PROCUREMENT_TYPE_LABEL[p]) },
+  ]);
   XLSX.writeFile(wb, 'Item Master Import Template.xlsx');
 }
 
-export interface ItemImportResult {
-  payloads: CreateItemInput[];
-  errors: string[];
+/** "Component", "component", "Tool / Instrument", "Raw Material",
+ *  "raw_material" → the Item Type code; null when it matches none. */
+function resolveItemType(raw: string): ItemType | null {
+  const key = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[\s/]+/g, '_')
+    .replace(/_+/g, '_');
+  for (const t of ITEM_TYPES) {
+    const labelKey = itemTypeLabel(t)
+      .toLowerCase()
+      .replace(/[\s/]+/g, '_')
+      .replace(/_+/g, '_');
+    if (key === t || key === labelKey) return t;
+  }
+  // Older sheets: "Tool_Instrument" / "tool instrument".
+  const stripped = key.replace(/_instrument$/, '');
+  return (ITEM_TYPES as readonly string[]).includes(stripped) ? (stripped as ItemType) : null;
 }
 
-export async function parseItemImportFile(file: File): Promise<ItemImportResult> {
-  const { rows, sheetError } = await readSheetRows(file);
-  if (sheetError) return { payloads: [], errors: [sheetError] };
+export async function parseItemImportFile(
+  file: File,
+  mode: MasterImportMode,
+): Promise<MasterImportParse> {
+  const { rows: sheet, sheetError } = await readSheetRows(file);
+  if (sheetError) return { rows: [], skipped: [], fatal: sheetError, notes: [] };
 
-  const errors: string[] = [];
-  const payloads: CreateItemInput[] = [];
+  const rows: ParsedImportRow[] = [];
+  const skipped: ParsedImportSkip[] = [];
   const seen = new Set<string>();
+  const isUpdate = mode === 'update';
+  const typeList = ITEM_TYPES.map((t) => itemTypeLabel(t)).join(' / ');
 
-  rows.forEach((r, i) => {
+  sheet.forEach((r, i) => {
     const rowNum = i + 2; // 1-indexed + header row
     const code = getCol(r, ['Item Code*', 'Item Code', 'item_code', 'Code', 'code']);
     // 'Item Name*' is the template header since 2026-09-26; older sheets carry 'Name*'.
     const name = getCol(r, ['Item Name*', 'Item Name', 'item_name', 'Name*', 'Name', 'name']);
     if (!code && !name) return; // fully blank row — skip silently
+    const skip = (reason: string): void => {
+      skipped.push({ rowNum, code: code || null, name, reason });
+    };
     if (!code) {
-      errors.push(`Row ${rowNum}: Item Code is required — skipped`);
-      return;
+      return skip(isUpdate ? 'Item Code is required to update an item' : 'Item Code is required');
     }
-    if (!name) {
-      errors.push(`Row ${rowNum}: Item Name is required — skipped`);
-      return;
-    }
-    if (seen.has(code)) {
-      errors.push(`Row ${rowNum}: Item Code "${code}" is repeated in the file — skipped`);
-      return;
-    }
-    seen.add(code);
-    const uom = coerceEnum(getCol(r, ['UOM', 'uom']), UOMS, {
-      fallback: 'NOS',
-      label: 'UOM',
-      transform: (s) => s.toUpperCase(),
-    });
-    if (uom.warning) errors.push(`Row ${rowNum}: ${uom.warning}`);
-    // Q2 (ADR-193): the Item Type is chosen per item — a blank cell is an
-    // error, never a silent 'component'.
+    if (!isUpdate && !name) return skip('Item Name is required');
+    const codeKey = code.toLowerCase();
+    if (seen.has(codeKey)) return skip(`Item Code "${code}" is repeated in the file`);
+    seen.add(codeKey);
+
+    const payload: Record<string, unknown> = {};
+    const warnings: string[] = [];
+    putIfFilled(payload, 'code', code);
+    putIfFilled(payload, 'name', name);
+    putIfFilled(payload, 'description', getCol(r, ['Description', 'desc', 'Desc']));
+    putIfFilled(payload, 'material', getCol(r, ['Material', 'material']));
+    putIfFilled(payload, 'hsnCode', getCol(r, ['HSN Code', 'HSN', 'hsn', 'HSN/SAC', 'hsn_code']));
+
+    // Q2 (ADR-193): the Item Type is chosen per item — a blank cell on a NEW
+    // item is an error, never a silent 'component'.
     const rawType = getCol(r, ['Item Type*', 'Item Type', 'ItemType', 'item_type', 'Type', 'type']);
-    if (!rawType || !rawType.trim()) {
-      errors.push(`Row ${rowNum}: Item Type is blank — choose ${ITEM_TYPES.join(' / ')}.`);
-      return;
+    if (rawType) {
+      const itemType = resolveItemType(rawType);
+      if (!itemType) return skip(`Item Type "${rawType}" is not one of ${typeList}`);
+      payload.itemType = itemType;
+    } else if (!isUpdate) {
+      return skip(`Item Type is blank — choose ${typeList}`);
     }
-    const itemType = coerceEnum(
-      rawType
-        .trim()
-        .replace(/[\s/]+/g, '_')
-        .replace(/_instrument$/i, ''),
-      ITEM_TYPES,
-      {
-        fallback: 'component',
-        label: 'Item Type',
-        transform: (s) => s.toLowerCase(),
-      },
-    );
-    if (itemType.warning) {
-      errors.push(
-        `Row ${rowNum}: Item Type "${rawType.trim()}" is not one of ${ITEM_TYPES.join(' / ')} — row not imported.`,
-      );
-      return;
+
+    const rawUom = getCol(r, ['UOM', 'uom']);
+    if (rawUom) {
+      const uom = coerceEnum(rawUom, UOMS, {
+        fallback: 'NOS',
+        label: 'UOM',
+        transform: (s) => s.toUpperCase(),
+      });
+      // Update mode must not quietly overwrite a good UOM with the fallback.
+      if (uom.warning && isUpdate) return skip(`UOM "${rawUom}" is not one of ${UOMS.join(' / ')}`);
+      if (uom.warning) warnings.push(uom.warning);
+      payload.uom = uom.value;
     }
-    // ADR-171 — Source (make / buy); blank or unknown → make, the default.
-    const source = coerceEnum(
-      getCol(r, ['Source', 'source', 'Procurement Type', 'procurement_type']),
-      ITEM_PROCUREMENT_TYPES,
-      {
+
+    // ADR-171 — Source (make / buy); blank → the server's default (make).
+    const rawSource = getCol(r, ['Source', 'source', 'Procurement Type', 'procurement_type']);
+    if (rawSource) {
+      const source = coerceEnum(rawSource, ITEM_PROCUREMENT_TYPES, {
         fallback: 'make',
         label: 'Source',
         transform: (s) => s.toLowerCase(),
-      },
-    );
-    if (source.warning) errors.push(`Row ${rowNum}: ${source.warning}`);
-    payloads.push({
-      code,
-      name,
-      description: getCol(r, ['Description', 'desc', 'Desc']) || undefined,
-      // `revision` is required by the CreateItemInput type (the schema defaults
-      // it to 'A' server-side); it is not read from the sheet any more.
-      revision: 'A',
-      material: getCol(r, ['Material', 'material']) || undefined,
-      uom: uom.value,
-      itemType: itemType.value,
-      procurementType: source.value,
-    });
+      });
+      if (source.warning && isUpdate) return skip(`Source "${rawSource}" is not Make or Buy`);
+      if (source.warning) warnings.push(source.warning);
+      payload.procurementType = source.value;
+    }
+
+    rows.push({ rowNum, payload, code, name, warnings });
   });
 
-  return { payloads, errors };
+  return { rows, skipped, notes: [] };
 }

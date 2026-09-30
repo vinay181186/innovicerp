@@ -12,29 +12,28 @@
 import type { Client, Company, JwReturnChallanListItem } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
+import { partyForPrint } from '@/lib/print/party-copy';
 import { type SheetField, challanDate, openSheetPrintWindow } from '@/lib/print/sheet-print';
-
-const FALLBACK_UOM = 'NOS';
 
 export function printJwReturnChallan(
   r: JwReturnChallanListItem,
   client: Client | null | undefined,
   company: Company | null | undefined,
 ): boolean {
-  const addressLines = [
-    client?.addressLine1 ?? '',
-    [client?.city, client?.state, client?.pincode].filter(Boolean).join(', '),
-  ].filter(Boolean);
+  // The paper's own copy of the customer (0186, plan D7); the live master
+  // only for a paper made before 0186.
+  const party = partyForPrint(r.clientCopy, client, r.clientName);
+  const addressLines = party.addressLines;
 
   const recipientFields: SheetField[] = [
-    { label: 'Customer Code', value: client?.code ?? '', variant: 'mono' },
-    { label: 'Name', value: client?.name ?? r.clientName ?? '', variant: 'name' },
+    { label: 'Customer Code', value: party.code, variant: 'mono' },
+    { label: 'Name', value: party.name, variant: 'name' },
     {
       label: 'Address',
       value: addressLines[0] ?? '',
       ...(addressLines.length > 1 ? { extra: addressLines.slice(1) } : {}),
     },
-    { label: 'GSTIN', value: client?.gstNumber ?? '', variant: 'mono' },
+    { label: 'GSTIN', value: party.gstNumber, variant: 'mono' },
   ];
 
   const documentFields: SheetField[] = [
@@ -47,7 +46,8 @@ export function printJwReturnChallan(
   if (r.vehicleNo)
     documentFields.push({ label: 'Vehicle No.', value: r.vehicleNo, variant: 'mono' });
 
-  const uom = r.uom?.trim() || FALLBACK_UOM;
+  // Blank when the JWSO line has no unit — never an invented 'NOS' (A29).
+  const uom = r.uom?.trim() ?? '';
 
   return openSheetPrintWindow({
     title: 'Job Work Return Challan',
@@ -63,7 +63,7 @@ export function printJwReturnChallan(
         itemCode: itemCodeWithRev(r.itemCode, r.itemRevision, ''),
         itemName: r.partName,
         uom,
-        hsn: null,
+        hsn: r.hsnCode?.trim() || null,
         qty: r.qty.toFixed(2),
         remarks: r.remarks,
       },

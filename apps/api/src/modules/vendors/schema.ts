@@ -4,6 +4,7 @@ export {
   bulkCreateVendorsInputSchema,
   createVendorInputSchema,
   listVendorsQuerySchema,
+  updateVendorImportRowSchema,
   updateVendorInputSchema,
   vendorSchema,
 } from '@innovic/shared';
@@ -16,6 +17,7 @@ export type {
   ListVendorsResponse,
   UpdateVendorInput,
   Vendor,
+  VendorSaveResponse,
 } from '@innovic/shared';
 
 // ADR-197: moving a vendor to Trash needs a reason (REASON_REQUIRED_ACTIONS).

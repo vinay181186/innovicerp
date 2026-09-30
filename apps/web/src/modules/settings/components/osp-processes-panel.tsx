@@ -10,6 +10,7 @@ import { Loader2, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, useSaveKey, withSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
 import { useVendorsList } from '@/modules/vendors/api';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
@@ -27,10 +28,17 @@ function useOspProcesses() {
   });
 }
 
-function useCreateOsp() {
+function useCreateOsp(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<OspProcess, Error, OspProcessInput>({
-    mutationFn: (input) => apiFetch<OspProcess>('/osp-processes', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<OspProcess>('/osp-processes', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ospKey }),
   });
 }
@@ -82,7 +90,10 @@ export function OspProcessesPanel(): React.JSX.Element {
     { ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}), limit: 50, offset: 0 },
     { enabled: canWrite },
   );
-  const createMut = useCreateOsp();
+  // R2: one save key per Add-modal open — rotated in openCreate(), since the
+  // modal is inline here rather than its own component.
+  const saveKey = useSaveKey();
+  const createMut = useCreateOsp(saveKey);
   const updateMut = useUpdateOsp();
   const deleteMut = useDeleteOsp();
 
@@ -94,6 +105,7 @@ export function OspProcessesPanel(): React.JSX.Element {
   const [overlaps, setOverlaps] = useState<string[] | null>(null);
 
   function openCreate(): void {
+    saveKey.rotate();
     setSubmitError(null);
     setModal({ ...emptyEdit });
   }

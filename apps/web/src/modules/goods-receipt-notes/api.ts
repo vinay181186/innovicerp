@@ -7,6 +7,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 
@@ -60,11 +61,17 @@ function invalidatePoCaches(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: activityLogKeys.all });
 }
 
-export function useCreateGoodsReceiptNote() {
+export function useCreateGoodsReceiptNote(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<GoodsReceiptNoteDetail, Error, CreateGoodsReceiptNoteInput>({
     mutationFn: (input) =>
-      apiFetch<GoodsReceiptNoteDetail>('/goods-receipt-notes', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<GoodsReceiptNoteDetail>('/goods-receipt-notes', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: goodsReceiptNotesKeys.lists() });
       qc.setQueryData(goodsReceiptNotesKeys.detail(created.id), created);

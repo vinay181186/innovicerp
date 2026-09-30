@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import { useCreatePlansBatch } from '@/modules/plans/api';
 import { useVendorsList } from '@/modules/vendors/api';
@@ -101,7 +102,8 @@ export function BomPlanningModal({
   onSaved,
 }: Props): JSX.Element {
   const { data, isLoading, error } = usePlanningBom(soId, soLineId);
-  const createPlans = useCreatePlansBatch();
+  const saveKey = useSaveKey();
+  const createPlans = useCreatePlansBatch(saveKey);
   const [rowState, setRowState] = useState<Map<string, RowState>>(new Map());
   const [planAssembly, setPlanAssembly] = useState<boolean>(false);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
@@ -325,8 +327,11 @@ function BomBody({
   // Vendors for the Buy / Outsource rows. Server-side search, one shared term —
   // only one picker is open at a time.
   const [vendorSearch, setVendorSearch] = useState('');
+  // Active vendors only (A10): a disabled vendor is not offered for a new pick;
+  // a row's already-chosen vendor keeps its label (vendorLabel).
   const { data: vendorPage, isFetching: vendorsFetching } = useVendorsList({
     ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    isActive: true,
     limit: 50,
     offset: 0,
   });

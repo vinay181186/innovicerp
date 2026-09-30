@@ -13,11 +13,13 @@ import {
 } from 'drizzle-orm';
 import {
   ActivityAction,
+  checkItemHsn,
   ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPE_RULES,
   type ItemProcurementType,
   type ItemType,
   itemTypeLabel,
+  type MasterImportRowResult,
   withPartyMaterialSuffix,
 } from '@innovic/shared';
 import { items } from '../../db/schema';
@@ -25,15 +27,27 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import {
+  applyMasterRules,
+  dropBlankCells,
+  issueTexts,
+  loadMasterRuleSettings,
+  rawRowText,
+  withWarnings,
+  zodRowReason,
+} from '../../lib/master-rules';
 import { emitActivityLog } from '../activity-log/service';
 import { checkTypeAndSerialChange, SERIAL_ONLY_FOR_TOOLS, trackSerialForCreate } from './type-lock';
+import { createItemInputSchema, updateItemImportRowSchema } from './schema';
 import type {
   BulkCreateItemsInput,
   BulkCreateItemsResponse,
   BulkItemSkip,
   CreateItemInput,
   Item,
+  ItemSaveResponse,
   ListItemsQuery,
   ListItemsResponse,
   UpdateItemInput,
@@ -107,7 +121,7 @@ export async function listItems(
     const conditions: SQL[] = [eq(items.companyId, companyId), isNull(items.deletedAt)];
     if (input.search) {
       // Search covers every column the Item Master list actually shows — Item
-      // Code, Name, Description, Drawing No., Rev, Material and the UOM badge
+      // Code, Name, Description, Material and the UOM badge
       // (the column defs in apps/web/src/modules/items/routes/list.tsx).
       // UOM is a Postgres enum, so it needs an explicit ::text cast — `uom
       // ILIKE $1` errors with "operator does not exist: uom ~~*". The raw
@@ -118,7 +132,9 @@ export async function listItems(
       //  - item type — not a row column; it is the StatStrip filter above the
       //    table (All / Component / Assembly), so searching it would only
       //    duplicate a filter that already exists;
-      //  - the drawing file path — the "Drw" cell renders an icon, not the path;
+      //  - Drawing No., Item Master Rev and the drawing file path — old item
+      //    columns no screen shows any more (plan v3 Step 4 #7); the DB keeps
+      //    them, but a row must not match on a value the user cannot see;
       //  - min stock qty — a quantity: partial matching on numbers makes a
       //    short term useless.
       // No money column exists on this table.
@@ -127,8 +143,6 @@ export async function listItems(
         ilike(items.code, term),
         ilike(items.name, term),
         ilike(items.description, term),
-        ilike(items.drawingNo, term),
-        ilike(items.revision, term),
         ilike(items.material, term),
         sql`${items.uom}::text ILIKE ${term} ESCAPE '\\'`,
       );
@@ -221,7 +235,10 @@ export async function getNextItemCode(user: AuthContext): Promise<{ code: string
   return withUserContext(user, async (tx) => ({ code: await nextItemCode(tx, companyId) }));
 }
 
-export async function createItem(input: CreateItemInput, user: AuthContext): Promise<Item> {
+export async function createItem(
+  input: CreateItemInput,
+  user: AuthContext,
+): Promise<ItemSaveResponse> {
   // Tier gate (was the admin/manager role check). L2 Data Entry can add an
   // item; L1 Viewer and L4 Approver cannot.
   await requireFormAccess(user, 'item_create', 'entry');
@@ -231,6 +248,13 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
   // the same ITM-#### — so the loser retries with the next code.
   return withUniqueRetry(() =>
     withUserContext(user, async (tx) => {
+      // HSN rule (plan D3): warn mode → saved + `warnings`; enforce → 400.
+      const settings = await loadMasterRuleSettings(tx, companyId);
+      const warnings = applyMasterRules(
+        checkItemHsn(input, settings),
+        settings.masterRulesMode,
+        `Item "${input.name}"`,
+      );
       // ADR-195: a Party Supplied Material item always carries the `-rm` suffix,
       // whether the code was auto-generated (blank input) or hand-typed. Other
       // item types keep the code exactly as given / generated.
@@ -266,7 +290,7 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
           itemType: input.itemType,
           procurementType: input.procurementType,
           trackSerial: trackSerialForCreate(input.itemType, input.trackSerial),
-          hsnCode: input.hsnCode ?? null,
+          hsnCode: emptyToNull(input.hsnCode),
           drawingFilePath: input.drawingFilePath ?? null,
           imagePath: input.imagePath ?? null,
           createdBy: user.id,
@@ -286,168 +310,317 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
         companyId,
         user,
       );
-      return row;
+      return withWarnings(row, warnings);
     }),
   );
 }
 
+type ItemRow = typeof items.$inferSelect;
+
+/** Excel column names for a refused row's reason (import template headers). */
+const ITEM_IMPORT_LABELS: Record<string, string> = {
+  code: 'Item Code',
+  name: 'Item Name',
+  description: 'Description',
+  material: 'Material',
+  uom: 'UOM',
+  itemType: 'Item Type',
+  procurementType: 'Source',
+  hsnCode: 'HSN Code',
+  drawingNo: 'Drawing No.',
+  revision: 'Item Master Rev',
+  trackSerial: 'Track by Serial No.',
+};
+
 /**
- * Create many items in ONE transaction — the Excel importer's whole sheet.
+ * The Excel importer's whole sheet in ONE transaction — ERPNext Data Import
+ * behaviour (shared/schemas/master-import.ts):
+ *   - mode 'insert' creates new items by Item Code (codes are the de-dup key;
+ *     names are NOT — two different items may share a name); a blank code gets
+ *     the next ITM-####; a Party Supplied Material code gets its -rm suffix,
+ *     as the single create does;
+ *   - mode 'update' finds each row's item by Item Code and writes only the
+ *     filled cells, one History (EDIT) row per item. Item Type and Track by
+ *     Serial No. are NOT changed by import (they carry stock locks) — a row
+ *     that tries is skipped with the reason;
+ *   - EVERY row is parsed on its own — a bad row is skipped with its reason,
+ *     the rest go in;
+ *   - the HSN rule runs per row (warn → imported with a warning, enforce →
+ *     skipped);
+ *   - dryRun = the preview: the same answer, nothing written.
  *
- * Why this exists: the importer used to call createItem once per row and wait
- * for each round trip, and every success invalidated the on-screen item list, so
- * the browser re-downloaded the whole master after every row. Measured live on
- * the identical vendor import, that ran at ~1 row/second — nine minutes for a
- * 500-row sheet — and got slower as the master grew.
- *
- * What makes this fast is not batching the HTTP call alone — it is doing the
- * per-row work ONCE:
- *   - one access check, one transaction, one RLS context set;
- *   - existing codes read in a single query instead of one lookup per row;
- *   - the ITM-#### series continued in memory instead of re-scanning the table
- *     for every row;
- *   - one multi-row INSERT instead of N;
- *   - one activity-log line for the import instead of one per item.
- *
- * DE-DUPLICATION KEY: item CODE, and only code. That is what the importer has
- * always used — the sheet's "Item Code*" column is required, the parser rejects
- * a code repeated inside the file, and the API rejected a code already stored.
- * Names are deliberately NOT de-duplicated: two genuinely different items can
- * share a name (same part, different revision or customer), so refusing on name
- * would throw away real rows. The check simply moves here, where it compares
- * against the WHOLE company instead of only the rows the browser had loaded.
- *
- * Tolerant, not all-or-nothing: a bad row is reported and left out, the rest go
- * in. A sheet with one duplicate should not cost the operator the other 499.
+ * Speed (why this exists at all): one access check, one read of the whole
+ * master, multi-row INSERT — the per-row POST loop it replaced ran at ~1 row
+ * per second.
  */
 export async function createItemsBulk(
   input: BulkCreateItemsInput,
   user: AuthContext,
 ): Promise<BulkCreateItemsResponse> {
-  // Same gate as a single create — this raises items, so it is `entry`.
-  await requireFormAccess(user, 'item_create', 'entry');
+  const mode = input.mode ?? 'insert';
+  const dryRun = input.dryRun ?? false;
+  // Insert raises items (`entry`); Update Existing changes saved ones (`edit`).
+  await requireFormAccess(user, 'item_create', mode === 'update' ? 'edit' : 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    // One read of what already exists, rather than a duplicate-check per row.
-    // Deleted rows are included on purpose: their CODE is still taken (the
-    // single create refuses to reuse it), so the series must skip past them and
-    // the operator gets told to restore rather than re-create.
-    const existingRows = await tx
-      .select({ code: items.code, deletedAt: items.deletedAt })
-      .from(items)
-      .where(eq(items.companyId, companyId));
-
+    const settings = await loadMasterRuleSettings(tx, companyId);
+    // One read of the whole master. Deleted rows are included on purpose:
+    // their CODE is still taken (restore, don't re-create).
+    const existingRows = await tx.select().from(items).where(eq(items.companyId, companyId));
     const takenCodes = new Set(existingRows.map((r) => r.code.trim().toLowerCase()));
+    const liveByCode = new Map(
+      existingRows.filter((r) => !r.deletedAt).map((r) => [r.code.trim().toLowerCase(), r]),
+    );
     const deletedCodes = new Set(
       existingRows.filter((r) => r.deletedAt).map((r) => r.code.trim().toLowerCase()),
     );
 
-    // Continue the ITM-#### series in memory. nextItemCode() scans the table for
-    // the highest code; doing that per row is one extra query per item.
+    // Continue the ITM-#### series in memory (ITM-#### and ITM-####-rm share
+    // one counter, ADR-195).
     let nextSeq = 0;
     for (const r of existingRows) {
-      // ADR-195: ITM-#### and ITM-####-rm share one counter — strip an optional
-      // -rm suffix before reading the number so the series never collides.
       const m = /^ITM-(\d+)$/i.exec(r.code.trim().replace(/-rm$/i, ''));
       if (m) nextSeq = Math.max(nextSeq, Number(m[1]));
     }
 
-    const skipped: BulkItemSkip[] = [];
-    const values: Array<typeof items.$inferInsert> = [];
+    const rows: MasterImportRowResult[] = [];
+    const inserts: Array<typeof items.$inferInsert> = [];
     const codes: string[] = [];
+    const updates: Array<{
+      before: ItemRow;
+      set: Record<string, unknown>;
+      changes: ReturnType<typeof diffFields>;
+    }> = [];
+    const seenCodes = new Set<string>();
 
-    for (const [i, it] of input.items.entries()) {
+    for (const [i, raw] of input.items.entries()) {
       const index = i + 1;
-      const name = it.name.trim();
-      if (it.trackSerial && it.itemType !== 'tool') {
-        skipped.push({ index, name, reason: SERIAL_ONLY_FOR_TOOLS });
+      const rawName = rawRowText(raw, 'name');
+      const rawCode = rawRowText(raw, 'code') || null;
+      const skip = (reason: string, code: string | null = rawCode, name = rawName): void => {
+        rows.push({ index, code, name, action: 'skip', reason });
+      };
+
+      if (mode === 'insert') {
+        const parsed = createItemInputSchema.safeParse(raw);
+        if (!parsed.success) {
+          skip(zodRowReason(parsed.error, ITEM_IMPORT_LABELS));
+          continue;
+        }
+        const it = parsed.data;
+        const name = it.name.trim();
+        if (it.trackSerial && it.itemType !== 'tool') {
+          skip(SERIAL_ONLY_FOR_TOOLS, it.code ?? null, name);
+          continue;
+        }
+        let code = it.code?.trim();
+        if (code) {
+          if (it.itemType === 'party_supplied_material') code = withPartyMaterialSuffix(code);
+          const key = code.toLowerCase();
+          if (deletedCodes.has(key)) {
+            skip(
+              `Item Code "${code}" already exists in Trash — restore it from Trash instead`,
+              code,
+              name,
+            );
+            continue;
+          }
+          if (takenCodes.has(key)) {
+            skip(`Item Code "${code}" already exists`, code, name);
+            continue;
+          }
+        } else {
+          do {
+            nextSeq += 1;
+            code = `ITM-${String(nextSeq).padStart(4, '0')}`;
+            if (it.itemType === 'party_supplied_material') code = withPartyMaterialSuffix(code);
+          } while (takenCodes.has(code.toLowerCase()));
+        }
+        const issues = checkItemHsn(it, settings);
+        if (settings.masterRulesMode === 'enforce' && issues.length > 0) {
+          skip(issueTexts(issues).join(' '), code, name);
+          continue;
+        }
+        takenCodes.add(code.toLowerCase());
+        inserts.push({
+          companyId,
+          code,
+          name,
+          description: it.description ?? null,
+          drawingNo: it.drawingNo ?? null,
+          revision: it.revision,
+          material: it.material ?? null,
+          uom: it.uom,
+          itemType: it.itemType,
+          procurementType: it.procurementType,
+          trackSerial: it.trackSerial === true,
+          hsnCode: emptyToNull(it.hsnCode),
+          drawingFilePath: it.drawingFilePath ?? null,
+          imagePath: it.imagePath ?? null,
+          createdBy: user.id,
+          updatedBy: user.id,
+        });
+        codes.push(code);
+        rows.push({
+          index,
+          code,
+          name,
+          action: 'insert',
+          ...(issues.length ? { warnings: issueTexts(issues) } : {}),
+        });
         continue;
       }
 
-      let code = it.code?.trim();
-      if (code) {
-        const key = code.toLowerCase();
-        if (deletedCodes.has(key)) {
-          skipped.push({
-            index,
-            name,
-            reason: `Item Code "${code}" already exists in Trash — restore it from Trash instead`,
-          });
-          continue;
-        }
-        if (takenCodes.has(key)) {
-          skipped.push({ index, name, reason: `Item Code "${code}" already exists` });
-          continue;
-        }
-      } else {
-        // Code is optional on import — the server assigns the next in series,
-        // exactly as the single create does when the form leaves it blank.
-        nextSeq += 1;
-        code = `ITM-${String(nextSeq).padStart(4, '0')}`;
-        // Defensive: a company holding a hand-typed ITM-0007 alongside the
-        // series could collide. Walk forward until the code is free.
-        while (takenCodes.has(code.toLowerCase())) {
-          nextSeq += 1;
-          code = `ITM-${String(nextSeq).padStart(4, '0')}`;
-        }
+      // ── Update Existing ──
+      const parsed = updateItemImportRowSchema.safeParse(dropBlankCells(raw));
+      if (!parsed.success) {
+        skip(zodRowReason(parsed.error, ITEM_IMPORT_LABELS));
+        continue;
       }
-      // Claim the code so a duplicate INSIDE the sheet is caught too, not only
-      // one against what was already stored.
-      takenCodes.add(code.toLowerCase());
-
-      values.push({
-        companyId,
-        code,
-        name,
-        description: it.description ?? null,
-        drawingNo: it.drawingNo ?? null,
-        revision: it.revision,
-        material: it.material ?? null,
-        uom: it.uom,
-        itemType: it.itemType,
-        procurementType: it.procurementType,
-        trackSerial: it.trackSerial === true,
-        hsnCode: it.hsnCode ?? null,
-        drawingFilePath: it.drawingFilePath ?? null,
-        imagePath: it.imagePath ?? null,
-        createdBy: user.id,
-        updatedBy: user.id,
-      });
-      codes.push(code);
-    }
-
-    if (values.length > 0) {
-      // One statement for the lot. Chunked because a single INSERT carries one
-      // parameter per column per row and Postgres caps a statement at 65535.
-      const CHUNK = 500;
-      for (let i = 0; i < values.length; i += CHUNK) {
-        await tx.insert(items).values(values.slice(i, i + CHUNK));
+      const { code: codeIn, ...patch } = parsed.data;
+      const key = codeIn.toLowerCase();
+      if (seenCodes.has(key)) {
+        skip(`Item Code "${codeIn}" is repeated in the sheet`);
+        continue;
       }
-      // One line for the whole import. Writing an activity row per item would
-      // put the per-row cost straight back into the transaction, and the log
-      // reader wants "500 items imported", not 500 near-identical lines.
-      await emitActivityLog(
-        tx,
+      seenCodes.add(key);
+      const before = liveByCode.get(key);
+      if (!before) {
+        skip(
+          deletedCodes.has(key)
+            ? `Item ${codeIn} is in Trash — restore it first`
+            : `No item with Item Code "${codeIn}"`,
+        );
+        continue;
+      }
+      if (patch.itemType !== undefined && patch.itemType !== before.itemType) {
+        skip(
+          `Item Type cannot be changed by import (${itemTypeLabel(before.itemType)} → ${itemTypeLabel(patch.itemType)}) — change it on the item screen`,
+          before.code,
+          before.name,
+        );
+        continue;
+      }
+      if (patch.trackSerial !== undefined && patch.trackSerial !== before.trackSerial) {
+        skip(
+          'Track by Serial No. cannot be changed by import — change it on the item screen',
+          before.code,
+          before.name,
+        );
+        continue;
+      }
+      const set = itemPlainUpdates(patch);
+      const issues = checkItemHsn(
         {
-          action: ActivityAction.Create,
-          entity: 'Item',
-          detail: `Excel import — ${values.length} item(s): ${codes[0]}…${codes[codes.length - 1]}`,
+          itemType: before.itemType,
+          hsnCode: patch.hsnCode !== undefined ? patch.hsnCode : before.hsnCode,
         },
-        companyId,
-        user,
+        settings,
       );
+      if (settings.masterRulesMode === 'enforce' && issues.length > 0) {
+        skip(issueTexts(issues).join(' '), before.code, before.name);
+        continue;
+      }
+      const changes = diffFields(before, set, ITEM_FIELDS);
+      if (changes.length > 0) updates.push({ before, set, changes });
+      rows.push({
+        index,
+        code: before.code,
+        name: patch.name?.trim() ?? before.name,
+        action: 'update',
+        changedFields: changes.length,
+        ...(issues.length ? { warnings: issueTexts(issues) } : {}),
+      });
     }
 
-    return { created: values.length, skipped, codes };
+    if (!dryRun) {
+      // Chunked: one INSERT carries one parameter per column per row and
+      // Postgres caps a statement at 65535.
+      const CHUNK = 500;
+      for (let i = 0; i < inserts.length; i += CHUNK) {
+        await tx.insert(items).values(inserts.slice(i, i + CHUNK));
+      }
+      if (inserts.length > 0) {
+        // One line for the whole insert — the log reader wants "500 items
+        // imported", not 500 near-identical lines.
+        await emitActivityLog(
+          tx,
+          {
+            action: ActivityAction.Create,
+            entity: 'Item',
+            detail: `Excel import — ${inserts.length} item(s): ${codes[0]}…${codes[codes.length - 1]}`,
+          },
+          companyId,
+          user,
+        );
+      }
+      // Update Existing: one History row per item, Before → After (ADR-197).
+      for (const u of updates) {
+        await tx
+          .update(items)
+          .set({ ...u.set, updatedBy: user.id })
+          .where(eq(items.id, u.before.id));
+        await emitActivityLog(
+          tx,
+          {
+            action: ActivityAction.Edit,
+            entity: 'Item',
+            entityId: u.before.id,
+            refId: u.before.code,
+            changes: u.changes,
+            detail: `Excel import (update) — ${u.before.code} — ${u.before.name}`,
+          },
+          companyId,
+          user,
+        );
+      }
+    }
+
+    const skipped: BulkItemSkip[] = rows
+      .filter((r) => r.action === 'skip')
+      .map((r) => ({ index: r.index, name: r.name, reason: r.reason ?? '' }));
+    return {
+      dryRun,
+      mode,
+      created: inserts.length,
+      updated: rows.filter((r) => r.action === 'update').length,
+      rows,
+      skipped,
+      codes,
+    };
   });
+}
+
+/** Fields an item update may write directly (not Item Type / Track by Serial
+ *  No., which go through type-lock.ts). Shared by the item screen's update and
+ *  the Update Existing import. */
+function itemPlainUpdates(input: UpdateItemInput): Record<string, unknown> {
+  const updates: Record<string, unknown> = {};
+  if (input.name !== undefined) updates.name = input.name;
+  if (input.description !== undefined) updates.description = input.description ?? null;
+  if (input.drawingNo !== undefined) updates.drawingNo = input.drawingNo ?? null;
+  if (input.revision !== undefined) updates.revision = input.revision;
+  if (input.material !== undefined) updates.material = input.material ?? null;
+  if (input.uom !== undefined) updates.uom = input.uom;
+  if (input.procurementType !== undefined) updates.procurementType = input.procurementType;
+  if (input.hsnCode !== undefined) updates.hsnCode = emptyToNull(input.hsnCode);
+  if (input.drawingFilePath !== undefined) updates.drawingFilePath = input.drawingFilePath ?? null;
+  // Product image: a string sets it, null clears it, undefined leaves it alone.
+  if (input.imagePath !== undefined) updates.imagePath = input.imagePath ?? null;
+  return updates;
+}
+
+function emptyToNull(s: string | null | undefined): string | null {
+  const t = (s ?? '').trim();
+  return t.length === 0 ? null : t;
 }
 
 export async function updateItem(
   id: string,
   input: UpdateItemInput,
   user: AuthContext,
-): Promise<Item> {
+): Promise<ItemSaveResponse> {
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
   await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
@@ -466,6 +639,8 @@ export async function updateItem(
     // ADR-193 (P23 / P15 phase 4): no switch to or from 'tool', and no change
     // of Track by Serial No., once stock has moved (type-lock.ts).
     const cur = existing[0]!;
+    // R5: refuse the save if someone else edited the item after this form opened it.
+    assertUnchangedSinceOpened(cur.updatedAt, input.expectedUpdatedAt);
     // ADR-195: the item CODE is permanent, and a Party Supplied Material item bakes
     // the -rm suffix into its code at creation. So the type may never be switched
     // INTO or OUT OF party-supplied on edit — doing so would leave the code and the
@@ -482,21 +657,23 @@ export async function updateItem(
     }
     const trackSerial = await checkTypeAndSerialChange(tx, id, cur, input);
 
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.name !== undefined) updates.name = input.name;
-    if (input.description !== undefined) updates.description = input.description ?? null;
-    if (input.drawingNo !== undefined) updates.drawingNo = input.drawingNo ?? null;
-    if (input.revision !== undefined) updates.revision = input.revision;
-    if (input.material !== undefined) updates.material = input.material ?? null;
-    if (input.uom !== undefined) updates.uom = input.uom;
+    // HSN rule on the MERGED item (type and HSN after this save).
+    const settings = await loadMasterRuleSettings(tx, companyId);
+    const warnings = applyMasterRules(
+      checkItemHsn(
+        {
+          itemType: input.itemType ?? cur.itemType,
+          hsnCode: input.hsnCode !== undefined ? input.hsnCode : cur.hsnCode,
+        },
+        settings,
+      ),
+      settings.masterRulesMode,
+      `Item ${cur.code}`,
+    );
+
+    const updates: Record<string, unknown> = { updatedBy: user.id, ...itemPlainUpdates(input) };
     if (input.itemType !== undefined) updates.itemType = input.itemType;
-    if (input.procurementType !== undefined) updates.procurementType = input.procurementType;
     if (trackSerial !== undefined) updates.trackSerial = trackSerial;
-    if (input.hsnCode !== undefined) updates.hsnCode = input.hsnCode ?? null;
-    if (input.drawingFilePath !== undefined)
-      updates.drawingFilePath = input.drawingFilePath ?? null;
-    // Product image: a string sets it, null clears it, undefined leaves it alone.
-    if (input.imagePath !== undefined) updates.imagePath = input.imagePath ?? null;
 
     const changes = diffFields(cur, updates, ITEM_FIELDS);
     const updated = await tx.update(items).set(updates).where(eq(items.id, id)).returning();
@@ -516,7 +693,7 @@ export async function updateItem(
         user,
       );
     }
-    return row;
+    return withWarnings(row, warnings);
   });
 }
 

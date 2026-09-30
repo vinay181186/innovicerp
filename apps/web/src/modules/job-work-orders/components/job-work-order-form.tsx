@@ -26,6 +26,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { docCodeToSend } from '@/lib/use-doc-number';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { apiFetch } from '@/lib/api';
@@ -236,8 +237,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
   // ── Searchable client picker (server-searched; scales past the 200 cap) ──
   const [clientSearch, setClientSearch] = useState('');
+  // Active customers only (A10) — the server refuses a newly linked inactive
+  // one; an edit keeps its current customer's label via clientLabel below.
   const { data: clientsData, isFetching: clientsFetching } = useClientsList({
     ...(clientSearch.trim() ? { search: clientSearch.trim() } : {}),
+    isActive: true,
     limit: 50,
     offset: 0,
   });
@@ -286,6 +290,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
   // ── JWSO No.: live duplicate/format check (parity with the SO form). ──
   const [docNoValid, setDocNoValid] = useState(true);
+  // S2: the number the field auto-filled. It is only a preview — the form
+  // sends a number only when the user changed it (docCodeToSend).
+  const [suggestedCode, setSuggestedCode] = useState('');
 
   // ── Client select label + inline quick-add ──
   const selectedClientId = watch('header.clientId') ?? null;
@@ -667,7 +674,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       ...h,
       // Code is generated server-side in series; never send a client value on
       // create (an empty string would fail the schema's min-length check).
-      code: h.code?.trim() || undefined,
+      code: docCodeToSend(h.code, suggestedCode),
       // customerName is snapshotted server-side from the client master.
       customerName: undefined,
       gstPercent: Number(h.gstPercent) || 0,
@@ -738,7 +745,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const saveButton = (
     <button type="submit" className="btn btn-primary" disabled={saveDisabled}>
       {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-      {props.submitLabel ?? (isCreate ? 'Save JWSO' : 'Save Changes')}
+      {formState.isSubmitting
+        ? 'Saving…'
+        : (props.submitLabel ?? (isCreate ? 'Save JWSO' : 'Save Changes'))}
     </button>
   );
   const errorBanners = (
@@ -1045,6 +1054,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               value={watch('header.code') ?? ''}
               onChange={(v) => setValue('header.code', v)}
               onValidityChange={setDocNoValid}
+              onSuggestedChange={setSuggestedCode}
             />
           </div>
           <div className="form-grp f-sm">

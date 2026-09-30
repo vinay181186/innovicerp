@@ -5,7 +5,12 @@
 // `?dispatchId=` (Create Invoice button on the Dispatch Register) preselects the
 // dispatch's SO and prefills the lines from that dispatch.
 
-import type { InvoiceTaxType, InvoiceableLine } from '@innovic/shared';
+import {
+  type InvoiceTaxType,
+  type InvoiceableLine,
+  PLACE_OF_SUPPLY_UNKNOWN_NOTE,
+  placeOfSupplyLabel,
+} from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -14,6 +19,7 @@ import { SearchableSelect as LineSearchableSelect } from '@/components/shared/se
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
 import { todayIst } from '@/lib/date';
@@ -59,7 +65,8 @@ function InvoiceNewPage(): React.JSX.Element {
   const { dispatchId } = invoiceNewRoute.useSearch();
   const { data: soOpts } = useFinanceSoOptions();
   const { data: next } = useNextInvoiceCode();
-  const create = useCreateInvoice();
+  const saveKey = useSaveKey();
+  const create = useCreateInvoice(saveKey);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
   // Where Cancel goes, and where ESC -> Exit goes. Every other way off the
@@ -94,6 +101,8 @@ function InvoiceNewPage(): React.JSX.Element {
   const [termsSource, setTermsSource] = useState<'customer' | 'default' | null>('default');
   const [gstSource, setGstSource] = useState<'so' | null>(null);
   const [taxTypeSource, setTaxTypeSource] = useState<'gstin' | null>(null);
+  // Place of Supply known for the chosen SO's customer (plan D2, 0186).
+  const posKnown = !!inv && inv.salesOrderId === soId && !!inv.placeOfSupply;
   useEffect(() => {
     termsTouched.current = false;
     gstTouched.current = false;
@@ -298,6 +307,11 @@ function InvoiceNewPage(): React.JSX.Element {
         </Banner>
       ) : null}
 
+      {/* Place of Supply unknown (warn mode) — screen only, never printed. */}
+      {inv && inv.salesOrderId === soId && !inv.placeOfSupply ? (
+        <Banner tone="warn">{PLACE_OF_SUPPLY_UNKNOWN_NOTE}</Banner>
+      ) : null}
+
       <Panel title="Invoice Details">
         {fromDispatch && fromDispatch.status !== 'cancelled' ? (
           <div
@@ -406,11 +420,20 @@ function InvoiceNewPage(): React.JSX.Element {
             label="Tax Type"
             size="sm"
             htmlFor="invoiceTaxType"
-            help={taxTypeSource === 'gstin' ? 'From customer GSTIN' : undefined}
+            help={
+              posKnown
+                ? `From Place of Supply: ${placeOfSupplyLabel(inv?.placeOfSupply)}`
+                : taxTypeSource === 'gstin'
+                  ? "Place of Supply unknown — the company's State is used"
+                  : undefined
+            }
           >
+            {/* Known Place of Supply → the tax type is decided by it (the server
+                refuses a different one); unknown → the user may choose. */}
             <select
               id="invoiceTaxType"
               className="innovic-select"
+              disabled={posKnown}
               value={taxType}
               onChange={(e) => {
                 taxTypeTouched.current = true;

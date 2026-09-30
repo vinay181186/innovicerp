@@ -6,7 +6,7 @@
 // RETURNED to the customer minus already invoiced. Bumps
 // job_work_order_lines.invoiced_qty.
 
-import { type SQL, and, asc, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, count, desc, eq, ilike, isNull, like, ne, or, sql } from 'drizzle-orm';
 import type {
   CancelJwInvoiceInput,
   CreateJwInvoiceInput,
@@ -25,8 +25,20 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { changedByOtherError } from '../../lib/row-lock';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { emitActivityLog } from '../activity-log/service';
 import { ActivityAction } from '@innovic/shared';
+import {
+  assertTaxTypeMatches,
+  clientCopyValues,
+  decideSupply,
+  dueDateFrom,
+  loadClientForCopy,
+  readClientCopy,
+} from '../../lib/party-copy';
+// The same fallback the SO invoice uses when the customer has no Payment Days.
+import { DEFAULT_PAYMENT_TERMS_DAYS } from '../invoices/constants';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -39,6 +51,8 @@ function dateLike(v: unknown): string {
 const money = (n: number): string => n.toFixed(2);
 
 async function nextInvoiceCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'jw_invoices');
   const prefix = 'IN-JWINV-';
   const rows = await tx
     .select({ code: jwInvoices.code })
@@ -72,6 +86,9 @@ function rowToInvoice(row: typeof jwInvoices.$inferSelect): JwInvoice {
     // other value is treated as "not recorded" so the print falls back to one
     // GST row instead of guessing a split.
     taxType: row.taxType === 'sgst_cgst' || row.taxType === 'igst' ? row.taxType : null,
+    paymentTermsDays: row.paymentTermsDays ?? null,
+    dueDate: row.dueDate ? dateLike(row.dueDate) : null,
+    placeOfSupply: row.placeOfSupply ?? null,
     remarks: row.remarks,
     // R5 (ADR-194): a cancelled invoice reverses its billed qty and never prints
     // as a live tax document. The text column is CHECK-free here, so any value
@@ -129,6 +146,7 @@ export async function createJwInvoice(
         id: jobWorkOrders.id,
         code: jobWorkOrders.code,
         clientId: jobWorkOrders.clientId,
+        customerName: jobWorkOrders.customerName,
         gstPercent: jobWorkOrders.gstPercent,
       })
       .from(jobWorkOrders)
@@ -154,6 +172,22 @@ export async function createJwInvoice(
     const gstAmount = (taxable * gstPercent) / 100;
     const total = taxable + gstAmount;
 
+    // Place of Supply → Tax Type (plan D2), same rule as the SO invoice: the
+    // customer's State (else GSTIN prefix) vs the company's; SEZ / Overseas →
+    // IGST; unknown → warn mode same-state + amber note, enforce refuses. The
+    // old silent 'sgst_cgst' default is gone.
+    const client = await loadClientForCopy(tx, jw.clientId, companyId);
+    const supply = await decideSupply(tx, companyId, client, { forSave: true });
+    const taxType = assertTaxTypeMatches(input.taxType, supply);
+    // Payment Terms + Due Date from the customer's Payment Days (plan D6).
+    const paymentTermsDays =
+      input.paymentTermsDays ?? client?.paymentDays ?? DEFAULT_PAYMENT_TERMS_DAYS;
+    const dueDate = dueDateFrom(input.invoiceDate, paymentTermsDays);
+    // Legal copy of the customer (plan D7) — the print reads it.
+    const copy = clientCopyValues(client);
+
+    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+    await lockDocSeries(tx, companyId, 'jw_invoices');
     const code = input.code ?? (await nextInvoiceCode(tx, companyId));
     const inserted = await tx
       .insert(jwInvoices)
@@ -171,7 +205,18 @@ export async function createJwInvoice(
         gstPercent: money(gstPercent),
         gstAmount: money(gstAmount),
         totalAmount: money(total),
-        taxType: input.taxType ?? 'sgst_cgst',
+        taxType,
+        paymentTermsDays,
+        dueDate,
+        clientNameText: copy.clientName ?? jw.customerName ?? null,
+        clientGstText: copy.clientGstText,
+        clientAddressLine1: copy.clientAddressLine1,
+        clientCity: copy.clientCity,
+        clientState: copy.clientState,
+        clientStateCode: copy.clientStateCode,
+        clientPincode: copy.clientPincode,
+        placeOfSupply: supply.placeOfSupply,
+        clientCopyAt: copy.clientCopyAt,
         remarks: input.remarks ?? null,
         createdBy: userId,
         updatedBy: userId,
@@ -224,6 +269,10 @@ export async function cancelJwInvoice(
   if (!reason) throw new ValidationError('Reason is required to cancel a JW Invoice.');
 
   return withUserContext(user, async (tx) => {
+    // S4 — cancel once. Lock the invoice row FIRST (the status used to be read
+    // before any lock, so two cancels both passed and the billed qty came off
+    // the JW line twice). A second cancel now waits here, reads 'cancelled'
+    // and is refused.
     const rows = await tx
       .select()
       .from(jwInvoices)
@@ -234,11 +283,14 @@ export async function cancelJwInvoice(
           isNull(jwInvoices.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const inv = rows[0];
     if (!inv) throw new NotFoundError('JW Invoice not found. Refresh the page.');
     if (inv.status === 'cancelled') {
-      throw new ConflictError(`JW Invoice ${inv.code} is already Cancelled.`);
+      throw new ConflictError(
+        `JW Invoice ${inv.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
+      );
     }
 
     // Lock the JW line, then give the billed qty back (clamp at 0).
@@ -264,10 +316,10 @@ export async function cancelJwInvoice(
         updatedAt: new Date(),
         updatedBy: userId,
       })
-      .where(eq(jwInvoices.id, inv.id))
+      .where(and(eq(jwInvoices.id, inv.id), ne(jwInvoices.status, 'cancelled')))
       .returning();
     const row = updated[0];
-    if (!row) throw new ConflictError(`Could not cancel JW Invoice ${inv.code}. Try again.`);
+    if (!row) throw changedByOtherError(`JW Invoice ${inv.code}`);
 
     await emitActivityLog(
       tx,
@@ -455,6 +507,8 @@ export async function listJwInvoices(
           clientPoLineNo: null,
           partName: r.partName ?? null,
           uom: r.uom ?? null,
+          // The paper's own copy of the customer (0186) — the print reads it.
+          clientCopy: readClientCopy({ ...r.inv, clientName: r.inv.clientNameText }),
         };
         return showMoney ? item : hideJwInvoiceMoney(item);
       }),

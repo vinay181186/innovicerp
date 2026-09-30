@@ -4,6 +4,7 @@ import type {
   GoodsReceiptNoteDetail,
   GoodsReceiptNoteLineDetail,
   GrnQcStatus,
+  Vendor,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -14,6 +15,7 @@ import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { partyAddressLines } from '@/lib/print/company';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -252,7 +254,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          <DetailGrid detail={detail} />
+          <DetailGrid detail={detail} vendor={vendor} />
         </div>
       </div>
 
@@ -275,6 +277,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
+                <th>UOM</th>
                 <th className="th-num">Received</th>
                 <th>Vendor Challan No.</th>
                 <th>QC Status</th>
@@ -286,7 +289,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={11} className="empty-state">
                     No lines on this GRN yet.
                   </td>
                 </tr>
@@ -362,7 +365,10 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
       <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
       </td>
-      <td>{l.itemName}</td>
+      {/* The item master's name; the saved copy is the print's (plan v3 Step 4). */}
+      <td>{l.masterItemName ?? l.itemName}</td>
+      {/* UOM off the item master (A26); blank when the line has no item. */}
+      <td className="mono">{l.uom ?? '—'}</td>
       <td className="mono td-num">{l.receivedQty}</td>
       <td className="mono">{l.dcRefNo ?? '—'}</td>
       <td>
@@ -381,8 +387,12 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
   );
 }
 
-function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Element {
-  const { detail } = props;
+function DetailGrid(props: {
+  detail: GoodsReceiptNoteDetail;
+  vendor: Vendor | null | undefined;
+}): React.JSX.Element {
+  const { detail, vendor } = props;
+  const vendorAddress = partyAddressLines(vendor);
   return (
     <div className="form-grid form-grid-3">
       <Pair label="GRN Date" value={fmtDate(detail.grnDate)} />
@@ -402,6 +412,19 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
         <Pair label="PO No." value={detail.poCode ?? detail.poCodeText ?? '—'} />
       )}
       <Pair label="Vendor" value={detail.vendorName ?? detail.vendorCodeText ?? '—'} />
+      {/* Vendor Code + full address off the vendor master (A26). */}
+      <Pair
+        label="Vendor Code"
+        value={
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {vendor?.code ?? detail.vendorCode ?? detail.vendorCodeText ?? '—'}
+          </span>
+        }
+      />
+      <Pair
+        label="Vendor Address"
+        value={vendorAddress.length > 0 ? vendorAddress.join(', ') : '—'}
+      />
       <div className="form-grp form-full">
         <span className="form-label">Remarks</span>
         <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>

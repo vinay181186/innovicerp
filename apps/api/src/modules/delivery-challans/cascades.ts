@@ -31,7 +31,7 @@
 // the return. This eliminated the send(−)/receive(+) pair that netted to zero
 // and let a later dispatch drive on-hand negative (SO-517 trace).
 
-import type { OutsourceStatus } from '@innovic/shared';
+import { type OutsourceStatus, opSrNo } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { jcOpPoLines, jcOps, jobCards, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
@@ -45,7 +45,10 @@ export interface OutwardCascadeArgs {
   dcCode: string;
   dcDate: string; // YYYY-MM-DD
   purchaseOrderLineId: string;
-  qty: number; // integer pcs sent on this DC line
+  /** The DC line qty (up to 3 decimals). When the line is tied to a JC op it
+   *  must be whole pieces — apply refuses a fraction, reverse rounds a legacy
+   *  one exactly as the pre-S9 send did. */
+  qty: number;
 }
 
 export interface OutwardCascadeResult {
@@ -244,12 +247,44 @@ export function jobWorkUnlinkedRefusal(poCode: string): string {
   );
 }
 
+/** S6 — lock the job-card operation a PO line stands for (via the 0118
+ *  op↔PO-line table) before its sent qty is read. Two challans on the same op
+ *  — even raised against two different PO lines of it — serialize here, and
+ *  the second one's Available is computed from the first one's committed
+ *  sent qty. No-op for a PO line with no operation behind it. */
+async function lockOpForPoLine(
+  tx: DbTransaction,
+  companyId: string,
+  purchaseOrderLineId: string,
+): Promise<void> {
+  await tx.execute(sql`
+    SELECT o.id FROM public.jc_ops o
+    JOIN public.jc_op_po_lines l
+      ON l.jc_op_id = o.id AND l.company_id = ${companyId}::uuid AND l.deleted_at IS NULL
+    WHERE l.purchase_order_line_id = ${purchaseOrderLineId}::uuid
+      AND o.company_id = ${companyId}::uuid
+      AND o.deleted_at IS NULL
+    ORDER BY o.id
+    FOR UPDATE OF o
+  `);
+}
+
 export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<OutwardCascadeResult> {
   const { tx, companyId, adminUserId, dcCode, dcDate, purchaseOrderLineId, qty } = args;
 
+  await lockOpForPoLine(tx, companyId, purchaseOrderLineId);
   const s = await loadOutwardSendable(tx, companyId, purchaseOrderLineId);
   if (s.kind === 'unlinked') return { fired: false };
   if (s.kind === 'job_work_unlinked') throw new ValidationError(jobWorkUnlinkedRefusal(s.poCode));
+  // S9 — the challan line may carry 3 decimals (KGS / MTR), but a job-card
+  // operation counts whole pieces (jc_ops.outsource_sent_qty is an integer).
+  // Refuse a fraction here instead of silently rounding it onto the op.
+  if (!Number.isInteger(qty)) {
+    throw new ValidationError(
+      `Qty (${qty}) must be a whole number — this line goes out for JC ${s.jcCode} ` +
+        `Op ${opSrNo(s.op.opSeq)}, which counts whole pieces.`,
+    );
+  }
   if (qty > s.effectiveSendable) throw new ValidationError(outwardCapRefusal(s, qty));
 
   const { op, jcCode } = s;
@@ -257,22 +292,25 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
   const prevStatus = op.outsourceStatus ?? null;
   const nextStatus =
     prevStatus && PRE_SENT_STATUSES.has(prevStatus) ? 'sent' : (prevStatus ?? 'sent');
-  const newSentQty = op.outsourceSentQty + qty;
 
   // sentDate keeps the earliest issue date if a prior DC was issued first.
   const nextSentDate =
     !op.outsourceSentDate || dcDate < op.outsourceSentDate ? dcDate : op.outsourceSentDate;
 
-  await tx
+  // S6 — one-statement counter (`x = x + n`), never a value computed in JS
+  // from an earlier read: a concurrent send can no longer be overwritten.
+  const bumped = await tx
     .update(jcOps)
     .set({
-      outsourceSentQty: newSentQty,
+      outsourceSentQty: sql`${jcOps.outsourceSentQty} + ${qty}`,
       outsourceSentDate: nextSentDate,
       outsourceDcNo: dcCode,
       outsourceStatus: nextStatus as typeof op.outsourceStatus,
       updatedBy: adminUserId,
     })
-    .where(eq(jcOps.id, op.id));
+    .where(eq(jcOps.id, op.id))
+    .returning({ sent: jcOps.outsourceSentQty });
+  const newSentQty = bumped[0]?.sent ?? op.outsourceSentQty + qty;
 
   return {
     fired: true,
@@ -289,8 +327,13 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
 export async function reverseOutwardFromJcOp(
   args: OutwardCascadeArgs,
 ): Promise<OutwardCascadeResult> {
-  const { tx, companyId, adminUserId, dcCode, purchaseOrderLineId, qty } = args;
+  const { tx, companyId, adminUserId, dcCode, purchaseOrderLineId } = args;
+  // The op's sent counter is whole pieces. A send tied to an op is refused a
+  // fraction (applyOutwardToJcOp); a pre-S9 challan was rounded when it went
+  // out, so it is rounded the same way coming back.
+  const qty = Math.round(args.qty);
 
+  await lockOpForPoLine(tx, companyId, purchaseOrderLineId);
   const rows = await tx
     .select({
       id: jcOps.id,
@@ -333,16 +376,20 @@ export async function reverseOutwardFromJcOp(
   const jcCode = jcRows[0]?.code ?? '';
 
   const prevStatus = op.outsourceStatus ?? null;
+  // Read under the op lock (lockOpForPoLine), so this equals what the
+  // one-statement decrement below leaves behind.
   const newSentQty = Math.max(0, op.outsourceSentQty - qty);
   // Downgrade status only if we drained to 0 AND we were 'sent' (not yet
   // received-back — receive flow lands in T-059b and shouldn't downgrade).
   const nextStatus = newSentQty === 0 && prevStatus === 'sent' ? 'po_created' : prevStatus;
   const nextDcNo = op.outsourceDcNo === dcCode ? null : op.outsourceDcNo;
 
+  // S6 — one-statement counter, clamped at 0 (the 0181 CHECK also keeps
+  // returned ≤ sent, so a cancel can never take back pieces already returned).
   await tx
     .update(jcOps)
     .set({
-      outsourceSentQty: newSentQty,
+      outsourceSentQty: sql`GREATEST(0, ${jcOps.outsourceSentQty} - ${qty})`,
       outsourceDcNo: nextDcNo,
       outsourceStatus: nextStatus as typeof op.outsourceStatus,
       updatedBy: adminUserId,

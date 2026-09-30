@@ -15,6 +15,9 @@ import {
   type NcDisposition,
   type NcRegister,
   opSrNo,
+  QTY_STEP,
+  hasQtyPrecision,
+  roundQty,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -108,9 +111,18 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
     return nc.opSeq != null ? [{ opSeq: nc.opSeq, operation: '' }] : [];
   }, [jcOps, nc.opSeq]);
 
+  // S9 — decimals: a bought-material (KG) reject may be split to 3 places; a
+  // disposition that works on the job card (rework / repair / make fresh /
+  // use as is) counts whole pieces. The item's own unit rule is the server's.
+  const needsWhole = !isMaterialNc && action !== '' && action !== 'scrap';
+  const qtyStep = needsWhole ? '1' : QTY_STEP;
   const qtyNum = qty === '' ? 0 : Number(qty);
-  const qtyValid = Number.isInteger(qtyNum) && qtyNum >= 1 && qtyNum <= openQty;
-  const remainder = qtyValid ? openQty - qtyNum : 0;
+  const qtyValid =
+    qtyNum > 0 &&
+    qtyNum <= openQty &&
+    hasQtyPrecision(qtyNum) &&
+    (!needsWhole || Number.isInteger(qtyNum));
+  const remainder = qtyValid ? roundQty(openQty - qtyNum) : 0;
   // The qty the notes talk about: the typed value while it is valid, else
   // the default, so the sentence never reads "for 0 pcs" mid-edit.
   const noteQty = qtyValid ? qtyNum : openQty;
@@ -171,9 +183,9 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                   <input
                     id="dispQty"
                     type="number"
-                    min={1}
+                    min={qtyStep}
                     max={openQty}
-                    step={1}
+                    step={qtyStep}
                     className="innovic-input"
                     style={{ width: 110 }}
                     value={qty === '' ? '' : qty}
@@ -185,7 +197,11 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                   </span>
                 </div>
                 {qty !== '' && !qtyValid ? (
-                  <div className="form-error">Enter a whole number from 1 to {openQty}.</div>
+                  <div className="form-error">
+                    {needsWhole
+                      ? `Enter a whole number from 1 to ${openQty} — this disposition works in whole pieces.`
+                      : `Enter a qty more than 0 and up to ${openQty} (at most 3 decimals).`}
+                  </div>
                 ) : null}
                 {qtyValid && remainder > 0 ? (
                   <div className="form-help">New NC for the other {remainder} pcs.</div>

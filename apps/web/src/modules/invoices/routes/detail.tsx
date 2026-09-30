@@ -29,7 +29,12 @@
 // columns (invoice_date / due_date / payment_date) are `date`, not timestamptz,
 // so no UTC-shift bug exists at these render sites.
 
-import { PAYMENT_MODES, type PaymentMode } from '@innovic/shared';
+import {
+  PAYMENT_MODES,
+  PLACE_OF_SUPPLY_UNKNOWN_NOTE,
+  type PaymentMode,
+  placeOfSupplyLabel,
+} from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -40,6 +45,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { fmtDate, todayIst } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
+import { Banner } from '@/ui/feedback';
 import { Panel } from '@/ui/data';
 import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
@@ -262,7 +268,34 @@ function InvoiceDetailPage(): React.JSX.Element {
           {inv.soCode ?? '—'}
         </Link>{' '}
         · Due Date: <b>{fmtDate(inv.dueDate)}</b>
+        {inv.placeOfSupply ? (
+          <>
+            {' '}
+            · Place of Supply: <b>{placeOfSupplyLabel(inv.placeOfSupply)}</b>
+          </>
+        ) : null}
       </div>
+
+      {/* Screen only — never on the printed (legal) invoice (plan D2). */}
+      {!inv.placeOfSupply ? (
+        <div className="mb-2">
+          <Banner tone="warn">{PLACE_OF_SUPPLY_UNKNOWN_NOTE}</Banner>
+        </div>
+      ) : null}
+
+      {/* The invoice keeps its own item names; where the item master's name
+          has changed since, show it beside (screen only, plan v3 Step 4). */}
+      {inv.lines.some((l) => l.masterItemName && l.masterItemName !== l.itemName) ? (
+        <div className="text3" style={{ fontSize: 11, marginBottom: 10 }}>
+          {inv.lines
+            .filter((l) => l.masterItemName && l.masterItemName !== l.itemName)
+            .map((l) => (
+              <div key={l.id}>
+                Ln {l.lineNo} {l.itemName} — Master: {l.masterItemName}
+              </div>
+            ))}
+        </div>
+      ) : null}
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         {stats.map((s) => (

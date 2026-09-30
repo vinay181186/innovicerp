@@ -32,12 +32,14 @@
 // poId only.
 
 import type { CreateDeliveryChallanInput, DcSendableLine, Uom } from '@innovic/shared';
-import { poSendsMaterialOut, UOMS } from '@innovic/shared';
+import { poSendsMaterialOut, qtyStepForUom, qtyUomProblem, UOMS } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Truck } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { docCodeToSend } from '@/lib/use-doc-number';
+import { useSaveKey } from '@/lib/use-save-key';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -244,11 +246,16 @@ function sendNowIssue(
   typed: string,
   cap: DcSendableLine | undefined,
   poLineQty: number,
+  uom: string,
 ): string | null {
   if (typed.trim() === '') return null;
   const qty = Number(typed);
   if (Number.isNaN(qty)) return 'Enter a number of pieces.';
   if (qty < 0) return 'Enter 1 or more pieces.';
+  // Decimals follow the unit (S9): KGS / MTR up to 3, NOS / SET whole only.
+  // The server checks the same rule; saying it here saves a round trip.
+  const uomProblem = qtyUomProblem(qty, uom, 'Send Now');
+  if (uomProblem) return uomProblem;
   const max = maxSendNow(cap, poLineQty);
   if (qty <= max) return null;
   const pcs = max === 1 ? 'pc' : 'pcs';
@@ -435,7 +442,9 @@ function PoDcFormBody({
 }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: po, isLoading: poLoading, isError: poError } = usePurchaseOrder(poId);
-  const create = useCreateDeliveryChallan();
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const create = useCreateDeliveryChallan(saveKey);
   // Asked as soon as the PO is known, so the allowance is on screen before the
   // first keystroke rather than after the first failed save.
   const { data: sendable } = useDcSendable(poId);
@@ -447,6 +456,9 @@ function PoDcFormBody({
 
   const [code, setCode] = useState('');
   const [codeValid, setCodeValid] = useState(false);
+  // S2: the number the field auto-filled. It is only a preview — the form
+  // sends a number only when the user changed it (docCodeToSend).
+  const [suggestedCode, setSuggestedCode] = useState('');
   const [dcDate, setDcDate] = useState(todayIst());
   const [transport, setTransport] = useState('');
   // Vehicle number is kept apart from the transporter NAME (`transport`) — the
@@ -501,7 +513,9 @@ function PoDcFormBody({
         if (l.shipQty === '') return true;
         const q = Number(l.shipQty);
         if (Number.isNaN(q) || q <= 0) return false;
-        return sendNowIssue(l.shipQty, capByLine.get(l.purchaseOrderLineId), l.poLineQty) === null;
+        return (
+          sendNowIssue(l.shipQty, capByLine.get(l.purchaseOrderLineId), l.poLineQty, l.uom) === null
+        );
       }),
     // codeValid flips asynchronously (the doc-number duplicate check); it MUST be
     // a dependency or the Save button's enabled state lags the real validity.
@@ -581,12 +595,14 @@ function PoDcFormBody({
       }
       const input: CreateDeliveryChallanInput = {
         header: {
-          code: code.trim() || undefined,
+          code: docCodeToSend(code, suggestedCode),
           dcDate,
           purchaseOrderId: po.id,
           poCodeText: po.code,
           vendorId: po.vendorId ?? null,
-          vendorCodeText: po.vendorCodeText ?? po.code,
+          // The vendor's code, never the PO number (A32, NAMING: Vendor Code). A
+          // linked vendor needs nothing here: the server stores the master's code.
+          ...(po.vendorCodeText ? { vendorCodeText: po.vendorCodeText } : {}),
           transport: transport.trim() || null,
           vehicleNo: vehicleNo.trim() || null,
         },
@@ -682,6 +698,7 @@ function PoDcFormBody({
             required
             id="dc-code"
             onValidityChange={setCodeValid}
+            onSuggestedChange={setSuggestedCode}
           />
         </div>
         <FormField label="DC Date" required size="sm" htmlFor="dc-date">
@@ -758,7 +775,7 @@ function PoDcFormBody({
             {lineDrafts.map((l, idx) => {
               const cap = capByLine.get(l.purchaseOrderLineId);
               const max = maxSendNow(cap, l.poLineQty);
-              const issue = sendNowIssue(l.shipQty, cap, l.poLineQty);
+              const issue = sendNowIssue(l.shipQty, cap, l.poLineQty, l.uom);
               // Nothing at all may go out on this line — worth saying out
               // loud, since there is no quantity the user could type that
               // would produce the explanation.
@@ -793,7 +810,7 @@ function PoDcFormBody({
                     <td className="td-num">
                       <input
                         type="number"
-                        step="1"
+                        step={qtyStepForUom(l.uom)}
                         min={0}
                         max={max}
                         className="innovic-input"
@@ -1076,7 +1093,9 @@ function NcDcFormBody({
   // Reuse the NC detail hook rather than refetch by hand — same cache, same
   // shape. rejectedQty / item fields come straight off it and refresh with ncId.
   const { data: nc, isLoading, isError } = useNcRegister(ncId);
-  const createDc = useCreateNcDc(ncId);
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const createDc = useCreateNcDc(ncId, saveKey);
 
   // Only what createNcDcInputSchema takes: dcDate, vendor, transport, vehicleNo,
   // remarks. No lines, no qty — the server derives the line from the NC.

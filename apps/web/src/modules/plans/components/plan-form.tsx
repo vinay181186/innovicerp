@@ -1051,7 +1051,7 @@ export function PlanForm({
           disabled={isSubmitting || Boolean(opsSeqError)}
         >
           {isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-          {submitLabel}
+          {isSubmitting ? 'Saving…' : submitLabel}
         </button>
       </div>
     </form>

@@ -64,6 +64,9 @@ export const jwDcOutwardSchema = z.object({
 export type JwDcOutward = z.infer<typeof jwDcOutwardSchema>;
 
 export const jwDcOutwardListItemSchema = jwDcOutwardSchema.extend({
+  /** Live vendors.name by vendorId (plan v3 Step 4) — screens read
+   *  `vendorName ?? vendorNameText`; the saved copy stays for the print. */
+  vendorName: z.string().nullable().default(null),
   linesCount: z.number().int().nonnegative(),
   totalSentQty: z.number().nonnegative(),
   totalReturnedQty: z.number().nonnegative(),
@@ -172,6 +175,8 @@ export type JwDcInward = z.infer<typeof jwDcInwardSchema>;
 
 export const jwDcInwardListItemSchema = jwDcInwardSchema.extend({
   vendorNameText: z.string().nullable(),
+  /** Live vendors.name via the outward's vendorId; null when it has none. */
+  vendorName: z.string().nullable().default(null),
   totalReceivedQty: z.number().nonnegative(),
   totalOkQty: z.number().nonnegative(),
   totalRejectedQty: z.number().nonnegative(),

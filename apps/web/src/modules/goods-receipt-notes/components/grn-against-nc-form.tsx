@@ -17,12 +17,14 @@
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
 
 import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
+import { isWholeNumberUom, qtyUomProblem, roundQty } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
+import { useSaveKey } from '@/lib/use-save-key';
 import {
   useDeliveryChallan,
   useDeliveryChallansList,
@@ -47,6 +49,8 @@ interface LineDraft {
   sentQty: number;
   receivedSoFar: number;
   balance: number;
+  /** The challan line's unit — decides whole-number vs 3-decimal Receive Now (S9). */
+  uom: string;
   /** Kept as text so a half-typed value never snaps to 0 under the user. */
   receiveNow: string;
   remarks: string;
@@ -61,11 +65,13 @@ export interface GrnAgainstNcFormProps extends GrnTypeFormShellProps {
 }
 
 /** One line's Receive Now check. Null = fine. */
-function lineQtyError(raw: string, balance: number): string | null {
+function lineQtyError(raw: string, balance: number, uom: string): string | null {
   const t = raw.trim();
   if (t === '') return null; // blank = 0 = skipped on submit
   const n = Number(t);
-  if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Whole number only.';
+  // S9 — decimals follow the unit: whole pieces for NOS / SET, else 3 places.
+  const unitProblem = qtyUomProblem(n, uom, 'Receive Now');
+  if (unitProblem) return unitProblem;
   if (n < 0) return 'Receive Now cannot be less than 0.';
   if (n > balance) return `Receive Now cannot be more than Pending (${balance}).`;
   return null;
@@ -78,7 +84,9 @@ export function GrnAgainstNcForm({
 }: GrnAgainstNcFormProps): React.JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const receive = useReceiveDeliveryChallan();
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const receive = useReceiveDeliveryChallan(saveKey);
 
   const [ncId, setNcId] = useState<string | null>(null);
   const [ncSearch, setNcSearch] = useState('');
@@ -148,7 +156,7 @@ export function GrnAgainstNcForm({
         .map((l): LineDraft | null => {
           const sent = Number(l.qty);
           const got = already.get(l.id) ?? 0;
-          const balance = sent - got;
+          const balance = roundQty(sent - got);
           if (balance <= 0) return null;
           return {
             deliveryChallanLineId: l.id,
@@ -160,6 +168,7 @@ export function GrnAgainstNcForm({
             sentQty: sent,
             receivedSoFar: got,
             balance,
+            uom: l.uom,
             receiveNow: String(balance),
             remarks: '',
             error: null,
@@ -202,7 +211,10 @@ export function GrnAgainstNcForm({
       setFormError('GRN Date is required.');
       return;
     }
-    const checked = lines.map((l) => ({ ...l, error: lineQtyError(l.receiveNow, l.balance) }));
+    const checked = lines.map((l) => ({
+      ...l,
+      error: lineQtyError(l.receiveNow, l.balance, l.uom),
+    }));
     setLines(checked);
     if (checked.some((l) => l.error !== null)) {
       setFormError('Fix the highlighted quantities.');
@@ -375,6 +387,7 @@ export function GrnAgainstNcForm({
             error: l.error,
           }))}
           qtyLabel="Sent Qty"
+          decimal={lines.some((l) => !isWholeNumberUom(l.uom))}
           emptyText={
             !ncId
               ? 'Pick an NC to load its return challan.'
@@ -384,7 +397,7 @@ export function GrnAgainstNcForm({
           }
           onReceiveNow={(idx, v) => {
             const l = lines[idx];
-            if (l) patchLine(idx, { receiveNow: v, error: lineQtyError(v, l.balance) });
+            if (l) patchLine(idx, { receiveNow: v, error: lineQtyError(v, l.balance, l.uom) });
           }}
           onRemarks={(idx, v) => patchLine(idx, { remarks: v })}
         />
