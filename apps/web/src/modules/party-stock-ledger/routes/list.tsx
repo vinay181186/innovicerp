@@ -34,7 +34,7 @@ const MOVEMENT_LABELS: Record<PartyStockMovement, string> = {
 const SOURCE_DOC_LABELS: Record<string, string> = {
   party_grn: 'Party GRN',
   party_grn_line: 'Party GRN',
-  party_material_issue: 'Material Issue',
+  party_material_issue: 'Customer Material Issue',
   party_material: 'Customer Material',
   job_card: 'Job Card',
   jw_return_challan: 'JW Return',
