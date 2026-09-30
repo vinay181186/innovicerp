@@ -18,7 +18,7 @@
 // (machine_id) where status='running' and is_osp=false. The service catches
 // the resulting unique-violation and returns a typed ConflictError.
 
-import { opSrNo } from '@innovic/shared';
+import { ActivityAction, type ActivityChange, opSrNo } from '@innovic/shared';
 import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -32,9 +32,11 @@ import {
   opLogTimeChangeRequests,
   runningOps,
   salesOrderLines,
+  users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { diffFields } from '../../lib/audit-trail';
 import { isWriteRole, requireOpEntryRole, requireQcRole, requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -48,6 +50,7 @@ import {
 } from '../../lib/production-order-stop';
 import { codeLabel, labelOf, OP_LOG_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { jcOpRef, logWhen } from './audit';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onRecoveryJobCardQc } from '../nc-register/recovery';
 import { autoCloseLinkedTasks } from '../tasks/service';
@@ -416,6 +419,11 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
         timingEditedAt: opLog.timingEditedAt,
         createdAt: opLog.createdAt,
         createdBy: opLog.createdBy,
+        // ADR-197 — the LOGGED-IN user who made the entry, beside the operator.
+        createdByName: sql<string | null>`COALESCE(${users.fullName}, ${users.email})`,
+        // 0179 — a reversal row names the entry it cancels, and why.
+        reversalOfId: opLog.reversalOfId,
+        reversalReason: opLog.reversalReason,
         // ADR-183 — the NC(s) this entry raised, so the op's Recent Logs strip
         // shows the number and its status next to the reject that caused it
         // and can link through. nc_register.qc_log_id points at the op_log row.
@@ -432,6 +440,7 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
       .leftJoin(machines, eq(machines.id, opLog.machineId))
       .leftJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
       .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
+      .leftJoin(users, eq(users.id, opLog.createdBy))
       .where(and(eq(opLog.companyId, companyId), scope))
       .orderBy(desc(opLog.createdAt))
       .limit(input.limit);
@@ -462,12 +471,18 @@ type OpLogRow = {
   createdBy: string;
   /** ADR-183 — json_agg of the NC(s) raised by this entry; [] when none. */
   ncs?: Array<{ id: string; code: string; status: string }> | null;
+  /** ADR-197 / 0179 — read-side extras, not (yet) in the frozen shared OpLog
+   *  contract; the web types them locally. */
+  createdByName?: string | null;
+  reversalOfId?: string | null;
+  reversalReason?: string | null;
 };
 
 const asIso = (v: Date | string | null): string | null =>
   v === null ? null : v instanceof Date ? v.toISOString() : String(v);
 
 function toOpLog(r: OpLogRow): OpLog {
+  // Cast: the three ADR-197 extras ride along untyped (frozen shared contract).
   return {
     id: r.id,
     jcOpId: r.jcOpId,
@@ -490,12 +505,16 @@ function toOpLog(r: OpLogRow): OpLog {
     createdAt: asIso(r.createdAt)!,
     createdBy: r.createdBy,
     ncs: r.ncs ?? [],
-  };
+    createdByName: r.createdByName ?? null,
+    reversalOfId: r.reversalOfId ?? null,
+    reversalReason: r.reversalReason ?? null,
+  } as OpLog;
 }
 
 // Same projection as listOpLog, for one row. Used to return the fresh entry
-// after a timing correction so the UI never has to guess what the DB stored.
-async function selectOpLogById(
+// after a timing correction (and a reversal) so the UI never has to guess what
+// the DB stored.
+export async function selectOpLogById(
   tx: DbTransaction,
   id: string,
   companyId: string,
@@ -523,11 +542,15 @@ async function selectOpLogById(
       timingEditedAt: opLog.timingEditedAt,
       createdAt: opLog.createdAt,
       createdBy: opLog.createdBy,
+      createdByName: sql<string | null>`COALESCE(${users.fullName}, ${users.email})`,
+      reversalOfId: opLog.reversalOfId,
+      reversalReason: opLog.reversalReason,
     })
     .from(opLog)
     .leftJoin(machines, eq(machines.id, opLog.machineId))
     .leftJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
     .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
+    .leftJoin(users, eq(users.id, opLog.createdBy))
     .where(and(eq(opLog.id, id), eq(opLog.companyId, companyId)))
     .limit(1);
   const row = rows[0];
@@ -622,6 +645,9 @@ export async function listRunningOps(
         r.is_osp            AS "isOsp",
         r.operator_id       AS "operatorId",
         r.operator_name     AS "operatorName",
+        -- ADR-197 — the logged-in user who pressed Start, beside the operator
+        -- on the floor (untyped extra; the web types it locally).
+        COALESCE(su.full_name, su.email) AS "startedByName",
         r.start_date        AS "startDate",
         r.start_time::text  AS "startTime",
         r.shift,
@@ -642,6 +668,7 @@ export async function listRunningOps(
         ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = r.machine_id
       LEFT JOIN public.machines pm ON pm.id = o.machine_id
+      LEFT JOIN public.users su ON su.id = r.created_by
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = r.jc_op_id
       WHERE r.company_id = ${companyId}::uuid
         ${input.status ? sql`AND r.status = ${input.status}::running_op_status` : sql``}
@@ -660,6 +687,7 @@ export async function listRunningOps(
       clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       plannedMachineCode: (r['plannedMachineCode'] as string | null) ?? null,
+      startedByName: (r['startedByName'] as string | null) ?? null,
       startDate:
         r['startDate'] instanceof Date
           ? (r['startDate'] as Date).toISOString().slice(0, 10)
@@ -1002,6 +1030,9 @@ interface ProductionLogParams {
   operatorId: string | null;
   operatorName: string | null;
   remarks: string | null;
+  /** Set by stopOp: the session was stopped by this same entry, so the one
+   *  LOG row says so instead of a second "stopped" row (ADR-197). */
+  stopNote?: string | undefined;
 }
 
 async function writeProductionLog(
@@ -1141,7 +1172,8 @@ async function writeProductionLog(
 
   const row = inserted[0]!;
 
-  // Audit: emit OP_COMPLETE keyed by JC code (legacy line 5459).
+  // Audit (ADR-197): one LOG row on the Job Card — logged-in user, operator,
+  // good qty, rejects and machine in the detail.
   const jcMeta = await tx
     .select({ code: jobCards.code, operation: jcOps.operation })
     .from(jcOps)
@@ -1150,15 +1182,21 @@ async function writeProductionLog(
     .limit(1);
   const meta = jcMeta[0];
   if (meta) {
-    const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
+    const machinePart = row.machineCodeText ? ` on ${row.machineCodeText}` : '';
     await emitActivityLog(
       tx,
       {
-        action: 'OP_COMPLETE',
-        entity: 'Op',
-        // display rule — see opSrNo in @innovic/shared
-        detail: `${meta.code} Op #${opSrNo(op.opSeq)} — ${input.qty} pcs${operatorPart}`,
+        action: ActivityAction.Log,
+        entity: 'JobCard',
+        entityId: op.jobCardId,
         refId: meta.code,
+        opRef: jcOpRef(op.opSeq, meta.operation),
+        qty: input.qty,
+        operatorName: input.operatorName,
+        detail:
+          `${meta.code} ${jcOpRef(op.opSeq, meta.operation)} — ${input.qty} good, ` +
+          `${input.rejectQty} rejected${machinePart} (${row.logNo}, ${logWhen(input.logDate, input.logTime)})` +
+          (input.stopNote ?? ''),
       },
       companyId,
       user,
@@ -1641,14 +1679,32 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // Audit emit. Single OP_QC action with both qtys in detail (one log can
     // carry both per legacy; splitting into _ACCEPT/_REJECT loses the link).
     if (jcCode) {
-      const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
+      // ADR-197 — QC (in-process, final or TPI) on the Job Card: the inspector
+      // who signed off is operatorName (for TPI the third party's inspector).
+      const kind = input.isTpi ? 'TPI' : op.opType === 'qc' ? 'QC' : 'In-process QC';
+      const inspector = input.isTpi
+        ? (input.tpiInspector ?? input.operatorName ?? null)
+        : (input.operatorName ?? null);
+      const tpiPart = input.isTpi
+        ? ` — ${[input.tpiOrganization, input.tpiCertNo ? `cert ${input.tpiCertNo}` : null]
+            .filter(Boolean)
+            .join(', ')}`
+        : '';
       await emitActivityLog(
         tx,
         {
-          action: 'OP_QC',
-          entity: 'Op',
-          detail: `${jcCode} Op #${opSrNo(op.opSeq)} — ${input.qty} accepted, ${input.rejectQty} rejected${operatorPart}`,
+          action: ActivityAction.QC,
+          entity: 'JobCard',
+          entityId: op.jobCardId,
           refId: jcCode,
+          opRef: jcOpRef(op.opSeq, op.operation),
+          qty: input.qty,
+          operatorName: inspector,
+          detail:
+            `${jcCode} ${jcOpRef(op.opSeq, op.operation)} — ${kind}: ${input.qty} accepted, ` +
+            `${input.rejectQty} rejected (${row.logNo}, ${logWhen(input.logDate, input.logTime)})` +
+            (tpiPart === ' — ' ? '' : tpiPart) +
+            (raisedNc ? `; ${raisedNc.ncCode} raised` : ''),
         },
         companyId,
         user,
@@ -1712,6 +1768,44 @@ type TimingTargetRow = {
   qty: number;
 };
 
+/** Job Card id + code and the op's seq + name, for a production log row. */
+async function loadOpAuditMeta(
+  tx: DbTransaction,
+  jcOpId: string,
+): Promise<{ jobCardId: string; code: string; opSeq: number; operation: string | null } | null> {
+  const rows = await tx
+    .select({
+      jobCardId: jcOps.jobCardId,
+      code: jobCards.code,
+      opSeq: jcOps.opSeq,
+      operation: jcOps.operation,
+    })
+    .from(jcOps)
+    .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+    .where(eq(jcOps.id, jcOpId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+const TIMING_FIELDS = [
+  { key: 'logDate', label: 'Log Date' },
+  { key: 'logTime', label: 'Log Time' },
+] as const;
+
+/** old → new of an entry's Log Date / Log Time, only the parts that moved. */
+function timingChanges(
+  prevDate: string,
+  prevTime: string | null,
+  nextDate: string,
+  nextTime: string | null,
+): ActivityChange[] {
+  return diffFields(
+    { logDate: prevDate, logTime: prevTime ? prevTime.slice(0, 5) : null },
+    { logDate: nextDate, logTime: nextTime ? nextTime.slice(0, 5) : null },
+    TIMING_FIELDS,
+  );
+}
+
 async function loadTimingTarget(
   tx: DbTransaction,
   opLogId: string,
@@ -1745,7 +1839,7 @@ async function applyTimingChange(
   nextTime: string | null,
   companyId: string,
   user: AuthContext,
-  via: string,
+  log: boolean,
 ): Promise<OpLog> {
   await tx
     .update(opLog)
@@ -1770,28 +1864,28 @@ async function applyTimingChange(
       );
   }
 
-  const meta = await tx
-    .select({ code: jobCards.code, opSeq: jcOps.opSeq })
-    .from(jcOps)
-    .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
-    .where(eq(jcOps.id, row.jcOpId))
-    .limit(1);
-  const jc = meta[0];
-  const was = `${row.logDate}${row.startTime ? ` ${row.startTime.slice(0, 5)}` : ''}`;
-  const now = `${nextDate}${nextTime ? ` ${nextTime.slice(0, 5)}` : ''}`;
-  await emitActivityLog(
-    tx,
-    {
-      action: 'OP_LOG_TIME_EDIT',
-      entity: 'Op',
-      detail:
-        `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — ${labelOf(OP_LOG_TYPE_LABEL, row.logType)} entry ${row.logNo} ` +
-        `time changed ${was} → ${now} (qty ${row.qty} unchanged)${via}`,
-      refId: jc?.code ?? row.logNo,
-    },
-    companyId,
-    user,
-  );
+  // ADR-197 — a direct correction is an EDIT with the old → new time. An
+  // approved request is logged ONCE, as the APPROVE row decideOpLogTimeChange
+  // writes (requested by + approved by + old → new), so `log` is false there.
+  if (log) {
+    const meta = await loadOpAuditMeta(tx, row.jcOpId);
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'JobCard',
+        entityId: meta?.jobCardId ?? null,
+        refId: meta?.code ?? row.logNo,
+        opRef: meta ? jcOpRef(meta.opSeq, meta.operation) : null,
+        changes: timingChanges(row.logDate, row.startTime, nextDate, nextTime),
+        detail:
+          `${meta?.code ?? ''} — ${labelOf(OP_LOG_TYPE_LABEL, row.logType)} entry ${row.logNo} time ` +
+          `changed ${logWhen(row.logDate, row.startTime)} → ${logWhen(nextDate, nextTime)} (qty ${row.qty} unchanged)`,
+      },
+      companyId,
+      user,
+    );
+  }
 
   const updated = await selectOpLogById(tx, row.id, companyId);
   if (!updated) throw new NotFoundError('Op log entry not found');
@@ -1848,7 +1942,7 @@ export async function updateOpLogTiming(
         nextTime,
         companyId,
         user,
-        '',
+        true,
       );
       // ADR-130 (Option B): a direct edit skips the queue, but we still record
       // it as an already-approved change so Approvals → Approved holds EVERY
@@ -1908,24 +2002,20 @@ export async function updateOpLogTiming(
       throw e;
     }
 
-    const meta = await tx
-      .select({ code: jobCards.code, opSeq: jcOps.opSeq })
-      .from(jcOps)
-      .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
-      .where(eq(jcOps.id, row.jcOpId))
-      .limit(1);
-    const jc = meta[0];
-    const was = `${row.logDate}${row.startTime ? ` ${row.startTime.slice(0, 5)}` : ''}`;
-    const asked = `${input.logDate}${nextTime ? ` ${nextTime.slice(0, 5)}` : ''}`;
+    const jc = await loadOpAuditMeta(tx, row.jcOpId);
     await emitActivityLog(
       tx,
       {
-        action: 'OP_LOG_TIME_CHANGE_REQUESTED',
-        entity: 'Op',
-        detail:
-          `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — entry ${row.logNo}, ` +
-          `${was} → ${asked} requested (entry unchanged until approved)`,
+        action: ActivityAction.Request,
+        entity: 'JobCard',
+        entityId: jc?.jobCardId ?? null,
         refId: jc?.code ?? row.logNo,
+        opRef: jc ? jcOpRef(jc.opSeq, jc.operation) : null,
+        changes: timingChanges(row.logDate, row.startTime, input.logDate, nextTime),
+        reason: input.reason?.trim() || null,
+        detail:
+          `${jc?.code ?? ''} — time change asked for on entry ${row.logNo}: ` +
+          `${logWhen(row.logDate, row.startTime)} → ${logWhen(input.logDate, nextTime)} (entry unchanged until approved)`,
       },
       companyId,
       user,
@@ -2081,6 +2171,11 @@ export async function decideOpLogTimeChange(
     if (req.status !== 'pending') {
       throw new ValidationError(`This request was already ${codeLabel(req.status)}.`);
     }
+    // ADR-197 — REJECT is a reason-required action. The shared input keeps
+    // decisionReason optional (frozen contract); both screens already ask for it.
+    if (input.decision === 'reject' && !input.decisionReason?.trim()) {
+      throw new ValidationError('Give a reason for rejecting this time change.');
+    }
 
     if (input.decision === 'approve') {
       const target = await loadTimingTarget(tx, req.opLogId, companyId);
@@ -2091,7 +2186,7 @@ export async function decideOpLogTimeChange(
         req.requestedStartTime,
         companyId,
         user,
-        ' — approved change',
+        false,
       );
     }
 
@@ -2106,29 +2201,35 @@ export async function decideOpLogTimeChange(
       })
       .where(eq(opLogTimeChangeRequests.id, req.id));
 
-    const meta = await tx
-      .select({ code: jobCards.code, opSeq: jcOps.opSeq })
-      .from(jcOps)
-      .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
-      .where(eq(jcOps.id, req.jcOpId))
+    // ADR-197 — APPROVE / REJECT on the Job Card: the approver is the user on
+    // the row, the requester is named in the detail, old → new in `changes`.
+    const jc = await loadOpAuditMeta(tx, req.jcOpId);
+    const reqRows = await tx
+      .select({ name: sql<string | null>`COALESCE(${users.fullName}, ${users.email})` })
+      .from(users)
+      .where(eq(users.id, req.requestedBy))
       .limit(1);
-    const jc = meta[0];
-    const asked = `${req.requestedLogDate}${
-      req.requestedStartTime ? ` ${req.requestedStartTime.slice(0, 5)}` : ''
-    }`;
+    const requestedByName = reqRows[0]?.name ?? 'unknown user';
+    const approved = input.decision === 'approve';
     await emitActivityLog(
       tx,
       {
-        action:
-          input.decision === 'approve'
-            ? 'OP_LOG_TIME_CHANGE_APPROVED'
-            : 'OP_LOG_TIME_CHANGE_REJECTED',
-        entity: 'Op',
-        detail:
-          `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — time change to ${asked} ` +
-          `${input.decision === 'approve' ? 'approved' : 'rejected'}` +
-          `${input.decisionReason?.trim() ? `: ${input.decisionReason.trim()}` : ''}`,
+        action: approved ? ActivityAction.Approve : ActivityAction.Reject,
+        entity: 'JobCard',
+        entityId: jc?.jobCardId ?? null,
         refId: jc?.code ?? req.id,
+        opRef: jc ? jcOpRef(jc.opSeq, jc.operation) : null,
+        changes: timingChanges(
+          req.prevLogDate,
+          req.prevStartTime,
+          req.requestedLogDate,
+          req.requestedStartTime,
+        ),
+        reason: input.decisionReason?.trim() || null,
+        detail:
+          `${jc?.code ?? ''} — time change requested by ${requestedByName} ` +
+          `${approved ? 'approved' : 'rejected'}: ` +
+          `${logWhen(req.prevLogDate, req.prevStartTime)} → ${logWhen(req.requestedLogDate, req.requestedStartTime)}`,
       },
       companyId,
       user,
@@ -2326,17 +2427,22 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
     // Audit: OP_START (legacy line 5532). Names the ACTUAL machine, and the
     // planned one beside it when the operator ran the op somewhere else, so
     // the trail shows the deviation without anyone comparing two screens.
-    const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
+    // ADR-197 — START on the Job Card: logged-in user + operator + machine.
     const deviation =
       machineCode && plannedCode && plannedCode !== machineCode ? ` (planned ${plannedCode})` : '';
     const machinePart = machineCode ? ` on ${machineCode}${deviation}` : '';
     await emitActivityLog(
       tx,
       {
-        action: 'OP_START',
-        entity: 'Op',
-        detail: `${meta.code} Op #${opSrNo(meta.opSeq)} — Started${machinePart}${operatorPart}`,
+        action: ActivityAction.Start,
+        entity: 'JobCard',
+        entityId: meta.jobCardId,
         refId: meta.code,
+        opRef: jcOpRef(meta.opSeq, meta.operation),
+        operatorName: input.operatorName ?? null,
+        detail:
+          `${meta.code} ${jcOpRef(meta.opSeq, meta.operation)} — started${machinePart} ` +
+          `(${logWhen(input.startDate, input.startTime)})`,
       },
       companyId,
       user,
@@ -2447,7 +2553,8 @@ export async function stopOp(
     // now writes an op_log 'complete' row like any other so the rejects land
     // somewhere and raise their NC. This used to be refused outright, which
     // left a scrapped batch with nowhere to go.
-    if (qty > 0 || rejectQty > 0) {
+    const logsProduction = qty > 0 || rejectQty > 0;
+    if (logsProduction) {
       // Production FIRST, session-end SECOND. The machine stamp (0095) resolves
       // off the OPEN running session, so ending the session first would credit
       // a re-routed op's pieces to the wrong machine.
@@ -2463,6 +2570,7 @@ export async function stopOp(
           operatorId: input.operatorId ?? null,
           operatorName: input.operatorName ?? null,
           remarks: input.remarks ?? null,
+          stopNote: '; session stopped',
         },
         companyId,
         user,
@@ -2533,22 +2641,30 @@ export async function stopOp(
       machineCode = machineRow[0]?.code ?? null;
     }
 
-    // Audit: OP_STOP (legacy line 5704). Unchanged for a bare stop; a stop that
-    // logged production names the qty, so the activity feed shows both the
-    // OP_COMPLETE and the OP_STOP for one action.
-    const machinePart = machineCode ? ` on ${machineCode}` : '';
-    const qtyPart = qty > 0 ? ` — ${qty} pcs logged` : '';
-    await emitActivityLog(
-      tx,
-      {
-        action: 'OP_STOP',
-        entity: 'Op',
-        detail: `${m.code} Op #${opSrNo(m.opSeq)} — Stopped${machinePart}${qtyPart}`,
-        refId: m.code,
-      },
-      companyId,
-      user,
-    );
+    // Audit (ADR-197): a stop that logged production is ONE LOG row, written
+    // by writeProductionLog above ("; session stopped"). A bare stop (a
+    // breakdown, nothing made) is its own LOG row with qty 0.
+    if (!logsProduction) {
+      const machinePart = machineCode ? ` on ${machineCode}` : '';
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Log,
+          entity: 'JobCard',
+          entityId: m.jobCardId,
+          refId: m.code,
+          opRef: jcOpRef(m.opSeq, m.operation),
+          qty: 0,
+          operatorName: input.operatorName ?? null,
+          detail:
+            `${m.code} ${jcOpRef(m.opSeq, m.operation)} — stopped${machinePart}, nothing logged ` +
+            `(${logWhen(input.logDate, input.logTime)})` +
+            (input.remarks ? `: ${input.remarks}` : ''),
+        },
+        companyId,
+        user,
+      );
+    }
 
     // What is left loggable AFTER this stop — the Stop box on the next session
     // shows it as "you can log up to N".

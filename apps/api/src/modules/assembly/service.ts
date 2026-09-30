@@ -28,6 +28,7 @@
 //                 | waiting (otherwise)
 
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { ActivityAction } from '@innovic/shared';
 import type {
   AssemblyComponentRow,
   AssemblyComponentStatus,
@@ -66,6 +67,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockSoRow, readPartsOutMany } from '../../lib/assembly-parts';
+import { restoreStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import { fitParts, fitSummary, lockSoOfUnit, unfitUnit } from './fitting';
 import { postAssemblyOutput, reverseAssemblyStockCascade } from './stock-cascade';
@@ -157,12 +159,7 @@ export async function getAssemblyTracker(
     const unitRows = await tx
       .select()
       .from(assemblyUnits)
-      .where(
-        and(
-          eq(assemblyUnits.salesOrderId, soId),
-          isNull(assemblyUnits.deletedAt),
-        ),
-      )
+      .where(and(eq(assemblyUnits.salesOrderId, soId), isNull(assemblyUnits.deletedAt)))
       .orderBy(asc(assemblyUnits.unitNo));
     const rawUnits = unitRows.map(toUnitRow);
 
@@ -208,8 +205,14 @@ export async function getAssemblyTracker(
     // Assembled = completed batches only; in-progress (WIP) batches are started
     // but not yet built, so they debit no stock and don't count as assembled
     // until stopped (ADR-129).
-    const assembledQty = units.reduce((sum, u) => (u.status === 'completed' ? sum + u.qty : sum), 0);
-    const inProgressQty = units.reduce((sum, u) => (u.status === 'in_progress' ? sum + u.qty : sum), 0);
+    const assembledQty = units.reduce(
+      (sum, u) => (u.status === 'completed' ? sum + u.qty : sum),
+      0,
+    );
+    const inProgressQty = units.reduce(
+      (sum, u) => (u.status === 'in_progress' ? sum + u.qty : sum),
+      0,
+    );
     const dispatchedQty = units.reduce((sum, u) => (u.dispatched ? sum + u.qty : sum), 0);
     // Units still owed on the order (not yet completed). `Short` is a shortage
     // against THESE, so components already consumed into built units don't read
@@ -265,7 +268,7 @@ export async function getAssemblyTracker(
         const remainingNeed = Math.round(qtyPerSet * remainingUnits);
         const shortfall = Math.max(0, remainingNeed - stillOut);
         const enoughForUnits =
-        qtyPerSet > 0 ? Math.floor(Math.round((stillOut / qtyPerSet) * 1000) / 1000 + 1e-9) : 0;
+          qtyPerSet > 0 ? Math.floor(Math.round((stillOut / qtyPerSet) * 1000) / 1000 + 1e-9) : 0;
         components.push({
           childItemId: r.line.childItemId,
           childItemCode: childCode,
@@ -397,10 +400,7 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
             })
             .from(salesOrderLines)
             .where(
-              and(
-                inArray(salesOrderLines.salesOrderId, soIds),
-                isNull(salesOrderLines.deletedAt),
-              ),
+              and(inArray(salesOrderLines.salesOrderId, soIds), isNull(salesOrderLines.deletedAt)),
             )
             .groupBy(salesOrderLines.salesOrderId),
       soIds.length === 0
@@ -416,12 +416,7 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
               dispatched: sql<number>`COALESCE(SUM(${assemblyUnits.qty}) FILTER (WHERE ${assemblyUnits.dispatched}), 0)::int`,
             })
             .from(assemblyUnits)
-            .where(
-              and(
-                inArray(assemblyUnits.salesOrderId, soIds),
-                isNull(assemblyUnits.deletedAt),
-              ),
-            )
+            .where(and(inArray(assemblyUnits.salesOrderId, soIds), isNull(assemblyUnits.deletedAt)))
             .groupBy(assemblyUnits.salesOrderId),
       bomIds.length === 0
         ? Promise.resolve([])
@@ -470,7 +465,10 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
       orderQtyMap.set(r.soId, Number(r.orderQty));
       dueDateMap.set(r.soId, r.earliestDueDate ?? null);
     }
-    const assembledMap = new Map<string, { assembled: number; inProgress: number; dispatched: number }>();
+    const assembledMap = new Map<
+      string,
+      { assembled: number; inProgress: number; dispatched: number }
+    >();
     for (const r of assembledAggRows) {
       assembledMap.set(r.soId, {
         assembled: Number(r.assembled),
@@ -478,7 +476,10 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
         dispatched: Number(r.dispatched),
       });
     }
-    const bomCodeMap = new Map<string, { bomNo: string; bomName: string | null; revision: number | null }>();
+    const bomCodeMap = new Map<
+      string,
+      { bomNo: string; bomName: string | null; revision: number | null }
+    >();
     for (const r of bomCodes) {
       bomCodeMap.set(r.id, { bomNo: r.bomNo, bomName: r.bomName, revision: r.revision });
     }
@@ -509,8 +510,9 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
       const flaggedDispatched = agg?.dispatched ?? 0;
       const registerDispatched = registerDispatchMap.get(r.soId) ?? 0;
       const dispatchedQty =
-        flaggedDispatched + Math.min(registerDispatched, Math.max(0, assembledQty - flaggedDispatched));
-      const bom = r.bomMasterId ? bomCodeMap.get(r.bomMasterId) ?? null : null;
+        flaggedDispatched +
+        Math.min(registerDispatched, Math.max(0, assembledQty - flaggedDispatched));
+      const bom = r.bomMasterId ? (bomCodeMap.get(r.bomMasterId) ?? null) : null;
       const ready = readiness.get(r.soId) ?? { canAssemble: 0, readyCount: 0, totalCount: 0 };
       return {
         soId: r.soId,
@@ -590,7 +592,8 @@ export async function markUnitAssembled(
     const nextUnitNo = Number(aggRows[0]?.maxUnitNo ?? 0) + 1;
 
     // Guard 1 — never build more than the order still owes.
-    const balance = unitsRequired > 0 ? Math.max(0, unitsRequired - alreadyAssembled) : requestedQty;
+    const balance =
+      unitsRequired > 0 ? Math.max(0, unitsRequired - alreadyAssembled) : requestedQty;
     if (unitsRequired > 0 && requestedQty > balance) {
       throw new ConflictError(
         `Qty (${requestedQty}) cannot be more than Pending (${balance}) of Order Qty ${unitsRequired}.`,
@@ -656,10 +659,15 @@ export async function markUnitAssembled(
     await emitActivityLog(
       tx,
       {
-        action: 'ASSEMBLED',
-        entity: 'AssemblyUnit',
+        // ADR-197 — assembly is logged on its Sales Order (the document the
+        // units belong to); the batch is the line reference.
+        action: ActivityAction.Complete,
+        entity: 'SalesOrder',
+        entityId: soId,
+        lineRef: `Batch ${nextUnitNo}`,
+        qty: requestedQty,
         detail:
-          `${so.code} — unit #${nextUnitNo}${requestedQty > 1 ? ` ×${requestedQty}` : ''} (S/N ${serial})` +
+          `${so.code} — assembled unit #${nextUnitNo}${requestedQty > 1 ? ` ×${requestedQty}` : ''} (S/N ${serial})` +
           fitSummary(fit, input.confirmVarianceReason),
         refId: so.code,
       },
@@ -761,9 +769,12 @@ export async function startAssembly(
     await emitActivityLog(
       tx,
       {
-        action: 'ASSEMBLY_START',
-        entity: 'AssemblyUnit',
-        detail: `${so.code} — started batch #${nextUnitNo} ×${requestedQty}`,
+        action: ActivityAction.Start,
+        entity: 'SalesOrder',
+        entityId: soId,
+        lineRef: `Batch ${nextUnitNo}`,
+        qty: requestedQty,
+        detail: `${so.code} — assembly started, batch #${nextUnitNo} ×${requestedQty}`,
         refId: so.code,
       },
       companyId,
@@ -806,7 +817,9 @@ export async function stopAssembly(
     const batch = existing[0];
     if (!batch) throw new NotFoundError('Assembly unit not found. Refresh the page.');
     if (batch.status !== 'in_progress') {
-      throw new ConflictError(`Batch No. ${batch.unitNo} is not in assembly — nothing to complete.`);
+      throw new ConflictError(
+        `Batch No. ${batch.unitNo} is not in assembly — nothing to complete.`,
+      );
     }
 
     const remaining = batch.qty;
@@ -901,10 +914,13 @@ export async function stopAssembly(
     await emitActivityLog(
       tx,
       {
-        action: 'ASSEMBLED',
-        entity: 'AssemblyUnit',
+        action: ActivityAction.Complete,
+        entity: 'SalesOrder',
+        entityId: soId,
+        lineRef: `Batch ${batch.unitNo}`,
+        qty: completedQty,
         detail:
-          `${batch.soCodeText} — completed ${completedQty} of batch #${batch.unitNo} (S/N ${serial})` +
+          `${batch.soCodeText} — assembled ${completedQty} of batch #${batch.unitNo} (S/N ${serial})` +
           (newRemaining > 0 ? ` · ${newRemaining} still in assembly` : '') +
           fitSummary(fit, input.confirmVarianceReason),
         refId: batch.soCodeText,
@@ -968,9 +984,13 @@ export async function markUnitDispatched(
     await emitActivityLog(
       tx,
       {
-        action: 'DISPATCHED',
-        entity: 'AssemblyUnit',
-        detail: `${row.soCodeText} — unit #${row.unitNo}${row.qty > 1 ? ` ×${row.qty}` : ''}${row.serialNo ? ` (S/N ${row.serialNo})` : ''}`,
+        action: ActivityAction.Send,
+        entity: 'SalesOrder',
+        entityId: row.salesOrderId,
+        lineRef: `Batch ${row.unitNo}`,
+        qty: row.qty,
+        operatorName: input.dispatchedBy ?? null,
+        detail: `${row.soCodeText} — dispatched unit #${row.unitNo}${row.qty > 1 ? ` ×${row.qty}` : ''}${row.serialNo ? ` (S/N ${row.serialNo})` : ''}`,
         refId: row.soCodeText,
       },
       companyId,
@@ -1006,12 +1026,7 @@ export async function undoLastUnit(
     const latest = await tx
       .select()
       .from(assemblyUnits)
-      .where(
-        and(
-          eq(assemblyUnits.salesOrderId, soId),
-          isNull(assemblyUnits.deletedAt),
-        ),
-      )
+      .where(and(eq(assemblyUnits.salesOrderId, soId), isNull(assemblyUnits.deletedAt)))
       .orderBy(desc(assemblyUnits.unitNo))
       .limit(1);
     const row = latest[0];
@@ -1042,8 +1057,11 @@ export async function undoLastUnit(
     await emitActivityLog(
       tx,
       {
-        action: 'UNDO_ASSEMBLY',
-        entity: 'AssemblyUnit',
+        action: ActivityAction.Reverse,
+        entity: 'SalesOrder',
+        entityId: soId,
+        lineRef: `Batch ${row.unitNo}`,
+        qty: -row.qty,
         detail:
           `${so.code} — undo unit #${row.unitNo}` +
           (unfitted > 0 ? ` · ${unfitted} fitted part line(s) back to Still Out` : '') +
@@ -1115,7 +1133,7 @@ export async function setReadinessOverride(
           readyQtyOverride: input.readyQtyOverride,
           remarks: input.remarks ?? null,
           childItemId,
-          deletedAt: null,
+          ...restoreStamp(),
           updatedBy: user.id,
         })
         .where(eq(assemblyTracking.id, existing[0].id));
@@ -1135,8 +1153,21 @@ export async function setReadinessOverride(
     await emitActivityLog(
       tx,
       {
-        action: 'OVERRIDE_READY',
-        entity: 'AssemblyTracking',
+        action: ActivityAction.Edit,
+        entity: 'SalesOrder',
+        entityId: soId,
+        lineRef: childItemCode,
+        changes: [
+          {
+            field: 'readyQtyOverride',
+            label: `${childItemCode} Ready`,
+            before:
+              existing[0]?.deletedAt == null && existing[0]?.readyQtyOverride != null
+                ? Number(existing[0].readyQtyOverride)
+                : null,
+            after: input.readyQtyOverride,
+          },
+        ],
         detail: `${so.code} — ${childItemCode} Ready ${input.readyQtyOverride}`,
         refId: so.code,
       },
@@ -1231,8 +1262,9 @@ async function syncEquipmentSoClosure(
   await emitActivityLog(
     tx,
     {
-      action: shouldClose ? 'SO_CLOSED' : 'SO_REOPENED',
+      action: shouldClose ? ActivityAction.Close : ActivityAction.Reopen,
       entity: 'SalesOrder',
+      entityId: soId,
       detail: shouldClose
         ? `${soCode} — All ${unitsRequired} unit(s) assembled`
         : `${soCode} — Reopened: ${assembled} of ${unitsRequired} unit(s) assembled`,

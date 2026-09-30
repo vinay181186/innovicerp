@@ -36,6 +36,7 @@ import { JcStatusBadge } from './jc-status-badge';
 import { JcStoppedBanner } from './jc-stopped-banner';
 import { JcRouteFlowPanel, JcViewSummary, SectionBar, currentOp } from './jc-view-summary';
 import { JcViewTabs } from './jc-view-tabs';
+import { JcFlowPanels } from '@/modules/flow-views/components/jc-flow-panels';
 
 export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const navigate = useNavigate();
@@ -345,6 +346,9 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           </div>
         ) : null}
       </div>
+
+      {/* ── E2. Op Qty Flow + Rework Tree (req. 3.5, read-only) ── */}
+      <JcFlowPanels jobCardId={id} />
 
       {/* ── F. Documents & Quality | Related Records | History ── */}
       <JcViewTabs jc={jc} ops={ops} extras={extras} stopped={stopped} />

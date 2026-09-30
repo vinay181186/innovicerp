@@ -9,7 +9,9 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
+import { Panel } from '@/ui/data';
 import { useCancelToolIssue, useToolIssue } from '../api';
 import { ReturnForm } from './tool-return-form';
 
@@ -83,7 +85,14 @@ export function ToolIssueViewModal({
                   onError={setErr}
                 />
               ) : (
-                <History t={t} />
+                <>
+                  <History t={t} />
+                  <div style={{ marginTop: 10 }}>
+                    <Panel title="History" bodyPadding="none">
+                      <DocumentHistory entity="ToolIssue" entityId={t.id} refId={t.code} />
+                    </Panel>
+                  </div>
+                </>
               )}
               {msg ? (
                 <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>

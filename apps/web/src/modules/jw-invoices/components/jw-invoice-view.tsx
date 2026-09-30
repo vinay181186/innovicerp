@@ -7,12 +7,14 @@
 import { type CreateJwInvoiceInput, type ListJwInvoicesQuery } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
+import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoiceableLines, useJwInvoicesList } from '../api';
@@ -81,6 +83,9 @@ export function JwInvoiceView({
 
   // The invoice the Cancel dialog is asking about, or null when closed.
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
+  // ADR-197: the invoice whose History is open, or null. JW Invoice has no
+  // detail page, so its History opens over the list.
+  const [historyTarget, setHistoryTarget] = useState<{ id: string; code: string } | null>(null);
 
   // Money hidden for L1 Viewers: the API nulls the amounts, so the Rate /
   // Taxable / GST% / GST Amt / Total columns are dropped for them.
@@ -229,8 +234,16 @@ export function JwInvoiceView({
                         {r.status === 'cancelled' ? 'Cancelled' : 'Issued'}
                       </span>
                     </td>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <PrintJwInvoiceButton invoice={r} priceVisible={!priceHidden} />
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => setHistoryTarget({ id: r.id, code: r.code })}
+                        title="Who did what on this invoice"
+                      >
+                        History
+                      </button>
                     </td>
                     {canCancel ? (
                       <td className="td-ctr">
@@ -261,6 +274,19 @@ export function JwInvoiceView({
 
       {showModal && canWrite ? (
         <NewJwInvoiceModal initialJwId={initialJwId} onClose={() => setShowModal(false)} />
+      ) : null}
+      {historyTarget ? (
+        <Modal
+          title={`History — ${historyTarget.code}`}
+          onClose={() => setHistoryTarget(null)}
+          size="lg"
+        >
+          <DocumentHistory
+            entity="JwInvoice"
+            entityId={historyTarget.id}
+            refId={historyTarget.code}
+          />
+        </Modal>
       ) : null}
       {cancelTarget && canCancel ? (
         <CancelJwInvoiceModal

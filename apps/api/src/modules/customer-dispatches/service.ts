@@ -14,6 +14,7 @@ import type {
   FinanceSoOption,
   ListCustomerDispatchesResponse,
 } from '@innovic/shared';
+import { ActivityAction } from '@innovic/shared';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   customerDispatchLines,
@@ -109,8 +110,10 @@ async function syncSoDispatchStatus(
     await emitActivityLog(
       tx,
       {
-        action: next === 'dispatched' ? 'SO_DISPATCHED' : 'SO_REOPENED',
+        // Fully shipped is an auto roll-up (COMPLETE); a cancel dropping it back is REOPEN.
+        action: next === 'dispatched' ? ActivityAction.Complete : ActivityAction.Reopen,
         entity: 'SalesOrder',
+        entityId: soId,
         detail:
           next === 'dispatched'
             ? `${soCode} — All lines fully dispatched`
@@ -979,10 +982,12 @@ export async function createDispatch(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'Dispatch',
-        detail: `${code} — ${so.code} (${totalQty} pcs)`,
+        entityId: header.id,
         refId: code,
+        qty: totalQty,
+        detail: `${code} — ${so.code} (${totalQty} pcs)`,
       },
       companyId,
       user,
@@ -994,6 +999,7 @@ export async function createDispatch(
 
 export async function cancelDispatch(
   id: string,
+  reason: string,
   user: AuthContext,
 ): Promise<CustomerDispatchDetail> {
   requireWriteRole(user);
@@ -1117,7 +1123,15 @@ export async function cancelDispatch(
 
     await emitActivityLog(
       tx,
-      { action: 'CANCEL', entity: 'Dispatch', detail: `${h.code} cancelled`, refId: h.code },
+      {
+        action: ActivityAction.Cancel,
+        entity: 'Dispatch',
+        entityId: h.id,
+        refId: h.code,
+        qty: lineRows.reduce((sum, l) => sum + Number(l.qty), 0),
+        reason,
+        detail: `${h.code} cancelled`,
+      },
       companyId,
       user,
     );

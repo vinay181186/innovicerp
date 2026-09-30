@@ -260,6 +260,8 @@ export async function generateOspPrForOp(
       entity: 'PurchaseRequest',
       detail: `${prCode} [OSP Auto] ${op.operation} → ${jc.code}`,
       refId: prCode,
+      entityId: pr.id,
+      qty: pr.qty,
     },
     companyId,
     user,
@@ -355,6 +357,8 @@ export async function generateOspPrForOp(
         // Mirrors the PR entry above; the feed matches `detail ILIKE '%<jc.code>%'`.
         detail: `${poCode} [OSP Auto Draft] ${op.operation} → ${jc.code}`,
         refId: poCode,
+        entityId: poId,
+        qty: poLine.qty,
       },
       companyId,
       user,

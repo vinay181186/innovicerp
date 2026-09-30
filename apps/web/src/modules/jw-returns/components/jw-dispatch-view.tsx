@@ -11,11 +11,13 @@ import {
 } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { statusText } from '@/lib/status-text';
+import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwReturnChallan, useJwReturnable, useJwReturnsList } from '../api';
@@ -67,6 +69,9 @@ export function JwDispatchView({
   // The return the Cancel dialog is asking about, or null when closed. The
   // dialog now captures a reason (R10, ADR-194) and runs the mutation itself.
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
+  // ADR-197: the return whose History is open, or null. JW Return has no
+  // detail page, so its History opens over the list.
+  const [historyTarget, setHistoryTarget] = useState<{ id: string; code: string } | null>(null);
 
   return (
     <div>
@@ -173,11 +178,15 @@ export function JwDispatchView({
                       </span>
                     </td>
                     <td className="td-ctr" style={{ whiteSpace: 'nowrap' }}>
-                      {r.status === 'cancelled' ? (
-                        <span className="text3" style={{ fontSize: 11 }}>
-                          —
-                        </span>
-                      ) : (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => setHistoryTarget({ id: r.id, code: r.code })}
+                        title="Who did what on this return"
+                      >
+                        History
+                      </button>
+                      {r.status === 'cancelled' ? null : (
                         <>
                           <PrintJwReturnButton returnId={r.id} row={r} />
                           {canWrite ? (
@@ -202,6 +211,19 @@ export function JwDispatchView({
       </div>
       <ListFooter total={data?.total ?? rows.length} noun="JW return" limit={LIST_LIMIT} />
 
+      {historyTarget ? (
+        <Modal
+          title={`History — ${historyTarget.code}`}
+          onClose={() => setHistoryTarget(null)}
+          size="lg"
+        >
+          <DocumentHistory
+            entity="JwReturnChallan"
+            entityId={historyTarget.id}
+            refId={historyTarget.code}
+          />
+        </Modal>
+      ) : null}
       {cancelTarget ? (
         <CancelJwReturnModal
           id={cancelTarget.id}

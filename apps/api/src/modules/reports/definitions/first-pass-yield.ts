@@ -86,8 +86,8 @@ export const firstPassYieldReport: RegisteredReport = {
           AND o.op_type = 'process'
           AND (
             (ol.log_type = 'complete' AND ol.log_no NOT LIKE 'LOG-NC-%'
-              AND (ol.qty > 0 OR ol.reject_qty > 0))
-            OR (ol.log_type = 'qc' AND ol.reject_qty > 0)
+              AND (ol.qty <> 0 OR ol.reject_qty <> 0)) -- 0179: reversals net
+            OR (ol.log_type = 'qc' AND ol.reject_qty <> 0)
           )
           ${fromFrag}
           ${toFrag}

@@ -10,9 +10,11 @@
 
 import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
 import {
+  ActivityAction,
   type DocumentTraceability,
   type RelatedDoc,
   NC_DISPOSITION_LABELS,
+  NC_REASON_CATEGORY_LABELS,
   NC_STATUS_LABELS,
   opSrNo,
   withDocRevision,
@@ -44,6 +46,7 @@ import {
 } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { labelOf } from '../../lib/status-labels';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import { autoCloseLinkedTasks } from '../tasks/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
@@ -189,6 +192,9 @@ interface NcJoins {
   // G8: the NC this row continues (Incoming-QC reject on a GRN that came back
   // against that NC's return-to-vendor challan). Code resolved on read.
   parentNcCode?: string | null;
+  // ADR-197: the full name of the user who decided the disposition
+  // (nc_register.disposition_by). Shown in place of the text snapshot.
+  dispositionByName?: string | null;
   // Material source (Tier A, WI3), derived on read via resolveNcSource / the
   // list reader's LATERAL. Null on a pure in-house reject.
   sourceVendorId?: string | null;
@@ -241,7 +247,9 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     reason: row.reason,
     disposition: row.disposition,
     dispositionDate: row.dispositionDate,
-    dispositionByText: row.dispositionByText,
+    // ADR-197 — the disposer read from the user FK (disposition_by → full
+    // name), falling back to the typed snapshot on rows decided before 0178.
+    dispositionByText: joins.dispositionByName ?? row.dispositionByText,
     dispositionRemarks: row.dispositionRemarks,
     reworkJcCodeText: row.reworkJcCodeText,
     reworkOpSeq: row.reworkOpSeq,
@@ -419,7 +427,11 @@ export async function listNcRegister(
         nc.reason_category AS "reasonCategory", nc.reason,
         nc.disposition,
         nc.disposition_date AS "dispositionDate",
-        nc.disposition_by_text AS "dispositionByText",
+        -- ADR-197: the disposer from the user FK, else the typed snapshot.
+        COALESCE(
+          (SELECT NULLIF(du.full_name, '') FROM public.users du WHERE du.id = nc.disposition_by),
+          nc.disposition_by_text
+        ) AS "dispositionByText",
         nc.disposition_remarks AS "dispositionRemarks",
         nc.rework_jc_code_text AS "reworkJcCodeText",
         nc.rework_op_seq AS "reworkOpSeq",
@@ -725,6 +737,11 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
         SELECT pnc.code FROM public.nc_register pnc
         WHERE pnc.id = ${ncRegister.parentNcId} AND pnc.deleted_at IS NULL
       )`,
+      // ADR-197: the disposer's name off the user FK.
+      dispositionByName: sql<string | null>`(
+        SELECT NULLIF(u.full_name, '') FROM public.users u
+        WHERE u.id = ${ncRegister.dispositionBy}
+      )`,
     })
     .from(ncRegister)
     // Resolve item code/name from the live items master, not the stale
@@ -766,6 +783,7 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     childJobCardCode: found.childJobCardCode,
     deliveryChallanCode: found.deliveryChallanCode,
     parentNcCode: found.parentNcCode,
+    dispositionByName: found.dispositionByName,
     sourceVendorId: source.sourceVendorId,
     sourceVendorCode: source.sourceVendorCode,
     sourceVendorName: source.sourceVendorName,
@@ -1289,10 +1307,13 @@ export async function createNcRegister(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'NonConformance',
-        detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
+        entityId: row.id,
         refId: row.code,
+        qty: row.rejectedQty,
+        operatorName: row.reportedByText,
+        detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
       },
       companyId,
       user,
@@ -1300,6 +1321,22 @@ export async function createNcRegister(
     return toNcRegister(row);
   });
 }
+
+/** The user-editable NC fields, with their screen labels (ADR-197 EDIT row). */
+const NC_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'ncDate', label: 'NC Date' },
+  {
+    key: 'reasonCategory',
+    label: 'Reason Category',
+    format: (v) =>
+      v == null
+        ? null
+        : ((NC_REASON_CATEGORY_LABELS as Record<string, string>)[String(v)] ?? String(v)),
+  },
+  { key: 'reason', label: 'Defect Description' },
+  { key: 'reportedByText', label: 'Reported By' },
+  { key: 'operatorText', label: 'Operator' },
+];
 
 export async function updateNcRegister(
   id: string,
@@ -1313,8 +1350,10 @@ export async function updateNcRegister(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // Full row, read BEFORE the update — the before side of the EDIT's
+    // before → after list (ADR-197).
     const existing = await tx
-      .select({ id: ncRegister.id, status: ncRegister.status })
+      .select()
       .from(ncRegister)
       .where(
         and(
@@ -1345,17 +1384,22 @@ export async function updateNcRegister(
 
     const reread = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
     const row = reread[0]!;
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'NonConformance',
-        detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
-        refId: row.code,
-      },
-      companyId,
-      user,
-    );
+    const changes = diffFields(existing[0]!, updates, NC_EDIT_FIELDS);
+    if (changes.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'NonConformance',
+          entityId: row.id,
+          refId: row.code,
+          changes,
+          detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
+        },
+        companyId,
+        user,
+      );
+    }
     return toNcRegister(row);
   });
 }
@@ -1406,39 +1450,44 @@ export async function disposeNcRegister(
     await emitActivityLog(
       tx,
       {
-        action: 'NC_DISPOSE',
+        action: ActivityAction.Dispose,
         entity: 'NonConformance',
-        detail: `${nc.code} — Disposition ${labelOf(NC_DISPOSITION_LABELS, input.action)}, ${result.qty} pcs${sideEffect}`,
+        entityId: nc.id,
         refId: nc.code,
+        qty: result.qty,
+        reason: input.remarks ?? null,
+        changes: [
+          {
+            field: 'disposition',
+            label: 'Disposition',
+            before: null,
+            after: labelOf(NC_DISPOSITION_LABELS, input.action),
+          },
+          {
+            field: 'status',
+            label: 'Status',
+            before: labelOf(NC_STATUS_LABELS, 'pending'),
+            after: labelOf(NC_STATUS_LABELS, nc.status),
+          },
+        ],
+        detail: `${nc.code} — Disposition ${labelOf(NC_DISPOSITION_LABELS, input.action)}, ${result.qty} pcs${sideEffect}`,
       },
       companyId,
       user,
     );
-    // A card raised inside the cascade gets its own CREATE row keyed by its
-    // code, so the JC filter shows the creation event instead of starting
-    // empty. NC_DISPOSE above already mentions the code in passing.
-    if (result.childJcCode) {
-      const label = input.action === 'repair' ? 'Repair' : 'Rework';
-      await emitActivityLog(
-        tx,
-        {
-          action: 'CREATE',
-          entity: 'JobCard',
-          detail: `${result.childJcCode} — ${label} for ${nc.code} (${result.qty} pcs)`,
-          refId: result.childJcCode,
-        },
-        companyId,
-        user,
-      );
-    }
+    // A card raised inside the cascade gets its own CREATE row: the rework /
+    // repair child's is written by createRecoveryJobCard (recovery.ts); the
+    // make_fresh supplementary's here. DISPOSE above mentions the code.
     if (input.action === 'make_fresh' && result.newJcCode) {
       await emitActivityLog(
         tx,
         {
-          action: 'CREATE',
+          action: ActivityAction.Create,
           entity: 'JobCard',
-          detail: `${result.newJcCode} — Supplementary for ${nc.code} (${result.qty} pcs)`,
+          entityId: result.newJcId ?? null,
           refId: result.newJcCode,
+          qty: result.qty,
+          detail: `${result.newJcCode} — Supplementary for ${nc.code} (${result.qty} pcs)`,
         },
         companyId,
         user,
@@ -1506,8 +1555,18 @@ export async function closeNc(
     await emitActivityLog(
       tx,
       {
-        action: 'NC_CLOSE',
+        action: ActivityAction.Close,
         entity: 'NonConformance',
+        entityId: after.id,
+        qty: after.rejectedQty,
+        changes: [
+          {
+            field: 'status',
+            label: 'Status',
+            before: labelOf(NC_STATUS_LABELS, before.status),
+            after: labelOf(NC_STATUS_LABELS, after.status),
+          },
+        ],
         detail:
           `${after.code} — Closed${opts.via ? ` (${opts.via})` : ''}: ` +
           `${after.rejectedQty} pcs, ${after.clearedQty} cleared, ${after.failedQty} failed` +
@@ -1729,6 +1788,9 @@ export async function createNcDc(
         transport: input.transport ?? null,
         vehicleNo: input.vehicleNo ?? null,
         status: 'issued',
+        // ADR-197 (0178) — who issued the challan, and when.
+        issuedBy: user.id,
+        issuedAt: new Date(),
         ncId: nc.id,
         jobCardId: nc.jobCardId,
         reason,
@@ -1831,10 +1893,27 @@ export async function createNcDc(
     await emitActivityLog(
       tx,
       {
-        action: 'NC_CREATE_DC',
+        action: ActivityAction.Send,
         entity: 'NonConformance',
-        detail: `${nc.code} — ${dc.code} issued to ${input.vendorCodeText}, ${qty} pcs`,
+        entityId: nc.id,
         refId: nc.code,
+        qty,
+        detail: `${nc.code} — ${dc.code} issued to ${input.vendorCodeText}, ${qty} pcs`,
+      },
+      companyId,
+      user,
+    );
+    // One row per document touched: the challan's own SEND.
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Send,
+        entity: 'DeliveryChallan',
+        entityId: dc.id,
+        refId: dc.code,
+        lineRef: 'Line 1',
+        qty,
+        detail: `${dc.code} — return to vendor ${input.vendorCodeText} for ${nc.code}, ${qty} pcs`,
       },
       companyId,
       user,
@@ -1848,7 +1927,11 @@ export async function createNcDc(
   });
 }
 
-export async function softDeleteNcRegister(id: string, user: AuthContext): Promise<{ ok: true }> {
+export async function softDeleteNcRegister(
+  id: string,
+  user: AuthContext,
+  reason?: string | null,
+): Promise<{ ok: true }> {
   requireOpEntryRole(user);
   // Delete is not one of the four tier actions, so it is expressed as the pair
   // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
@@ -1886,15 +1969,18 @@ export async function softDeleteNcRegister(id: string, user: AuthContext): Promi
     }
     await tx
       .update(ncRegister)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(ncRegister.id, id));
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
+        action: ActivityAction.Delete,
         entity: 'NonConformance',
-        detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
+        entityId: row.id,
         refId: row.code,
+        qty: row.rejectedQty,
+        reason: reason ?? null,
+        detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
       },
       companyId,
       user,

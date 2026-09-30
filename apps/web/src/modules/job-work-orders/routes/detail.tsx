@@ -12,6 +12,7 @@ import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
+import { useHistoryTab } from '@/components/shared/document-history';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -25,9 +26,10 @@ import {
 } from '@/modules/jwso-documents/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
-import { useJobWorkOrder, useSoftDeleteJobWorkOrder } from '../api';
+import { useJobWorkOrder } from '../api';
+import { DeleteJwsoModal } from '../components/delete-jwso-modal';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
 import { ShortCloseJwLineModal } from '../components/short-close-jw-line-modal';
 
@@ -51,8 +53,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'jw_create');
-  const softDelete = useSoftDeleteJobWorkOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-197: the JWSO's own History tab (hooks run before any early return).
+  const historyTab = useHistoryTab({ entity: 'JobWorkOrder', entityId: id, refId: detail?.code });
   // R6 (ADR-194): the line the Short-close dialog is asking about, or null.
   const [shortCloseLine, setShortCloseLine] = useState<JobWorkOrderLine | null>(null);
   // The line drawing the user asked to look at, or null when nothing is open.
@@ -90,13 +93,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
     return <PageState as="page" state="noaccess" />;
   }
 
-  // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
-  // shows a failure inside the dialog.
-  const onDelete = async (): Promise<void> => {
-    await softDelete.mutateAsync(detail.id);
-    setConfirmDelete(false);
-    void navigate({ to: '/job-work-orders', replace: true });
-  };
+  // After the JWSO is in Trash the detail has nothing to show — go to the list.
+  const onDeleted = (): void => void navigate({ to: '/job-work-orders', replace: true });
 
   // Access matrix (jw_create) replaces the old admin/manager role flags.
   const canEdit = perms.edit;
@@ -226,13 +224,11 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
       ) : null}
 
       {confirmDelete ? (
-        <ConfirmDialog
-          title={`Move JWSO ${detail.code} to Trash?`}
-          message="You can restore it from Trash."
-          confirmLabel="Move to Trash"
-          pendingLabel="Moving to Trash…"
-          onConfirm={onDelete}
-          onCancel={() => setConfirmDelete(false)}
+        <DeleteJwsoModal
+          id={detail.id}
+          code={detail.code}
+          onClose={() => setConfirmDelete(false)}
+          onDeleted={onDeleted}
         />
       ) : null}
 
@@ -301,13 +297,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <tr>
                   <td
                     colSpan={
-                      priceHidden
-                        ? canShortCloseAction
-                          ? 9
-                          : 8
-                        : canShortCloseAction
-                          ? 11
-                          : 10
+                      priceHidden ? (canShortCloseAction ? 9 : 8) : canShortCloseAction ? 11 : 10
                     }
                     className="empty-state"
                   >
@@ -339,7 +329,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         canDelete={me?.role !== 'viewer'}
       />
 
-      <RelatedDocsTabs module="job-work-orders" id={detail.id} />
+      <RelatedDocsTabs module="job-work-orders" id={detail.id} extraTabs={[historyTab]} />
 
       {linePreview ? (
         <FilePreviewModal

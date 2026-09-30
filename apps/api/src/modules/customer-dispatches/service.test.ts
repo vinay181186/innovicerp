@@ -237,7 +237,7 @@ describe('customer dispatch — assembly finished-good stock legs', () => {
     expect(await onHand(parentId)).toBe(6);
 
     // Cancel puts the 4 back on the parent.
-    await cancelDispatch(dispatch.id, admin);
+    await cancelDispatch(dispatch.id, 'Test cancel', admin);
     const ins = (
       await db.select().from(storeTransactions).where(eq(storeTransactions.sourceType, 'dispatch'))
     )

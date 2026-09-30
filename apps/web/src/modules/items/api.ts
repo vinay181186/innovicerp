@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const itemsKeys = {
   all: ['items'] as const,
@@ -68,6 +69,7 @@ export function useCreateItem() {
   return useMutation<Item, Error, CreateItemInput>({
     mutationFn: (input) => apiFetch<Item>('/items', { method: 'POST', json: input }),
     onSuccess: (created) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
       qc.setQueryData(itemsKeys.detail(created.id), created);
     },
@@ -86,6 +88,7 @@ export function useBulkCreateItems() {
     mutationFn: (input) =>
       apiFetch<BulkCreateItemsResponse>('/items/bulk', { method: 'POST', json: input }),
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
     },
   });
@@ -96,6 +99,7 @@ export function useUpdateItem(id: string) {
   return useMutation<Item, Error, UpdateItemInput>({
     mutationFn: (input) => apiFetch<Item>(`/items/${id}`, { method: 'PATCH', json: input }),
     onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
       qc.setQueryData(itemsKeys.detail(id), updated);
     },
@@ -104,11 +108,13 @@ export function useUpdateItem(id: string) {
 
 export function useSoftDeleteItem() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (id) => {
-      await apiFetch<null>(`/items/${id}`, { method: 'DELETE' });
+  // ADR-197: a reason is required to move a record to Trash.
+  return useMutation<void, Error, { id: string; reason: string }>({
+    mutationFn: async ({ id, reason }) => {
+      await apiFetch<null>(`/items/${id}`, { method: 'DELETE', json: { reason } });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
       qc.removeQueries({ queryKey: itemsKeys.detail(id) });
     },

@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const partyMaterialsKeys = {
   all: ['party-materials'] as const,
@@ -38,8 +39,7 @@ export function usePartyMaterialsList(
 ) {
   return useQuery<ListPartyMaterialsResponse>({
     queryKey: partyMaterialsKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListPartyMaterialsResponse>(`/party-materials?${buildSearch(query)}`),
+    queryFn: () => apiFetch<ListPartyMaterialsResponse>(`/party-materials?${buildSearch(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -62,6 +62,7 @@ export function useCreatePartyMaterial() {
       apiFetch<PartyMaterial>('/party-materials', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyMaterialsKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
@@ -73,6 +74,7 @@ export function useUpdatePartyMaterial() {
       apiFetch<PartyMaterial>(`/party-materials/${id}`, { method: 'PATCH', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyMaterialsKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
@@ -87,19 +89,22 @@ export function useReturnPartyMaterial() {
       apiFetch<PartyMaterial>(`/party-materials/${id}/return`, { method: 'POST', json: body }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyMaterialsKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // A return posts a ledger row → the party stock ledger changes too.
       void qc.invalidateQueries({ queryKey: ['party-stock-ledger'] });
     },
   });
 }
 
+/** ADR-197: a delete carries its reason (required by the API). */
 export function useDeletePartyMaterial() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<void>(`/party-materials/${id}`, { method: 'DELETE' }),
+  return useMutation<void, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<void>(`/party-materials/${id}`, { method: 'DELETE', json: { reason } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyMaterialsKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }

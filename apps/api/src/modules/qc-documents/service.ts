@@ -28,6 +28,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { softDeleteStamp } from '../../lib/audit-trail';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -328,7 +329,7 @@ export async function deleteQcDocument(id: string, user: AuthContext): Promise<{
   return withUserContext(user, async (tx) => {
     const updated = await tx
       .update(qcDocuments)
-      .set({ deletedAt: new Date(), updatedBy: user.id, updatedAt: new Date() })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id, updatedAt: new Date() })
       .where(
         and(
           eq(qcDocuments.id, id),

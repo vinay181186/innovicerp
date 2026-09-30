@@ -26,6 +26,8 @@ import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { ActivityAction } from '@innovic/shared';
+import { softDeleteStamp } from '../../lib/audit-trail';
 import { partyMaterialFitsJwLine } from '../party-materials/service';
 
 function requireCompany(user: AuthContext): string {
@@ -351,10 +353,12 @@ export async function createPartyMaterialIssue(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Issue,
         entity: 'PartyMaterialIssue',
-        detail: `${code} — issued ${input.qty} of ${pm.code} to ${jcCodeText ?? jw.code}`,
-        refId: row.id,
+        entityId: row.id,
+        refId: code,
+        qty: input.qty,
+        detail: `${code} — issued ${input.qty} of ${pm.code} to ${jcCodeText ?? jw.code} (${jw.code})`,
       },
       companyId,
       user,
@@ -471,7 +475,7 @@ export async function cancelPartyMaterialIssue(
     await tx
       .update(partyMaterialIssues)
       .set({
-        deletedAt: now,
+        ...softDeleteStamp(user),
         remarks: iss.remarks ? `${iss.remarks}\n[Cancelled] ${trimmed}` : `[Cancelled] ${trimmed}`,
         updatedAt: now,
         updatedBy: user.id,
@@ -481,12 +485,15 @@ export async function cancelPartyMaterialIssue(
     await emitActivityLog(
       tx,
       {
-        action: 'CANCEL',
+        action: ActivityAction.Cancel,
         entity: 'PartyMaterialIssue',
-        detail:
-          `${iss.code} cancelled: ${trimmed} — returned ${iss.qty} of ` +
-          `${iss.partyMaterialCodeText ?? 'material'} to party stock`,
+        entityId: iss.id,
         refId: iss.code,
+        qty: iss.qty,
+        reason: trimmed,
+        detail:
+          `${iss.code} cancelled — returned ${iss.qty} of ` +
+          `${iss.partyMaterialCodeText ?? 'material'} to party stock`,
       },
       companyId,
       user,

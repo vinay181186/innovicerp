@@ -1,3 +1,4 @@
+import { activityReasonSchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
@@ -13,6 +14,11 @@ import * as shortClose from './short-close';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 const lineIdParamSchema = z.object({ lineId: z.string().uuid() });
+// ADR-197 — the reason rides beside the shared SO payload (packages/shared is
+// frozen): optional on a save (required by the service when it cancels the
+// SO), required to move an SO to Trash.
+const editReasonSchema = z.object({ reason: activityReasonSchema.optional() });
+const deleteReasonSchema = z.object({ reason: activityReasonSchema });
 
 export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
   app.get('/sales-orders', async (req) => {
@@ -62,7 +68,8 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateSalesOrderInputSchema.parse(req.body);
-    return service.updateSalesOrder(id, body, req.user);
+    const { reason } = editReasonSchema.parse(req.body ?? {});
+    return service.updateSalesOrder(id, body, req.user, reason ?? null);
   });
 
   // ADR-196 — ERPNext "Close": the header closes short every line that still
@@ -84,7 +91,8 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/sales-orders/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.softDeleteSalesOrder(id, req.user);
+    const { reason } = deleteReasonSchema.parse(req.body ?? {});
+    await service.softDeleteSalesOrder(id, req.user, reason);
     reply.code(204);
     return null;
   });

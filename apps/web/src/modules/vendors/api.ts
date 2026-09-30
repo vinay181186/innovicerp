@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const vendorsKeys = {
   all: ['vendors'] as const,
@@ -60,6 +61,7 @@ export function useCreateVendor() {
   return useMutation<Vendor, Error, CreateVendorInput>({
     mutationFn: (input) => apiFetch<Vendor>('/vendors', { method: 'POST', json: input }),
     onSuccess: (created) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: vendorsKeys.lists() });
       qc.setQueryData(vendorsKeys.detail(created.id), created);
     },
@@ -78,6 +80,7 @@ export function useBulkCreateVendors() {
     mutationFn: (input) =>
       apiFetch<BulkCreateVendorsResponse>('/vendors/bulk', { method: 'POST', json: input }),
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: vendorsKeys.lists() });
     },
   });
@@ -88,6 +91,7 @@ export function useUpdateVendor(id: string) {
   return useMutation<Vendor, Error, UpdateVendorInput>({
     mutationFn: (input) => apiFetch<Vendor>(`/vendors/${id}`, { method: 'PATCH', json: input }),
     onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: vendorsKeys.lists() });
       qc.setQueryData(vendorsKeys.detail(id), updated);
     },
@@ -96,11 +100,13 @@ export function useUpdateVendor(id: string) {
 
 export function useSoftDeleteVendor() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (id) => {
-      await apiFetch<null>(`/vendors/${id}`, { method: 'DELETE' });
+  // ADR-197: a reason is required to move a record to Trash.
+  return useMutation<void, Error, { id: string; reason: string }>({
+    mutationFn: async ({ id, reason }) => {
+      await apiFetch<null>(`/vendors/${id}`, { method: 'DELETE', json: { reason } });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: vendorsKeys.lists() });
       qc.removeQueries({ queryKey: vendorsKeys.detail(id) });
     },

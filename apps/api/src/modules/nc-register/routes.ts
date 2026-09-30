@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { activityReasonSchema } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
@@ -12,6 +13,9 @@ import {
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
+// ADR-197 — a delete says why (REASON_REQUIRED_ACTIONS). Module-local body
+// schema; the shared NC contract is unchanged.
+const deleteNcBodySchema = z.object({ reason: activityReasonSchema });
 
 export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
   app.get('/nc-register', async (req) => {
@@ -57,7 +61,8 @@ export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/nc-register/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.softDeleteNcRegister(id, req.user);
+    const { reason } = deleteNcBodySchema.parse(req.body ?? {});
+    await service.softDeleteNcRegister(id, req.user, reason);
     reply.code(204);
     return null;
   });

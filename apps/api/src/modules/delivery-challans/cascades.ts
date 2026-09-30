@@ -53,6 +53,8 @@ export interface OutwardCascadeResult {
   fired: boolean;
   jcOpId?: string;
   jcCode?: string;
+  /** The Job Card the op belongs to — the activity log's document (ADR-197). */
+  jobCardId?: string;
   opSeq?: number;
   prevStatus?: string | null;
   nextStatus?: string;
@@ -276,6 +278,7 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
     fired: true,
     jcOpId: op.id,
     jcCode,
+    jobCardId: op.jobCardId,
     opSeq: op.opSeq,
     prevStatus,
     nextStatus,
@@ -350,6 +353,7 @@ export async function reverseOutwardFromJcOp(
     fired: true,
     jcOpId: op.id,
     jcCode,
+    jobCardId: op.jobCardId,
     opSeq: op.opSeq,
     prevStatus,
     nextStatus: nextStatus ?? 'sent',

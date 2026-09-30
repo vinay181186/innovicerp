@@ -17,6 +17,7 @@
 // Idempotent: SO/JW lines or headers already in `closed` (or `cancelled`)
 // are not re-flipped — no `updated_at` thrash on re-runs.
 
+import { ActivityAction } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   jobCards,
@@ -201,8 +202,9 @@ async function finishJc(
     await emitActivityLog(
       tx,
       {
-        action: 'JC_COMPLETE',
+        action: ActivityAction.Complete,
         entity: 'JobCard',
+        entityId: jobCardId,
         detail: `${jcCode} — All operations Completed`,
         refId: jcCode,
       },
@@ -266,6 +268,7 @@ async function cascadeSo(
       salesOrderId: salesOrderLines.salesOrderId,
       status: salesOrderLines.status,
       orderQty: salesOrderLines.orderQty,
+      lineNo: salesOrderLines.lineNo,
     })
     .from(salesOrderLines)
     .where(and(eq(salesOrderLines.id, soLineId), isNull(salesOrderLines.deletedAt)))
@@ -313,9 +316,12 @@ async function cascadeSo(
     await emitActivityLog(
       tx,
       {
-        action: 'SO_LINE_CLOSED',
+        action: ActivityAction.Close,
         entity: 'SalesOrder',
-        detail: `${soHeader.code} — Line auto-closed (JC ${jcCode})`,
+        entityId: line.salesOrderId,
+        lineRef: `Line ${line.lineNo}`,
+        qty: line.orderQty,
+        detail: `${soHeader.code} — Line ${line.lineNo} auto-closed (JC ${jcCode})`,
         refId: soHeader.code,
       },
       user.companyId,
@@ -350,8 +356,9 @@ async function cascadeSo(
     await emitActivityLog(
       tx,
       {
-        action: 'SO_CLOSED',
+        action: ActivityAction.Close,
         entity: 'SalesOrder',
+        entityId: line.salesOrderId,
         detail: `${soHeader.code} — All lines closed`,
         refId: soHeader.code,
       },
@@ -374,6 +381,7 @@ async function cascadeJw(
       jobWorkOrderId: jobWorkOrderLines.jobWorkOrderId,
       status: jobWorkOrderLines.status,
       orderQty: jobWorkOrderLines.orderQty,
+      lineNo: jobWorkOrderLines.lineNo,
     })
     .from(jobWorkOrderLines)
     .where(and(eq(jobWorkOrderLines.id, jwLineId), isNull(jobWorkOrderLines.deletedAt)))
@@ -406,9 +414,12 @@ async function cascadeJw(
     await emitActivityLog(
       tx,
       {
-        action: 'JW_LINE_CLOSED',
+        action: ActivityAction.Close,
         entity: 'JobWorkOrder',
-        detail: `${jwHeader.code} — Line auto-closed (JC ${jcCode})`,
+        entityId: line.jobWorkOrderId,
+        lineRef: `Line ${line.lineNo}`,
+        qty: line.orderQty,
+        detail: `${jwHeader.code} — Line ${line.lineNo} auto-closed (JC ${jcCode})`,
         refId: jwHeader.code,
       },
       user.companyId,
@@ -443,8 +454,9 @@ async function cascadeJw(
     await emitActivityLog(
       tx,
       {
-        action: 'JW_CLOSED',
+        action: ActivityAction.Close,
         entity: 'JobWorkOrder',
+        entityId: line.jobWorkOrderId,
         detail: `${jwHeader.code} — All lines closed`,
         refId: jwHeader.code,
       },

@@ -6,14 +6,17 @@
 // withUserContext, viewers cannot write.
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import type {
-  CreateJwDocumentInput,
-  JwDocumentFile,
-  JwDocumentListResponse,
+import {
+  ActivityAction,
+  type CreateJwDocumentInput,
+  type JwDocumentFile,
+  type JwDocumentListResponse,
 } from '@innovic/shared';
-import { fileRegistry } from '../../db/schema';
+import { fileRegistry, jobWorkOrders } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -68,22 +71,24 @@ export async function listJwDocuments(
     );
 
     return {
-      files: frRows.map((r): JwDocumentFile => ({
-        id: r['id'] as string,
-        jobWorkOrderId: (r['jobWorkOrderId'] as string | null) ?? null,
-        jwCodeText: (r['jwCodeText'] as string | null) ?? null,
-        jwLineId: (r['jwLineId'] as string | null) ?? null,
-        jwLineNo: r['jwLineNo'] == null ? null : num(r['jwLineNo']),
-        category: (r['category'] as string) ?? 'po-docs',
-        docType: (r['docType'] as string | null) ?? null,
-        fileName: (r['fileName'] as string) ?? '',
-        storagePath: (r['storagePath'] as string) ?? '',
-        fileSize: r['fileSize'] == null ? null : num(r['fileSize']),
-        fileType: (r['fileType'] as string | null) ?? null,
-        status: (r['status'] as string) ?? 'active',
-        uploadedByText: (r['uploadedByText'] as string | null) ?? null,
-        createdAt: isoLike(r['createdAt']),
-      })),
+      files: frRows.map(
+        (r): JwDocumentFile => ({
+          id: r['id'] as string,
+          jobWorkOrderId: (r['jobWorkOrderId'] as string | null) ?? null,
+          jwCodeText: (r['jwCodeText'] as string | null) ?? null,
+          jwLineId: (r['jwLineId'] as string | null) ?? null,
+          jwLineNo: r['jwLineNo'] == null ? null : num(r['jwLineNo']),
+          category: (r['category'] as string) ?? 'po-docs',
+          docType: (r['docType'] as string | null) ?? null,
+          fileName: (r['fileName'] as string) ?? '',
+          storagePath: (r['storagePath'] as string) ?? '',
+          fileSize: r['fileSize'] == null ? null : num(r['fileSize']),
+          fileType: (r['fileType'] as string | null) ?? null,
+          status: (r['status'] as string) ?? 'active',
+          uploadedByText: (r['uploadedByText'] as string | null) ?? null,
+          createdAt: isoLike(r['createdAt']),
+        }),
+      ),
     };
   });
 }
@@ -101,7 +106,7 @@ export async function createJwDocument(
     // Guard: the JWSO must belong to this company (RLS also enforces it).
     const jw = rows(
       await tx.execute(sql`
-        SELECT jw.id
+        SELECT jw.id, jw.code
         FROM public.job_work_orders jw
         WHERE jw.id = ${input.jobWorkOrderId}::uuid AND jw.company_id = ${companyId}::uuid
           AND jw.deleted_at IS NULL
@@ -131,6 +136,22 @@ export async function createJwDocument(
       .returning();
     const r = inserted[0];
     if (!r) throw new Error('Insert failed');
+    // ADR-197: a document added to a JWSO is an edit of that JWSO.
+    const jwCode = String(jw['code'] ?? input.jwCodeText ?? '');
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'JobWorkOrder',
+        entityId: input.jobWorkOrderId,
+        refId: jwCode || null,
+        lineRef: input.jwLineNo != null ? `Line ${input.jwLineNo}` : null,
+        changes: [{ field: 'document', label: 'Document', before: null, after: r.fileName }],
+        detail: `${jwCode} — document ${r.fileName} uploaded`,
+      },
+      companyId,
+      user,
+    );
     return {
       id: r.id,
       jobWorkOrderId: r.jobWorkOrderId ?? null,
@@ -156,7 +177,7 @@ export async function deleteJwDocument(id: string, user: AuthContext): Promise<{
   return withUserContext(user, async (tx) => {
     const updated = await tx
       .update(fileRegistry)
-      .set({ deletedAt: new Date(), updatedBy: user.id, updatedAt: new Date() })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id, updatedAt: new Date() })
       .where(
         and(
           eq(fileRegistry.id, id),
@@ -164,8 +185,39 @@ export async function deleteJwDocument(id: string, user: AuthContext): Promise<{
           isNull(fileRegistry.deletedAt),
         ),
       )
-      .returning({ id: fileRegistry.id });
-    if (updated.length === 0) throw new NotFoundError(`Document ${id} not found`);
+      .returning({
+        id: fileRegistry.id,
+        jobWorkOrderId: fileRegistry.jobWorkOrderId,
+        jwCodeText: fileRegistry.jwCodeText,
+        jwLineNo: fileRegistry.jwLineNo,
+        fileName: fileRegistry.fileName,
+      });
+    const doc = updated[0];
+    if (!doc) throw new NotFoundError(`Document ${id} not found`);
+    // ADR-197: removing a JWSO's document is an edit of that JWSO (the JWSO
+    // itself is not deleted, so it is not logged as DELETE).
+    if (doc.jobWorkOrderId) {
+      const jwRow = await tx
+        .select({ code: jobWorkOrders.code })
+        .from(jobWorkOrders)
+        .where(eq(jobWorkOrders.id, doc.jobWorkOrderId))
+        .limit(1);
+      const jwCode = jwRow[0]?.code ?? doc.jwCodeText ?? null;
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'JobWorkOrder',
+          entityId: doc.jobWorkOrderId,
+          refId: jwCode,
+          lineRef: doc.jwLineNo != null ? `Line ${doc.jwLineNo}` : null,
+          changes: [{ field: 'document', label: 'Document', before: doc.fileName, after: null }],
+          detail: `${jwCode ?? 'JWSO'} — document ${doc.fileName} removed`,
+        },
+        companyId,
+        user,
+      );
+    }
     return { id };
   });
 }

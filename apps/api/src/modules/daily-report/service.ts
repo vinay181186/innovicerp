@@ -71,7 +71,7 @@ export async function getDailyReport(
       WHERE l.company_id = ${companyId}::uuid
         AND l.log_date = ${input.date}::date
         AND l.log_type <> 'start'
-        AND l.qty > 0
+        AND l.qty <> 0 -- 0179: a reversal (negative qty) nets the day total
         ${machineFrag}
       ORDER BY COALESCE(m.code, l.machine_code_text, op.machine_code_text, ''), op.op_seq, l.id
     `);

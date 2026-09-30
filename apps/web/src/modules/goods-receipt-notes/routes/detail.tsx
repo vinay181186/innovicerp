@@ -10,10 +10,12 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { useSession } from '@/lib/session';
@@ -47,6 +49,8 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const { data: vendor } = useVendor(detail?.vendorId ?? undefined);
   const { data: templates, isLoading: templatesLoading } = usePrintTemplates();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Why it is being moved to Trash — required (ADR-197), shown on History.
+  const [deleteReason, setDeleteReason] = useState('');
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -87,7 +91,9 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // mutateAsync: ConfirmDialog stays pending while it runs and shows a
   // rejection inside the dialog instead of closing.
   const onDelete = async (): Promise<void> => {
-    await softDelete.mutateAsync(detail.id);
+    const reason = deleteReason.trim();
+    if (!reason) throw new Error('Enter the reason for moving this GRN to Trash.');
+    await softDelete.mutateAsync({ id: detail.id, reason });
     setConfirmDelete(false);
     await navigate({ to: '/goods-receipt-notes', replace: true });
   };
@@ -222,6 +228,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                   danger: true,
                   onClick: () => {
                     softDelete.reset();
+                    setDeleteReason('');
                     setConfirmDelete(true);
                   },
                   hidden: !canDelete,
@@ -293,10 +300,34 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
 
       <RelatedDocsPanel module="goods-receipt-notes" id={detail.id} />
 
+      {/* ADR-197 — this GRN's own History: create, edits (before → after),
+          Incoming QC per line (inspector + accepted qty), delete. */}
+      <Panel title="History" bodyPadding="none">
+        <DocumentHistory entity="GoodsReceiptNote" entityId={detail.id} refId={detail.code} />
+      </Panel>
+
       {canDelete && confirmDelete ? (
         <ConfirmDialog
           title={`Move GRN ${detail.code} to Trash?`}
-          message="You can restore it from Trash."
+          message={
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span>You can restore it from Trash.</span>
+              <label className="form-grp" style={{ margin: 0 }}>
+                <span className="form-label">
+                  Reason<span className="req">★</span>
+                </span>
+                <textarea
+                  className="innovic-input"
+                  rows={2}
+                  maxLength={500}
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="Why is this GRN being moved to Trash?"
+                  autoFocus
+                />
+              </label>
+            </div>
+          }
           confirmLabel="Move to Trash"
           pendingLabel="Moving to Trash…"
           tone="danger"

@@ -7,6 +7,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 
 export const goodsReceiptNotesKeys = {
@@ -55,6 +56,8 @@ export function useGoodsReceiptNote(id: string | undefined) {
  *  out cascades to the PO line received_qty + PO header status. */
 function invalidatePoCaches(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.all });
+  // Every GRN write adds a row to the GRN's (and the PO's) History (ADR-197).
+  void qc.invalidateQueries({ queryKey: activityLogKeys.all });
 }
 
 export function useCreateGoodsReceiptNote() {
@@ -88,11 +91,16 @@ export function useUpdateGoodsReceiptNote(id: string) {
 
 export function useSoftDeleteGoodsReceiptNote() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (id) => {
-      await apiFetch<null>(`/goods-receipt-notes/${id}`, { method: 'DELETE' });
+  return useMutation<void, Error, { id: string; reason: string }>({
+    // The reason is required by the server (ADR-197) and lands on the GRN's
+    // History row for the delete.
+    mutationFn: async ({ id, reason }) => {
+      await apiFetch<null>(`/goods-receipt-notes/${id}`, {
+        method: 'DELETE',
+        json: { reason },
+      });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
       void qc.invalidateQueries({ queryKey: goodsReceiptNotesKeys.lists() });
       qc.removeQueries({ queryKey: goodsReceiptNotesKeys.detail(id) });
       invalidatePoCaches(qc);

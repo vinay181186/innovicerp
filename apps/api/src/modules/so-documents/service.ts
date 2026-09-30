@@ -5,6 +5,7 @@
 // metadata here. QC docs keep their own qc_documents table and are surfaced
 // read-only via UNION (source='qc', no delete here).
 
+import { ActivityAction } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreateSoDocumentInput,
@@ -13,10 +14,12 @@ import type {
   SoDocumentLine,
   SoDocumentOverviewResponse,
 } from '@innovic/shared';
-import { fileRegistry } from '../../db/schema';
+import { fileRegistry, salesOrders } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 
 // ── Which permission gates this screen ─────────────────────────────────────
 //
@@ -305,7 +308,12 @@ export async function createSoDocument(
 
 /** Soft-delete a registered file (file_registry only; QC docs are managed in
  *  the QC module and cannot be deleted here). */
-export async function deleteSoDocument(id: string, user: AuthContext): Promise<{ id: string }> {
+export async function deleteSoDocument(
+  id: string,
+  user: AuthContext,
+  /** ADR-197 — why the file goes (the route requires it). */
+  reason?: string | null,
+): Promise<{ id: string }> {
   // Delete is not one of the four tier actions, so it is expressed as the pair
   // only L5 Department Admin and above hold: edit AND approve. L3 Editor has
   // edit but not approve; L4 Approver has approve but not edit. Exactly how
@@ -315,9 +323,10 @@ export async function deleteSoDocument(id: string, user: AuthContext): Promise<{
   await requireFormAccess(user, SO_DOCS_FORM, 'approve');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    const stamp = softDeleteStamp(user);
     const updated = await tx
       .update(fileRegistry)
-      .set({ deletedAt: new Date(), updatedBy: user.id, updatedAt: new Date() })
+      .set({ ...stamp, updatedBy: user.id, updatedAt: stamp.deletedAt })
       .where(
         and(
           eq(fileRegistry.id, id),
@@ -325,8 +334,39 @@ export async function deleteSoDocument(id: string, user: AuthContext): Promise<{
           isNull(fileRegistry.deletedAt),
         ),
       )
-      .returning({ id: fileRegistry.id });
-    if (updated.length === 0) throw new NotFoundError(`Document ${id} not found`);
+      .returning({
+        id: fileRegistry.id,
+        salesOrderId: fileRegistry.salesOrderId,
+        soCodeText: fileRegistry.soCodeText,
+        soLineNo: fileRegistry.soLineNo,
+        fileName: fileRegistry.fileName,
+      });
+    const doc = updated[0];
+    if (!doc) throw new NotFoundError(`Document ${id} not found`);
+    // ADR-197 — a file removed from an SO is an action on the SO: it lands on
+    // the SO's History, naming the file. A file on no SO has no document page.
+    if (doc.salesOrderId) {
+      const so = await tx
+        .select({ code: salesOrders.code })
+        .from(salesOrders)
+        .where(eq(salesOrders.id, doc.salesOrderId))
+        .limit(1);
+      const soCode = so[0]?.code ?? doc.soCodeText ?? null;
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Delete,
+          entity: 'SalesOrder',
+          entityId: doc.salesOrderId,
+          refId: soCode,
+          lineRef: doc.soLineNo != null ? `Line ${doc.soLineNo}` : null,
+          reason: reason?.trim() || null,
+          detail: `Document "${doc.fileName}" deleted`,
+        },
+        companyId,
+        user,
+      );
+    }
     return { id };
   });
 }

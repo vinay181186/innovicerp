@@ -467,13 +467,15 @@ describe('op-entry service', () => {
       .from(activityLog)
       .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, testJcCode)));
     const actions = auditRows.map((r) => r.action).sort();
-    expect(actions).toEqual(['OP_COMPLETE', 'OP_START', 'OP_STOP']);
+    // ADR-197: START, a bare stop (LOG qty 0) and the production LOG.
+    expect(actions).toEqual(['LOG', 'LOG', 'START']);
     for (const r of auditRows) {
-      expect(r.entity).toBe('Op');
+      expect(r.entity).toBe('JobCard');
+      expect(r.operatorName).toBe('Audit Op');
       expect(r.userId).toBe(admin.id);
       expect(r.userName).toBe(admin.email);
       expect(r.detail).toContain(testJcCode);
-      expect(r.detail).toContain('Op #990');
+      expect(r.detail).toContain('Op 990');
     }
 
     // Cleanup so subsequent tests don't see the residue.
@@ -594,14 +596,14 @@ describe('op-entry submitQcLog (T-040d)', () => {
     const audit = await db
       .select()
       .from(activityLog)
-      .where(and(eq(activityLog.action, 'OP_QC'), eq(activityLog.companyId, admin.companyId!)));
+      .where(and(eq(activityLog.action, 'QC'), eq(activityLog.companyId, admin.companyId!)));
     const myRow = audit.find((r) => r.refId === testJcCode);
     expect(myRow).toBeDefined();
-    expect(myRow?.entity).toBe('Op');
-    expect(myRow?.detail).toContain('Op #20');
+    expect(myRow?.entity).toBe('JobCard');
+    expect(myRow?.detail).toContain('Op 20');
     expect(myRow?.detail).toContain('8 accepted');
     expect(myRow?.detail).toContain('2 rejected');
-    expect(myRow?.detail).toContain('QC-Insp');
+    expect(myRow?.operatorName).toBe('QC-Insp');
 
     // T-040e: rejectQty=2 should have auto-created an NC. Verify shape.
     const ncs = await db

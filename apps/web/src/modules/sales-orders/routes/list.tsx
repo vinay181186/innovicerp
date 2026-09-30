@@ -31,6 +31,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ConfirmDialog } from '@/ui/feedback';
+import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
 import { ListFooter, ListHeader, PageState, ViewToggle } from '@/ui/layout';
 import { useSoStatus } from '../../so-status/api';
 import {
@@ -232,7 +233,12 @@ function SalesOrdersListPage(): React.JSX.Element {
   // Delete asks through the ONE confirm dialog (never window.confirm); a failed
   // delete is shown inside the dialog and the question stays open.
   const [deletingSo, setDeletingSo] = useState<SalesOrderListItem | null>(null);
-  const onDeleteSo = (so: SalesOrderListItem): void => setDeletingSo(so);
+  // ADR-197 — why it goes to Trash (required; lands on the SO History).
+  const [deleteReason, setDeleteReason] = useState('');
+  const onDeleteSo = (so: SalesOrderListItem): void => {
+    setDeleteReason('');
+    setDeletingSo(so);
+  };
 
   // Export status banner — an export that finds nothing, or fails, says so here.
   // (There was a bulk multi-SO Excel import on this screen; removed on the
@@ -675,13 +681,20 @@ function SalesOrdersListPage(): React.JSX.Element {
       <ConfirmDialog
         open={deletingSo !== null}
         title={`Move SO ${deletingSo?.code ?? ''} to Trash?`}
-        message="You can restore it from Trash."
+        message={
+          <>
+            You can restore it from Trash.
+            <ReasonField value={deleteReason} onChange={setDeleteReason} />
+          </>
+        }
         confirmLabel="Move to Trash"
         pendingLabel="Moving to Trash…"
         onCancel={() => setDeletingSo(null)}
         onConfirm={async () => {
           if (!deletingSo) return;
-          await softDelete.mutateAsync(deletingSo.id);
+          const reason = deleteReason.trim();
+          if (!reason) throw new Error(REASON_REQUIRED_MESSAGE);
+          await softDelete.mutateAsync({ id: deletingSo.id, reason });
           setDeletingSo(null);
         }}
       />
@@ -731,6 +744,7 @@ function EquipmentSoExpand({
 }): React.JSX.Element {
   const softDelete = useSoftDeleteSalesOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
   const line = so.lines[0];
   if (!line)
     return (
@@ -814,7 +828,10 @@ function EquipmentSoExpand({
             <button
               type="button"
               className="btn btn-danger btn-sm"
-              onClick={() => setConfirmDelete(true)}
+              onClick={() => {
+                setDeleteReason('');
+                setConfirmDelete(true);
+              }}
             >
               Delete
             </button>
@@ -825,12 +842,19 @@ function EquipmentSoExpand({
       <ConfirmDialog
         open={confirmDelete}
         title={`Move SO ${so.code} to Trash?`}
-        message="You can restore it from Trash."
+        message={
+          <>
+            You can restore it from Trash.
+            <ReasonField value={deleteReason} onChange={setDeleteReason} />
+          </>
+        }
         confirmLabel="Move to Trash"
         pendingLabel="Moving to Trash…"
         onCancel={() => setConfirmDelete(false)}
         onConfirm={async () => {
-          await softDelete.mutateAsync(so.id);
+          const reason = deleteReason.trim();
+          if (!reason) throw new Error(REASON_REQUIRED_MESSAGE);
+          await softDelete.mutateAsync({ id: so.id, reason });
           setConfirmDelete(false);
         }}
       />
@@ -940,7 +964,11 @@ function ComponentSoExpand({
   // Line delete asks through ConfirmDialog, not window.confirm. Same update
   // call as before: re-send the surviving lines.
   const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
-  const onDeleteLine = (lineId: string): void => setDeletingLineId(lineId);
+  const [lineDeleteReason, setLineDeleteReason] = useState('');
+  const onDeleteLine = (lineId: string): void => {
+    setLineDeleteReason('');
+    setDeletingLineId(lineId);
+  };
   const deletingLine = so.lines.find((l) => l.id === deletingLineId) ?? null;
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
@@ -1134,14 +1162,21 @@ function ComponentSoExpand({
       <ConfirmDialog
         open={deletingLine !== null}
         title={`Delete line ${deletingLine?.lineNo ?? ''} of SO ${so.code}?`}
-        message="The line is removed from this Sales Order."
+        message={
+          <>
+            The line is removed from this Sales Order.
+            <ReasonField value={lineDeleteReason} onChange={setLineDeleteReason} />
+          </>
+        }
         confirmLabel="Delete"
         pendingLabel="Deleting…"
         onCancel={() => setDeletingLineId(null)}
         onConfirm={async () => {
           if (!deletingLineId) return;
+          const reason = lineDeleteReason.trim();
+          if (!reason) throw new Error(REASON_REQUIRED_MESSAGE);
           const surviving = so.lines.filter((l) => l.id !== deletingLineId).map(lineToInput);
-          await update.mutateAsync({ header: {}, lines: surviving });
+          await update.mutateAsync({ header: {}, lines: surviving, reason });
           setDeletingLineId(null);
         }}
       />

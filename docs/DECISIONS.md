@@ -10546,3 +10546,70 @@ which the remainder is neither delivered nor billed (Delivery Note / Sales Invoi
   lowers Dispatched and the extra qty simply stays undelivered (it is not re-opened); the SO header only
   flips to `dispatched` when every line is fully shipped (a closed-short line never is — the fulfilment
   badge says Completed / Closed instead).
+
+## ADR-197: Accountability — per-document history, before → after, deleted_by
+
+**Date:** 2026-09-29
+**Status:** Accepted — FOUNDATION only (step 1 of "Requirement: Production Flow Clarity & User
+Accountability", section 3). Code on the `layout-fix` branch; migration
+`0178_activity_log_accountability.sql` must be run on TEST, then on PROD before test → main.
+Services adopt it module by module (steps 2+), following `docs/AUDIT-TRAIL.md`.
+
+### Context
+The requirement (§2.5) found: no document has its own History; edits keep no before → after; no
+`deleted_by` anywhere; PR reject / OSP DC issue + receive / NC disposition record no user; ~200 log
+call sites use inconsistent action names (`EDIT` vs `UPDATE`, `SHORT_CLOSE` vs `BALANCE_CLOSE`) and
+entity names (`JobCard` vs `Job Card` vs `JcOp`); the log shows the e-mail, not the person; the
+document number on the global Activity Log could not always open the document (codes only, no id).
+
+### Decision
+1. **One log, richer rows — no second audit table.** `activity_log` stays the single append-only
+   trail. 0178 adds `entity_id` (the DOCUMENT's uuid), `line_ref`, `op_ref`, `qty`, `changes jsonb`
+   (`[{field,label,before,after}]`), `reason`, `operator_name`, `user_full_name`, plus the index
+   `(company_id, entity, entity_id, ts DESC)`. A document's History tab is a filtered read of it.
+2. **`entity` + `entity_id` always name the document header.** A line or an op is located by
+   `line_ref` / `op_ref` on the same row — so a Job Card's history includes its op starts / logs / QC
+   without a join, and "the history of IN-PO-00012" is one indexed query.
+3. **One vocabulary** in `packages/shared/src/enums/activity.ts`: `ActivityAction` (CREATE, EDIT,
+   SUBMIT, APPROVE, REJECT, WITHDRAW, REQUEST, START, LOG, QC, SEND, RECEIVE, ISSUE, RETURN, COMPLETE,
+   CLOSE, CLOSE_SHORT, REOPEN, REVERSE, CANCEL, DELETE, RESTORE, DISPOSE, SPLIT, PAYMENT, POST) with
+   labels, and `ACTIVITY_ENTITIES` (CamelCase document types) with the legacy spellings as aliases.
+   Stored rows are never rewritten: `canonicalActivityAction` / `canonicalActivityEntity` map legacy
+   names for display, badge colour and history matching. Incoming QC logs `QC` on the GRN, never
+   `EDIT`. REJECT / REVERSE / CLOSE_SHORT / CANCEL / DELETE require a reason (`activityReasonSchema`
+   in the service's input).
+4. **The writer is backward compatible.** `emitActivityLog(tx, input, companyId, user)` keeps its
+   signature; the new fields are optional, so all existing callers compile and behave as before. It
+   now always snapshots `user_full_name`.
+5. **Helpers, not conventions:** `diffFields(before, after, fields)` builds the before → after list
+   (only changed fields; numerics compared numerically); `softDeleteStamp(user)` / `restoreStamp()`
+   set / clear `deleted_at` + `deleted_by` together (apps/api/src/lib/audit-trail.ts).
+6. **`deleted_by` on every table with `deleted_at`** (96), added by one idempotent DO block — not
+   a per-module decision. Plus `purchase_requests.rejected_by/at/rejection_reason` (as on POs),
+   `delivery_challans.issued_by/at, received_by/at, cancelled_by/at`, and
+   `nc_register.disposition_by/at` (the live user behind the existing `disposition_by_text` snapshot —
+   named to pair with it per NAMING's `xxx ?? xxxText` rule, not `disposed_by`).
+7. **Read side:** `GET /activity-log/history?entity=&entityId=&refId=` (company-scoped; gated by the
+   document's own Access Control form `view`, else the Tasks & Alerts department that holds the
+   Activity Log). Legacy rows match by code, so pages pass both id and code. Web:
+   `<DocumentHistory>` + `useDocumentHistory` + `useHistoryTab` (a Related Documents extra tab). The
+   global Activity Log shows the full name and opens the document by id when the row has one.
+
+### Alternatives Considered
+- A separate `document_history` table written by triggers — rejected: triggers see columns, not
+  intent (no reason, no operator, no "Close short" vs "Edit"), and the app already writes one row per
+  action inside the same transaction.
+- Rewriting legacy action / entity names in place — rejected: the log is append-only (ADR-019);
+  display-time mapping gives the same screen without touching history.
+- Making `action` a Postgres enum — rejected: ~80 legacy strings would need to be members forever.
+- Enforcing "reason required" inside `emitActivityLog` — rejected: it would throw inside old callers
+  that log DELETE without one; the reason is enforced at the service's Zod input instead.
+
+### Consequences
+- Positive: every document can show who / what / qty / before → after / when / why from one query;
+  new modules adopt it by passing four more fields.
+- Negative: legacy rows (before 0178) show only their `detail` line — no before → after — and are
+  found by document code only.
+- Risks: a service that forgets `entityId` leaves its rows findable only by code; the guide
+  (docs/AUDIT-TRAIL.md) and code review are the check. `deleted_by` is NULL on rows deleted before
+  0178 and on any delete path not yet moved to `softDeleteStamp`.

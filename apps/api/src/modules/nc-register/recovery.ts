@@ -16,7 +16,7 @@
 // hooks; the manual Close button goes through the same gate.
 
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { SHIFTS, opSrNo } from '@innovic/shared';
+import { ActivityAction, SHIFTS, opSrNo } from '@innovic/shared';
 import { jcOps, jobCards, machines, ncRegister, opLog, purchaseOrderLines } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
@@ -235,6 +235,20 @@ export async function createRecoveryJobCard(
   if (!child)
     throw new ValidationError(`Could not create the ${label.toLowerCase()} JC. Try again.`);
   await seedRecoveryOps(tx, nc, parent.id, child.id, user);
+  // ADR-197 — the child card's own CREATE row (its History starts here).
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Create,
+      entity: 'JobCard',
+      entityId: child.id,
+      refId: child.code,
+      qty,
+      detail: `${child.code} — ${label} JC raised from ${nc.code} (${parent.code}${opPart}), ${qty} pcs`,
+    },
+    nc.companyId,
+    user,
+  );
   return child;
 }
 
@@ -508,17 +522,21 @@ export async function climbRecoveryToAncestors(
     const a = Math.max(0, Math.min(accepted, open));
     const f = Math.max(0, Math.min(failed, open - a));
     if (a + f > 0) {
-      await creditRecovery(tx, nc, a, f, user);
+      const credited = await creditRecovery(tx, nc, a, f, user);
       if (a > 0) {
         await reinjectIntoOriginOp(tx, nc, a, viaCode, logDate, shift, user);
       }
       await emitActivityLog(
         tx,
         {
-          action: 'NC_RECOVERY_QC',
+          action: ActivityAction.QC,
           entity: 'NonConformance',
-          detail: `${nc.code} — recovery from ${viaCode}: ${a} Accepted${f ? `, ${f} Rejected` : ''}`,
+          entityId: nc.id,
           refId: nc.code,
+          qty: a,
+          detail:
+            `${nc.code} — recovery from ${viaCode}: ${a} Accepted${f ? `, ${f} Rejected` : ''}` +
+            (credited.closed ? '; Closed' : ''),
         },
         companyId,
         user,
@@ -622,13 +640,17 @@ export async function onRecoveryJobCardQc(
     );
   }
 
+  // ADR-197: the inspection is on the recovery JOB CARD (the NC(s) above it
+  // got their own QC rows in the climb).
   await emitActivityLog(
     tx,
     {
-      action: 'NC_RECOVERY_QC',
-      entity: 'NonConformance',
-      detail: `${jc.code} Final Inspection: ${accepted} Accepted, ${rejected} Rejected; Accepted returned to the original JC.`,
+      action: ActivityAction.QC,
+      entity: 'JobCard',
+      entityId: args.jobCardId,
       refId: jc.code,
+      qty: accepted,
+      detail: `${jc.code} Final Inspection: ${accepted} Accepted, ${rejected} Rejected; Accepted returned to the original JC.`,
     },
     companyId,
     user,
@@ -682,10 +704,12 @@ export async function onNcChallanReceived(
   await emitActivityLog(
     tx,
     {
-      action: 'NC_RTV_RECEIVED',
+      action: ActivityAction.Receive,
       entity: 'NonConformance',
-      detail: `${nc.code} — received ${received} pcs from vendor (${total} of ${sent} sent)`,
+      entityId: nc.id,
       refId: nc.code,
+      qty: received,
+      detail: `${nc.code} — received ${received} pcs from vendor (${total} of ${sent} sent)`,
     },
     companyId,
     user,
@@ -760,7 +784,8 @@ export async function onNcChallanReceived(
  */
 export async function onNcChallanCancelled(
   tx: DbTransaction,
-  args: { ncId: string; deliveryChallanId: string },
+  /** `reason` — the challan's cancel reason, copied onto the NC's CANCEL row. */
+  args: { ncId: string; deliveryChallanId: string; reason?: string | null | undefined },
   companyId: string,
   user: AuthContext,
 ): Promise<void> {
@@ -790,10 +815,13 @@ export async function onNcChallanCancelled(
   await emitActivityLog(
     tx,
     {
-      action: 'NC_RTV_CHALLAN_CANCELLED',
+      action: ActivityAction.Cancel,
       entity: 'NonConformance',
-      detail: `${nc.code} — return-to-vendor challan cancelled (${sent} pcs no longer out); back to disposed, challan can be re-issued`,
+      entityId: nc.id,
       refId: nc.code,
+      qty: sent,
+      reason: args.reason ?? null,
+      detail: `${nc.code} — return-to-vendor challan cancelled (${sent} pcs no longer out); back to disposed, challan can be re-issued`,
     },
     companyId,
     user,
@@ -981,13 +1009,15 @@ export async function onNcReplacementQc(
   await emitActivityLog(
     tx,
     {
-      action: 'NC_RECOVERY_QC',
+      action: ActivityAction.QC,
       entity: 'NonConformance',
+      entityId: nc.id,
+      refId: nc.code,
+      qty: accepted,
       detail:
         `${nc.code} — ${viaText} Incoming QC: accepted ${accepted}, rejected ${rejected}; ` +
         `cleared ${ledger.cleared}/${Math.round(n(nc.rejectedQty))}, failed ${ledger.failed}` +
         (ledger.closed ? '; Closed' : ''),
-      refId: nc.code,
     },
     companyId,
     user,

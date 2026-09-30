@@ -48,6 +48,7 @@ import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateVendors, useSoftDeleteVendor, useVendorsList } from '../api';
+import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
 import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-export';
 
 // No pagination — Vendors is a master list, so it mirrors the SO/WO list: one
@@ -139,6 +140,8 @@ function VendorsListPage(): React.JSX.Element {
   );
 
   const softDelete = useSoftDeleteVendor();
+  // ADR-197: Delete asks for a reason — the row's Delete opens this dialog.
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; code: string } | null>(null);
 
   // Excel import — the WHOLE sheet goes in one request, and the list reloads
   // once at the end.
@@ -360,22 +363,12 @@ function VendorsListPage(): React.JSX.Element {
                 // ROUTE, so it stays a real link — ctrl/middle-click work.
                 editTo={canEdit ? `/vendors/${v.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
-                // The PROMISE is handed back, not swallowed. The confirm
-                // dialog then owns the wait: both its buttons go dead, "Moving
-                // to Trash…" shows on the button, and it closes only once the
-                // vendor really is in the Trash. A failure stays on screen as
-                // an error in the dialog — which is what the old `confirm()`
-                // could not do at all.
-                onDelete={canDelete ? (): Promise<void> => softDelete.mutateAsync(v.id) : undefined}
+                // Delete opens the Trash dialog below, which asks for a reason
+                // (ADR-197) and owns the wait until the record is in the Trash.
+                onDelete={canDelete ? () => setDeleteTarget({ id: v.id, code: v.code }) : undefined}
                 // And every OTHER row's Delete greys out while one is in
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
-                deleteConfirm={{
-                  title: `Move Vendor ${v.code} to Trash?`,
-                  message: 'You can restore it from Trash.',
-                  confirmLabel: 'Move to Trash',
-                  pendingLabel: 'Moving to Trash…',
-                }}
               />
             )}
           />
@@ -423,6 +416,16 @@ function VendorsListPage(): React.JSX.Element {
           ) : null
         }
       />
+      {deleteTarget ? (
+        <TrashReasonDialog
+          title={`Move Vendor ${deleteTarget.code} to Trash?`}
+          onConfirm={async (reason) => {
+            await softDelete.mutateAsync({ id: deleteTarget.id, reason });
+            setDeleteTarget(null);
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

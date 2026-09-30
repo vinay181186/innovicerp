@@ -2,6 +2,9 @@
 // jc_ops + job_cards + items + machines + users for human-readable columns.
 // Mirror of legacy renderOpLog (HTML L13194).
 //
+// Corrections (ADR-197, 0179): POST /op-entry/op-log/:id/reverse adds an
+// opposite entry; this list shows both, linked through the reversal fields.
+//
 // DELTA from legacy: NO delete action ported. Legacy `delLog` (L13224) hard-
 // deleted log rows which violates CLAUDE.md Rule #8 (no hard deletes from
 // app code) AND breaks qty-done recalc downstream (every other module's
@@ -116,6 +119,19 @@ export async function listOpLog(
           createdAt: opLog.createdAt,
           createdBy: opLog.createdBy,
           createdByName: users.fullName,
+          // 0179 (ADR-197) — a reversal names the entry it cancels; an original
+          // that was reversed names its reversal. One reversal per entry.
+          reversalOfId: opLog.reversalOfId,
+          reversalReason: opLog.reversalReason,
+          reversalOfLogNo: sql<string | null>`(
+            SELECT o2.log_no FROM public.op_log o2 WHERE o2.id = ${opLog.reversalOfId}
+          )`,
+          reversedById: sql<string | null>`(
+            SELECT r.id FROM public.op_log r WHERE r.reversal_of_id = ${opLog.id} LIMIT 1
+          )`,
+          reversedByLogNo: sql<string | null>`(
+            SELECT r.log_no FROM public.op_log r WHERE r.reversal_of_id = ${opLog.id} LIMIT 1
+          )`,
         })
         .from(opLog)
         .innerJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
@@ -165,6 +181,11 @@ export async function listOpLog(
       createdAt: r.createdAt.toISOString(),
       createdBy: r.createdBy,
       createdByName: r.createdByName,
+      reversalOfId: r.reversalOfId ?? null,
+      reversalOfLogNo: r.reversalOfLogNo ?? null,
+      reversalReason: r.reversalReason ?? null,
+      reversedById: r.reversedById ?? null,
+      reversedByLogNo: r.reversedByLogNo ?? null,
     }));
 
     return {

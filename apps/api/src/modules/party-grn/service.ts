@@ -23,6 +23,8 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { ActivityAction } from '@innovic/shared';
+import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
@@ -424,6 +426,15 @@ export async function createPartyGrn(
       if (r.jwLineId != null) acceptedByLineId.set(String(r.jwLineId), Number(r.accepted));
     }
 
+    // ADR-197: the compulsory incoming QC of each line, logged after the header.
+    const qcLogs: Array<{
+      lineNo: number;
+      accepted: number;
+      rejected: number;
+      detail: string;
+      pmCode: string;
+    }> = [];
+
     // 5) Insert lines + update per-material totals
     for (const [idx, ln] of input.lines.entries()) {
       const pm = pmById.get(ln.partyMaterialId);
@@ -516,6 +527,16 @@ export async function createPartyGrn(
         createdBy: userId,
         updatedBy: userId,
       });
+      qcLogs.push({
+        lineNo: idx + 1,
+        accepted: ln.acceptedQty,
+        rejected: ln.rejectedQty,
+        pmCode: pm.code,
+        detail:
+          `${pm.code} (${jw.code} Ln ${lnKey}) — received ${ln.receivedQty}, ` +
+          `${ln.acceptedQty} accepted, ${ln.rejectedQty} rejected` +
+          (ln.rejectedQty > 0 && ln.rejectReason ? ` (${ln.rejectReason})` : ''),
+      });
 
       // R2 + R3 (ADR-194): only the ACCEPTED qty becomes party stock. The ledger
       // writer owns stock_qty (the running balance); this service bumps the
@@ -547,17 +568,37 @@ export async function createPartyGrn(
 
     // ADR-189 — a customer-material receipt is on the activity log like every
     // other receipt (cancel already was).
+    const totalReceived = input.lines.reduce((a, l) => a + l.receivedQty, 0);
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
-        entity: 'Party GRN',
-        detail: `${header.code} · ${input.lines.length} line(s), ${input.lines.reduce((a, l) => a + l.receivedQty, 0)} pcs against ${header.jwCodeText ?? ''}`,
+        action: ActivityAction.Create,
+        entity: 'PartyGrn',
+        entityId: header.id,
         refId: header.code,
+        qty: totalReceived,
+        detail: `${header.code} · ${input.lines.length} line(s), ${totalReceived} pcs against ${header.jwCodeText ?? ''}`,
       },
       companyId,
       user,
     );
+    // Compulsory party-GRN QC (ADR-194 R2): one QC row per line, qty = accepted.
+    for (const q of qcLogs) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.QC,
+          entity: 'PartyGrn',
+          entityId: header.id,
+          refId: header.code,
+          lineRef: `Line ${q.lineNo}`,
+          qty: q.accepted,
+          detail: q.detail,
+        },
+        companyId,
+        user,
+      );
+    }
 
     return rowToPartyGrn(header);
   });
@@ -680,15 +721,16 @@ export async function cancelPartyGrn(
         .where(eq(partyMaterials.id, materialId));
     }
 
+    const stamp = softDeleteStamp(user);
     await tx
       .update(partyGrnLines)
-      .set({ deletedAt: now, updatedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedAt: now, updatedBy: user.id })
       .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)));
 
     await tx
       .update(partyGrn)
       .set({
-        deletedAt: now,
+        ...stamp,
         remarks: head.remarks
           ? `${head.remarks}\n[Cancelled] ${trimmed}`
           : `[Cancelled] ${trimmed}`,
@@ -700,10 +742,13 @@ export async function cancelPartyGrn(
     await emitActivityLog(
       tx,
       {
-        action: 'CANCEL',
+        action: ActivityAction.Cancel,
         entity: 'PartyGrn',
-        detail: `${head.code} cancelled: ${trimmed} — reversed ${reversedQty} from party stock`,
+        entityId: head.id,
         refId: head.code,
+        qty: reversedQty,
+        reason: trimmed,
+        detail: `${head.code} cancelled — reversed ${reversedQty} from party stock`,
       },
       companyId,
       user,

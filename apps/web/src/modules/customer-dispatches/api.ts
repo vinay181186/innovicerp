@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const dispatchKeys = {
   all: ['customer-dispatches'] as const,
@@ -77,17 +78,23 @@ export function useCreateDispatch() {
       apiFetch<CustomerDispatchDetail>('/customer-dispatches', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: dispatchKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
 
+/** Cancel reverses the dispatch; the reason is required (ADR-197). */
 export function useCancelDispatch() {
   const qc = useQueryClient();
-  return useMutation<CustomerDispatchDetail, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<CustomerDispatchDetail>(`/customer-dispatches/${id}/cancel`, { method: 'POST' }),
+  return useMutation<CustomerDispatchDetail, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<CustomerDispatchDetail>(`/customer-dispatches/${id}/cancel`, {
+        method: 'POST',
+        json: { reason },
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: dispatchKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }

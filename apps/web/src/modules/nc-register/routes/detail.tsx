@@ -17,10 +17,12 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { Panel } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -42,6 +44,7 @@ import { NcLinksBlock } from '../components/nc-links-block';
 import { Note } from '../components/nc-note';
 import { NcStatusBadge } from '../components/nc-status-badge';
 import { ncOpenQty } from '../nc-qty';
+import { NcTimelinePanel } from '@/modules/flow-views/components/nc-timeline-panel';
 
 export const ncRegisterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -66,6 +69,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const createDc = useCreateNcDc(id);
   const createCapa = useCreateCapa();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
   const [showDispose, setShowDispose] = useState(false);
   const [disposeResult, setDisposeResult] = useState<DisposeNcResult | null>(null);
   const [reworkDoneQty, setReworkDoneQty] = useState<number | ''>('');
@@ -205,7 +209,10 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
   // shows a rejection in the dialog instead of closing it.
   const onDelete = async (): Promise<void> => {
-    await softDelete.mutateAsync(detail.id);
+    // ADR-197 — a delete says why; the dialog shows this error in place.
+    const reason = deleteReason.trim();
+    if (!reason) throw new Error('Reason is required.');
+    await softDelete.mutateAsync({ id: detail.id, reason });
     setConfirmDelete(false);
     await navigate({ to: '/nc-register', replace: true });
   };
@@ -375,7 +382,10 @@ function NcRegisterDetailPage(): React.JSX.Element {
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                onClick={() => setConfirmDelete(true)}
+                onClick={() => {
+                  setDeleteReason('');
+                  setConfirmDelete(true);
+                }}
               >
                 <Trash2 size={13} /> Delete
               </button>
@@ -485,12 +495,37 @@ function NcRegisterDetailPage(): React.JSX.Element {
         </Note>
       ) : null}
 
+      {/* Step-by-step path of this NC with qty and user (req. 3.5, read-only). */}
+      <NcTimelinePanel ncId={detail.id} />
+
       <RelatedDocsPanel module="nc-register" id={detail.id} />
+
+      {/* ADR-197 — every action on this NC: who, what, qty, before → after, why. */}
+      <Panel title="History" bodyPadding="none" style={{ marginTop: 10 }}>
+        <DocumentHistory entity="NonConformance" entityId={detail.id} refId={detail.code} />
+      </Panel>
 
       {confirmDelete ? (
         <ConfirmDialog
           title={`Move NC ${detail.code} to Trash?`}
-          message="You can restore it from Trash."
+          message={
+            <>
+              You can restore it from Trash.
+              <span className="form-grp" style={{ display: 'block', marginTop: 10 }}>
+                <label className="form-label" htmlFor="nc-delete-reason">
+                  Reason <span className="req">★</span>
+                </label>
+                <textarea
+                  id="nc-delete-reason"
+                  className="innovic-input"
+                  rows={3}
+                  maxLength={500}
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                />
+              </span>
+            </>
+          }
           confirmLabel="Move to Trash"
           pendingLabel="Moving to Trash…"
           onConfirm={onDelete}

@@ -631,7 +631,7 @@ describe('op-entry sales-cascade (T-033)', () => {
     ).resolves.toBeDefined();
   });
 
-  it('SO single-line: cascade emits JC_COMPLETE + SO_LINE_CLOSED + SO_CLOSED audit rows', async () => {
+  it('SO single-line: cascade emits COMPLETE on the JC + CLOSE (line) + CLOSE (header) on the SO', async () => {
     const f = await makeSoCascadeFixture({
       soCode: `${TEST_PREFIX}SO-AUD`,
       jcCodePrefix: `${TEST_PREFIX}JC-AUD`,
@@ -655,8 +655,8 @@ describe('op-entry sales-cascade (T-033)', () => {
       .select()
       .from(activityLog)
       .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, jcCode)));
-    expect(jcAudit.map((r) => r.action)).toContain('JC_COMPLETE');
-    const jcRow = jcAudit.find((r) => r.action === 'JC_COMPLETE')!;
+    expect(jcAudit.map((r) => r.action)).toContain('COMPLETE');
+    const jcRow = jcAudit.find((r) => r.action === 'COMPLETE')!;
     expect(jcRow.entity).toBe('JobCard');
 
     const soAudit = await db
@@ -669,16 +669,16 @@ describe('op-entry sales-cascade (T-033)', () => {
         ),
       );
     const soActions = soAudit.map((r) => r.action).sort();
-    expect(soActions).toEqual(['SO_CLOSED', 'SO_LINE_CLOSED']);
+    expect(soActions).toEqual(['CLOSE', 'CLOSE']);
     for (const r of soAudit) {
       expect(r.entity).toBe('SalesOrder');
       expect(r.userId).toBe(admin.id);
     }
-    const lineRow = soAudit.find((r) => r.action === 'SO_LINE_CLOSED')!;
+    const lineRow = soAudit.find((r) => r.lineRef !== null)!;
     expect(lineRow.detail).toContain(jcCode);
   });
 
-  it('JW path: cascade emits JC_COMPLETE + JW_LINE_CLOSED + JW_CLOSED audit rows', async () => {
+  it('JW path: cascade emits COMPLETE on the JC + CLOSE (line) + CLOSE (header) on the JWSO', async () => {
     // Build a single-line JW + JC fixture inline — the existing JW test
     // (line 541) doesn't return ids in a struct we can reuse.
     const jw = (
@@ -766,7 +766,7 @@ describe('op-entry sales-cascade (T-033)', () => {
       .select()
       .from(activityLog)
       .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, jcCode)));
-    expect(jcAudit.map((r) => r.action)).toContain('JC_COMPLETE');
+    expect(jcAudit.map((r) => r.action)).toContain('COMPLETE');
 
     const jwAudit = await db
       .select()
@@ -778,7 +778,7 @@ describe('op-entry sales-cascade (T-033)', () => {
         ),
       );
     const jwActions = jwAudit.map((r) => r.action).sort();
-    expect(jwActions).toEqual(['JW_CLOSED', 'JW_LINE_CLOSED']);
+    expect(jwActions).toEqual(['CLOSE', 'CLOSE']);
     for (const r of jwAudit) {
       expect(r.entity).toBe('JobWorkOrder');
     }
@@ -901,7 +901,7 @@ describe('op-entry sales-cascade (T-033)', () => {
         and(
           eq(activityLog.companyId, admin.companyId!),
           eq(activityLog.refId, jcCode),
-          eq(activityLog.action, 'JC_COMPLETE'),
+          eq(activityLog.action, 'COMPLETE'),
         ),
       );
     expect(jcRows.length).toBe(1);

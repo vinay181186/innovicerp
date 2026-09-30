@@ -1,3 +1,4 @@
+import { activityReasonSchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
@@ -9,6 +10,13 @@ import {
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
+
+// ADR-197 — why the card went to Trash. Optional at the door (an older screen
+// sends no body); the Route Card screens always ask for it.
+const deleteRouteCardBodySchema = z
+  .object({ reason: activityReasonSchema.optional() })
+  .nullish()
+  .transform((b) => b ?? {});
 
 export async function routeCardRoutes(app: FastifyInstance): Promise<void> {
   app.get('/route-cards', async (req) => {
@@ -46,6 +54,7 @@ export async function routeCardRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/route-cards/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.softDeleteRouteCard(id, req.user);
+    const { reason } = deleteRouteCardBodySchema.parse(req.body);
+    return service.softDeleteRouteCard(id, req.user, reason ?? null);
   });
 }

@@ -17,11 +17,13 @@ import { isProductionOrderStopped } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { useProductionOrder } from '../api';
 import { PoCloseForm } from '../components/po-close-form';
@@ -378,6 +380,12 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           </div>
         </div>
       ) : null}
+
+      {/* ADR-197 — every action on this order: create, partial closes,
+          reversals, short close — who, when, qty, reason. */}
+      <Panel title="History" bodyPadding="none" style={{ marginTop: 12 }}>
+        <DocumentHistory entity="ProductionOrder" entityId={data.id} refId={data.code} />
+      </Panel>
 
       {shortCloseOpen ? (
         <PoShortCloseModal

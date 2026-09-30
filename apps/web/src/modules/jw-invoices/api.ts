@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const jwInvoicesKeys = {
   all: ['jw-invoices'] as const,
@@ -56,6 +57,7 @@ export function useCreateJwInvoice() {
     mutationFn: (input) => apiFetch<JwInvoice>('/jw-invoices', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwInvoicesKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // Invoicing bumps job_work_order_lines.invoiced_qty → JW lists change.
       void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
     },
@@ -71,6 +73,7 @@ export function useCancelJwInvoice() {
       apiFetch<JwInvoice>(`/jw-invoices/${id}/cancel`, { method: 'POST', json: { reason } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwInvoicesKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
     },
   });

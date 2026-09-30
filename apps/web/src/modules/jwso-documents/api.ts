@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 import { signedUrl, uploadFile } from '@/lib/storage';
 
 export const jwsoDocumentsKeys = {
@@ -43,7 +44,11 @@ export function useCreateJwDocument() {
   return useMutation<JwDocumentFile, Error, CreateJwDocumentInput>({
     mutationFn: (input) =>
       apiFetch<JwDocumentFile>('/jwso-documents', { method: 'POST', json: input }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: jwsoDocumentsKeys.all }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: jwsoDocumentsKeys.all });
+      // ADR-197: an upload / removal is a row on the JWSO's History.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+    },
   });
 }
 
@@ -51,6 +56,10 @@ export function useDeleteJwDocument() {
   const qc = useQueryClient();
   return useMutation<{ id: string }, Error, string>({
     mutationFn: (id) => apiFetch<{ id: string }>(`/jwso-documents/${id}`, { method: 'DELETE' }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: jwsoDocumentsKeys.all }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: jwsoDocumentsKeys.all });
+      // ADR-197: an upload / removal is a row on the JWSO's History.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+    },
   });
 }

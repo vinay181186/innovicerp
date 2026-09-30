@@ -11,6 +11,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 import { ncRegisterKeys } from '@/modules/nc-register/api';
 
 export const deliveryChallansKeys = {
@@ -105,18 +106,24 @@ export function useCreateDeliveryChallan() {
       apiFetch<DeliveryChallanWithLines>('/delivery-challans', { method: 'POST', json: input }),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(deliveryChallansKeys.detail(created.id), created);
     },
   });
 }
 
+/** Cancel takes a reason (ADR-197) — written on the DC's CANCEL history row. */
 export function useCancelDeliveryChallan() {
   const qc = useQueryClient();
-  return useMutation<DeliveryChallanWithLines, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${id}/cancel`, { method: 'POST' }),
+  return useMutation<DeliveryChallanWithLines, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${id}/cancel`, {
+        method: 'POST',
+        json: { reason },
+      }),
     onSuccess: (cancelled) => {
       void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(deliveryChallansKeys.detail(cancelled.id), cancelled);
     },
   });
@@ -140,6 +147,7 @@ export function useReceiveDeliveryChallan() {
       }),
     onSuccess: (received) => {
       void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // Cache the DC shape only; `autoGrn` is a receive-time extra that the
       // detail page never reads and should not linger on its query.
       const { autoGrn: _drop, ...dc } = received;

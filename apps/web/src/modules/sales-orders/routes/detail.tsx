@@ -30,6 +30,8 @@ import { inrFormat } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
+import { SoLevelMatrixPanel } from '@/modules/flow-views/components/so-level-matrix-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
 import { SoDocumentsSection } from '@/modules/so-documents/components/so-documents-section';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, QtyStrip, type DataTableColumn } from '@/ui/data';
@@ -37,6 +39,7 @@ import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import { SoCloseModal, closableQty } from '../components/so-close-modal';
+import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
 import { SoFulfilmentBadge, SoLineShortClosedBadge } from '../components/so-fulfilment-badge';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
@@ -91,6 +94,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'so_create');
   const softDelete = useSoftDeleteSalesOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-197 — why the SO goes to Trash (required; lands on its History).
+  const [deleteReason, setDeleteReason] = useState('');
   const [assignOpen, setAssignOpen] = useState(false);
   // ADR-196 — the Close dialog: `line` null = the whole SO (Actions ▾ → Close).
   const [closeTarget, setCloseTarget] = useState<{ line: SalesOrderLine | null } | null>(null);
@@ -102,6 +107,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // the same hook, and the shared query key means TanStack Query serves it from
   // cache rather than firing a second request.
   const { data: drawingHistory } = useSoDrawingHistory(id);
+  // ADR-197 — who did what to this SO (before → after, reasons). Called before
+  // the early returns (hooks rule); the code joins once the detail is loaded.
+  const historyTab = useHistoryTab({ entity: 'SalesOrder', entityId: id, refId: detail?.code });
 
   if (isLoading) {
     return <PageState state="loading" message="Loading sales order…" />;
@@ -202,7 +210,10 @@ function SalesOrderDetailPage(): React.JSX.Element {
                   label: 'Delete',
                   danger: true,
                   hidden: !canDelete,
-                  onClick: () => setConfirmDelete(true),
+                  onClick: () => {
+                    setDeleteReason('');
+                    setConfirmDelete(true);
+                  },
                 },
               ]}
             />
@@ -300,6 +311,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </Panel>
       ) : null}
 
+      {/* Every SO line through Plan → Production Order → Job Card → OSP docs (req. 3.5, read-only). */}
+      <SoLevelMatrixPanel salesOrderId={detail.id} />
+
       <RelatedDocsTabs
         module="sales-orders"
         id={detail.id}
@@ -313,6 +327,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
             count: drawingHistory?.lines.length ?? 0,
             render: () => <SoDrawingHistory salesOrderId={detail.id} soCode={detail.code} />,
           },
+          historyTab,
         ]}
       />
 
@@ -352,14 +367,21 @@ function SalesOrderDetailPage(): React.JSX.Element {
       <ConfirmDialog
         open={confirmDelete}
         title={`Move SO ${detail.code} to Trash?`}
-        message={`${detail.code} and its ${detail.lines.length} line${
-          detail.lines.length === 1 ? '' : 's'
-        } will be removed from the Sales Order list. You can restore it from Trash.`}
+        message={
+          <>
+            {`${detail.code} and its ${detail.lines.length} line${
+              detail.lines.length === 1 ? '' : 's'
+            } will be removed from the Sales Order list. You can restore it from Trash.`}
+            <ReasonField value={deleteReason} onChange={setDeleteReason} />
+          </>
+        }
         confirmLabel="Move to Trash"
         pendingLabel="Moving to Trash…"
         onCancel={() => setConfirmDelete(false)}
         onConfirm={async () => {
-          await softDelete.mutateAsync(detail.id);
+          const reason = deleteReason.trim();
+          if (!reason) throw new Error(REASON_REQUIRED_MESSAGE);
+          await softDelete.mutateAsync({ id: detail.id, reason });
           void navigate({ to: '/sales-orders', replace: true });
         }}
       />

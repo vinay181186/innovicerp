@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
   createBomMasterInputSchema,
+  deleteBomMasterInputSchema,
   listBomMastersQuerySchema,
   updateBomMasterInputSchema,
 } from './schema';
@@ -60,6 +61,7 @@ export async function bomMasterRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/bom-masters/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.softDeleteBomMaster(id, req.user);
+    const { reason } = deleteBomMasterInputSchema.parse(req.body ?? {});
+    return service.softDeleteBomMaster(id, req.user, reason);
   });
 }

@@ -418,7 +418,7 @@ describe('purchase-requests service', () => {
       },
       admin,
     );
-    await service.softDeletePurchaseRequest(created.id, admin);
+    await service.softDeletePurchaseRequest(created.id, 'test delete', admin);
     await expect(service.getPurchaseRequest(created.id, admin)).rejects.toBeInstanceOf(
       NotFoundError,
     );
@@ -450,7 +450,7 @@ describe('purchase-requests service', () => {
     // We cannot easily set poId to a real PO here without T-036b. Skip the
     // ConflictError half-test for now — the guard branch is covered by code
     // review of the service. (Will be exercised once T-036b creates POs.)
-    await service.softDeletePurchaseRequest(created2.id, admin);
+    await service.softDeletePurchaseRequest(created2.id, 'test delete', admin);
   });
 
   it('throws AuthorizationError when user has no company assignment', async () => {
@@ -487,7 +487,7 @@ describe('purchase-requests service', () => {
       admin,
     );
     await service.updatePurchaseRequest(created.id, { qty: 6 }, admin);
-    await service.softDeletePurchaseRequest(created.id, admin);
+    await service.softDeletePurchaseRequest(created.id, 'test delete', admin);
 
     const auditRows = await db
       .select()

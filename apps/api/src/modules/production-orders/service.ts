@@ -55,6 +55,7 @@
 //     goods-receipt-notes/cascades.ts read job_cards.production_order_id and
 //     credit nothing for a PO-linked JC; the only credit is the close below.
 
+import { ActivityAction, PRODUCTION_ORDER_STATUS_LABEL } from '@innovic/shared';
 import { and, asc, count, desc, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -973,8 +974,10 @@ export async function createProductionOrder(
       await emitActivityLog(
         tx,
         {
-          action: 'CREATE',
-          entity: 'Production Order',
+          action: ActivityAction.Create,
+          entity: 'ProductionOrder',
+          entityId: po.id,
+          qty: input.orderQty,
           detail:
             `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ` +
             `${ops.length} ops, Order Qty ${input.orderQty} ` +
@@ -1128,6 +1131,13 @@ export async function closeProductionOrder(
 ): Promise<ProductionOrderDetail> {
   await requireFormAccess(user, 'prodorder_create', 'edit');
   const companyId = requireCompany(user);
+  // ADR-197 — Finish Short writes pieces off as lost (CLOSE_SHORT), a
+  // reason-required action. The shared input keeps `remarks` optional (frozen
+  // contract); the close form already makes it mandatory, the server now too.
+  const closeRemarks = input.remarks?.trim() || null;
+  if (input.finish && !closeRemarks) {
+    throw new ValidationError('Give a reason for Finish Short (Remarks).');
+  }
 
   return withUserContext(user, async (tx) => {
     // Lock the PO row so a double-clicked Close cannot credit stock twice: the
@@ -1315,14 +1325,31 @@ export async function closeProductionOrder(
     await emitActivityLog(
       tx,
       {
-        action: 'CLOSE',
-        entity: 'Production Order',
+        // ADR-197 — CLOSE (qty credited) / CLOSE_SHORT (Finish Short: qty
+        // credited now, the rest recorded as lost, reason required).
+        action: input.finish ? ActivityAction.CloseShort : ActivityAction.Close,
+        entity: 'ProductionOrder',
+        entityId: id,
+        qty: creditNow,
+        reason: input.finish ? closeRemarks : null,
+        changes: [
+          {
+            field: 'creditedQty',
+            label: 'Credited Qty',
+            before: alreadyCredited,
+            after: newCredited,
+          },
+          ...(input.finish
+            ? [{ field: 'lostQty', label: 'Lost Qty', before: null, after: lostQty ?? 0 }]
+            : []),
+        ],
         detail: input.finish
           ? `${current.code} Finish Short — JC ${current.jcCodeText} closed ${creditNow} (${newCredited} of ${current.orderQty}), ${lostQty ?? 0} lost` +
             (planShift && planShift.pendingAfter !== planShift.pendingBefore
               ? `; returned ${planShift.pendingAfter - planShift.pendingBefore} to plan ${planShift.planCode} (Pending ${planShift.pendingBefore} → ${planShift.pendingAfter})`
               : '')
-          : `${current.code} ${finalStatus === 'closed' ? 'Closed' : 'Partly Closed'} — JC ${current.jcCodeText} closed ${creditNow} (${newCredited} of ${current.orderQty})`,
+          : `${current.code} ${finalStatus === 'closed' ? 'Closed' : 'Partly Closed'} — JC ${current.jcCodeText} closed ${creditNow} (${newCredited} of ${current.orderQty})` +
+            (closeRemarks ? `. Remarks: ${closeRemarks}` : ''),
         refId: current.code,
       },
       companyId,
@@ -1358,6 +1385,12 @@ export async function reverseProductionOrderClose(
 ): Promise<ProductionOrderDetail> {
   await requireFormAccess(user, 'prodorder_create', 'edit');
   const companyId = requireCompany(user);
+  // ADR-197 — REVERSE is reason-required. `remarks` is optional in the frozen
+  // shared schema; the ledger's Reverse box now requires it and so does this.
+  const reverseReason = input.remarks?.trim() || null;
+  if (!reverseReason) {
+    throw new ValidationError('Give a reason for reversing this close.');
+  }
 
   return withUserContext(user, async (tx) => {
     // Lock the PO so the reversal and its status recompute are atomic against a
@@ -1554,8 +1587,19 @@ export async function reverseProductionOrderClose(
     await emitActivityLog(
       tx,
       {
-        action: 'REVERSE',
-        entity: 'Production Order',
+        action: ActivityAction.Reverse,
+        entity: 'ProductionOrder',
+        entityId: id,
+        qty: -close.qty,
+        reason: reverseReason,
+        changes: [
+          {
+            field: 'creditedQty',
+            label: 'Credited Qty',
+            before: po.creditedQty ?? 0,
+            after: newCredited,
+          },
+        ],
         detail:
           `${po.code} — reversed close of ${close.qty} (now ${newCredited} of ${po.orderQty} closed)` +
           (unbooked > 0 ? `, ${unbooked} reservation released` : ''),
@@ -1637,8 +1681,23 @@ async function shiftPlanPending(
     await emitActivityLog(
       tx,
       {
-        action: 'UPDATE',
+        action: ActivityAction.Edit,
         entity: 'Plan',
+        entityId: plan.id,
+        changes: [
+          {
+            field: 'pendingQty',
+            label: 'Pending',
+            before: before.pendingQty,
+            after: after.pendingQty,
+          },
+          {
+            field: 'planStatus',
+            label: 'Plan Status',
+            before: labelOf(PLAN_STATUS_LABEL, 'jc_created'),
+            after: labelOf(PLAN_STATUS_LABEL, 'planned'),
+          },
+        ],
         detail:
           `${plan.code} re-opened by ${how} of ${poCode}: ` +
           `Pending ${before.pendingQty} → ${after.pendingQty}`,
@@ -1660,8 +1719,23 @@ async function shiftPlanPending(
     await emitActivityLog(
       tx,
       {
-        action: 'UPDATE',
+        action: ActivityAction.Edit,
         entity: 'Plan',
+        entityId: plan.id,
+        changes: [
+          {
+            field: 'pendingQty',
+            label: 'Pending',
+            before: before.pendingQty,
+            after: after.pendingQty,
+          },
+          {
+            field: 'planStatus',
+            label: 'Plan Status',
+            before: labelOf(PLAN_STATUS_LABEL, 'planned'),
+            after: labelOf(PLAN_STATUS_LABEL, 'jc_created'),
+          },
+        ],
         detail:
           `${plan.code} fully covered again by ${how} of ${poCode}: ` +
           `Pending ${before.pendingQty} → ${after.pendingQty}`,
@@ -1884,8 +1958,20 @@ export async function shortCloseProductionOrder(
     await emitActivityLog(
       tx,
       {
-        action: 'SHORT_CLOSE',
-        entity: 'Production Order',
+        action: ActivityAction.CloseShort,
+        entity: 'ProductionOrder',
+        entityId: id,
+        qty: lost,
+        reason,
+        changes: [
+          {
+            field: 'status',
+            label: 'Production Order Status',
+            before: labelOf(PRODUCTION_ORDER_STATUS_LABEL, po.status),
+            after: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
+          },
+          { field: 'lostQty', label: 'Lost Qty', before: po.lostQty ?? null, after: lost },
+        ],
         detail:
           `${po.code} Short Closed — JC ${po.jcCodeText}: credited ${credited} of ${po.orderQty}, ` +
           `lost ${lost}, returned ${returned} to plan ${planCode}` +

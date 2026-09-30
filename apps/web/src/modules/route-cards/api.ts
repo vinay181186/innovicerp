@@ -11,6 +11,7 @@ import type {
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const routeCardsKeys = {
   all: ['route-cards'] as const,
@@ -82,6 +83,7 @@ export function useCreateRouteCard() {
       apiFetch<RouteCardDetail>('/route-cards', { method: 'POST', json: input }),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(routeCardsKeys.detail(created.id), created);
     },
   });
@@ -94,6 +96,7 @@ export function useUpdateRouteCard(id: string) {
       apiFetch<RouteCardDetail>(`/route-cards/${id}`, { method: 'PUT', json: input }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(routeCardsKeys.detail(updated.id), updated);
     },
   });
@@ -101,11 +104,14 @@ export function useUpdateRouteCard(id: string) {
 
 export function useDeleteRouteCard() {
   const qc = useQueryClient();
-  return useMutation<RouteCard, Error, string>({
-    mutationFn: (id) => apiFetch<RouteCard>(`/route-cards/${id}`, { method: 'DELETE' }),
-    onSuccess: (_deleted, id) => {
+  // ADR-197: a delete carries the reason the user typed.
+  return useMutation<RouteCard, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<RouteCard>(`/route-cards/${id}`, { method: 'DELETE', json: { reason } }),
+    onSuccess: (_deleted, { id }) => {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: routeCardsKeys.detail(id) });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }

@@ -11,6 +11,7 @@ import type {
 import { reportTypes } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { softDeleteStamp } from '../../lib/audit-trail';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -109,7 +110,7 @@ export async function deleteReportType(id: string, user: AuthContext): Promise<{
   return withUserContext(user, async (tx) => {
     const updated = await tx
       .update(reportTypes)
-      .set({ deletedAt: new Date(), updatedBy: user.id, updatedAt: new Date() })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id, updatedAt: new Date() })
       .where(
         and(
           eq(reportTypes.id, id),

@@ -43,7 +43,7 @@ import {
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
-import { opSrNo, parseDocRevision, withDocRevision } from '@innovic/shared';
+import { ActivityAction, opSrNo, parseDocRevision, withDocRevision } from '@innovic/shared';
 import type { DocumentTraceability, ReceiveDeliveryChallanResponse } from '@innovic/shared';
 import type {
   CreateDeliveryChallanInput,
@@ -1134,6 +1134,9 @@ export async function createDeliveryChallan(
         transport: input.header.transport ?? null,
         vehicleNo: input.header.vehicleNo ?? null,
         status: 'issued',
+        // ADR-197: who issued the challan (it is issued the moment it is saved).
+        issuedBy: user.id,
+        issuedAt: new Date(),
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -1160,7 +1163,7 @@ export async function createDeliveryChallan(
     const insertedLines = await tx.insert(deliveryChallanLines).values(lineValues).returning();
 
     // Cascades: stock OUT ledger + jc_op flip per line.
-    const opCascades: Array<{ jcCode: string; opSeq: number; qty: number }> = [];
+    const opCascades: Array<{ jcCode: string; jobCardId: string; opSeq: number; qty: number }> = [];
     for (const dl of insertedLines) {
       const qtyInt = Math.round(Number(dl.qty));
       // Option A (ADR-067): OSP send is stock-neutral — issuing an outward JW
@@ -1179,20 +1182,29 @@ export async function createDeliveryChallan(
           purchaseOrderLineId: dl.purchaseOrderLineId,
           qty: qtyInt,
         });
-        if (result.fired && result.jcCode && result.opSeq) {
-          opCascades.push({ jcCode: result.jcCode, opSeq: result.opSeq, qty: qtyInt });
+        if (result.fired && result.jcCode && result.jobCardId && result.opSeq) {
+          opCascades.push({
+            jcCode: result.jcCode,
+            jobCardId: result.jobCardId,
+            opSeq: result.opSeq,
+            qty: qtyInt,
+          });
         }
       }
     }
 
-    // Audit emissions in the same tx.
+    // Audit emissions in the same tx (ADR-197): one SEND on the challan (qty =
+    // everything that left on it), one SEND per Job Card op it moved.
+    const sentTotal = insertedLines.reduce((sum, dl) => sum + Number(dl.qty), 0);
     await emitActivityLog(
       tx,
       {
-        action: 'DC_ISSUE',
+        action: ActivityAction.Send,
         entity: 'DeliveryChallan',
-        detail: dcDetail(header.code, header.vendorCodeText),
+        entityId: header.id,
         refId: header.code,
+        qty: sentTotal,
+        detail: `${dcDetail(header.code, header.vendorCodeText)} — issued, ${sentTotal} sent`,
       },
       companyId,
       user,
@@ -1201,10 +1213,13 @@ export async function createDeliveryChallan(
       await emitActivityLog(
         tx,
         {
-          action: 'OP_OUTSOURCE_SENT',
-          entity: 'JcOp',
-          detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — sent ${op.qty} pcs via ${header.code}`,
+          action: ActivityAction.Send,
+          entity: 'JobCard',
+          entityId: op.jobCardId,
           refId: op.jcCode,
+          opRef: `Op ${opSrNo(op.opSeq)}`,
+          qty: op.qty,
+          detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — sent ${op.qty} pcs via ${header.code}${header.vendorCodeText ? ` to ${header.vendorCodeText}` : ''}`,
         },
         companyId,
         user,
@@ -1218,6 +1233,8 @@ export async function createDeliveryChallan(
 export async function cancelDeliveryChallan(
   id: string,
   user: AuthContext,
+  /** Why (ADR-197) — required at the route (`cancelDeliveryChallanInputSchema`). */
+  reason?: string,
 ): Promise<DeliveryChallanWithLines> {
   // Destructive: reverses jc_op state + writes compensating stock ledger rows.
   // Cancel is not one of the four tier actions, so it is expressed as the pair
@@ -1265,7 +1282,7 @@ export async function cancelDeliveryChallan(
         and(eq(deliveryChallanLines.deliveryChallanId, id), isNull(deliveryChallanLines.deletedAt)),
       );
 
-    const opCascades: Array<{ jcCode: string; opSeq: number; qty: number }> = [];
+    const opCascades: Array<{ jcCode: string; jobCardId: string; opSeq: number; qty: number }> = [];
     if (header.ncId) {
       // Return-to-vendor challan (createNcDc, ADR-166). Its one line carries
       // the origin op's PO line for the print, but createNcDc never added its
@@ -1275,7 +1292,12 @@ export async function cancelDeliveryChallan(
       // NC's rtv ledger, the op status createNcDc demoted, and the PO line
       // received_qty the ADR-165 formula lowered when the challan went out.
       // Receipts are already ruled out above (dcHasActiveReceipts).
-      await onNcChallanCancelled(tx, { ncId: header.ncId, deliveryChallanId: id }, companyId, user);
+      await onNcChallanCancelled(
+        tx,
+        { ncId: header.ncId, deliveryChallanId: id, reason },
+        companyId,
+        user,
+      );
     }
     for (const dl of lineRows) {
       const qtyInt = Math.round(Number(dl.qty));
@@ -1291,36 +1313,59 @@ export async function cancelDeliveryChallan(
           purchaseOrderLineId: dl.purchaseOrderLineId,
           qty: qtyInt,
         });
-        if (result.fired && result.jcCode && result.opSeq) {
-          opCascades.push({ jcCode: result.jcCode, opSeq: result.opSeq, qty: qtyInt });
+        if (result.fired && result.jcCode && result.jobCardId && result.opSeq) {
+          opCascades.push({
+            jcCode: result.jcCode,
+            jobCardId: result.jobCardId,
+            opSeq: result.opSeq,
+            qty: qtyInt,
+          });
         }
       }
     }
 
+    const cancelledAt = new Date();
     await tx
       .update(deliveryChallans)
-      .set({ status: 'cancelled', updatedBy: user.id })
+      .set({
+        status: 'cancelled',
+        // ADR-197: who cancelled, and when (the reason is on the CANCEL log row).
+        cancelledBy: user.id,
+        cancelledAt,
+        updatedBy: user.id,
+        updatedAt: cancelledAt,
+      })
       .where(eq(deliveryChallans.id, id));
 
+    const cancelledQty = lineRows.reduce((sum, dl) => sum + Number(dl.qty), 0);
     await emitActivityLog(
       tx,
       {
-        action: 'DC_CANCEL',
+        action: ActivityAction.Cancel,
         entity: 'DeliveryChallan',
-        detail: `${header.code} — cancelled`,
+        entityId: id,
         refId: header.code,
+        qty: cancelledQty,
+        reason: reason ?? null,
+        detail: `${dcDetail(header.code, header.vendorCodeText)} — cancelled`,
       },
       companyId,
       user,
     );
+    // The send each op received from this challan is taken back: a REVERSE
+    // on the Job Card naming the challan, with the same reason.
     for (const op of opCascades) {
       await emitActivityLog(
         tx,
         {
-          action: 'OP_OUTSOURCE_REVERSED',
-          entity: 'JcOp',
-          detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — reversed ${op.qty} pcs from ${header.code}`,
+          action: ActivityAction.Reverse,
+          entity: 'JobCard',
+          entityId: op.jobCardId,
           refId: op.jcCode,
+          opRef: `Op ${opSrNo(op.opSeq)}`,
+          qty: op.qty,
+          reason: reason ?? null,
+          detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — reversed ${op.qty} pcs sent on ${header.code} (DC cancelled)`,
         },
         companyId,
         user,
@@ -1604,6 +1649,7 @@ export async function receiveAgainstDeliveryChallan(
       fullyReceived: boolean;
       statusChanged: boolean;
       jobCardId: string;
+      poLineId: string;
     }> = [];
     for (const [poLineId, qtyAdded] of poLineQtyAdded) {
       const cascadeResult = await applyReceiveToJcOp({
@@ -1622,6 +1668,7 @@ export async function receiveAgainstDeliveryChallan(
           fullyReceived: Boolean(cascadeResult.fullyReceived),
           statusChanged: Boolean(cascadeResult.statusChanged),
           jobCardId: cascadeResult.jobCardId!,
+          poLineId,
         });
       }
     }
@@ -1629,6 +1676,13 @@ export async function receiveAgainstDeliveryChallan(
     // No reject at receive: the rejected-goods NC is no longer raised here.
     // Everything received is now sitting on the auto-GRN as pending QC, and
     // Incoming QC is the single place a reject raises a defect record (NC).
+
+    // ADR-197: who booked the latest receipt against the challan, and when.
+    const receivedAt = new Date();
+    await tx
+      .update(deliveryChallans)
+      .set({ receivedBy: user.id, receivedAt, updatedBy: user.id, updatedAt: receivedAt })
+      .where(eq(deliveryChallans.id, deliveryChallanId));
 
     // DC status flip when ALL outward lines fully reconciled.
     let dcMarkedReceived = false;
@@ -1640,18 +1694,28 @@ export async function receiveAgainstDeliveryChallan(
       dcMarkedReceived = true;
     }
 
-    // Audit emissions in the same tx.
-    await emitActivityLog(
-      tx,
-      {
-        action: 'DC_RECEIVE',
-        entity: 'DeliveryChallan',
-        detail: `${dcHeader.code} — receipt ${receiptCode}${autoGrn ? ` → GRN ${autoGrn.code} (QC Pending)` : ''}`,
-        refId: dcHeader.code,
-      },
-      companyId,
-      user,
-    );
+    // Audit emissions in the same tx (ADR-197): one RECEIVE row per challan
+    // line that took pieces in this receipt, qty = that line's received qty.
+    for (const rl of insertedLines) {
+      const dcLine = dcLineById.get(rl.deliveryChallanLineId)!;
+      const receivedQty = Number(rl.receivedQty);
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Receive,
+          entity: 'DeliveryChallan',
+          entityId: dcHeader.id,
+          refId: dcHeader.code,
+          lineRef: `Line ${dcLine.lineNo}`,
+          qty: receivedQty,
+          detail:
+            `${dcHeader.code} Ln ${dcLine.lineNo}${dcLine.itemCodeText ? ` (${dcLine.itemCodeText})` : ''}` +
+            ` — ${receivedQty} received on ${receiptCode}${autoGrn ? ` → GRN ${autoGrn.code} (QC Pending)` : ''}`,
+        },
+        companyId,
+        user,
+      );
+    }
     // Only when the op's status actually moved in THIS receipt. A
     // return-to-vendor receipt against the same PO line re-evaluates an op
     // that is already 'received' (or that onNcChallanReceived just flipped,
@@ -1661,10 +1725,13 @@ export async function receiveAgainstDeliveryChallan(
         await emitActivityLog(
           tx,
           {
-            action: 'OP_OUTSOURCE_RECEIVED',
-            entity: 'JcOp',
-            detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — fully received via ${receiptCode}`,
+            action: ActivityAction.Receive,
+            entity: 'JobCard',
+            entityId: op.jobCardId,
             refId: op.jcCode,
+            opRef: `Op ${opSrNo(op.opSeq)}`,
+            qty: poLineQtyAdded.get(op.poLineId) ?? null,
+            detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — fully received via ${receiptCode}`,
           },
           companyId,
           user,
@@ -1675,10 +1742,11 @@ export async function receiveAgainstDeliveryChallan(
       await emitActivityLog(
         tx,
         {
-          action: 'DC_COMPLETE',
+          action: ActivityAction.Complete,
           entity: 'DeliveryChallan',
-          detail: `${dcHeader.code} — all lines fully reconciled`,
+          entityId: dcHeader.id,
           refId: dcHeader.code,
+          detail: `${dcHeader.code} — all lines fully reconciled`,
         },
         companyId,
         user,

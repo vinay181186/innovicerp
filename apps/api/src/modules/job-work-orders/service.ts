@@ -11,8 +11,9 @@
 // If a third module (T-032 / T-038) needs the same logic, extract then.
 
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import type { ActivityChange, DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import {
+  ActivityAction,
   normalizeRevision,
   revisionBackwardsMessage,
   revisionGoesBackwards,
@@ -28,6 +29,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import {
@@ -745,13 +747,23 @@ export async function shortCloseJobWorkOrderLine(
     if (!row) throw new ConflictError('Could not short-close the JWSO line. Try again.');
 
     const shortfall = Math.max(0, row.orderQty - row.returnedQty);
+    const hdr = await tx
+      .select({ code: jobWorkOrders.code })
+      .from(jobWorkOrders)
+      .where(eq(jobWorkOrders.id, row.jobWorkOrderId))
+      .limit(1);
+    const jwCode = hdr[0]?.code ?? null;
     await emitActivityLog(
       tx,
       {
-        action: 'SHORT_CLOSE',
-        entity: 'JobWorkOrderLine',
-        detail: `Ln ${row.lineNo} short-closed (${shortfall} unmet): ${reason}`,
-        refId: row.id,
+        action: ActivityAction.CloseShort,
+        entity: 'JobWorkOrder',
+        entityId: row.jobWorkOrderId,
+        refId: jwCode,
+        lineRef: `Line ${row.lineNo}`,
+        qty: shortfall,
+        reason,
+        detail: `${jwCode ?? 'JWSO'} Ln ${row.lineNo} short-closed (${shortfall} unmet)`,
       },
       companyId,
       user,
@@ -982,10 +994,12 @@ export async function createJobWorkOrder(
       await emitActivityLog(
         tx,
         {
-          action: 'CREATE',
+          action: ActivityAction.Create,
           entity: 'JobWorkOrder',
-          detail: jwDetail(header.code, header.customerName),
+          entityId: header.id,
           refId: header.code,
+          qty: insertedLines.reduce((a, l) => a + Number(l.orderQty), 0),
+          detail: jwDetail(header.code, header.customerName),
         },
         companyId,
         user,
@@ -1069,11 +1083,15 @@ export async function updateJobWorkOrder(
     if (h.clientMaterialQty !== undefined)
       updates['clientMaterialQty'] = numToStringOrNull(h.clientMaterialQty);
 
+    // ADR-197: before → after of the header, read BEFORE the update.
+    const headerChanges = diffFields(existingHdr, updates, JW_HEADER_FIELDS);
+
     await tx.update(jobWorkOrders).set(updates).where(eq(jobWorkOrders.id, id));
 
-    if (input.lines !== undefined) {
-      await mergeLines(tx, id, companyId, input.lines, user, showMoney);
-    }
+    const lineLogs =
+      input.lines !== undefined
+        ? await mergeLines(tx, id, companyId, input.lines, user, showMoney)
+        : [];
 
     const updatedHdrRows = await tx
       .select()
@@ -1103,17 +1121,40 @@ export async function updateJobWorkOrder(
       lineRows.map((l) => l.itemId),
       companyId,
     );
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'JobWorkOrder',
-        detail: jwDetail(updatedHdr.code, updatedHdr.customerName),
-        refId: updatedHdr.code,
-      },
-      companyId,
-      user,
-    );
+    // ADR-197: one row for the header (only when a header field changed) and
+    // one per line added / changed / removed, each carrying its own lineRef.
+    if (headerChanges.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'JobWorkOrder',
+          entityId: updatedHdr.id,
+          refId: updatedHdr.code,
+          changes: headerChanges,
+          detail: `Edited ${jwDetail(updatedHdr.code, updatedHdr.customerName)}`,
+        },
+        companyId,
+        user,
+      );
+    }
+    for (const l of lineLogs) {
+      await emitActivityLog(
+        tx,
+        {
+          action: l.action,
+          entity: 'JobWorkOrder',
+          entityId: updatedHdr.id,
+          refId: updatedHdr.code,
+          lineRef: `Line ${l.lineNo}`,
+          qty: l.qty ?? null,
+          changes: l.changes ?? null,
+          detail: `${updatedHdr.code} Ln ${l.lineNo} ${l.what}`,
+        },
+        companyId,
+        user,
+      );
+    }
 
     const partyReceivedQty = await sumPartyReceivedQty(tx, id);
     return {
@@ -1122,6 +1163,51 @@ export async function updateJobWorkOrder(
       lines: lineRows.map((l) => toJobWorkOrderLine(l, codeMap)),
     };
   });
+}
+
+/** ADR-197 — one line's add / edit / remove, logged by updateJobWorkOrder. */
+interface JwLineLog {
+  action: ActivityAction;
+  lineNo: number;
+  what: string;
+  qty?: number;
+  changes?: ActivityChange[];
+}
+
+/** JWSO header fields compared on Edit — labels as on the JWSO form. */
+const JW_HEADER_FIELDS: readonly DiffField[] = [
+  { key: 'jwDate', label: 'JWSO Date' },
+  { key: 'customerName', label: 'Customer' },
+  { key: 'clientPoNo', label: 'Client PO No.' },
+  { key: 'gstPercent', label: 'GST %' },
+  { key: 'remarks', label: 'Remarks' },
+  { key: 'clientMaterial', label: 'Customer Material (Item -rm)' },
+  { key: 'clientMaterialQty', label: 'Material Qty' },
+];
+
+/** JWSO line fields compared on Edit — labels as on the JWSO form's line grid. */
+function jwLineFields(itemCode: (v: unknown) => string | null): readonly DiffField[] {
+  const fileName = (v: unknown): string | null =>
+    v == null || v === '' ? null : (String(v).split('/').pop() ?? String(v));
+  return [
+    { key: 'lineNo', label: 'Ln' },
+    { key: 'itemId', label: 'Item Code', format: itemCode },
+    { key: 'partName', label: 'Item Name' },
+    { key: 'material', label: 'Material' },
+    { key: 'drawingNo', label: 'Drawing No.' },
+    { key: 'revision', label: 'Rev' },
+    { key: 'drawingFilePath', label: 'Drawing File', format: fileName },
+    { key: 'uom', label: 'UOM' },
+    { key: 'orderQty', label: 'Order Qty' },
+    { key: 'rate', label: 'Rate' },
+    { key: 'dueDate', label: 'Due Date' },
+    { key: 'status', label: 'Status' },
+    {
+      key: 'sourceBomMasterId',
+      label: 'Assembly BOM',
+      format: (v) => (v == null || v === '' ? null : 'Linked'),
+    },
+  ];
 }
 
 async function mergeLines(
@@ -1134,15 +1220,11 @@ async function mergeLines(
    *  `rate` is then ignored on an EXISTING line so the stored figure survives.
    *  A NEW line still takes the input (there is no stored value to protect). */
   showMoney: boolean,
-): Promise<void> {
+): Promise<JwLineLog[]> {
+  // The whole stored line: its Rev is compared for ADR-177 (never backwards)
+  // and every field feeds the ADR-197 before → after of the line edit.
   const existing = await tx
-    .select({
-      id: jobWorkOrderLines.id,
-      lineNo: jobWorkOrderLines.lineNo,
-      // The stored Rev, read back only so a backwards change can be refused
-      // (ADR-177) — nothing else on the update compares against it.
-      revision: jobWorkOrderLines.revision,
-    })
+    .select()
     .from(jobWorkOrderLines)
     .where(
       and(
@@ -1176,8 +1258,42 @@ async function mergeLines(
   if (absentIds.length > 0) {
     await tx
       .update(jobWorkOrderLines)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(inArray(jobWorkOrderLines.id, absentIds));
+  }
+
+  // ADR-197: Item Code changes read as codes, not uuids.
+  const codeById = await resolveItemCodesById(
+    tx,
+    [
+      ...existing.map((e) => e.itemId),
+      ...inputLines.map((l) => l.itemId ?? null),
+      ...Array.from(resolved.values()),
+    ],
+    companyId,
+  );
+  const lineFields = jwLineFields((v) =>
+    v == null || v === '' ? null : (codeById.get(String(v))?.code ?? String(v)),
+  );
+  const logs: JwLineLog[] = [];
+  for (const eid of absentIds) {
+    const gone = existingById.get(eid)!;
+    const itemCode = gone.itemId
+      ? (codeById.get(gone.itemId)?.code ?? gone.itemCodeText)
+      : gone.itemCodeText;
+    logs.push({
+      action: ActivityAction.Edit,
+      lineNo: gone.lineNo,
+      what: 'removed',
+      changes: [
+        {
+          field: 'line',
+          label: 'Line',
+          before: `${itemCode ?? gone.partName} × ${gone.orderQty}`,
+          after: null,
+        },
+      ],
+    });
   }
 
   for (const u of toUpdate) {
@@ -1229,7 +1345,17 @@ async function mergeLines(
       lineUpdate['sourceBomMasterId'] = u.data.sourceBomMasterId ?? null;
     }
 
+    const beforeLine = existingById.get(u.id)!;
+    const lineChanges = diffFields(beforeLine, lineUpdate, lineFields);
     await tx.update(jobWorkOrderLines).set(lineUpdate).where(eq(jobWorkOrderLines.id, u.id));
+    if (lineChanges.length > 0) {
+      logs.push({
+        action: ActivityAction.Edit,
+        lineNo: Number(lineUpdate['lineNo'] ?? beforeLine.lineNo),
+        what: 'edited',
+        changes: lineChanges,
+      });
+    }
   }
 
   if (toInsert.length > 0) {
@@ -1276,11 +1402,23 @@ async function mergeLines(
       if (line.sourceBomMasterId) {
         await cascadeBomToJwLine(tx, line.id, user);
       }
+      logs.push({
+        action: ActivityAction.Create,
+        lineNo: line.lineNo,
+        what: 'added',
+        qty: line.orderQty,
+      });
     }
   }
+  return logs;
 }
 
-export async function softDeleteJobWorkOrder(id: string, user: AuthContext): Promise<{ ok: true }> {
+export async function softDeleteJobWorkOrder(
+  id: string,
+  user: AuthContext,
+  /** ADR-197: why it was moved to Trash (the route requires it). */
+  reason?: string,
+): Promise<{ ok: true }> {
   requireWriteRole(user);
   await requireFormAccess(user, 'jw_create', 'edit');
   await requireFormAccess(user, 'jw_create', 'approve');
@@ -1306,22 +1444,24 @@ export async function softDeleteJobWorkOrder(id: string, user: AuthContext): Pro
     if (!row) {
       throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
     }
-    const now = new Date();
+    const stamp = softDeleteStamp(user);
     await tx
       .update(jobWorkOrderLines)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id })
       .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)));
     await tx
       .update(jobWorkOrders)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id })
       .where(eq(jobWorkOrders.id, id));
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
+        action: ActivityAction.Delete,
         entity: 'JobWorkOrder',
-        detail: jwDetail(row.code, row.customerName),
+        entityId: row.id,
         refId: row.code,
+        reason: reason?.trim() || null,
+        detail: jwDetail(row.code, row.customerName),
       },
       companyId,
       user,

@@ -1,10 +1,13 @@
 import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import { ActivityAction } from '@innovic/shared';
 import { clients } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import type {
   BulkClientSkip,
   BulkCreateClientsInput,
@@ -20,6 +23,26 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+const activeLabel = (v: unknown): string | null =>
+  v === true ? 'Active' : v === false ? 'Inactive' : null;
+
+/** Every user-editable Customer Master field, with its screen label, for the
+ *  Edit row's Before → After (ADR-197). Entity 'Client' is not yet in the
+ *  shared ACTIVITY_ENTITIES list (shared frozen for this build). */
+const CLIENT_FIELDS: readonly DiffField[] = [
+  { key: 'name', label: 'Customer' },
+  { key: 'gstNumber', label: 'GSTIN' },
+  { key: 'addressLine1', label: 'Address' },
+  { key: 'city', label: 'City' },
+  { key: 'state', label: 'State' },
+  { key: 'pincode', label: 'Pincode' },
+  { key: 'contactPerson', label: 'Contact Person' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'email', label: 'Email' },
+  { key: 'paymentDays', label: 'Payment Days' },
+  { key: 'isActive', label: 'Status', format: activeLabel },
+];
 
 function emptyToNull(s: string | undefined): string | null {
   if (s === undefined) return null;
@@ -223,7 +246,20 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
           updatedBy: user.id,
         })
         .returning();
-      return inserted[0] as unknown as Client;
+      const row = inserted[0] as unknown as Client;
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Create,
+          entity: 'Client',
+          entityId: row.id,
+          refId: row.code,
+          detail: `${row.code} — ${row.name}`,
+        },
+        companyId,
+        user,
+      );
+      return row;
     }),
   );
 }
@@ -347,6 +383,17 @@ export async function createClientsBulk(
       for (let i = 0; i < values.length; i += CHUNK) {
         await tx.insert(clients).values(values.slice(i, i + CHUNK));
       }
+      // One line for the whole import, as the Item Master import does.
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Create,
+          entity: 'Client',
+          detail: `Excel import — ${values.length} customer(s): ${codes[0]}…${codes[codes.length - 1]}`,
+        },
+        companyId,
+        user,
+      );
     }
 
     return { created: values.length, skipped, codes };
@@ -362,13 +409,14 @@ export async function updateClient(
   await requireFormAccess(user, 'client_create', 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // The whole row, read BEFORE the update — the "before" of Before → After.
     const existing = await tx
-      .select({ id: clients.id })
+      .select()
       .from(clients)
       .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
       .limit(1);
-    if (existing.length === 0)
-      throw new NotFoundError('Customer not found. It may have been moved to Trash.');
+    const before = existing[0];
+    if (!before) throw new NotFoundError('Customer not found. It may have been moved to Trash.');
     if (input.name !== undefined) await assertClientNameFree(tx, companyId, input.name, id);
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
@@ -384,28 +432,63 @@ export async function updateClient(
     if (input.paymentDays !== undefined) updates.paymentDays = input.paymentDays;
     if (input.isActive !== undefined) updates.isActive = input.isActive;
 
+    const changes = diffFields(before, updates, CLIENT_FIELDS);
     const updated = await tx.update(clients).set(updates).where(eq(clients.id, id)).returning();
-    return updated[0] as unknown as Client;
+    const row = updated[0] as unknown as Client;
+    if (changes.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'Client',
+          entityId: row.id,
+          refId: row.code,
+          changes,
+          detail: `Edited ${row.code} — ${row.name}`,
+        },
+        companyId,
+        user,
+      );
+    }
+    return row;
   });
 }
 
-export async function softDeleteClient(id: string, user: AuthContext): Promise<{ ok: true }> {
+export async function softDeleteClient(
+  id: string,
+  reason: string,
+  user: AuthContext,
+): Promise<{ ok: true }> {
   requireWriteRole(user);
   await requireFormAccess(user, 'client_create', 'edit');
   await requireFormAccess(user, 'client_create', 'approve');
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // The whole row, read BEFORE the update — the "before" of Before → After.
     const existing = await tx
-      .select({ id: clients.id })
+      .select()
       .from(clients)
       .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
       .limit(1);
-    if (existing.length === 0)
-      throw new NotFoundError('Customer not found. It may have been moved to Trash.');
+    const before = existing[0];
+    if (!before) throw new NotFoundError('Customer not found. It may have been moved to Trash.');
     await tx
       .update(clients)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(clients.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Delete,
+        entity: 'Client',
+        entityId: before.id,
+        refId: before.code,
+        reason,
+        detail: `${before.code} — ${before.name}`,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

@@ -12,6 +12,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const jwDcKeys = {
   all: ['jw-dc'] as const,
@@ -66,8 +67,7 @@ function buildInwardSearch(q: ListJwDcInwardQuery): string {
 export function useJwDcOutwardList(query: ListJwDcOutwardQuery) {
   return useQuery<ListJwDcOutwardResponse>({
     queryKey: jwDcKeys.outwardList(query),
-    queryFn: () =>
-      apiFetch<ListJwDcOutwardResponse>(`/jw-dc/outward?${buildOutwardSearch(query)}`),
+    queryFn: () => apiFetch<ListJwDcOutwardResponse>(`/jw-dc/outward?${buildOutwardSearch(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -93,10 +93,10 @@ export function useJwDcPoLines(poId: string | undefined) {
 export function useCreateJwDcOutward() {
   const qc = useQueryClient();
   return useMutation<JwDcOutward, Error, CreateJwDcOutwardInput>({
-    mutationFn: (input) =>
-      apiFetch<JwDcOutward>('/jw-dc/outward', { method: 'POST', json: input }),
+    mutationFn: (input) => apiFetch<JwDcOutward>('/jw-dc/outward', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwDcKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: ['store-inventory'] });
       void qc.invalidateQueries({ queryKey: ['store-transactions'] });
     },
@@ -122,8 +122,7 @@ export function useNextInwardCode() {
 export function useJwDcInwardList(query: ListJwDcInwardQuery) {
   return useQuery<ListJwDcInwardResponse>({
     queryKey: jwDcKeys.inwardList(query),
-    queryFn: () =>
-      apiFetch<ListJwDcInwardResponse>(`/jw-dc/inward?${buildInwardSearch(query)}`),
+    queryFn: () => apiFetch<ListJwDcInwardResponse>(`/jw-dc/inward?${buildInwardSearch(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -133,10 +132,10 @@ export function useJwDcInwardList(query: ListJwDcInwardQuery) {
 export function useCreateJwDcInward() {
   const qc = useQueryClient();
   return useMutation<JwDcInward, Error, CreateJwDcInwardInput>({
-    mutationFn: (input) =>
-      apiFetch<JwDcInward>('/jw-dc/inward', { method: 'POST', json: input }),
+    mutationFn: (input) => apiFetch<JwDcInward>('/jw-dc/inward', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwDcKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: ['store-inventory'] });
       void qc.invalidateQueries({ queryKey: ['store-transactions'] });
     },

@@ -22,6 +22,7 @@ import type {
 } from './schema';
 import { adHocSpecSchema } from './schema';
 import { getSource, listSourceDescriptors } from './sources';
+import { softDeleteStamp } from '../../lib/audit-trail';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -302,7 +303,7 @@ export async function softDeleteSavedReport(id: string, user: AuthContext): Prom
 
     await tx
       .update(savedReports)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(savedReports.id, id));
   });
 }

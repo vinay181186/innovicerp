@@ -139,7 +139,11 @@ describe('bom-master routes', () => {
     await app.close();
     const manager: AuthContext = { ...admin, role: 'manager' };
     app = await buildApp(manager);
-    const del = await app.inject({ method: 'DELETE', url: `/bom-masters/${id}` });
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/bom-masters/${id}`,
+      payload: { reason: 'test' },
+    });
     expect(del.statusCode).toBe(403);
   });
 });

@@ -18,6 +18,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 import { soPlanningKeys } from '@/modules/so-planning/api';
 
 export const plansKeys = {
@@ -111,6 +112,7 @@ export function useCreatePlansBatch() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
@@ -125,6 +127,7 @@ export function useCreatePlan() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
@@ -143,6 +146,7 @@ export function useCreatePlan() {
 function invalidateStockViews(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
   void qc.invalidateQueries({ queryKey: plansKeys.all });
+  void qc.invalidateQueries({ queryKey: activityLogKeys.all });
   void qc.invalidateQueries({ queryKey: ['store-inventory'] });
   void qc.invalidateQueries({ queryKey: stockReservationKeys.all });
 }
@@ -219,6 +223,7 @@ export function useUpdatePlan(id: string) {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
@@ -229,6 +234,7 @@ export function useFinalizePlan() {
     mutationFn: (id: string) => apiFetch<PlanDetail>(`/plans/${id}/finalize`, { method: 'POST' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }
@@ -240,6 +246,7 @@ export function useExecutePlan() {
       apiFetch<ExecutePlanResultShape>(`/plans/${id}/execute`, { method: 'POST' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // The Planning workflow page reads from the so-planning keys; refresh them
       // so an executed plan card flips to 'pr_created' and its Execute button
       // disappears immediately (prevents a re-click that would try to re-execute).
@@ -251,9 +258,12 @@ export function useExecutePlan() {
 export function useSoftDeletePlan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiFetch<{ ok: true }>(`/plans/${id}`, { method: 'DELETE' }),
+    // ADR-197 — a delete carries its reason.
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiFetch<{ ok: true }>(`/plans/${id}`, { method: 'DELETE', json: { reason } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }

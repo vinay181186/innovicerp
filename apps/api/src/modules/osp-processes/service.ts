@@ -10,6 +10,7 @@ import { ospProcesses, vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { softDeleteStamp } from '../../lib/audit-trail';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -87,7 +88,8 @@ export async function createOspProcess(
         ),
       )
       .limit(1);
-    if (dup.length > 0) throw new ValidationError(`OSP process "${input.processName}" already exists`);
+    if (dup.length > 0)
+      throw new ValidationError(`OSP process "${input.processName}" already exists`);
 
     const inserted = await tx
       .insert(ospProcesses)
@@ -183,7 +185,8 @@ export async function updateOspProcess(
         ),
       )
       .limit(1);
-    if (dup.length > 0) throw new ValidationError(`OSP process "${input.processName}" already exists`);
+    if (dup.length > 0)
+      throw new ValidationError(`OSP process "${input.processName}" already exists`);
 
     await tx
       .update(ospProcesses)
@@ -220,7 +223,7 @@ export async function softDeleteOspProcess(id: string, user: AuthContext): Promi
 
     await tx
       .update(ospProcesses)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(ospProcesses.id, id));
     return { ok: true };
   });

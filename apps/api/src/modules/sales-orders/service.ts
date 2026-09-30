@@ -12,6 +12,7 @@
 // avoids the footgun where a header-only PATCH would wipe lines.
 
 import {
+  ActivityAction,
   deriveSoFulfilmentStatus,
   normalizeRevision,
   revisionBackwardsMessage,
@@ -51,6 +52,7 @@ import {
 } from '../../lib/errors';
 import { readStockPositionLocked, reconcileLineReservations } from '../../lib/stock-reservation';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import { cascadeBomToSoLine } from '../bom-master/cascade';
 import {
@@ -62,7 +64,7 @@ import {
   readSoLineCommitments,
 } from './line-commitments';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
-import { buildSoEditSummary, type SoLineSnapshot } from './edit-summary';
+import { logSoEdit } from './edit-log';
 
 function soDetail(code: string, customerName: string | null | undefined): string {
   return customerName ? `${code} — ${customerName}` : code;
@@ -1557,10 +1559,13 @@ export async function createSalesOrder(
       await emitActivityLog(
         tx,
         {
-          action: 'CREATE',
+          action: ActivityAction.Create,
           entity: 'SalesOrder',
-          detail: soDetail(header.code, header.customerName),
+          entityId: header.id,
           refId: header.code,
+          // ADR-197 — the order's total Order Qty across its lines.
+          qty: insertedLines.reduce((s, l) => s + Number(l.orderQty), 0),
+          detail: soDetail(header.code, header.customerName),
         },
         companyId,
         user,
@@ -1630,6 +1635,9 @@ export async function updateSalesOrder(
   id: string,
   input: UpdateSalesOrderInput,
   user: AuthContext,
+  /** ADR-197 — why: required when the save cancels the SO; also written on
+   *  the History row of a line the save removes or cancels. */
+  reason?: string | null,
 ): Promise<SalesOrderDetail> {
   // Editing an existing SO is admin-only (managers can still create). A
   // non-admin update is rejected server-side even if the UI is bypassed.
@@ -1688,6 +1696,9 @@ export async function updateSalesOrder(
       }
       // Review fix — back to 'draft' ("not yet committed") is refused on the
       // same grounds as 'cancelled': production / dispatch already runs on it.
+      if (h.status === 'cancelled' && !reason?.trim()) {
+        throw new ValidationError(`Give a reason to cancel ${existingHdr.code}.`);
+      }
       if (h.status === 'cancelled' || h.status === 'draft') {
         const blocking = await describeSoBlockingDocuments(tx, companyId, id);
         if (blocking) {
@@ -1715,15 +1726,7 @@ export async function updateSalesOrder(
       input.lines === undefined
         ? []
         : await tx
-            .select({
-              id: salesOrderLines.id,
-              lineNo: salesOrderLines.lineNo,
-              orderQty: salesOrderLines.orderQty,
-              itemId: salesOrderLines.itemId,
-              itemCodeText: salesOrderLines.itemCodeText,
-              rate: salesOrderLines.rate,
-              status: salesOrderLines.status,
-            })
+            .select()
             .from(salesOrderLines)
             .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
     const linesBefore = input.lines !== undefined ? before : null;
@@ -1758,40 +1761,17 @@ export async function updateSalesOrder(
       [...lineRows.map((l) => l.itemId), ...before.map((l) => l.itemId)],
       companyId,
     );
-    // ADR-184 — before → after trail of what this save changed.
-    const toLineSnap = (l: {
-      id: string;
-      lineNo: number;
-      orderQty: number;
-      itemId: string | null;
-      itemCodeText: string | null;
-      rate: string | null;
-      status: string;
-    }): SoLineSnapshot => ({
-      id: l.id,
-      lineNo: l.lineNo,
-      itemCode: (l.itemId ? updatedCodeMap.get(l.itemId) : undefined) ?? l.itemCodeText ?? null,
-      orderQty: Number(l.orderQty),
-      rate: l.rate,
-      status: l.status,
+    // ADR-197 — before → after of what this save changed, one History row per
+    // header / line touched (edit-log.ts).
+    await logSoEdit(tx, companyId, user, {
+      before: existingHdr,
+      after: updatedHdr,
+      beforeLines: linesBefore,
+      afterLines: lineRows,
+      codeById: updatedCodeMap,
+      showMoney,
+      reason: reason?.trim() || null,
     });
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'SalesOrder',
-        detail: buildSoEditSummary(
-          soDetail(updatedHdr.code, updatedHdr.customerName),
-          existingHdr,
-          updatedHdr,
-          linesBefore ? linesBefore.map(toLineSnap) : null,
-          linesBefore ? lineRows.map(toLineSnap) : null,
-        ),
-        refId: updatedHdr.code,
-      },
-      companyId,
-      user,
-    );
 
     const updatedImageMap = await resolveItemImagesById(
       tx,
@@ -1882,10 +1862,16 @@ async function reconcileAmendedLineReservations(
       await emitActivityLog(
         tx,
         {
-          action: 'UPDATE',
-          entity: 'Reservation',
+          // Same row the plans module writes for a release (ADR-197): on the
+          // SO's own History, as a CANCEL of the booking, with the reason.
+          action: ActivityAction.Cancel,
+          entity: 'SalesOrder',
           detail: `${soCode} Ln ${b.lineNo} — ${released} released back to free stock (${reason})`,
+          reason,
           refId: soCode,
+          entityId: salesOrderId,
+          lineRef: `Line ${b.lineNo}`,
+          qty: released,
         },
         companyId,
         user,
@@ -1925,7 +1911,7 @@ async function mergeMilestones(
   if (absentIds.length > 0) {
     await tx
       .update(soMilestones)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(inArray(soMilestones.id, absentIds));
   }
 
@@ -2077,7 +2063,7 @@ async function mergeLines(
   if (absentIds.length > 0) {
     await tx
       .update(salesOrderLines)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(inArray(salesOrderLines.id, absentIds));
   }
 
@@ -2209,7 +2195,12 @@ async function mergeLines(
   await insertDrawingRevisions(tx, pendingRevisions, companyId);
 }
 
-export async function softDeleteSalesOrder(id: string, user: AuthContext): Promise<{ ok: true }> {
+export async function softDeleteSalesOrder(
+  id: string,
+  user: AuthContext,
+  /** ADR-197 — why it goes to Trash (the route requires it). */
+  reason?: string | null,
+): Promise<{ ok: true }> {
   requireWriteRole(user);
   await requireFormAccess(user, 'so_create', 'edit');
   await requireFormAccess(user, 'so_create', 'approve');
@@ -2246,8 +2237,6 @@ export async function softDeleteSalesOrder(id: string, user: AuthContext): Promi
       );
     }
 
-    const now = new Date();
-
     // Hand back whatever these lines are holding BEFORE they are soft-deleted
     // (ADR-180) — reconcileLineReservations reads the line, so it must still
     // be visible. A deleted line otherwise keeps its reservation rows alive
@@ -2273,21 +2262,25 @@ export async function softDeleteSalesOrder(id: string, user: AuthContext): Promi
       );
     }
 
+    // ADR-197 — header AND lines carry who deleted them (deleted_by).
+    const stamp = softDeleteStamp(user);
     await tx
       .update(salesOrderLines)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id, updatedAt: stamp.deletedAt })
       .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
     await tx
       .update(salesOrders)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id, updatedAt: stamp.deletedAt })
       .where(eq(salesOrders.id, id));
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
+        action: ActivityAction.Delete,
         entity: 'SalesOrder',
-        detail: soDetail(row.code, row.customerName),
+        entityId: id,
         refId: row.code,
+        reason: reason?.trim() || null,
+        detail: soDetail(row.code, row.customerName),
       },
       companyId,
       user,

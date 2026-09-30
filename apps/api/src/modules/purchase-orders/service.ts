@@ -49,9 +49,11 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
 import { loadPrBalances } from '../purchase-requests/service';
 import {
+  ActivityAction,
   ITEM_TYPE_RULES,
   type ItemType,
   type PoType,
@@ -61,7 +63,11 @@ import {
   poCodePrefix,
   withDocRevision,
 } from '@innovic/shared';
-import type { DocumentTraceability, ShortClosePurchaseOrderInput } from '@innovic/shared';
+import type {
+  ActivityChange,
+  DocumentTraceability,
+  ShortClosePurchaseOrderInput,
+} from '@innovic/shared';
 import { PO_SHORT_CLOSE_REASON_MIN } from '@innovic/shared';
 import type {
   CreatePurchaseOrderFromPrInput,
@@ -80,6 +86,11 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+/** Total ordered qty across a PO's lines — the Activity Qty on its CREATE row. */
+function sumLineQty(lines: ReadonlyArray<{ qty: string | number }>): number {
+  return lines.reduce((acc, l) => acc + Number(l.qty), 0);
+}
 
 // Screen words for PO status codes, for error text only (matches the web's
 // po-labels.ts). Unknown codes fall back to Title Case.
@@ -1305,10 +1316,12 @@ export async function createPurchaseOrder(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'PurchaseOrder',
+        entityId: header.id,
         detail: poDetail(header.code, header.vendorCodeText),
         refId: header.code,
+        qty: sumLineQty(insertedLines),
       },
       companyId,
       user,
@@ -1321,6 +1334,7 @@ export async function createPurchaseOrder(
         {
           action: 'PR_CONVERT',
           entity: 'PurchaseRequest',
+          entityId: pr.id,
           detail: `${pr.code} → ${header.code}`,
           refId: pr.code,
         },
@@ -1655,6 +1669,12 @@ export async function updatePurchaseOrder(
     // the goods-movement lock below and the revision check further down compare
     // against them — asking the database twice for the same rows would be waste.
     const storedLines = await loadStoredPoLines(tx, companyId, id);
+    // ADR-197 — the full line rows as they stand BEFORE the save, for the
+    // History tab's per-line before → after.
+    const beforeLineRows = await tx
+      .select()
+      .from(purchaseOrderLines)
+      .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)));
 
     // ── Money lock (0100, retriggered 2026-08-31) ───────────────────
     // The figures on a PO stop being the buyer's to change once the goods they
@@ -1799,10 +1819,12 @@ export async function updatePurchaseOrder(
         await emitActivityLog(
           tx,
           {
-            action: 'APPROVAL_WITHDRAWN',
-            entity: 'Purchase Order',
+            action: ActivityAction.Withdraw,
+            entity: 'PurchaseOrder',
+            entityId: id,
             detail: `${oldCode} → ${newCode}: items / qty / rate / vendor / tax changed after approval; back to Draft for re-approval`,
             refId: newCode,
+            changes: [{ field: 'status', label: 'PO Status', before: 'Open', after: 'Draft' }],
           },
           companyId,
           user,
@@ -1863,17 +1885,13 @@ export async function updatePurchaseOrder(
       taxAmount: totals.taxAmount,
       totalAmount: totals.totalAmount,
     };
-    await emitActivityLog(
-      tx,
-      {
-        action: 'EDIT',
-        entity: 'PurchaseOrder',
-        detail: poDetail(updatedHdr.code, updatedHdr.vendorCodeText),
-        refId: updatedHdr.code,
-      },
-      companyId,
-      user,
-    );
+    await logPoEdit(tx, companyId, user, {
+      before: existingHdr,
+      after: updatedHdr,
+      beforeLines: beforeLineRows,
+      afterLines: lineRows.map((r) => r.row),
+      showMoney,
+    });
 
     return {
       ...toPurchaseOrder(updatedHdr),
@@ -1881,6 +1899,156 @@ export async function updatePurchaseOrder(
       lines: lineRows.map((r) => toPurchaseOrderLine(r.row, null, r.sourcePrCode)),
     };
   });
+}
+
+// ── ADR-197: the PO's EDIT rows ───────────────────────────────────────────
+// Header: one EDIT row whose `changes` list starts with the revision (PO No.
+// /R1 → /R2) and then every header field that moved. Lines: one EDIT row per
+// line added, removed or changed, with `lineRef: Line N`. Nothing changed →
+// no row at all. Money fields (rate, tax %, total) are only compared when the
+// editor may see prices — a price-blind save never moves them anyway.
+
+type PoHeaderRow = typeof purchaseOrders.$inferSelect;
+type PoLineRow = typeof purchaseOrderLines.$inferSelect;
+
+const PO_TYPE_LABEL: Record<string, string> = {
+  standard: 'Standard',
+  job_work: 'Job Work',
+  outsource: 'Outsource',
+  service: 'Service',
+};
+
+const PO_HEADER_FIELDS: readonly DiffField[] = [
+  { key: 'poDate', label: 'PO Date' },
+  {
+    key: 'poType',
+    label: 'PO Type',
+    format: (v) => (v == null ? null : (PO_TYPE_LABEL[String(v)] ?? String(v))),
+  },
+  { key: 'dueDate', label: 'Due Date' },
+  { key: 'taxType', label: 'Tax Type' },
+  { key: 'prCodeText', label: 'PR No.' },
+  { key: 'remarks', label: 'Remarks' },
+];
+
+const PO_MONEY_HEADER_FIELDS: readonly DiffField[] = [
+  { key: 'sgstPct', label: 'SGST %' },
+  { key: 'cgstPct', label: 'CGST %' },
+  { key: 'igstPct', label: 'IGST %' },
+  { key: 'totalAmount', label: 'Total Amount' },
+];
+
+const PO_LINE_FIELDS: readonly DiffField[] = [
+  { key: 'itemCodeText', label: 'Item Code' },
+  { key: 'qty', label: 'Order Qty' },
+  { key: 'dueDate', label: 'Due Date' },
+  { key: 'lineRemarks', label: 'Remarks' },
+];
+
+const PO_MONEY_LINE_FIELDS: readonly DiffField[] = [{ key: 'rate', label: 'Rate' }];
+
+async function logPoEdit(
+  tx: DbTransaction,
+  companyId: string,
+  user: AuthContext,
+  args: {
+    before: PoHeaderRow;
+    after: PoHeaderRow;
+    beforeLines: PoLineRow[];
+    afterLines: PoLineRow[];
+    showMoney: boolean;
+  },
+): Promise<void> {
+  const { before, after, showMoney } = args;
+  const refId = after.code;
+  const headerFields = showMoney
+    ? [...PO_HEADER_FIELDS, ...PO_MONEY_HEADER_FIELDS]
+    : PO_HEADER_FIELDS;
+  const headerChanges: ActivityChange[] = [];
+  if (before.code !== after.code) {
+    headerChanges.push({ field: 'code', label: 'PO No.', before: before.code, after: after.code });
+  }
+  if ((before.vendorId ?? null) !== (after.vendorId ?? null)) {
+    const ids = [before.vendorId, after.vendorId].filter((v): v is string => !!v);
+    const vrows =
+      ids.length > 0
+        ? await tx
+            .select({ id: vendors.id, code: vendors.code })
+            .from(vendors)
+            .where(inArray(vendors.id, ids))
+        : [];
+    const codeOf = (vid: string | null): string | null =>
+      vid ? (vrows.find((r) => r.id === vid)?.code ?? null) : null;
+    headerChanges.push({
+      field: 'vendorId',
+      label: 'Vendor',
+      before: codeOf(before.vendorId) ?? before.vendorCodeText ?? null,
+      after: codeOf(after.vendorId) ?? after.vendorCodeText ?? null,
+    });
+  }
+  headerChanges.push(...diffFields(before, after, headerFields));
+  if (headerChanges.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'PurchaseOrder',
+        entityId: after.id,
+        refId,
+        changes: headerChanges,
+        detail: `Edited ${refId}`,
+      },
+      companyId,
+      user,
+    );
+  }
+
+  const lineFields = showMoney ? [...PO_LINE_FIELDS, ...PO_MONEY_LINE_FIELDS] : PO_LINE_FIELDS;
+  const beforeById = new Map(args.beforeLines.map((l) => [l.id, l]));
+  const afterIds = new Set(args.afterLines.map((l) => l.id));
+  const lineLabel = (l: PoLineRow): string =>
+    `${l.itemCodeText ?? l.itemName ?? 'Item'} × ${Number(l.qty)}`;
+  for (const line of args.afterLines) {
+    const prev = beforeById.get(line.id);
+    const changes: ActivityChange[] = prev
+      ? diffFields(prev, line, lineFields)
+      : [{ field: 'line', label: 'Line added', before: null, after: lineLabel(line) }];
+    if (changes.length === 0) continue;
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'PurchaseOrder',
+        entityId: after.id,
+        refId,
+        lineRef: `Line ${line.lineNo}`,
+        qty: line.qty,
+        changes,
+        detail: prev
+          ? `Edited ${refId} Line ${line.lineNo}`
+          : `Added Line ${line.lineNo} to ${refId}`,
+      },
+      companyId,
+      user,
+    );
+  }
+  for (const prev of args.beforeLines) {
+    if (afterIds.has(prev.id)) continue;
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'PurchaseOrder',
+        entityId: after.id,
+        refId,
+        lineRef: `Line ${prev.lineNo}`,
+        changes: [{ field: 'line', label: 'Line removed', before: lineLabel(prev), after: null }],
+        detail: `Removed Line ${prev.lineNo} from ${refId}`,
+      },
+      companyId,
+      user,
+    );
+  }
 }
 
 async function mergeLines(
@@ -1947,7 +2115,7 @@ async function mergeLines(
   if (absentIds.length > 0) {
     await tx
       .update(purchaseOrderLines)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(inArray(purchaseOrderLines.id, absentIds));
   }
 
@@ -2129,6 +2297,7 @@ async function mergeLines(
 export async function softDeletePurchaseOrder(
   id: string,
   user: AuthContext,
+  reason?: string | null,
 ): Promise<{ ok: true }> {
   // Delete is not one of the four tier actions, so "L5 Department Admin and
   // above" is expressed as the pair only L5/L6 hold: L3 has edit without
@@ -2168,24 +2337,26 @@ export async function softDeletePurchaseOrder(
         `Cannot delete PO ${row.code}: goods have moved against it (${liveDoc}). Cancel that document first.`,
       );
     }
-    const now = new Date();
+    const stamp = softDeleteStamp(user);
     await tx
       .update(purchaseOrderLines)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id })
       .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)));
     await tx
       .update(purchaseOrders)
-      .set({ deletedAt: now, updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id })
       .where(eq(purchaseOrders.id, id));
     // G9a: hand the outsourced ops and the PRs back (see releaseJcOpsForCancelledPo).
     await releaseJcOpsForCancelledPo(tx, companyId, { id, code: row.code }, user);
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
+        action: ActivityAction.Delete,
         entity: 'PurchaseOrder',
+        entityId: id,
         detail: poDetail(row.code, row.vendorCodeText),
         refId: row.code,
+        reason: reason ?? null,
       },
       companyId,
       user,
@@ -2397,8 +2568,10 @@ async function releaseJcOpsForCancelledPo(
       await emitActivityLog(
         tx,
         {
-          action: 'UPDATE',
-          entity: 'Job Card',
+          action: ActivityAction.Edit,
+          entity: 'JobCard',
+          entityId: op.jobCardId,
+          opRef: `Op ${opSrNo(op.opSeq)} · ${op.operation}`,
           // display rule — see opSrNo in @innovic/shared
           detail: `${jcCode} Op${opSrNo(op.opSeq)} "${op.operation}" — PO ${po.code} cancelled; op stays on its other purchase order`,
           refId: jcCode,
@@ -2423,8 +2596,10 @@ async function releaseJcOpsForCancelledPo(
     await emitActivityLog(
       tx,
       {
-        action: 'UPDATE',
-        entity: 'Job Card',
+        action: ActivityAction.Edit,
+        entity: 'JobCard',
+        entityId: op.jobCardId,
+        opRef: `Op ${opSrNo(op.opSeq)} · ${op.operation}`,
         detail:
           `${jcCode} Op${opSrNo(op.opSeq)} "${op.operation}" — released from PO ${po.code} (cancelled): ` +
           (prAlive && pr ? `back to PR raised (${pr.code})` : 'no PR — awaiting a fresh PR'),
@@ -2466,8 +2641,17 @@ async function releaseJcOpsForCancelledPo(
     await emitActivityLog(
       tx,
       {
-        action: 'UPDATE',
+        action: ActivityAction.Edit,
         entity: 'PurchaseRequest',
+        entityId: pr.id,
+        changes: [
+          {
+            field: 'status',
+            label: 'PR Status',
+            before: 'PO Created',
+            after: backTo === 'approved' ? 'Approved' : 'Open',
+          },
+        ],
         detail: `${pr.code} back to ${backTo === 'approved' ? 'Approved' : 'Open'} — PO ${po.code} was cancelled`,
         refId: pr.code,
       },
@@ -2703,10 +2887,12 @@ export async function createPurchaseOrderFromPr(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'PurchaseOrder',
+        entityId: header.id,
         detail: poDetail(header.code, header.vendorCodeText),
         refId: header.code,
+        qty: sumLineQty(insertedLines),
       },
       companyId,
       user,
@@ -2716,6 +2902,7 @@ export async function createPurchaseOrderFromPr(
       {
         action: 'PR_CONVERT',
         entity: 'PurchaseRequest',
+        entityId: pr.id,
         detail: `${pr.code} → ${header.code}`,
         refId: pr.code,
       },
@@ -2916,8 +3103,10 @@ export async function approvePurchaseOrder(
     await emitActivityLog(
       tx,
       {
-        action: 'APPROVE',
-        entity: 'Purchase Order',
+        action: ActivityAction.Approve,
+        entity: 'PurchaseOrder',
+        entityId: id,
+        changes: [{ field: 'status', label: 'PO Status', before: 'Draft', after: 'Open' }],
         detail:
           po.code +
           ' approved by ' +
@@ -2999,10 +3188,13 @@ export async function rejectPurchaseOrder(
     await emitActivityLog(
       tx,
       {
-        action: 'REJECT',
-        entity: 'Purchase Order',
+        action: ActivityAction.Reject,
+        entity: 'PurchaseOrder',
+        entityId: id,
         detail: po.code + ' rejected: ' + reason.trim(),
         refId: po.code,
+        reason: reason.trim(),
+        changes: [{ field: 'status', label: 'PO Status', before: 'Draft', after: 'Cancelled' }],
       },
       companyId,
       user,
@@ -3121,8 +3313,14 @@ export async function shortClosePurchaseOrder(
     await emitActivityLog(
       tx,
       {
-        action: 'SHORT_CLOSE',
-        entity: 'Purchase Order',
+        // Nothing received → the PO is cancelled outright; part received →
+        // short closed. Both carry the reason and the qty that will now never
+        // arrive.
+        action: stopWholly ? ActivityAction.Cancel : ActivityAction.CloseShort,
+        entity: 'PurchaseOrder',
+        entityId: id,
+        qty: ordered - received,
+        reason,
         detail: stopWholly
           ? `${po.code} cancelled — nothing received (ordered ${ordered}); PRs released. Reason: ${reason}`
           : `${po.code} short closed — received ${received} of ${ordered}; ${ordered - received} returned to its PRs as Pending. Reason: ${reason}`,
@@ -3367,8 +3565,10 @@ export async function createPurchaseOrderFromPrBatch(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: ActivityAction.Create,
         entity: 'PurchaseOrder',
+        entityId: header.id,
+        qty: sumLineQty(insertedLines),
         detail: `${header.code} (Job Work PO) — ${sortedPrs.length} lines to ${vendorRow?.name ?? 'Vendor'}`,
         refId: header.code,
       },
@@ -3381,6 +3581,7 @@ export async function createPurchaseOrderFromPrBatch(
         {
           action: 'PR_CONVERT',
           entity: 'PurchaseRequest',
+          entityId: pr.id,
           detail: `${pr.code} → ${header.code}`,
           refId: pr.code,
         },

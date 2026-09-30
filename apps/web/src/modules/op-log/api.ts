@@ -39,6 +39,14 @@ export interface OpLogListItem {
   createdAt: string;
   createdBy: string | null;
   createdByName: string | null;
+  // ADR-197 reversal pair. On a REVERSAL row (negative qty / rejectQty, same
+  // logType as the original): the entry it cancels + the reason typed.
+  reversalOfId: string | null;
+  reversalOfLogNo: string | null;
+  reversalReason: string | null;
+  // On an ORIGINAL that has been reversed: the reversal row that cancels it.
+  reversedById: string | null;
+  reversedByLogNo: string | null;
 }
 
 export interface ListOpLogQuery {

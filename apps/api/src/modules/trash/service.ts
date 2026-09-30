@@ -8,8 +8,12 @@
 // own `deleted_at` column, so trash is just a UNION ALL of soft-deleted
 // rows across a curated set of tables.
 //
-// All operations admin-only. Restore clears `deleted_at`.
+// All operations admin-only. Restore clears `deleted_at` and `deleted_by`
+// (ADR-197) and logs RESTORE against the document's own History. "Deleted
+// By" reads `deleted_by`, falling back to `updated_by` for rows deleted
+// before 0178 added the column.
 
+import { ActivityAction, type ActivityEntity } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import {
   bomMasters,
@@ -92,6 +96,21 @@ const ENTITIES: readonly EntityMeta[] = [
   { type: 'Production Order', table: 'production_orders', labelSql: 'code', hasUpdatedBy: true },
 ];
 
+// Child rows a delete stamps together with their header (one softDeleteStamp
+// for both, so they share the exact deleted_at). Restore brings back only the
+// children whose deleted_at equals the header's — a line removed by an
+// earlier edit carries a different instant and stays deleted. BOM lines are
+// never stamped by a BOM delete, so bom_masters has no entry.
+const CHILD_TABLES: Partial<Record<TrashEntityType, { table: string; fk: string }[]>> = {
+  'Sales Order': [{ table: 'sales_order_lines', fk: 'sales_order_id' }],
+  'Job Work Order': [{ table: 'job_work_order_lines', fk: 'job_work_order_id' }],
+  'Job Card': [{ table: 'jc_ops', fk: 'job_card_id' }],
+  'Purchase Order': [{ table: 'purchase_order_lines', fk: 'purchase_order_id' }],
+  'Goods Receipt Note': [{ table: 'goods_receipt_note_lines', fk: 'goods_receipt_note_id' }],
+  'Delivery Challan': [{ table: 'delivery_challan_lines', fk: 'delivery_challan_id' }],
+  'Route Card': [{ table: 'route_card_ops', fk: 'route_card_id' }],
+};
+
 // Used by restore to look up the Drizzle table object by type.
 const TABLE_BY_TYPE = {
   'Sales Order': salesOrders,
@@ -113,6 +132,31 @@ const TABLE_BY_TYPE = {
   'QC Process': qcProcesses,
   'Production Order': productionOrders,
 } as const satisfies Record<TrashEntityType, unknown>;
+
+// The document type each Trash type is logged under (ADR-197) — the same
+// entity its DELETE row was written with, so RESTORE lands on the same
+// History tab. Master types with no ACTIVITY_ENTITIES entry use the
+// CamelCase name their own service logs with.
+const ACTIVITY_ENTITY_BY_TYPE: Record<TrashEntityType, ActivityEntity | (string & {})> = {
+  'Sales Order': 'SalesOrder',
+  'Job Work Order': 'JobWorkOrder',
+  'Job Card': 'JobCard',
+  Item: 'Item',
+  Client: 'Client',
+  Vendor: 'Vendor',
+  Machine: 'Machine',
+  Operator: 'Operator',
+  'Purchase Request': 'PurchaseRequest',
+  'Purchase Order': 'PurchaseOrder',
+  'Goods Receipt Note': 'GoodsReceiptNote',
+  'Delivery Challan': 'DeliveryChallan',
+  'NC Register': 'NonConformance',
+  'BOM Master': 'BOM',
+  'Route Card': 'RouteCard',
+  'Cost Center': 'CostCenter',
+  'QC Process': 'QcProcess',
+  'Production Order': 'ProductionOrder',
+};
 
 // Screen words for the activity-log line. The type codes above stay as they
 // are (they are the API contract); only the two that break the naming
@@ -166,10 +210,10 @@ function unionSql(companyId: string, typeFilter?: TrashEntityType): string {
               '${e.type.replace(/'/g, "''")}'::text AS type,
               t.${e.labelSql}::text AS label,
               t.deleted_at AS deleted_at,
-              t.updated_by AS deleted_by_id,
+              COALESCE(t.deleted_by, t.updated_by) AS deleted_by_id,
               u.full_name AS deleted_by_name
        FROM "${e.table}" t
-       LEFT JOIN "users" u ON u.id = t.updated_by
+       LEFT JOIN "users" u ON u.id = COALESCE(t.deleted_by, t.updated_by)
        WHERE t.deleted_at IS NOT NULL
          AND t.company_id = '${companyId}'::uuid`,
   );
@@ -272,27 +316,54 @@ export async function restoreFromTrash(
       }
     }
 
+    // The header's delete instant, read before it is cleared — the key that
+    // picks out the child rows deleted with it.
+    const stampRows = (await tx.execute(
+      sql.raw(
+        `SELECT deleted_at::text AS deleted_at FROM "${entity.table}"
+         WHERE id = '${input.id}'::uuid
+           AND company_id = '${companyId}'::uuid
+           AND deleted_at IS NOT NULL`,
+      ),
+    )) as unknown as { deleted_at: string }[];
+    const deletedAtText = stampRows[0]?.deleted_at ?? null;
+
     const result = await tx.execute(
       sql.raw(
         `UPDATE "${entity.table}"
-         SET deleted_at = NULL${entity.hasUpdatedBy ? `, updated_by = '${user.id}'::uuid, updated_at = now()` : ''}
+         SET deleted_at = NULL, deleted_by = NULL${entity.hasUpdatedBy ? `, updated_by = '${user.id}'::uuid, updated_at = now()` : ''}
          WHERE id = '${input.id}'::uuid
            AND company_id = '${companyId}'::uuid
            AND deleted_at IS NOT NULL
-         RETURNING id`,
+         RETURNING id, ${entity.labelSql}::text AS label`,
       ),
     );
-    const rows = result as unknown as { id: string }[];
+    const rows = result as unknown as { id: string; label: string | null }[];
     if (rows.length === 0)
       throw new NotFoundError('This record is no longer in Trash. Refresh the page.');
 
+    if (deletedAtText) {
+      for (const child of CHILD_TABLES[entity.type] ?? []) {
+        await tx.execute(sql`
+          UPDATE ${sql.raw(`"${child.table}"`)}
+             SET deleted_at = NULL, deleted_by = NULL,
+                 updated_by = ${user.id}::uuid, updated_at = now()
+           WHERE ${sql.raw(child.fk)} = ${input.id}::uuid
+             AND company_id = ${companyId}::uuid
+             AND deleted_at = ${deletedAtText}::timestamptz
+        `);
+      }
+    }
+
+    const code = rows[0]?.label ?? null;
     await emitActivityLog(
       tx,
       {
-        action: 'RESTORE',
-        entity: input.type,
-        detail: `Restored ${typeLabel(input.type)} from Trash`,
-        refId: input.id,
+        action: ActivityAction.Restore,
+        entity: ACTIVITY_ENTITY_BY_TYPE[input.type],
+        entityId: input.id,
+        refId: code ?? input.id,
+        detail: `Restored ${typeLabel(input.type)}${code ? ` ${code}` : ''} from Trash`,
       },
       companyId,
       user,

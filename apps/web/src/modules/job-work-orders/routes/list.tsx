@@ -28,9 +28,9 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
-import { useJobWorkOrder, useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
+import { useJobWorkOrder, useJobWorkOrdersList } from '../api';
+import { DeleteJwsoModal } from '../components/delete-jwso-modal';
 
 // No pagination — mirror the SO/WO list: load all matching JWSOs in one fetch
 // and scroll (no Prev/Next). Uses the JW list-query cap (200); the count line
@@ -164,7 +164,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const canCreate = perms.entry;
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
-  const deleteMut = useSoftDeleteJobWorkOrder();
   const today = todayIst();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -172,11 +171,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
   // The JWSO the Move-to-Trash dialog is asking about, or null when closed.
   const [trashTarget, setTrashTarget] = useState<{ id: string; code: string } | null>(null);
-  const onDelete = async (): Promise<void> => {
-    if (!trashTarget) return;
-    await deleteMut.mutateAsync(trashTarget.id);
-    setTrashTarget(null);
-  };
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
@@ -329,7 +323,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                         <button
                           type="button"
                           className="btn btn-danger btn-sm"
-                          disabled={deleteMut.isPending}
                           onClick={() => setTrashTarget({ id: jw.jwId, code: jw.code })}
                         >
                           Delete
@@ -432,13 +425,10 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       <ListFooter total={total} shown={rows.length} noun="JWSO" limit={LIST_LIMIT} />
 
       {trashTarget ? (
-        <ConfirmDialog
-          title={`Move JWSO ${trashTarget.code} to Trash?`}
-          message="You can restore it from Trash."
-          confirmLabel="Move to Trash"
-          pendingLabel="Moving to Trash…"
-          onConfirm={onDelete}
-          onCancel={() => setTrashTarget(null)}
+        <DeleteJwsoModal
+          id={trashTarget.id}
+          code={trashTarget.code}
+          onClose={() => setTrashTarget(null)}
         />
       ) : null}
     </div>

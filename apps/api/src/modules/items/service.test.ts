@@ -163,7 +163,7 @@ describe('items service', () => {
       },
       admin,
     );
-    await service.softDeleteItem(created.id, admin);
+    await service.softDeleteItem(created.id, 'test cleanup', admin);
     await expect(service.getItem(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
   });
 
@@ -181,7 +181,7 @@ describe('items service', () => {
       admin,
     );
     await service.updateItem(created.id, { name: 'Audit Test (renamed)' }, admin);
-    await service.softDeleteItem(created.id, admin);
+    await service.softDeleteItem(created.id, 'test cleanup', admin);
 
     const auditRows = await db
       .select()

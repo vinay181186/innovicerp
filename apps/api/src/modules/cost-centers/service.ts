@@ -1,3 +1,4 @@
+import { ActivityAction } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { costCenters } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -11,6 +12,8 @@ import type {
   ListCostCentersResponse,
   UpdateCostCenterInput,
 } from './schema';
+import { softDeleteStamp } from '../../lib/audit-trail';
+import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -187,10 +190,10 @@ export async function softDeleteCostCenter(id: string, user: AuthContext): Promi
   // edit AND approve. L3 Editor has edit but not approve; L4 Approver the reverse.
   await requireFormAccess(user, 'cc_create', 'edit');
   await requireFormAccess(user, 'cc_create', 'approve');
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: costCenters.id })
+      .select({ id: costCenters.id, code: costCenters.code })
       .from(costCenters)
       .where(and(eq(costCenters.id, id), isNull(costCenters.deletedAt)))
       .limit(1);
@@ -198,8 +201,20 @@ export async function softDeleteCostCenter(id: string, user: AuthContext): Promi
       throw new NotFoundError('Cost Centre not found. It may have been moved to Trash.');
     await tx
       .update(costCenters)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(costCenters.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Delete,
+        entity: 'CostCenter',
+        entityId: id,
+        refId: existing[0]?.code ?? null,
+        detail: `Deleted Cost Centre ${existing[0]?.code ?? id}`,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

@@ -1,3 +1,4 @@
+import { ActivityAction } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { qcProcesses } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -11,6 +12,8 @@ import type {
   QcProcess,
   UpdateQcProcessInput,
 } from './schema';
+import { softDeleteStamp } from '../../lib/audit-trail';
+import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -245,8 +248,20 @@ export async function softDeleteQcProcess(id: string, user: AuthContext): Promis
 
     await tx
       .update(qcProcesses)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(qcProcesses.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Delete,
+        entity: 'QcProcess',
+        entityId: id,
+        refId: row.code,
+        detail: `Deleted QC Process ${row.code}`,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

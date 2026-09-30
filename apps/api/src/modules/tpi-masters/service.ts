@@ -1,3 +1,4 @@
+import { ActivityAction } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { tpiMasters } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -10,6 +11,8 @@ import type {
   TpiMaster,
   UpdateTpiMasterInput,
 } from './schema';
+import { softDeleteStamp } from '../../lib/audit-trail';
+import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -211,10 +214,10 @@ export async function softDeleteTpiMaster(id: string, user: AuthContext): Promis
   // has edit but not approve; L4 Approver has approve but not edit.
   await requireFormAccess(user, 'tpimaster_create', 'edit');
   await requireFormAccess(user, 'tpimaster_create', 'approve');
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: tpiMasters.id })
+      .select({ id: tpiMasters.id, code: tpiMasters.code })
       .from(tpiMasters)
       .where(and(eq(tpiMasters.id, id), isNull(tpiMasters.deletedAt)))
       .limit(1);
@@ -226,8 +229,20 @@ export async function softDeleteTpiMaster(id: string, user: AuthContext): Promis
     // it only takes the name out of the pickers.
     await tx
       .update(tpiMasters)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(tpiMasters.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Delete,
+        entity: 'TpiInspector',
+        entityId: id,
+        refId: existing[0]?.code ?? null,
+        detail: `Deleted TPI Inspector ${existing[0]?.code ?? id}`,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

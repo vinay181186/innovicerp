@@ -62,6 +62,14 @@ export const opLogListItemSchema = z.object({
   createdAt: z.string(),
   createdBy: z.string().uuid().nullable(),
   createdByName: z.string().nullable(),
+  /** 0179 (ADR-197) — set on a REVERSAL row: the entry it cancels. A reversal
+   *  carries the NEGATIVE qty / rejectQty of that entry, same logType. */
+  reversalOfId: z.string().uuid().nullable(),
+  reversalOfLogNo: z.string().nullable(),
+  reversalReason: z.string().nullable(),
+  /** Set on an ORIGINAL entry that has been reversed: its reversal row. */
+  reversedById: z.string().uuid().nullable(),
+  reversedByLogNo: z.string().nullable(),
 });
 export type OpLogListItem = z.infer<typeof opLogListItemSchema>;
 

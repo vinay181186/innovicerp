@@ -12,19 +12,25 @@
 //            In Store · Lost → still out with the holder (instrument stays
 //            Issued and can be returned again) · Scrap → nothing changes.
 
-import type {
-  DecideToolWriteoffInput,
-  ListToolWriteoffsQuery,
-  ListToolWriteoffsResponse,
-  ToolWriteoffKind,
-  ToolWriteoffRow,
-  ToolWriteoffStatus,
+import {
+  ActivityAction,
+  type DecideToolWriteoffInput,
+  type ListToolWriteoffsQuery,
+  type ListToolWriteoffsResponse,
+  type ToolWriteoffKind,
+  type ToolWriteoffRow,
+  type ToolWriteoffStatus,
 } from '@innovic/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { toolIssueInstruments, toolWriteoffs } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
-import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 import { lockInstrument, setInstrumentStatus, tsOut } from '../instruments/common';
@@ -121,6 +127,11 @@ export async function decideToolWriteoff(
       );
     }
     const approve = input.decision === 'approve';
+    // ADR-197 — a Reject needs a reason (the decision Remarks are the reason).
+    const decisionRemarks = input.remarks?.trim() || null;
+    if (!approve && !decisionRemarks) {
+      throw new ValidationError('Give a reason in Remarks to reject this write-off.');
+    }
     const ti = w.toolIssueId ? await lockIssue(tx, companyId, w.toolIssueId) : null;
     const item = await lockItemForStock(tx, companyId, w.itemId);
     const ins = w.instrumentId ? await lockInstrument(tx, companyId, w.instrumentId) : null;
@@ -194,10 +205,15 @@ export async function decideToolWriteoff(
     await emitActivityLog(
       tx,
       {
-        action: approve ? 'APPROVE' : 'REJECT',
-        entity: 'Tool Write-off',
-        detail: `${w.kind} · ${what}${ti ? ` · ${ti.code}` : ''} · ${approve ? 'approved' : 'rejected'}${input.remarks ? ` · ${input.remarks}` : ''}`,
+        action: approve ? ActivityAction.Approve : ActivityAction.Reject,
+        // The Tool Issue is the document when there is one; a shelf Scrap /
+        // Mark Missing has no Tool Issue, so it stays on the write-off itself.
+        entity: ti ? 'ToolIssue' : 'Tool Write-off',
+        entityId: ti ? ti.id : id,
         refId: ti?.code ?? item.code,
+        qty: w.qty,
+        reason: approve ? null : decisionRemarks,
+        detail: `${w.kind} write-off · ${what}${ti ? ` · ${ti.code}` : ''} · ${approve ? 'approved' : 'rejected'}${approve && decisionRemarks ? ` · ${decisionRemarks}` : ''}`,
       },
       companyId,
       user,

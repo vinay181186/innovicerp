@@ -43,7 +43,7 @@
 // pending, linked back through split_from_nc_id. Every NC row is therefore
 // exactly one disposition — there is no child table to reconcile.
 
-import { NC_STATUS_LABELS, opSrNo } from '@innovic/shared';
+import { ActivityAction, NC_STATUS_LABELS, opSrNo } from '@innovic/shared';
 import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
@@ -327,15 +327,35 @@ export async function disposeNcCascade(
     nc = { ...loaded, rejectedQty: qty.toFixed(2) };
     result.remainderNcId = sib.id;
     result.remainderNcCode = sib.code;
+    // ADR-197 — one SPLIT row on each NC: the parent keeps `qty`, the new
+    // sibling starts with the remainder.
     await emitActivityLog(
       tx,
       {
-        action: 'NC_SPLIT',
+        action: ActivityAction.Split,
         entity: 'NonConformance',
+        entityId: loaded.id,
+        refId: loaded.code,
+        qty,
+        changes: [
+          { field: 'rejectedQty', label: 'Rejected Qty', before: rejectedBefore, after: qty },
+        ],
         detail:
           `${loaded.code} — ${qty} of ${rejectedBefore} pcs dispositioned; ` +
           `${remainder} pcs remain pending as ${sib.code}`,
-        refId: loaded.code,
+      },
+      ctx.companyId,
+      ctx.user,
+    );
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Split,
+        entity: 'NonConformance',
+        entityId: sib.id,
+        refId: sib.code,
+        qty: remainder,
+        detail: `${sib.code} — split from ${loaded.code}: ${remainder} pcs pending`,
       },
       ctx.companyId,
       ctx.user,
@@ -365,6 +385,9 @@ export async function disposeNcCascade(
           disposition: 'scrap',
           dispositionDate: today,
           dispositionByText: ctx.userName,
+          // ADR-197 — the live user behind the text snapshot.
+          dispositionBy: ctx.userId,
+          dispositionAt: new Date(),
           dispositionRemarks: input.remarks ?? null,
           failedQty: rejectedQtyInt.toFixed(2),
           scrapCost: Math.max(0, input.scrapCost ?? 0).toFixed(2),
@@ -387,6 +410,9 @@ export async function disposeNcCascade(
         disposition: 'return_to_vendor',
         dispositionDate: today,
         dispositionByText: ctx.userName,
+        // ADR-197 — the live user behind the text snapshot.
+        dispositionBy: ctx.userId,
+        dispositionAt: new Date(),
         dispositionRemarks: input.remarks ?? null,
         updatedBy: ctx.userId,
       })
@@ -407,6 +433,9 @@ export async function disposeNcCascade(
         disposition: input.action,
         dispositionDate: today,
         dispositionByText: ctx.userName,
+        // ADR-197 — the live user behind the text snapshot.
+        dispositionBy: ctx.userId,
+        dispositionAt: new Date(),
         dispositionRemarks: input.remarks ?? null,
         childJobCardId: child.id,
         reworkJcCodeText: child.code,
@@ -428,6 +457,9 @@ export async function disposeNcCascade(
         disposition: 'scrap',
         dispositionDate: today,
         dispositionByText: ctx.userName,
+        // ADR-197 — the live user behind the text snapshot.
+        dispositionBy: ctx.userId,
+        dispositionAt: new Date(),
         dispositionRemarks: input.remarks ?? null,
         scrapCost: scrapCost.toFixed(2),
         // Ledger (QC-NC audit 2026-09-21, gap 8): the scrapped pieces are
@@ -530,6 +562,9 @@ export async function disposeNcCascade(
         disposition: 'use_as_is',
         dispositionDate: today,
         dispositionByText: ctx.userName,
+        // ADR-197 — the live user behind the text snapshot.
+        dispositionBy: ctx.userId,
+        dispositionAt: new Date(),
         dispositionRemarks: input.remarks ?? null,
         // Ledger (QC-NC audit 2026-09-21, gap 8): the pieces are accepted with
         // concession, i.e. CLEARED — the qc row above is the same mechanism a
@@ -644,6 +679,9 @@ export async function disposeNcCascade(
         disposition: 'return_to_vendor',
         dispositionDate: today,
         dispositionByText: ctx.userName,
+        // ADR-197 — the live user behind the text snapshot.
+        dispositionBy: ctx.userId,
+        dispositionAt: new Date(),
         dispositionRemarks: input.remarks ?? null,
         updatedBy: ctx.userId,
       })
@@ -800,6 +838,9 @@ export async function disposeNcCascade(
       disposition: 'make_fresh',
       dispositionDate: today,
       dispositionByText: ctx.userName,
+      // ADR-197 — the live user behind the text snapshot.
+      dispositionBy: ctx.userId,
+      dispositionAt: new Date(),
       dispositionRemarks: input.remarks ?? null,
       reworkJcCodeText: newJc.code,
       failedQty: rejectedQtyInt.toFixed(2),
@@ -1026,10 +1067,13 @@ export async function autoCreateMaterialNcFromIqcReject(
   await emitActivityLog(
     tx,
     {
-      action: 'CREATE',
+      action: ActivityAction.Create,
       entity: 'NonConformance',
-      detail: `${nc.code} — ${itemCode} qty=${ctx.rejectedQty.toFixed(2)} (bought material rejected at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo})`,
+      entityId: nc.id,
       refId: nc.code,
+      qty: ctx.rejectedQty,
+      operatorName: ctx.reportedByText,
+      detail: `${nc.code} — ${itemCode} qty=${ctx.rejectedQty.toFixed(2)} (bought material rejected at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo})`,
     },
     ctx.companyId,
     user,
@@ -1198,10 +1242,13 @@ export async function autoCreateNcFromQcReject(
   await emitActivityLog(
     tx,
     {
-      action: 'CREATE',
+      action: ActivityAction.Create,
       entity: 'NonConformance',
-      detail: `${row.code} — ${itemCode || '—'}, ${row.rejectedQty} pcs Rejected at QC (auto NC)`,
+      entityId: row.id,
       refId: row.code,
+      qty: row.rejectedQty,
+      operatorName: ctx.reportedByText,
+      detail: `${row.code} — ${itemCode || '—'}, ${row.rejectedQty} pcs Rejected at QC (auto NC)`,
     },
     ctx.companyId,
     user,

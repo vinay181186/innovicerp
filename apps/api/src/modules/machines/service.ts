@@ -1,3 +1,4 @@
+import { ActivityAction } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { machineGroups, machines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -10,6 +11,8 @@ import type {
   Machine,
   UpdateMachineInput,
 } from './schema';
+import { softDeleteStamp } from '../../lib/audit-trail';
+import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -265,18 +268,30 @@ export async function softDeleteMachine(id: string, user: AuthContext): Promise<
   // this was admin-only, which locked out the very tier meant to run the dept.
   await requireFormAccess(user, 'machine_create', 'edit');
   await requireFormAccess(user, 'machine_create', 'approve');
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: machines.id })
+      .select({ id: machines.id, code: machines.code })
       .from(machines)
       .where(and(eq(machines.id, id), isNull(machines.deletedAt)))
       .limit(1);
     if (existing.length === 0) throw new NotFoundError('Machine not found. Refresh the page.');
     await tx
       .update(machines)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(machines.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Delete,
+        entity: 'Machine',
+        entityId: id,
+        refId: existing[0]?.code ?? null,
+        detail: `Deleted Machine ${existing[0]?.code ?? id}`,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

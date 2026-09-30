@@ -1,3 +1,4 @@
+import { ActivityAction } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { operators } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -14,6 +15,8 @@ import type {
   Operator,
   UpdateOperatorInput,
 } from './schema';
+import { softDeleteStamp } from '../../lib/audit-trail';
+import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -339,18 +342,30 @@ export async function softDeleteOperator(id: string, user: AuthContext): Promise
   // Delete = the edit+approve pair only L5 Department Admin and above hold.
   await requireFormAccess(user, 'operator_create', 'edit');
   await requireFormAccess(user, 'operator_create', 'approve');
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: operators.id })
+      .select({ id: operators.id, code: operators.code })
       .from(operators)
       .where(and(eq(operators.id, id), isNull(operators.deletedAt)))
       .limit(1);
     if (existing.length === 0) throw new NotFoundError('Operator not found. Refresh the page.');
     await tx
       .update(operators)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
       .where(eq(operators.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Delete,
+        entity: 'Operator',
+        entityId: id,
+        refId: existing[0]?.code ?? null,
+        detail: `Deleted Operator ${existing[0]?.code ?? id}`,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

@@ -28,8 +28,8 @@ import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
-import { ConfirmDialog } from '@/ui/feedback';
-import { useCancelDispatch, useDispatchList, useDispatchRegister } from '../api';
+import { useDispatchList, useDispatchRegister } from '../api';
+import { CancelDispatchModal } from '../components/cancel-dispatch-modal';
 import { type DispatchGroup, DispatchCard } from '../components/dispatch-card';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
@@ -92,7 +92,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
     () => new Map((dispatchList?.dispatches ?? []).map((d) => [d.id, d.billedStatus])),
     [dispatchList],
   );
-  const cancel = useCancelDispatch();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   const canAdd = perms.entry;
@@ -428,7 +427,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 billedStatus={billedById.get(g.dispatchId)}
                 isOpen={expanded.has(g.dispatchId)}
                 canCancel={canCancel}
-                cancelPending={cancel.isPending}
+                cancelPending={cancelling !== null}
                 onToggle={() => toggle(g.dispatchId)}
                 onCancel={() => setCancelling(g)}
               />
@@ -438,17 +437,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
         </>
       )}
       {cancelling ? (
-        <ConfirmDialog
-          title={`Cancel Dispatch ${cancelling.code}?`}
-          message="Stock will be reversed."
-          confirmLabel="Cancel Dispatch"
-          cancelLabel="Keep"
-          pendingLabel="Cancelling…"
-          onConfirm={async () => {
-            await cancel.mutateAsync(cancelling.dispatchId);
-            setCancelling(null);
-          }}
-          onCancel={() => setCancelling(null)}
+        <CancelDispatchModal
+          id={cancelling.dispatchId}
+          code={cancelling.code}
+          onClose={() => setCancelling(null)}
         />
       ) : null}
     </div>

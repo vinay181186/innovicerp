@@ -27,9 +27,12 @@
 //                    ospVendorCodeText fallback). ospLeadDays
 //                    captured for downstream JC scheduling.
 //
-// 4. Audit emission. CREATE / EDIT / DELETE rows land in activity_log
-//    with entity='Route Card' so the activity-log viewer can filter
-//    for route-card changes (legacy L7004 / L10275).
+// 4. Audit emission (ADR-197, docs/AUDIT-TRAIL.md). CREATE / EDIT / DELETE
+//    rows land in activity_log with entity='RouteCard' + entityId, inside
+//    the write's transaction. An edit writes one header row (before → after
+//    of the header fields + the Route Card Rev bump) and one row per op that
+//    was added / removed / changed, located by opRef "Op 20 · Turning".
+//    The JC / plan auto-save (saveRouteCardForItem) logs the same way.
 //
 // 5. Auto-save (saveRouteCardForItem, bottom of this file). Saving a
 //    Job Card / executing a plan writes the item's route card so the
@@ -45,7 +48,12 @@
 //    always rewritten from the master name. Header-only — it is not
 //    pushed down to plans or job cards.
 
-import { type JcRouteCardWriteBack, opSrNo } from '@innovic/shared';
+import {
+  type ActivityChange,
+  ActivityAction,
+  type JcRouteCardWriteBack,
+  opSrNo,
+} from '@innovic/shared';
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   items,
@@ -61,6 +69,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { requireWriteRole } from '../../lib/auth';
 import { resolveRmItem } from '../../lib/rm-item';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
@@ -642,6 +651,172 @@ export function computeRouteCardDiffNote(oldOps: DiffOp[], newOps: DiffOp[]): st
   return segs.length > 0 ? segs.join(' · ') : 'No op changes';
 }
 
+// ─── Audit trail (ADR-197) ────────────────────────────────────────────────
+//
+// The History tab reads before → after from `changes`, so both sides are
+// built as a person reads them: ids already turned into codes, plan / op
+// types into their screen words. Labels are the form's own (docs/NAMING.md).
+
+const PLAN_TYPE_LABEL: Record<string, string> = {
+  manufacture: 'Manufacture',
+  full_outsource: 'Full Outsource',
+  direct_purchase: 'Buy',
+};
+
+const OP_TYPE_LABEL: Record<string, string> = {
+  process: 'In-house',
+  outsource: 'OSP',
+  qc: 'QC',
+};
+
+function labelOf(map: Record<string, string>): (v: unknown) => string | null {
+  return (v) => (v === null || v === undefined || v === '' ? null : (map[String(v)] ?? String(v)));
+}
+
+/** The route card header as the form shows it. */
+interface RcHeaderView {
+  code?: string;
+  itemCode?: string | null;
+  planType?: string | null;
+  rawMaterialGradeText?: string | null;
+  rawMaterialSizeText?: string | null;
+  rawMaterialItemCode?: string | null;
+  rmQtyPerPiece?: number | null;
+  notes?: string | null;
+}
+
+const RC_HEADER_FIELDS: readonly DiffField[] = [
+  { key: 'code', label: 'RC No.' },
+  { key: 'itemCode', label: 'Item Code' },
+  { key: 'planType', label: 'Plan Type', format: labelOf(PLAN_TYPE_LABEL) },
+  { key: 'rawMaterialGradeText', label: 'RM Grade' },
+  { key: 'rawMaterialSizeText', label: 'RM Size' },
+  { key: 'rawMaterialItemCode', label: 'RM Item' },
+  { key: 'rmQtyPerPiece', label: 'RM Qty per piece' },
+  { key: 'notes', label: 'Notes' },
+];
+
+const RC_OP_FIELDS: readonly DiffField[] = [
+  { key: 'operation', label: 'Operation' },
+  { key: 'opType', label: 'Op Type', format: labelOf(OP_TYPE_LABEL) },
+  { key: 'machineCode', label: 'Machine' },
+  { key: 'ospVendorCode', label: 'Vendor' },
+  { key: 'cycleTimeMin', label: 'Cycle Time (min)' },
+  { key: 'ospLeadDays', label: 'Lead Days' },
+  { key: 'program', label: 'Program No.' },
+  { key: 'toolNo', label: 'Tool No.' },
+  { key: 'toolDetails', label: 'Tool Details' },
+  { key: 'qcRequired', label: 'QC' },
+];
+
+/** Every op field empty — the "before" of an added op, the "after" of a removed one. */
+const EMPTY_OP_VIEW: Record<string, null> = Object.fromEntries(
+  RC_OP_FIELDS.map((f) => [f.key, null]),
+);
+
+function opView(o: DiffOp): Record<string, unknown> {
+  // A legacy op with no QC flag reads as "No", so it is not a change to "No".
+  return { ...o, qcRequired: Boolean(o.qcRequired) };
+}
+
+function rcOpRef(o: DiffOp): string {
+  return `Op ${opSrNo(o.opSeq)} · ${o.operation || '(unnamed)'}`;
+}
+
+/** The Route Card Rev bump every saved revision carries. */
+function revChange(before: number, after: number): ActivityChange {
+  return { field: 'currentRevision', label: 'Route Card Rev', before, after };
+}
+
+interface RcOpLogRow {
+  action: ActivityAction;
+  opRef: string;
+  changes: ActivityChange[];
+  detail: string;
+}
+
+/** One log row per op that was added, removed or changed — ops are keyed by
+ *  their position (opSeq), the same way the revision note compares them. */
+export function routeCardOpLogRows(oldOps: DiffOp[], newOps: DiffOp[]): RcOpLogRow[] {
+  const oldBySeq = new Map(oldOps.map((o) => [o.opSeq, o]));
+  const newSeqs = new Set(newOps.map((o) => o.opSeq));
+  const out: RcOpLogRow[] = [];
+  for (const no of newOps) {
+    const oo = oldBySeq.get(no.opSeq);
+    if (!oo) {
+      out.push({
+        action: ActivityAction.Create,
+        opRef: rcOpRef(no),
+        changes: diffFields(EMPTY_OP_VIEW, opView(no), RC_OP_FIELDS).filter(
+          (c) => c.after !== false,
+        ),
+        detail: 'Op added',
+      });
+      continue;
+    }
+    const changes = diffFields(opView(oo), opView(no), RC_OP_FIELDS);
+    if (changes.length > 0) {
+      out.push({ action: ActivityAction.Edit, opRef: rcOpRef(no), changes, detail: 'Op changed' });
+    }
+  }
+  for (const oo of oldOps) {
+    if (newSeqs.has(oo.opSeq)) continue;
+    out.push({
+      action: ActivityAction.Edit,
+      opRef: rcOpRef(oo),
+      changes: diffFields(opView(oo), EMPTY_OP_VIEW, RC_OP_FIELDS).filter(
+        (c) => c.before !== false,
+      ),
+      detail: 'Op removed',
+    });
+  }
+  return out;
+}
+
+/** The EDIT rows for one saved revision: the header row (its field changes +
+ *  the Route Card Rev bump) and one row per changed op. */
+async function logRouteCardRevision(
+  tx: DbTransaction,
+  companyId: string,
+  user: AuthContext,
+  rc: { id: string; code: string },
+  headerChanges: ActivityChange[],
+  opRows: RcOpLogRow[],
+  detail: string,
+): Promise<void> {
+  if (headerChanges.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'RouteCard',
+        entityId: rc.id,
+        refId: rc.code,
+        changes: headerChanges,
+        detail,
+      },
+      companyId,
+      user,
+    );
+  }
+  for (const r of opRows) {
+    await emitActivityLog(
+      tx,
+      {
+        action: r.action,
+        entity: 'RouteCard',
+        entityId: rc.id,
+        refId: rc.code,
+        opRef: r.opRef,
+        changes: r.changes,
+        detail: `${rc.code} ${r.opRef} — ${r.detail}`,
+      },
+      companyId,
+      user,
+    );
+  }
+}
+
 // ─── Writes ───────────────────────────────────────────────────────────────
 
 function rcDetailString(code: string, itemCode: string | null): string {
@@ -740,10 +915,11 @@ export async function createRouteCard(
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
-        entity: 'Route Card',
-        detail: rcDetailString(header.code, item.code),
+        action: ActivityAction.Create,
+        entity: 'RouteCard',
+        entityId: header.id,
         refId: header.code,
+        detail: rcDetailString(header.code, item.code),
       },
       companyId,
       user,
@@ -844,6 +1020,7 @@ export async function updateRouteCard(
     if (input.code !== header.code) {
       headerChanges.push(`Code ${header.code} → ${input.code}`);
     }
+    let prevItemCode: string | null = item.code;
     if (input.itemId !== header.itemId) {
       // Plain select, not assertItemExists: the OLD item may since have been
       // deleted, and that must not block recording that it was replaced.
@@ -852,6 +1029,7 @@ export async function updateRouteCard(
         .from(items)
         .where(eq(items.id, header.itemId))
         .limit(1);
+      prevItemCode = prev[0]?.code ?? null;
       headerChanges.push(`Item ${prev[0]?.code ?? '—'} → ${item.code}`);
     }
     if ((rawMaterial.rawMaterialGradeText ?? null) !== (header.rawMaterialGradeText ?? null)) {
@@ -886,6 +1064,37 @@ export async function updateRouteCard(
       headerChanges.push(`Notes ${noteVal(header.notes)} → ${noteVal(input.notes)}`);
     }
 
+    // ADR-197 — the same header, as a person reads it, for the log's
+    // before → after. Read here, before the UPDATE below.
+    const rmCodes = await rmItemCodes(tx, companyId, [
+      header.rawMaterialItemId,
+      rawMaterial.rawMaterialItemId,
+    ]);
+    const beforeView: RcHeaderView = {
+      code: header.code,
+      itemCode: prevItemCode,
+      planType: header.planType,
+      rawMaterialGradeText: header.rawMaterialGradeText,
+      rawMaterialSizeText: header.rawMaterialSizeText,
+      rawMaterialItemCode: header.rawMaterialItemId
+        ? (rmCodes.get(header.rawMaterialItemId) ?? null)
+        : null,
+      rmQtyPerPiece: header.rmQtyPerPiece,
+      notes: header.notes,
+    };
+    const afterView: RcHeaderView = {
+      code: input.code,
+      itemCode: item.code,
+      planType: nextPlanType,
+      rawMaterialGradeText: rawMaterial.rawMaterialGradeText,
+      rawMaterialSizeText: rawMaterial.rawMaterialSizeText,
+      rawMaterialItemCode: rawMaterial.rawMaterialItemId
+        ? (rmCodes.get(rawMaterial.rawMaterialItemId) ?? null)
+        : null,
+      rmQtyPerPiece: rawMaterial.rmQtyPerPiece,
+      notes: input.notes ?? null,
+    };
+
     // Header fields the ops-replace helper does not own. rawMaterial is always
     // written, never merged — sending null (or leaving the field out) clears
     // the grade or size instead of keeping the old one.
@@ -906,7 +1115,7 @@ export async function updateRouteCard(
     // (replaceRouteCardOps) shared with the auto-save path below.
     // skipWhenUnchanged is false here: an explicit user save always
     // records a revision, exactly as it did before this refactor.
-    const { newRevision } = await replaceRouteCardOps(
+    const replaced = await replaceRouteCardOps(
       tx,
       {
         routeCardId: id,
@@ -921,23 +1130,33 @@ export async function updateRouteCard(
       user,
     );
 
-    await emitActivityLog(
+    // An explicit save always records a revision, so the header row always
+    // carries at least the Route Card Rev bump.
+    const revisionNote = input.revisionNote?.trim();
+    await logRouteCardRevision(
       tx,
-      {
-        action: 'EDIT',
-        entity: 'Route Card',
-        detail: `${rcDetailString(input.code, item.code)} (Rev ${header.currentRevision} → ${newRevision})`,
-        refId: input.code,
-      },
       companyId,
       user,
+      { id, code: input.code },
+      [
+        ...diffFields(beforeView, afterView, RC_HEADER_FIELDS),
+        revChange(header.currentRevision, replaced.newRevision),
+      ],
+      routeCardOpLogRows(replaced.oldOps, replaced.newOps),
+      `Edited ${rcDetailString(input.code, item.code)}${revisionNote ? ` — ${revisionNote}` : ''}`,
     );
 
     return loadRouteCardDetail(tx, id, companyId);
   });
 }
 
-export async function softDeleteRouteCard(id: string, user: AuthContext): Promise<RouteCard> {
+export async function softDeleteRouteCard(
+  id: string,
+  user: AuthContext,
+  /** Why it was deleted (ADR-197). Optional at the door so an older screen
+   *  still deletes; the Route Card screens always ask for one. */
+  reason?: string | null,
+): Promise<RouteCard> {
   if (user.role !== 'admin') {
     throw new AuthorizationError('You do not have permission to delete Route Cards. Ask an admin.');
   }
@@ -969,18 +1188,32 @@ export async function softDeleteRouteCard(id: string, user: AuthContext): Promis
       .limit(1);
     const itemCode = itemRows[0]?.code ?? null;
 
+    const stamp = softDeleteStamp(user);
     await tx
       .update(routeCards)
-      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .set({ ...stamp, updatedBy: user.id, updatedAt: stamp.deletedAt })
       .where(eq(routeCards.id, id));
+    // The ops go to Trash with their card, stamped the same way.
+    await tx
+      .update(routeCardOps)
+      .set({ ...stamp, updatedBy: user.id, updatedAt: stamp.deletedAt })
+      .where(
+        and(
+          eq(routeCardOps.routeCardId, id),
+          eq(routeCardOps.companyId, companyId),
+          isNull(routeCardOps.deletedAt),
+        ),
+      );
 
     await emitActivityLog(
       tx,
       {
-        action: 'DELETE',
-        entity: 'Route Card',
-        detail: rcDetailString(header.code, itemCode),
+        action: ActivityAction.Delete,
+        entity: 'RouteCard',
+        entityId: id,
         refId: header.code,
+        reason: reason ?? null,
+        detail: rcDetailString(header.code, itemCode),
       },
       companyId,
       user,
@@ -1005,7 +1238,7 @@ export async function softDeleteRouteCard(id: string, user: AuthContext): Promis
       createdBy: header.createdBy,
       updatedAt: tsLike(header.updatedAt),
       updatedBy: header.updatedBy,
-      deletedAt: new Date().toISOString(),
+      deletedAt: stamp.deletedAt.toISOString(),
     };
   });
 }
@@ -1181,7 +1414,7 @@ async function replaceRouteCardOps(
   tx: DbTransaction,
   p: ReplaceRouteCardOpsParams,
   user: AuthContext,
-): Promise<{ newRevision: number; changed: boolean }> {
+): Promise<{ newRevision: number; changed: boolean; oldOps: DiffOp[]; newOps: DiffOp[] }> {
   // Capture PRE-update ops for the revision snapshot + diff note.
   const oldOpRows = await tx
     .select({
@@ -1208,7 +1441,7 @@ async function replaceRouteCardOps(
       p.ops.map(comparableFromInput),
     )
   ) {
-    return { newRevision: p.currentRevision, changed: false };
+    return { newRevision: p.currentRevision, changed: false, oldOps: [], newOps: [] };
   }
 
   const oldSnapshot: DiffOp[] = oldOpRows.map((r) => ({
@@ -1276,7 +1509,7 @@ async function replaceRouteCardOps(
     createdBy: user.id,
   });
 
-  return { newRevision, changed: true };
+  return { newRevision, changed: true, oldOps: oldSnapshot, newOps: newSnapshot };
 }
 
 // ─── Auto-save from a source document (Job Card / plan execute) ───────────
@@ -1460,6 +1693,45 @@ export async function saveRouteCardForItem(
       },
       user,
     );
+    if (replaced.changed) {
+      // ADR-197 — the auto-save is a revision like any other: header row with
+      // the raw-material moves + the Route Card Rev bump, then the op rows.
+      const rmCodes =
+        rmPatch.rawMaterialItemId !== undefined
+          ? await rmItemCodes(tx, companyId, [card.rawMaterialItemId, rmPatch.rawMaterialItemId])
+          : new Map<string, string>();
+      const rmCode = (rid: string | null): string | null =>
+        rid ? (rmCodes.get(rid) ?? null) : null;
+      const beforeView: RcHeaderView = {
+        rawMaterialGradeText: card.rawMaterialGradeText,
+        rawMaterialSizeText: card.rawMaterialSizeText,
+        rawMaterialItemCode: rmCode(card.rawMaterialItemId),
+        rmQtyPerPiece: card.rmQtyPerPiece,
+      };
+      const afterView: RcHeaderView = {};
+      if (rmPatch.rawMaterialGradeText !== undefined) {
+        afterView.rawMaterialGradeText = rmPatch.rawMaterialGradeText;
+      }
+      if (rmPatch.rawMaterialSizeText !== undefined) {
+        afterView.rawMaterialSizeText = rmPatch.rawMaterialSizeText;
+      }
+      if (rmPatch.rawMaterialItemId !== undefined) {
+        afterView.rawMaterialItemCode = rmCode(rmPatch.rawMaterialItemId);
+        afterView.rmQtyPerPiece = rmPatch.rmQtyPerPiece ?? null;
+      }
+      await logRouteCardRevision(
+        tx,
+        companyId,
+        user,
+        { id: card.id, code: card.code },
+        [
+          ...diffFields(beforeView, afterView, RC_HEADER_FIELDS),
+          revChange(card.currentRevision, replaced.newRevision),
+        ],
+        routeCardOpLogRows(replaced.oldOps, replaced.newOps),
+        `${card.code} updated from ${sourceCode}`,
+      );
+    }
     return replaced.changed
       ? {
           routeCardId: card.id,
@@ -1496,5 +1768,17 @@ export async function saveRouteCardForItem(
     opsSnapshot: buildOpsSnapshot(cleanOps, machinesLookup, vendorsLookup),
     createdBy: user.id,
   });
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Create,
+      entity: 'RouteCard',
+      entityId: header.id,
+      refId: code,
+      detail: `${code} created from ${sourceCode}`,
+    },
+    companyId,
+    user,
+  );
   return { routeCardId: header.id, routeCardCode: code, routeCardRevision: 0, created: true };
 }

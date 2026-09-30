@@ -17,7 +17,6 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useClientsList } from '../../clients/api';
 import { useItem } from '../../items/api';
@@ -27,11 +26,11 @@ import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
 import { usePlanningSoDetail } from '../../so-planning/api';
 import {
   useCreatePartyMaterial,
-  useDeletePartyMaterial,
   useNextPartyMaterialCode,
   usePartyMaterialsList,
   useUpdatePartyMaterial,
 } from '../api';
+import { DeletePartyMaterialModal } from '../components/delete-party-material-modal';
 import { ReturnPartyMaterialModal } from '../components/return-party-material-modal';
 
 const PAGE_SIZE = 50;
@@ -72,18 +71,12 @@ function PartyMaterialsListPage(): React.JSX.Element {
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
-  const deleteMut = useDeletePartyMaterial();
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
 
   // The material the Delete dialog is asking about, or null when closed. A row
   // with stock on hand never gets here — its Delete button is disabled.
   const [deleteRow, setDeleteRow] = useState<PartyMaterialListItem | null>(null);
-  const onDelete = async (): Promise<void> => {
-    if (!deleteRow) return;
-    await deleteMut.mutateAsync(deleteRow.id);
-    setDeleteRow(null);
-  };
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -285,13 +278,11 @@ function PartyMaterialsListPage(): React.JSX.Element {
         <ReturnPartyMaterialModal row={returnRow} onClose={() => setReturnRow(null)} />
       ) : null}
       {deleteRow ? (
-        <ConfirmDialog
-          title={`Delete Party Material ${deleteRow.code}?`}
-          message={`${deleteRow.name} will be removed from the Party Material Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
-          onConfirm={onDelete}
-          onCancel={() => setDeleteRow(null)}
+        <DeletePartyMaterialModal
+          id={deleteRow.id}
+          code={deleteRow.code}
+          name={deleteRow.name}
+          onClose={() => setDeleteRow(null)}
         />
       ) : null}
     </div>

@@ -24,6 +24,7 @@ import { type PurchaseRequestDetail, opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -64,6 +65,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const prApprovalOn = usePrApprovalOn();
   const softDelete = useSoftDeletePurchaseRequest();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-197 — why the PR goes to Trash (required; lands on its History).
+  const [deleteReason, setDeleteReason] = useState('');
   // Short-closing the remainder is a SIGN-OFF, not data entry, so it rides the
   // same `pr_create` + approve right the Approve / Reject pair on the PR list
   // uses — and the same right the API gate (`requireFormAccess(user,
@@ -113,7 +116,10 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // Returns the promise so the ConfirmDialog shows its pending state and keeps
   // a failure inside the dialog instead of closing it.
   const onDelete = async (): Promise<void> => {
-    await softDelete.mutateAsync(detail.id);
+    const reason = deleteReason.trim();
+    // Thrown, not returned: the ConfirmDialog shows it and stays open.
+    if (!reason) throw new Error('Enter a reason to move this PR to Trash.');
+    await softDelete.mutateAsync({ id: detail.id, reason });
     void navigate({ to: '/purchase-requests', replace: true });
   };
 
@@ -254,7 +260,10 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                   hidden: !canDelete,
                   disabled: linkedToPo,
                   title: linkedToPo ? 'PR has a linked PO — cancel instead of delete' : undefined,
-                  onClick: () => setConfirmDelete(true),
+                  onClick: () => {
+                    setDeleteReason('');
+                    setConfirmDelete(true);
+                  },
                 },
               ]}
             />
@@ -263,7 +272,20 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
         {canDelete && confirmDelete && !linkedToPo ? (
           <ConfirmDialog
             title={`Move PR ${detail.code} to Trash?`}
-            message="You can restore it from Trash."
+            message={
+              <>
+                You can restore it from Trash.
+                <textarea
+                  className="innovic-input"
+                  aria-label="Reason"
+                  placeholder="Reason (required)"
+                  rows={2}
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  style={{ display: 'block', width: '100%', marginTop: 8 }}
+                />
+              </>
+            }
             confirmLabel="Move to Trash"
             pendingLabel="Moving…"
             tone="danger"
@@ -365,6 +387,14 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
       </div>
 
       <RelatedDocsPanel module="purchase-requests" id={detail.id} />
+
+      {/* ADR-197 — who did what to this PR, with before → after and reasons. */}
+      <div className="panel" style={{ marginTop: 14 }}>
+        <div className="panel-hdr">
+          <div className="panel-title">History</div>
+        </div>
+        <DocumentHistory entity="PurchaseRequest" entityId={detail.id} refId={detail.code} />
+      </div>
 
       {closeOpen ? (
         <CloseBalanceModal

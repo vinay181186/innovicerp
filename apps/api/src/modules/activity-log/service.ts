@@ -5,8 +5,9 @@
 // directly via withUserContext — kept out of this module to avoid
 // circular module dependencies.
 
+import type { ActivityAction, ActivityChange, ActivityEntity } from '@innovic/shared';
 import { and, count, desc, eq, gte, ilike, lte, or, sql, type SQL } from 'drizzle-orm';
-import { activityLog } from '../../db/schema';
+import { activityLog, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import type { ActivityLogEntry, ListActivityLogQuery, ListActivityLogResponse } from './schema';
@@ -16,7 +17,10 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
-function rowToEntry(r: typeof activityLog.$inferSelect): ActivityLogEntry {
+function rowToEntry(
+  r: typeof activityLog.$inferSelect,
+  liveFullName: string | null,
+): ActivityLogEntry {
   return {
     id: r.id,
     companyId: r.companyId,
@@ -28,6 +32,10 @@ function rowToEntry(r: typeof activityLog.$inferSelect): ActivityLogEntry {
     detail: r.detail,
     refId: r.refId,
     createdAt: r.createdAt.toISOString(),
+    // ADR-197: the name snapshotted on the row, else today's full name, else
+    // the e-mail (legacy rows).
+    userFullName: r.userFullName ?? liveFullName ?? r.userName,
+    entityId: r.entityId,
   };
 }
 
@@ -66,6 +74,10 @@ export async function listActivityLog(
         ilike(activityLog.entity, pattern),
         ilike(activityLog.detail, pattern),
         ilike(activityLog.userName, pattern),
+        // The User column shows the person's name (ADR-197): the row's
+        // snapshot, or today's full name for rows written before it existed.
+        ilike(activityLog.userFullName, pattern),
+        sql`EXISTS (SELECT 1 FROM users u WHERE u.id = ${activityLog.userId} AND u.full_name ILIKE ${pattern})`,
         ilike(activityLog.refId, pattern),
         // Date + Time columns. Both are rendered from `ts`, which is stored in
         // UTC and displayed in IST (CLAUDE.md §6.5), so the text a user reads
@@ -89,11 +101,13 @@ export async function listActivityLog(
     }
 
     const where = and(...conditions);
+    const userNameExpr = sql<string>`COALESCE(${users.fullName}, ${activityLog.userName})`;
 
     const [rows, totals, distinctActions, distinctUsers] = await Promise.all([
       tx
-        .select()
+        .select({ log: activityLog, liveFullName: users.fullName })
         .from(activityLog)
+        .leftJoin(users, eq(users.id, activityLog.userId))
         .where(where)
         .orderBy(desc(activityLog.ts), desc(activityLog.id))
         .limit(input.limit)
@@ -107,19 +121,21 @@ export async function listActivityLog(
         .where(eq(activityLog.companyId, companyId))
         .orderBy(activityLog.action),
       // Distinct {id, name} pairs. NULL ids collapse together — UI shows
-      // them as snapshot-only entries (e.g. legacy "Japan").
+      // them as snapshot-only entries (e.g. legacy "Japan"). The name is the
+      // person's full name where the users row has one (ADR-197).
       tx
         .selectDistinct({
           id: activityLog.userId,
-          name: activityLog.userName,
+          name: userNameExpr,
         })
         .from(activityLog)
+        .leftJoin(users, eq(users.id, activityLog.userId))
         .where(eq(activityLog.companyId, companyId))
-        .orderBy(activityLog.userName),
+        .orderBy(userNameExpr),
     ]);
 
     return {
-      entries: rows.map((r) => rowToEntry(r as typeof activityLog.$inferSelect)),
+      entries: rows.map((r) => rowToEntry(r.log, r.liveFullName)),
       total: totals[0]?.value ?? 0,
       limit: input.limit,
       offset: input.offset,
@@ -129,21 +145,53 @@ export async function listActivityLog(
   });
 }
 
+// ─── Writers ────────────────────────────────────────────────────────────────
+
+/**
+ * What one activity-log row records (ADR-197). Only `action` and `entity` are
+ * required, so every pre-ADR-197 caller keeps compiling unchanged. New code
+ * uses the standard names (`ActivityAction`, `ACTIVITY_ENTITIES`) and fills
+ * the fields that apply — docs/AUDIT-TRAIL.md has one example per action.
+ */
+export interface ActivityLogInput {
+  /** Standard `ActivityAction` (UPPER_SNAKE). Free text is still accepted
+   *  for legacy callers. */
+  action: ActivityAction | (string & {});
+  /** Standard entity name — the DOCUMENT, never a line or an op. */
+  entity: ActivityEntity | (string & {});
+  /** One-line human summary (still shown on the global Activity Log). */
+  detail?: string | undefined;
+  /** The document's code, e.g. IN-PO-00012. */
+  refId?: string | null | undefined;
+  /** The document's uuid (header row). */
+  entityId?: string | null | undefined;
+  /** Which line, e.g. `Line 2`. */
+  lineRef?: string | null | undefined;
+  /** Which operation, e.g. `Op 20 · Turning`. */
+  opRef?: string | null | undefined;
+  /** Quantity this action moved. */
+  qty?: number | string | null | undefined;
+  /** Before → after list — build it with diffFields(). */
+  changes?: ActivityChange[] | null | undefined;
+  /** Why — required by the service for REASON_REQUIRED_ACTIONS. */
+  reason?: string | null | undefined;
+  /** Operator / inspector named on the entry (when not the user). */
+  operatorName?: string | null | undefined;
+}
+
 // Standalone emitter — owns its own transaction. Use when there's no
 // caller-side tx already running.
-export async function appendActivityLog(
-  input: {
-    action: string;
-    entity: string;
-    detail?: string;
-    refId?: string | null;
-  },
-  user: AuthContext,
-): Promise<void> {
+export async function appendActivityLog(input: ActivityLogInput, user: AuthContext): Promise<void> {
   const companyId = requireCompany(user);
   await withUserContext(user, async (tx) => {
     await emitActivityLog(tx, input, companyId, user);
   });
+}
+
+function blankToNull(v: string | null | undefined): string | null {
+  if (v === undefined || v === null) return null;
+  const t = v.trim();
+  return t === '' ? null : t;
 }
 
 // Low-level emitter — writes inside an existing transaction so the audit
@@ -153,24 +201,46 @@ export async function appendActivityLog(
 // existing withUserContext block.
 export async function emitActivityLog(
   tx: DbTransaction,
-  input: {
-    action: string;
-    entity: string;
-    detail?: string;
-    refId?: string | null;
-  },
+  input: ActivityLogInput,
   companyId: string,
   user: AuthContext,
 ): Promise<void> {
+  // The user's name is snapshotted on every row (ADR-197). The auth plugin
+  // sets `fullName`; only a caller that built its own AuthContext (tests,
+  // scripts) leaves it undefined, and then it is read from users.
+  let fullName: string | null = user.fullName ?? null;
+  if (user.fullName === undefined) {
+    const u = await tx
+      .select({ fullName: users.fullName })
+      .from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
+    fullName = u[0]?.fullName ?? null;
+  }
+
+  let qty: string | null = null;
+  if (input.qty !== undefined && input.qty !== null && input.qty !== '') {
+    const n = Number(input.qty);
+    if (Number.isFinite(n)) qty = String(n);
+  }
+
   await tx.insert(activityLog).values({
     companyId,
     ts: new Date(),
     userId: user.id,
     userName: user.email,
+    userFullName: blankToNull(fullName),
     action: input.action,
     entity: input.entity,
     detail: input.detail ?? '',
     refId: input.refId ?? null,
+    entityId: input.entityId ?? null,
+    lineRef: blankToNull(input.lineRef),
+    opRef: blankToNull(input.opRef),
+    qty,
+    changes: input.changes && input.changes.length > 0 ? input.changes : null,
+    reason: blankToNull(input.reason),
+    operatorName: blankToNull(input.operatorName),
     createdBy: user.id,
   });
 }

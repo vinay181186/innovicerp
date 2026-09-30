@@ -6,6 +6,7 @@ import {
   createClientInputSchema,
   listClientsQuerySchema,
   updateClientInputSchema,
+  deleteClientInputSchema,
 } from './schema';
 import { getClientRelated } from './related';
 import * as service from './service';
@@ -66,7 +67,8 @@ export async function clientsRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/clients/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.softDeleteClient(id, req.user);
+    const { reason } = deleteClientInputSchema.parse(req.body ?? {});
+    await service.softDeleteClient(id, reason, req.user);
     reply.code(204);
     return null;
   });

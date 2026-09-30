@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Fragment, useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -41,6 +42,7 @@ function RouteCardDetailPage(): React.JSX.Element {
   // Print failure (popup blocked) shows in place — never window.alert.
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
 
   const onPrint = (): void => {
     if (!detail) return;
@@ -135,7 +137,10 @@ function RouteCardDetailPage(): React.JSX.Element {
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                onClick={() => setConfirmDelete(true)}
+                onClick={() => {
+                  setDeleteReason('');
+                  setConfirmDelete(true);
+                }}
                 disabled={del.isPending}
                 title="Move this Route Card to Trash"
               >
@@ -367,15 +372,39 @@ function RouteCardDetailPage(): React.JSX.Element {
 
       {detail.revisions.length > 0 ? <RevisionHistory revisions={detail.revisions} /> : null}
 
+      {/* ADR-197 — who did what to this card, with before → after and reasons. */}
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title">History</div>
+        </div>
+        <DocumentHistory entity="RouteCard" entityId={detail.id} refId={detail.code} />
+      </div>
+
       <ConfirmDialog
         open={confirmDelete}
         title={`Move Route Card ${detail.code} to Trash?`}
-        message="You can restore it from Trash."
+        message={
+          <>
+            You can restore it from Trash.
+            <textarea
+              className="innovic-input"
+              aria-label="Reason"
+              placeholder="Reason (required)"
+              rows={2}
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              style={{ display: 'block', width: '100%', marginTop: 8 }}
+            />
+          </>
+        }
         confirmLabel="Move to Trash"
         pendingLabel="Moving to Trash…"
         onCancel={() => setConfirmDelete(false)}
         onConfirm={async () => {
-          await del.mutateAsync(detail.id);
+          const reason = deleteReason.trim();
+          // Thrown, not returned: the ConfirmDialog shows it and stays open.
+          if (!reason) throw new Error('Enter a reason to move this Route Card to Trash.');
+          await del.mutateAsync({ id: detail.id, reason });
           void navigate({ to: '/route-cards' });
         }}
       />

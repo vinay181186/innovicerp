@@ -26,6 +26,7 @@ import { printTemplates, printTemplateRevisions, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { softDeleteStamp } from '../../lib/audit-trail';
 
 const REVISIONS_SHOWN = 5;
 
@@ -57,7 +58,10 @@ async function buildEffective(tx: Tx, companyId: string): Promise<EffectivePrint
 
   const editorIds = [...new Set(rows.map((r) => r.updatedBy))];
   const editors = editorIds.length
-    ? await tx.select({ id: users.id, name: users.fullName }).from(users).where(inArray(users.id, editorIds))
+    ? await tx
+        .select({ id: users.id, name: users.fullName })
+        .from(users)
+        .where(inArray(users.id, editorIds))
     : [];
 
   const byKey = new Map(rows.map((r) => [r.templateKey, r]));
@@ -176,7 +180,7 @@ export async function restorePrintTemplateDefault(
       });
       await tx
         .update(printTemplates)
-        .set({ deletedAt: new Date(), updatedBy: user.id })
+        .set({ ...softDeleteStamp(user), updatedBy: user.id })
         .where(eq(printTemplates.id, existing.id));
     }
 

@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const jwReturnsKeys = {
   all: ['jw-returns'] as const,
@@ -47,6 +48,7 @@ export function useCreateJwReturnChallan() {
       apiFetch<JwReturnChallan>('/jw-returns', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwReturnsKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // Returning goods may flip the JWSO status to dispatched.
       void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
     },
@@ -63,6 +65,7 @@ export function useCancelJwReturn() {
       apiFetch<JwReturnChallan>(`/jw-returns/${id}/cancel`, { method: 'POST', json: { reason } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwReturnsKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // Reversing the returned-qty cascade may revert the JWSO status.
       void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
     },

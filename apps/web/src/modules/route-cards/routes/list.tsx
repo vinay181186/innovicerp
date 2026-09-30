@@ -49,6 +49,7 @@ import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, Tag } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
 import { PrintRouteCardButton } from '../components/print-route-card-button';
@@ -102,6 +103,10 @@ function RouteCardsListPage(): React.JSX.Element {
   // only L5 Department Admin and above hold — matching the detail page.
   const canDelete = perms.edit && perms.approve;
   const del = useDeleteRouteCard();
+  // ADR-197: Delete asks for a reason, so the row hands the question to this
+  // page's own ConfirmDialog (RowActions' built-in one has no reason box).
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; code: string } | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
 
@@ -263,32 +268,53 @@ function RouteCardsListPage(): React.JSX.Element {
                 // RowActions knows about, so it comes in through `extra` —
                 // unchanged, including its lazy per-row fetch.
                 extra={<PrintRouteCardButton rc={rc} />}
-                // The PROMISE is handed back, not swallowed. The confirm dialog
-                // then owns the wait: both its buttons go dead, "Deleting…"
-                // shows on the button, and it closes only once the card really
-                // is gone. A failure stays on screen as an error in the dialog,
-                // where the old `window.alert` used to interrupt.
+                // Caller-owned confirm (below): it asks for the reason, owns
+                // the wait, and keeps a failure on screen inside the dialog.
                 onDelete={
                   canDelete
-                    ? async (): Promise<void> => {
-                        await del.mutateAsync(rc.id);
+                    ? (): void => {
+                        setDeleteReason('');
+                        setPendingDelete({ id: rc.id, code: rc.code });
                       }
                     : undefined
                 }
-                // And every OTHER row's Delete greys out while one is in
-                // flight, which the old per-row mutation could not do.
+                // Every row's Delete greys out while one is in flight.
                 deleteDisabled={del.isPending}
-                deleteConfirm={{
-                  title: `Move Route Card ${rc.code} to Trash?`,
-                  message: `You can restore it from Trash. Plans raised from it keep the ops they already copied.`,
-                  confirmLabel: 'Move to Trash',
-                  pendingLabel: 'Moving to Trash…',
-                }}
               />
             )}
           />
         </Panel>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={`Move Route Card ${pendingDelete?.code ?? ''} to Trash?`}
+        message={
+          <>
+            You can restore it from Trash. Plans raised from it keep the ops they already copied.
+            <textarea
+              className="innovic-input"
+              aria-label="Reason"
+              placeholder="Reason (required)"
+              rows={2}
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              style={{ display: 'block', width: '100%', marginTop: 8 }}
+            />
+          </>
+        }
+        confirmLabel="Move to Trash"
+        pendingLabel="Moving to Trash…"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={async () => {
+          if (!pendingDelete) return;
+          const reason = deleteReason.trim();
+          // Thrown, not returned: the ConfirmDialog shows it and stays open.
+          if (!reason) throw new Error('Enter a reason to move this Route Card to Trash.');
+          await del.mutateAsync({ id: pendingDelete.id, reason });
+          setPendingDelete(null);
+        }}
+      />
 
       <ListFooter
         total={total}

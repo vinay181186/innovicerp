@@ -4,7 +4,9 @@
 import { ISSUE_AGAINST_LABELS, STORE_ISSUE_REVERSE_REASON_MIN } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
+import { Panel } from '@/ui/data';
 import { useReturnStoreIssue, useReverseStoreIssue, useStoreIssue } from '../api';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
@@ -231,7 +233,13 @@ export function IssueViewModal({
                     </div>
                   ) : null}
                 </div>
-              ) : null}
+              ) : (
+                <div style={{ marginTop: 10 }}>
+                  <Panel title="History" bodyPadding="none">
+                    <DocumentHistory entity="StoreIssue" entityId={iss.id} refId={iss.code} />
+                  </Panel>
+                </div>
+              )}
               {msg ? (
                 <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>
                   ✓ {msg}

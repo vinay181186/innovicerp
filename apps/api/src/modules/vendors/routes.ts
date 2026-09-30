@@ -6,6 +6,7 @@ import {
   createVendorInputSchema,
   listVendorsQuerySchema,
   updateVendorInputSchema,
+  deleteVendorInputSchema,
 } from './schema';
 import { getVendorRelated } from './related';
 import * as service from './service';
@@ -67,7 +68,8 @@ export async function vendorsRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/vendors/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    await service.softDeleteVendor(id, req.user);
+    const { reason } = deleteVendorInputSchema.parse(req.body ?? {});
+    await service.softDeleteVendor(id, reason, req.user);
     reply.code(204);
     return null;
   });

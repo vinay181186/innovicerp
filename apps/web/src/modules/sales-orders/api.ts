@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const salesOrdersKeys = {
   all: ['sales-orders'] as const,
@@ -96,6 +97,8 @@ export function useCreateSalesOrder() {
       apiFetch<SalesOrderDetail>('/sales-orders', { method: 'POST', json: input }),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
+      // ADR-197 — the SO's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(salesOrdersKeys.detail(created.id), created);
       // ADR-196 — re-read for the fulfilment status the write-back leaves null.
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.detail(created.id) });
@@ -105,11 +108,15 @@ export function useCreateSalesOrder() {
 
 export function useUpdateSalesOrder(id: string) {
   const qc = useQueryClient();
-  return useMutation<SalesOrderDetail, Error, UpdateSalesOrderInput>({
+  // `reason` (ADR-197) rides beside the shared payload: required by the server
+  // when the save cancels the SO, and written on a removed / cancelled line.
+  return useMutation<SalesOrderDetail, Error, UpdateSalesOrderInput & { reason?: string }>({
     mutationFn: (input) =>
       apiFetch<SalesOrderDetail>(`/sales-orders/${id}`, { method: 'PATCH', json: input }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
+      // ADR-197 — the SO's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(salesOrdersKeys.detail(id), updated);
       // ADR-196 — the write-back carries no fulfilment status or Billed (only
       // the detail read works them out), so re-read the detail behind it.
@@ -130,6 +137,8 @@ export function useShortCloseSalesOrderLine(soId: string) {
       }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
+      // ADR-197 — the SO's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(salesOrdersKeys.detail(soId), updated);
     },
   });
@@ -147,6 +156,8 @@ export function useCloseSalesOrder(soId: string) {
       }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
+      // ADR-197 — the SO's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(salesOrdersKeys.detail(soId), updated);
     },
   });
@@ -154,12 +165,15 @@ export function useCloseSalesOrder(soId: string) {
 
 export function useSoftDeleteSalesOrder() {
   const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (id) => {
-      await apiFetch<null>(`/sales-orders/${id}`, { method: 'DELETE' });
+  // ADR-197 — a reason is required to move an SO to Trash.
+  return useMutation<void, Error, { id: string; reason: string }>({
+    mutationFn: async ({ id, reason }) => {
+      await apiFetch<null>(`/sales-orders/${id}`, { method: 'DELETE', json: { reason } });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
+      // ADR-197 — the SO's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.removeQueries({ queryKey: salesOrdersKeys.detail(id) });
     },
   });

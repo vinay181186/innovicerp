@@ -16,6 +16,7 @@ import { designProjects, designWorkLog, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { softDeleteStamp } from '../../lib/audit-trail';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -281,7 +282,7 @@ export async function deleteDesignWorkLogEntry(id: string, user: AuthContext): P
     if (!rows[0]) throw new NotFoundError('Work log entry not found. Refresh the page.');
     await tx
       .update(designWorkLog)
-      .set({ deletedAt: new Date(), updatedAt: new Date(), updatedBy: userId })
+      .set({ ...softDeleteStamp(user), updatedAt: new Date(), updatedBy: userId })
       .where(eq(designWorkLog.id, rows[0].id));
   });
 }

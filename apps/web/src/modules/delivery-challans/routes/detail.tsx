@@ -16,12 +16,14 @@ import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/sha
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Ban, Inbox, Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
@@ -57,6 +59,8 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   const cancel = useCancelDeliveryChallan();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // ADR-197: a cancel must say why — the reason lands on the DC's History.
+  const [cancelReason, setCancelReason] = useState('');
 
   const aggregatesByLine = useMemo(() => {
     const map = new Map<string, LineAgg>();
@@ -152,9 +156,15 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   // the dialog's own error line.
   const onCancel = async (): Promise<void> => {
     setCancelError(null);
+    const reason = cancelReason.trim();
+    if (!reason) {
+      setCancelError('Enter the reason for cancelling this DC.');
+      return;
+    }
     try {
-      await cancel.mutateAsync(dc.id);
+      await cancel.mutateAsync({ id: dc.id, reason });
       setConfirmCancel(false);
+      setCancelReason('');
     } catch (e) {
       setCancelError(e instanceof Error ? e.message : 'Could not cancel DC. Try again.');
     }
@@ -361,15 +371,39 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
 
       <RelatedDocsPanel module="delivery-challans" id={dc.id} />
 
+      <Panel title="History" bodyPadding="none">
+        <DocumentHistory entity="DeliveryChallan" entityId={dc.id} refId={dc.code} />
+      </Panel>
+
       {confirmCancel ? (
         <ConfirmDialog
           title={`Cancel DC ${dc.code}?`}
-          message="The DC will be marked Cancelled."
+          message={
+            <div>
+              <p style={{ marginBottom: 8 }}>The DC will be marked Cancelled.</p>
+              <label className="form-label" htmlFor="dc-cancel-reason">
+                Reason <span className="req">*</span>
+              </label>
+              <textarea
+                id="dc-cancel-reason"
+                className="innovic-textarea"
+                rows={2}
+                maxLength={500}
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                autoFocus
+              />
+            </div>
+          }
           confirmLabel="Cancel DC"
           cancelLabel="Keep"
           pendingLabel="Cancelling…"
           onConfirm={onCancel}
-          onCancel={() => setConfirmCancel(false)}
+          onCancel={() => {
+            setConfirmCancel(false);
+            setCancelReason('');
+            setCancelError(null);
+          }}
           errorText={cancelError}
         />
       ) : null}
