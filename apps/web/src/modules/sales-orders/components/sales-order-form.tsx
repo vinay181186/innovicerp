@@ -877,7 +877,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                title="Add a new customer without leaving this form"
+                title="New Customer"
                 onClick={() => setShowAddClient(true)}
               >
                 + New
@@ -896,7 +896,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               id="clientPoNo"
               className="innovic-input"
               autoComplete="off"
-              placeholder="Client PO reference"
               {...register('header.clientPoNo', {
                 onChange: (e) => {
                   if (e.target.value.trim()) setPoEmailError(null);
@@ -968,7 +967,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               id="remarks"
               className="innovic-textarea"
               rows={2}
-              placeholder="Notes"
               {...register('header.remarks')}
             />
           </FormField>
@@ -1108,8 +1106,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     </>
                   ) : (
                     <>
-                      ⚠ No BOM exists for {equipItem.code} — {equipItem.name}. Create one in BOM
-                      Master first, then come back and re-pick this item.{' '}
+                      ⚠ No BOM for {equipItem.code}.{' '}
                       <Link to="/bom-masters/new" className="btn btn-ghost btn-sm">
                         Go to BOM Master →
                       </Link>
@@ -1266,7 +1263,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                 <input
                                   className="innovic-input fw-xs"
                                   autoComplete="off"
-                                  placeholder="Rev"
                                   aria-label={`Drawing Rev, line ${idx + 1}`}
                                   maxLength={32}
                                   style={{ textTransform: 'uppercase' }}

@@ -222,11 +222,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
       <PageHeader
         sticky
         title={`Receive against ${detail.vendorName ?? detail.vendorCodeText}`}
-        subtitle={
-          <>
-            <span className="td-code">{detail.code}</span> · Received qty goes to Incoming QC.
-          </>
-        }
+        subtitle={<span className="td-code">{detail.code}</span>}
         backLabel="Back to DC"
         onBack={goBack}
         dirty={dirty}

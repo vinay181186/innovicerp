@@ -146,7 +146,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
           <Link to="/purchase-requests/$id" params={{ id: savedCode.id }} className="td-code">
             {savedCode.code}
           </Link>{' '}
-          — this is a new blank PR with the same PR Date, PR Type and Vendor.
+          · new blank PR ready.
         </Banner>
       ) : null}
       <PurchaseRequestForm

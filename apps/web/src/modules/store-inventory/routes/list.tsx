@@ -217,7 +217,7 @@ function StoreInventoryPage(): React.JSX.Element {
                           At Vendor
                         </th>
                         <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                          Pending to Make
+                          Pending from Production
                         </th>
                         {showActions ? <th>Actions</th> : null}
                       </tr>

@@ -447,12 +447,12 @@ function MachineGroupModal({
                 className="innovic-input"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional note — what the group covers, which shop it runs in"
+                placeholder="e.g. 3-axis VMCs, mill shop"
               />
             </div>
             <div className="form-grp">
               <label className="form-label" htmlFor="mgStatus">
-                Status
+                Active
               </label>
               <select
                 id="mgStatus"

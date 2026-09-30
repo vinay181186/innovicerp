@@ -102,7 +102,7 @@ function SoCostingListPage(): React.JSX.Element {
                 <th className="th-num">Total Qty</th>
                 {priceHidden ? null : (
                   <th className="th-num" style={{ color: 'var(--green2)' }}>
-                    SO Value
+                    Subtotal
                   </th>
                 )}
                 <th>Cost Centre</th>

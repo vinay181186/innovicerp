@@ -18,7 +18,7 @@ export function exportStockValuation(rows: StockValuationRow[]): void {
   const priceHidden = rows.some((r) => r.value == null);
   const withStock = rows.filter((r) => r.stockQty > 0);
   const detail = withStock.map((r) => ({
-    Category: categoryLabel(r.category),
+    'Item Type': categoryLabel(r.category),
     'Item Code': r.code,
     'Item Name': r.name,
     UOM: r.uom,
@@ -29,10 +29,13 @@ export function exportStockValuation(rows: StockValuationRow[]): void {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detail), 'Stock Detail');
   if (!priceHidden) {
-    const catMap = new Map<string, { Category: string; Items: number; 'Total Value': number }>();
+    const catMap = new Map<
+      string,
+      { 'Item Type': string; Items: number; 'Total Value': number }
+    >();
     for (const r of withStock) {
       const c = catMap.get(r.category) ?? {
-        Category: categoryLabel(r.category),
+        'Item Type': categoryLabel(r.category),
         Items: 0,
         'Total Value': 0,
       };
@@ -40,7 +43,11 @@ export function exportStockValuation(rows: StockValuationRow[]): void {
       c['Total Value'] += r.value ?? 0;
       catMap.set(r.category, c);
     }
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([...catMap.values()]), 'Category Summary');
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet([...catMap.values()]),
+      'Item Type Summary',
+    );
   }
   XLSX.writeFile(wb, `stock-valuation-${todayIst()}.xlsx`);
 }

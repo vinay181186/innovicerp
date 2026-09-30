@@ -170,7 +170,7 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
           ) : null}
           {mode === 'record' ? (
             <>
-              <Field label="Result ★" id="ia-result">
+              <Field label="Calibration Result ★" id="ia-result">
                 <select
                   id="ia-result"
                   className="innovic-select"
@@ -191,7 +191,7 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
                 />
               </Field>
               {result === 'pass' ? (
-                <Field label="Next Due" id="ia-next">
+                <Field label="Calibration Due" id="ia-next">
                   <input
                     id="ia-next"
                     type="date"
@@ -203,7 +203,7 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
               ) : null}
               <div className="form-grp form-full text3" style={{ fontSize: 11 }}>
                 {result === 'pass'
-                  ? 'Next Due blank = Calibrated On + Calibration Interval (days).'
+                  ? 'Calibration Due blank = Calibrated On + Calibration Interval (days).'
                   : 'Fail keeps it blocked from issue until a Pass or Scrap.'}
               </div>
             </>

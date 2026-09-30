@@ -186,7 +186,6 @@ function InstrumentsListPage(): React.JSX.Element {
                     <tr
                       key={ins.id}
                       style={{ cursor: 'pointer' }}
-                      title="Open — calibration history and actions"
                       onClick={() => setViewId(ins.id)}
                     >
                       <td>
@@ -244,9 +243,7 @@ function InstrumentsListPage(): React.JSX.Element {
                 {(data?.items ?? []).length === 0 ? (
                   <tr>
                     <td colSpan={8} className="empty-state">
-                      {filtered
-                        ? 'No instruments match.'
-                        : 'No instruments registered yet — receive the piece (GRN / Stock Count), then Register Instrument.'}
+                      {filtered ? 'No instruments match.' : 'No instruments registered yet.'}
                     </td>
                   </tr>
                 ) : null}

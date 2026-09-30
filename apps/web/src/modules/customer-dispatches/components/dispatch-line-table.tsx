@@ -89,7 +89,7 @@ export function DispatchLineTable(props: {
               <th
                 style={{ width: '9%' }}
                 className="th-num"
-                title="Ready + reserved to this line, less what has already been dispatched. Hover a number for the stock breakdown."
+                title="Ready + reserved to this line, less what has already been dispatched."
               >
                 Dispatchable
               </th>
@@ -108,7 +108,7 @@ export function DispatchLineTable(props: {
             {cards.length === 0 ? (
               <tr>
                 <td colSpan={COL_COUNT} className="empty-state" style={{ padding: 14 }}>
-                  No lines yet — click &ldquo;+ Add Line&rdquo;
+                  No lines yet.
                 </td>
               </tr>
             ) : (

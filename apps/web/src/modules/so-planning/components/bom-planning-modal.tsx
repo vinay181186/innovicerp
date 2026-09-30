@@ -462,16 +462,16 @@ function BomBody({
               <th>Sr No</th>
               <th>Item Code</th>
               <th>Item Name</th>
-              <th>{mode === 'equipment' ? 'Qty/Set' : 'Per Unit'}</th>
+              <th>Qty per Set</th>
               <th>Total Need</th>
-              <th style={{ color: 'var(--green2)' }}>Stock</th>
+              <th style={{ color: 'var(--green2)' }}>Physical</th>
               <th style={{ color: 'var(--red2)' }} title="Total Need − Current Stock">
-                Pending
+                Short
               </th>
               <th>BOM Type</th>
               <th>Plan Status</th>
               <th>Select</th>
-              <th>Qty to Plan</th>
+              <th>Plan Qty</th>
             </tr>
           </thead>
           <tbody>
@@ -675,7 +675,7 @@ function BomBody({
               🛠 Final Assembly Job Card
             </span>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-              (created after child items are ready — operations planned separately)
+              (created after child items are ready)
             </span>
             {data.hasAssemblyPlan ? (
               <span style={{ fontWeight: 700, color: 'var(--cyan)', fontSize: 11 }}>

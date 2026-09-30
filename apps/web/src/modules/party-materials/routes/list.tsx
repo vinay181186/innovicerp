@@ -85,7 +85,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Party Materials. Ask an admin.
+        You do not have permission to view Customer Materials. Ask an admin.
       </div>
     );
   }
@@ -95,7 +95,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + Add Material. */}
       <ListHeader
-        title="Party Material Master"
+        title="Customer Material Master"
         icon="🏭"
         count={data?.total}
         noun="material"
@@ -159,7 +159,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                 {data.items.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="empty-state">
-                      {search.trim() ? 'No Party Materials match.' : 'No Party Materials yet.'}
+                      {search.trim() ? 'No customer materials match.' : 'No customer materials yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -217,9 +217,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                             style={{ fontSize: 11, color: 'var(--purple)' }}
                             disabled={pm.stockQty <= 0}
                             title={
-                              pm.stockQty <= 0
-                                ? 'Nothing in the party store to return'
-                                : 'Return spare customer material'
+                              pm.stockQty <= 0 ? 'Nothing in the party store to return' : undefined
                             }
                             onClick={() => setReturnRow(pm)}
                           >
@@ -478,7 +476,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
   };
 
   return (
-    <ModalShell onClose={guard.requestClose} title="Add Party Material">
+    <ModalShell onClose={guard.requestClose} title="Add Customer Material">
       {guard.dialog}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {/* 1. Material Code (auto, read-only) + UOM */}
@@ -557,7 +555,6 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
               value={autoName}
               readOnly
               disabled
-              placeholder="Fills from the chosen item"
             />
           </Field>
         </div>
@@ -570,7 +567,6 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
               className="innovic-input"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Fills from the item — editable"
             />
           </Field>
         </div>
@@ -584,7 +580,6 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
               value={autoMaterial}
               readOnly
               disabled
-              placeholder="Fills from the chosen item"
             />
           </Field>
         </div>
@@ -598,7 +593,6 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
               value={lineId ? jcNo || '—' : ''}
               readOnly
               disabled
-              placeholder="Job Card linked to this line"
             />
           </Field>
         </div>
@@ -685,7 +679,7 @@ function EditPartyMaterialModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`Edit Party Material ${row.code}`}>
+    <ModalShell onClose={onClose} title={`Edit Customer Material ${row.code}`}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="Code">
           <input

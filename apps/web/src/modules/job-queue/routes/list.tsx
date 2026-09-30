@@ -154,7 +154,7 @@ function JobQueuePage(): React.JSX.Element {
                 type="button"
                 className="btn btn-ghost"
                 disabled={backfillMut.isPending}
-                title="Link operations that carry a machine as text only to the matching machine. Safe to run repeatedly."
+                title="Safe to run repeatedly."
                 onClick={() => backfillMut.mutate()}
               >
                 {backfillMut.isPending

@@ -200,7 +200,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                   color: 'var(--amber2)',
                 },
               ]),
-        { label: 'Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green2)' },
+        { label: 'Grand Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green2)' },
         { label: 'Paid', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
         ...((inv.totalTds ?? 0) > 0
           ? [
@@ -213,7 +213,7 @@ function InvoiceDetailPage(): React.JSX.Element {
             ]
           : []),
         {
-          label: 'Outstanding',
+          label: 'Outstanding Amount',
           value: inr(inv.balance ?? 0),
           size: 18,
           color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)',
@@ -381,7 +381,6 @@ function InvoiceDetailPage(): React.JSX.Element {
                 <label className="form-label">Notes</label>
                 <input
                   className="innovic-input"
-                  placeholder="Payment remarks..."
                   value={payNotes}
                   onChange={(e) => setPayNotes(e.target.value)}
                 />

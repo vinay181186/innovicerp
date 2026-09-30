@@ -849,7 +849,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 className="innovic-input"
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Planning notes, special instructions"
               />
             </div>
           </div>

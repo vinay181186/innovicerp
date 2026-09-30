@@ -44,8 +44,7 @@ import { prConvertible, usePrApprovalOn } from '@/modules/purchase-requests/lib/
 /** Why the PR box is greyed out. The vendor is a HARD prerequisite now, not a
  *  hint: a PR belongs to a vendor, so there is no honest list to show until the
  *  header names one. */
-export const PICK_VENDOR_FIRST_TIP =
-  "Select a Vendor first — each line's PR list is only that vendor's Purchase Requests.";
+export const PICK_VENDOR_FIRST_TIP = 'Select a Vendor first';
 
 /** The disabled control's own placeholder. The cell is 168px wide, so the detail
  *  lives in the note above, not in here. */
@@ -62,7 +61,7 @@ export const PICK_VENDOR_FIRST_PLACEHOLDER = 'Select a Vendor first…';
  *  PO is raised (ADR-152). */
 export function noOpenPrsMessage(vendorName: string): string {
   const who = vendorName.trim() === '' ? 'this vendor' : vendorName.trim();
-  return `No Purchase Requests pending to order for ${who} — raise a PR first, or choose another vendor.`;
+  return `No Purchase Requests pending for ${who}.`;
 }
 
 export interface PrPickerProps {

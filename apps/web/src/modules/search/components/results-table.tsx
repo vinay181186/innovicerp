@@ -47,7 +47,7 @@ export function ResultsTable({
             <th>Document No.</th>
             <th>Customer / Vendor</th>
             <th>Particulars</th>
-            <th>Qty</th>
+            <th>Document Qty</th>
             <th>Document Status</th>
           </tr>
         </thead>

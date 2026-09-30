@@ -213,8 +213,8 @@ export function PartyGrnCard({
                   <thead>
                     <tr>
                       <th>Ln</th>
-                      <th>Material</th>
-                      <th>Material Name</th>
+                      <th>Customer Material</th>
+                      <th>Customer Material Name</th>
                       <th>JWSO Line</th>
                       <th className="th-num" style={{ color: 'var(--green2)' }}>
                         Received

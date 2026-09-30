@@ -450,9 +450,6 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
     <div className="panel" style={{ borderLeft: '3px solid var(--amber)' }}>
       <div className="panel-hdr">
         <div className="panel-title">▸ Revision History ({revisions.length})</div>
-        <div className="text3" style={{ fontSize: 11 }}>
-          Click a revision to see the operations it held
-        </div>
       </div>
       <div className="tbl-wrap">
         <table className="innovic-table">

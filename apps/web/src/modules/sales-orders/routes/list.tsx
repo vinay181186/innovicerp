@@ -324,7 +324,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         filterNote={search.status ? SO_STATUS_LABEL[search.status] : undefined}
         search={searchInput}
         onSearch={setSearchInput}
-        searchPlaceholder="Search SO no., customer, client PO, part, item code…"
+        searchPlaceholder="Search SO no., customer, client PO, part name, item code…"
         updating={isFetching && !isLoading}
         filters={
           <>
@@ -887,7 +887,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
             <th style={{ width: 36 }}>Sr No</th>
             <th>Item Code</th>
             <th>Item Name</th>
-            <th className="th-num">Qty / Set</th>
+            <th className="th-num">Qty per Set</th>
             <th className="th-num" style={{ color: 'var(--cyan)' }}>
               Total Need
             </th>
@@ -896,7 +896,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
               Physical
             </th>
             <th className="th-num" style={{ color: 'var(--red2)' }}>
-              Pending
+              Short
             </th>
           </tr>
         </thead>

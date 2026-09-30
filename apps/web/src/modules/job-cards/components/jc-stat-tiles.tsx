@@ -130,9 +130,9 @@ export function JcStatTiles({
           {/* Raw material planned for this job card (both optional — a dash
               when the plan carried neither). */}
           <div style={{ fontSize: 11, marginTop: 4 }}>
-            <span style={{ color: 'var(--text3)' }}>Grade: </span>
+            <span style={{ color: 'var(--text3)' }}>RM Grade: </span>
             <span className="mono fw-700">{jc.rawMaterialGradeText || '—'}</span>
-            <span style={{ color: 'var(--text3)' }}> · Size: </span>
+            <span style={{ color: 'var(--text3)' }}> · RM Size: </span>
             <span className="mono fw-700">{jc.rawMaterialSizeText || '—'}</span>
           </div>
           {/* The job card's own remarks, directly under the grade and size they
@@ -244,7 +244,7 @@ export function JcStatTiles({
                 `Already produced on the first operation: ${rmAvailable.consumedQty}. ` +
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`
-                  : 'Issue more customer material from Party Material Issue to continue.')
+                  : 'Issue more customer material from Customer Material Issue to continue.')
               }
             >
               Customer Material <span className="mono fw-700">{rmAvailable.availableQty}</span>

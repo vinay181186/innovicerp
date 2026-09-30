@@ -97,7 +97,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         ),
       },
       {
-        header: 'Pending',
+        header: 'To Plan',
         width: '6%',
         align: 'right',
         className: 'mono fw-700',

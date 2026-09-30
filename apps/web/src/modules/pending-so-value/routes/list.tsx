@@ -163,11 +163,11 @@ function PendingSoValuePage(): React.JSX.Element {
                           style={{ color: 'var(--amber2)' }}
                           title="Order Value − Dispatched Value"
                         >
-                          Pending Value
+                          Value to Dispatch
                         </th>
-                        <th className="th-num">Invoiced</th>
+                        <th className="th-num">Invoiced Value</th>
                         <th className="th-num">Received</th>
-                        <th className="th-num">Outstanding</th>
+                        <th className="th-num">Outstanding Amount</th>
                       </>
                     )}
                     <th>SO Status</th>
@@ -243,14 +243,14 @@ function KpiStrip({ totals }: { totals: PendingSoValueResponse['totals'] }): Rea
         },
         {
           key: 'pending',
-          label: 'Pending Value',
+          label: 'Value to Dispatch',
           count: inr(totals.pendingValue),
           color: 'var(--amber2)',
           sub: pct(p, o),
         },
         {
           key: 'invoiced',
-          label: 'Invoiced',
+          label: 'Invoiced Value',
           count: inr(totals.invoicedValue),
           color: TEAL,
           sub: `${pct(i, d)} of dispatched`,
@@ -264,7 +264,7 @@ function KpiStrip({ totals }: { totals: PendingSoValueResponse['totals'] }): Rea
         },
         {
           key: 'outstanding',
-          label: 'Outstanding',
+          label: 'Outstanding Amount',
           count: inr(totals.outstandingValue),
           color: out > 0 ? 'var(--red)' : 'var(--green)',
           sub: `${pct(out, i)} of invoiced`,

@@ -822,7 +822,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                title="Add a new customer without leaving this form"
                 style={{ whiteSpace: 'nowrap' }}
                 onClick={() => setShowAddClient(true)}
               >
@@ -933,7 +932,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               id="clientPoNo"
               className="innovic-input"
               autoComplete="off"
-              placeholder="Client PO reference"
               {...register('header.clientPoNo', {
                 onChange: (e) => {
                   if (e.target.value.trim()) setPoEmailError(null);
@@ -1012,7 +1010,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                title="Create a new Party Supplied Material item without leaving this form"
                 style={{ whiteSpace: 'nowrap' }}
                 onClick={() => setShowAddPartyMat(true)}
               >
@@ -1031,7 +1028,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             ) : null}
           </div>
           <div className="form-grp f-sm">
-            <label className="form-label">Material Qty</label>
+            <label className="form-label">Customer Material Qty</label>
             <input
               type="number"
               min={0}
@@ -1303,13 +1300,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                         <input
                           className="innovic-input"
                           autoComplete="off"
-                          placeholder="Item Name"
                           readOnly={lineOnMaster}
-                          title={
-                            lineOnMaster
-                              ? 'Auto-filled from Item Master (item code is the key)'
-                              : undefined
-                          }
+                          title={lineOnMaster ? 'Auto-filled from Item Master' : undefined}
                           style={
                             lineOnMaster
                               ? { background: 'var(--bg4)', color: 'var(--text3)' }

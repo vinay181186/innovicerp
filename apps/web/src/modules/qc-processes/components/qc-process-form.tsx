@@ -115,7 +115,6 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
             id="description"
             className="innovic-input"
             autoComplete="off"
-            {...(isEdit ? {} : { placeholder: 'What does this QC process involve?' })}
             {...register('description', {
               maxLength: { value: 1000, message: 'Max 1000 characters.' },
             })}

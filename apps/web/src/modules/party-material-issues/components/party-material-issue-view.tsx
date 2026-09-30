@@ -85,7 +85,7 @@ export function PartyMaterialIssueView({
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Party Material Issues. Ask an admin.
+        You do not have permission to view Customer Material Issues. Ask an admin.
       </div>
     );
   }
@@ -95,7 +95,7 @@ export function PartyMaterialIssueView({
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + New Issue. */}
       <ListHeader
-        title="Party Material Issue"
+        title="Customer Material Issue"
         icon="📤"
         count={data?.total}
         noun="issue"
@@ -152,7 +152,7 @@ export function PartyMaterialIssueView({
                 {rows.length === 0 ? (
                   <tr>
                     <td colSpan={canCancel ? 9 : 8} className="empty-state">
-                      {term ? 'No Party Material Issues match.' : 'No Party Material Issues yet.'}
+                      {term ? 'No Customer Material Issues match.' : 'No Customer Material Issues yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -497,7 +497,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
       return;
     }
     if (!partyMaterialId) {
-      setErr('Party Material is required.');
+      setErr('Customer Material is required.');
       return;
     }
     const q = Number(qty);
@@ -552,7 +552,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          New Party Material Issue
+          New Customer Material Issue
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -619,7 +619,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           </div>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Party Material" required>
+            <Field label="Customer Material" required>
               <SearchableSelect
                 id="pmi-material"
                 value={partyMaterialId}

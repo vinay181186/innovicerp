@@ -199,7 +199,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
           <table className="innovic-table tbl-grid">
             <thead>
               <tr>
-                <th>Code</th>
+                <th>{noun} Code</th>
                 <th>{noun}</th>
                 <th>Description</th>
                 <th>Active</th>

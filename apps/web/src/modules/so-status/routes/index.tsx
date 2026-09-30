@@ -246,7 +246,7 @@ function SoStatusIndexPage(): React.JSX.Element {
           <SoStatusDetailView soId={selected} />
         ) : (
           <div className="empty-state" style={{ padding: 60, fontSize: 14 }}>
-            Select an SO from the list to review its status.
+            Select an SO
           </div>
         )}
       </div>

@@ -84,9 +84,6 @@ function OperatorNewPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div>
             <div className="panel-title">+ Add Operator</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Create a master record for a shop-floor worker.
-            </div>
           </div>
         </div>
         <div className="panel-body">

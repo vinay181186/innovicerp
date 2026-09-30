@@ -75,7 +75,7 @@ export function ReturnPartyMaterialModal({
         </div>
         <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
           In the party store now: <b style={{ color: 'var(--green2)' }}>{row.stockQty}</b>{' '}
-          {row.uom}. Returning removes it from party stock and records it on the party ledger.
+          {row.uom}.
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="pm-return-qty">

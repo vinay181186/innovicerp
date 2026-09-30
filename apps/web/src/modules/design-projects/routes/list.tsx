@@ -335,7 +335,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
       return;
     }
     if (!targetDate) {
-      setErr('Target Date is required.');
+      setErr('Due Date is required.');
       return;
     }
     const input: CreateDesignProjectInput = {
@@ -458,7 +458,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
         </div>
         <div className="form-grp">
           <label className="form-label">
-            Target Date<span className="req">★</span>
+            Due Date<span className="req">★</span>
           </label>
           <input
             type="date"

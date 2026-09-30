@@ -18,7 +18,7 @@ export function StockCountLinesTable(props: {
       <table className="innovic-table">
         <thead>
           <tr>
-            <th className="th-num">Ln</th>
+            <th className="th-num">Sr No</th>
             <th>Item Code</th>
             <th>Item Name</th>
             <th>UOM</th>
@@ -118,7 +118,7 @@ export function StockCountLinesTable(props: {
           {lines.length === 0 ? (
             <tr>
               <td colSpan={10} className="empty-state">
-                Add items below or upload an Excel sheet (Item Code · Counted Qty · Reason).
+                No items yet. Excel columns: Item Code · Counted Qty · Reason.
               </td>
             </tr>
           ) : null}

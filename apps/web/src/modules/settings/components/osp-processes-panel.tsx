@@ -435,7 +435,7 @@ export function OspProcessesPanel(): React.JSX.Element {
       {removing ? (
         <ConfirmDialog
           title={`Delete OSP process ${removing.processName}?`}
-          message="It is removed from the OSP process list."
+          message=""
           confirmLabel="Delete"
           pendingLabel="Deleting…"
           onConfirm={() => remove(removing)}

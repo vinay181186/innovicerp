@@ -372,10 +372,10 @@ export function GrnAgainstPoForm({
             error: l.error,
           }))}
           decimal
-          qtyLabel="Qty"
+          qtyLabel="PO Qty"
           emptyText={
             !poId
-              ? 'Pick a purchase order to load its pending lines.'
+              ? 'Select a purchase order'
               : !po
                 ? 'Loading PO lines…'
                 : 'Every line on this PO is fully received.'

@@ -36,7 +36,7 @@ export const poLineAnalysisReport: RegisteredReport = {
       { key: 'line_no', label: 'Ln', type: 'number' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
-      { key: 'qty', label: 'Qty', type: 'number' },
+      { key: 'qty', label: 'PO Qty', type: 'number' },
       { key: 'received_qty', label: 'Received', type: 'number' },
       { key: 'qc_accepted_qty', label: 'Accepted', type: 'number' },
       { key: 'qc_rejected_qty', label: 'Rejected', type: 'number' },

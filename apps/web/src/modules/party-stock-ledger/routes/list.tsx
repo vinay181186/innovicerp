@@ -35,7 +35,7 @@ const SOURCE_DOC_LABELS: Record<string, string> = {
   party_grn: 'Party GRN',
   party_grn_line: 'Party GRN',
   party_material_issue: 'Material Issue',
-  party_material: 'Party Material',
+  party_material: 'Customer Material',
   job_card: 'Job Card',
   jw_return_challan: 'JW Return',
 };
@@ -82,7 +82,7 @@ function PartyStockLedgerListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view the Party Stock Ledger. Ask an admin.
+        You do not have permission to view the Customer Material Stock Ledger. Ask an admin.
       </div>
     );
   }
@@ -90,7 +90,7 @@ function PartyStockLedgerListPage(): React.JSX.Element {
   return (
     <div>
       <ListHeader
-        title="Party Stock Ledger"
+        title="Customer Material Stock Ledger"
         icon="📒"
         count={data?.total ?? rows.length}
         noun="movement"
@@ -111,7 +111,7 @@ function PartyStockLedgerListPage(): React.JSX.Element {
             <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error
                 ? error.message
-                : 'Could not load the party stock ledger. Try again.'}
+                : 'Could not load the Customer Material Stock Ledger. Try again.'}
             </div>
           </div>
         ) : (
@@ -119,16 +119,16 @@ function PartyStockLedgerListPage(): React.JSX.Element {
             <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Material</th>
+                  <th>Movement Date</th>
+                  <th>Customer Material</th>
                   <th>Movement</th>
                   <th>In / Out</th>
-                  <th className="th-num">Qty</th>
+                  <th className="th-num">Movement Qty</th>
                   <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Balance
                   </th>
                   <th>Source Doc</th>
-                  <th>By</th>
+                  <th>Recorded By</th>
                 </tr>
               </thead>
               <tbody>

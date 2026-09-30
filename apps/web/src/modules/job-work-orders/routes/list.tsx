@@ -295,7 +295,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                     params={{ id: jw.jwId }}
                     className="td-code"
                     style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
-                    title="Open the JWSO detail page"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {jw.code}
@@ -385,7 +384,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                     </span>
                     <span>·</span>
                     <span>
-                      Material{' '}
+                      Customer Material{' '}
                       <MaterialCell
                         received={jw.partyReceivedQty}
                         expected={Number(jw.clientMaterialQty ?? 0)}

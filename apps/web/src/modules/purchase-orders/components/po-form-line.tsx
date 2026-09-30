@@ -338,7 +338,6 @@ export function PoFormLine({
             className="innovic-input mono"
             list={itemDatalistId}
             autoComplete="off"
-            placeholder="Item code…"
             aria-label={`Item Code, line ${idx + 1}`}
             {...register(`lines.${idx}.itemCodeText` as const)}
           />
@@ -355,7 +354,6 @@ export function PoFormLine({
           <input
             className="innovic-input"
             autoComplete="off"
-            placeholder="Name…"
             aria-label={`Item Name, line ${idx + 1}`}
             {...register(`lines.${idx}.itemName` as const)}
           />
@@ -461,7 +459,6 @@ export function PoFormLine({
                   id={`pof-ram-${idx}`}
                   className="innovic-input"
                   autoComplete="off"
-                  placeholder="RAM remark…"
                   aria-label={`RAM remark, line ${idx + 1}`}
                   {...register(`lines.${idx}.ramRemark` as const)}
                 />
@@ -471,7 +468,6 @@ export function PoFormLine({
                   id={`pof-rmk-${idx}`}
                   className="innovic-input"
                   autoComplete="off"
-                  placeholder="Remarks for this line…"
                   aria-label={`Remarks, line ${idx + 1}`}
                   {...register(`lines.${idx}.lineRemarks` as const)}
                 />

@@ -155,7 +155,7 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="productCode">
             Product Code
           </label>
-          <input id="productCode" className="innovic-input" autoComplete="off" placeholder="Product this machine runs" {...register('productCode')} />
+          <input id="productCode" className="innovic-input" autoComplete="off" {...register('productCode')} />
         </div>
 
         <div className="form-grp form-full">
@@ -167,7 +167,7 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="capacityPerShift">
-            Capacity / Shift (hrs)
+            Hours per Shift
           </label>
           <input id="capacityPerShift" className="innovic-input" type="number" min={0} autoComplete="off" {...register('capacityPerShift')} />
         </div>
@@ -195,7 +195,6 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
             min={0}
             step="0.01"
             autoComplete="off"
-            placeholder="₹ per hour"
             {...register('hourRate')}
           />
         </div>
@@ -290,7 +289,7 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="productCode">
             Product Code
           </label>
-          <input id="productCode" className="innovic-input" autoComplete="off" placeholder="Product this machine runs" {...register('productCode')} />
+          <input id="productCode" className="innovic-input" autoComplete="off" {...register('productCode')} />
         </div>
 
         <div className="form-grp form-full">
@@ -302,7 +301,7 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="capacityPerShift">
-            Capacity / Shift (hrs)
+            Hours per Shift
           </label>
           <input id="capacityPerShift" className="innovic-input" type="number" min={0} autoComplete="off" {...register('capacityPerShift')} />
         </div>
@@ -330,7 +329,6 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
             min={0}
             step="0.01"
             autoComplete="off"
-            placeholder="₹ per hour"
             {...register('hourRate')}
           />
         </div>

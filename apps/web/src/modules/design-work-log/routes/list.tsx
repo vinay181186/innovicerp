@@ -222,7 +222,7 @@ function EntryTab(): React.JSX.Element {
           items={[
             { key: 'today', label: 'Today', count: `${todayHrs.toFixed(1)}h` },
             { key: 'entries', label: 'Entries Today', count: todayLogs.length },
-            { key: 'total', label: 'Total Hours', count: `${totalHrs.toFixed(0)}h` },
+            { key: 'total', label: 'Booked Hours', count: `${totalHrs.toFixed(0)}h` },
           ]}
         />
       </div>

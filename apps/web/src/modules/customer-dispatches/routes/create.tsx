@@ -368,7 +368,6 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                 className="btn btn-ghost btn-sm"
                 onClick={addAllPendingLines}
                 disabled={!dispatchable}
-                title="Add every SO line that still has a pending qty"
               >
                 Add all pending lines
               </button>

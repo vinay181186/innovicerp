@@ -195,7 +195,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                       <th>Order Qty</th>
                       <th>Completed</th>
                       <th style={{ color: 'var(--amber2)' }}>Available</th>
-                      <th>Pending (hrs)</th>
+                      <th>Pending Hrs</th>
                       <th>Op Status</th>
                       {canOpEntry ? <th>Action</th> : null}
                     </tr>
@@ -464,7 +464,7 @@ function SupplyChainPanel({
         }}
       >
         <ScTile
-          label="Low Stock Alerts"
+          label="Below Reorder"
           value={lowStockCount}
           bg={low ? 'var(--red3)' : 'var(--bg3)'}
           border={low ? 'var(--red)' : 'var(--border)'}
@@ -495,7 +495,7 @@ function SupplyChainPanel({
       {lowStockItems.length > 0 ? (
         <div style={{ padding: '0 14px 14px' }}>
           <div style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700, marginBottom: 6 }}>
-            Low Stock Items:
+            Below Reorder:
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {lowStockItems.map((i) => (
@@ -510,7 +510,7 @@ function SupplyChainPanel({
                   color: 'var(--red2)',
                 }}
               >
-                {i.code} ({i.inStock} / min {i.minQty})
+                {i.code} ({i.inStock} / Reorder Level {i.minQty})
               </span>
             ))}
           </div>

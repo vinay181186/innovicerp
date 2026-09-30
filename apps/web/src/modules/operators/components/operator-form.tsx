@@ -153,7 +153,7 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="name">
             Name<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoFocus autoComplete="off" placeholder="Full name" {...register('name')} />
+          <input id="name" className="innovic-input" autoFocus autoComplete="off" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
@@ -165,7 +165,7 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
-            Status
+            Active
           </label>
           <select
             id="isActive"
@@ -235,7 +235,6 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
             id="name"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Full name"
             {...register('name')}
           />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
@@ -249,7 +248,7 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
-            Status
+            Active
           </label>
           <select
             id="isActive"

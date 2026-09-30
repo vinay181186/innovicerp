@@ -316,16 +316,7 @@ function RouteCardsListPage(): React.JSX.Element {
         }}
       />
 
-      <ListFooter
-        total={total}
-        noun="route card"
-        limit={LIST_LIMIT}
-        hint={
-          <>
-            Click ▸ before the <b>RC No.</b> to show its operation sequence.
-          </>
-        }
-      />
+      <ListFooter total={total} noun="route card" limit={LIST_LIMIT} />
     </div>
   );
 }

@@ -54,7 +54,7 @@ export function GridTable(props: GridTableProps): React.JSX.Element {
                 <button
                   type="button"
                   className="rpt-sort-btn"
-                  title={`${col.label} — click to sort`}
+                  title={col.label}
                   onClick={() => props.onSort(col.key)}
                 >
                   <span className="rpt-cell">{col.label}</span>

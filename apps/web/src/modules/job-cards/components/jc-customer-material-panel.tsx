@@ -54,7 +54,7 @@ export function JcCustomerMaterialPanel({ jc }: { jc: JobCardListItem }): React.
           Customer Material
         </div>
         <span className="text3" style={{ fontSize: 11 }}>
-          Client-supplied material for this job (party store)
+          (party store)
         </span>
       </div>
       <div

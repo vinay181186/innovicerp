@@ -496,11 +496,11 @@ const LINE_COLS: { key: string; label: string; width: number; title?: string }[]
     key: 'available',
     label: 'Available',
     width: 6,
-    title: 'Physical − Reserved: free stock. Hover a number for Physical and Reserved.',
+    title: 'Physical − Reserved: free stock.',
   },
   {
     key: 'balance',
-    label: 'Pending to Plan',
+    label: 'To Plan',
     width: 6,
     title:
       'Order − Planned − direct Job Cards: still to plan. The same number + Plan / + PR use. Hover a number for Balance (Order − Dispatched − Reserved).',
@@ -742,8 +742,7 @@ function OrderDetail({
         >
           {savedPlan.derivedStatus === 'route_card_pending' ? (
             <>
-              Next: this item has no Route Card yet — make the Route Card, then raise the Production
-              Order for this plan.{' '}
+              Next:{' '}
               <Link
                 to="/route-cards/new"
                 search={
@@ -763,7 +762,7 @@ function OrderDetail({
             </>
           ) : canProductionOrder ? (
             <>
-              Next: raise the Production Order for this plan.{' '}
+              Next:{' '}
               <Link
                 to="/production-orders/new"
                 search={{ planId: savedPlan.id, planCode: savedPlan.code }}

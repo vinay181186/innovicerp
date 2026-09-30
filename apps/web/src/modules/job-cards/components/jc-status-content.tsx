@@ -639,7 +639,6 @@ function JcStatusEditForm({
                 rows={2}
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Optional notes for this job card"
               />
             </div>
           </div>

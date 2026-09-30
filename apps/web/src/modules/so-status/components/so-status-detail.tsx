@@ -392,10 +392,10 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Sr No</th><th>Item Code</th><th>Item Name</th><th>Qty / Set</th>
+              <th>Sr No</th><th>Item Code</th><th>Item Name</th><th>Qty per Set</th>
               <th style={{ color: 'var(--cyan)', fontWeight: 800 }} title="Equipment Qty × Qty per Set">Total Need</th><th>BOM Type</th>
               <th style={{ color: 'var(--green2)' }}>Physical</th>
-              <th style={{ color: 'var(--red2)' }}>Pending</th><th>Plan Status</th>
+              <th style={{ color: 'var(--red2)' }}>Short</th><th>Plan Status</th>
             </tr>
           </thead>
           <tbody>

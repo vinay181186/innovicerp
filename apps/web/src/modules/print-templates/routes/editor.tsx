@@ -414,21 +414,8 @@ function PrintTemplatesPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr" style={{ marginBottom: 8 }}>
+      <div className="section-hdr" style={{ marginBottom: 14 }}>
         Print Templates
-      </div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 12,
-          marginBottom: 14,
-          padding: '10px 14px',
-          background: 'var(--sig-info-bg)',
-          border: '1px solid var(--sig-info-bd)',
-          borderRadius: 6,
-        }}
-      >
-        Click a section to edit; click a variable to insert it.
       </div>
 
       {/* Doc selector + actions */}

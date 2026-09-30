@@ -114,7 +114,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
                   <th>Issue Status</th>
                   <th>Assigned To</th>
                   <th>Raised Date</th>
-                  <th>Age</th>
+                  <th>Days Open</th>
                   <th>Action</th>
                 </tr>
               </thead>

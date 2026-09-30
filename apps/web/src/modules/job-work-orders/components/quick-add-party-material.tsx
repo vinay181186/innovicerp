@@ -157,9 +157,7 @@ export function QuickAddPartyMaterial({
             </select>
           </FormField>
         </div>
-        <div className="form-help">
-          Item Type is locked to Party Supplied Material; the code auto-carries -rm (ITM-####-rm).
-        </div>
+        <div className="form-help">The code auto-carries -rm (ITM-####-rm).</div>
         {err ? (
           <div className="form-error" style={{ marginTop: 6 }}>
             {err}

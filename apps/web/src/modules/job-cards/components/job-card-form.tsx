@@ -1030,7 +1030,7 @@ export function JobCardForm({
           <div className="f-full">
             <RawMaterialGroup>
               <div className="form-grp">
-                <label className="form-label">Grade</label>
+                <label className="form-label">RM Grade</label>
                 <MaterialGradePicker
                   valueId={rmGradeId}
                   valueText={rmGradeText}
@@ -1041,7 +1041,7 @@ export function JobCardForm({
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label">Size</label>
+                <label className="form-label">RM Size</label>
                 <MaterialSizePicker
                   valueId={rmSizeId}
                   valueText={rmSizeText}
@@ -1062,7 +1062,6 @@ export function JobCardForm({
               rows={2}
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Optional notes for this job card"
             />
           </FormField>
         </FormGrid>

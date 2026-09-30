@@ -768,9 +768,6 @@ export function OpEntryForm({
             </div>
           ) : (
             <>
-              <p className="text2" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
-                Raise a JW PR for this outsource operation.
-              </p>
               <button
                 type="button"
                 className="btn btn-primary"

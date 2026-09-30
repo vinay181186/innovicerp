@@ -333,7 +333,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               border: '1px solid var(--green)',
             }}
           >
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Pending to Plan</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>To Plan</div>
             <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green2)' }}>
               {remaining}
             </div>
@@ -453,7 +453,6 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             maxLength={500}
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Planning notes, special instructions"
             style={{ width: '100%', resize: 'vertical' }}
           />
         </div>

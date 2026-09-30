@@ -357,6 +357,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                   to="/purchase-orders/from-pr"
                   search={{ prIds: selectedList.map((x) => x.id).join(',') }}
                   className="btn btn-primary btn-sm"
+                  title="Raises one PO per vendor from the ticked PRs."
                 >
                   Create PO from Selected ({selectedList.length})
                 </Link>
@@ -438,11 +439,6 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                 search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
                 replace: true,
               })
-            }
-            hint={
-              canCreatePo
-                ? 'Tick the PRs of one vendor, then "Create PO from Selected" to raise one PO with a line per PR.'
-                : undefined
             }
           />
         </>

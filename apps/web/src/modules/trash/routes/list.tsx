@@ -271,16 +271,11 @@ function TrashListPage(): React.JSX.Element {
         }
       />
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-        Only admins can open Trash. Restore puts a document back where it was; nothing is
-        permanently deleted from here.
-      </div>
-
       {restoring ? (
         <ConfirmDialog
           tone="primary"
           title={`Restore ${typeLabel(restoring.type)} ${restoring.label}?`}
-          message="It goes back to its list exactly as it was before it was deleted."
+          message=""
           confirmLabel="Restore"
           pendingLabel="Restoring…"
           onConfirm={onRestoreConfirmed}

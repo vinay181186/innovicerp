@@ -33,7 +33,7 @@ export function DeletePartyMaterialModal({
         onSuccess: () => onClose(),
         onError: (e) =>
           setErr(
-            e instanceof Error ? e.message : 'Could not delete the Party Material. Try again.',
+            e instanceof Error ? e.message : 'Could not delete the Customer Material. Try again.',
           ),
       },
     );
@@ -63,10 +63,10 @@ export function DeletePartyMaterialModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 12 }}>
-          ⚠ Delete Party Material {code}?
+          ⚠ Delete Customer Material {code}?
         </div>
         <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
-          {name} will be removed from the Party Material Master.
+          {name} will be removed from the Customer Material Master.
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="pm-delete-reason">

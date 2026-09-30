@@ -954,11 +954,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         }
       >
         <div className="panel-body">
-          <div className="form-help" style={{ marginTop: 0 }}>
-            {parentLocked
-              ? 'Pick the parent item above to unlock the part list.'
-              : 'Pick an item code — the name auto-fills from the Item Master.'}
-          </div>
+          {parentLocked ? (
+            <div className="form-help" style={{ marginTop: 0 }}>
+              Pick the parent item above to unlock the part list.
+            </div>
+          ) : null}
 
           {importSummary ? (
             <div style={{ marginTop: 'var(--sp-2)' }}>

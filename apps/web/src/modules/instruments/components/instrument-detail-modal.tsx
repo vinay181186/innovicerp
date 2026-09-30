@@ -129,7 +129,7 @@ export function InstrumentDetailModal({
                       <th>Calibration Result</th>
                       <th>Certificate No.</th>
                       <th>Agency</th>
-                      <th>Next Due</th>
+                      <th>Calibration Due</th>
                       <th>Recorded By</th>
                     </tr>
                   </thead>
