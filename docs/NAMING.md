@@ -176,6 +176,13 @@
 | The Sales Order an NC belongs to (fix wave 2, 0184) | `SO No.` (shows the live code) | `soId` (link) + `soCodeText` (snapshot) | `nc_register.so_id` → `sales_orders.code` | reading `soCodeText` when `soId` is set |
 | A unit that counts pieces — ERPNext UOM "Must be whole number" (fix wave 2) | — (the refusal says "must be a whole number — the unit is NOS") | `WHOLE_NUMBER_UOMS` / `isWholeNumberUom` | packages/shared `lib/qty-rule.ts` (NOS, PCS, SET, LOT); every other unit takes up to 3 decimals (`QTY_DECIMALS`) | a second per-module list of whole-number units |
 | Allowed status moves of a document (fix wave 2, S8) | — (buttons / choices shown) | `SO_STATUS_MOVES`, `BOM_STATUS_MOVES`, `NC_STATUS_MOVES` | packages/shared `lib/status-moves.ts`; the API refuses any other move with 409 | a status list typed inline in a screen or a service |
+| A party's GST registration number (naming audit 2026-09-30) | `GSTIN` | `gstin` | `clients.gstin` / `vendors.gstin` | `GST No.`, `GSTIN/UIN`, `GST Number`, `GST` |
+| A BOM-child / equipment line shortfall — Total Need − Stock (naming audit 2026-09-30) | `Short` | `shortQty` | computed — Total Need − Physical | `Pending`, `Shortfall`, `Balance`, `Remaining` |
+| SO value ordered but not yet dispatched (naming audit 2026-09-30) | `Value to Dispatch` | `valueToDispatch` | computed — un-dispatched line value | `Pending Value`, `Outstanding Value` |
+| A machine's working hours per shift, master config (naming audit 2026-09-30) | `Hours per Shift` | `hoursPerShift` | `machines` shift config | `Capacity`, `Daily Cap`, `Capacity / Shift` (Capacity = Available Hours, A row above) |
+| A machine's cost per running hour (naming audit 2026-09-30) | `Hour Rate` (shown `Hour Rate (₹/hr)`) | `hourRate` | `machines.hour_rate` | `Rate`, `Machine Rate` |
+| Days a design issue has been open (naming audit 2026-09-30) | `Days Open` | `daysOpen` | computed — today − raised date | `Age` |
+| Raw-material grade & size, RC/JC snapshot (naming audit 2026-09-30) | `RM Grade` / `RM Size` | `rawMaterialGrade` / `rawMaterialSize` | `route_cards` (snapshot) | `Material` (for the grade), bare `Grade` / `Size` where ambiguous |
 
 **Snapshot rule.** `xxxText` means "the value as it was, when the live row may be gone".
 It is only ever a fallback: read `xxx ?? xxxText`, never the snapshot alone. A `xxxText`
