@@ -213,7 +213,7 @@ export const listPlansResponseSchema = z.object({
        *  Read-only: the Sales Order is the only place it is typed. */
       clientPoLineNo: z.string().nullable().default(null),
       /** The Due Date of the SO / JWSO line this plan is for — the date the
-       *  customer wants it (shown as "Customer Target Date" on Create Production
+       *  customer wants it (shown as "Customer Dispatch Date" on Create Production
        *  Order). Read live, null on an ad-hoc plan. */
       lineDueDate: z.string().nullable().default(null),
       itemName: z.string().nullable(),

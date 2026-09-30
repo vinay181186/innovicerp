@@ -1,7 +1,7 @@
 // Create Production Order (ADR-170, ADR-182): Plan + Route Card + Order Qty +
 // PRO Target Date (owner label 2026-09-30, was "Customer Dispatch Date"; the
 // wire field stays `targetDate`) → Create JC. The customer's own date shows
-// read-only as "Customer Target Date" in the plan summary.
+// read-only as "Customer Dispatch Date" in the plan summary.
 //
 // ADR-182 added three things to this screen:
 //   • Order Qty — a plan may be covered by SEVERAL orders now (50 = 20+20+10),
@@ -561,7 +561,7 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
         <Fact label="SO / JWSO No." value={so} mono />
         {/* The customer's wanted date — the SO / JWSO line's Due Date, read-only
             here; the PRO Target Date above is this order's own date. */}
-        <Fact label="Customer Target Date" value={fmtDate(plan.lineDueDate)} mono />
+        <Fact label="Customer Dispatch Date" value={fmtDate(plan.lineDueDate)} mono />
         <Fact label="Planned Start Date" value={fmtDate(plan.plannedStartDate)} mono />
         <Fact label="Planned End Date" value={fmtDate(plan.plannedEndDate)} mono />
         <Fact label="RM Grade" value={plan.rawMaterialGradeText ?? '—'} />
