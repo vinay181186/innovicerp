@@ -17,6 +17,7 @@ import type {
 import { ActivityAction } from '@innovic/shared';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  clients,
   customerDispatchLines,
   customerDispatches,
   items,
@@ -45,6 +46,7 @@ import {
 import { emitActivityLog } from '../activity-log/service';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
+import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -182,6 +184,7 @@ type DispatchableRow = {
   item_revision: string | null;
   client_po_line_no: string | null;
   item_name: string;
+  master_item_name: string | null;
   order_qty: string | number;
   dispatched_qty: string | number;
   rate: string | number;
@@ -256,6 +259,8 @@ async function loadDispatchable(
         -- POL: the line number on the CUSTOMER's own purchase order, not ours.
         sol.client_po_line_no,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
+        -- The item master's name, shown beside a differing line name (plan v3 Step 4).
+        i.name AS master_item_name,
         -- ADR-196 — a line closed short takes no more dispatch.
         (sol.short_closed_at IS NOT NULL) AS short_closed,
         -- The plan's Customer Dispatch Date (migration 0137): earliest across
@@ -389,6 +394,7 @@ async function loadDispatchable(
       itemRevision: r.item_revision ?? null,
       clientPoLineNo: r.client_po_line_no ?? null,
       itemName: r.item_name,
+      masterItemName: r.master_item_name ?? null,
       orderQty,
       readyQty: ready,
       reservedQty: reserved,
@@ -596,6 +602,18 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
       .groupBy(customerDispatchLines.customerDispatchId);
     const agg = new Map(aggRows.map((a) => [a.id, { cnt: Number(a.cnt), qty: Number(a.qty) }]));
     const billed = await loadBilledQtyByDispatch(tx, companyId);
+    // Live customer name per SO off the client master (plan v3 Step 4) — the
+    // list shows it; the dispatch's saved customer_text is the fallback when
+    // the SO has no client_id, and stays the copy the DC print reads.
+    const soIds = [...new Set(headers.map((h) => h.salesOrderId))];
+    const liveCustomerRows = soIds.length
+      ? await tx
+          .select({ soId: salesOrders.id, name: clients.name })
+          .from(salesOrders)
+          .innerJoin(clients, and(eq(clients.id, salesOrders.clientId), isNull(clients.deletedAt)))
+          .where(inArray(salesOrders.id, soIds))
+      : [];
+    const liveCustomer = new Map(liveCustomerRows.map((r) => [r.soId, r.name]));
 
     return {
       dispatches: headers.map((h) => {
@@ -603,6 +621,7 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
         const billedQty = billed.get(h.id) ?? 0;
         return {
           ...rowToHeader(h, a.cnt, a.qty),
+          customer: liveCustomer.get(h.salesOrderId) ?? h.customerText,
           billedQty,
           billedStatus: billedStatusOf(billedQty, a.qty),
         };
@@ -646,7 +665,9 @@ export async function listDispatchRegister(
     const res = await tx.execute(sql`
       SELECT h.id AS dispatch_id, h.code AS dispatch_code, h.status,
         h.dispatch_date::text AS dispatch_date, h.so_code_text AS so_no,
-        h.customer_text AS customer, h.remarks,
+        -- Live customer name off the client master via the SO (plan v3 Step 4);
+        -- the dispatch's saved customer_text only when the SO has no client_id.
+        COALESCE(cli.name, h.customer_text) AS customer, h.remarks,
         i.code AS item_code, l.item_code_text AS item_code_text,
         l.item_name, l.qty,
         -- The customer's drawing revision, off the SO line this dispatch line
@@ -664,6 +685,8 @@ export async function listDispatchRegister(
         jcs.jc_codes AS jc_no
       FROM customer_dispatch_lines l
       JOIN customer_dispatches h ON h.id = l.customer_dispatch_id
+      LEFT JOIN public.sales_orders cso ON cso.id = h.sales_order_id
+      LEFT JOIN public.clients cli ON cli.id = cso.client_id AND cli.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = l.item_id AND i.deleted_at IS NULL
       LEFT JOIN sales_order_lines sol ON sol.id = l.sales_order_line_id
       LEFT JOIN public.users u ON u.id = h.created_by
@@ -759,6 +782,9 @@ async function getDispatchInternal(
       itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
       itemCodeText: customerDispatchLines.itemCodeText,
       itemName: customerDispatchLines.itemName,
+      // The item master's name — the detail screen notes it when the line's
+      // saved name differs (plan v3 Step 4). Display only; the print keeps itemName.
+      masterItemName: items.name,
       qty: customerDispatchLines.qty,
       // POL + unit off the same SO line — the DC print carries both.
       clientPoLineNo: salesOrderLines.clientPoLineNo,
@@ -788,6 +814,7 @@ async function getDispatchInternal(
     itemRevision: l.itemRevision ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemName,
+    masterItemName: l.masterItemName ?? null,
     qty: l.qty,
     clientPoLineNo: l.clientPoLineNo ?? null,
     uom: l.uom ?? null,
@@ -808,6 +835,9 @@ async function getDispatchInternal(
     billedStatus: billedStatusOf(billedQty, totalQty),
     clientId: soRows[0]?.clientId ?? null,
     clientPoNo: soRows[0]?.clientPoNo ?? null,
+    // The DC's own copy of the customer (0186, plan D7) — the print reads it;
+    // null only on a dispatch made before 0186 (print falls back to the master).
+    clientCopy: readClientCopy({ ...h, clientName: h.customerText }),
     lines,
   };
 }
@@ -898,6 +928,8 @@ export async function createDispatch(
     }
 
     const code = await nextCode(tx, companyId);
+    // Legal copy of the customer (plan D7, 0186) — the DC print reads it.
+    const copy = clientCopyValues(await loadClientForCopy(tx, so.clientId, companyId));
     const inserted = await tx
       .insert(customerDispatches)
       .values({
@@ -906,7 +938,15 @@ export async function createDispatch(
         dispatchDate: input.dispatchDate,
         salesOrderId: so.id,
         soCodeText: so.code,
-        customerText: so.customer,
+        customerText: copy.clientName ?? so.customer,
+        clientGstText: copy.clientGstText,
+        clientAddressLine1: copy.clientAddressLine1,
+        clientCity: copy.clientCity,
+        clientState: copy.clientState,
+        clientStateCode: copy.clientStateCode,
+        clientPincode: copy.clientPincode,
+        placeOfSupply: copy.placeOfSupply,
+        clientCopyAt: copy.clientCopyAt,
         transport: input.transport ?? null,
         vehicleNo: input.vehicleNo ?? null,
         status: 'dispatched',

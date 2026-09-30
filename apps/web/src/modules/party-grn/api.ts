@@ -7,6 +7,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const partyGrnKeys = {
@@ -65,10 +66,17 @@ export function useNextPartyGrnCode() {
   });
 }
 
-export function useCreatePartyGrn() {
+export function useCreatePartyGrn(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<PartyGrn, Error, CreatePartyGrnInput>({
-    mutationFn: (input) => apiFetch<PartyGrn>('/party-grn', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PartyGrn>('/party-grn', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

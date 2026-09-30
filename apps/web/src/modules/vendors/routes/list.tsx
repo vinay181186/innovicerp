@@ -372,7 +372,9 @@ function VendorsListPage(): React.JSX.Element {
           allowInsert={canAdd}
           allowUpdate={canEdit}
           parse={parseVendorImportFile}
-          submit={(rows, mode, dryRun) => bulkCreate.mutateAsync({ vendors: rows, mode, dryRun })}
+          submit={(rows, mode, dryRun, saveKey) =>
+            bulkCreate.mutateAsync({ vendors: rows, mode, dryRun, saveKey })
+          }
           onDownloadTemplate={downloadVendorTemplate}
           errorsFileName="Vendor Import Errors.xlsx"
           onClose={() => setImportOpen(false)}

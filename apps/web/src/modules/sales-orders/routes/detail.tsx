@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { ItemBadge } from '@/components/shared/item-badge';
+import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -436,13 +437,16 @@ function lineColumns(opts: {
       width: priceHidden ? '24%' : '17%',
       align: 'left',
       render: (l) => (
-        <ItemBadge
-          size="row"
-          code={l.itemCode ?? l.itemCodeText}
-          name={l.partName}
-          revision={l.revision}
-          imagePath={l.itemImagePath}
-        />
+        <>
+          <ItemBadge
+            size="row"
+            code={l.itemCode ?? l.itemCodeText}
+            name={l.partName}
+            revision={l.revision}
+            imagePath={l.itemImagePath}
+          />
+          <MasterItemNameNote lineName={l.partName} masterItemName={l.masterItemName} />
+        </>
       ),
     },
     {

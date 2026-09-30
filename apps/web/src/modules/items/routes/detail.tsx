@@ -18,10 +18,9 @@
 //  - The detail grid carries itemType / hsnCode / description, which legacy's
 //    modal has no counterpart for. Kept — dropping live fields to reach parity
 //    would lose working behaviour.
-//  - NO Revision or Drawing no. (user decision 2026-09-21): both belong to the
-//    SO / JWSO line, not the item. An item that still carries a pre-cutover
-//    drawing file shows it under "Old Drawing" so nothing already uploaded
-//    goes missing; new items never get one.
+//  - NO Revision, Drawing no. or Drawing File (user decision 2026-09-21, plan
+//    v3 Step 4 #7): all three belong to the SO / JWSO line, not the item. The
+//    old item columns stay in the DB with their data; no screen shows them.
 //  - The header is the shared <ItemBadge> at its 96 px size: product image
 //    (3D render), code, name. Click the picture to see it large.
 //
@@ -30,29 +29,21 @@
 // Route Card table (L11799-11802) and Job Card History (L11803-11806) all need
 // route-card / job-card / running-op reads this page does not have.
 
-import {
-  type Company,
-  ITEM_PROCUREMENT_TYPE_LABEL,
-  type Item,
-  itemTypeLabel,
-} from '@innovic/shared';
+import { ITEM_PROCUREMENT_TYPE_LABEL, type Item, itemTypeLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Package, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { DocumentHistory } from '@/components/shared/document-history';
-import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useMyCompany } from '@/modules/settings/api';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
 import { STORE_TXN_SOURCE_LABELS } from '@/modules/store-transactions/lib/txn-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItem, useSoftDeleteItem } from '../api';
 import { TrashReasonDialog } from '../components/trash-reason-dialog';
-import { printItemDrawing } from '../lib/print-drawing';
 
 // Rows pulled for the ledger sub-panel. The panel discloses the cap against the
 // server's `total` whenever there are more (legacy lists every txn, L11816).
@@ -70,7 +61,6 @@ function ItemDetailPage(): React.JSX.Element {
   const { data: item, isLoading, isError, error } = useItem(id);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'item_create');
-  const { data: company } = useMyCompany();
   const softDelete = useSoftDeleteItem();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -179,7 +169,7 @@ function ItemDetailPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          <DetailGrid item={item} company={company} />
+          <DetailGrid item={item} />
         </div>
       </div>
 
@@ -339,8 +329,8 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
   );
 }
 
-function DetailGrid(props: { item: Item; company: Company | undefined }): React.JSX.Element {
-  const { item, company } = props;
+function DetailGrid(props: { item: Item }): React.JSX.Element {
+  const { item } = props;
   return (
     <div className="form-grid">
       <Pair label="Item Type" value={itemTypeLabel(item.itemType)} />
@@ -355,9 +345,6 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
       <Pair label="UOM" value={item.uom} />
       <Pair label="Material" value={item.material ?? '—'} />
       <Pair label="HSN Code" value={item.hsnCode ?? '—'} />
-      {/* Old items only — a drawing uploaded on the item before drawings moved
-          to the SO line. Never shown for an item without one. */}
-      {item.drawingFilePath ? <DrawingFilePair item={item} company={company} /> : null}
       <div className="form-grp form-full">
         <span className="form-label">Description</span>
         <div style={{ whiteSpace: 'pre-wrap' }}>{item.description ?? '—'}</div>
@@ -371,63 +358,6 @@ function Pair(props: { label: string; value: string }): React.JSX.Element {
     <div className="form-grp">
       <span className="form-label">{props.label}</span>
       <div style={{ fontWeight: 600 }}>{props.value}</div>
-    </div>
-  );
-}
-
-function DrawingFilePair({
-  item,
-  company,
-}: {
-  item: Item;
-  company: Company | undefined;
-}): React.JSX.Element {
-  const path = item.drawingFilePath;
-  // Viewing happens in the shared preview, not `window.open(signedUrl)`. Two
-  // reasons, and only the first is new: the link is now minted by the server so
-  // the look is logged and a save is a separate, permissioned act; and handing
-  // the file to the browser let Chrome's "download PDFs" setting save a drawing
-  // the user only meant to glance at.
-  const [previewOpen, setPreviewOpen] = useState(false);
-  async function print(): Promise<void> {
-    if (!path) return;
-    try {
-      const ok = await printItemDrawing({ item, company });
-      if (!ok) window.alert('Allow popups to print.');
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not open drawing. Try again.');
-    }
-  }
-  return (
-    <div className="form-grp">
-      <span className="form-label">Old Drawing</span>
-      <div style={{ fontWeight: 600, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {path ? (
-          <>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setPreviewOpen(true)}
-            >
-              📎 View drawing
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void print()}>
-              <Printer size={13} /> Print drawing
-            </button>
-          </>
-        ) : (
-          '—'
-        )}
-      </div>
-      {previewOpen && path ? (
-        <FilePreviewModal
-          storagePath={path}
-          kind="drawing"
-          source="item"
-          refCode={item.code}
-          onClose={() => setPreviewOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }

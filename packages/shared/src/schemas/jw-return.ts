@@ -5,6 +5,7 @@
 // returned; bumps job_work_order_lines.returned_qty. Numbering: IN-JWRC-#####.
 
 import { z } from 'zod';
+import { clientCopySchema } from './party-copy';
 
 export const jwReturnChallanSchema = z.object({
   id: z.string().uuid(),
@@ -45,6 +46,10 @@ export const jwReturnChallanListItemSchema = jwReturnChallanSchema.extend({
   /** HSN off the item master (items.hsn_code), printed on the challan (A4). */
   hsnCode: z.string().nullable().optional(),
   clientPoNo: z.string().nullable().default(null),
+  /** Legal copy of the customer taken when this paper was made (0186, plan
+   *  D7). The print reads it; null only on a row made before 0186 (the print
+   *  then falls back to the live customer master). */
+  clientCopy: clientCopySchema.nullable().default(null),
 });
 export type JwReturnChallanListItem = z.infer<typeof jwReturnChallanListItemSchema>;
 

@@ -26,6 +26,7 @@
 // status='po_created' atomically. Mirrors legacy `addPO()` line 25728.
 
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { servicePoTaxTypeSchema } from './service-po';
 import { PO_STATUSES } from '../enums/po-status';
 import { PO_TYPES } from '../enums/po-type';
@@ -178,6 +179,10 @@ export const purchaseOrderDetailSchema = purchaseOrderSchema.extend({
   // otherwise (free-text vendor stays in vendorCodeText). Same pattern as
   // salesOrderLine.itemCode (per ISSUE-005 fix).
   vendorName: z.string().nullable().default(null),
+  /** Live vendor code (vendors.code by vendorId) — plan v3 Step 4: working
+   *  screens read the master, `vendorCodeText` is only the fallback when the
+   *  PO has no vendorId. Optional: the write-backs return this shape unjoined. */
+  vendorCode: z.string().nullable().optional(),
   /** The Sales Order this PO ultimately serves, resolved through its lines'
    *  source_so_line_id. A PO raised by Planning (an OSP/job-work PR off a Job
    *  Card) carries that link on every line, so the buyer can see which customer
@@ -194,6 +199,8 @@ export type PurchaseOrderDetail = z.infer<typeof purchaseOrderDetailSchema>;
 /** List row: header + line aggregates + vendor name join. */
 export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
   vendorName: z.string().nullable(),
+  /** Live vendors.code by vendorId; null when the PO has no vendorId. */
+  vendorCode: z.string().nullable().optional(),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
@@ -302,6 +309,7 @@ export const updatePurchaseOrderInputSchema = z.object({
     .omit({ code: true })
     .extend({ taxType: poTaxTypeSchema.nullable().optional() }),
   lines: z.array(purchaseOrderLineInputSchema).optional(),
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type UpdatePurchaseOrderInput = z.infer<typeof updatePurchaseOrderInputSchema>;
 

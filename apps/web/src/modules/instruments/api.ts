@@ -14,6 +14,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
 export const instrumentsKeys = {
   all: ['instruments'] as const,
@@ -74,11 +75,17 @@ function invalidate(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: ['store-transactions'] });
 }
 
-export function useCreateInstrument() {
+export function useCreateInstrument(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<InstrumentListItem, Error, CreateInstrumentInput>({
     mutationFn: (input) =>
-      apiFetch<InstrumentListItem>('/instruments', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<InstrumentListItem>('/instruments', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => invalidate(qc),
   });
 }

@@ -22,6 +22,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import { useCreatePlan, useDefaultRouteOps, useReserveStock } from '@/modules/plans/api';
 import {
@@ -117,7 +118,8 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const qtyToReserve = Math.min(Math.max(Math.trunc(reserveQty) || 0, 0), reservable);
   const canReserve = Boolean(line.itemId) && reservable > 0 && qtyToReserve > 0;
   const [err, setErr] = useState<string | null>(null);
-  const createPlan = useCreatePlan();
+  const saveKey = useSaveKey();
+  const createPlan = useCreatePlan(saveKey);
   const reserve = useReserveStock();
   // ADR-180: releasing a booking now needs a reason, so the old one-click
   // "release" link is a box of its own (shared with the Planning sheet).

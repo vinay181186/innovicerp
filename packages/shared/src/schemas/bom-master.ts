@@ -10,6 +10,7 @@
 // their reference).
 
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { BOM_LINE_TYPES } from '../enums/bom-line-type';
 import { BOM_STATUSES } from '../enums/bom-status';
 import { positiveQtySchema } from '../lib/qty-rule';
@@ -177,6 +178,7 @@ export const updateBomMasterInputSchema = z
     status: bomStatusSchema,
     lines: z.array(createBomMasterLineInputSchema).min(1),
     revisionNote: z.string().max(2000).nullable().optional(),
+    expectedUpdatedAt: expectedUpdatedAtSchema,
   })
   .refine(
     (v) => new Set(v.lines.map((l) => l.childItemId)).size === v.lines.length,

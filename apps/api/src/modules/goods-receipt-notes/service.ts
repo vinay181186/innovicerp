@@ -803,6 +803,7 @@ async function getGoodsReceiptNoteInternal(
         gnl.updated_at AS "updatedAt", gnl.updated_by AS "updatedBy",
         gnl.deleted_at AS "deletedAt",
         i.code AS "itemCode",
+        i.name AS "masterItemName",
         i.uom::text AS "uom",
         -- ADR-177: the order line's drawing revision, read LIVE through
         -- whichever chain this GRN line came in on (never a snapshot, never
@@ -922,6 +923,7 @@ async function getGoodsReceiptNoteInternal(
       itemRevision: (r['itemRevision'] as string | null) ?? null,
       clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       uom: (r['uom'] as string | null) ?? null,
+      masterItemName: (r['masterItemName'] as string | null) ?? null,
     })),
   };
 }

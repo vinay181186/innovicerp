@@ -13,6 +13,7 @@ import type {
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
 export const machinesKeys = {
   all: ['machines'] as const,
@@ -51,10 +52,17 @@ export function useMachine(id: string | undefined) {
   });
 }
 
-export function useCreateMachine() {
+export function useCreateMachine(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<Machine, Error, CreateMachineInput>({
-    mutationFn: (input) => apiFetch<Machine>('/machines', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<Machine>('/machines', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: machinesKeys.lists() });
       qc.setQueryData(machinesKeys.detail(created.id), created);
@@ -129,10 +137,17 @@ export function useMachineGroupsList(
   });
 }
 
-export function useCreateMachineGroup() {
+export function useCreateMachineGroup(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<MachineGroup, Error, CreateMachineGroupInput>({
-    mutationFn: (input) => apiFetch<MachineGroup>('/machine-groups', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<MachineGroup>('/machine-groups', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: machineGroupsKeys.lists() });
     },

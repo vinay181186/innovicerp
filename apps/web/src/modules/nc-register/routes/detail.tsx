@@ -30,6 +30,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useCloseNc,
@@ -69,7 +70,9 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const dispose = useDisposeNcRegister(id);
   const closeRework = useCloseNcRework(id);
   const closeNc = useCloseNc(id);
-  const createDc = useCreateNcDc(id);
+  // R2 — the Create DC panel's save carries one key per open page, reused on a retry.
+  const saveKey = useSaveKey();
+  const createDc = useCreateNcDc(id, saveKey);
   const createCapa = useCreateCapa();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');

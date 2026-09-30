@@ -147,6 +147,7 @@ export async function listJwDcOutward(
           OR jdo.jwpo_code_text ILIKE ${term}
           OR jdo.vendor_name_text ILIKE ${term}
           OR jdo.vendor_code_text ILIKE ${term}
+          OR v.name ILIKE ${term}
         )`
       : sql``;
     const vendorFrag = input.vendorId ? sql`AND jdo.vendor_id = ${input.vendorId}::uuid` : sql``;
@@ -188,6 +189,7 @@ export async function listJwDcOutward(
         jdo.vendor_id AS "vendorId",
         jdo.vendor_code_text AS "vendorCodeText",
         jdo.vendor_name_text AS "vendorNameText",
+        v.name AS "vendorName",
         jdo.vehicle_no AS "vehicleNo",
         jdo.remarks,
         jdo.created_at AS "createdAt", jdo.created_by AS "createdBy",
@@ -205,6 +207,7 @@ export async function listJwDcOutward(
         END AS "returnStatus",
         so_resolved.so_code AS "soCode"
       FROM public.jw_dc_outward jdo
+      LEFT JOIN public.vendors v ON v.id = jdo.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN return_stats rs ON rs.dc_id = jdo.id
       -- Resolve the SO(s) behind the JWPO: its lines carry source_so_line_id
       -- (stamped from the JC's SO by the OSP cascade). Distinct-agg in case a
@@ -252,6 +255,7 @@ function toOutwardListItem(r: Record<string, unknown>): JwDcOutwardListItem {
     vendorId: (r['vendorId'] as string | null) ?? null,
     vendorCodeText: (r['vendorCodeText'] as string | null) ?? null,
     vendorNameText: (r['vendorNameText'] as string | null) ?? null,
+    vendorName: (r['vendorName'] as string | null) ?? null,
     vehicleNo: (r['vehicleNo'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
@@ -289,6 +293,16 @@ export async function getJwDcOutwardDetail(
       .limit(1);
     const header = headerRows[0];
     if (!header) throw new NotFoundError('JW DC not found. Refresh the page.');
+
+    // Live vendor name for the screen (plan v3 Step 4); the saved
+    // vendorNameText stays as the fallback and as the print's copy.
+    const liveVendor = header.vendorId
+      ? await tx
+          .select({ name: vendors.name })
+          .from(vendors)
+          .where(and(eq(vendors.id, header.vendorId), isNull(vendors.deletedAt)))
+          .limit(1)
+      : [];
 
     const lineRows = (await tx.execute(sql`
       SELECT
@@ -407,6 +421,7 @@ export async function getJwDcOutwardDetail(
       vendorId: header.vendorId,
       vendorCodeText: header.vendorCodeText,
       vendorNameText: header.vendorNameText,
+      vendorName: liveVendor[0]?.name ?? null,
       vehicleNo: header.vehicleNo,
       remarks: header.remarks,
       createdAt: tsLike(header.createdAt),
@@ -981,6 +996,7 @@ export async function listJwDcInward(
           OR jdi.dc_code_text ILIKE ${term}
           OR jdi.vendor_challan_no ILIKE ${term}
           OR jdo.vendor_name_text ILIKE ${term}
+          OR v.name ILIKE ${term}
         )`
       : sql``;
     const outFrag = input.jwDcOutwardId
@@ -1000,6 +1016,7 @@ export async function listJwDcInward(
         jdi.updated_at AS "updatedAt", jdi.updated_by AS "updatedBy",
         jdi.deleted_at AS "deletedAt",
         jdo.vendor_name_text AS "vendorNameText",
+        v.name AS "vendorName",
         jdi.goods_receipt_note_id AS "goodsReceiptNoteId",
         g.code AS "grnCode",
         COALESCE(agg.total_received, 0)::float8 AS "totalReceivedQty",
@@ -1011,6 +1028,7 @@ export async function listJwDcInward(
               ELSE COALESCE(gq.rejected, 0) END)::float8 AS "totalRejectedQty"
       FROM public.jw_dc_inward jdi
       LEFT JOIN public.jw_dc_outward jdo ON jdo.id = jdi.jw_dc_outward_id AND jdo.deleted_at IS NULL
+      LEFT JOIN public.vendors v ON v.id = jdo.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.goods_receipt_notes g
         ON g.id = jdi.goods_receipt_note_id AND g.deleted_at IS NULL
       LEFT JOIN LATERAL (
@@ -1058,6 +1076,7 @@ export async function listJwDcInward(
         updatedBy: r['updatedBy'] as string,
         deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
         vendorNameText: (r['vendorNameText'] as string | null) ?? null,
+        vendorName: (r['vendorName'] as string | null) ?? null,
         goodsReceiptNoteId: (r['goodsReceiptNoteId'] as string | null) ?? null,
         grnCode: (r['grnCode'] as string | null) ?? null,
         totalReceivedQty: Number(r['totalReceivedQty'] ?? 0),

@@ -828,7 +828,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 with no explicit saveLabel, so the label is "Save SO". */}
             <button type="submit" className="btn btn-primary" disabled={saveDisabled}>
               {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              {props.submitLabel ?? (isCreate ? 'Save SO' : 'Save Changes')}
+              {formState.isSubmitting
+                ? 'Saving…'
+                : (props.submitLabel ?? (isCreate ? 'Save SO' : 'Save Changes'))}
             </button>
           </>
         }

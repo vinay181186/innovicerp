@@ -236,7 +236,7 @@ export async function listJobCards(
         COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
           WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
             AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
-        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
+        COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
         -- Raw material the JC was raised with. The TEXT snapshots are read, not
@@ -464,7 +464,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
           WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
             AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
-        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
+        COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
         -- Raw material the JC was raised with. The TEXT snapshots are read, not
@@ -743,7 +743,7 @@ async function resolveLinkedSource(
             sol.line_no AS "lineNo", sol.part_name AS "partName",
             COALESCE(i.code, sol.item_code_text) AS "itemCode",
             sol.item_id AS "itemId",
-            COALESCE(so.customer_name, cli.name) AS "customerName",
+            COALESCE(cli.name, so.customer_name) AS "customerName",
             sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
             sol.client_po_line_no AS "clientPoLineNo",
             -- "Already in JCs" excludes rework/repair children, exactly as
@@ -764,7 +764,7 @@ async function resolveLinkedSource(
             jwl.line_no AS "lineNo", jwl.part_name AS "partName",
             COALESCE(i.code, jwl.item_code_text) AS "itemCode",
             jwl.item_id AS "itemId",
-            COALESCE(jw.customer_name, cli.name) AS "customerName",
+            COALESCE(cli.name, jw.customer_name) AS "customerName",
             jwl.order_qty AS "orderQty", jwl.due_date AS "dueDate",
             NULL AS "clientPoLineNo",
             COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
@@ -788,7 +788,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
       SELECT 'so' AS type, so.id AS "orderId", sol.id AS "lineId", so.code,
         sol.line_no AS "lineNo", sol.part_name AS "partName",
         COALESCE(i.code, sol.item_code_text) AS "itemCode",
-        COALESCE(so.customer_name, cli.name) AS "customerName",
+        COALESCE(cli.name, so.customer_name) AS "customerName",
         sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE((SELECT SUM(${jcEffectiveQtySql('jc')}) FROM public.job_cards jc
@@ -803,7 +803,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
       UNION ALL
       SELECT 'jw' AS type, jw.id, jwl.id, jw.code, jwl.line_no, jwl.part_name,
         COALESCE(i2.code, jwl.item_code_text),
-        COALESCE(jw.customer_name, cli2.name),
+        COALESCE(cli2.name, jw.customer_name),
         jwl.order_qty, jwl.due_date, NULL,
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
           WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL

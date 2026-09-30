@@ -12,6 +12,7 @@ import { requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import {
   applyMasterRules,
@@ -631,9 +632,12 @@ export async function updateClient(
       .select()
       .from(clients)
       .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
+      .for('update')
       .limit(1);
     const before = existing[0];
     if (!before) throw new NotFoundError('Customer not found. It may have been moved to Trash.');
+    // R5: refuse the save if someone else edited the customer after this form opened it.
+    assertUnchangedSinceOpened(before.updatedAt, input.expectedUpdatedAt);
     if (input.name !== undefined) await assertClientNameFree(tx, companyId, input.name, id);
 
     const settings = await loadMasterRuleSettings(tx, companyId);

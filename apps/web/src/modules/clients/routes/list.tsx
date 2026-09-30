@@ -336,7 +336,9 @@ function ClientsListPage(): React.JSX.Element {
           allowInsert={canAdd}
           allowUpdate={canEdit}
           parse={parseClientImportFile}
-          submit={(rows, mode, dryRun) => bulkCreate.mutateAsync({ clients: rows, mode, dryRun })}
+          submit={(rows, mode, dryRun, saveKey) =>
+            bulkCreate.mutateAsync({ clients: rows, mode, dryRun, saveKey })
+          }
           onDownloadTemplate={downloadClientTemplate}
           errorsFileName="Customer Import Errors.xlsx"
           onClose={() => setImportOpen(false)}

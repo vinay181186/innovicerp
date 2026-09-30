@@ -16,6 +16,7 @@ import { deliveryChallansKeys } from '@/modules/delivery-challans/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { opEntryKeys } from '@/modules/op-entry/api';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const ncRegisterKeys = {
@@ -71,10 +72,17 @@ export function useNcRegister(id: string | undefined) {
   });
 }
 
-export function useCreateNcRegister() {
+export function useCreateNcRegister(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<NcRegister, Error, CreateNcRegisterInput>({
-    mutationFn: (input) => apiFetch<NcRegister>('/nc-register', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<NcRegister>('/nc-register', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
@@ -147,14 +155,17 @@ export function useDisposeNcRegister(id: string) {
 }
 
 /** Return-to-vendor challan raised straight from the NC (design §5). */
-export function useCreateNcDc(id: string) {
+export function useCreateNcDc(id: string, saveKey?: SaveKey) {
   const invalidate = useInvalidateNcCascade(id);
   return useMutation<CreateNcDcResult, Error, CreateNcDcInput>({
     mutationFn: (input) =>
-      apiFetch<CreateNcDcResult>(`/nc-register/${id}/create-dc`, {
-        method: 'POST',
-        json: input,
-      }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<CreateNcDcResult>(`/nc-register/${id}/create-dc`, {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (resp) => invalidate(resp.nc),
   });
 }

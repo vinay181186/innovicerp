@@ -39,6 +39,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { docCodeToSend } from '@/lib/use-doc-number';
+import { useSaveKey } from '@/lib/use-save-key';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -441,7 +442,9 @@ function PoDcFormBody({
 }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: po, isLoading: poLoading, isError: poError } = usePurchaseOrder(poId);
-  const create = useCreateDeliveryChallan();
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const create = useCreateDeliveryChallan(saveKey);
   // Asked as soon as the PO is known, so the allowance is on screen before the
   // first keystroke rather than after the first failed save.
   const { data: sendable } = useDcSendable(poId);
@@ -1090,7 +1093,9 @@ function NcDcFormBody({
   // Reuse the NC detail hook rather than refetch by hand — same cache, same
   // shape. rejectedQty / item fields come straight off it and refresh with ncId.
   const { data: nc, isLoading, isError } = useNcRegister(ncId);
-  const createDc = useCreateNcDc(ncId);
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const createDc = useCreateNcDc(ncId, saveKey);
 
   // Only what createNcDcInputSchema takes: dcDate, vendor, transport, vehicleNo,
   // remarks. No lines, no qty — the server derives the line from the NC.

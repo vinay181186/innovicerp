@@ -28,6 +28,7 @@ import {
   type MasterImportParse,
   type MasterImportParser,
 } from '@/lib/master-import';
+import { type SaveKey, useSaveKey } from '@/lib/use-save-key';
 import { Badge, Button, Icon, type BadgeTone } from '@/ui/core';
 import { StatStrip } from '@/ui/data';
 import { Banner, Modal } from '@/ui/feedback';
@@ -48,8 +49,16 @@ export interface MasterImportDialogProps {
   allowInsert: boolean;
   allowUpdate: boolean;
   parse: MasterImportParser;
-  /** POST /<master>/bulk with { rows, mode, dryRun }. */
-  submit: (rows: unknown[], mode: MasterImportMode, dryRun: boolean) => Promise<MasterImportResult>;
+  /** POST /<master>/bulk with { rows, mode, dryRun }. `saveKey` is passed ONLY
+   *  for the real import (dryRun false) — one key per dialog open, reused if
+   *  the user retries after a timeout, so the sheet is never imported twice.
+   *  The preview never carries it: a preview is not a save. */
+  submit: (
+    rows: unknown[],
+    mode: MasterImportMode,
+    dryRun: boolean,
+    saveKey?: SaveKey,
+  ) => Promise<MasterImportResult>;
   onDownloadTemplate: () => void;
   /** File name for "Download errors", e.g. "Customer Import Errors.xlsx". */
   errorsFileName: string;
@@ -133,6 +142,9 @@ export function MasterImportDialog({
   errorsFileName,
   onClose,
 }: MasterImportDialogProps): React.JSX.Element {
+  // R2: one save key per dialog open (the list pages mount the dialog only
+  // while it is open, so every open starts with a fresh key).
+  const saveKey = useSaveKey();
   const [step, setStep] = useState<Step>('choose');
   const [mode, setMode] = useState<MasterImportMode>(allowInsert ? 'insert' : 'update');
   const [file, setFile] = useState<File | null>(null);
@@ -152,6 +164,11 @@ export function MasterImportDialog({
   const nGood = nInsert + nUpdate;
 
   function reset(): void {
+    // Back = a different batch (new file or Import Type). The server replays a
+    // key's first answer without comparing the rows, so the next import must
+    // not reuse this one. Rows already imported by an earlier attempt show up
+    // in the new preview as Skip / Update, so nothing is written twice.
+    saveKey.rotate();
     setStep('choose');
     setParsed(null);
     setPreview(null);
@@ -206,6 +223,7 @@ export function MasterImportDialog({
         parsed.rows.map((r) => r.payload),
         mode,
         false,
+        saveKey,
       );
       setFinalResult(res);
       setStep('done');
@@ -263,7 +281,7 @@ export function MasterImportDialog({
           disabled={nGood === 0 || busy}
           onClick={() => void runImport()}
         >
-          Import {plural(nGood, 'row')}
+          {busy ? 'Importing…' : `Import ${plural(nGood, 'row')}`}
         </Button>
       </>
     ) : (

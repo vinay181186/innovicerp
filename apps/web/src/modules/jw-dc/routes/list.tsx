@@ -264,7 +264,9 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
       <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
         {dc.soCode ?? '—'}
       </td>
-      <td style={{ fontWeight: 600 }}>{dc.vendorNameText ?? dc.vendorCodeText ?? '—'}</td>
+      <td style={{ fontWeight: 600 }}>
+        {dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '—'}
+      </td>
       <td className="td-num">{dc.linesCount}</td>
       <td className="mono fw-700 td-num" style={{ color: 'var(--purple)' }}>
         {dc.totalSentQty}
@@ -390,7 +392,9 @@ function InwardView(): React.JSX.Element {
                       >
                         {inv.dcCodeText ?? '—'}
                       </td>
-                      <td style={{ fontWeight: 600 }}>{inv.vendorNameText ?? '—'}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {inv.vendorName ?? inv.vendorNameText ?? '—'}
+                      </td>
                       <td style={{ fontSize: 11 }}>{inv.vendorChallanNo ?? '—'}</td>
                       <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                         {inv.goodsReceiptNoteId && inv.grnCode ? (
@@ -993,7 +997,8 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             <option value="">-- Select DC --</option>
             {pendingDcs.map((dc) => (
               <option key={dc.id} value={dc.id}>
-                {dc.code} — {dc.vendorNameText ?? dc.vendorCodeText ?? ''} ({dc.jwpoCodeText})
+                {dc.code} — {dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? ''} (
+                {dc.jwpoCodeText})
               </option>
             ))}
           </select>

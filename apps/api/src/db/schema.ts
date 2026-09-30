@@ -4878,6 +4878,19 @@ export const jwReturnChallans = pgTable(
     transport: text('transport'),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
+    clientNameText: text('client_name_text'),
+    clientGstText: text('client_gst_text'),
+    // Legal copy of the customer (migration 0186, plan D7 — ERPNext
+    // address_display): taken when the paper is made; the print reads it.
+    // clientCopyAt NULL = no copy (older row) → print falls back to the master.
+    clientAddressLine1: text('client_address_line1'),
+    clientCity: text('client_city'),
+    clientState: text('client_state'),
+    clientStateCode: char('client_state_code', { length: 2 }),
+    clientPincode: text('client_pincode'),
+    // Place of Supply (0186, plan D2): GST State Code billed / shipped to.
+    placeOfSupply: char('place_of_supply', { length: 2 }),
+    clientCopyAt: timestamp('client_copy_at', { withTimezone: true }),
     // R10 (ADR-194, migration 0174): cancel audit trail, symmetric with jw_invoices.
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     cancelledBy: uuid('cancelled_by').references(() => users.id),
@@ -4946,6 +4959,23 @@ export const jwInvoices = pgTable(
     // 'sgst_cgst' | 'igst' (same codes as purchase_orders.tax_type), migration
     // 0148. NULL on rows raised before it: those print a single GST row.
     taxType: text('tax_type'),
+    clientNameText: text('client_name_text'),
+    clientGstText: text('client_gst_text'),
+    // Legal copy of the customer (migration 0186, plan D7 — ERPNext
+    // address_display): taken when the paper is made; the print reads it.
+    // clientCopyAt NULL = no copy (older row) → print falls back to the master.
+    clientAddressLine1: text('client_address_line1'),
+    clientCity: text('client_city'),
+    clientState: text('client_state'),
+    clientStateCode: char('client_state_code', { length: 2 }),
+    clientPincode: text('client_pincode'),
+    // Place of Supply (0186, plan D2): GST State Code billed / shipped to.
+    placeOfSupply: char('place_of_supply', { length: 2 }),
+    clientCopyAt: timestamp('client_copy_at', { withTimezone: true }),
+    // Payment Terms (days) + Due Date (0186, plan D6) from the customer's
+    // Payment Days. NULL on JW invoices raised before 0186. CHECK 0..365.
+    paymentTermsDays: integer('payment_terms_days'),
+    dueDate: date('due_date'),
     remarks: text('remarks'),
     // R5 (ADR-194): a JW Invoice can be cancelled. 'issued' | 'cancelled'.
     status: text('status').notNull().default('issued'),
@@ -5685,6 +5715,17 @@ export const invoices = pgTable(
     clientNameText: text('client_name_text'),
     clientCodeText: text('client_code_text'),
     clientGstText: text('client_gst_text'),
+    // Legal copy of the customer (migration 0186, plan D7 — ERPNext
+    // address_display): taken when the paper is made; the print reads it.
+    // clientCopyAt NULL = no copy (older row) → print falls back to the master.
+    clientAddressLine1: text('client_address_line1'),
+    clientCity: text('client_city'),
+    clientState: text('client_state'),
+    clientStateCode: char('client_state_code', { length: 2 }),
+    clientPincode: text('client_pincode'),
+    // Place of Supply (0186, plan D2): GST State Code billed / shipped to.
+    placeOfSupply: char('place_of_supply', { length: 2 }),
+    clientCopyAt: timestamp('client_copy_at', { withTimezone: true }),
     subtotal: numeric('subtotal', { precision: 14, scale: 2 }).notNull().default('0'),
     gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
     gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
@@ -5858,6 +5899,19 @@ export const customerDispatches = pgTable(
       .references(() => salesOrders.id),
     soCodeText: text('so_code_text'),
     customerText: text('customer_text'),
+    // Legal copy (0186): the name copy is customerText above.
+    clientGstText: text('client_gst_text'),
+    // Legal copy of the customer (migration 0186, plan D7 — ERPNext
+    // address_display): taken when the paper is made; the print reads it.
+    // clientCopyAt NULL = no copy (older row) → print falls back to the master.
+    clientAddressLine1: text('client_address_line1'),
+    clientCity: text('client_city'),
+    clientState: text('client_state'),
+    clientStateCode: char('client_state_code', { length: 2 }),
+    clientPincode: text('client_pincode'),
+    // Place of Supply (0186, plan D2): GST State Code billed / shipped to.
+    placeOfSupply: char('place_of_supply', { length: 2 }),
+    clientCopyAt: timestamp('client_copy_at', { withTimezone: true }),
     transport: text('transport'),
     vehicleNo: text('vehicle_no'),
     status: customerDispatchStatusEnum('status').notNull().default('dispatched'),

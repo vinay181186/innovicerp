@@ -194,8 +194,12 @@ export function JobCardForm({
   // that, so a static first page left every later vendor unreachable ("No
   // matches" for VND-959).
   const [vendorSearch, setVendorSearch] = useState('');
+  // Active vendors only, filtered by the server (A10). An op's already-linked
+  // vendor that is now disabled is still resolved by code (missingVendorCodes
+  // below, which does not filter) so its "CODE — Name" label survives.
   const { data: vendorsData, isFetching: vendorsFetching } = useVendorsList({
     ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    isActive: true,
     limit: 200,
     offset: 0,
   });

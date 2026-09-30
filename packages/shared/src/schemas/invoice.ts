@@ -50,9 +50,14 @@ export const invoiceableSoResponseSchema = z.object({
   /** The customer's Payment Days (clients.payment_days) — the new invoice's
    *  default Payment Terms. Null when the customer has none set (ADR-188). */
   paymentDays: z.number().int().nonnegative().nullable(),
-  /** The new invoice's default Tax Type, decided by the server: IGST when the
-   *  customer's GSTIN state code differs from the company's, else SGST + CGST. */
+  /** The new invoice's Tax Type, decided by the server from the Place of
+   *  Supply (0186, plan D2): IGST when it differs from the company's State (or
+   *  the customer is SEZ / Overseas), else SGST + CGST. */
   taxType: invoiceTaxTypeSchema,
+  /** Place of Supply — the customer's State Code, else its GSTIN's first two
+   *  digits. Null = unknown: warn mode bills as same-state and the screen shows
+   *  an amber note; enforce mode refuses the save. */
+  placeOfSupply: z.string().nullable().default(null),
   lines: z.array(invoiceableLineSchema),
 });
 export type InvoiceableSoResponse = z.infer<typeof invoiceableSoResponseSchema>;
@@ -64,7 +69,8 @@ export const createInvoiceInputSchema = z.object({
   // the SO's GST %.
   paymentTermsDays: z.coerce.number().int().nonnegative().optional(),
   gstPercent: z.coerce.number().nonnegative().max(100).optional(),
-  /** Omitted → the server decides from the customer's GSTIN vs the company's. */
+  /** Omitted → the server decides from the Place of Supply. A different
+   *  choice is refused while the Place of Supply is known (0186). */
   taxType: invoiceTaxTypeSchema.optional(),
   remarks: z.string().max(1000).optional(),
   lines: z
@@ -128,6 +134,10 @@ export const invoiceLineRowSchema = z.object({
   // Stored snapshot fallback captured at invoice creation.
   itemCodeText: z.string().nullable(),
   itemName: z.string(),
+  /** The item master's name now (items.name) — the screen shows it beside
+   *  the invoice's own Item Name as a grey "Master: ..." when they differ.
+   *  Never printed: the invoice keeps its own name. */
+  masterItemName: z.string().nullable().optional(),
   qty: z.number().int(),
   // Money — NULL when the viewer's access hides prices.
   rate: z.number().nonnegative().nullable(),
@@ -181,13 +191,17 @@ export const invoiceDetailSchema = invoiceRowSchema.extend({
   priceVisible: z.boolean().optional(),
   clientCode: z.string().nullable(),
   clientGst: z.string().nullable(),
-  /** The customer's billing address for the print (A1). The invoice has no
-   *  saved copy of it yet, so it is read live off the customer master
-   *  (clients.address_line1 / city / state / pincode); null when not set. */
+  /** The customer's billing address for the print (A1) — the invoice's own
+   *  legal copy (0186, plan D7), taken when it was raised. Only an invoice
+   *  with no copy (clientCopyAt NULL) reads the live customer master. */
   clientAddressLine1: z.string().nullable().optional(),
   clientCity: z.string().nullable().optional(),
   clientState: z.string().nullable().optional(),
+  clientStateCode: z.string().nullable().optional(),
   clientPincode: z.string().nullable().optional(),
+  /** Place of Supply (0186): GST State Code billed to. Null = unknown — the
+   *  screen shows an amber note; the legal print shows no Place of Supply. */
+  placeOfSupply: z.string().nullable().default(null),
   paymentTermsDays: z.number().int().nonnegative(),
   /** Null on invoices raised before migration 0171 — those print the split the
    *  old way (from the customer's GSTIN). */

@@ -12,6 +12,7 @@
 import type { Client, Company, JwReturnChallanListItem } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
+import { partyForPrint } from '@/lib/print/party-copy';
 import { type SheetField, challanDate, openSheetPrintWindow } from '@/lib/print/sheet-print';
 
 export function printJwReturnChallan(
@@ -19,20 +20,20 @@ export function printJwReturnChallan(
   client: Client | null | undefined,
   company: Company | null | undefined,
 ): boolean {
-  const addressLines = [
-    client?.addressLine1 ?? '',
-    [client?.city, client?.state, client?.pincode].filter(Boolean).join(', '),
-  ].filter(Boolean);
+  // The paper's own copy of the customer (0186, plan D7); the live master
+  // only for a paper made before 0186.
+  const party = partyForPrint(r.clientCopy, client, r.clientName);
+  const addressLines = party.addressLines;
 
   const recipientFields: SheetField[] = [
-    { label: 'Customer Code', value: client?.code ?? '', variant: 'mono' },
-    { label: 'Name', value: client?.name ?? r.clientName ?? '', variant: 'name' },
+    { label: 'Customer Code', value: party.code, variant: 'mono' },
+    { label: 'Name', value: party.name, variant: 'name' },
     {
       label: 'Address',
       value: addressLines[0] ?? '',
       ...(addressLines.length > 1 ? { extra: addressLines.slice(1) } : {}),
     },
-    { label: 'GSTIN', value: client?.gstNumber ?? '', variant: 'mono' },
+    { label: 'GSTIN', value: party.gstNumber, variant: 'mono' },
   ];
 
   const documentFields: SheetField[] = [

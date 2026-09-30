@@ -10,7 +10,6 @@ import type {
   InvoiceLineRow,
   InvoicePaymentRow,
   InvoiceRow,
-  InvoiceTaxType,
   InvoiceableLine,
   InvoiceableSoResponse,
   ListInvoicesResponse,
@@ -19,7 +18,6 @@ import { ActivityAction } from '@innovic/shared';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
   clients,
-  companies,
   invoiceLines,
   invoicePayments,
   invoices,
@@ -42,6 +40,13 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { emitActivityLog } from '../activity-log/service';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { DEFAULT_PAYMENT_TERMS_DAYS } from './constants';
+import {
+  assertTaxTypeMatches,
+  clientCopyValues,
+  decideSupply,
+  dueDateFrom,
+  loadClientForCopy,
+} from '../../lib/party-copy';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -58,36 +63,9 @@ function isOverdue(status: string, dueDate: string | null): boolean {
   return status !== 'paid' && !!dueDate && dueDate < todayStr();
 }
 
-/** The GST state code is the first two digits of a GSTIN. Null when blank. */
-function gstStateCode(gstin: string | null | undefined): string | null {
-  const m = (gstin ?? '').trim().match(/^(\d{2})/);
-  return m ? m[1]! : null;
-}
-
-/** Our home GST state (Gujarat) — the rule used before the company GSTIN was
- *  read, and the one the invoice print falls back to for an invoice with no
- *  Tax Type. Used only when the company GSTIN is blank. */
-const HOME_GST_STATE_CODE = '24';
-
-/** Default Tax Type for a new invoice — the ONE rule for the create form's
- *  default and the saved invoice: IGST when the customer's GSTIN state differs
- *  from ours, else SGST + CGST. "Ours" is the company GSTIN's state, or the
- *  home state ('24') when the company GSTIN is blank. A customer with no
- *  GSTIN defaults to SGST + CGST. */
-function defaultTaxType(clientGst: string | null, companyGst: string | null): InvoiceTaxType {
-  const c = gstStateCode(clientGst);
-  const own = gstStateCode(companyGst) ?? HOME_GST_STATE_CODE;
-  return c && c !== own ? 'igst' : 'sgst_cgst';
-}
-
-async function companyGstNumber(tx: DbTransaction, companyId: string): Promise<string | null> {
-  const rows = await tx
-    .select({ gstNumber: companies.gstNumber })
-    .from(companies)
-    .where(eq(companies.id, companyId))
-    .limit(1);
-  return rows[0]?.gstNumber ?? null;
-}
+// Place of Supply + tax type + the customer's legal copy come from
+// lib/party-copy (plan v3 Steps 3 + 4, migration 0186). There is no home-state
+// default: an unknown Place of Supply warns (warn mode) or refuses (enforce).
 
 function rowToInvoice(r: typeof invoices.$inferSelect): InvoiceRow {
   const grandTotal = n(r.grandTotal);
@@ -252,6 +230,9 @@ async function getInvoiceInternal(
       uom: sql<string | null>`COALESCE(${salesOrderLines.uom}::text, ${items.uom}::text)`,
       // HSN off the item master for the tax-invoice print (A4). Display only.
       hsnCode: items.hsnCode,
+      // The item master's name NOW — screen only ("Master: …" when it
+      // differs from the invoice's own frozen name). Never printed.
+      masterItemName: items.name,
     })
     .from(invoiceLines)
     // LEFT, never inner: invoice_lines.sales_order_line_id is nullable, and a
@@ -270,6 +251,7 @@ async function getInvoiceInternal(
     hsnCode: l.hsnCode ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemNameText,
+    masterItemName: l.masterItemName ?? null,
     qty: l.qty,
     rate: n(l.rate),
     lineAmount: n(l.lineAmount),
@@ -297,21 +279,32 @@ async function getInvoiceInternal(
     .where(eq(salesOrders.id, inv.salesOrderId))
     .limit(1);
 
-  // The customer's billing address for the print (A1). The invoice keeps no
-  // saved copy of it, so it is read off the customer master.
-  const addrRows = inv.clientId
-    ? await tx
-        .select({
-          addressLine1: clients.addressLine1,
-          city: clients.city,
-          state: clients.state,
-          pincode: clients.pincode,
-        })
-        .from(clients)
-        .where(and(eq(clients.id, inv.clientId), eq(clients.companyId, companyId)))
-        .limit(1)
-    : [];
-  const addr = addrRows[0];
+  // The customer's billing address for the print (A1): the invoice's own
+  // legal copy (0186, plan D7). Only an invoice with no copy (clientCopyAt
+  // NULL — raised by code older than 0186) reads the live customer master.
+  const addrRows =
+    !inv.clientCopyAt && inv.clientId
+      ? await tx
+          .select({
+            addressLine1: clients.addressLine1,
+            city: clients.city,
+            state: clients.state,
+            stateCode: clients.stateCode,
+            pincode: clients.pincode,
+          })
+          .from(clients)
+          .where(and(eq(clients.id, inv.clientId), eq(clients.companyId, companyId)))
+          .limit(1)
+      : [];
+  const addr = inv.clientCopyAt
+    ? {
+        addressLine1: inv.clientAddressLine1,
+        city: inv.clientCity,
+        state: inv.clientState,
+        stateCode: inv.clientStateCode,
+        pincode: inv.clientPincode,
+      }
+    : addrRows[0];
 
   return {
     ...rowToInvoice(inv),
@@ -320,7 +313,9 @@ async function getInvoiceInternal(
     clientAddressLine1: addr?.addressLine1 ?? null,
     clientCity: addr?.city ?? null,
     clientState: addr?.state ?? null,
+    clientStateCode: addr?.stateCode ?? null,
     clientPincode: addr?.pincode ?? null,
+    placeOfSupply: inv.placeOfSupply ?? null,
     paymentTermsDays: inv.paymentTermsDays,
     taxType: inv.taxType === 'sgst_cgst' || inv.taxType === 'igst' ? inv.taxType : null,
     remarks: inv.remarks,
@@ -540,6 +535,7 @@ export async function getInvoiceableSo(
         id: salesOrders.id,
         code: salesOrders.code,
         customer: salesOrders.customerName,
+        clientId: salesOrders.clientId,
         clientGst: clients.gstNumber,
         gstPercent: salesOrders.gstPercent,
         paymentDays: clients.paymentDays,
@@ -557,7 +553,14 @@ export async function getInvoiceableSo(
     const so = soRows[0];
     if (!so) throw new NotFoundError('SO not found. Refresh the page.');
     const lines = await loadInvoiceableLines(tx, companyId, soId);
-    const ownGst = await companyGstNumber(tx, companyId);
+    // Preview only (never refuses): the save re-decides and, in enforce mode,
+    // refuses an unknown Place of Supply.
+    const supply = await decideSupply(
+      tx,
+      companyId,
+      await loadClientForCopy(tx, so.clientId, companyId),
+      { forSave: false },
+    );
     return {
       salesOrderId: so.id,
       soCode: so.code,
@@ -567,7 +570,8 @@ export async function getInvoiceableSo(
       // the SO, Payment Terms from the customer's Payment Days.
       gstPercent: n(so.gstPercent),
       paymentDays: so.paymentDays ?? null,
-      taxType: defaultTaxType(so.clientGst ?? null, ownGst),
+      taxType: supply.taxType,
+      placeOfSupply: supply.placeOfSupply,
       lines,
     };
   });
@@ -690,18 +694,22 @@ export async function createInvoice(
     const gstPercent = input.gstPercent ?? n(so.soGstPercent);
     const paymentTermsDays =
       input.paymentTermsDays ?? so.clientPaymentDays ?? DEFAULT_PAYMENT_TERMS_DAYS;
-    // Tax Type: as chosen, else IGST / SGST + CGST from the GSTIN states.
-    const taxType =
-      input.taxType ?? defaultTaxType(so.clientGst ?? null, await companyGstNumber(tx, companyId));
+    // Place of Supply → Tax Type (plan D2): the customer's State (else its
+    // GSTIN prefix) against the company's State; SEZ / Overseas → IGST.
+    // Unknown → warn mode bills same-state (amber note on the screen),
+    // enforce mode refuses. A contradicting choice is refused.
+    const client = await loadClientForCopy(tx, so.clientId, companyId);
+    const supply = await decideSupply(tx, companyId, client, { forSave: true });
+    const taxType = assertTaxTypeMatches(input.taxType, supply);
+    // Legal copy of the customer (plan D7) — the print reads it from now on.
+    const copy = clientCopyValues(client);
 
     const lineAmounts = input.lines.map((l) => l.qty * l.rate);
     const subtotal = lineAmounts.reduce((s, v) => s + v, 0);
     const gstAmount = Math.round(((subtotal * gstPercent) / 100) * 100) / 100;
     const grand = subtotal + gstAmount;
 
-    const due = new Date(input.invoiceDate);
-    due.setDate(due.getDate() + paymentTermsDays);
-    const dueDate = due.toISOString().slice(0, 10);
+    const dueDate = dueDateFrom(input.invoiceDate, paymentTermsDays);
 
     const code = await nextInvoiceCode(tx, companyId);
     const inserted = await tx
@@ -715,7 +723,14 @@ export async function createInvoice(
         clientId: so.clientId ?? null,
         clientNameText: so.clientName ?? so.customer,
         clientCodeText: so.clientCode ?? null,
-        clientGstText: so.clientGst ?? null,
+        clientGstText: copy.clientGstText,
+        clientAddressLine1: copy.clientAddressLine1,
+        clientCity: copy.clientCity,
+        clientState: copy.clientState,
+        clientStateCode: copy.clientStateCode,
+        clientPincode: copy.clientPincode,
+        placeOfSupply: supply.placeOfSupply,
+        clientCopyAt: copy.clientCopyAt,
         subtotal: String(subtotal),
         gstPercent: String(gstPercent),
         gstAmount: String(gstAmount),

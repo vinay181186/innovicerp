@@ -365,7 +365,8 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
       <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
       </td>
-      <td>{l.itemName}</td>
+      {/* The item master's name; the saved copy is the print's (plan v3 Step 4). */}
+      <td>{l.masterItemName ?? l.itemName}</td>
       {/* UOM off the item master (A26); blank when the line has no item. */}
       <td className="mono">{l.uom ?? '—'}</td>
       <td className="mono td-num">{l.receivedQty}</td>

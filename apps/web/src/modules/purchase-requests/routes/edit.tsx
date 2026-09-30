@@ -7,6 +7,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useItem } from '@/modules/items/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
@@ -38,7 +40,10 @@ export const purchaseRequestEditRoute = createRoute({
 
 function PurchaseRequestNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreatePurchaseRequest();
+  // R2 — one idempotency key per open form (rotates after each successful save,
+  // so Save & New gets a fresh one).
+  const saveKey = useSaveKey();
+  const create = useCreatePurchaseRequest(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Tier-driven, per department (Purchase). The + New PR button is hidden from
   // anyone without entry rights, but this screen had no gate of its own —
@@ -165,7 +170,10 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   const { id } = purchaseRequestEditRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = usePurchaseRequest(id);
-  const update = useUpdatePurchaseRequest(id);
+  const saveKey = useSaveKey();
+  const update = useUpdatePurchaseRequest(id, saveKey);
+  // R5 — the PR's version as it was when this edit form opened.
+  const opened = useOpenedVersion(detail?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Tier-driven, per department (Purchase). This screen had no gate at all —
   // typing the URL handed the form to anyone, including an L1 Viewer and an
@@ -182,7 +190,11 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   const onSubmit = async (values: UpdatePurchaseRequestInput): Promise<void> => {
     setSubmitError(null);
     try {
-      await update.mutateAsync(values);
+      const saved = await update.mutateAsync({
+        ...values,
+        expectedUpdatedAt: opened.expected(),
+      });
+      opened.saved(saved?.updatedAt);
       exit.leave(
         () => void navigate({ to: '/purchase-requests/$id', params: { id }, replace: true }),
       );

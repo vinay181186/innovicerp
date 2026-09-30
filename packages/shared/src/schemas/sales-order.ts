@@ -25,6 +25,7 @@
 //     free text ("BOM Assigned" / "BOM Pending").
 
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { SO_FULFILMENT_STATUSES } from '../enums/so-fulfilment-status';
 import { SO_STATUSES } from '../enums/so-status';
@@ -52,6 +53,11 @@ export const salesOrderLineSchema = z.object({
   // only display value). UI renders `itemCode ?? itemCodeText ?? '—'`.
   itemCode: z.string().nullable().default(null),
   partName: z.string(),
+  /** The item master's name (items.name by itemId). The line's own Item Name
+   *  (`partName`) stays editable; the SO detail screen shows a grey
+   *  "Master: …" note when the two differ (plan v3 Step 4). Only the detail
+   *  read fills it; null when the line has no item. */
+  masterItemName: z.string().nullable().optional(),
   material: z.string().nullable(),
   drawingNo: z.string().nullable(),
   // The CUSTOMER'S drawing revision, exactly as written on the drawing they
@@ -356,6 +362,7 @@ export const updateSalesOrderInputSchema = z.object({
     }),
   lines: z.array(salesOrderLineInputSchema).optional(),
   milestones: z.array(salesOrderMilestoneInputSchema).optional(),
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type UpdateSalesOrderInput = z.infer<typeof updateSalesOrderInputSchema>;
 

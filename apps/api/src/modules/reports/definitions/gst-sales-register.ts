@@ -4,6 +4,7 @@
 // Modelled on ERPNext's "Sales Register" / India "GST Sales Register" report.
 
 import { sql } from 'drizzle-orm';
+import { placeOfSupplyLabel } from '@innovic/shared';
 import type { RegisteredReport } from '../registry';
 import {
   dateCell,
@@ -14,17 +15,19 @@ import {
   textCell,
 } from './report-helpers';
 
-// Same-state test for a sales invoice when no tax type is stored. Mirrors the
-// printed tax invoice (web invoices/lib/print.ts): the customer GSTIN's
-// 2-digit state code against ours (our GSTIN's prefix; '24' Gujarat — the
-// print's own default — when the company has no GSTIN). With no customer
-// GSTIN, the two master-data states are compared; with neither, the print
-// treats it as same-state and so does this.
-function interStateSql(clientGst: string, clientState: string) {
+// Customer name, GSTIN and State come from the invoice's OWN legal copy
+// (migration 0186, plan D7) — what was billed, not what the master says now.
+// Only a row with no copy (client_copy_at NULL) reads the live customer.
+//
+// Same-state test when an invoice stores no tax type: its Place of Supply (else
+// the GSTIN's first two digits) against the company's State Code (company
+// GSTIN prefix). No home-state default (plan D2): with either side unknown the
+// row is treated as same-state, as the invoice itself was billed in warn mode.
+function interStateSql(pos: string, gstin: string) {
   return sql.raw(`(CASE
-    WHEN ${clientGst} ~ '^[0-9]{2}' THEN LEFT(${clientGst}, 2) <> co.home_code
-    WHEN NULLIF(TRIM(${clientState}), '') IS NOT NULL AND co.home_state IS NOT NULL
-      THEN LOWER(TRIM(${clientState})) <> co.home_state
+    WHEN co.home_code IS NULL THEN false
+    WHEN ${pos} IS NOT NULL THEN ${pos} <> co.home_code
+    WHEN ${gstin} ~ '^[0-9]{2}' THEN LEFT(${gstin}, 2) <> co.home_code
     ELSE false
   END)`);
 }
@@ -34,7 +37,7 @@ export const gstSalesRegisterReport: RegisteredReport = {
     slug: 'gst-sales-register',
     title: 'GST sales register',
     description:
-      'Every sales invoice and JW invoice in the date range: Customer GSTIN and state, Taxable Value, GST % and the GST split — CGST + SGST half each when the customer is in our state, IGST otherwise. A JW invoice uses the tax type stored on it; a sales invoice decides by GSTIN state code, exactly as its print does.',
+      "Every sales invoice and JW invoice in the date range: Customer, GSTIN, State and Place of Supply as billed (the invoice's own copy), Taxable Value, GST % and the GST split — CGST + SGST half each when the Place of Supply is our State, IGST otherwise. Each invoice uses the tax type stored on it.",
     group: 'Finance',
     dept: 'finance',
     showsMoney: true,
@@ -50,6 +53,7 @@ export const gstSalesRegisterReport: RegisteredReport = {
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'client_gstin', label: 'Customer GSTIN', type: 'text' },
       { key: 'client_state', label: 'Customer State', type: 'text' },
+      { key: 'place_of_supply', label: 'Place of Supply', type: 'text' },
       { key: 'taxable_value', label: 'Taxable Value', type: 'number' },
       { key: 'gst_percent', label: 'GST %', type: 'number' },
       { key: 'cgst', label: 'CGST', type: 'number' },
@@ -68,26 +72,25 @@ export const gstSalesRegisterReport: RegisteredReport = {
     const jwFrom = fromDate ? sql`AND ji.invoice_date >= ${fromDate}::date` : sql``;
     const jwTo = toDate ? sql`AND ji.invoice_date <= ${toDate}::date` : sql``;
     const invCustomer = customer
-      ? sql`AND COALESCE(cl.name, inv.client_name_text, '') ILIKE ${customer}`
+      ? sql`AND COALESCE(inv.client_name_text, cl.name, '') ILIKE ${customer}`
       : sql``;
     const jwCustomer = customer
-      ? sql`AND COALESCE(cl.name, jwo.customer_name, '') ILIKE ${customer}`
+      ? sql`AND COALESCE(ji.client_name_text, cl.name, jwo.customer_name, '') ILIKE ${customer}`
       : sql``;
 
     const soInter = interStateSql(
-      `COALESCE(NULLIF(TRIM(inv.client_gst_text), ''), cl.gst_number, '')`,
-      'cl.state',
+      'inv.place_of_supply',
+      `COALESCE(NULLIF(TRIM(inv.client_gst_text), ''), CASE WHEN inv.client_copy_at IS NULL THEN cl.gst_number END, '')`,
     );
-    const jwInter = interStateSql(`COALESCE(cl.gst_number, '')`, 'cl.state');
+    const jwInter = interStateSql(
+      'ji.place_of_supply',
+      `COALESCE(NULLIF(TRIM(ji.client_gst_text), ''), CASE WHEN ji.client_copy_at IS NULL THEN cl.gst_number END, '')`,
+    );
 
     const result = await tx.execute(sql`
       WITH co AS (
         SELECT
-          COALESCE(
-            CASE WHEN c.gst_number ~ '^[0-9]{2}' THEN LEFT(c.gst_number, 2) END,
-            '24'
-          )                                          AS home_code,
-          LOWER(NULLIF(TRIM(c.state), ''))           AS home_state
+          CASE WHEN c.gst_number ~ '^[0-9]{2}' THEN LEFT(c.gst_number, 2) END AS home_code
         FROM public.companies c
         WHERE c.id = ${companyId}::uuid
       ),
@@ -96,14 +99,21 @@ export const gstSalesRegisterReport: RegisteredReport = {
           'Sales Invoice'                                            AS source,
           inv.code                                                   AS invoice_code,
           inv.invoice_date                                           AS invoice_date,
-          COALESCE(cl.name, inv.client_name_text, '—')               AS client_name,
-          COALESCE(NULLIF(TRIM(inv.client_gst_text), ''), cl.gst_number) AS client_gstin,
-          cl.state                                                   AS client_state,
+          COALESCE(inv.client_name_text, cl.name, '—')               AS client_name,
+          CASE WHEN inv.client_copy_at IS NOT NULL THEN inv.client_gst_text
+               ELSE COALESCE(NULLIF(TRIM(inv.client_gst_text), ''), cl.gst_number) END AS client_gstin,
+          CASE WHEN inv.client_copy_at IS NOT NULL THEN inv.client_state
+               ELSE cl.state END                                     AS client_state,
+          inv.place_of_supply                                        AS place_of_supply,
           inv.subtotal                                               AS taxable_value,
           inv.gst_percent                                            AS gst_percent,
           inv.gst_amount                                             AS gst_amount,
           inv.grand_total                                            AS total,
-          ${soInter}                                                 AS is_inter
+          CASE inv.tax_type
+            WHEN 'igst' THEN true
+            WHEN 'sgst_cgst' THEN false
+            ELSE ${soInter}
+          END                                                        AS is_inter
         FROM public.invoices inv
         CROSS JOIN co
         LEFT JOIN public.clients cl
@@ -120,9 +130,12 @@ export const gstSalesRegisterReport: RegisteredReport = {
           'JW Invoice'                                               AS source,
           ji.code                                                    AS invoice_code,
           ji.invoice_date                                            AS invoice_date,
-          COALESCE(cl.name, jwo.customer_name, '—')                  AS client_name,
-          cl.gst_number                                              AS client_gstin,
-          cl.state                                                   AS client_state,
+          COALESCE(ji.client_name_text, cl.name, jwo.customer_name, '—') AS client_name,
+          CASE WHEN ji.client_copy_at IS NOT NULL THEN ji.client_gst_text
+               ELSE cl.gst_number END                                AS client_gstin,
+          CASE WHEN ji.client_copy_at IS NOT NULL THEN ji.client_state
+               ELSE cl.state END                                     AS client_state,
+          ji.place_of_supply                                         AS place_of_supply,
           ji.taxable_amount                                          AS taxable_value,
           ji.gst_percent                                             AS gst_percent,
           ji.gst_amount                                              AS gst_amount,
@@ -151,6 +164,7 @@ export const gstSalesRegisterReport: RegisteredReport = {
         client_name,
         client_gstin,
         client_state,
+        place_of_supply::text                                      AS place_of_supply,
         taxable_value::float                                       AS taxable_value,
         gst_percent::float                                         AS gst_percent,
         CASE WHEN is_inter THEN 0 ELSE ROUND(gst_amount / 2, 2) END::float AS cgst,
@@ -169,6 +183,9 @@ export const gstSalesRegisterReport: RegisteredReport = {
       client_name: String(r['client_name'] ?? ''),
       client_gstin: textCell(r['client_gstin']),
       client_state: textCell(r['client_state']),
+      place_of_supply: textCell(
+        r['place_of_supply'] ? placeOfSupplyLabel(String(r['place_of_supply'])) : null,
+      ),
       taxable_value: numCell(r['taxable_value']),
       gst_percent: numCell(r['gst_percent']),
       cgst: numCell(r['cgst']),

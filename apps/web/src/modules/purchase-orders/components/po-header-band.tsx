@@ -130,12 +130,12 @@ export function PoHeaderBand({
       >
         {/* ── Vendor ── */}
         <Col caption="Vendor">
-          {detail.vendorCodeText ? (
+          {(detail.vendorCode ?? detail.vendorCodeText) ? (
             <div
               className="mono fw-700"
               style={{ color: 'var(--purple)', fontSize: 13, marginBottom: 2 }}
             >
-              {detail.vendorCodeText}
+              {detail.vendorCode ?? detail.vendorCodeText}
             </div>
           ) : null}
           <div className="fw-700" style={{ fontSize: 14, marginBottom: 4 }}>

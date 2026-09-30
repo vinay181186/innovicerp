@@ -15,6 +15,8 @@ import type { CreateItemInput, UpdateItemInput } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { PageHeader, PageState } from '@/ui/layout';
 import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/master-rules-ui';
@@ -38,7 +40,8 @@ const BACK_TO_LIST = 'Back to Item Master';
 
 function ItemNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreateItem();
+  const saveKey = useSaveKey();
+  const create = useCreateItem(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
   // Tier-driven, per department (Store). The + Add Item button is hidden from
@@ -103,7 +106,11 @@ function ItemEditPage(): React.JSX.Element {
   const { id } = itemEditRoute.useParams();
   const navigate = useNavigate();
   const { data: item, isLoading, isError, error } = useItem(id);
-  const update = useUpdateItem(id);
+  const saveKey = useSaveKey();
+  const update = useUpdateItem(id, saveKey);
+  // R5: the version this form was opened from — a save after someone else
+  // changed the item is refused (409 edit_conflict) instead of overwriting it.
+  const opened = useOpenedVersion(item?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
   // Same hole on the edit route: the row's Edit link is hidden without edit
@@ -122,7 +129,8 @@ function ItemEditPage(): React.JSX.Element {
     setSubmitError(null);
     setServerFieldErrors(null);
     try {
-      await update.mutateAsync(values);
+      const saved = await update.mutateAsync({ ...values, expectedUpdatedAt: opened.expected() });
+      opened.saved(saved.updatedAt);
       exit.leave(() => void navigate({ to: '/items/$id', params: { id }, replace: true }));
     } catch (err) {
       setServerFieldErrors(serverFieldErrorsOf(err));

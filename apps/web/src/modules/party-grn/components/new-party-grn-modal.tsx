@@ -15,6 +15,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { usePartyMaterialsList } from '../../party-materials/api';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
@@ -84,7 +85,9 @@ export function NewPartyGrnModal({
   );
   const pmAll = pmData?.items ?? [];
 
-  const createMut = useCreatePartyGrn();
+  // R2 — one idempotency key per open modal, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const createMut = useCreatePartyGrn(saveKey);
 
   // A stray click outside / ESC used to throw away every typed line; now it
   // asks first when anything was typed (party-grn-create#1).

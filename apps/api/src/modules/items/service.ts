@@ -27,6 +27,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import {
   applyMasterRules,
@@ -120,7 +121,7 @@ export async function listItems(
     const conditions: SQL[] = [eq(items.companyId, companyId), isNull(items.deletedAt)];
     if (input.search) {
       // Search covers every column the Item Master list actually shows — Item
-      // Code, Name, Description, Drawing No., Rev, Material and the UOM badge
+      // Code, Name, Description, Material and the UOM badge
       // (the column defs in apps/web/src/modules/items/routes/list.tsx).
       // UOM is a Postgres enum, so it needs an explicit ::text cast — `uom
       // ILIKE $1` errors with "operator does not exist: uom ~~*". The raw
@@ -131,7 +132,9 @@ export async function listItems(
       //  - item type — not a row column; it is the StatStrip filter above the
       //    table (All / Component / Assembly), so searching it would only
       //    duplicate a filter that already exists;
-      //  - the drawing file path — the "Drw" cell renders an icon, not the path;
+      //  - Drawing No., Item Master Rev and the drawing file path — old item
+      //    columns no screen shows any more (plan v3 Step 4 #7); the DB keeps
+      //    them, but a row must not match on a value the user cannot see;
       //  - min stock qty — a quantity: partial matching on numbers makes a
       //    short term useless.
       // No money column exists on this table.
@@ -140,8 +143,6 @@ export async function listItems(
         ilike(items.code, term),
         ilike(items.name, term),
         ilike(items.description, term),
-        ilike(items.drawingNo, term),
-        ilike(items.revision, term),
         ilike(items.material, term),
         sql`${items.uom}::text ILIKE ${term} ESCAPE '\\'`,
       );
@@ -638,6 +639,8 @@ export async function updateItem(
     // ADR-193 (P23 / P15 phase 4): no switch to or from 'tool', and no change
     // of Track by Serial No., once stock has moved (type-lock.ts).
     const cur = existing[0]!;
+    // R5: refuse the save if someone else edited the item after this form opened it.
+    assertUnchangedSinceOpened(cur.updatedAt, input.expectedUpdatedAt);
     // ADR-195: the item CODE is permanent, and a Party Supplied Material item bakes
     // the -rm suffix into its code at creation. So the type may never be switched
     // INTO or OUT OF party-supplied on edit — doing so would leave the code and the

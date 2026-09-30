@@ -44,6 +44,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
   AuthorizationError,
   ConflictError,
@@ -723,6 +724,9 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         row: salesOrderLines,
         itemCode: items.code,
         itemImagePath: items.imagePath,
+        // The item master's name — the detail screen notes it beside a line
+        // whose own (editable) Item Name differs (plan v3 Step 4).
+        masterItemName: items.name,
       })
       .from(salesOrderLines)
       .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
@@ -800,6 +804,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
     const headerOut = toSalesOrder(header);
     const linesOut = lineRows.map((r) => ({
       ...toSalesOrderLine(r.row, r.itemCode, r.itemImagePath ?? null),
+      masterItemName: r.masterItemName ?? null,
       billedQty: billedByLine.get(r.row.id) ?? 0,
       jcQty: jcByLine.get(r.row.id) ?? 0,
     }));
@@ -1674,9 +1679,12 @@ export async function updateSalesOrder(
           isNull(salesOrders.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError('SO not found. It may have been moved to Trash.');
+    // R5: refuse the save if someone else edited the SO after this form opened it.
+    assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;

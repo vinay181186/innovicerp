@@ -41,6 +41,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { FormField } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreateGoodsReceiptNote } from '../api';
@@ -84,7 +85,9 @@ export function UnifiedGrnForm({
 
   // Purchase branch — the existing create endpoint; the form is the new
   // PO-driven one (lines come from the PO, never typed by hand).
-  const createPurchase = useCreateGoodsReceiptNote();
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const createPurchase = useCreateGoodsReceiptNote(saveKey);
   const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
   const onPurchaseSubmit = async (values: CreateGoodsReceiptNoteInput): Promise<void> => {
     setPurchaseErr(null);

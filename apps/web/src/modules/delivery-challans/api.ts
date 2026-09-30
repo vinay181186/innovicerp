@@ -11,6 +11,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { ncRegisterKeys } from '@/modules/nc-register/api';
 
@@ -99,11 +100,17 @@ export function useDcSendable(poId: string | undefined) {
   });
 }
 
-export function useCreateDeliveryChallan() {
+export function useCreateDeliveryChallan(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<DeliveryChallanWithLines, Error, CreateDeliveryChallanInput>({
     mutationFn: (input) =>
-      apiFetch<DeliveryChallanWithLines>('/delivery-challans', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<DeliveryChallanWithLines>('/delivery-challans', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
@@ -133,7 +140,7 @@ export function useCancelDeliveryChallan() {
 // The response is the refreshed DC plus `autoGrn` — the GRN the receive just
 // raised — so the GRN screen's "Against JWPO / DC" tab can land on it. The
 // standalone receive page only reads `.id`, which is unchanged.
-export function useReceiveDeliveryChallan() {
+export function useReceiveDeliveryChallan(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<
     ReceiveDeliveryChallanResponse,
@@ -141,10 +148,13 @@ export function useReceiveDeliveryChallan() {
     { dcId: string; input: CreateDeliveryChallanReceiptInput }
   >({
     mutationFn: ({ dcId, input }) =>
-      apiFetch<ReceiveDeliveryChallanResponse>(`/delivery-challans/${dcId}/receive`, {
-        method: 'POST',
-        json: input,
-      }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<ReceiveDeliveryChallanResponse>(`/delivery-challans/${dcId}/receive`, {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (received) => {
       void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

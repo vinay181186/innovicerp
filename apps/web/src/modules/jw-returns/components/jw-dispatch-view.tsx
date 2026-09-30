@@ -15,6 +15,7 @@ import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { fmtDate, todayLocal } from '@/lib/date';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
 import { statusText } from '@/lib/status-text';
 import { Modal } from '@/ui/feedback';
@@ -275,7 +276,8 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
   );
   const pickedReturnable = jobWorkOrderLineId ? returnableById.get(jobWorkOrderLineId) : undefined;
 
-  const createMut = useCreateJwReturnChallan();
+  const saveKey = useSaveKey();
+  const createMut = useCreateJwReturnChallan(saveKey);
 
   const onSave = (): void => {
     setErr(null);

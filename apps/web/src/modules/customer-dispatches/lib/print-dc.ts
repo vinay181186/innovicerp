@@ -12,6 +12,7 @@
 import type { Client, Company, CustomerDispatchDetail } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
+import { partyForPrint } from '@/lib/print/party-copy';
 import {
   type SheetField,
   type SheetPrintModel,
@@ -25,20 +26,20 @@ function dispatchSheetModel(
   client: Client | null | undefined,
   company: Company | null | undefined,
 ): SheetPrintModel {
-  const addressLines = [
-    client?.addressLine1 ?? '',
-    [client?.city, client?.state, client?.pincode].filter(Boolean).join(', '),
-  ].filter(Boolean);
+  // The paper's own copy of the customer (0186, plan D7); the live master
+  // only for a paper made before 0186.
+  const party = partyForPrint(d.clientCopy, client, d.customer);
+  const addressLines = party.addressLines;
 
   const recipientFields: SheetField[] = [
-    { label: 'Customer Code', value: client?.code ?? '', variant: 'mono' },
-    { label: 'Name', value: client?.name ?? d.customer ?? '', variant: 'name' },
+    { label: 'Customer Code', value: party.code, variant: 'mono' },
+    { label: 'Name', value: party.name, variant: 'name' },
     {
       label: 'Address',
       value: addressLines[0] ?? '',
       ...(addressLines.length > 1 ? { extra: addressLines.slice(1) } : {}),
     },
-    { label: 'GSTIN', value: client?.gstNumber ?? '', variant: 'mono' },
+    { label: 'GSTIN', value: party.gstNumber, variant: 'mono' },
   ];
 
   const documentFields: SheetField[] = [

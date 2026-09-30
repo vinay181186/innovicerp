@@ -289,7 +289,7 @@ function ClientFormShell(props: {
             </button>
             <button type="submit" className="btn btn-primary" disabled={props.isSubmitting}>
               {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              {props.submitLabel}
+              {props.isSubmitting ? 'Saving…' : props.submitLabel}
             </button>
           </>
         }

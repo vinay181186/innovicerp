@@ -7,6 +7,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
 export const costCentersKeys = {
   all: ['cost-centers'] as const,
@@ -47,10 +48,17 @@ export function useCostCenter(id: string | undefined) {
   });
 }
 
-export function useCreateCostCenter() {
+export function useCreateCostCenter(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<CostCenter, Error, CreateCostCenterInput>({
-    mutationFn: (input) => apiFetch<CostCenter>('/cost-centers', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<CostCenter>('/cost-centers', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: costCentersKeys.lists() });
       qc.setQueryData(costCentersKeys.detail(created.id), created);

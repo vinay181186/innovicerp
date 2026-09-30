@@ -11,6 +11,7 @@
 
 import type { DispatchableLine } from '@innovic/shared';
 import { X } from 'lucide-react';
+import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -168,6 +169,10 @@ export function DispatchLineTable(props: {
                         readOnly
                         placeholder="auto-filled"
                         value={line?.itemName ?? ''}
+                      />
+                      <MasterItemNameNote
+                        lineName={line?.itemName}
+                        masterItemName={line?.masterItemName}
                       />
                     </td>
                     <td className="mono td-num">{line ? line.orderQty : '—'}</td>

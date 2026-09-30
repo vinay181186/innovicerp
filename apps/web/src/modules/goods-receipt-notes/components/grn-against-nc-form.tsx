@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
+import { useSaveKey } from '@/lib/use-save-key';
 import {
   useDeliveryChallan,
   useDeliveryChallansList,
@@ -83,7 +84,9 @@ export function GrnAgainstNcForm({
 }: GrnAgainstNcFormProps): React.JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const receive = useReceiveDeliveryChallan();
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const receive = useReceiveDeliveryChallan(saveKey);
 
   const [ncId, setNcId] = useState<string | null>(null);
   const [ncSearch, setNcSearch] = useState('');

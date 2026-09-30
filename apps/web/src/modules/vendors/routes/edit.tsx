@@ -5,6 +5,8 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/master-rules-ui';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -25,7 +27,8 @@ export const vendorEditRoute = createRoute({
 
 function VendorNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreateVendor();
+  const saveKey = useSaveKey();
+  const create = useCreateVendor(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
   // Creating a master record is `entry` on vendor_create (Purchase). Checked
@@ -90,7 +93,11 @@ function VendorEditPage(): React.JSX.Element {
   const { id } = vendorEditRoute.useParams();
   const navigate = useNavigate();
   const { data: vendor, isLoading, isError, error } = useVendor(id);
-  const update = useUpdateVendor(id);
+  const saveKey = useSaveKey();
+  const update = useUpdateVendor(id, saveKey);
+  // R5: the version this form was opened from — a save after someone else
+  // changed the vendor is refused (409 edit_conflict) instead of overwriting it.
+  const opened = useOpenedVersion(vendor?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
   // Changing a saved record is `edit` on vendor_create (Purchase), so L2 Data
@@ -109,7 +116,8 @@ function VendorEditPage(): React.JSX.Element {
     setSubmitError(null);
     setServerFieldErrors(null);
     try {
-      await update.mutateAsync(values);
+      const saved = await update.mutateAsync({ ...values, expectedUpdatedAt: opened.expected() });
+      opened.saved(saved.updatedAt);
       exit.leave(() => void navigate({ to: '/vendors/$id', params: { id }, replace: true }));
     } catch (err) {
       setServerFieldErrors(serverFieldErrorsOf(err));

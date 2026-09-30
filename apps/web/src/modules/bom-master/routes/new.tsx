@@ -2,6 +2,7 @@ import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { docCodeToSend } from '@/lib/use-doc-number';
 import { useCreateBomMaster, useNextBomNo } from '../api';
@@ -20,7 +21,8 @@ export const bomMasterNewRoute = createRoute({
 
 function BomMasterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreateBomMaster();
+  const saveKey = useSaveKey();
+  const create = useCreateBomMaster(saveKey);
   // S2: the number the form pre-filled is only a preview; it is sent only when
   // the user changed it (docCodeToSend), else the server numbers the record.
   const { data: nextBomNo } = useNextBomNo();

@@ -35,6 +35,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -333,7 +334,12 @@ export async function createJwReturnChallan(
     if (!line) throw new NotFoundError('Selected JWSO line was not found. Please pick it again.');
 
     const jwRows = await tx
-      .select({ id: jobWorkOrders.id, code: jobWorkOrders.code, clientId: jobWorkOrders.clientId })
+      .select({
+        id: jobWorkOrders.id,
+        code: jobWorkOrders.code,
+        clientId: jobWorkOrders.clientId,
+        customerName: jobWorkOrders.customerName,
+      })
       .from(jobWorkOrders)
       .where(and(eq(jobWorkOrders.id, line.jwId), isNull(jobWorkOrders.deletedAt)))
       .limit(1);
@@ -375,7 +381,9 @@ export async function createJwReturnChallan(
       jobCardId = jcRows[0].id;
     }
 
-    // 4) Insert return challan
+    // 4) Insert return challan — with its legal copy of the customer (plan D7,
+    // 0186): the print reads this copy, not the live master.
+    const copy = clientCopyValues(await loadClientForCopy(tx, jw.clientId, companyId));
     // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
     await lockDocSeries(tx, companyId, 'jw_return_challans');
     const code = input.code ?? (await nextReturnCode(tx, companyId));
@@ -390,6 +398,15 @@ export async function createJwReturnChallan(
         jwCodeText: jw.code,
         jobCardId,
         clientId: jw.clientId ?? null,
+        clientNameText: copy.clientName ?? jw.customerName ?? null,
+        clientGstText: copy.clientGstText,
+        clientAddressLine1: copy.clientAddressLine1,
+        clientCity: copy.clientCity,
+        clientState: copy.clientState,
+        clientStateCode: copy.clientStateCode,
+        clientPincode: copy.clientPincode,
+        placeOfSupply: copy.placeOfSupply,
+        clientCopyAt: copy.clientCopyAt,
         qty: input.qty,
         transport: input.transport ?? null,
         vehicleNo: input.vehicleNo ?? null,
@@ -808,6 +825,8 @@ function toListItem(r: {
     uom: r.uom ?? null,
     hsnCode: r.hsnCode ?? null,
     clientPoNo: r.clientPoNo ?? null,
+    // The paper's own copy of the customer (0186) — the print reads it.
+    clientCopy: readClientCopy({ ...r.ret, clientName: r.ret.clientNameText }),
   };
 }
 

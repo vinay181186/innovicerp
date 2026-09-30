@@ -137,9 +137,10 @@ export const jobCardListItemSchema = z.object({
   clientPoLineNo: z.string().nullable(),
   lastOpCompletedQty: z.number().int().nonnegative(),
   runningCount: z.number().int().nonnegative(),
-  /** Customer name surfaced for the list view: prefers SO/JW source link's
-   *  `customer_name`; falls back to the linked client's name when the source
-   *  uses `client_id`. Null when no source link or no customer info at all. */
+  /** Customer name surfaced for the list view: the LIVE clients.name via the
+   *  SO/JW source's `client_id` (plan v3 Step 4); falls back to the source's
+   *  saved `customer_name` only when it has no client_id. Null when no source
+   *  link or no customer info at all. */
   customerName: z.string().nullable(),
   /** The item's active route card (code + current revision), resolved by item_id
    *  — the routing this item is built from. Null if the item has no route card.

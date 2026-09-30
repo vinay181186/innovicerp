@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { queryBoolean } from '../lib/query-boolean';
 import { ITEM_TYPES } from '../enums/item-type';
 import { ITEM_PROCUREMENT_TYPES } from '../enums/item-procurement-type';
@@ -78,7 +79,10 @@ export const createItemInputSchema = z.object({
 });
 export type CreateItemInput = z.infer<typeof createItemInputSchema>;
 
-export const updateItemInputSchema = createItemInputSchema.partial().omit({ code: true });
+export const updateItemInputSchema = createItemInputSchema
+  .partial()
+  .omit({ code: true })
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateItemInput = z.infer<typeof updateItemInputSchema>;
 
 /** BULK IMPORT — the Excel importer's whole sheet in ONE request.

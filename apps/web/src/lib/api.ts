@@ -13,11 +13,23 @@ class ApiError extends Error {
   }
 }
 
-type RequestInitWithJson = Omit<RequestInit, 'body'> & { json?: unknown };
+type RequestInitWithJson = Omit<RequestInit, 'body'> & {
+  json?: unknown;
+  /** Give up waiting after this many ms (default 60 s). A long Excel import
+   *  passes a bigger number. */
+  timeoutMs?: number;
+};
 
 // Friendly, plain-language copy for the failure modes users actually hit.
 const NETWORK_MESSAGE = "Couldn't reach Innovic ERP. Check your internet connection and try again.";
 const SERVER_MESSAGE = 'Something went wrong on our side. Please try again in a moment.';
+// R2: a write that times out may still have been saved on the server — say so,
+// instead of inviting a blind second click. (The form's save key makes that
+// second click safe anyway: it replays the first result.)
+const SAVE_TIMEOUT_MESSAGE =
+  'The server is taking too long to answer. The save may have gone through — check the list before trying again.';
+const READ_TIMEOUT_MESSAGE = 'The server is taking too long to answer. Please try again.';
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 /**
  * Turn a server validation payload (Zod `flatten()`: { formErrors, fieldErrors })
@@ -44,7 +56,7 @@ function humanizeValidationDetails(details: unknown): string | null {
 /** crypto.randomUUID exists only in secure contexts (https / localhost); a
  *  shop-floor PC opening the app over plain http on a LAN IP has no such
  *  function, so fall back to getRandomValues rather than break every save. */
-function newRequestKey(): string {
+export function newRequestKey(): string {
   const c = globalThis.crypto;
   if (c && typeof c.randomUUID === 'function') return c.randomUUID();
   const bytes = new Uint8Array(16);
@@ -73,21 +85,51 @@ export async function apiFetch<T = unknown>(
     headers.set('idempotency-key', newRequestKey());
   }
 
+  // R2: never wait forever. On timeout the request is aborted and the user is
+  // told plainly — for a write, that it may have saved.
+  const isWrite = method !== 'GET' && method !== 'HEAD';
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, json, signal: callerSignal, ...rest } = init;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const onCallerAbort = () => controller.abort();
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+  const timeoutError = (cause: unknown) =>
+    new ApiError(0, 'timeout', isWrite ? SAVE_TIMEOUT_MESSAGE : READ_TIMEOUT_MESSAGE, cause);
+
   // A dropped connection / DNS / CORS failure rejects fetch with a TypeError —
   // translate it into a friendly ApiError instead of leaking "Failed to fetch".
   let res: Response;
+  let text: string;
   try {
-    res = await fetch(new URL(path, env.VITE_API_URL), {
-      ...init,
-      headers,
-      body:
-        init.json !== undefined ? JSON.stringify(init.json) : ((init as RequestInit).body ?? null),
-    });
-  } catch (cause) {
-    throw new ApiError(0, 'network_error', NETWORK_MESSAGE, cause);
+    try {
+      res = await fetch(new URL(path, env.VITE_API_URL), {
+        ...rest,
+        headers,
+        signal: controller.signal,
+        body: json !== undefined ? JSON.stringify(json) : ((init as RequestInit).body ?? null),
+      });
+    } catch (cause) {
+      if (timedOut) throw timeoutError(cause);
+      throw new ApiError(0, 'network_error', NETWORK_MESSAGE, cause);
+    }
+    try {
+      text = await res.text();
+    } catch (cause) {
+      if (timedOut) throw timeoutError(cause);
+      throw new ApiError(0, 'network_error', NETWORK_MESSAGE, cause);
+    }
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener('abort', onCallerAbort);
   }
 
-  const text = await res.text();
   let body: unknown = null;
   if (text) {
     try {

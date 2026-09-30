@@ -47,6 +47,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
@@ -789,9 +790,12 @@ export async function updateBomMaster(
           isNull(bomMasters.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const header = headers[0];
     if (!header) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
+    // R5: refuse the save if someone else edited the BOM after this form opened it.
+    assertUnchangedSinceOpened(header.updatedAt, input.expectedUpdatedAt);
 
     // S8: status moves follow BOM_STATUS_MOVES (Draft → Active / Obsolete,
     // Active → Obsolete, Obsolete is final). The change itself is logged by the
@@ -883,6 +887,9 @@ export async function updateBomMaster(
         revision: newRevision,
         revisionDate: sql`current_date` as unknown as string,
         updatedBy: user.id,
+        // R5: bom_masters has no set_updated_at trigger until 0187 — bump the
+        // version here so the next edit-conflict check sees this save.
+        updatedAt: new Date(),
       })
       .where(eq(bomMasters.id, id));
 

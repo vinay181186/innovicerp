@@ -3,6 +3,7 @@
 // Register that gates invoicing. Legacy dispatchLog / renderDispatchRegister.
 
 import { z } from 'zod';
+import { clientCopySchema } from './party-copy';
 import { CUSTOMER_DISPATCH_STATUSES } from '../enums/customer-dispatch-status';
 
 // A dispatchable SO line for a chosen SO (the create form).
@@ -21,6 +22,10 @@ export const dispatchableLineSchema = z.object({
    *  (user rule, 2026-09-23). Null when the customer's PO gave no line. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string(),
+  /** The item master's name (items.name by item id) — shown as a grey
+   *  "Master: …" note when it differs from the line's own itemName
+   *  (plan v3 Step 4). Null when the line has no item. */
+  masterItemName: z.string().nullable().optional(),
   orderQty: z.number().int().nonnegative(),
   readyQty: z.number().int().nonnegative(), // produced + QC-accepted (final op)
   /** Qty reserved to this SO line from stock (Stage 1) — also dispatchable now,
@@ -83,6 +88,10 @@ export const customerDispatchLineRowSchema = z.object({
   itemRevision: z.string().nullable().default(null),
   itemCodeText: z.string().nullable(), // stored snapshot alias (fallback only)
   itemName: z.string(),
+  /** The item master's name (items.name by item id) — shown as a grey
+   *  "Master: …" note when it differs from the line's own itemName
+   *  (plan v3 Step 4). Null when the line has no item. */
+  masterItemName: z.string().nullable().optional(),
   qty: z.number().int(),
   /** POL — the customer's PO line no., off the same SO line (printed on the DC). */
   clientPoLineNo: z.string().nullable().default(null),
@@ -124,6 +133,10 @@ export const customerDispatchDetailSchema = customerDispatchRowSchema.extend({
   clientId: z.string().uuid().nullable().default(null),
   /** Client PO No. of the SO (sales_orders.client_po_no) — printed on the DC. */
   clientPoNo: z.string().nullable().default(null),
+  /** Legal copy of the customer taken when this paper was made (0186, plan
+   *  D7). The print reads it; null only on a row made before 0186 (the print
+   *  then falls back to the live customer master). */
+  clientCopy: clientCopySchema.nullable().default(null),
   lines: z.array(customerDispatchLineRowSchema),
 });
 export type CustomerDispatchDetail = z.infer<typeof customerDispatchDetailSchema>;

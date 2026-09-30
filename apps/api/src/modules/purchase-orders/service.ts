@@ -45,6 +45,7 @@ import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
   AuthorizationError,
   ConflictError,
@@ -566,6 +567,7 @@ export async function listPurchaseOrders(
           -- The card renders vendorName ?? vendorCodeText; v is the vendors
           -- join already in the SELECT below, so the name is matched too.
           OR v.name ILIKE ${term} ESCAPE '\\'
+          OR v.code ILIKE ${term} ESCAPE '\\'
           OR po.status::text ILIKE ${term} ESCAPE '\\'
           OR po.po_type::text ILIKE ${term} ESCAPE '\\'
           OR po.po_date::text ILIKE ${term} ESCAPE '\\'
@@ -640,6 +642,7 @@ export async function listPurchaseOrders(
         po.updated_at AS "updatedAt", po.updated_by AS "updatedBy",
         po.deleted_at AS "deletedAt",
         v.name AS "vendorName",
+        v.code AS "vendorCode",
         cu.full_name AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::float8   AS "totalQty",
@@ -757,6 +760,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),
     vendorName: (r['vendorName'] as string | null) ?? null,
+    vendorCode: (r['vendorCode'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     receivedQty: Number(r['receivedQty'] ?? 0),
@@ -773,7 +777,7 @@ export async function getPurchaseOrder(
   const showMoney = await canSeeFormPrice(user, 'po_create');
   return withUserContext(user, async (tx) => {
     const headerRows = await tx
-      .select({ row: purchaseOrders, vendorName: vendors.name })
+      .select({ row: purchaseOrders, vendorName: vendors.name, vendorCode: vendors.code })
       .from(purchaseOrders)
       .leftJoin(vendors, and(eq(vendors.id, purchaseOrders.vendorId), isNull(vendors.deletedAt)))
       .where(
@@ -877,6 +881,7 @@ export async function getPurchaseOrder(
     return {
       ...(showMoney ? header : hidePoHeaderMoney(header)),
       vendorName: headerRow.vendorName,
+      vendorCode: headerRow.vendorCode,
       soCode,
       soLineNo,
       lines: showMoney ? lines : lines.map(hidePoLineMoney),
@@ -1669,6 +1674,8 @@ export async function updatePurchaseOrder(
       .for('update');
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError('PO not found. It may have been moved to Trash.');
+    // R5: refuse the save if someone else edited the PO after this form opened it.
+    assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
     // The lines as they stand BEFORE this save. Loaded here, once, because both
     // the goods-movement lock below and the revision check further down compare

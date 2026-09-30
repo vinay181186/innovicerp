@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { queryBoolean } from '../lib/query-boolean';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { PLAN_EFFECTIVE_STATUSES, PLAN_STATUSES, type PlanStatus } from '../enums/plan-status';
 import { PLAN_TYPES, type PlanType } from '../enums/plan-type';
 import { OP_TYPES, type OpType } from '../enums/op-type';
@@ -460,6 +461,7 @@ export const updatePlanInputSchema = z.object({
 
   // Replace-all behavior on ops when present (matches sales_orders.lines merge)
   ops: z.array(planOpInputSchema).optional(),
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type UpdatePlanInput = z.infer<typeof updatePlanInputSchema>;
 

@@ -745,7 +745,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const saveButton = (
     <button type="submit" className="btn btn-primary" disabled={saveDisabled}>
       {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-      {props.submitLabel ?? (isCreate ? 'Save JWSO' : 'Save Changes')}
+      {formState.isSubmitting
+        ? 'Saving…'
+        : (props.submitLabel ?? (isCreate ? 'Save JWSO' : 'Save Changes'))}
     </button>
   );
   const errorBanners = (

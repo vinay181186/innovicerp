@@ -200,7 +200,7 @@ function ItemFormHeader(props: {
             </Button>
           ) : null}
           <Button type="submit" variant="primary" loading={props.isSubmitting}>
-            {props.submitLabel}
+            {props.isSubmitting ? 'Saving…' : props.submitLabel}
           </Button>
         </>
       }

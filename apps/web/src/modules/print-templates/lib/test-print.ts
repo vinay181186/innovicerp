@@ -473,6 +473,11 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     totalAmount: 5900,
     // Same-state sample: the sheet prints SGST 9% + CGST 9%.
     taxType: 'sgst_cgst',
+    paymentTermsDays: 45,
+    dueDate: null,
+    placeOfSupply: '24',
+    // No copy on the sample: the sheet reads the sample client above.
+    clientCopy: null,
     remarks: 'Sample invoice — turning and grinding on client-supplied blanks.',
     // ADR-194: a live (issued) sample invoice.
     status: 'issued',

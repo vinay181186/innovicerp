@@ -14,6 +14,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
@@ -60,7 +61,9 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   const { id } = deliveryChallanReceiveRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
-  const receive = useReceiveDeliveryChallan();
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const receive = useReceiveDeliveryChallan(saveKey);
   // Booking material back is `entry` on ospdc_create (Purchase) — the same right
   // that raised the DC. Checked here too because the route is reachable by URL.
   const { data: eff } = useMyAccess();

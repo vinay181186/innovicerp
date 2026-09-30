@@ -914,8 +914,11 @@ function OutsourceBalanceModal({
   // The vendor box searches the SERVER (?search=) — a fixed first page of 200
   // left every vendor after it unpickable. The saved value is still the CODE.
   const [vendorSearch, setVendorSearch] = useState('');
+  // Active vendors only (A10): a disabled vendor is not offered for a NEW pick.
+  // The op's current vendor still reads right via vendorLabel / its code.
   const { data: vendorsData, isFetching: vendorsFetching } = useVendorsList({
     ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    isActive: true,
     limit: 50,
     offset: 0,
   });

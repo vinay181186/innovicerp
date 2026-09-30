@@ -52,6 +52,7 @@ import { receivableAgeingReport } from './definitions/receivable-ageing';
 import { dispatchedNotInvoicedReport } from './definitions/dispatched-not-invoiced';
 import { gstSalesRegisterReport } from './definitions/gst-sales-register';
 import { hsnOutwardSummaryReport } from './definitions/hsn-outward-summary';
+import { masterCompletenessReport } from './definitions/master-completeness';
 import type { ReportColumn, ReportDefinition, ReportRow } from './schema';
 
 export interface ReportRunContext {
@@ -118,6 +119,8 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [inspectionSummaryReport.definition.slug]: inspectionSummaryReport,
   [firstPassYieldReport.definition.slug]: firstPassYieldReport,
   [vendorRejectionReport.definition.slug]: vendorRejectionReport,
+  // Plan v3 Phase E — the Phase F gate (Master Rules Mode → Enforce).
+  [masterCompletenessReport.definition.slug]: masterCompletenessReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {

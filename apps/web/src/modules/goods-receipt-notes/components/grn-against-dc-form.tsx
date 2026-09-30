@@ -23,6 +23,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSaveKey } from '@/lib/use-save-key';
 import {
   useDeliveryChallan,
   useDeliveryChallansList,
@@ -83,7 +84,9 @@ export function GrnAgainstDcForm({
 }: GrnAgainstDcFormProps): React.JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const receive = useReceiveDeliveryChallan();
+  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
+  const saveKey = useSaveKey();
+  const receive = useReceiveDeliveryChallan(saveKey);
 
   const [jwpoId, setJwpoId] = useState<string | null>(null);
   const [jwpoSearch, setJwpoSearch] = useState('');

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { queryBoolean } from '../lib/query-boolean';
 import { GST_CATEGORIES } from '../lib/gst';
 import type { MasterRuleWarnings } from '../lib/master-rules';
@@ -82,7 +83,10 @@ export const createVendorInputSchema = z.object({
 });
 export type CreateVendorInput = z.infer<typeof createVendorInputSchema>;
 
-export const updateVendorInputSchema = createVendorInputSchema.partial().omit({ code: true });
+export const updateVendorInputSchema = createVendorInputSchema
+  .partial()
+  .omit({ code: true })
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateVendorInput = z.infer<typeof updateVendorInputSchema>;
 
 /** BULK IMPORT — the Excel importer's whole sheet in ONE request.

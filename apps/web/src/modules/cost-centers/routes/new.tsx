@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList, useCreateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
@@ -16,7 +17,8 @@ export const costCenterNewRoute = createRoute({
 
 function CostCenterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreateCostCenter();
+  const saveKey = useSaveKey();
+  const create = useCreateCostCenter(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/cost-centers' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });

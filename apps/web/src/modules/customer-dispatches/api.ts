@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const dispatchKeys = {
@@ -71,11 +72,17 @@ export function useDispatchableSo(soId: string | undefined) {
   });
 }
 
-export function useCreateDispatch() {
+export function useCreateDispatch(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<CustomerDispatchDetail, Error, CreateCustomerDispatchInput>({
     mutationFn: (input) =>
-      apiFetch<CustomerDispatchDetail>('/customer-dispatches', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<CustomerDispatchDetail>('/customer-dispatches', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: dispatchKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const jwInvoicesKeys = {
@@ -51,10 +52,17 @@ export function useJwInvoicesList(query: ListJwInvoicesQuery) {
   });
 }
 
-export function useCreateJwInvoice() {
+export function useCreateJwInvoice(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<JwInvoice, Error, CreateJwInvoiceInput>({
-    mutationFn: (input) => apiFetch<JwInvoice>('/jw-invoices', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<JwInvoice>('/jw-invoices', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwInvoicesKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

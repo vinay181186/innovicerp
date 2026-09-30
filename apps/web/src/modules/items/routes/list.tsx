@@ -314,7 +314,7 @@ function ItemsListPage(): React.JSX.Element {
         noun="item"
         search={searchInput}
         onSearch={setSearchInput}
-        searchPlaceholder="Search code, name, description, drawing, rev, material, UOM…"
+        searchPlaceholder="Search code, name, description, material, UOM…"
         updating={isFetching && !isLoading}
         filters={
           <>
@@ -459,7 +459,9 @@ function ItemsListPage(): React.JSX.Element {
           allowInsert={canCreate}
           allowUpdate={canEdit}
           parse={parseItemImportFile}
-          submit={(rows, mode, dryRun) => bulkCreate.mutateAsync({ items: rows, mode, dryRun })}
+          submit={(rows, mode, dryRun, saveKey) =>
+            bulkCreate.mutateAsync({ items: rows, mode, dryRun, saveKey })
+          }
           onDownloadTemplate={downloadItemTemplate}
           errorsFileName="Item Import Errors.xlsx"
           onClose={() => setImportOpen(false)}

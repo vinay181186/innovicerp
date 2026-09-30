@@ -143,7 +143,10 @@ export function printPurchaseOrder(args: {
     // says the omission is known.
     expenseHead: '',
     costCenter: '',
-    paymentTerms: 'As per agreement',
+    // Payment Terms from the vendor master (plan D6, 0183): "N days"; the old
+    // fixed wording only when the vendor has none set.
+    paymentTerms:
+      vendor?.paymentTermsDays != null ? `${vendor.paymentTermsDays} days` : 'As per agreement',
     deliveryTerms: po.dueDate ? `By ${fmtDate(po.dueDate)}` : '',
     vendorName,
     vendorAddress,

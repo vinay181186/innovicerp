@@ -11,6 +11,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const bomMastersKeys = {
@@ -69,11 +70,17 @@ export function useNextBomNo() {
   });
 }
 
-export function useCreateBomMaster() {
+export function useCreateBomMaster(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<BomMasterDetail, Error, CreateBomMasterInput>({
     mutationFn: (input) =>
-      apiFetch<BomMasterDetail>('/bom-masters', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<BomMasterDetail>('/bom-masters', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: bomMastersKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
@@ -82,11 +89,17 @@ export function useCreateBomMaster() {
   });
 }
 
-export function useUpdateBomMaster(id: string) {
+export function useUpdateBomMaster(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<BomMasterDetail, Error, UpdateBomMasterInput>({
     mutationFn: (input) =>
-      apiFetch<BomMasterDetail>(`/bom-masters/${id}`, { method: 'PUT', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<BomMasterDetail>(`/bom-masters/${id}`, {
+          method: 'PUT',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: bomMastersKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

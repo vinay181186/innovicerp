@@ -5,6 +5,8 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { uploadJwDocFile, useCreateJwDocument } from '@/modules/jwso-documents/api';
@@ -61,7 +63,8 @@ export const jobWorkOrderEditRoute = createRoute({
 
 function JobWorkOrderNewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const create = useCreateJobWorkOrder();
+  const saveKey = useSaveKey();
+  const create = useCreateJobWorkOrder(saveKey);
   const createDoc = useCreateJwDocument();
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
@@ -147,7 +150,11 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   const { id } = jobWorkOrderEditRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useJobWorkOrder(id);
-  const update = useUpdateJobWorkOrder(id);
+  const saveKey = useSaveKey();
+  const update = useUpdateJobWorkOrder(id, saveKey);
+  // R5 — the version this form opened with; a save over someone else's newer
+  // edit is refused (409 edit_conflict) and its message shows in the banner.
+  const opened = useOpenedVersion(detail?.updatedAt);
   const createDoc = useCreateJwDocument();
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
@@ -164,7 +171,8 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   const onSubmit = async (values: UpdateJobWorkOrderInput): Promise<void> => {
     setSubmitError(null);
     try {
-      const saved = await update.mutateAsync(values);
+      const saved = await update.mutateAsync({ ...values, expectedUpdatedAt: opened.expected() });
+      opened.saved(saved.updatedAt);
       // Upload a newly-picked Client PO document + Email Ref against this JWSO
       // (a failed upload is reported on the JWSO, never swallowed).
       const failed = [

@@ -82,6 +82,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { emitActivityLog } from '../activity-log/service';
 import type {
   CreateRouteCardInput,
@@ -960,9 +961,12 @@ export async function updateRouteCard(
           isNull(routeCards.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const header = headers[0];
     if (!header) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
+    // R5: refuse the save if someone else edited the Route Card after this form opened it.
+    assertUnchangedSinceOpened(header.updatedAt, input.expectedUpdatedAt);
 
     // Validate item exists (may have changed if user re-pointed).
     const item = await assertItemExists(tx, input.itemId, companyId);

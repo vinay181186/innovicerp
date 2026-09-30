@@ -32,6 +32,7 @@ import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
@@ -1046,9 +1047,12 @@ export async function updateJobWorkOrder(
           isNull(jobWorkOrders.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
+    // R5: refuse the save if someone else edited the JWSO after this form opened it.
+    assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;

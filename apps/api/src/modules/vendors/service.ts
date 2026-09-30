@@ -11,6 +11,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import {
   applyMasterRules,
@@ -598,9 +599,12 @@ export async function updateVendor(
       .select()
       .from(vendors)
       .where(and(eq(vendors.id, id), isNull(vendors.deletedAt)))
+      .for('update')
       .limit(1);
     const before = existing[0];
     if (!before) throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
+    // R5: refuse the save if someone else edited the vendor after this form opened it.
+    assertUnchangedSinceOpened(before.updatedAt, input.expectedUpdatedAt);
 
     const settings = await loadMasterRuleSettings(tx, companyId);
     const gst = vendorGstUpdate(before, input);

@@ -250,6 +250,20 @@ async function loadPrsByLine(
   return map;
 }
 
+// Plan v3 Step 4 — the customer name every Planning pane shows is the LIVE
+// client master name via the order's client_id; the order's saved
+// customer_name is only the fallback when it has no client_id.
+function liveSoCustomerName() {
+  return sql<
+    string | null
+  >`COALESCE((SELECT c.name FROM public.clients c WHERE c.id = ${salesOrders.clientId} AND c.deleted_at IS NULL), ${salesOrders.customerName})`;
+}
+function liveJwCustomerName() {
+  return sql<
+    string | null
+  >`COALESCE((SELECT c.name FROM public.clients c WHERE c.id = ${jobWorkOrders.clientId} AND c.deleted_at IS NULL), ${jobWorkOrders.customerName})`;
+}
+
 // ─── Left pane ───────────────────────────────────────────────────────────
 
 export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoListResponse> {
@@ -262,7 +276,7 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
       .select({
         soId: salesOrders.id,
         soCode: salesOrders.code,
-        customerName: salesOrders.customerName,
+        customerName: liveSoCustomerName().as('customer_name'),
         soType: salesOrders.type,
         totalLines: sql<number>`count(${salesOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${salesOrderLines.orderQty}), 0)::int`.as('total_qty'),
@@ -318,7 +332,7 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
       .select({
         soId: jobWorkOrders.id,
         soCode: jobWorkOrders.code,
-        customerName: jobWorkOrders.customerName,
+        customerName: liveJwCustomerName().as('customer_name'),
         totalLines: sql<number>`count(${jobWorkOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${jobWorkOrderLines.orderQty}), 0)::int`.as('total_qty'),
         maxDueDate: sql<string | null>`max(${jobWorkOrderLines.dueDate})::text`.as('max_due'),
@@ -475,7 +489,7 @@ export async function getPlanningSoDetail(
       .select({
         id: salesOrders.id,
         code: salesOrders.code,
-        customerName: salesOrders.customerName,
+        customerName: liveSoCustomerName(),
         type: salesOrders.type,
         clientPoNo: salesOrders.clientPoNo,
         bomMasterId: salesOrders.bomMasterId,
@@ -833,7 +847,7 @@ async function getJwPlanningDetail(
     .select({
       id: jobWorkOrders.id,
       code: jobWorkOrders.code,
-      customerName: jobWorkOrders.customerName,
+      customerName: liveJwCustomerName(),
       clientPoNo: jobWorkOrders.clientPoNo,
     })
     .from(jobWorkOrders)

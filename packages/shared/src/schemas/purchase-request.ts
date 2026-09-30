@@ -16,6 +16,7 @@
 //   - query: list filters (search, status, vendor, jc-op link, date range).
 
 import { z } from 'zod';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { queryBoolean } from '../lib/query-boolean';
 import { PR_STATUSES, PR_TYPES } from '../enums/pr-status';
 
@@ -231,7 +232,8 @@ export type CreatePurchaseRequestInput = z.infer<typeof createPurchaseRequestInp
 // form from ever skipping the approvedBy/approvedAt stamp.
 export const updatePurchaseRequestInputSchema = _prInputBase
   .partial()
-  .omit({ code: true, prType: true, status: true });
+  .omit({ code: true, prType: true, status: true })
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdatePurchaseRequestInput = z.infer<typeof updatePurchaseRequestInputSchema>;
 
 /** SHORT-CLOSE the balance — stop expecting the unordered remainder.

@@ -128,6 +128,10 @@ export const goodsReceiptNoteLineDetailSchema = goodsReceiptNoteLineSchema.exten
   /** The item's unit off the item master (items.uom) — shown on the GRN
    *  screen and print (A26). Null when the line has no linked item. */
   uom: z.string().nullable().optional(),
+  /** The item master's name (items.name by itemId) — what the GRN SCREENS
+   *  show (plan v3 Step 4, same as Incoming QC). `itemName` stays the line's
+   *  saved copy, read only by the GRN print. Null when the line has no item. */
+  masterItemName: z.string().nullable().optional(),
 });
 export type GoodsReceiptNoteLineDetail = z.infer<typeof goodsReceiptNoteLineDetailSchema>;
 

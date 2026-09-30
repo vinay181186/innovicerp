@@ -8,6 +8,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const jobWorkOrdersKeys = {
@@ -50,11 +51,17 @@ export function useJobWorkOrder(id: string | undefined) {
   });
 }
 
-export function useCreateJobWorkOrder() {
+export function useCreateJobWorkOrder(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<JobWorkOrderDetail, Error, CreateJobWorkOrderInput>({
     mutationFn: (input) =>
-      apiFetch<JobWorkOrderDetail>('/job-work-orders', { method: 'POST', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<JobWorkOrderDetail>('/job-work-orders', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
       qc.setQueryData(jobWorkOrdersKeys.detail(created.id), created);
@@ -63,11 +70,17 @@ export function useCreateJobWorkOrder() {
   });
 }
 
-export function useUpdateJobWorkOrder(id: string) {
+export function useUpdateJobWorkOrder(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<JobWorkOrderDetail, Error, UpdateJobWorkOrderInput>({
     mutationFn: (input) =>
-      apiFetch<JobWorkOrderDetail>(`/job-work-orders/${id}`, { method: 'PATCH', json: input }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<JobWorkOrderDetail>(`/job-work-orders/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
       qc.setQueryData(jobWorkOrdersKeys.detail(id), updated);

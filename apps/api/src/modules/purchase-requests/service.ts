@@ -25,6 +25,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { assertActiveParty } from '../../lib/active-party';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
   AuthorizationError,
   ConflictError,
@@ -1117,10 +1118,13 @@ export async function updatePurchaseRequest(
           isNull(purchaseRequests.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     if (existing.length === 0) {
       throw new NotFoundError('PR not found. It may have been moved to Trash.');
     }
+    // R5: refuse the save if someone else edited the PR after this form opened it.
+    assertUnchangedSinceOpened(existing[0]!.updatedAt, input.expectedUpdatedAt);
     // A PR with quantity on a LIVE purchase order is locked — no further edits.
     //
     // This used to test the boolean (`po_id IS NOT NULL OR status='po_created'`),

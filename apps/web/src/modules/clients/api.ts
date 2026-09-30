@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const clientsKeys = {
@@ -56,10 +57,17 @@ export function useClient(id: string | undefined) {
   });
 }
 
-export function useCreateClient() {
+export function useCreateClient(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<Client, Error, CreateClientInput>({
-    mutationFn: (input) => apiFetch<Client>('/clients', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<Client>('/clients', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: clientsKeys.lists() });
@@ -77,9 +85,23 @@ export function useCreateClient() {
  *  500-row sheet. */
 export function useBulkCreateClients() {
   const qc = useQueryClient();
-  return useMutation<BulkCreateClientsResponse, Error, BulkCreateClientsInput>({
-    mutationFn: (input) =>
-      apiFetch<BulkCreateClientsResponse>('/clients/bulk', { method: 'POST', json: input }),
+  return useMutation<
+    BulkCreateClientsResponse,
+    Error,
+    BulkCreateClientsInput & { saveKey?: SaveKey | undefined }
+  >({
+    // A big sheet can take over a minute — give it three. Only the real import
+    // (dryRun: false) carries the dialog's save key; a preview is not a save,
+    // and sharing the key would make the server replay the preview's answer.
+    mutationFn: ({ saveKey, ...input }) =>
+      withSaveKey(input.dryRun ? undefined : saveKey, (headers) =>
+        apiFetch<BulkCreateClientsResponse>('/clients/bulk', {
+          method: 'POST',
+          json: input,
+          timeoutMs: 180_000,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (_res, input) => {
       // A preview (dryRun) writes nothing — nothing to reload.
       if (input.dryRun) return;
@@ -89,10 +111,17 @@ export function useBulkCreateClients() {
   });
 }
 
-export function useUpdateClient(id: string) {
+export function useUpdateClient(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<Client, Error, UpdateClientInput>({
-    mutationFn: (input) => apiFetch<Client>(`/clients/${id}`, { method: 'PATCH', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<Client>(`/clients/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: clientsKeys.lists() });
