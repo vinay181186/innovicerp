@@ -403,6 +403,10 @@ export async function listPlans(
         itemName: items.name,
         itemRevision: SO_LINE_REVISION,
         clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
+        // The customer's wanted date: the SO line's Due Date, else the JWSO line's.
+        lineDueDate: sql<
+          string | null
+        >`COALESCE(${salesOrderLines.dueDate}, ${jobWorkOrderLines.dueDate})::text`,
         // ADR-182 — the NEWEST live order of the plan, read as scalars so
         // several orders cannot multiply the plan row.
         productionOrderId: PLAN_LATEST_ORDER_ID_SQL,
@@ -469,6 +473,7 @@ export async function listPlans(
           // able to tell "this plan has no SO line" from "the revision is empty".
           itemRevision: r.itemRevision ?? null,
           clientPoLineNo: r.clientPoLineNo ?? null,
+          lineDueDate: r.lineDueDate ?? null,
           itemName: r.itemName ?? null,
           opsCount: opsCounts.get(r.plan.id) ?? 0,
           derivedStatus: derivePlanStatus({

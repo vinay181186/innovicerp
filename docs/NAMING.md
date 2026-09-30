@@ -240,3 +240,6 @@ and survives only in the co-label "SO / WO"; `FI` appears nowhere — the system
 3. A label may be shortened only if the short form is unique across the whole app.
    `POL` qualified; `Rev` does not.
 4. A column header must name the FACT, not the row's subject. `Date` is not a fact.
+
+| Production Order's own target date (owner label 2026-09-30) | `PRO Target Date` | `targetDate` | `production_orders.target_date` | `Customer Dispatch Date` (on a Production Order) |
+| The SO / JWSO line's Due Date shown read-only on Create Production Order (owner label 2026-09-30) | `Customer Target Date` | `lineDueDate` | `sales_order_lines.due_date` / `job_work_order_lines.due_date` (read live) | — |

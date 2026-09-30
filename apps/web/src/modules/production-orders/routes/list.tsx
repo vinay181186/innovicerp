@@ -218,7 +218,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         meta: { tdClass: 'mono fw-700 td-num', thClass: 'th-num' },
       },
       {
-        header: 'Customer Dispatch Date',
+        header: 'PRO Target Date',
         accessorKey: 'targetDate',
         meta: { tdClass: 'mono' },
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{fmtDate(row.original.targetDate)}</span>,
