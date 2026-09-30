@@ -24,6 +24,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 import { ActivityAction } from '@innovic/shared';
@@ -40,6 +41,8 @@ function dateLike(v: unknown): string {
 }
 
 async function nextIssueCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'party_material_issues');
   const prefix = 'IN-PMI-';
   const rows = await tx
     .select({ code: partyMaterialIssues.code })
@@ -301,6 +304,8 @@ export async function createPartyMaterialIssue(
     }
 
     // 4) Insert issue
+    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+    await lockDocSeries(tx, companyId, 'party_material_issues');
     const code = input.code ?? (await nextIssueCode(tx, companyId));
     const inserted = await tx
       .insert(partyMaterialIssues)

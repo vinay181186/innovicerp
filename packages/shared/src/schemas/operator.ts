@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 
 const codeRegex = /^[A-Za-z0-9._-]+$/;
 
@@ -73,7 +74,7 @@ export interface BulkCreateOperatorsResponse {
 
 export const listOperatorsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean().optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

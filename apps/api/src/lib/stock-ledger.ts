@@ -141,6 +141,15 @@ export async function postStockMove(
   }
 
   const after = roundQty(input.txnType === 'in' ? before + qty : before - qty);
+  // S12 — stock never goes below zero, whatever the guard (a 'none' reversal
+  // included): read under the item lock above, so this is the real figure.
+  // Migration 0181's item_stock_balances_on_hand_nonneg is the database
+  // backstop; this is the sentence the user sees instead of its error.
+  if (input.txnType === 'out' && after < 0) {
+    throw new ConflictError(
+      `Item ${item.code}: ${label} (${qty}) cannot be more than In Stock (${before}) — stock cannot go below zero.`,
+    );
+  }
   // Serial cover (P38): every move of a serial item — adjust, count, issue,
   // dispatch — must leave On Hand ≥ the pieces registered as on the shelf.
   if (item.trackSerial && input.txnType === 'out') {

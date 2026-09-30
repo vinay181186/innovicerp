@@ -2049,7 +2049,8 @@ export const purchaseOrders = pgTable(
     vendorCodeText: text('vendor_code_text'),
     status: poStatusEnum('status').notNull().default('draft'),
     dueDate: date('due_date'),
-    taxType: text('tax_type'),
+    // 'sgst_cgst' | 'igst' | null — CHECK purchase_orders_tax_type_check (0182).
+    taxType: text('tax_type').$type<'sgst_cgst' | 'igst'>(),
     sgstPct: numeric('sgst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
     cgstPct: numeric('cgst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
     igstPct: numeric('igst_pct', { precision: 5, scale: 2 }).notNull().default('0'),

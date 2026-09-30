@@ -8,8 +8,11 @@
 // GST split: the invoice's Tax Type (0171); older invoices without one fall back
 // to home state (GSTIN prefix 24/Gujarat) → SGST+CGST, else IGST.
 //
-// Known gaps vs legacy (need a shared/API change — do NOT stub):
-//  - Bill To omits the client's ADDRESS; InvoiceDetail carries no address field.
+// Bill To prints the customer's address (A1) — read off the customer master by
+// the API (the invoice keeps no saved copy yet) — and each line its HSN (A4).
+// UOM prints blank when neither the SO line nor the item has one: never 'NOS'.
+//
+// Known gap vs legacy:
 //  - There is no 'INVOICE' print-template doc type yet, so no special notes /
 //    terms / footer blocks print; the sheet's own signatory line does.
 
@@ -25,8 +28,6 @@ import {
   challanDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
-
-const FALLBACK_UOM = 'NOS';
 
 const STATE_MAP: Record<string, string> = {
   '24': 'Gujarat',
@@ -118,18 +119,41 @@ function invoiceSheetModel(
         { label: `CGST @ ${gstPct / 2}%`, value: money(splitGst(gstAmount).cgst) },
       ];
 
-  const uoms = new Set(inv.lines.map((l) => l.uom?.trim() || FALLBACK_UOM));
+  const uoms = new Set(inv.lines.map((l) => l.uom?.trim() ?? ''));
   const totalQty = inv.lines.reduce((sum, l) => sum + l.qty, 0);
   // Quantities print rounded to 2 dp with no trailing zeros: 12, 2.5, 0.33 --
   // a float sum (0.1 + 0.2) must not print as 0.30000000000000004.
   const qtyText = (n: number): string => String(Math.round(n * 100) / 100);
 
+  // Billing address: street, then "City – Pincode" (A1). State prints on its
+  // own row below, with the GST state code.
+  const addressLines = [
+    inv.clientAddressLine1?.trim() ?? '',
+    [inv.clientCity?.trim(), inv.clientPincode?.trim()].filter(Boolean).join(' – '),
+  ].filter(Boolean);
   const recipientFields: SheetField[] = [
     { label: 'Customer Code', value: inv.clientCode ?? '', variant: 'mono' },
     { label: 'Name', value: inv.clientName ?? '', variant: 'name' },
+    ...(addressLines.length > 0
+      ? [
+          {
+            label: 'Address',
+            value: addressLines[0] ?? '',
+            ...(addressLines.length > 1 ? { extra: addressLines.slice(1) } : {}),
+          },
+        ]
+      : []),
     { label: 'GSTIN', value: gst, variant: 'mono' },
   ];
-  if (STATE_MAP[stateCode]) {
+  // State: the customer master's State (with the GSTIN's state code when there
+  // is a GSTIN); else, as before, the name the GSTIN prefix gives.
+  const masterState = inv.clientState?.trim() ?? '';
+  if (masterState) {
+    recipientFields.push({
+      label: 'State',
+      value: gst ? `${masterState}, Code: ${stateCode}` : masterState,
+    });
+  } else if (STATE_MAP[stateCode]) {
     recipientFields.push({ label: 'State', value: `${STATE_MAP[stateCode]}, Code: ${stateCode}` });
   }
 
@@ -159,7 +183,8 @@ function invoiceSheetModel(
       itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
       pol: l.clientPoLineNo ?? null,
       itemName: l.itemName,
-      uom: l.uom?.trim() || FALLBACK_UOM,
+      uom: l.uom?.trim() ?? '',
+      hsn: l.hsnCode?.trim() || null,
       qty: qtyText(l.qty),
       rate: money(l.rate),
       amount: money(l.lineAmount),

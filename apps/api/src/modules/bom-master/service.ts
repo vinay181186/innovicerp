@@ -46,6 +46,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
@@ -172,6 +173,8 @@ function assertNoDuplicateChildItems(
 // finds the highest numeric suffix used so far and adds 1, zero-padded
 // to 4 digits.
 async function nextBomNo(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'bom_masters');
   const rows = (await tx.execute(sql`
     SELECT bom_no FROM public.bom_masters
     WHERE company_id = ${companyId}::uuid
@@ -656,6 +659,8 @@ export async function createBomMaster(
     assertNoDuplicateChildItems(input.lines, itemsLookup);
 
     // Auto bomNo when not supplied; reject if supplied + already used.
+    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+    await lockDocSeries(tx, companyId, 'bom_masters');
     const bomNo = input.bomNo?.trim() || (await nextBomNo(tx, companyId));
     if (input.bomNo) {
       const dup = await tx

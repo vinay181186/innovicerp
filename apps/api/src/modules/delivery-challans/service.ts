@@ -23,14 +23,17 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
+import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
   ConflictError,
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosedForPoLine } from '../../lib/production-order-stop';
 import { lockPoLinesForSend, sumSentOnPoLines } from '../../lib/po-line-sent';
+import { assertRowUpdated } from '../../lib/row-lock';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
@@ -802,20 +805,14 @@ function dcDetail(code: string, vendorCodeText: string | null | undefined): stri
   return vendorCodeText ? `${code} — ${vendorCodeText}` : code;
 }
 
+/** Vendor exists, is in this company and is ACTIVE (A10 — a new challan is a
+ *  new link). Returns the vendor's code for the challan's vendor-code column. */
 async function assertVendorExists(
   tx: DbTransaction,
   vendorId: string,
   companyId: string,
-): Promise<void> {
-  const rows = await tx
-    .select({ id: vendors.id })
-    .from(vendors)
-    .where(
-      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
-    )
-    .limit(1);
-  if (rows.length === 0)
-    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
+): Promise<string> {
+  return (await assertActiveParty(tx, 'vendor', vendorId, companyId)).code;
 }
 
 async function assertPurchaseOrderExists(
@@ -997,6 +994,9 @@ function assignLineNos(
  *
  *  A new challan is born at revision 1 — IN-DC-00006/R1. */
 async function nextDcCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering a challan — OSP and NC return
+  // challans share this series and this lock (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'delivery_challans');
   const prefix = 'IN-DC-';
   const rows = await tx
     .select({ code: deliveryChallans.code })
@@ -1040,6 +1040,7 @@ export async function createDeliveryChallan(
     // edit path is ever added, it must bump the code the way updatePurchaseOrder
     // does: bumpDocRevision, and rewrite every stored text copy of the old
     // number in the same transaction.
+    await lockDocSeries(tx, companyId, 'delivery_challans');
     const supplied = input.header.code?.trim();
     const suppliedRev = supplied ? parseDocRevision(supplied) : null;
     const code = suppliedRev
@@ -1063,8 +1064,14 @@ export async function createDeliveryChallan(
     // Vendor/item may be an FK OR free text (ADR-015 / ADR-012 #10), mirroring
     // the Job-Work PO this DC is generated from. Only validate the FK when set;
     // vendor_code_text / item_code_text always carry the human identifier.
+    // The vendor-code column holds the VENDOR's code (A32) — the master's code
+    // when the vendor is linked, never the PO number the screen used to send.
+    let vendorCodeText = input.header.vendorCodeText?.trim() || null;
     if (input.header.vendorId) {
-      await assertVendorExists(tx, input.header.vendorId, companyId);
+      vendorCodeText = await assertVendorExists(tx, input.header.vendorId, companyId);
+    }
+    if (!vendorCodeText) {
+      throw new ValidationError('Vendor is required. Please select the Vendor.');
     }
     if (input.header.purchaseOrderId) {
       await assertPurchaseOrderExists(tx, input.header.purchaseOrderId, companyId);
@@ -1128,7 +1135,7 @@ export async function createDeliveryChallan(
         purchaseOrderId: input.header.purchaseOrderId ?? null,
         poCodeText: input.header.poCodeText,
         vendorId: input.header.vendorId ?? null,
-        vendorCodeText: input.header.vendorCodeText,
+        vendorCodeText,
         salesOrderLineId: input.header.salesOrderLineId ?? null,
         soRefText: input.header.soRefText ?? null,
         transport: input.header.transport ?? null,
@@ -1246,6 +1253,9 @@ export async function cancelDeliveryChallan(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // S6 — lock the challan first. A cancel racing a receive (or a second
+    // cancel) waits here, then re-reads the committed status / receipts and is
+    // refused by the checks below, so the op's sent qty is reversed only once.
     const headerRows = await tx
       .select()
       .from(deliveryChallans)
@@ -1256,11 +1266,14 @@ export async function cancelDeliveryChallan(
           isNull(deliveryChallans.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const header = headerRows[0];
     if (!header) throw new NotFoundError('DC not found. Refresh the page.');
     if (header.status === 'cancelled') {
-      throw new ConflictError(`DC ${header.code} is already Cancelled.`);
+      throw new ConflictError(
+        `DC ${header.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
+      );
     }
     if (header.status === 'received') {
       throw new ConflictError(`Cannot cancel DC ${header.code}: it is Received.`);
@@ -1280,7 +1293,9 @@ export async function cancelDeliveryChallan(
       .from(deliveryChallanLines)
       .where(
         and(eq(deliveryChallanLines.deliveryChallanId, id), isNull(deliveryChallanLines.deletedAt)),
-      );
+      )
+      .orderBy(asc(deliveryChallanLines.id))
+      .for('update');
 
     const opCascades: Array<{ jcCode: string; jobCardId: string; opSeq: number; qty: number }> = [];
     if (header.ncId) {
@@ -1325,7 +1340,7 @@ export async function cancelDeliveryChallan(
     }
 
     const cancelledAt = new Date();
-    await tx
+    const cancelledRows = await tx
       .update(deliveryChallans)
       .set({
         status: 'cancelled',
@@ -1335,7 +1350,10 @@ export async function cancelDeliveryChallan(
         updatedBy: user.id,
         updatedAt: cancelledAt,
       })
-      .where(eq(deliveryChallans.id, id));
+      // Cancel once: only from the status read under the lock above.
+      .where(and(eq(deliveryChallans.id, id), eq(deliveryChallans.status, header.status)))
+      .returning({ id: deliveryChallans.id });
+    assertRowUpdated(cancelledRows, `DC ${header.code}`);
 
     const cancelledQty = lineRows.reduce((sum, dl) => sum + Number(dl.qty), 0);
     await emitActivityLog(
@@ -1386,6 +1404,8 @@ async function generateReceiptCode(
   // Format: RCPT-<dcCode>-NN (zero-padded, 1-based per DC). Read the existing
   // count + 1 inside the same tx. Re-checks with a uniqueness probe loop in
   // case of concurrent inserts (extremely rare; bail after 5 attempts).
+  // S2: the receipt series lock makes two receipts on one DC queue up.
+  await lockDocSeries(tx, companyId, 'delivery_challan_receipts');
   for (let attempt = 0; attempt < 5; attempt++) {
     const countRows = (await tx.execute(sql`
       SELECT COUNT(*)::int AS n
@@ -1430,6 +1450,10 @@ export async function receiveAgainstDeliveryChallan(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // S6 — lock the challan and its lines before reading what was already
+    // received: two receipts (or a receipt and a cancel) on one DC serialize,
+    // and the second re-reads the first one's receipt lines, so Received can
+    // never pass Sent.
     const headerRows = await tx
       .select()
       .from(deliveryChallans)
@@ -1440,7 +1464,8 @@ export async function receiveAgainstDeliveryChallan(
           isNull(deliveryChallans.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const dcHeader = headerRows[0];
     if (!dcHeader) throw new NotFoundError('DC not found. Refresh the page.');
     if (dcHeader.status === 'cancelled') {
@@ -1462,7 +1487,9 @@ export async function receiveAgainstDeliveryChallan(
           eq(deliveryChallanLines.companyId, companyId),
           isNull(deliveryChallanLines.deletedAt),
         ),
-      );
+      )
+      .orderBy(asc(deliveryChallanLines.id))
+      .for('update');
     const dcLineById = new Map(dcLineRows.map((l) => [l.id, l]));
 
     const inputLineIds = input.lines.map((l) => l.deliveryChallanLineId);
@@ -1603,12 +1630,24 @@ export async function receiveAgainstDeliveryChallan(
     // "Against JWPO / DC" tab can land on the GRN it just raised.
     let autoGrn: { id: string; code: string } | null = null;
     if (grnLines.length > 0) {
+      // The GRN's vendor-code copy is the VENDOR's code (A32): the master's
+      // code when the challan has a linked vendor — never the challan's old
+      // text, which on pre-0182 challans held the PO number.
+      let grnVendorCodeText = dcHeader.vendorCodeText;
+      if (dcHeader.vendorId) {
+        const [v] = await tx
+          .select({ code: vendors.code })
+          .from(vendors)
+          .where(and(eq(vendors.id, dcHeader.vendorId), eq(vendors.companyId, companyId)))
+          .limit(1);
+        if (v) grnVendorCodeText = v.code;
+      }
       const grn = await insertGrnForOspReceipt(tx, companyId, user, {
         grnDate: input.receiptDate,
         purchaseOrderId: dcHeader.purchaseOrderId,
         poCodeText: dcHeader.poCodeText,
         vendorId: dcHeader.vendorId,
-        vendorCodeText: dcHeader.vendorCodeText,
+        vendorCodeText: grnVendorCodeText,
         dcNo: dcHeader.code,
         deliveryChallanId: dcHeader.id,
         invoiceNo: receiptHeader.vendorInvoiceText,

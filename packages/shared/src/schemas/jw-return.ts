@@ -42,6 +42,8 @@ export const jwReturnChallanListItemSchema = jwReturnChallanSchema.extend({
   itemCode: z.string().nullable().default(null),
   itemRevision: z.string().nullable().default(null),
   uom: z.string().nullable().default(null),
+  /** HSN off the item master (items.hsn_code), printed on the challan (A4). */
+  hsnCode: z.string().nullable().optional(),
   clientPoNo: z.string().nullable().default(null),
 });
 export type JwReturnChallanListItem = z.infer<typeof jwReturnChallanListItemSchema>;

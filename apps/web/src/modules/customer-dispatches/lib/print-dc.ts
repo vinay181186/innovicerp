@@ -20,8 +20,6 @@ import {
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
 
-const FALLBACK_UOM = 'NOS';
-
 function dispatchSheetModel(
   d: CustomerDispatchDetail,
   client: Client | null | undefined,
@@ -53,7 +51,8 @@ function dispatchSheetModel(
   if (d.vehicleNo)
     documentFields.push({ label: 'Vehicle No.', value: d.vehicleNo, variant: 'mono' });
 
-  const uomOf = (u: string | null | undefined): string => u?.trim() || FALLBACK_UOM;
+  // Blank when the line has no unit — never an invented 'NOS' (A29).
+  const uomOf = (u: string | null | undefined): string => u?.trim() ?? '';
   const uoms = new Set(d.lines.map((l) => uomOf(l.uom)));
   const totalQty = d.lines.reduce((s, l) => s + l.qty, 0);
 
@@ -72,7 +71,8 @@ function dispatchSheetModel(
       pol: l.clientPoLineNo,
       itemName: l.itemName,
       uom: uomOf(l.uom),
-      hsn: null,
+      // HSN off the item master (A4); the column prints only when a line has one.
+      hsn: l.hsnCode?.trim() || null,
       qty: l.qty.toFixed(2),
       remarks: null,
     })),

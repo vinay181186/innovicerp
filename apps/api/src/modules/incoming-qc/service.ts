@@ -111,7 +111,10 @@ async function creditOutsourceReturn(
     })
     .from(jcOps)
     .where(and(eq(jcOps.id, jcOpId), isNull(jcOps.deletedAt)))
-    .limit(1);
+    .limit(1)
+    // S6 — lock the op: two GRN lines of the same op inspected at once
+    // serialize here, and the second reads the first one's returned qty.
+    .for('update');
   const op = opRows[0];
   // Dual-lane (ADR-081): also credit the return onto a PROCESS op that carries an
   // OSP balance (it has a sent qty), not only whole op_type='outsource' ops.
@@ -131,7 +134,8 @@ async function creditOutsourceReturn(
   await tx
     .update(jcOps)
     .set({
-      outsourceReturnedQty: newReturned,
+      // S6 — one-statement counter; migration 0181's CHECK keeps it ≤ sent.
+      outsourceReturnedQty: sql`${jcOps.outsourceReturnedQty} + ${acceptedDelta}`,
       // Flip to 'received' once the whole sent qty is back; partials keep their
       // current status (still 'sent'/'at_vendor') but now carry a return count.
       ...(fullyReturned ? { outsourceStatus: 'received' as const } : {}),

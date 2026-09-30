@@ -29,6 +29,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { assertActiveParty } from '../../lib/active-party';
 import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -37,6 +38,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { emitActivityLog } from '../activity-log/service';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { DEFAULT_PAYMENT_TERMS_DAYS } from './constants';
@@ -248,6 +250,8 @@ async function getInvoiceInternal(
       // Unit for the printed UOM column: the SO line's (what the customer
       // ordered in), else the item master's. Display only, not frozen.
       uom: sql<string | null>`COALESCE(${salesOrderLines.uom}::text, ${items.uom}::text)`,
+      // HSN off the item master for the tax-invoice print (A4). Display only.
+      hsnCode: items.hsnCode,
     })
     .from(invoiceLines)
     // LEFT, never inner: invoice_lines.sales_order_line_id is nullable, and a
@@ -263,6 +267,7 @@ async function getInvoiceInternal(
     itemRevision: l.itemRevision ?? null,
     clientPoLineNo: l.clientPoLineNo ?? null,
     uom: l.uom ?? null,
+    hsnCode: l.hsnCode ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemNameText,
     qty: l.qty,
@@ -292,10 +297,30 @@ async function getInvoiceInternal(
     .where(eq(salesOrders.id, inv.salesOrderId))
     .limit(1);
 
+  // The customer's billing address for the print (A1). The invoice keeps no
+  // saved copy of it, so it is read off the customer master.
+  const addrRows = inv.clientId
+    ? await tx
+        .select({
+          addressLine1: clients.addressLine1,
+          city: clients.city,
+          state: clients.state,
+          pincode: clients.pincode,
+        })
+        .from(clients)
+        .where(and(eq(clients.id, inv.clientId), eq(clients.companyId, companyId)))
+        .limit(1)
+    : [];
+  const addr = addrRows[0];
+
   return {
     ...rowToInvoice(inv),
     clientCode: inv.clientCodeText,
     clientGst: inv.clientGstText,
+    clientAddressLine1: addr?.addressLine1 ?? null,
+    clientCity: addr?.city ?? null,
+    clientState: addr?.state ?? null,
+    clientPincode: addr?.pincode ?? null,
     paymentTermsDays: inv.paymentTermsDays,
     taxType: inv.taxType === 'sgst_cgst' || inv.taxType === 'igst' ? inv.taxType : null,
     remarks: inv.remarks,
@@ -549,6 +574,8 @@ export async function getInvoiceableSo(
 }
 
 async function nextInvoiceCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'invoices');
   const rows = await tx
     .select({ code: invoices.code })
     .from(invoices)
@@ -604,6 +631,9 @@ export async function createInvoice(
     if (!so) throw new NotFoundError('SO not found. Refresh the page.');
     // ADR-185 — a draft or cancelled order is not billed.
     assertSoAcceptsWork(so.status, so.code, 'it cannot be invoiced');
+    // A new invoice to a customer switched off in the master is refused
+    // (A10 inactive-master rule — 409 "Customer X is disabled", as in ERPNext).
+    if (so.clientId) await assertActiveParty(tx, 'customer', so.clientId, companyId);
     // One invoice lists an SO line once: the To Invoice check below is per
     // line, so a repeated line would bill the same pieces twice.
     const seenLines = new Set<string>();

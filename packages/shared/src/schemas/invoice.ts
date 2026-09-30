@@ -120,8 +120,11 @@ export const invoiceLineRowSchema = z.object({
    *  Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   /** Unit for the printed UOM column: the SO line's unit, else the item
-   *  master's (items.uom). Null when neither exists; the print shows NOS. */
+   *  master's (items.uom). Null when neither exists; the print leaves it blank. */
   uom: z.string().nullable().default(null),
+  /** HSN code off the item master (items.hsn_code) — printed on the tax
+   *  invoice (A4). Display only, not frozen; null when the item has none. */
+  hsnCode: z.string().nullable().optional(),
   // Stored snapshot fallback captured at invoice creation.
   itemCodeText: z.string().nullable(),
   itemName: z.string(),
@@ -178,6 +181,13 @@ export const invoiceDetailSchema = invoiceRowSchema.extend({
   priceVisible: z.boolean().optional(),
   clientCode: z.string().nullable(),
   clientGst: z.string().nullable(),
+  /** The customer's billing address for the print (A1). The invoice has no
+   *  saved copy of it yet, so it is read live off the customer master
+   *  (clients.address_line1 / city / state / pincode); null when not set. */
+  clientAddressLine1: z.string().nullable().optional(),
+  clientCity: z.string().nullable().optional(),
+  clientState: z.string().nullable().optional(),
+  clientPincode: z.string().nullable().optional(),
   paymentTermsDays: z.number().int().nonnegative(),
   /** Null on invoices raised before migration 0171 — those print the split the
    *  old way (from the customer's GSTIN). */

@@ -30,7 +30,6 @@ import {
 
 // The unit comes off the JWSO line being billed (`uom` on the register row).
 // NOS — the unit the whole system assumes — only when that is blank.
-const FALLBACK_UOM = 'NOS';
 
 // The one statement this document must never print without.
 //
@@ -104,7 +103,8 @@ export function printJwInvoice(args: {
               { label: `CGST @ ${gstPct / 2}%`, value: money(cgstAmount) },
             ]
           : [{ label: `GST @ ${gstPct}%`, value: money(gstAmount) }];
-  const uom = invoice.uom?.trim() || FALLBACK_UOM;
+  // Blank when there is no unit — never an invented 'NOS' (A29).
+  const uom = invoice.uom?.trim() ?? '';
 
   const clientName = client?.name ?? invoice.clientName ?? '';
   // Full postal address for the party box — line 1 plus city / state / pincode,

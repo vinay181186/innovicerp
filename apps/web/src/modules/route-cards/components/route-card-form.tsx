@@ -1207,8 +1207,10 @@ function RouteCardVendorCell({
   onChange: (vendor: Vendor | null) => void;
 }): React.JSX.Element {
   const [search, setSearch] = useState('');
+  // Active vendors only (A10) — the server refuses a newly linked inactive one.
   const { data, isFetching } = useVendorsList({
     ...(search.trim() ? { search: search.trim() } : {}),
+    isActive: true,
     limit: 50,
     offset: 0,
   });

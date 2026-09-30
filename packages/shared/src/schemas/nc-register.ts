@@ -16,6 +16,7 @@
 //   - query: list filters (search, status, reason, jc, date range).
 
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 import { type NcDisposition, NC_DISPOSITIONS } from '../enums/nc-disposition';
 import { NC_REASON_CATEGORIES } from '../enums/nc-reason-category';
 import { type NcStatus, NC_STATUSES } from '../enums/nc-status';
@@ -269,7 +270,7 @@ export const listNcRegisterQuerySchema = z.object({
    *  +New DC screen; the NC detail page raises the same challan and both go
    *  through createNcDc, so the one-challan-per-NC lock keeps a qty from being
    *  returned twice however it is reached. */
-  pendingRtvChallan: z.coerce.boolean().optional(),
+  pendingRtvChallan: queryBoolean().optional(),
   fromDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

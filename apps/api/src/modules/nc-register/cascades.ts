@@ -58,8 +58,10 @@ import {
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { nextNcCodeFrom } from '../../lib/nc-code';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { jobCardOrderChainCte } from '../../lib/production-order-link';
+import { assertRowUpdated } from '../../lib/row-lock';
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
@@ -192,6 +194,23 @@ export interface DisposeNcCascadeResult {
   opLogId?: string;
 }
 
+/** S3 — write a disposition onto an NC only while it is still NC Raised
+ *  ('pending'). The row is locked by disposeNcCascade first; this is the second
+ *  half of the rule: 0 rows means another user decided it first. */
+async function setPendingNc(
+  tx: DbTransaction,
+  ncId: string,
+  ncCode: string,
+  values: Partial<typeof ncRegister.$inferInsert>,
+): Promise<void> {
+  const rows = await tx
+    .update(ncRegister)
+    .set(values)
+    .where(and(eq(ncRegister.id, ncId), eq(ncRegister.status, 'pending')))
+    .returning({ id: ncRegister.id });
+  assertRowUpdated(rows, `NC ${ncCode}`);
+}
+
 /**
  * Atomically apply a disposition to an NC + run its cascades.
  *
@@ -206,7 +225,7 @@ export async function disposeNcCascade(
   input: DisposeNcInput,
   ctx: DisposeNcContext,
 ): Promise<DisposeNcCascadeResult> {
-  // Re-read NC inside this tx — defends against concurrent dispose.
+  // Re-read NC inside this tx, LOCKED — defends against concurrent dispose.
   const ncRows = await tx
     .select()
     .from(ncRegister)
@@ -217,14 +236,19 @@ export async function disposeNcCascade(
         isNull(ncRegister.deletedAt),
       ),
     )
-    .limit(1);
+    .limit(1)
+    // S3 — lock the NC: a second decision on it (rework in one tab, scrap in
+    // another) waits here, then re-reads the committed row and is refused by
+    // the status check below instead of committing a second disposition.
+    .for('update');
   const loaded = ncRows[0];
   if (!loaded) {
     throw new ValidationError('NC not found. Refresh the page.');
   }
   if (loaded.status !== 'pending') {
     throw new ConflictError(
-      `NC ${loaded.code} is already ${labelOf(NC_STATUS_LABELS, loaded.status)}.`,
+      `NC ${loaded.code} is already ${labelOf(NC_STATUS_LABELS, loaded.status)} — ` +
+        'someone else may have decided it just now. Reload the page.',
     );
   }
 
@@ -320,10 +344,10 @@ export async function disposeNcCascade(
       .returning({ id: ncRegister.id, code: ncRegister.code });
     const sib = sibling[0];
     if (!sib) throw new ValidationError('Could not split the NC. Try again.');
-    await tx
-      .update(ncRegister)
-      .set({ rejectedQty: qty.toFixed(2), updatedBy: ctx.userId })
-      .where(eq(ncRegister.id, ncId));
+    await setPendingNc(tx, ncId, loaded.code, {
+      rejectedQty: qty.toFixed(2),
+      updatedBy: ctx.userId,
+    });
     nc = { ...loaded, rejectedQty: qty.toFixed(2) };
     result.remainderNcId = sib.id;
     result.remainderNcCode = sib.code;
@@ -378,24 +402,21 @@ export async function disposeNcCascade(
     }
     if (input.action === 'scrap') {
       // Written off: the pieces are gone for good.
-      await tx
-        .update(ncRegister)
-        .set({
-          status: 'closed',
-          disposition: 'scrap',
-          dispositionDate: today,
-          dispositionByText: ctx.userName,
-          // ADR-197 — the live user behind the text snapshot.
-          dispositionBy: ctx.userId,
-          dispositionAt: new Date(),
-          dispositionRemarks: input.remarks ?? null,
-          failedQty: rejectedQtyInt.toFixed(2),
-          scrapCost: Math.max(0, input.scrapCost ?? 0).toFixed(2),
-          closedAt: new Date(),
-          closedBy: ctx.userId,
-          updatedBy: ctx.userId,
-        })
-        .where(eq(ncRegister.id, ncId));
+      await setPendingNc(tx, ncId, loaded.code, {
+        status: 'closed',
+        disposition: 'scrap',
+        dispositionDate: today,
+        dispositionByText: ctx.userName,
+        // ADR-197 — the live user behind the text snapshot.
+        dispositionBy: ctx.userId,
+        dispositionAt: new Date(),
+        dispositionRemarks: input.remarks ?? null,
+        failedQty: rejectedQtyInt.toFixed(2),
+        scrapCost: Math.max(0, input.scrapCost ?? 0).toFixed(2),
+        closedAt: new Date(),
+        closedBy: ctx.userId,
+        updatedBy: ctx.userId,
+      });
       result.status = 'closed';
       return result;
     }
@@ -403,20 +424,17 @@ export async function disposeNcCascade(
     // return challan is raised next (createNcDc), the PO line stops counting
     // the pieces while they are out (recalcPoLineReceivedQty), and the vendor's
     // replacement is received and inspected against this NC.
-    await tx
-      .update(ncRegister)
-      .set({
-        status: 'disposed',
-        disposition: 'return_to_vendor',
-        dispositionDate: today,
-        dispositionByText: ctx.userName,
-        // ADR-197 — the live user behind the text snapshot.
-        dispositionBy: ctx.userId,
-        dispositionAt: new Date(),
-        dispositionRemarks: input.remarks ?? null,
-        updatedBy: ctx.userId,
-      })
-      .where(eq(ncRegister.id, ncId));
+    await setPendingNc(tx, ncId, loaded.code, {
+      status: 'disposed',
+      disposition: 'return_to_vendor',
+      dispositionDate: today,
+      dispositionByText: ctx.userName,
+      // ADR-197 — the live user behind the text snapshot.
+      dispositionBy: ctx.userId,
+      dispositionAt: new Date(),
+      dispositionRemarks: input.remarks ?? null,
+      updatedBy: ctx.userId,
+    });
     result.status = 'disposed';
     return result;
   }
@@ -426,22 +444,19 @@ export async function disposeNcCascade(
     // raises a child card instead, so it is deliberately ignored here.
     const child = await createRecoveryJobCard(tx, nc, input.action, qty, ctx.user);
     const status = input.action === 'rework' ? 'under_rework' : 'under_repair';
-    await tx
-      .update(ncRegister)
-      .set({
-        status,
-        disposition: input.action,
-        dispositionDate: today,
-        dispositionByText: ctx.userName,
-        // ADR-197 — the live user behind the text snapshot.
-        dispositionBy: ctx.userId,
-        dispositionAt: new Date(),
-        dispositionRemarks: input.remarks ?? null,
-        childJobCardId: child.id,
-        reworkJcCodeText: child.code,
-        updatedBy: ctx.userId,
-      })
-      .where(eq(ncRegister.id, ncId));
+    await setPendingNc(tx, ncId, loaded.code, {
+      status,
+      disposition: input.action,
+      dispositionDate: today,
+      dispositionByText: ctx.userName,
+      // ADR-197 — the live user behind the text snapshot.
+      dispositionBy: ctx.userId,
+      dispositionAt: new Date(),
+      dispositionRemarks: input.remarks ?? null,
+      childJobCardId: child.id,
+      reworkJcCodeText: child.code,
+      updatedBy: ctx.userId,
+    });
     result.status = status;
     result.childJcId = child.id;
     result.childJcCode = child.code;
@@ -450,32 +465,29 @@ export async function disposeNcCascade(
 
   if (input.action === 'scrap') {
     const scrapCost = Math.max(0, input.scrapCost ?? 0);
-    await tx
-      .update(ncRegister)
-      .set({
-        status: 'closed',
-        disposition: 'scrap',
-        dispositionDate: today,
-        dispositionByText: ctx.userName,
-        // ADR-197 — the live user behind the text snapshot.
-        dispositionBy: ctx.userId,
-        dispositionAt: new Date(),
-        dispositionRemarks: input.remarks ?? null,
-        scrapCost: scrapCost.toFixed(2),
-        // Ledger (QC-NC audit 2026-09-21, gap 8): the scrapped pieces are
-        // written off on THIS row, so cleared + failed = rejected and the NC's
-        // open qty reads 0 rather than the whole rejected qty after close.
-        // Before, only the ANCESTOR NCs received `failed` (via the climb
-        // below) and a top-level scrap left its own ledger at 0/0. Readers
-        // are unaffected: v_nc_op_breakup.scrap_qty and the production-order
-        // loss sum both key scrap on disposition + rejected_qty, and
-        // nc_closed_qty excludes scrap outright.
-        failedQty: rejectedQtyInt.toFixed(2),
-        closedAt: new Date(),
-        closedBy: ctx.userId,
-        updatedBy: ctx.userId,
-      })
-      .where(eq(ncRegister.id, ncId));
+    await setPendingNc(tx, ncId, loaded.code, {
+      status: 'closed',
+      disposition: 'scrap',
+      dispositionDate: today,
+      dispositionByText: ctx.userName,
+      // ADR-197 — the live user behind the text snapshot.
+      dispositionBy: ctx.userId,
+      dispositionAt: new Date(),
+      dispositionRemarks: input.remarks ?? null,
+      scrapCost: scrapCost.toFixed(2),
+      // Ledger (QC-NC audit 2026-09-21, gap 8): the scrapped pieces are
+      // written off on THIS row, so cleared + failed = rejected and the NC's
+      // open qty reads 0 rather than the whole rejected qty after close.
+      // Before, only the ANCESTOR NCs received `failed` (via the climb
+      // below) and a top-level scrap left its own ledger at 0/0. Readers
+      // are unaffected: v_nc_op_breakup.scrap_qty and the production-order
+      // loss sum both key scrap on disposition + rejected_qty, and
+      // nc_closed_qty excludes scrap outright.
+      failedQty: rejectedQtyInt.toFixed(2),
+      closedAt: new Date(),
+      closedBy: ctx.userId,
+      updatedBy: ctx.userId,
+    });
     result.status = 'closed';
     // If this scrapped NC sits on a recovery child, the pieces are genuinely
     // gone — climb the failed qty up the ancestor chain so every ancestor NC
@@ -555,30 +567,27 @@ export async function disposeNcCascade(
       })
       .returning({ id: opLog.id });
 
-    await tx
-      .update(ncRegister)
-      .set({
-        status: 'closed',
-        disposition: 'use_as_is',
-        dispositionDate: today,
-        dispositionByText: ctx.userName,
-        // ADR-197 — the live user behind the text snapshot.
-        dispositionBy: ctx.userId,
-        dispositionAt: new Date(),
-        dispositionRemarks: input.remarks ?? null,
-        // Ledger (QC-NC audit 2026-09-21, gap 8): the pieces are accepted with
-        // concession, i.e. CLEARED — the qc row above is the same mechanism a
-        // rework child's recovery uses, so the NC books it the same way and
-        // cleared + failed = rejected. Before, the row closed with 0/0 and its
-        // open qty read the whole rejected qty forever. v_nc_op_breakup
-        // (0131) counts a closed non-scrap NC by cleared_qty once a ledger is
-        // present, which equals what it counted before (rejected_qty).
-        clearedQty: rejectedQtyInt.toFixed(2),
-        closedAt: new Date(),
-        closedBy: ctx.userId,
-        updatedBy: ctx.userId,
-      })
-      .where(eq(ncRegister.id, ncId));
+    await setPendingNc(tx, ncId, loaded.code, {
+      status: 'closed',
+      disposition: 'use_as_is',
+      dispositionDate: today,
+      dispositionByText: ctx.userName,
+      // ADR-197 — the live user behind the text snapshot.
+      dispositionBy: ctx.userId,
+      dispositionAt: new Date(),
+      dispositionRemarks: input.remarks ?? null,
+      // Ledger (QC-NC audit 2026-09-21, gap 8): the pieces are accepted with
+      // concession, i.e. CLEARED — the qc row above is the same mechanism a
+      // rework child's recovery uses, so the NC books it the same way and
+      // cleared + failed = rejected. Before, the row closed with 0/0 and its
+      // open qty read the whole rejected qty forever. v_nc_op_breakup
+      // (0131) counts a closed non-scrap NC by cleared_qty once a ledger is
+      // present, which equals what it counted before (rejected_qty).
+      clearedQty: rejectedQtyInt.toFixed(2),
+      closedAt: new Date(),
+      closedBy: ctx.userId,
+      updatedBy: ctx.userId,
+    });
 
     result.status = 'closed';
     const insertedId = inserted[0]?.id;
@@ -672,20 +681,17 @@ export async function disposeNcCascade(
     //
     // The challan itself is raised by service.createNcDc (design §5); the PO
     // received-qty adjustment of §12.2 happens there, at DC time, not here.
-    await tx
-      .update(ncRegister)
-      .set({
-        status: 'disposed',
-        disposition: 'return_to_vendor',
-        dispositionDate: today,
-        dispositionByText: ctx.userName,
-        // ADR-197 — the live user behind the text snapshot.
-        dispositionBy: ctx.userId,
-        dispositionAt: new Date(),
-        dispositionRemarks: input.remarks ?? null,
-        updatedBy: ctx.userId,
-      })
-      .where(eq(ncRegister.id, ncId));
+    await setPendingNc(tx, ncId, loaded.code, {
+      status: 'disposed',
+      disposition: 'return_to_vendor',
+      dispositionDate: today,
+      dispositionByText: ctx.userName,
+      // ADR-197 — the live user behind the text snapshot.
+      dispositionBy: ctx.userId,
+      dispositionAt: new Date(),
+      dispositionRemarks: input.remarks ?? null,
+      updatedBy: ctx.userId,
+    });
     result.status = 'disposed';
     return result;
   }
@@ -831,24 +837,21 @@ export async function disposeNcCascade(
   // so this write would have dropped make_fresh pieces out of the op's
   // "closed" strip; 0138 keys make_fresh on rejected_qty regardless. The
   // production-order loss sum already keys make_fresh on disposition.
-  await tx
-    .update(ncRegister)
-    .set({
-      status: 'closed',
-      disposition: 'make_fresh',
-      dispositionDate: today,
-      dispositionByText: ctx.userName,
-      // ADR-197 — the live user behind the text snapshot.
-      dispositionBy: ctx.userId,
-      dispositionAt: new Date(),
-      dispositionRemarks: input.remarks ?? null,
-      reworkJcCodeText: newJc.code,
-      failedQty: rejectedQtyInt.toFixed(2),
-      closedAt: new Date(),
-      closedBy: ctx.userId,
-      updatedBy: ctx.userId,
-    })
-    .where(eq(ncRegister.id, ncId));
+  await setPendingNc(tx, ncId, loaded.code, {
+    status: 'closed',
+    disposition: 'make_fresh',
+    dispositionDate: today,
+    dispositionByText: ctx.userName,
+    // ADR-197 — the live user behind the text snapshot.
+    dispositionBy: ctx.userId,
+    dispositionAt: new Date(),
+    dispositionRemarks: input.remarks ?? null,
+    reworkJcCodeText: newJc.code,
+    failedQty: rejectedQtyInt.toFixed(2),
+    closedAt: new Date(),
+    closedBy: ctx.userId,
+    updatedBy: ctx.userId,
+  });
 
   // If this NC sits on a recovery CHILD, the written-off pieces are gone from
   // the whole chain exactly as a scrap is (the supplementary JC replaces them
@@ -884,6 +887,9 @@ export async function disposeNcCascade(
  * merely contains a slash is left alone — only a known split tail is removed.
  */
 async function nextSplitNcCode(tx: DbTransaction, companyId: string, nc: NcRow): Promise<string> {
+  // S2: the same per-company NC number lock nextNcCode takes, so two splits
+  // of one NC at the same moment cannot both pick `/2`.
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`nc_code:${companyId}`}))`);
   const base = nc.splitFromNcId ? nc.code.replace(/\/\d+$/, '') : nc.code;
   for (let i = 2; ; i++) {
     const candidate = `${base}/${i}`;
@@ -912,6 +918,8 @@ async function nextSupplementaryJcCode(
   companyId: string,
   originCode: string,
 ): Promise<string> {
+  // S2: queue behind any other save numbering a job card (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'job_cards');
   const prefix = `${originCode}-S`;
   const existing = await tx
     .select({ code: jobCards.code })

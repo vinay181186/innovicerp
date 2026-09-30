@@ -69,6 +69,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { assertActivePartiesBatch } from '../../lib/active-party';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { requireWriteRole } from '../../lib/auth';
 import { resolveRmItem } from '../../lib/rm-item';
@@ -80,6 +81,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { emitActivityLog } from '../activity-log/service';
 import type {
   CreateRouteCardInput,
@@ -190,11 +192,16 @@ async function assertMachineIdsExist(
   return lookup;
 }
 
+/** Every op vendor exists, and every one NOT already on this route card
+ *  (`keepIds`, on an edit) is ACTIVE — an inactive vendor is refused as a new
+ *  link with 409 (A10 inactive-master rule). */
 async function assertVendorIdsExist(
   tx: DbTransaction,
   ids: string[],
   companyId: string,
+  keepIds: ReadonlySet<string> = new Set(),
 ): Promise<VendorsLookup> {
+  await assertActivePartiesBatch(tx, 'vendor', ids, companyId, keepIds);
   const lookup = await loadVendorsByIds(tx, ids, companyId);
   const unique = Array.from(new Set(ids.filter((x): x is string => Boolean(x))));
   if (lookup.byId.size !== unique.length) {
@@ -297,6 +304,8 @@ async function resolveRcRawMaterial(
 // helper (L6933-6934) — finds the highest numeric suffix used so far
 // and adds 1, zero-padded to 5 digits.
 async function nextRouteCardCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'route_cards');
   const rows = (await tx.execute(sql`
     SELECT code FROM public.route_cards
     WHERE company_id = ${companyId}::uuid
@@ -865,6 +874,8 @@ export async function createRouteCard(
     }
 
     // Auto code when not supplied; reject if supplied + already used.
+    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+    await lockDocSeries(tx, companyId, 'route_cards');
     const code = input.code?.trim() || (await nextRouteCardCode(tx, companyId));
     if (input.code) {
       const dup = await tx
@@ -1004,7 +1015,23 @@ export async function updateRouteCard(
     const machineIds = input.ops.map((o) => o.machineId).filter((x): x is string => Boolean(x));
     const vendorIds = input.ops.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x));
     const machinesLookup = await assertMachineIdsExist(tx, machineIds, companyId);
-    const vendorsLookup = await assertVendorIdsExist(tx, vendorIds, companyId);
+    // Vendors already on this route card's ops stay allowed even if inactive.
+    const currentOpVendors = await tx
+      .select({ id: routeCardOps.ospVendorId })
+      .from(routeCardOps)
+      .where(
+        and(
+          eq(routeCardOps.routeCardId, id),
+          eq(routeCardOps.companyId, companyId),
+          isNull(routeCardOps.deletedAt),
+        ),
+      );
+    const vendorsLookup = await assertVendorIdsExist(
+      tx,
+      vendorIds,
+      companyId,
+      new Set(currentOpVendors.flatMap((r) => (r.id ? [r.id] : []))),
+    );
 
     const rawMaterial = await resolveRcRawMaterial(tx, companyId, input, {
       rawMaterialItemId: header.rawMaterialItemId,

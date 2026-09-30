@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch } from '@/lib/api';
-import { useDocNumber } from './use-doc-number';
+import { docCodeToSend, useDocNumber } from './use-doc-number';
 
 vi.mock('@/lib/api', () => ({ apiFetch: vi.fn() }));
 const mockApi = vi.mocked(apiFetch);
@@ -62,5 +62,20 @@ describe('useDocNumber', () => {
     await new Promise((r) => setTimeout(r, 700)); // past the 500ms debounce
     const codeCalls = mockApi.mock.calls.filter((c) => String(c[0]).includes('code='));
     expect(codeCalls.length).toBe(0);
+  });
+});
+
+describe('docCodeToSend (S2)', () => {
+  it('sends nothing for an empty box', () => {
+    expect(docCodeToSend('  ', 'IN-SO-00126')).toBeUndefined();
+  });
+  it('sends nothing for the untouched suggestion — the server numbers it', () => {
+    expect(docCodeToSend('IN-MPO-00006/R1', 'IN-MPO-00006/R1')).toBeUndefined();
+  });
+  it('sends a number the user typed, trimmed', () => {
+    expect(docCodeToSend(' IN-SO-00200 ', 'IN-SO-00126')).toBe('IN-SO-00200');
+  });
+  it('sends the value when nothing was suggested', () => {
+    expect(docCodeToSend('IN-GRN-00010', '')).toBe('IN-GRN-00010');
   });
 });

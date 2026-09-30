@@ -12,6 +12,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { docCodeToSend } from '@/lib/use-doc-number';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { LineItemPicker } from '@/components/shared/line-item-picker';
 import { todayIst } from '@/lib/date';
@@ -143,6 +144,9 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   } = form;
   const isCreate = !isEdit;
   const [docNoValid, setDocNoValid] = useState(true);
+  // S2: the number the field auto-filled. It is only a preview — the form
+  // sends a number only when the user changed it (docCodeToSend).
+  const [suggestedCode, setSuggestedCode] = useState('');
   const errors = formState.errors;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
 
@@ -223,6 +227,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
 
     const headerOut = {
       ...values.header,
+      code: docCodeToSend(values.header.code, suggestedCode),
       purchaseOrderId: values.header.purchaseOrderId || undefined,
       poCodeText: values.header.poCodeText?.trim() || undefined,
       vendorId: values.header.vendorId || undefined,
@@ -300,6 +305,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               value={watch('header.code') ?? ''}
               onChange={(v) => setValue('header.code', v)}
               onValidityChange={setDocNoValid}
+              onSuggestedChange={setSuggestedCode}
             />
           </div>
           <FormField label="GRN Date" required size="sm" htmlFor="grnDate">

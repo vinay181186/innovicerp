@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 import { ITEM_TYPES } from '../enums/item-type';
 import { ITEM_PROCUREMENT_TYPES } from '../enums/item-procurement-type';
 import { UOMS } from '../enums/uom';
@@ -114,7 +115,7 @@ export const listItemsQuerySchema = z.object({
    *  from the list. The general "what are we making / selling / buying" line-item
    *  pickers pass this so a customer's own material can't be chosen on a normal
    *  line; the Item Master list and the JWSO Customer Material picker do not. */
-  excludePartyOwned: z.coerce.boolean().optional(),
+  excludePartyOwned: queryBoolean().optional(),
   procurementType: itemProcurementTypeSchema.optional(),
   sortBy: itemSortFieldSchema.optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),

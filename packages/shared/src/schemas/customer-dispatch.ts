@@ -88,6 +88,8 @@ export const customerDispatchLineRowSchema = z.object({
   clientPoLineNo: z.string().nullable().default(null),
   /** The SO line's unit (printed on the DC). */
   uom: z.string().nullable().default(null),
+  /** HSN off the item master (items.hsn_code), printed on the DC (A4). */
+  hsnCode: z.string().nullable().optional(),
 });
 export type CustomerDispatchLineRow = z.infer<typeof customerDispatchLineRowSchema>;
 

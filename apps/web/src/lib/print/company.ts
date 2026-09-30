@@ -42,6 +42,28 @@ export function companyAddressLines(company: Company | null | undefined): string
   );
 }
 
+/** A customer's / vendor's full address as printed lines: the street line,
+ *  then "City, State, Pincode" (A1 / A26 / A38) — the same two lines the
+ *  customer dispatch challan already prints. Blank parts drop out. */
+export function partyAddressLines(
+  party:
+    | {
+        addressLine1?: string | null;
+        city?: string | null;
+        state?: string | null;
+        pincode?: string | null;
+      }
+    | null
+    | undefined,
+): string[] {
+  if (!party) return [];
+  const cityLine = [party.city, party.state, party.pincode]
+    .map((x) => x?.trim())
+    .filter(Boolean)
+    .join(', ');
+  return [party.addressLine1?.trim() ?? '', cityLine].filter(Boolean);
+}
+
 export function buildDocCompany(company: Company | null | undefined): DocCompany {
   const c: DocCompany = {
     name: company?.name ?? 'Innovic Technology',

@@ -39,9 +39,12 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
+import { assertActiveParty } from '../../lib/active-party';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
+import { assertRowUpdated } from '../../lib/row-lock';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import {
   AuthorizationError,
   ConflictError,
@@ -237,7 +240,10 @@ async function assertLinesWithinPrBalances(
         eq(purchaseRequests.companyId, companyId),
         isNull(purchaseRequests.deletedAt),
       ),
-    );
+    )
+    // S5 — lock the PRs (id order: no deadlock) before their balance is read.
+    .orderBy(asc(purchaseRequests.id))
+    .for('update');
   const prById = new Map(prRows.map((r) => [r.id, r]));
   for (const prId of prIds) {
     if (!prById.has(prId))
@@ -296,17 +302,11 @@ async function assertVendorExists(
   tx: DbTransaction,
   vendorId: string,
   companyId: string,
+  /** The PO's current vendor on an edit — an inactive vendor is refused only
+   *  when it is being newly linked (A10 inactive-master rule). */
+  keepVendorId?: string | null,
 ): Promise<void> {
-  const rows = await tx
-    .select({ id: vendors.id })
-    .from(vendors)
-    .where(
-      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
-    )
-    .limit(1);
-  if (rows.length === 0) {
-    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
-  }
+  await assertActiveParty(tx, 'vendor', vendorId, companyId, keepVendorId);
 }
 
 async function assertItemIdsExist(
@@ -732,7 +732,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     vendorCodeText: (r['vendorCodeText'] as string | null) ?? null,
     status: r['status'] as PurchaseOrder['status'],
     dueDate: maybeDateLike(r['dueDate']),
-    taxType: (r['taxType'] as string | null) ?? null,
+    taxType: (r['taxType'] as PurchaseOrder['taxType'] | undefined) ?? null,
     sgstPct: r['sgstPct'] as string,
     cgstPct: r['cgstPct'] as string,
     igstPct: r['igstPct'] as string,
@@ -1011,6 +1011,8 @@ function codeWithRevision(supplied: string): string {
  *
  *  A brand-new PO is born at revision 1 — IN-MPO-00006/R1. */
 async function nextPoCode(tx: DbTransaction, companyId: string, poType: PoType): Promise<string> {
+  // S2: queue behind any other save numbering a PO (see lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'purchase_orders');
   const prefix = poCodePrefix(poType);
   const rows = await tx
     .select({ code: purchaseOrders.code })
@@ -1064,6 +1066,9 @@ export async function createPurchaseOrder(
     // writes to the po_type column — the two must never drift apart, or a PO
     // would be filed in one series and numbered in another.
     const headerType = input.header.poType ?? 'standard';
+    // S2: the number is picked AND checked under the PO series lock, so two
+    // saves at the same moment get consecutive numbers, never the same one.
+    await lockDocSeries(tx, companyId, 'purchase_orders');
     const suppliedCode = input.header.code?.trim();
     const code = suppliedCode
       ? codeWithRevision(suppliedCode)
@@ -1126,7 +1131,11 @@ export async function createPurchaseOrder(
             eq(purchaseRequests.companyId, companyId),
             isNull(purchaseRequests.deletedAt),
           ),
-        );
+        )
+        // S5 — lock the PRs (id order: no deadlock) before their balance is
+        // read, so two POs cannot both take the same PR balance.
+        .orderBy(asc(purchaseRequests.id))
+        .for('update');
       const prById = new Map(prRows.map((r) => [r.id, r]));
       for (const prId of distinctPrIds) {
         const pr = prById.get(prId);
@@ -1581,16 +1590,15 @@ async function poEditWouldChange(
  *  them behind and a GRN prints IN-MPO-00005 for an order that is now
  *  IN-MPO-00005/R2, and the two stop looking like the same document.
  *
- *  The four columns, and why each one holds a PO number:
+ *  The three columns, and why each one holds a PO number:
  *    goods_receipt_notes.po_code_text   — the PO the goods were received against
  *    delivery_challans.po_code_text     — the PO the material went out under
  *    jw_dc_outward.jwpo_code_text       — the same, on the job-work outward challan
- *    delivery_challans.vendor_code_text — named for the vendor, but on every
- *        production challan it actually holds the PO NUMBER (see the note in
- *        apps/web/src/modules/delivery-challans/lib/print-ospdc.ts) and the
- *        printed challan reads it, so it has to move with the code. The equality
- *        guard is what makes including it safe: a row that really does hold a
- *        vendor code cannot match the old PO number, so it is left alone.
+ *
+ *  delivery_challans.vendor_code_text is NOT a PO number (A32, migration 0182):
+ *  it holds the vendor's code. The OSP DC screen used to write the PO number
+ *  into it and this routine used to rewrite it; both stopped, and 0182 put the
+ *  vendor's code back on the old rows.
  *
  *  ANYONE ADDING ANOTHER COLUMN THAT SNAPSHOTS A PO NUMBER MUST ADD IT HERE.
  *
@@ -1622,12 +1630,6 @@ async function renamePoCodeEverywhere(
       and(eq(deliveryChallans.companyId, companyId), eq(deliveryChallans.poCodeText, oldCode)),
     );
   await tx
-    .update(deliveryChallans)
-    .set({ vendorCodeText: newCode })
-    .where(
-      and(eq(deliveryChallans.companyId, companyId), eq(deliveryChallans.vendorCodeText, oldCode)),
-    );
-  await tx
     .update(jwDcOutward)
     .set({ jwpoCodeText: newCode })
     .where(and(eq(jwDcOutward.companyId, companyId), eq(jwDcOutward.jwpoCodeText, oldCode)));
@@ -1651,6 +1653,8 @@ export async function updatePurchaseOrder(
   const showMoney = await canSeeFormPrice(user, 'po_create');
 
   return withUserContext(user, async (tx) => {
+    // S5 — lock the PO: an edit that sends an approved PO back to Draft
+    // (Withdraw) and an Approve / Reject on it can no longer interleave.
     const existingHdrRows = await tx
       .select()
       .from(purchaseOrders)
@@ -1661,7 +1665,8 @@ export async function updatePurchaseOrder(
           isNull(purchaseOrders.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
@@ -1740,7 +1745,7 @@ export async function updatePurchaseOrder(
     }
 
     if (input.header.vendorId !== undefined && input.header.vendorId !== null) {
-      await assertVendorExists(tx, input.header.vendorId, companyId);
+      await assertVendorExists(tx, input.header.vendorId, companyId, existingHdr.vendorId);
     }
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
@@ -2681,6 +2686,10 @@ export async function createPurchaseOrderFromPr(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // Same lock ORDER as create / batch: PO series first, then the PR rows —
+    // two opposite orders on the same PR could deadlock. (Re-taken below where
+    // the number is picked; an advisory xact lock is re-entrant.)
+    await lockDocSeries(tx, companyId, 'purchase_orders');
     const prRows = await tx
       .select()
       .from(purchaseRequests)
@@ -2691,7 +2700,10 @@ export async function createPurchaseOrderFromPr(
           isNull(purchaseRequests.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      // S5 — lock the PR before its balance is read: a second Create PO on
+      // the same PR (another tab / user) waits, then sees this PO's qty.
+      .for('update');
     const pr = prRows[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     const switches = await readApprovalSwitches(tx, companyId);
@@ -2719,6 +2731,11 @@ export async function createPurchaseOrderFromPr(
         .limit(1);
       overrideVendorCode = vRows[0]?.code ?? null;
     }
+    // No override: the new PO takes the PR's vendor — still a NEW link, so an
+    // inactive vendor on the PR is refused the same way (A10).
+    if (!overrideVendorId && pr.vendorId) {
+      await assertVendorExists(tx, pr.vendorId, companyId);
+    }
 
     // Derive the PO type from the SOURCE PR, not the form: an OSP/job-work PR
     // (jw_osp, or linked to a JC op) → job_work; a service PR → service; a plain
@@ -2741,6 +2758,7 @@ export async function createPurchaseOrderFromPr(
     // Blank code ⇒ auto-generate the next code in that series (same as the main
     // create path). A code typed by hand is kept, with /R1 stamped on it when it
     // arrives without a revision.
+    await lockDocSeries(tx, companyId, 'purchase_orders');
     const suppliedFromPrCode = input.header.code?.trim();
     const code = suppliedFromPrCode
       ? codeWithRevision(suppliedFromPrCode)
@@ -3055,6 +3073,7 @@ export async function approvePurchaseOrder(
       );
     }
 
+    // Locked (S5): approve vs reject vs a second approve serialize here.
     const existing = await tx
       .select()
       .from(purchaseOrders)
@@ -3065,11 +3084,12 @@ export async function approvePurchaseOrder(
           isNull(purchaseOrders.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const po = existing[0];
     if (!po) throw new NotFoundError('PO not found. It may have been moved to Trash.');
     if (po.status !== 'draft') {
-      throw new ValidationError(
+      throw new ConflictError(
         `Cannot approve PO ${po.code}: it is ${poStatusLabel(po.status)}. Only Draft POs can be approved.`,
       );
     }
@@ -3088,7 +3108,7 @@ export async function approvePurchaseOrder(
       }
     }
 
-    await tx
+    const approvedRows = await tx
       .update(purchaseOrders)
       .set({
         status: 'open',
@@ -3098,7 +3118,9 @@ export async function approvePurchaseOrder(
         updatedBy: user.id,
         updatedAt: new Date(),
       })
-      .where(eq(purchaseOrders.id, id));
+      .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.status, 'draft')))
+      .returning({ id: purchaseOrders.id });
+    assertRowUpdated(approvedRows, `PO ${po.code}`);
 
     await emitActivityLog(
       tx,
@@ -3146,6 +3168,7 @@ export async function rejectPurchaseOrder(
       throw new AuthorizationError('You do not have permission to reject POs. Ask an admin.');
     }
 
+    // Locked (S5): reject vs approve vs a second reject serialize here.
     const existing = await tx
       .select()
       .from(purchaseOrders)
@@ -3156,11 +3179,12 @@ export async function rejectPurchaseOrder(
           isNull(purchaseOrders.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const po = existing[0];
     if (!po) throw new NotFoundError('PO not found. It may have been moved to Trash.');
     if (po.status !== 'draft') {
-      throw new ValidationError(
+      throw new ConflictError(
         `Cannot reject PO ${po.code}: it is ${poStatusLabel(po.status)}. Only Draft POs can be rejected.`,
       );
     }
@@ -3170,7 +3194,7 @@ export async function rejectPurchaseOrder(
     // auditor reading the trail must see two different names on the document.
     assertNotSelfApproval(user, po.createdBy, `PO ${po.code}`);
 
-    await tx
+    const rejectedRows = await tx
       .update(purchaseOrders)
       .set({
         status: 'cancelled',
@@ -3180,7 +3204,9 @@ export async function rejectPurchaseOrder(
         updatedBy: user.id,
         updatedAt: new Date(),
       })
-      .where(eq(purchaseOrders.id, id));
+      .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.status, 'draft')))
+      .returning({ id: purchaseOrders.id });
+    assertRowUpdated(rejectedRows, `PO ${po.code}`);
 
     // G9a: a rejected PO holds nothing — hand its outsourced ops and PRs back.
     await releaseJcOpsForCancelledPo(tx, companyId, { id: po.id, code: po.code }, user);
@@ -3350,7 +3376,7 @@ export async function createPurchaseOrderFromPrBatch(
       poDate: string;
       poType?: 'standard' | 'job_work' | 'outsource' | 'service' | undefined;
       dueDate?: string | undefined;
-      taxType?: string | undefined;
+      taxType?: 'sgst_cgst' | 'igst' | undefined;
       sgstPct?: number | undefined;
       cgstPct?: number | undefined;
       igstPct?: number | undefined;
@@ -3380,6 +3406,7 @@ export async function createPurchaseOrderFromPrBatch(
     // it mandatory here, unlike the other two create paths), so there is nothing
     // to auto-generate — only a revision to stamp. /R1 goes on when the caller
     // sent a bare number, so a batch PO is stored like every other PO.
+    await lockDocSeries(tx, companyId, 'purchase_orders');
     const code = codeWithRevision(input.header.code);
 
     // Code uniqueness on the new PO.
@@ -3398,7 +3425,8 @@ export async function createPurchaseOrderFromPrBatch(
       throw new ConflictError(`PO No. "${code}" already exists.`);
     }
 
-    // Load all PRs.
+    // Load all PRs — LOCKED (S5), in id order so two batches sharing PRs
+    // can never deadlock; the balance read below then sees committed POs only.
     const prRows = await tx
       .select()
       .from(purchaseRequests)
@@ -3408,7 +3436,9 @@ export async function createPurchaseOrderFromPrBatch(
           eq(purchaseRequests.companyId, companyId),
           isNull(purchaseRequests.deletedAt),
         ),
-      );
+      )
+      .orderBy(asc(purchaseRequests.id))
+      .for('update');
     if (prRows.length !== input.prIds.length) {
       throw new NotFoundError(
         'Some selected PRs no longer exist. Refresh the list and select again.',

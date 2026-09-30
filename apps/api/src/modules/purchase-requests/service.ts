@@ -24,6 +24,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
   ConflictError,
@@ -32,9 +33,11 @@ import {
 } from '../../lib/errors';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
+import { assertRowUpdated } from '../../lib/row-lock';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import type {
   ClosePurchaseRequestBalanceInput,
   CreatePurchaseRequestInput,
@@ -104,21 +107,15 @@ const PR_EDIT_FIELDS: readonly DiffField[] = [
 
 // ─── FK validation helpers ────────────────────────────────────────────────
 
+/** Vendor exists, is in this company and — unless it is the PR's current
+ *  vendor (`keepVendorId`, on an edit) — is ACTIVE (A10 inactive-master rule). */
 async function assertVendorExists(
   tx: DbTransaction,
   vendorId: string,
   companyId: string,
+  keepVendorId?: string | null,
 ): Promise<void> {
-  const rows = await tx
-    .select({ id: vendors.id })
-    .from(vendors)
-    .where(
-      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
-    )
-    .limit(1);
-  if (rows.length === 0) {
-    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
-  }
+  await assertActiveParty(tx, 'vendor', vendorId, companyId, keepVendorId);
 }
 
 /**
@@ -974,6 +971,8 @@ export async function insertPurchaseRequestTx(
   // T23: blank code → auto-generate the next IN-PR-#####. OSP callers pass an
   // explicit IN-JWPR- code, which is honoured; only the standalone PR form
   // leaves it blank. nextSeriesCode is prefix-scoped so the series don't mix.
+  // S2: pick and check the number under the PR series lock (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'purchase_requests');
   const code = input.code?.trim() || (await nextSeriesCode(tx, 'pr', companyId, 'IN-PR-'));
   // Code uniqueness within company
   const dup = await tx
@@ -1135,7 +1134,7 @@ export async function updatePurchaseRequest(
     }
 
     if (input.vendorId !== undefined && input.vendorId !== null) {
-      await assertVendorExists(tx, input.vendorId, companyId);
+      await assertVendorExists(tx, input.vendorId, companyId, existing[0]!.vendorId);
     }
     if (input.itemId !== undefined && input.itemId !== null) {
       await assertItemExists(tx, input.itemId, companyId);
@@ -1276,6 +1275,8 @@ export async function approvePurchaseRequest(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // S5 — locked: approve / reject / short close / Create PO on one PR
+    // serialize, and each re-reads what the one before it committed.
     const existing = await tx
       .select()
       .from(purchaseRequests)
@@ -1286,12 +1287,13 @@ export async function approvePurchaseRequest(
           isNull(purchaseRequests.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const pr = existing[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     // Only a pre-approval PR ('open') can be approved.
     if (pr.status !== 'open') {
-      throw new ValidationError(
+      throw new ConflictError(
         `Cannot approve PR ${pr.code}: it is ${prStatusLabel(pr.status)}. Only Open PRs can be approved.`,
       );
     }
@@ -1300,7 +1302,7 @@ export async function approvePurchaseRequest(
     assertNotSelfApproval(user, pr.createdBy, `PR ${pr.code}`);
 
     const now = new Date();
-    await tx
+    const approvedRows = await tx
       .update(purchaseRequests)
       .set({
         status: 'approved',
@@ -1309,7 +1311,9 @@ export async function approvePurchaseRequest(
         updatedBy: user.id,
         updatedAt: now,
       })
-      .where(eq(purchaseRequests.id, id));
+      .where(and(eq(purchaseRequests.id, id), eq(purchaseRequests.status, 'open')))
+      .returning({ id: purchaseRequests.id });
+    assertRowUpdated(approvedRows, `PR ${pr.code}`);
 
     const reread = await tx
       .select()
@@ -1349,6 +1353,8 @@ export async function rejectPurchaseRequest(
   const trimmedReason = reason.trim();
 
   return withUserContext(user, async (tx) => {
+    // S5 — locked: approve / reject / short close / Create PO on one PR
+    // serialize, and each re-reads what the one before it committed.
     const existing = await tx
       .select()
       .from(purchaseRequests)
@@ -1359,7 +1365,8 @@ export async function rejectPurchaseRequest(
           isNull(purchaseRequests.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const pr = existing[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     // Quantity already on a LIVE purchase order carries the procurement
@@ -1369,7 +1376,7 @@ export async function rejectPurchaseRequest(
     // be rejected (and edited) again rather than being stuck forever.
     const orderedQty = await loadOrderedQty(tx, pr);
     if (orderedQty > 0 || pr.status === 'cancelled') {
-      throw new ValidationError(
+      throw new ConflictError(
         orderedQty > 0
           ? `Cannot reject PR ${pr.code}: a PO has already been placed against it.`
           : `Cannot reject PR ${pr.code}: it is ${prStatusLabel(pr.status)}. Only Open or Approved PRs can be rejected.`,
@@ -1390,7 +1397,7 @@ export async function rejectPurchaseRequest(
       : `[Rejected] ${trimmedReason}`;
 
     const now = new Date();
-    await tx
+    const rejectedRows = await tx
       .update(purchaseRequests)
       .set({
         status: 'cancelled',
@@ -1401,7 +1408,10 @@ export async function rejectPurchaseRequest(
         updatedBy: user.id,
         updatedAt: now,
       })
-      .where(eq(purchaseRequests.id, id));
+      // Expected status: the one read under the lock (never 'cancelled').
+      .where(and(eq(purchaseRequests.id, id), eq(purchaseRequests.status, pr.status)))
+      .returning({ id: purchaseRequests.id });
+    assertRowUpdated(rejectedRows, `PR ${pr.code}`);
 
     const released = await releaseSourceJcOps(tx, id, user);
 
@@ -1466,11 +1476,14 @@ export async function closePurchaseRequestBalance(
     // Loaded WITHOUT the soft-delete filter on purpose: a deleted PR should be
     // told apart from one that never existed, so the user gets "it was deleted"
     // instead of a bare not-found.
+    // S5 — locked, like approve / reject: a Short Close racing a Create PO on
+    // the same PR serializes, and the balance below is read after it.
     const existing = await tx
       .select()
       .from(purchaseRequests)
       .where(and(eq(purchaseRequests.id, id), eq(purchaseRequests.companyId, companyId)))
-      .limit(1);
+      .limit(1)
+      .for('update');
     const pr = existing[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     if (pr.deletedAt !== null) {
@@ -1480,7 +1493,7 @@ export async function closePurchaseRequestBalance(
       throw new ValidationError(`PR ${pr.code} is Cancelled. It cannot be Short Closed.`);
     }
     if (pr.balanceClosedAt !== null) {
-      throw new ValidationError(`PR ${pr.code} is already Short Closed.`);
+      throw new ConflictError(`PR ${pr.code} is already Short Closed.`);
     }
 
     const orderedQty = await loadOrderedQty(tx, pr);
@@ -1504,7 +1517,7 @@ export async function closePurchaseRequestBalance(
     }
 
     const now = new Date();
-    await tx
+    const closedRows = await tx
       .update(purchaseRequests)
       .set({
         balanceClosedAt: now,
@@ -1513,7 +1526,10 @@ export async function closePurchaseRequestBalance(
         updatedBy: user.id,
         updatedAt: now,
       })
-      .where(eq(purchaseRequests.id, id));
+      // Short close once.
+      .where(and(eq(purchaseRequests.id, id), isNull(purchaseRequests.balanceClosedAt)))
+      .returning({ id: purchaseRequests.id });
+    assertRowUpdated(closedRows, `PR ${pr.code}`);
 
     const reread = await tx
       .select()

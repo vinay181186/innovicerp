@@ -33,6 +33,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -101,6 +102,8 @@ function dateLike(v: unknown): string {
 }
 
 async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'jw_return_challans');
   const prefix = 'IN-JWRC-';
   const rows = await tx
     .select({ code: jwReturnChallans.code })
@@ -372,6 +375,8 @@ export async function createJwReturnChallan(
     }
 
     // 4) Insert return challan
+    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+    await lockDocSeries(tx, companyId, 'jw_return_challans');
     const code = input.code ?? (await nextReturnCode(tx, companyId));
     const inserted = await tx
       .insert(jwReturnChallans)
@@ -772,6 +777,7 @@ function selectListItems(tx: DbTransaction) {
       itemCodeText: jobWorkOrderLines.itemCodeText,
       itemRevision: jobWorkOrderLines.revision,
       uom: sql<string | null>`${jobWorkOrderLines.uom}::text`,
+      hsnCode: items.hsnCode,
       clientPoNo: jobWorkOrders.clientPoNo,
     })
     .from(jwReturnChallans)
@@ -789,6 +795,7 @@ function toListItem(r: {
   itemCodeText: string | null;
   itemRevision: string | null;
   uom: string | null;
+  hsnCode: string | null;
   clientPoNo: string | null;
 }): JwReturnChallanListItem {
   return {
@@ -798,6 +805,7 @@ function toListItem(r: {
     itemCode: r.itemCode ?? r.itemCodeText ?? null,
     itemRevision: r.itemRevision ?? null,
     uom: r.uom ?? null,
+    hsnCode: r.hsnCode ?? null,
     clientPoNo: r.clientPoNo ?? null,
   };
 }

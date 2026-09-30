@@ -9,6 +9,7 @@
 // reactivate / soft-delete.
 
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 import { USER_ROLES } from '../enums/user-role';
 
 export const userRoleSchema = z.enum(USER_ROLES);
@@ -75,7 +76,7 @@ export type SetUserPasswordInput = z.infer<typeof setUserPasswordInputSchema>;
 export const listUsersQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   role: userRoleSchema.optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean().optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

@@ -14,8 +14,6 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
 import { type SheetField, challanDate, openSheetPrintWindow } from '@/lib/print/sheet-print';
 
-const FALLBACK_UOM = 'NOS';
-
 export function printJwReturnChallan(
   r: JwReturnChallanListItem,
   client: Client | null | undefined,
@@ -47,7 +45,8 @@ export function printJwReturnChallan(
   if (r.vehicleNo)
     documentFields.push({ label: 'Vehicle No.', value: r.vehicleNo, variant: 'mono' });
 
-  const uom = r.uom?.trim() || FALLBACK_UOM;
+  // Blank when the JWSO line has no unit — never an invented 'NOS' (A29).
+  const uom = r.uom?.trim() ?? '';
 
   return openSheetPrintWindow({
     title: 'Job Work Return Challan',
@@ -63,7 +62,7 @@ export function printJwReturnChallan(
         itemCode: itemCodeWithRev(r.itemCode, r.itemRevision, ''),
         itemName: r.partName,
         uom,
-        hsn: null,
+        hsn: r.hsnCode?.trim() || null,
         qty: r.qty.toFixed(2),
         remarks: r.remarks,
       },

@@ -66,6 +66,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   createReservation,
@@ -129,6 +130,8 @@ function requireCompany(user: AuthContext): string {
  * timestamp/random codes are ignored and the series stays clean.
  */
 async function nextPlanCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'plans');
   const rows = await tx
     .select({ code: plans.code })
     .from(plans)
@@ -817,6 +820,8 @@ async function createPlanInTx(
 ): Promise<PlanDetail> {
   // Blank/omitted code → auto-number the next PLN-NNNN. A user-supplied code
   // is still honoured (and dup-checked).
+  // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'plans');
   const code =
     input.code && input.code.trim().length > 0
       ? input.code.trim()

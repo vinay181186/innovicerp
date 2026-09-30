@@ -171,7 +171,7 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="gstNumber">
-            GST No.
+            GSTIN
           </label>
           <input
             id="gstNumber"
@@ -342,7 +342,7 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="gstNumber">
-            GST No.
+            GSTIN
           </label>
           <input
             id="gstNumber"

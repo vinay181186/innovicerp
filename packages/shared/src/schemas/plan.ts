@@ -2,6 +2,7 @@
 // Per ADR-030.
 
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 import { PLAN_EFFECTIVE_STATUSES, PLAN_STATUSES, type PlanStatus } from '../enums/plan-status';
 import { PLAN_TYPES, type PlanType } from '../enums/plan-type';
 import { OP_TYPES, type OpType } from '../enums/op-type';
@@ -192,7 +193,7 @@ export const listPlansQuerySchema = z.object({
   derivedStatus: planDerivedStatusSchema.optional(),
   /** Production → Plans "Pending" button: route-card-driven plans that have no
    *  Production Order yet (route_card_pending + gen_production_order), not cancelled. */
-  poPending: z.coerce.boolean().optional(),
+  poPending: queryBoolean().optional(),
   limit: z.coerce.number().int().min(1).max(500).optional().default(100),
   offset: z.coerce.number().int().min(0).optional().default(0),
 });

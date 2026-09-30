@@ -1,7 +1,7 @@
 // Vendor Master list (UI-003-02; legacy parity pass 2026-07-15).
 // Ports legacy renderVendors (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
 // L27734) to Innovic chrome. Legacy columns, in order: Code | Name | Contact |
-// Phone | Email | GST No. | Address | Rating | Status | PO/GRN | Actions.
+// Phone | Email | GSTIN | Address | Rating | Status | PO/GRN | Actions.
 //
 // Two legacy columns/behaviours are DELTA (blocked on backend, not faked here):
 //   * PO/GRN — legacy counts db.purchaseOrders/db.grn client-side because it
@@ -252,7 +252,7 @@ function VendorsListPage(): React.JSX.Element {
         render: (v) => v.email ?? '—',
         title: (v) => v.email ?? '',
       },
-      { header: 'GST No.', width: '12%', nowrap: true, render: (v) => v.gstNumber ?? '—' },
+      { header: 'GSTIN', width: '12%', nowrap: true, render: (v) => v.gstNumber ?? '—' },
       {
         header: 'Address',
         width: '10%',

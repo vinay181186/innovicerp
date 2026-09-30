@@ -32,12 +32,14 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
   ConflictError,
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
@@ -216,20 +218,16 @@ async function logGrnEdit(
 
 // ─── FK helpers ───────────────────────────────────────────────────────────
 
+/** Vendor exists, is in this company and — unless it is the GRN's current
+ *  vendor (`keepVendorId`, on an edit) — is ACTIVE (A10 inactive-master rule;
+ *  a new GRN is refused for a disabled vendor, as in ERPNext). */
 async function assertVendorExists(
   tx: DbTransaction,
   vendorId: string,
   companyId: string,
+  keepVendorId?: string | null,
 ): Promise<void> {
-  const rows = await tx
-    .select({ id: vendors.id })
-    .from(vendors)
-    .where(
-      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
-    )
-    .limit(1);
-  if (rows.length === 0)
-    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
+  await assertActiveParty(tx, 'vendor', vendorId, companyId, keepVendorId);
 }
 
 async function assertPurchaseOrderExists(
@@ -760,6 +758,7 @@ async function getGoodsReceiptNoteInternal(
         grn.nc_id AS "ncId",
         po.code AS "poCode",
         v.name AS "vendorName",
+        v.code AS "vendorCode",
         dc.code AS "dcCode",
         nc.code AS "ncCode"
       FROM public.goods_receipt_notes grn
@@ -804,6 +803,7 @@ async function getGoodsReceiptNoteInternal(
         gnl.updated_at AS "updatedAt", gnl.updated_by AS "updatedBy",
         gnl.deleted_at AS "deletedAt",
         i.code AS "itemCode",
+        i.uom::text AS "uom",
         -- ADR-177: the order line's drawing revision, read LIVE through
         -- whichever chain this GRN line came in on (never a snapshot, never
         -- items.revision — that is a different column about the item master):
@@ -889,6 +889,7 @@ async function getGoodsReceiptNoteInternal(
     deletedAt: maybeTsLike(headerRow['deletedAt']),
     poCode: (headerRow['poCode'] as string | null) ?? null,
     vendorName: (headerRow['vendorName'] as string | null) ?? null,
+    vendorCode: (headerRow['vendorCode'] as string | null) ?? null,
     dcCode: (headerRow['dcCode'] as string | null) ?? null,
     ncCode: (headerRow['ncCode'] as string | null) ?? null,
     lines: lineRows.map((r) => ({
@@ -920,6 +921,7 @@ async function getGoodsReceiptNoteInternal(
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
       clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
+      uom: (r['uom'] as string | null) ?? null,
     })),
   };
 }
@@ -937,6 +939,8 @@ export async function getGoodsReceiptNote(
 /** Next IN-GRN-##### code in the company series (mirrors nextSoCode). Used when
  *  the create payload omits a code (document-number override: blank = auto). */
 async function nextGrnCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering a GRN (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'goods_receipt_notes');
   const rows = await tx
     .select({ code: goodsReceiptNotes.code })
     .from(goodsReceiptNotes)
@@ -960,24 +964,6 @@ export async function createGoodsReceiptNote(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const code = input.header.code?.trim() || (await nextGrnCode(tx, companyId));
-    const dup = await tx
-      .select({ id: goodsReceiptNotes.id })
-      .from(goodsReceiptNotes)
-      .where(
-        and(
-          eq(goodsReceiptNotes.companyId, companyId),
-          eq(goodsReceiptNotes.code, code),
-          isNull(goodsReceiptNotes.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (dup.length > 0) {
-      throw new ConflictError(
-        `GRN No. "${code}" already exists — duplicate not allowed. Please use a unique number.`,
-      );
-    }
-
     if (input.header.vendorId) {
       await assertVendorExists(tx, input.header.vendorId, companyId);
     }
@@ -996,6 +982,29 @@ export async function createGoodsReceiptNote(
       .filter((id): id is string => Boolean(id));
     await assertPoLineIdsExist(tx, poLineIds, companyId);
     await assertPoReceiptFits(tx, companyId, input.header.purchaseOrderId, input.lines);
+
+    // S2: the GRN No. is picked (blank = next number) and checked under the
+    // GRN series lock, AFTER the PO-line locks above — the same order the OSP
+    // DC receive takes them in (PO lines, then its auto-GRN number), so the
+    // two can never wait on each other.
+    await lockDocSeries(tx, companyId, 'goods_receipt_notes');
+    const code = input.header.code?.trim() || (await nextGrnCode(tx, companyId));
+    const dup = await tx
+      .select({ id: goodsReceiptNotes.id })
+      .from(goodsReceiptNotes)
+      .where(
+        and(
+          eq(goodsReceiptNotes.companyId, companyId),
+          eq(goodsReceiptNotes.code, code),
+          isNull(goodsReceiptNotes.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (dup.length > 0) {
+      throw new ConflictError(
+        `GRN No. "${code}" already exists — duplicate not allowed. Please use a unique number.`,
+      );
+    }
 
     const lineNos = assignLineNos(input.lines, 1);
 
@@ -1231,7 +1240,7 @@ export async function updateGoodsReceiptNote(
     }
 
     if (input.header.vendorId !== undefined && input.header.vendorId !== null) {
-      await assertVendorExists(tx, input.header.vendorId, companyId);
+      await assertVendorExists(tx, input.header.vendorId, companyId, existingHdrRows[0]!.vendorId);
     }
     if (input.header.purchaseOrderId !== undefined && input.header.purchaseOrderId !== null) {
       await assertPurchaseOrderExists(tx, input.header.purchaseOrderId, companyId);

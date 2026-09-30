@@ -34,6 +34,7 @@ import {
   salesOrderLines,
 } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { ActivityAction } from '@innovic/shared';
@@ -75,6 +76,7 @@ async function nextJobCardCode(
 ): Promise<string> {
   // Auto-generate JC-BOM-<short_so_line>-<seq>. Short slice + per-line
   // sequence keeps codes short + scoped without an extra counter table.
+  await lockDocSeries(tx, companyId, 'job_cards');
   const rows = await tx
     .select({ value: count() })
     .from(jobCards)
@@ -89,6 +91,7 @@ async function nextPrCode(
   companyId: string,
   parentSoLineId: string,
 ): Promise<string> {
+  await lockDocSeries(tx, companyId, 'purchase_requests');
   const rows = await tx
     .select({ value: count() })
     .from(purchaseRequests)
@@ -135,6 +138,14 @@ export async function cascadeBomToSoLine(
   }
 
   const bomMasterId = soLine.sourceBomMasterId;
+
+  // S2: the JC and PR series locks come BEFORE the idempotency check below.
+  // Two saves cascading the same line used to be stopped only by both picking
+  // the same JC-BOM number; with the lock the second waits, then sees the
+  // first one's children and returns without doubling them. Order is always
+  // job cards, then purchase requests (lib/doc-series-lock).
+  await lockDocSeries(tx, soLine.companyId, 'job_cards');
+  await lockDocSeries(tx, soLine.companyId, 'purchase_requests');
 
   // 2. Idempotency: if any child JC OR PR already has source_so_line_id
   //    = this SO line, the cascade has already run. Return empty.
@@ -310,6 +321,7 @@ async function nextJwJobCardCode(
   companyId: string,
   parentJwLineId: string,
 ): Promise<string> {
+  await lockDocSeries(tx, companyId, 'job_cards');
   const rows = await tx
     .select({ value: count() })
     .from(jobCards)
@@ -381,6 +393,9 @@ export async function cascadeBomToJwLine(
     return { fired: false, jwLineId, bomMasterId: '', createdJobCardCodes: [] };
   }
   const bomMasterId = jwLine.sourceBomMasterId;
+
+  // S2: JC series lock before the idempotency check (see cascadeBomToSoLine).
+  await lockDocSeries(tx, jwLine.companyId, 'job_cards');
 
   // Idempotency: any child JC already pointing at this line means the cascade
   // has run. Re-saving the JW must not double the shop-floor work.

@@ -4,6 +4,7 @@ export * from './lib/revision';
 export * from './lib/jc-op-sequence';
 export * from './lib/doc-nav-page';
 export * from './lib/report-access';
+export * from './lib/query-boolean';
 export * from './enums/user-role';
 export * from './enums/uom';
 export * from './enums/item-type';

@@ -40,6 +40,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { resolveRmItem } from '../../lib/rm-item';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
@@ -1404,6 +1405,8 @@ const NUM = (v: number): string => String(v);
  *  IN-JC-YY-##### codes count toward the sequence, so legacy JC-PLN-… and the old
  *  yearless IN-JC-##### codes never corrupt the next number. */
 export async function nextJcCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'job_cards');
   const yy = new Date().toISOString().slice(2, 4);
   const prefix = `IN-JC-${yy}-`;
   const rows = await tx

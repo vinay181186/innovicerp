@@ -25,6 +25,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { assertActiveParty } from '../../lib/active-party';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -32,6 +33,8 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertRowUpdated } from '../../lib/row-lock';
 import { postStockMove } from '../../lib/stock-ledger';
 import {
   consumeForLine,
@@ -460,13 +463,20 @@ async function loadSo(
   tx: DbTransaction,
   companyId: string,
   soId: string,
-): Promise<{ id: string; code: string; customer: string | null; status: string }> {
+): Promise<{
+  id: string;
+  code: string;
+  customer: string | null;
+  status: string;
+  clientId: string | null;
+}> {
   const rows = await tx
     .select({
       id: salesOrders.id,
       code: salesOrders.code,
       customer: salesOrders.customerName,
       status: salesOrders.status,
+      clientId: salesOrders.clientId,
     })
     .from(salesOrders)
     .where(
@@ -518,6 +528,8 @@ export async function getDispatchableSo(
 }
 
 async function nextCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'customer_dispatches');
   const rows = await tx
     .select({ code: customerDispatches.code })
     .from(customerDispatches)
@@ -750,6 +762,8 @@ async function getDispatchInternal(
       // POL + unit off the same SO line — the DC print carries both.
       clientPoLineNo: salesOrderLines.clientPoLineNo,
       uom: sql<string | null>`${salesOrderLines.uom}::text`,
+      // HSN off the item master for the DC print (A4). Display only.
+      hsnCode: items.hsnCode,
     })
     .from(customerDispatchLines)
     .leftJoin(items, and(eq(items.id, customerDispatchLines.itemId), isNull(items.deletedAt)))
@@ -776,6 +790,7 @@ async function getDispatchInternal(
     qty: l.qty,
     clientPoLineNo: l.clientPoLineNo ?? null,
     uom: l.uom ?? null,
+    hsnCode: l.hsnCode ?? null,
   }));
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
   // The SO's customer + Client PO No. — the DC print reads the customer's
@@ -814,6 +829,9 @@ export async function createDispatch(
     // ADR-185 — nothing ships against a draft or cancelled order (the SO
     // picker already hides a cancelled one; the server now says so too).
     assertSoAcceptsWork(so.status, so.code, 'nothing can be dispatched against it');
+    // A new dispatch to a customer switched off in the master is refused
+    // (A10 inactive-master rule — 409 "Customer X is disabled", as in ERPNext).
+    if (so.clientId) await assertActiveParty(tx, 'customer', so.clientId, companyId);
     // Lock the SO lines being dispatched BEFORE reading availability, so two
     // concurrent dispatches on the same line serialize instead of both passing
     // the qty check and over-dispatching.
@@ -1008,6 +1026,9 @@ export async function cancelDispatch(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // S4 — cancel once. The dispatch row is locked FIRST, so a second Cancel
+    // (double click, another tab) waits here, then reads 'cancelled' and is
+    // refused — the SO dispatched qty and the stock go back exactly once.
     const rows = await tx
       .select()
       .from(customerDispatches)
@@ -1018,11 +1039,14 @@ export async function cancelDispatch(
           isNull(customerDispatches.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const h = rows[0];
     if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
     if (h.status === 'cancelled')
-      throw new ValidationError(`Dispatch ${h.code} is already Cancelled.`);
+      throw new ConflictError(
+        `Dispatch ${h.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
+      );
 
     const lineRows = await tx
       .select()
@@ -1033,6 +1057,23 @@ export async function cancelDispatch(
           isNull(customerDispatchLines.deletedAt),
         ),
       );
+
+    // Lock the SO lines being given back, in the same id order dispatch and
+    // invoice create use (no deadlock), so an invoice cannot be raised on
+    // them between the "already invoiced?" check below and the reversal.
+    const soLineIds = [
+      ...new Set(lineRows.flatMap((l) => (l.salesOrderLineId ? [l.salesOrderLineId] : []))),
+    ];
+    if (soLineIds.length > 0) {
+      await tx
+        .select({ id: salesOrderLines.id })
+        .from(salesOrderLines)
+        .where(
+          and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, soLineIds)),
+        )
+        .orderBy(asc(salesOrderLines.id))
+        .for('update');
+    }
 
     // Guard: don't cancel a dispatch that has already been invoiced — reversing
     // dispatched_qty below invoiced_qty leaves a live invoice billing goods no
@@ -1116,10 +1157,12 @@ export async function cancelDispatch(
     // from `dispatched` back to closed/open to match.
     await syncSoDispatchStatus(tx, companyId, h.salesOrderId, h.soCodeText ?? h.code, user);
 
-    await tx
+    const cancelledRows = await tx
       .update(customerDispatches)
       .set({ status: 'cancelled', updatedBy: user.id, updatedAt: new Date() })
-      .where(eq(customerDispatches.id, id));
+      .where(and(eq(customerDispatches.id, id), eq(customerDispatches.status, h.status)))
+      .returning({ id: customerDispatches.id });
+    assertRowUpdated(cancelledRows, `Dispatch ${h.code}`);
 
     await emitActivityLog(
       tx,

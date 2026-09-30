@@ -125,6 +125,9 @@ export const goodsReceiptNoteLineDetailSchema = goodsReceiptNoteLineSchema.exten
    *  return, a line whose SO line was deleted). Read-only: the Sales Order is
    *  the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
+  /** The item's unit off the item master (items.uom) — shown on the GRN
+   *  screen and print (A26). Null when the line has no linked item. */
+  uom: z.string().nullable().optional(),
 });
 export type GoodsReceiptNoteLineDetail = z.infer<typeof goodsReceiptNoteLineDetailSchema>;
 
@@ -133,6 +136,8 @@ export const goodsReceiptNoteDetailSchema = goodsReceiptNoteSchema.extend({
   poCode: z.string().nullable(),
   /** Resolved vendor name from vendors.name via FK; null when not linked. */
   vendorName: z.string().nullable(),
+  /** Vendor Code off the vendor master (vendors.code) when linked (A26). */
+  vendorCode: z.string().nullable().optional(),
   /** Resolved DC code from delivery_challans.code via deliveryChallanId; null
    *  when the GRN is not DC-sourced. Lets the detail page link "Open DC". */
   dcCode: z.string().nullable().default(null),

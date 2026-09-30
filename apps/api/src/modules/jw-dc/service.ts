@@ -51,6 +51,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { lockPoLinesForSend, poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
@@ -85,6 +86,8 @@ async function nextOutwardCode(
   tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
   companyId: string,
 ): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'jw_dc_outward');
   const rows = (await tx.execute(sql`
     SELECT COALESCE(
       MAX(NULLIF(regexp_replace(code, '^JWDC-OUT-', ''), '')::int),
@@ -103,6 +106,8 @@ async function nextInwardCode(
   tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
   companyId: string,
 ): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'jw_dc_inward');
   const rows = (await tx.execute(sql`
     SELECT COALESCE(
       MAX(NULLIF(regexp_replace(code, '^JWIN-', ''), '')::int),

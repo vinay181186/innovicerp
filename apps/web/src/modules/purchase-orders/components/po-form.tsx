@@ -41,14 +41,14 @@ import { VendorPicker } from '@/components/shared/vendor-picker';
 import { addDaysLocal, daysBetweenLocal, todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { inrFormat } from '@/lib/print/doc-print';
-import { useDocNumber } from '@/lib/use-doc-number';
+import { docCodeToSend, useDocNumber } from '@/lib/use-doc-number';
 import { useVendor, useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreatePurchaseOrder, useUpdatePurchaseOrder } from '../api';
-import { PO_TYPE_LABELS } from '../lib/po-labels';
+import { PO_TYPE_LABELS, toPoTaxType } from '../lib/po-labels';
 import { PoFormLine } from './po-form-line';
 import { NEW_PO_LINE, type PoFormLineValue, type PoFormValues } from './po-form-types';
 
@@ -171,6 +171,11 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     suggested.current = next;
     if (current !== next) setValue('header.code', next);
   }, [isEdit, docNo.nextCode, poType, getValues, setValue]);
+  // S2: the box still holds OUR suggestion and someone else has just saved
+  // that number. Not an error for the buyer — an untouched suggestion is not
+  // sent (docCodeToSend), so the server gives this PO the next free number.
+  const suggestionTaken =
+    !isEdit && code.trim() !== '' && code.trim() === suggested.current && docNo.duplicate;
 
   // ── Item Master: each line's Item Code box searches the server itself
   // (PoFormLine → useItemCodeSearch), so an item past any first page can be
@@ -482,7 +487,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const blocking = useMemo((): string | null => {
     if (!isEdit) {
       if (code.trim() === '') return 'PO No. is required';
-      if (docNo.duplicate) return 'That PO number is already used';
+      if (docNo.duplicate && !suggestionTaken) return 'That PO number is already used';
       if (docNo.formatInvalid) return docNo.error ?? 'PO number format is wrong';
     }
     if (poDate.trim() === '') return 'PO Date is required';
@@ -519,6 +524,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     isEdit,
     code,
     docNo,
+    suggestionTaken,
     poDate,
     deliveryDate,
     vendorId,
@@ -546,7 +552,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       vendorId: values.header.vendorId || undefined,
       vendorCodeText: values.header.vendorCodeText?.trim() || undefined,
       dueDate: values.header.dueDate || undefined,
-      taxType: values.header.taxType?.trim() || undefined,
+      taxType: toPoTaxType(values.header.taxType),
       sgstPct: Number(values.header.sgstPct) || 0,
       cgstPct: Number(values.header.cgstPct) || 0,
       igstPct: Number(values.header.igstPct) || 0,
@@ -599,12 +605,15 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         // branch. The cast is only because the schema gives `status` a default,
         // which makes it required in the INFERRED (output) type even though the
         // request may legitimately omit it.
+        const sendCode = docCodeToSend(values.header.code, suggested.current);
         const payload = {
           header: {
             ...header,
             // Blank → omitted so the server auto-generates IN-PO-#####; sending
             // '' fails the schema's code.min(1) → "request validation failed".
-            ...(values.header.code.trim() ? { code: values.header.code.trim() } : {}),
+            // S2: the untouched suggestion is omitted too — the server numbers
+            // the PO under its series lock; only a number the buyer typed goes.
+            ...(sendCode ? { code: sendCode } : {}),
           },
           lines: outLines,
         } as CreatePurchaseOrderInput;
@@ -639,7 +648,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
   const codeState = isEdit
     ? undefined
-    : code.trim() === '' || docNo.error
+    : code.trim() === '' || (docNo.error && !suggestionTaken)
       ? 'is-bad'
       : docNo.valid
         ? 'is-ok'
@@ -769,7 +778,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                 ? undefined
                 : code.trim() === ''
                   ? 'PO No. is required'
-                  : docNo.checking
+                  : docNo.checking || suggestionTaken
                     ? undefined
                     : docNo.duplicate
                       ? 'Already used'
@@ -778,6 +787,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             help={
               isEdit ? undefined : docNo.checking ? (
                 'Checking…'
+              ) : suggestionTaken ? (
+                'Just used by someone else — the next free number is given on save.'
               ) : (
                 <span style={{ color: 'var(--green2)' }}>
                   <Check size={11} style={{ verticalAlign: -1 }} /> Number not used

@@ -68,8 +68,8 @@ export function printOspDc(args: {
   };
 
   const blocks = templatesToBlocks('OSP DC', templates);
-  // Vendor master first: `vendorCodeText` is the ISSUE-TIME snapshot and on
-  // every production challan it holds the PO number, not the vendor's code.
+  // Vendor master first: `vendorCodeText` is the ISSUE-TIME snapshot. Challans
+  // saved before A32 / migration 0182 held the PO number there.
   const vendorAddressLines = [
     vendor?.addressLine1 ?? '',
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
@@ -84,6 +84,10 @@ export function printOspDc(args: {
     },
     { label: 'GSTIN', value: vendor?.gstNumber ?? '', variant: 'mono' },
   ];
+  // Vendor contact (A33): contact person and phone off the vendor master, the
+  // same pair the GRN prints. Printed only when the master has one.
+  const vendorContact = [vendor?.contactPerson, vendor?.phone].filter(Boolean).join(', ');
+  if (vendorContact) recipientFields.push({ label: 'Contact', value: vendorContact });
 
   const documentFields: SheetField[] = [
     { label: 'DC No.', value: dc.code, variant: 'mono' },

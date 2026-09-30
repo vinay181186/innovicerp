@@ -210,7 +210,9 @@ export const createDeliveryChallanInputSchema = z.object({
     // FK when the vendor is in the master, else null with vendorCodeText as the
     // human identifier (ADR-015) — mirrors the Job-Work PO this DC is issued from.
     vendorId: z.string().uuid().nullable().optional(),
-    vendorCodeText: z.string().min(1),
+    /** The VENDOR's code — never the PO number (A32). Optional when vendorId is
+     *  set: the server stores the vendor master's code. Required otherwise. */
+    vendorCodeText: z.string().min(1).optional(),
     salesOrderLineId: z.string().uuid().nullable().optional(),
     soRefText: z.string().nullable().optional(),
     transport: z.string().nullable().optional(),

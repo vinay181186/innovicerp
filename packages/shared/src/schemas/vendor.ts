@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 
 const codeRegex = /^[A-Za-z0-9._&-]+$/;
 
@@ -90,7 +91,7 @@ export type VendorSortField = z.infer<typeof vendorSortFieldSchema>;
 
 export const listVendorsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBoolean().optional(),
   sortBy: vendorSortFieldSchema.optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
   // 1000 so the Vendor Master can load the whole master in one scrolling fetch

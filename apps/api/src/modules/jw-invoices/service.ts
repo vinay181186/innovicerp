@@ -6,7 +6,7 @@
 // RETURNED to the customer minus already invoiced. Bumps
 // job_work_order_lines.invoiced_qty.
 
-import { type SQL, and, asc, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, count, desc, eq, ilike, isNull, like, ne, or, sql } from 'drizzle-orm';
 import type {
   CancelJwInvoiceInput,
   CreateJwInvoiceInput,
@@ -25,6 +25,8 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { changedByOtherError } from '../../lib/row-lock';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { emitActivityLog } from '../activity-log/service';
 import { ActivityAction } from '@innovic/shared';
 
@@ -39,6 +41,8 @@ function dateLike(v: unknown): string {
 const money = (n: number): string => n.toFixed(2);
 
 async function nextInvoiceCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: queue behind any other save numbering this series (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'jw_invoices');
   const prefix = 'IN-JWINV-';
   const rows = await tx
     .select({ code: jwInvoices.code })
@@ -154,6 +158,8 @@ export async function createJwInvoice(
     const gstAmount = (taxable * gstPercent) / 100;
     const total = taxable + gstAmount;
 
+    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+    await lockDocSeries(tx, companyId, 'jw_invoices');
     const code = input.code ?? (await nextInvoiceCode(tx, companyId));
     const inserted = await tx
       .insert(jwInvoices)
@@ -224,6 +230,10 @@ export async function cancelJwInvoice(
   if (!reason) throw new ValidationError('Reason is required to cancel a JW Invoice.');
 
   return withUserContext(user, async (tx) => {
+    // S4 — cancel once. Lock the invoice row FIRST (the status used to be read
+    // before any lock, so two cancels both passed and the billed qty came off
+    // the JW line twice). A second cancel now waits here, reads 'cancelled'
+    // and is refused.
     const rows = await tx
       .select()
       .from(jwInvoices)
@@ -234,11 +244,14 @@ export async function cancelJwInvoice(
           isNull(jwInvoices.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const inv = rows[0];
     if (!inv) throw new NotFoundError('JW Invoice not found. Refresh the page.');
     if (inv.status === 'cancelled') {
-      throw new ConflictError(`JW Invoice ${inv.code} is already Cancelled.`);
+      throw new ConflictError(
+        `JW Invoice ${inv.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
+      );
     }
 
     // Lock the JW line, then give the billed qty back (clamp at 0).
@@ -264,10 +277,10 @@ export async function cancelJwInvoice(
         updatedAt: new Date(),
         updatedBy: userId,
       })
-      .where(eq(jwInvoices.id, inv.id))
+      .where(and(eq(jwInvoices.id, inv.id), ne(jwInvoices.status, 'cancelled')))
       .returning();
     const row = updated[0];
-    if (!row) throw new ConflictError(`Could not cancel JW Invoice ${inv.code}. Try again.`);
+    if (!row) throw changedByOtherError(`JW Invoice ${inv.code}`);
 
     await emitActivityLog(
       tx,

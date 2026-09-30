@@ -53,6 +53,7 @@ import {
 import { readStockPositionLocked, reconcileLineReservations } from '../../lib/stock-reservation';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { assertActiveParty } from '../../lib/active-party';
 import { emitActivityLog } from '../activity-log/service';
 import { cascadeBomToSoLine } from '../bom-master/cascade';
 import {
@@ -103,18 +104,11 @@ async function assertClientExists(
   tx: DbTransaction,
   clientId: string,
   companyId: string,
+  /** The document's current customer on an edit — an inactive customer is
+   *  refused only when it is being newly linked (A10 inactive-master rule). */
+  keepClientId?: string | null,
 ): Promise<string> {
-  const rows = await tx
-    .select({ id: clients.id, name: clients.name })
-    .from(clients)
-    .where(
-      and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
-    )
-    .limit(1);
-  if (rows.length === 0) {
-    throw new ValidationError('Selected Customer was not found. Please select the Customer again.');
-  }
-  return rows[0]!.name;
+  return (await assertActiveParty(tx, 'customer', clientId, companyId, keepClientId)).name;
 }
 
 /** For a batch of line inputs, resolve itemId from itemCodeText where the
@@ -1670,7 +1664,12 @@ export async function updateSalesOrder(
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;
     if (input.header.clientId !== undefined && input.header.clientId !== null) {
-      snapshotClientName = await assertClientExists(tx, input.header.clientId, companyId);
+      snapshotClientName = await assertClientExists(
+        tx,
+        input.header.clientId,
+        companyId,
+        existingHdr.clientId,
+      );
     }
 
     // Header update — only set the fields the caller provided.

@@ -8,7 +8,7 @@
 // 'pending' until the dispose action flips it. SoftDelete blocks once status
 // leaves 'pending' — disposed/closed NCs are permanent records.
 
-import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, like, ne, sql } from 'drizzle-orm';
 import {
   ActivityAction,
   type DocumentTraceability,
@@ -31,11 +31,11 @@ import {
   purchaseOrderLines,
   salesOrderLines,
   users,
-  vendors,
   goodsReceiptNoteLines,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { assertActiveParty } from '../../lib/active-party';
 import { requireOpEntryRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -44,7 +44,9 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { assertRowUpdated } from '../../lib/row-lock';
 import { labelOf } from '../../lib/status-labels';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
@@ -696,6 +698,17 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
   };
+}
+
+/** S3 — take the NC row lock inside the caller's transaction BEFORE reading
+ *  its status. A second write on the same NC (another tab, another user) waits
+ *  here and then reads what the first one committed. */
+async function lockNcRow(tx: DbTransaction, id: string, companyId: string): Promise<void> {
+  await tx
+    .select({ id: ncRegister.id })
+    .from(ncRegister)
+    .where(and(eq(ncRegister.id, id), eq(ncRegister.companyId, companyId)))
+    .for('update');
 }
 
 /** One NC with every join the contract carries. Used by the detail read AND
@@ -1350,6 +1363,7 @@ export async function updateNcRegister(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    await lockNcRow(tx, id, companyId);
     // Full row, read BEFORE the update — the before side of the EDIT's
     // before → after list (ADR-197).
     const existing = await tx
@@ -1380,7 +1394,12 @@ export async function updateNcRegister(
       updates['reportedByText'] = input.reportedByText ?? null;
     if (input.operatorText !== undefined) updates['operatorText'] = input.operatorText ?? null;
 
-    await tx.update(ncRegister).set(updates).where(eq(ncRegister.id, id));
+    const edited = await tx
+      .update(ncRegister)
+      .set(updates)
+      .where(and(eq(ncRegister.id, id), eq(ncRegister.status, 'pending')))
+      .returning({ id: ncRegister.id });
+    assertRowUpdated(edited, `NC ${existing[0]!.code}`);
 
     const reread = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
     const row = reread[0]!;
@@ -1530,7 +1549,16 @@ export async function disposeNcRegister(
 export async function closeNc(
   id: string,
   user: AuthContext,
-  opts: { reworkDoneQty?: number | undefined; via?: string | undefined } = {},
+  opts: {
+    reworkDoneQty?: number | undefined;
+    via?: string | undefined;
+    /** Legacy close routes: refuse unless the NC carries one of these
+     *  dispositions — checked under the row lock, in the same transaction. */
+    requireDisposition?: {
+      allowed: ReadonlyArray<NcRegister['disposition']>;
+      message: (code: string) => string;
+    };
+  } = {},
 ): Promise<NcRegister> {
   requireOpEntryRole(user);
   // Closing changes an already-disposed NC — `edit`.
@@ -1538,9 +1566,14 @@ export async function closeNc(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    await lockNcRow(tx, id, companyId);
     const before = await readNc(tx, id, companyId);
     if (before.status === 'closed') {
       throw new ConflictError(`NC ${before.code} is already closed`);
+    }
+    const need = opts.requireDisposition;
+    if (need && !need.allowed.includes(before.disposition)) {
+      throw new ConflictError(need.message(before.code));
     }
     const reason = ncCloseBlockedReason(before);
     if (reason) throw new ConflictError(reason);
@@ -1588,26 +1621,30 @@ export async function closeNcRework(
   input: CloseNcReworkInput,
   user: AuthContext,
 ): Promise<NcRegister> {
-  const companyId = requireCompany(user);
-  const nc = await withUserContext(user, (tx) => readNc(tx, id, companyId));
-  if (nc.disposition !== 'rework' && nc.disposition !== 'repair') {
-    throw new ConflictError(`NC ${nc.code} is not set to Rework. Change its disposition first.`);
-  }
-  return closeNc(id, user, { reworkDoneQty: input.reworkDoneQty, via: 'rework' });
+  // The disposition check runs INSIDE closeNc's locked transaction (S3), not
+  // in a separate read first — a check in one transaction and the close in
+  // another let the NC change in between.
+  return closeNc(id, user, {
+    reworkDoneQty: input.reworkDoneQty,
+    via: 'rework',
+    requireDisposition: {
+      allowed: ['rework', 'repair'],
+      message: (code) => `NC ${code} is not set to Rework. Change its disposition first.`,
+    },
+  });
 }
 
 /** Legacy route: POST /nc-register/:id/close-return. Same gate as closeNc —
  *  which for a return-to-vendor NC means the challan has been issued, every
  *  piece has come back and Incoming QC has passed judgement on all of them. */
 export async function closeNcReturnToVendor(id: string, user: AuthContext): Promise<NcRegister> {
-  const companyId = requireCompany(user);
-  const nc = await withUserContext(user, (tx) => readNc(tx, id, companyId));
-  if (nc.disposition !== 'return_to_vendor') {
-    throw new ConflictError(
-      `NC ${nc.code} is not set to Return to Vendor. Change its disposition first.`,
-    );
-  }
-  return closeNc(id, user, { via: 'return to vendor' });
+  return closeNc(id, user, {
+    via: 'return to vendor',
+    requireDisposition: {
+      allowed: ['return_to_vendor'],
+      message: (code) => `NC ${code} is not set to Return to Vendor. Change its disposition first.`,
+    },
+  });
 }
 
 // ─── Create the return-to-vendor challan (design §5) ──────────────────────
@@ -1631,6 +1668,8 @@ async function readPoLineReceived(
  *  a revised challan keeps its running number. Kept identical on purpose —
  *  an NC challan and a PO challan share one number series. */
 async function nextNcDcCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // S2: same series — and same lock — as the OSP challan (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'delivery_challans');
   const prefix = 'IN-DC-';
   const rows = await tx
     .select({ code: deliveryChallans.code })
@@ -1675,6 +1714,9 @@ export async function createNcDc(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // S3 — locked: two users pressing "Issue DC" on one NC serialize here, and
+    // the second one sees the first one's challan (deliveryChallanId below).
+    // Migration 0181's delivery_challans_nc_active_uq is the database backstop.
     const ncRows = await tx
       .select()
       .from(ncRegister)
@@ -1685,7 +1727,8 @@ export async function createNcDc(
           isNull(ncRegister.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const nc = ncRows[0];
     if (!nc) throw new NotFoundError('NC not found. It may have been moved to Trash.');
     if (nc.disposition !== 'return_to_vendor') {
@@ -1701,21 +1744,23 @@ export async function createNcDc(
     if (nc.deliveryChallanId) {
       throw new ConflictError(`NC ${nc.code} already has a return-to-vendor DC.`);
     }
-
-    if (input.vendorId) {
-      const v = await tx
-        .select({ id: vendors.id })
-        .from(vendors)
-        .where(
-          and(
-            eq(vendors.id, input.vendorId),
-            eq(vendors.companyId, companyId),
-            isNull(vendors.deletedAt),
-          ),
-        )
-        .limit(1);
-      if (v.length === 0)
-        throw new ValidationError('Vendor not found. Pick it again from the list.');
+    // One ACTIVE return-to-vendor DC per NC, checked on the challans too — not
+    // only on the NC's pointer (same rule as the 0181 partial unique index).
+    const activeDc = await tx
+      .select({ code: deliveryChallans.code })
+      .from(deliveryChallans)
+      .where(
+        and(
+          eq(deliveryChallans.ncId, nc.id),
+          isNull(deliveryChallans.deletedAt),
+          ne(deliveryChallans.status, 'cancelled'),
+        ),
+      )
+      .limit(1);
+    if (activeDc[0]) {
+      throw new ConflictError(
+        `NC ${nc.code} already has return-to-vendor DC ${activeDc[0].code}. Reload the page.`,
+      );
     }
 
     // WI4: default the return vendor FK from the NC's ACTUAL source (GRN vendor,
@@ -1728,6 +1773,11 @@ export async function createNcDc(
       jcOpId: nc.jcOpId,
     });
     const effectiveVendorId = input.vendorId ?? source.sourceVendorId;
+    // The return challan is a NEW link to the vendor: it must exist and be
+    // active (A10 inactive-master rule — 409 "Vendor X is disabled").
+    if (effectiveVendorId) {
+      await assertActiveParty(tx, 'vendor', effectiveVendorId, companyId);
+    }
 
     // The parent card supplies the SO line; the item master the uom the line
     // needs; the origin op tells us whether a PO line is involved.
@@ -1819,7 +1869,7 @@ export async function createNcDc(
       updatedBy: user.id,
     });
 
-    await tx
+    const sentRows = await tx
       .update(ncRegister)
       .set({
         rtvSentQty: qty.toFixed(2),
@@ -1827,7 +1877,9 @@ export async function createNcDc(
         status: 'sent_to_vendor',
         updatedBy: user.id,
       })
-      .where(eq(ncRegister.id, nc.id));
+      .where(and(eq(ncRegister.id, nc.id), eq(ncRegister.status, 'disposed')))
+      .returning({ id: ncRegister.id });
+    assertRowUpdated(sentRows, `NC ${nc.code}`);
 
     // The pieces are at the vendor again, so an origin op that read 'received'
     // goes back to 'sent' (OSP chain gap G5, 2026-09-16). Only that one
@@ -1941,6 +1993,7 @@ export async function softDeleteNcRegister(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    await lockNcRow(tx, id, companyId);
     const existing = await tx
       .select({
         id: ncRegister.id,

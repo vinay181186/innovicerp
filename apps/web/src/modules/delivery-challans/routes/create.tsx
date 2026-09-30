@@ -38,6 +38,7 @@ import { ArrowLeft, Loader2, Truck } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { docCodeToSend } from '@/lib/use-doc-number';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -447,6 +448,9 @@ function PoDcFormBody({
 
   const [code, setCode] = useState('');
   const [codeValid, setCodeValid] = useState(false);
+  // S2: the number the field auto-filled. It is only a preview — the form
+  // sends a number only when the user changed it (docCodeToSend).
+  const [suggestedCode, setSuggestedCode] = useState('');
   const [dcDate, setDcDate] = useState(todayIst());
   const [transport, setTransport] = useState('');
   // Vehicle number is kept apart from the transporter NAME (`transport`) — the
@@ -581,12 +585,14 @@ function PoDcFormBody({
       }
       const input: CreateDeliveryChallanInput = {
         header: {
-          code: code.trim() || undefined,
+          code: docCodeToSend(code, suggestedCode),
           dcDate,
           purchaseOrderId: po.id,
           poCodeText: po.code,
           vendorId: po.vendorId ?? null,
-          vendorCodeText: po.vendorCodeText ?? po.code,
+          // The vendor's code, never the PO number (A32, NAMING: Vendor Code). A
+          // linked vendor needs nothing here: the server stores the master's code.
+          ...(po.vendorCodeText ? { vendorCodeText: po.vendorCodeText } : {}),
           transport: transport.trim() || null,
           vehicleNo: vehicleNo.trim() || null,
         },
@@ -682,6 +688,7 @@ function PoDcFormBody({
             required
             id="dc-code"
             onValidityChange={setCodeValid}
+            onSuggestedChange={setSuggestedCode}
           />
         </div>
         <FormField label="DC Date" required size="sm" htmlFor="dc-date">

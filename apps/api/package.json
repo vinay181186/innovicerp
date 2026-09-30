@@ -18,7 +18,9 @@
     "db:migrate": "dotenv -e ../../.env.local -- drizzle-kit migrate",
     "db:push": "dotenv -e ../../.env.local -- drizzle-kit push",
     "db:studio": "dotenv -e ../../.env.local -- drizzle-kit studio",
-    "seed": "dotenv -e ../../.env.local -- tsx src/db/seed.ts"
+    "seed": "dotenv -e ../../.env.local -- tsx src/db/seed.ts",
+    "db:drift": "tsx src/db/check-drift.ts",
+    "db:quality": "tsx src/db/data-quality.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

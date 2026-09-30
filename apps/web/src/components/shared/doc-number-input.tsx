@@ -27,6 +27,10 @@ export interface DocNumberInputProps {
    *  series (IN-MPO- / IN-JWPO- / IN-SPO- / IN-OPO-) the suggestion and the
    *  placeholder are built from. */
   poType?: PoType;
+  /** Told the number this field auto-filled, every time it fills one. The form
+   *  keeps it and passes it to `docCodeToSend` on save, so an untouched
+   *  suggestion is NOT sent and the server numbers the document itself (S2). */
+  onSuggestedChange?: (suggested: string) => void;
 }
 
 export function DocNumberInput({
@@ -39,6 +43,7 @@ export function DocNumberInput({
   id,
   onValidityChange,
   poType,
+  onSuggestedChange,
 }: DocNumberInputProps): React.JSX.Element {
   const fmt = DOC_NUMBER_FORMATS[type];
   const state = useDocNumber(type, readOnly ? '' : value, poType);
@@ -71,16 +76,26 @@ export function DocNumberInput({
     if (!firstFill && !seriesChanged) return;
     filledFor.current = seriesKey;
     autoFilled.current = next;
+    onSuggestedChange?.(next);
     if (current !== next) onChange(next);
-  }, [readOnly, state.nextCode, value, onChange, seriesKey]);
+  }, [readOnly, state.nextCode, value, onChange, seriesKey, onSuggestedChange]);
+
+  // S2: the box still holds our own suggestion. It is not sent on save (the
+  // server numbers the document), so it can never be a duplicate for the
+  // user — if someone else saved that number meanwhile, this save just gets
+  // the next one. Only a number the user typed is held to the check.
+  const isSuggestion =
+    !readOnly && value.trim() !== '' && value.trim() === autoFilled.current;
+  const suggestionTaken = isSuggestion && state.duplicate;
 
   // Edit mode is always "valid" (immutable existing code); create defers to the hook.
-  const effectiveValid = readOnly ? true : state.valid;
+  const effectiveValid = readOnly ? true : suggestionTaken ? true : state.valid;
   useEffect(() => {
     onValidityChange?.(effectiveValid);
   }, [effectiveValid, onValidityChange]);
 
   const showStatus = !readOnly && value.trim().length > 0;
+  const error = suggestionTaken ? null : state.error;
 
   return (
     <div className="form-grp">
@@ -101,7 +116,7 @@ export function DocNumberInput({
             if (!readOnly && value.trim()) onChange(state.padded);
           }}
           style={
-            showStatus && state.error
+            showStatus && error
               ? { borderColor: 'var(--red)', paddingRight: 30 }
               : showStatus && state.valid
                 ? { borderColor: 'var(--green)', paddingRight: 30 }
@@ -115,7 +130,7 @@ export function DocNumberInput({
           >
             {state.checking ? (
               <Loader2 size={14} className="animate-spin" style={{ color: 'var(--text3)' }} />
-            ) : state.error ? (
+            ) : error ? (
               <X size={15} style={{ color: 'var(--red2)' }} />
             ) : (
               <Check size={15} style={{ color: 'var(--green2)' }} />
@@ -127,10 +142,12 @@ export function DocNumberInput({
         <div className="form-help">Code cannot be changed after creation.</div>
       ) : state.checking ? (
         <div className="form-help">Checking…</div>
-      ) : state.error ? (
-        <div className="form-error">{state.error}</div>
+      ) : error ? (
+        <div className="form-error">{error}</div>
       ) : value.trim() === '' ? (
         <div className="form-help">Leave blank for the next number.</div>
+      ) : suggestionTaken ? (
+        <div className="form-help">Just used by someone else — the next free number is given on save.</div>
       ) : (
         <div className="form-help" style={{ color: 'var(--green2)' }}>✓ Available</div>
       )}

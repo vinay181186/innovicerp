@@ -15,12 +15,15 @@
 // everything sent has come back). Closure happens automatically from the QC
 // hooks; the manual Close button goes through the same gate.
 
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { ActivityAction, SHIFTS, opSrNo } from '@innovic/shared';
+import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { ActivityAction, NC_STATUS_LABELS, SHIFTS, opSrNo } from '@innovic/shared';
 import { jcOps, jobCards, machines, ncRegister, opLog, purchaseOrderLines } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { assertRowUpdated } from '../../lib/row-lock';
+import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
@@ -133,7 +136,8 @@ export async function markNcClosed(
   user: AuthContext,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
-  await tx
+  // Close once (S3): an NC someone else closed first is refused, not re-stamped.
+  const rows = await tx
     .update(ncRegister)
     .set({
       ...extra,
@@ -142,7 +146,9 @@ export async function markNcClosed(
       closedBy: user.id,
       updatedBy: user.id,
     })
-    .where(eq(ncRegister.id, ncId));
+    .where(and(eq(ncRegister.id, ncId), ne(ncRegister.status, 'closed')))
+    .returning({ code: ncRegister.code });
+  assertRowUpdated(rows, 'This NC');
 }
 
 // ─── Child rework / repair job card (design §4) ───────────────────────────
@@ -354,6 +360,8 @@ async function nextRecoveryJcCode(
   parentCode: string,
   kind: RecoveryKind,
 ): Promise<string> {
+  // S2: queue behind any other save numbering a job card (lib/doc-series-lock).
+  await lockDocSeries(tx, companyId, 'job_cards');
   const suffix = kind === 'rework' ? 'RW' : 'RP';
   const countRows = await tx
     .select({ c: sql<number>`count(*)::int` })
@@ -387,6 +395,11 @@ async function nextRecoveryJcCode(
 
 // ─── Shared pieces of the two QC hooks ────────────────────────────────────
 
+/** Every recovery step (QC credit, climb, challan receive / cancel) reads the
+ *  NC LOCKED (S3): two steps on one NC — two GRN lines inspected at once, a
+ *  receive racing a cancel — serialize here, and the second one re-reads the
+ *  ledger the first committed instead of overwriting it. Locks only ever climb
+ *  child → ancestor, the same direction disposeNcCascade takes. */
 async function loadNc(tx: DbTransaction, ncId: string, companyId: string): Promise<NcRow> {
   const rows = await tx
     .select()
@@ -398,7 +411,8 @@ async function loadNc(tx: DbTransaction, ncId: string, companyId: string): Promi
         isNull(ncRegister.deletedAt),
       ),
     )
-    .limit(1);
+    .limit(1)
+    .for('update');
   const nc = rows[0];
   if (!nc) throw new NotFoundError('NC not found. Refresh the page.');
   return nc;
@@ -684,6 +698,12 @@ export async function onNcChallanReceived(
   }
   const received = Math.max(0, Math.round(args.receivedQty));
   if (received === 0) return;
+  // S3 — pieces can only come back while they are out.
+  if (nc.status !== 'sent_to_vendor' && nc.status !== 'received_qc_pending') {
+    throw new ConflictError(
+      `NC ${nc.code} is ${labelOf(NC_STATUS_LABELS, nc.status)}; nothing is at the vendor on it. Reload the page.`,
+    );
+  }
   const sent = Math.round(n(nc.rtvSentQty));
   const already = Math.round(n(nc.rtvReceivedQty));
   const total = already + received;
@@ -802,7 +822,9 @@ export async function onNcChallanCancelled(
   }
   const sent = Math.round(n(nc.rtvSentQty));
 
-  await tx
+  // S3 — only a challan still out can be taken back; the NC row is locked
+  // (loadNc) and the write requires the status it was read at.
+  const reverted = await tx
     .update(ncRegister)
     .set({
       rtvSentQty: '0.00',
@@ -810,7 +832,9 @@ export async function onNcChallanCancelled(
       status: 'disposed',
       updatedBy: user.id,
     })
-    .where(eq(ncRegister.id, nc.id));
+    .where(and(eq(ncRegister.id, nc.id), eq(ncRegister.status, 'sent_to_vendor')))
+    .returning({ id: ncRegister.id });
+  assertRowUpdated(reverted, `NC ${nc.code}`);
 
   await emitActivityLog(
     tx,

@@ -26,9 +26,14 @@
 // status='po_created' atomically. Mirrors legacy `addPO()` line 25728.
 
 import { z } from 'zod';
+import { servicePoTaxTypeSchema } from './service-po';
 import { PO_STATUSES } from '../enums/po-status';
 import { PO_TYPES } from '../enums/po-type';
 
+/** PO Tax Type — the same fixed list as invoices / JW invoices / Service POs
+ *  (S1): 'sgst_cgst' = SGST + CGST (same state), 'igst' = IGST. Null = None. */
+export const poTaxTypeSchema = servicePoTaxTypeSchema;
+export type PoTaxType = z.infer<typeof poTaxTypeSchema>;
 export const poTypeSchema = z.enum(PO_TYPES);
 export const poStatusSchema = z.enum(PO_STATUSES);
 
@@ -116,7 +121,9 @@ export const purchaseOrderSchema = z.object({
   vendorCodeText: z.string().nullable(),
   status: poStatusSchema,
   dueDate: z.string().nullable(),
-  taxType: z.string().nullable(),
+  /** 'sgst_cgst' | 'igst' | null (None) — the one tax-type list shared with
+   *  invoices, JW invoices and Service POs (DB CHECK purchase_orders_tax_type_check, 0182). */
+  taxType: poTaxTypeSchema.nullable(),
   // GST percentages — NULL when the viewer's access hides prices (they reveal
   // the money structure, so they are hidden with the amounts).
   sgstPct: z.string().nullable(),
@@ -251,7 +258,7 @@ const _poHeaderInputBase = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
     .optional(),
-  taxType: z.string().max(32).optional(),
+  taxType: poTaxTypeSchema.optional(),
   sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
   cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
   igstPct: z.coerce.number().nonnegative().max(99.99).default(0),
@@ -293,7 +300,7 @@ export const updatePurchaseOrderInputSchema = z.object({
   header: _poHeaderInputBase
     .partial()
     .omit({ code: true })
-    .extend({ taxType: z.string().max(32).nullable().optional() }),
+    .extend({ taxType: poTaxTypeSchema.nullable().optional() }),
   lines: z.array(purchaseOrderLineInputSchema).optional(),
 });
 export type UpdatePurchaseOrderInput = z.infer<typeof updatePurchaseOrderInputSchema>;
@@ -324,7 +331,7 @@ export const createPurchaseOrderFromPrInputSchema = z.object({
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
       .optional(),
-    taxType: z.string().max(32).optional(),
+    taxType: poTaxTypeSchema.optional(),
     sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
     cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
     igstPct: z.coerce.number().nonnegative().max(99.99).default(0),
@@ -348,7 +355,7 @@ export const createPurchaseOrderFromPrBatchInputSchema = z.object({
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
       .optional(),
-    taxType: z.string().max(32).optional(),
+    taxType: poTaxTypeSchema.optional(),
     sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
     cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
     igstPct: z.coerce.number().nonnegative().max(99.99).default(0),

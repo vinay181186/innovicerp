@@ -183,7 +183,7 @@ function VendorFacts(props: { vendor: Vendor }): React.JSX.Element {
         value={vendor.rating ? <StatusBadge kind="rating" status={vendor.rating} /> : null}
       />
       <ReadField label="Phone" size="md" mono value={vendor.phone} />
-      <ReadField label="GST No." size="md" mono value={vendor.gstNumber} />
+      <ReadField label="GSTIN" size="md" mono value={vendor.gstNumber} />
 
       <ReadField label="City" size="lg" value={vendor.city} />
       <ReadField label="State" size="md" value={vendor.state} />

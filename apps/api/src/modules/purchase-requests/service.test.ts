@@ -615,9 +615,10 @@ describe('purchase-requests service', () => {
     expect(convertible.items.map((i) => i.code)).not.toContain(code);
 
     // Closing twice is refused — a second click is a mistake, not a no-op.
+    // A state conflict (409), not a form error (S5, fix wave 1).
     await expect(
       service.closePurchaseRequestBalance(pr.id, { reason: 'again' }, admin),
-    ).rejects.toBeInstanceOf(ValidationError);
+    ).rejects.toBeInstanceOf(ConflictError);
 
     const auditRows = await db
       .select()

@@ -34,7 +34,7 @@ const VENDOR_FIELDS: readonly DiffField[] = [
   { key: 'contactPerson', label: 'Contact Person' },
   { key: 'phone', label: 'Phone' },
   { key: 'email', label: 'Email' },
-  { key: 'gstNumber', label: 'GST No.' },
+  { key: 'gstNumber', label: 'GSTIN' },
   { key: 'addressLine1', label: 'Address' },
   { key: 'city', label: 'City' },
   { key: 'state', label: 'State' },
@@ -73,7 +73,7 @@ export async function listVendors(
     const conditions: SQL[] = [eq(vendors.companyId, companyId), isNull(vendors.deletedAt)];
     if (input.search) {
       // Search covers every column the Vendor Master list actually shows —
-      // Code, Name, Contact, Phone, Email, GST No., Address and the Rating
+      // Code, Name, Contact, Phone, Email, GSTIN, Address and the Rating
       // badge (the <th> row in apps/web/src/modules/vendors/routes/list.tsx).
       // Deliberately NOT searched:
       //  - materials supplied, city, state, pincode — held on the vendor, but
