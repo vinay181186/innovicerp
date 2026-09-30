@@ -17,16 +17,16 @@
 // client-form.tsx once that form is migrated. Keep the two in step:
 //
 //   Contact person lg · Email lg                        → 6 + 6  = 12
-//   Phone lg · GST number lg                            → 6 + 6  = 12
+//   Phone md · GSTIN md · GST Category md               → 4+4+4  = 12
 //   City lg · State md · Pincode xs                     → 6+4+2  = 12
 //   Payment Days xs (ADR-188)                           → 2, row closes
 //   Address full                                        → 12
 //
-// The address row is deliberately identical to the vendor's. Phone and GST
-// number are wider here than on the vendor page for one reason: a client has
-// no Rating, so there is no third field to close that row at md · md · md.
+// The address row is deliberately identical to the vendor's. GST Category
+// (plan v3 Step 2) closes the Phone · GSTIN row at md · md · md; State shows
+// "Name (code)" from the State Code, else an old record's free text.
 
-import type { Client } from '@innovic/shared';
+import { type Client, gstCategoryLabel, stateLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -173,14 +173,15 @@ function ClientFacts(props: { client: Client }): React.JSX.Element {
       <ReadField label="Address" size="full" pre value={client.addressLine1} />
 
       <ReadField label="City" size="lg" value={client.city} />
-      <ReadField label="State" size="md" value={client.state} />
+      <ReadField label="State" size="md" value={stateLabel(client.stateCode) || client.state} />
       <ReadField label="Pincode" size="xs" mono value={client.pincode} />
 
       <ReadField label="Contact Person" size="lg" value={client.contactPerson} />
       <ReadField label="Email" size="lg" value={client.email} />
 
-      <ReadField label="Phone" size="lg" mono value={client.phone} />
-      <ReadField label="GSTIN" size="lg" mono value={client.gstNumber} />
+      <ReadField label="Phone" size="md" mono value={client.phone} />
+      <ReadField label="GSTIN" size="md" mono value={client.gstNumber} />
+      <ReadField label="GST Category" size="md" value={gstCategoryLabel(client.gstCategory)} />
       <ReadField label="Payment Days" size="xs" mono value={client.paymentDays ?? null} />
     </ReadGrid>
   );

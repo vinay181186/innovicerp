@@ -16,6 +16,7 @@ import {
   type JwReturnableResponse,
   type ListJwReturnChallansQuery,
   type ListJwReturnChallansResponse,
+  roundQty,
 } from '@innovic/shared';
 import {
   clients,
@@ -415,7 +416,7 @@ export async function createJwReturnChallan(
           code,
           input.returnDate,
           c.childItemId,
-          Math.round(input.qty * c.qtyPerSet),
+          roundQty(input.qty * c.qtyPerSet), // S9: keep BOM decimals, never round to 0
           { code: c.childItemCode },
         );
       }

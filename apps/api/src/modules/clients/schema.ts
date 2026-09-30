@@ -6,6 +6,7 @@ export {
   clientSchema,
   createClientInputSchema,
   listClientsQuerySchema,
+  updateClientImportRowSchema,
   updateClientInputSchema,
 } from '@innovic/shared';
 export type {
@@ -13,6 +14,7 @@ export type {
   BulkCreateClientsInput,
   BulkCreateClientsResponse,
   Client,
+  ClientSaveResponse,
   CreateClientInput,
   ListClientsQuery,
   ListClientsResponse,

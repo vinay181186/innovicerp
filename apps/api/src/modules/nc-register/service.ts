@@ -8,7 +8,7 @@
 // 'pending' until the dispose action flips it. SoftDelete blocks once status
 // leaves 'pending' — disposed/closed NCs are permanent records.
 
-import { and, asc, desc, eq, isNull, like, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, like, ne, sql } from 'drizzle-orm';
 import {
   ActivityAction,
   type DocumentTraceability,
@@ -16,7 +16,11 @@ import {
   NC_DISPOSITION_LABELS,
   NC_REASON_CATEGORY_LABELS,
   NC_STATUS_LABELS,
+  NC_STATUS_MOVES,
   opSrNo,
+  qtyUomProblem,
+  roundQty,
+  statusesThatMayMoveTo,
   withDocRevision,
 } from '@innovic/shared';
 import {
@@ -30,6 +34,7 @@ import {
   ncRegister,
   purchaseOrderLines,
   salesOrderLines,
+  salesOrders,
   users,
   goodsReceiptNoteLines,
 } from '../../db/schema';
@@ -241,6 +246,7 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     // or standalone card has no customer PO line, so it stays null, and the
     // write paths that pass nothing return null exactly as they do for itemCode.
     clientPoLineNo,
+    soId: row.soId ?? null,
     soCodeText: row.soCodeText,
     machineCodeText: row.machineCodeText,
     operatorText: row.operatorText,
@@ -281,7 +287,7 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     failedQty: row.failedQty,
     closedAt: maybeTsLike(row.closedAt),
     closedBy: row.closedBy,
-    openQty: ncOpenQty(row).toFixed(2),
+    openQty: ncOpenQty(row).toFixed(3),
     closeBlockedReason: ncCloseBlockedReason({ ...row, childJobCardCode }),
     scrapCost: row.scrapCost,
     status: row.status,
@@ -423,7 +429,8 @@ export async function listNcRegister(
         nc.operation_text AS "operationText", nc.qc_operation_text AS "qcOperationText",
         nc.item_id AS "itemId", nc.item_code_text AS "itemCodeText",
         nc.item_name_text AS "itemNameText",
-        nc.so_code_text AS "soCodeText", nc.machine_code_text AS "machineCodeText",
+        nc.so_id AS "soId", nc.so_code_text AS "soCodeText",
+        nc.machine_code_text AS "machineCodeText",
         nc.operator_text AS "operatorText",
         nc.rejected_qty::text AS "rejectedQty",
         nc.reason_category AS "reasonCategory", nc.reason,
@@ -644,6 +651,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     itemId: r['itemId'] as string,
     itemCodeText: r['itemCodeText'] as string,
     itemNameText: (r['itemNameText'] as string | null) ?? null,
+    soId: str('soId'),
     soCodeText: (r['soCodeText'] as string | null) ?? null,
     machineCodeText: (r['machineCodeText'] as string | null) ?? null,
     operatorText: (r['operatorText'] as string | null) ?? null,
@@ -678,7 +686,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     failedQty: ledger.failedQty,
     closedAt: maybeTsLike(r['closedAt']),
     closedBy: str('closedBy'),
-    openQty: ncOpenQty(ledger).toFixed(2),
+    openQty: ncOpenQty(ledger).toFixed(3),
     closeBlockedReason: ncCloseBlockedReason(ledger),
     scrapCost: r['scrapCost'] as string,
     status: ledger.status,
@@ -1287,6 +1295,51 @@ export async function createNcRegister(
     // Snapshot itemCodeText from the items row so the durable text matches the
     // master at creation time. Same pattern as legacy auto-NC capture.
     const itemCode = await getItemCode(tx, input.itemId, companyId);
+    // S9 — decimals follow the item's unit: Rejected Qty on a NOS / SET item is
+    // whole pieces; a KG item keeps up to 3 decimals (like the GRN it came from).
+    const uomRows = await tx
+      .select({ uom: items.uom })
+      .from(items)
+      .where(eq(items.id, input.itemId))
+      .limit(1);
+    const uomProblem = qtyUomProblem(input.rejectedQty, uomRows[0]?.uom ?? null, 'Rejected Qty');
+    if (uomProblem) throw new ValidationError(uomProblem);
+
+    // 0184 — the real SO link. A picked SO (soId) must be a live SO of this
+    // company and its code becomes the snapshot; a typed code alone is linked
+    // when it names exactly one live SO, else it stays text only.
+    let soId: string | null = null;
+    let soCodeText = input.soCodeText ?? null;
+    if (input.soId) {
+      const soRows = await tx
+        .select({ id: salesOrders.id, code: salesOrders.code })
+        .from(salesOrders)
+        .where(
+          and(
+            eq(salesOrders.id, input.soId),
+            eq(salesOrders.companyId, companyId),
+            isNull(salesOrders.deletedAt),
+          ),
+        )
+        .limit(1);
+      const so = soRows[0];
+      if (!so) throw new ValidationError('SO not found. Pick the SO No. again.');
+      soId = so.id;
+      soCodeText = so.code;
+    } else if (soCodeText) {
+      const soRows = await tx
+        .select({ id: salesOrders.id })
+        .from(salesOrders)
+        .where(
+          and(
+            eq(salesOrders.code, soCodeText),
+            eq(salesOrders.companyId, companyId),
+            isNull(salesOrders.deletedAt),
+          ),
+        )
+        .limit(2);
+      if (soRows.length === 1) soId = soRows[0]!.id;
+    }
 
     const inserted = await tx
       .insert(ncRegister)
@@ -1302,10 +1355,11 @@ export async function createNcRegister(
         itemId: input.itemId,
         itemCodeText: itemCode ?? '',
         itemNameText: input.itemNameText ?? null,
-        soCodeText: input.soCodeText ?? null,
+        soId,
+        soCodeText,
         machineCodeText: input.machineCodeText ?? null,
         operatorText: input.operatorText ?? null,
-        rejectedQty: input.rejectedQty.toFixed(2),
+        rejectedQty: input.rejectedQty.toFixed(3),
         reasonCategory: input.reasonCategory,
         reason: input.reason ?? null,
         // Disposition fields stay null until T-040b's dispose action.
@@ -1581,7 +1635,7 @@ export async function closeNc(
     const extra: Record<string, unknown> = {};
     const done = opts.reworkDoneQty;
     if (done != null && Number.isFinite(done) && done >= 0) {
-      extra['reworkDoneQty'] = done.toFixed(2);
+      extra['reworkDoneQty'] = done.toFixed(3);
     }
     await markNcClosed(tx, id, user, extra);
     const after = await readNc(tx, id, companyId);
@@ -1818,7 +1872,7 @@ export async function createNcDc(
       poLineId = gl[0]?.poLineId ?? null;
     }
 
-    const qty = Math.round(Number(nc.rejectedQty));
+    const qty = roundQty(Number(nc.rejectedQty));
     const code = await nextNcDcCode(tx, companyId);
     const reason = `Return to vendor — ${nc.dispositionRemarks ?? 'rework'}`;
 
@@ -1858,7 +1912,7 @@ export async function createNcDc(
       itemId: nc.itemId,
       itemCodeText: item?.code ?? nc.itemCodeText,
       itemNameText: item?.name ?? nc.itemNameText,
-      qty: qty.toFixed(2),
+      qty: qty.toFixed(3),
       uom: item?.uom ?? 'NOS',
       materialText: null,
       // The NC code is always the line remark so the challan print names the
@@ -1872,12 +1926,17 @@ export async function createNcDc(
     const sentRows = await tx
       .update(ncRegister)
       .set({
-        rtvSentQty: qty.toFixed(2),
+        rtvSentQty: qty.toFixed(3),
         deliveryChallanId: dc.id,
         status: 'sent_to_vendor',
         updatedBy: user.id,
       })
-      .where(and(eq(ncRegister.id, nc.id), eq(ncRegister.status, 'disposed')))
+      .where(
+        and(
+          eq(ncRegister.id, nc.id),
+          inArray(ncRegister.status, statusesThatMayMoveTo(NC_STATUS_MOVES, 'sent_to_vendor')),
+        ),
+      )
       .returning({ id: ncRegister.id });
     assertRowUpdated(sentRows, `NC ${nc.code}`);
 

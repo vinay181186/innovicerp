@@ -314,6 +314,27 @@ the reversed `qty` and the `reason`.
 | NC disposition                  | `dispositionBy`, `dispositionAt` (keep writing `dispositionByText` as the snapshot) |
 | Any soft delete                 | `...softDeleteStamp(user)` (restore: `...restoreStamp()`)                           |
 
+### Master data: GST fields, rule settings, Excel import (fix wave 2, 0183)
+
+- **Customer / Vendor EDIT** — `CLIENT_FIELDS` / `VENDOR_FIELDS` also diff
+  `gstCategory` (`GST Category`, shown with `gstCategoryLabel`), `stateCode`
+  (`State Code`) and, on the vendor, `paymentTermsDays` (`Payment Terms (days)`).
+  `state` was already there. Picking a State writes both `stateCode` and `state`
+  (the list's name), so the History row shows both.
+- **Item EDIT** — `hsnCode` (`HSN Code`) was already diffed; unchanged.
+- **Company Settings EDIT** — `updateMyCompany` now logs `EDIT` on entity
+  `Company` (entityId = company id, refId = company name) with Before → After
+  for every Settings field, including `Master Rules Mode`, `Check HSN` and
+  `HSN Min Digits` — switching warn → enforce is on record with who and when.
+- **Excel import, Insert new** — one `CREATE` row for the whole sheet (unchanged).
+- **Excel import, Update existing** — one `EDIT` row PER record changed, with its
+  own Before → After (`detail` starts `Excel import (update) —`), so a data-fill
+  import is undoable field by field from each record's History tab. A preview
+  (`dryRun: true`) writes nothing and logs nothing.
+- **0183 backfill** — the one-time State text → State Code mapping is not in
+  History; its before-copy is `public._fix0183_backup` (table, row id, column,
+  old value).
+
 ## A page: the History tab
 
 Pages pass the document's **id and code** (legacy rows are found by code only).

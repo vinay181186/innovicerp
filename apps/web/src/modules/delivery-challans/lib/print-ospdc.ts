@@ -21,6 +21,7 @@ import type {
   EffectivePrintTemplate,
   Vendor,
 } from '@innovic/shared';
+import { roundQty } from '@innovic/shared';
 import {
   type SheetField,
   type SheetPrintModel,
@@ -137,10 +138,10 @@ export function printOspDc(args: {
       // HSN lives on the item master and the challan line does not carry it,
       // so the column prints blank. Only 3 of 46 items have one today anyway.
       hsn: null,
-      qty: String(Number(Number(l.qty).toFixed(2))),
+      qty: String(roundQty(Number(l.qty))),
       remarks: l.dcRemarks,
     })),
-    totalQty: String(Number(totalQty.toFixed(2))),
+    totalQty: String(roundQty(totalQty)),
     totalUom: uoms.length === 1 ? (uoms[0] ?? '') : '',
   };
 

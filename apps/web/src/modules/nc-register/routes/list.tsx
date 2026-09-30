@@ -3,12 +3,14 @@
 import {
   type ListNcRegisterQuery,
   NC_REASON_CATEGORIES,
+  NC_FILTER_STATUSES,
   NC_REASON_CATEGORY_LABELS,
   NC_STATUS_LABELS,
   NC_STATUSES,
   type NcReasonCategory,
   type NcStatus,
   opSrNo,
+  roundQty,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -234,7 +236,8 @@ function NcRegisterListPage(): React.JSX.Element {
                   }}
                 >
                   <option value="">All Status</option>
-                  {NC_STATUSES.map((s) => (
+                  {/* S8 — every status NCs are written in (legacy rework_done hidden). */}
+                  {NC_FILTER_STATUSES.map((s) => (
                     <option key={s} value={s}>
                       {NC_STATUS_LABELS[s]}
                     </option>
@@ -307,18 +310,18 @@ function NcRegisterListPage(): React.JSX.Element {
                 {
                   key: 'totalQty',
                   label: 'Rejected Qty',
-                  count: summary?.totalQty == null ? '—' : Math.round(summary.totalQty),
+                  count: summary?.totalQty == null ? '—' : roundQty(summary.totalQty),
                 },
                 {
                   key: 'rework',
                   label: 'Rework Qty',
-                  count: summary?.reworkQty == null ? '—' : Math.round(summary.reworkQty),
+                  count: summary?.reworkQty == null ? '—' : roundQty(summary.reworkQty),
                   color: 'var(--cyan)',
                 },
                 {
                   key: 'scrap',
                   label: 'Scrap Qty',
-                  count: summary?.scrapQty == null ? '—' : Math.round(summary.scrapQty),
+                  count: summary?.scrapQty == null ? '—' : roundQty(summary.scrapQty),
                   color: 'var(--red2)',
                 },
               ]}
@@ -521,7 +524,7 @@ function NcRegisterListPage(): React.JSX.Element {
                       <span>
                         Rejected{' '}
                         <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
-                          {Number(nc.rejectedQty).toFixed(0)}
+                          {roundQty(Number(nc.rejectedQty))}
                         </span>
                       </span>
                       <span>·</span>

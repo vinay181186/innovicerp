@@ -53,7 +53,8 @@ export async function itemsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const body = bulkCreateItemsInputSchema.parse(req.body);
     const result = await service.createItemsBulk(body, req.user);
-    reply.code(201);
+    // A preview (dryRun) writes nothing — 200; a real import creates — 201.
+    reply.code(body.dryRun ? 200 : 201);
     return result;
   });
 

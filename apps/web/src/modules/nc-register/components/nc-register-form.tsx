@@ -13,6 +13,8 @@ import {
   type NcRegister,
   type UpdateNcRegisterInput,
   opSrNo,
+  QTY_STEP,
+  qtyUomProblem,
 } from '@innovic/shared';
 import { todayIst } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
@@ -36,6 +38,8 @@ interface FormValues {
   itemId: string;
   itemCodeText?: string;
   itemNameText?: string;
+  /** The picked SO's id (0184) — sent with its code so the NC links to the SO. */
+  soId?: string;
   soCodeText?: string;
   machineCodeText?: string;
   operatorText?: string;
@@ -114,8 +118,8 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     name: `${itemCodeWithRev(jc.itemCode, jc.itemRevision, '')} ${jc.itemName}`.trim(),
   }));
 
-  // SO No. is a code-text snapshot (string), not an id — so the picker stores the
-  // chosen SO's code, not its id (keeps the saved value type identical).
+  // SO No.: the picker stores the chosen SO's code (the soCodeText snapshot)
+  // AND its id (soId, 0184 — the real link the server stores).
   const [soSearch, setSoSearch] = useState('');
   const soQuery = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
   const soOptions = (soQuery.data?.items ?? []).map((s) => ({
@@ -193,7 +197,13 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     const currentSo = watch('soCodeText') ?? '';
     if (!currentSo || currentSo === autoSoCode.current) {
       const jcSo = jc.sourceLink?.type === 'so' ? jc.sourceLink.code : '';
-      if (jcSo !== currentSo) setValue('soCodeText', jcSo, { shouldDirty: true });
+      if (jcSo !== currentSo) {
+        setValue('soCodeText', jcSo, { shouldDirty: true });
+        // 0184 — the JC's own SO id travels with its code.
+        setValue('soId', jc.sourceLink?.type === 'so' ? jc.sourceLink.salesOrderId : undefined, {
+          shouldDirty: true,
+        });
+      }
       autoSoCode.current = jcSo || null;
     }
   }, [selectedJcId, isEdit, jcs, pickedJc, seededJc, setValue, watch]);
@@ -224,6 +234,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         itemId: values.itemId,
         ...(values.itemNameText?.trim() ? { itemNameText: values.itemNameText.trim() } : {}),
         ...(values.soCodeText?.trim() ? { soCodeText: values.soCodeText.trim() } : {}),
+        ...(values.soId && values.soCodeText?.trim() ? { soId: values.soId } : {}),
         ...(values.machineCodeText?.trim()
           ? { machineCodeText: values.machineCodeText.trim() }
           : {}),
@@ -374,11 +385,16 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                   </label>
                   <SearchableSelect
                     id="nc-so"
-                    value={soOptions.find((o) => o.code === watch('soCodeText'))?.id ?? null}
+                    value={
+                      watch('soId') ??
+                      soOptions.find((o) => o.code === watch('soCodeText'))?.id ??
+                      null
+                    }
                     valueLabel={watch('soCodeText') || undefined}
                     onChange={(id) => {
                       const so = soOptions.find((o) => o.id === id);
                       setValue('soCodeText', so?.code ?? '', { shouldDirty: true });
+                      setValue('soId', so?.id, { shouldDirty: true });
                     }}
                     onSearch={setSoSearch}
                     loading={soQuery.isFetching}
@@ -457,13 +473,17 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                   <input
                     id="rejectedQty"
                     type="number"
-                    min={1}
-                    step="0.01"
+                    min={QTY_STEP}
+                    step={QTY_STEP}
                     placeholder="Qty"
                     className="innovic-input fw-700 red"
                     {...register('rejectedQty', {
                       valueAsNumber: true,
-                      min: { value: 0.01, message: 'Rejected must be more than 0.' },
+                      // The unit rule (whole pieces for NOS / SET) is the server's.
+                      validate: (v) =>
+                        !(v > 0)
+                          ? 'Rejected must be more than 0.'
+                          : (qtyUomProblem(v, null, 'Rejected') ?? true),
                     })}
                   />
                   {errors.rejectedQty?.message ? (

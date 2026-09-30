@@ -57,6 +57,7 @@ import {
   ActivityAction,
   type ActivityChange,
   opSrNo,
+  roundQty,
   stripStaleGeneratedTerminalQc,
 } from '@innovic/shared';
 import type {
@@ -634,11 +635,12 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
   const cmReturned = Number(r['cmReturned'] ?? 0);
   const customerMaterial: JobCardListItem['customerMaterial'] = jwLineId
     ? {
-        needed: rmQtyPerPiece == null ? null : Math.round(rmQtyPerPiece * orderQty),
-        received: Math.max(0, cmReceived),
-        issued: Math.max(0, cmIssued),
-        returned: Math.max(0, cmReturned),
-        balance: cmReceived - cmIssued - cmReturned,
+        // S9 — 3 decimals, never a whole-number round (2.4 KG stayed 2).
+        needed: rmQtyPerPiece == null ? null : roundQty(rmQtyPerPiece * orderQty),
+        received: roundQty(Math.max(0, cmReceived)),
+        issued: roundQty(Math.max(0, cmIssued)),
+        returned: roundQty(Math.max(0, cmReturned)),
+        balance: roundQty(cmReceived - cmIssued - cmReturned),
       }
     : null;
   return {
@@ -1590,7 +1592,7 @@ async function loadBomComponentBudget(
       ON bml.bom_master_id = COALESCE(
            sol.source_bom_master_id,
            CASE WHEN so.type = 'equipment'
-                 AND so.bom_master_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+                 AND so.bom_master_id::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
                 THEN so.bom_master_id::uuid END)
      AND bml.company_id = sol.company_id
      AND bml.deleted_at IS NULL

@@ -112,8 +112,8 @@ export async function loadSoPhaseData(
            WHERE dt.sales_order_id = so.id AND dt.deleted_at IS NULL
              AND dt.status = 'Approved') AS design_approved,
         (SELECT b.created_at FROM bom_masters b
-           WHERE so.bom_master_id ~ '^[0-9a-fA-F-]{36}$'
-             AND b.id = so.bom_master_id::uuid AND b.deleted_at IS NULL
+           -- 0184: bom_master_id is a uuid FK; ::text keeps this safe either side of it
+           WHERE b.id::text = so.bom_master_id::text AND b.deleted_at IS NULL
            LIMIT 1) AS bom_linked,
         (SELECT MIN(p.created_at) FROM plans p
            JOIN sales_order_lines sl ON sl.id = p.so_line_id

@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/master-rules-ui';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateVendor, useUpdateVendor, useVendor } from '../api';
 import { VendorForm } from '../components/vendor-form';
@@ -26,6 +27,7 @@ function VendorNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateVendor();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
   // Creating a master record is `entry` on vendor_create (Purchase). Checked
   // here as well as on the list button — the route is reachable by URL, so
   // without this an L1 Viewer got the whole form and failed only at the API.
@@ -36,12 +38,14 @@ function VendorNewPage(): React.JSX.Element {
 
   const onSubmit = async (values: CreateVendorInput): Promise<void> => {
     setSubmitError(null);
+    setServerFieldErrors(null);
     try {
       const created = await create.mutateAsync(values);
       exit.leave(
         () => void navigate({ to: '/vendors/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
+      setServerFieldErrors(serverFieldErrorsOf(err));
       setSubmitError(err instanceof Error ? err.message : 'Could not save Vendor. Try again.');
     }
   };
@@ -73,6 +77,7 @@ function VendorNewPage(): React.JSX.Element {
             mode="create"
             onSubmit={onSubmit}
             submitError={submitError}
+            serverFieldErrors={serverFieldErrors}
             onCancel={() => exit.leave(goBack)}
           />
         </div>
@@ -87,6 +92,7 @@ function VendorEditPage(): React.JSX.Element {
   const { data: vendor, isLoading, isError, error } = useVendor(id);
   const update = useUpdateVendor(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
   // Changing a saved record is `edit` on vendor_create (Purchase), so L2 Data
   // Entry (create-only) is correctly refused. Checked here too because the
   // route is reachable by URL, not just from the Edit button.
@@ -101,10 +107,12 @@ function VendorEditPage(): React.JSX.Element {
 
   const onSubmit = async (values: UpdateVendorInput): Promise<void> => {
     setSubmitError(null);
+    setServerFieldErrors(null);
     try {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/vendors/$id', params: { id }, replace: true }));
     } catch (err) {
+      setServerFieldErrors(serverFieldErrorsOf(err));
       setSubmitError(err instanceof Error ? err.message : 'Could not save Vendor. Try again.');
     }
   };
@@ -175,6 +183,7 @@ function VendorEditPage(): React.JSX.Element {
             vendor={vendor}
             onSubmit={onSubmit}
             submitError={submitError}
+            serverFieldErrors={serverFieldErrors}
             onCancel={() => exit.leave(goBack)}
           />
         </div>

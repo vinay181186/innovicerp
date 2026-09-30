@@ -194,8 +194,9 @@ type DispatchableRow = {
 // bearing:
 //
 //   * assembly lines  -> sales_order_lines.source_bom_master_id (uuid)
-//   * EQUIPMENT SOs   -> sales_orders.bom_master_id, on the HEADER, and typed
-//                        text rather than uuid (legacy column)
+//   * EQUIPMENT SOs   -> sales_orders.bom_master_id, on the HEADER (text until
+//                        0184, a uuid FK since — the ::text regex guard below
+//                        keeps the query valid on either side of that change)
 //
 // Keying only on the line column silently skipped every equipment SO — all five
 // in the database had a header BOM and a NULL line BOM — so those orders fell
@@ -207,7 +208,7 @@ type DispatchableRow = {
 const UUID_SQL_RE = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
 const EFFECTIVE_BOM_ID = `COALESCE(
   sol.source_bom_master_id,
-  CASE WHEN so.type = 'equipment' AND so.bom_master_id ~ '${UUID_SQL_RE}'
+  CASE WHEN so.type = 'equipment' AND so.bom_master_id::text ~ '${UUID_SQL_RE}'
        THEN so.bom_master_id::uuid END
 )`;
 

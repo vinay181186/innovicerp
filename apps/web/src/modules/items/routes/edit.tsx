@@ -17,6 +17,7 @@ import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { PageHeader, PageState } from '@/ui/layout';
+import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/master-rules-ui';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateItem, useItem, useUpdateItem } from '../api';
 import { ItemForm } from '../components/item-form';
@@ -39,6 +40,7 @@ function ItemNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateItem();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
   // Tier-driven, per department (Store). The + Add Item button is hidden from
   // anyone without entry rights, but this screen had no gate of its own —
   // typing the URL still handed over the create form (an L1 Viewer, an L4
@@ -50,12 +52,14 @@ function ItemNewPage(): React.JSX.Element {
 
   const onSubmit = async (values: CreateItemInput): Promise<void> => {
     setSubmitError(null);
+    setServerFieldErrors(null);
     try {
       const created = await create.mutateAsync(values);
       exit.leave(
         () => void navigate({ to: '/items/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
+      setServerFieldErrors(serverFieldErrorsOf(err));
       setSubmitError(err instanceof Error ? err.message : 'Could not save Item. Try again.');
     }
   };
@@ -88,6 +92,7 @@ function ItemNewPage(): React.JSX.Element {
         onBack={goBack}
         onSubmit={onSubmit}
         submitError={submitError}
+        serverFieldErrors={serverFieldErrors}
         onCancel={() => exit.leave(goBack)}
       />
     </>
@@ -100,6 +105,7 @@ function ItemEditPage(): React.JSX.Element {
   const { data: item, isLoading, isError, error } = useItem(id);
   const update = useUpdateItem(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
   // Same hole on the edit route: the row's Edit link is hidden without edit
   // rights, but the URL was open to anyone signed in.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
@@ -114,10 +120,12 @@ function ItemEditPage(): React.JSX.Element {
 
   const onSubmit = async (values: UpdateItemInput): Promise<void> => {
     setSubmitError(null);
+    setServerFieldErrors(null);
     try {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/items/$id', params: { id }, replace: true }));
     } catch (err) {
+      setServerFieldErrors(serverFieldErrorsOf(err));
       setSubmitError(err instanceof Error ? err.message : 'Could not save Item. Try again.');
     }
   };
@@ -161,6 +169,7 @@ function ItemEditPage(): React.JSX.Element {
         onBack={goBack}
         onSubmit={onSubmit}
         submitError={submitError}
+        serverFieldErrors={serverFieldErrors}
         onCancel={() => exit.leave(goBack)}
       />
     </>

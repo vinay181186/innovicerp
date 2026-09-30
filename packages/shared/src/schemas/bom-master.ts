@@ -12,6 +12,7 @@
 import { z } from 'zod';
 import { BOM_LINE_TYPES } from '../enums/bom-line-type';
 import { BOM_STATUSES } from '../enums/bom-status';
+import { positiveQtySchema } from '../lib/qty-rule';
 
 export const bomStatusSchema = z.enum(BOM_STATUSES);
 export const bomLineTypeSchema = z.enum(BOM_LINE_TYPES);
@@ -126,7 +127,9 @@ export interface ListBomMastersResponse {
 
 export const createBomMasterLineInputSchema = z.object({
   childItemId: z.string().uuid(),
-  qtyPerSet: z.number().positive(),
+  /** Up to 3 decimals (numeric(14,3), 0184 — S9: 0.125 KG was saved as 0.13).
+   *  A whole-number child unit (NOS / SET) is refused a fraction by the API. */
+  qtyPerSet: positiveQtySchema,
   bomType: bomLineTypeSchema,
   // Raw material for this child part — see bomMasterLineSchema. Optional.
   rawMaterialGradeId: z.string().uuid().nullable().optional(),

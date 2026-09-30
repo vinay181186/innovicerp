@@ -79,7 +79,9 @@ export function useBulkCreateVendors() {
   return useMutation<BulkCreateVendorsResponse, Error, BulkCreateVendorsInput>({
     mutationFn: (input) =>
       apiFetch<BulkCreateVendorsResponse>('/vendors/bulk', { method: 'POST', json: input }),
-    onSuccess: () => {
+    onSuccess: (_res, input) => {
+      // A preview (dryRun) writes nothing — nothing to reload.
+      if (input.dryRun) return;
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: vendorsKeys.lists() });
     },

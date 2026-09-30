@@ -9,7 +9,7 @@
 //
 //   <ListHeader>            title · count · ⟳ Updating… · primary, then the filter
 //                           bar: SearchInput · item type (with counts) · Source · Clear
-//   <Banner>                import error / import result (dismissible)
+//   <MasterImportDialog>    Excel import: Import Type → preview → import
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint · Excel template / import
 //   <PageState>             no-access and load-failure
@@ -23,7 +23,7 @@
 // What did NOT change: the route and its search params, the 300ms debounce on
 // the URL write, normalizeSearchTerm, the whole-master count queries (so the
 // item-type dropdown's counts do not shrink as you type), perms -> canCreate/canEdit/
-// canDelete, the one-request bulk import and its duplicate/failure buckets,
+// canDelete, the one-request bulk import (now through the shared import dialog),
 // row click -> detail, Item Code -> detail, the thumbnail's own click (the
 // picture opens large; it never opens the row).
 //
@@ -63,15 +63,15 @@ import {
   type ListItemsQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ItemBadge, ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
+import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Badge, Button, Icon, Tag } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
@@ -93,19 +93,6 @@ const COUNT_ALL: ListItemsQuery = { limit: 1, offset: 0 };
 const COUNT_BY_TYPE: ReadonlyArray<readonly [ItemType, ListItemsQuery]> = ITEM_TYPES.map(
   (t) => [t, { itemType: t, limit: 1, offset: 0 }] as const,
 );
-
-/** Outcome of an Excel import, bucketed so each group is shown on its own. */
-interface ImportResult {
-  total: number;
-  /** Item codes that were added to Item Master. */
-  imported: string[];
-  /** Item codes that already exist in Item Master (skipped). */
-  duplicates: string[];
-  /** Item codes that failed for a non-duplicate reason (bad data, etc.). */
-  failures: string[];
-  /** Row-level parse warnings from the workbook. */
-  warnings: string[];
-}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -197,63 +184,13 @@ function ItemsListPage(): React.JSX.Element {
   // ADR-197: Delete asks for a reason — the row's Delete opens this dialog.
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; code: string } | null>(null);
 
-  // Excel import — parse the workbook, then send the WHOLE sheet in one request.
-  // It used to POST one item at a time and wait for each answer, and every
-  // answer invalidated the list below, so the browser re-downloaded the entire
-  // item master after every row. On the identical vendor import that measured
-  // about one row a second — nine minutes for a 500-row sheet. Now: one request,
-  // one list reload at the end.
+  // Excel import — ONE shared dialog (components/shared/master-import-dialog):
+  // Import Type (Insert new / Update existing by Item Code) → preview (dryRun,
+  // the server checks every row and writes nothing) → import. The whole sheet
+  // goes in one request and the list reloads once at the end; a bad row is
+  // left out with its reason and the rest go in.
   const bulkCreate = useBulkCreateItems();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-
-  async function onImportFile(file: File): Promise<void> {
-    setImporting(true);
-    setImportResult(null);
-    setImportError(null);
-    try {
-      const { payloads, errors } = await parseItemImportFile(file);
-      if (payloads.length === 0) {
-        setImportResult({
-          total: 0,
-          imported: [],
-          duplicates: [],
-          failures: [],
-          warnings: errors,
-        });
-        return;
-      }
-      const res = await bulkCreate.mutateAsync({ items: payloads });
-      const duplicates: string[] = [];
-      const failures: string[] = [];
-      for (const skip of res.skipped) {
-        // `index` is the 1-based position in the array we sent, so it maps
-        // straight back to the parsed row and its code. Code is optional on
-        // import (auto-assigned server-side), so fall back to the name.
-        const label = payloads[skip.index - 1]?.code ?? skip.name;
-        // A code that is already taken is a duplicate — the user's fix is to
-        // remove that row. Anything else is a genuine failure worth its reason.
-        if (/already exists|deleted item/i.test(skip.reason)) duplicates.push(label);
-        else failures.push(`${label}: ${skip.reason}`);
-      }
-      // `codes` are the codes actually assigned, in insert order — including the
-      // ITM-#### the server generated for rows that left the code blank.
-      setImportResult({
-        total: payloads.length,
-        imported: res.codes,
-        duplicates,
-        failures,
-        warnings: errors,
-      });
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : 'Could not import file. Try again.');
-    } finally {
-      setImporting(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  }
+  const [importOpen, setImportOpen] = useState(false);
 
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -444,16 +381,6 @@ function ItemsListPage(): React.JSX.Element {
         }
       />
 
-      {importError ? (
-        <Banner tone="error" role="alert" onDismiss={() => setImportError(null)}>
-          ⚠ {importError}
-        </Banner>
-      ) : null}
-
-      {importResult ? (
-        <ImportResultBanner result={importResult} onClose={() => setImportResult(null)} />
-      ) : null}
-
       {isError ? (
         <PageState
           state="error"
@@ -497,10 +424,10 @@ function ItemsListPage(): React.JSX.Element {
         noun="item"
         limit={LIST_LIMIT}
         // Excel template + import sit below the count line (mirror of Client
-        // and Vendor Master). The file input is hidden and only opened by the
-        // button.
+        // and Vendor Master). Import opens the shared import dialog; Insert
+        // new needs Add, Update existing needs Edit.
         actions={
-          canCreate ? (
+          canCreate || canEdit ? (
             <>
               <Button
                 size="sm"
@@ -515,25 +442,29 @@ function ItemsListPage(): React.JSX.Element {
                 size="sm"
                 variant="ghost"
                 icon={<Icon name="upload" size={12} />}
-                loading={importing}
-                onClick={() => fileRef.current?.click()}
+                onClick={() => setImportOpen(true)}
               >
                 Import from Excel
               </Button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onImportFile(f);
-                }}
-              />
             </>
           ) : null
         }
       />
+      {importOpen ? (
+        <MasterImportDialog
+          title="Import Items from Excel"
+          noun="item"
+          codeLabel="Item Code"
+          nameLabel="Item Name"
+          allowInsert={canCreate}
+          allowUpdate={canEdit}
+          parse={parseItemImportFile}
+          submit={(rows, mode, dryRun) => bulkCreate.mutateAsync({ items: rows, mode, dryRun })}
+          onDownloadTemplate={downloadItemTemplate}
+          errorsFileName="Item Import Errors.xlsx"
+          onClose={() => setImportOpen(false)}
+        />
+      ) : null}
       {deleteTarget ? (
         <TrashReasonDialog
           title={`Move Item ${deleteTarget.code} to Trash?`}
@@ -545,116 +476,5 @@ function ItemsListPage(): React.JSX.Element {
         />
       ) : null}
     </div>
-  );
-}
-
-// Excel-import result. Two notices, not one hand-painted panel: the outcome,
-// and — when there are any — the duplicates on their own so the user can see
-// exactly which item codes already exist in Item Master and copy them out.
-function ImportResultBanner(props: {
-  result: ImportResult;
-  onClose: () => void;
-}): React.JSX.Element {
-  const { result, onClose } = props;
-  const { total, imported, duplicates, failures, warnings } = result;
-  const copyDuplicates = (): void => {
-    void navigator.clipboard?.writeText(duplicates.join('\n'));
-  };
-  // The code chips are <Tag>s — the square mono chip, which is what a bare
-  // document code is everywhere else in the app.
-  const chips = (codes: string[]): React.JSX.Element => (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 'var(--sp-1)',
-        maxHeight: 160,
-        overflowY: 'auto',
-        userSelect: 'text',
-      }}
-    >
-      {codes.map((c) => (
-        <Tag key={c} tone="neutral">
-          {c}
-        </Tag>
-      ))}
-    </div>
-  );
-
-  return (
-    <>
-      <Banner
-        tone={imported.length > 0 ? 'success' : 'info'}
-        onDismiss={onClose}
-        title={
-          <>
-            {imported.length > 0 ? '✅' : 'ℹ'} Imported {imported.length} of {total} item
-            {total === 1 ? '' : 's'}
-            {duplicates.length > 0
-              ? ` · ${duplicates.length} duplicate${duplicates.length === 1 ? '' : 's'} skipped`
-              : ''}
-            {failures.length > 0 ? ` · ${failures.length} not imported` : ''}
-          </>
-        }
-      >
-        {imported.length > 0 || failures.length > 0 ? (
-          <div style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
-            {imported.length > 0 ? (
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div
-                  className="fw-700"
-                  style={{ color: 'var(--green2)', marginBottom: 'var(--sp-1)' }}
-                >
-                  ✅ Added rows ({imported.length})
-                </div>
-                {chips(imported)}
-              </div>
-            ) : null}
-            {failures.length > 0 ? (
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div
-                  className="fw-700"
-                  style={{ color: 'var(--red2)', marginBottom: 'var(--sp-1)' }}
-                >
-                  ✕ Rows not imported ({failures.length})
-                </div>
-                {chips(failures)}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {warnings.length > 0 ? (
-          <div className="text3" style={{ marginTop: 'var(--sp-2)' }}>
-            <div className="fw-700" style={{ marginBottom: 'var(--sp-1)' }}>
-              Row warnings ({warnings.length})
-            </div>
-            <ul style={{ margin: 0, paddingLeft: 18, maxHeight: 120, overflowY: 'auto' }}>
-              {warnings.map((w, i) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </Banner>
-
-      {duplicates.length > 0 ? (
-        <Banner
-          tone="warn"
-          title={
-            <>
-              <span style={{ flex: 1 }}>
-                ⚠ Duplicate item codes — already in Item Master ({duplicates.length})
-              </span>
-              <Button size="sm" variant="ghost" onClick={copyDuplicates}>
-                📋 Copy codes
-              </Button>
-            </>
-          }
-        >
-          {chips(duplicates)}
-        </Banner>
-      ) : null}
-    </>
   );
 }

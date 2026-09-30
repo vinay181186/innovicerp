@@ -162,13 +162,15 @@ export const jobCardListItemSchema = z.object({
   // regular (own-material) JC. Needed = rmQtyPerPiece × orderQty (from the
   // ADR-193 route-card RM); Received/Issued/Returned come from the party store
   // ledger for this JWSO line; Balance = received − issued − returned.
+  // Fix wave 2 (S9): up to 3 decimals — customer material is often KG / MTR,
+  // and "RM needed" was rounded to a whole number (2.4 KG → 2).
   customerMaterial: z
     .object({
-      needed: z.number().int().nonnegative().nullable(),
-      received: z.number().int().nonnegative(),
-      issued: z.number().int().nonnegative(),
-      returned: z.number().int().nonnegative(),
-      balance: z.number().int(),
+      needed: z.number().nonnegative().nullable(),
+      received: z.number().nonnegative(),
+      issued: z.number().nonnegative(),
+      returned: z.number().nonnegative(),
+      balance: z.number(),
     })
     .nullable()
     .default(null),

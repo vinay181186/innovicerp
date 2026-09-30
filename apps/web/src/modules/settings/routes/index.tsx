@@ -13,6 +13,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
 import { useMyCompany, useUpdateMyCompany } from '../api';
 import { DataIntegrityPanel } from '../components/data-integrity-panel';
+import { MasterRulesPanel } from '../components/master-rules-panel';
 import { OspProcessesPanel } from '../components/osp-processes-panel';
 
 export const settingsRoute = createRoute({
@@ -308,6 +309,7 @@ function SettingsPage(): React.JSX.Element {
         </div>
       </div>
 
+      <MasterRulesPanel isAdmin={isAdmin} />
       <OspProcessesPanel />
       <DataIntegrityPanel />
     </div>

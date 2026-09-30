@@ -17,6 +17,7 @@
 
 import { z } from 'zod';
 import { queryBoolean } from '../lib/query-boolean';
+import { positiveQtyCoerceSchema } from '../lib/qty-rule';
 import { type NcDisposition, NC_DISPOSITIONS } from '../enums/nc-disposition';
 import { NC_REASON_CATEGORIES } from '../enums/nc-reason-category';
 import { type NcStatus, NC_STATUSES } from '../enums/nc-status';
@@ -65,6 +66,9 @@ export const ncRegisterSchema = z.object({
    *  the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
+  /** The Sales Order this NC belongs to (0184 — was linked by code text only).
+   *  Read `soId ?? soCodeText`: soCodeText stays as the snapshot. */
+  soId: z.string().uuid().nullable().default(null),
   soCodeText: z.string().nullable(),
   machineCodeText: z.string().nullable(),
   operatorText: z.string().nullable(),
@@ -173,10 +177,16 @@ export const createNcRegisterInputSchema = z.object({
   qcOperationText: z.string().max(255).optional(),
   itemId: z.string().uuid(),
   itemNameText: z.string().max(255).optional(),
+  /** The SO picked on the form (0184). When given, the server stores its code
+   *  as soCodeText; when only soCodeText comes, the server links it if the code
+   *  names exactly one live SO. */
+  soId: z.string().uuid().optional(),
   soCodeText: z.string().max(64).optional(),
   machineCodeText: z.string().max(64).optional(),
   operatorText: z.string().max(255).optional(),
-  rejectedQty: z.coerce.number().positive(),
+  /** Up to 3 decimals, like the GRN / QC qty it comes from (numeric(14,3),
+   *  0184 — S9). A whole-number unit is refused a fraction by the API. */
+  rejectedQty: positiveQtyCoerceSchema,
   reasonCategory: ncReasonCategorySchema.default('other'),
   // Defect/problem description is REQUIRED for manual NC entry (legacy
   // `_addManualNC` validates this — HTML L22591). Auto-NCs from QC keep it
@@ -208,8 +218,10 @@ export const disposeNcInputSchema = z.object({
   action: ncDispositionSchema,
   /** How many of the NC's rejected pieces this disposition covers (design §3,
    *  interlock 2). Omitted = all of them. Less than all splits the remainder
-   *  into a sibling NC that stays pending. Never more than the open qty. */
-  qty: z.coerce.number().int().positive().optional(),
+   *  into a sibling NC that stays pending. Never more than the open qty.
+   *  Up to 3 decimals (S9); whole pieces for a NOS / SET item and for a
+   *  rework / repair (it raises a job card in pieces) — checked by the API. */
+  qty: positiveQtyCoerceSchema.optional(),
   remarks: z.string().max(2000).optional(),
   /** Legacy in-route rework only; a new `rework` disposition raises a child
    *  job card and ignores this. Kept so old clients do not break. */

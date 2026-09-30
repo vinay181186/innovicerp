@@ -31,7 +31,7 @@
 // the return. This eliminated the send(−)/receive(+) pair that netted to zero
 // and let a later dispatch drive on-hand negative (SO-517 trace).
 
-import type { OutsourceStatus } from '@innovic/shared';
+import { type OutsourceStatus, opSrNo } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { jcOpPoLines, jcOps, jobCards, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
@@ -45,7 +45,10 @@ export interface OutwardCascadeArgs {
   dcCode: string;
   dcDate: string; // YYYY-MM-DD
   purchaseOrderLineId: string;
-  qty: number; // integer pcs sent on this DC line
+  /** The DC line qty (up to 3 decimals). When the line is tied to a JC op it
+   *  must be whole pieces — apply refuses a fraction, reverse rounds a legacy
+   *  one exactly as the pre-S9 send did. */
+  qty: number;
 }
 
 export interface OutwardCascadeResult {
@@ -273,6 +276,15 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
   const s = await loadOutwardSendable(tx, companyId, purchaseOrderLineId);
   if (s.kind === 'unlinked') return { fired: false };
   if (s.kind === 'job_work_unlinked') throw new ValidationError(jobWorkUnlinkedRefusal(s.poCode));
+  // S9 — the challan line may carry 3 decimals (KGS / MTR), but a job-card
+  // operation counts whole pieces (jc_ops.outsource_sent_qty is an integer).
+  // Refuse a fraction here instead of silently rounding it onto the op.
+  if (!Number.isInteger(qty)) {
+    throw new ValidationError(
+      `Qty (${qty}) must be a whole number — this line goes out for JC ${s.jcCode} ` +
+        `Op ${opSrNo(s.op.opSeq)}, which counts whole pieces.`,
+    );
+  }
   if (qty > s.effectiveSendable) throw new ValidationError(outwardCapRefusal(s, qty));
 
   const { op, jcCode } = s;
@@ -315,7 +327,11 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
 export async function reverseOutwardFromJcOp(
   args: OutwardCascadeArgs,
 ): Promise<OutwardCascadeResult> {
-  const { tx, companyId, adminUserId, dcCode, purchaseOrderLineId, qty } = args;
+  const { tx, companyId, adminUserId, dcCode, purchaseOrderLineId } = args;
+  // The op's sent counter is whole pieces. A send tied to an op is refused a
+  // fraction (applyOutwardToJcOp); a pre-S9 challan was rounded when it went
+  // out, so it is rounded the same way coming back.
+  const qty = Math.round(args.qty);
 
   await lockOpForPoLine(tx, companyId, purchaseOrderLineId);
   const rows = await tx

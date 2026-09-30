@@ -21,6 +21,14 @@
 // (legacy renderBOMMaster never persisted this multiplied qty; it
 // re-derived on every read. We persist on the child row so downstream
 // reports / cascades don't have to chase the BOM each time.)
+//
+// Rounding rule (fix wave 2, finding S9): a positive requirement is NEVER
+// skipped. qty_per_set keeps 3 decimals, so 0.25 × 1 = 0.25 — it used to be
+// Math.round'ed to 0 and the child JC / PR silently vanished.
+//   • Job Card (order_qty is a whole-number column) → round UP (Math.ceil):
+//     you cannot make a quarter of a part.
+//   • Purchase Request (qty is numeric(14,3)) → keep the decimals (roundQty),
+//     rounded UP only when the child's unit is a whole-number one (NOS / SET …).
 
 import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
 import {
@@ -37,7 +45,19 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, isWholeNumberUom, roundQty } from '@innovic/shared';
+
+/** Child qty for a Job Card — whole pieces, rounded UP (see header comment). */
+function jobCardChildQty(parentQty: number, qtyPerSet: number): number {
+  return Math.ceil(roundQty(parentQty * qtyPerSet));
+}
+
+/** Child qty for a Purchase Request — 3 decimals, or whole pieces rounded UP
+ *  when the child item's unit only moves in whole numbers. */
+function purchaseChildQty(parentQty: number, qtyPerSet: number, uom: string | null): number {
+  const q = roundQty(parentQty * qtyPerSet);
+  return isWholeNumberUom(uom) ? Math.ceil(q) : q;
+}
 
 /** One document the cascade spawned — logged as its own CREATE (ADR-197). */
 interface SpawnedDoc {
@@ -167,10 +187,11 @@ export async function cascadeBomToSoLine(
     };
   }
 
-  // 3. Load BOM lines.
-  const bomLines = await tx
-    .select()
+  // 3. Load BOM lines (+ the child item's unit, for the PR rounding rule).
+  const bomLineRows = await tx
+    .select({ line: bomMasterLines, uom: items.uom })
     .from(bomMasterLines)
+    .leftJoin(items, eq(items.id, bomMasterLines.childItemId))
     .where(
       and(
         eq(bomMasterLines.bomMasterId, bomMasterId),
@@ -186,9 +207,13 @@ export async function cascadeBomToSoLine(
   const spawned: SpawnedDoc[] = [];
   const today = new Date().toISOString().slice(0, 10);
 
-  for (const bl of bomLines) {
-    const childQty = Math.round(soLine.orderQty * Number(bl.qtyPerSet));
-    if (childQty <= 0) continue;
+  for (const { line: bl, uom } of bomLineRows) {
+    const perSet = Number(bl.qtyPerSet);
+    const childQty =
+      bl.bomType === 'manufacture'
+        ? jobCardChildQty(soLine.orderQty, perSet)
+        : purchaseChildQty(soLine.orderQty, perSet, uom);
+    if (!(childQty > 0)) continue;
 
     if (bl.bomType === 'manufacture') {
       const code = await nextJobCardCode(tx, soLine.companyId, soLineId);
@@ -429,8 +454,9 @@ export async function cascadeBomToJwLine(
   const today = new Date().toISOString().slice(0, 10);
 
   for (const bl of bomLines) {
-    const childQty = Math.round(jwLine.orderQty * Number(bl.qtyPerSet));
-    if (childQty <= 0) continue;
+    // Every JW child is a Job Card → whole pieces, rounded up (header comment).
+    const childQty = jobCardChildQty(jwLine.orderQty, Number(bl.qtyPerSet));
+    if (!(childQty > 0)) continue;
 
     const code = await nextJwJobCardCode(tx, jwLine.companyId, jwLineId);
     const jc = await tx

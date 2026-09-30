@@ -10,12 +10,18 @@
 // The private `bomx-` stylesheet (40px inputs, 36px buttons, own palette) is
 // gone.
 
-import type {
-  BomLineType,
-  BomMaster,
-  CreateBomMasterLineInput,
-  Item,
-  ListItemsResponse,
+import {
+  BOM_CREATE_STATUSES,
+  BOM_STATUS_MOVES,
+  type BomLineType,
+  type BomMaster,
+  type BomStatus,
+  type CreateBomMasterLineInput,
+  type Item,
+  type ListItemsResponse,
+  QTY_STEP,
+  qtyStepForUom,
+  qtyUomProblem,
 } from '@innovic/shared';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Copy, Download, Plus, Trash2, Upload } from 'lucide-react';
@@ -177,6 +183,12 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const { mode, initialHeader, initialLines, bom, onSubmit, submitting, submitError, onCancel } =
     props;
   const [header, setHeader] = useState<BomFormHeaderDraft>(initialHeader);
+  // S8: a new BOM is saved as Draft or Active; an existing one offers its
+  // saved status plus the moves BOM_STATUS_MOVES allows (the server enforces it).
+  const statusChoices: readonly BomStatus[] =
+    mode === 'create'
+      ? BOM_CREATE_STATUSES
+      : [initialHeader.status, ...BOM_STATUS_MOVES[initialHeader.status]];
   const [lines, setLines] = useState<BomFormLineDraft[]>(initialLines);
   const [revisionNote, setRevisionNote] = useState('');
   const [importErrors, setImportErrors] = useState<ExcelRowError[]>([]);
@@ -743,6 +755,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       if (!Number.isFinite(qty) || qty <= 0) {
         return `Row #${i + 1}: Qty / Set must be greater than 0.`;
       }
+      // Decimals follow the child's unit (S9) — the server repeats this check.
+      const unitProblem = qtyUomProblem(qty, itemById.get(l.childItemId)?.uom, 'Qty / Set');
+      if (unitProblem) return `Row #${i + 1}: ${unitProblem}`;
     }
     return null;
   }, [header, resolvedLines, itemById, resolvedParentId, parentItem]);
@@ -859,9 +874,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                 setHeader({ ...header, status: e.target.value as BomFormHeaderDraft['status'] })
               }
             >
-              <option value="active">Active</option>
-              <option value="draft">Draft</option>
-              <option value="obsolete">Obsolete</option>
+              {statusChoices.map((st) => (
+                <option key={st} value={st}>
+                  {STATUS_LABEL[st]}
+                </option>
+              ))}
             </select>
           </FormField>
           <FormField label="BOM Rev" size="xs" htmlFor="bom-rev">
@@ -1118,8 +1135,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                       <td className="td-num">
                         <input
                           type="number"
-                          min="0.01"
-                          step="0.01"
+                          min={item ? qtyStepForUom(item.uom) : QTY_STEP}
+                          step={item ? qtyStepForUom(item.uom) : QTY_STEP}
                           className="innovic-input mono"
                           aria-label={`Qty / Set, line ${idx + 1}`}
                           value={line.qtyPerSet}

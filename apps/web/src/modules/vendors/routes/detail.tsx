@@ -13,13 +13,14 @@
 // vendor-form.tsx once that form is migrated (Group 2). Keep the two in step:
 //
 //   Contact person lg · Email lg                        → 6 + 6  = 12
-//   Rating md · Phone md · GST number md                → 4+4+4  = 12
+//   Rating md · Phone md · GSTIN md                     → 4+4+4  = 12
+//   GST Category md · Payment Terms (days) md           → 4+4, row closes
 //   City lg · State md · Pincode xs                     → 6+4+2  = 12
 //   Materials supplied full · Address full              → 12 each
 //
 // Every row sums to 12, so a value sits in exactly the slot its input occupies.
 
-import type { Vendor } from '@innovic/shared';
+import { type Vendor, gstCategoryLabel, stateLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -185,8 +186,16 @@ function VendorFacts(props: { vendor: Vendor }): React.JSX.Element {
       <ReadField label="Phone" size="md" mono value={vendor.phone} />
       <ReadField label="GSTIN" size="md" mono value={vendor.gstNumber} />
 
+      <ReadField label="GST Category" size="md" value={gstCategoryLabel(vendor.gstCategory)} />
+      <ReadField
+        label="Payment Terms (days)"
+        size="md"
+        mono
+        value={vendor.paymentTermsDays ?? null}
+      />
+
       <ReadField label="City" size="lg" value={vendor.city} />
-      <ReadField label="State" size="md" value={vendor.state} />
+      <ReadField label="State" size="md" value={stateLabel(vendor.stateCode) || vendor.state} />
       <ReadField label="Pincode" size="xs" mono value={vendor.pincode} />
 
       <ReadField label="Materials Supplied" size="full" pre value={vendor.materialsSupplied} />

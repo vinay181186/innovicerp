@@ -60,6 +60,11 @@ import { Button } from '@/ui/core';
 import { Banner } from '@/ui/feedback';
 import { Panel } from '@/ui/data';
 import { CheckField, FormField, FormGrid, Input, Select } from '@/ui/forms';
+import {
+  type ServerFieldErrors,
+  ruleHelp,
+  useItemHsnNote,
+} from '@/modules/settings/master-rules-ui';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextItemCode } from '../api';
 import { ItemImageField } from './item-image-field';
@@ -77,6 +82,8 @@ type CommonProps = {
    */
   onBack?: () => void;
   submitError?: string | null;
+  /** Field errors from an enforce-mode 400 (master rules), shown under the fields. */
+  serverFieldErrors?: ServerFieldErrors | null;
   /** Cancel. The route wraps this one in `exit.leave(...)`, as it always did. */
   onCancel?: () => void;
 };
@@ -208,6 +215,13 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
     defaultValues: { ...CREATE_DEFAULTS, ...props.defaultValues },
   });
   const { register, formState, watch, setValue } = form;
+  // HSN Code rule (Check HSN / HSN Min Digits): amber in Warn mode, red in
+  // Enforce mode; the server refusal lands here too.
+  const hsnNote = useItemHsnNote({
+    itemType: watch('itemType'),
+    hsnCode: watch('hsnCode'),
+    serverFieldErrors: props.serverFieldErrors,
+  });
   const errors = formState.errors;
 
   // Prefill the next ITM-#### in the series (editable). The user may keep it,
@@ -377,7 +391,13 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             />
           </FormField>
 
-          <FormField label="HSN Code" size="md" htmlFor="hsnCode" error={errors.hsnCode?.message}>
+          <FormField
+            label="HSN Code"
+            size="md"
+            htmlFor="hsnCode"
+            error={errors.hsnCode?.message ?? hsnNote.error}
+            help={ruleHelp(hsnNote)}
+          >
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
 
@@ -405,6 +425,13 @@ function EditItemForm(props: EditMode): React.JSX.Element {
     defaultValues: itemToUpdateDefaults(props.item),
   });
   const { register, formState, watch, setValue } = form;
+  // HSN Code rule (Check HSN / HSN Min Digits): amber in Warn mode, red in
+  // Enforce mode; the server refusal lands here too.
+  const hsnNote = useItemHsnNote({
+    itemType: watch('itemType'),
+    hsnCode: watch('hsnCode'),
+    serverFieldErrors: props.serverFieldErrors,
+  });
   const errors = formState.errors;
 
   return (
@@ -521,7 +548,13 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             />
           </FormField>
 
-          <FormField label="HSN Code" size="md" htmlFor="hsnCode" error={errors.hsnCode?.message}>
+          <FormField
+            label="HSN Code"
+            size="md"
+            htmlFor="hsnCode"
+            error={errors.hsnCode?.message ?? hsnNote.error}
+            help={ruleHelp(hsnNote)}
+          >
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
 

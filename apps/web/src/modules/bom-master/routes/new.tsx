@@ -57,8 +57,8 @@ function BomMasterNewPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      {/* A new BOM is usable straight away, so it opens as 'active' — nobody has
-          to remember to promote it out of Draft. */}
+      {/* A new BOM opens as Draft (S8): only an Active BOM links to a sales
+          order, so the user promotes it to Active once its parts are right. */}
       <BomForm
         mode="create"
         initialHeader={{
@@ -66,7 +66,7 @@ function BomMasterNewPage(): React.JSX.Element {
           bomName: '',
           parentItemId: '',
           parentItemCodeText: '',
-          status: 'active',
+          status: 'draft',
         }}
         // Start with no part rows: the parent has to be chosen first, and an
         // empty row sitting under a locked list only invites confusion.

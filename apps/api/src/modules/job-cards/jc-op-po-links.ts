@@ -17,6 +17,7 @@
 // form's "committed" test, the purchase-request picker's `is null` filter).
 
 import { and, eq, isNull } from 'drizzle-orm';
+import { roundQty } from '@innovic/shared';
 import { jcOpPoLines, jcOps } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 
@@ -72,7 +73,8 @@ export async function linkJcOpToPoLine(
       companyId,
       jcOpId,
       purchaseOrderLineId,
-      qty,
+      // numeric(14,3) since 0184 — a KGS / MTR PO line keeps its decimals.
+      qty: roundQty(qty).toFixed(3),
       createdBy: userId,
       updatedBy: userId,
     });

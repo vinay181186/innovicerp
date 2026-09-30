@@ -21,8 +21,8 @@
 //   - milestones[] (#8, no current data)
 //   - clientPoFileUrl / clientPoFileName (file upload, Phase 6)
 //   - dispatchedQty / SO Total Value (derived; needs dispatch + BOM modules)
-//   - bom_master_id / bom_status are kept as nullable text fields (forward FK
-//     when BOM module ships).
+//   - bom_master_id is a uuid FK to bom_masters since 0184; bom_status stays
+//     free text ("BOM Assigned" / "BOM Pending").
 
 import { z } from 'zod';
 import { REVISION_PATTERN } from '../lib/revision';
@@ -309,7 +309,10 @@ const _soHeaderInputBase = z.object({
   type: soTypeSchema.default('component_manufacturing'),
   status: soStatusSchema.default('open'),
   gstPercent: z.coerce.number().nonnegative().max(99.99).default(18),
-  bomMasterId: z.string().max(64).optional(),
+  /** The BOM (bom_masters.id) this equipment SO builds — a real uuid FK since
+   *  0184. Only an Active BOM may be linked (checked by the server when the
+   *  link is set or changed). '' / absent = no BOM. */
+  bomMasterId: z.union([z.string().uuid(), z.literal('')]).optional(),
   bomStatus: z.string().max(32).optional(),
   costCenter: z.string().max(64).optional(),
   remarks: z.string().max(2000).optional(),

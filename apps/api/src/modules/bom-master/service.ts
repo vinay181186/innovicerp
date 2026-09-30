@@ -50,7 +50,14 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
-import { ActivityAction } from '@innovic/shared';
+import {
+  ActivityAction,
+  BOM_CREATE_STATUSES,
+  BOM_STATUS_MOVES,
+  canMoveStatus,
+  qtyUomProblem,
+  statusMoveRefusal,
+} from '@innovic/shared';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import { type BomAuditLine, bomHeaderChanges, bomLineAuditRows } from './audit';
 import type {
@@ -87,8 +94,15 @@ function maybeTsLike(v: unknown): string | null {
 }
 
 interface ItemsLookup {
-  byId: Map<string, { code: string; name: string }>;
+  byId: Map<string, { code: string; name: string; uom: string }>;
 }
+
+/** Screen words for BOM Status (docs/NAMING.md). */
+const BOM_STATUS_LABELS: Readonly<Record<string, string>> = {
+  draft: 'Draft',
+  active: 'Active',
+  obsolete: 'Obsolete',
+};
 
 async function loadItemsByIds(
   tx: DbTransaction,
@@ -99,10 +113,10 @@ async function loadItemsByIds(
   const unique = Array.from(new Set(ids));
   if (unique.length === 0) return out;
   const rows = await tx
-    .select({ id: items.id, code: items.code, name: items.name })
+    .select({ id: items.id, code: items.code, name: items.name, uom: items.uom })
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
-  for (const r of rows) out.byId.set(r.id, { code: r.code, name: r.name });
+  for (const r of rows) out.byId.set(r.id, { code: r.code, name: r.name, uom: r.uom });
   return out;
 }
 
@@ -167,6 +181,22 @@ function assertNoDuplicateChildItems(
     }
     seen.set(id, i);
   }
+}
+
+// Decimals follow the unit (finding S9): BOM Qty / Set keeps up to 3 decimals
+// (numeric(14,3)), but a child counted in whole pieces (NOS / PCS / SET / LOT)
+// cannot be needed 0.25 at a time — refuse it, naming the line and the item.
+function assertQtyPerSetFitsUom(
+  lines: ReadonlyArray<{ childItemId: string; qtyPerSet: number }>,
+  lookup: ItemsLookup,
+): void {
+  lines.forEach((l, i) => {
+    const it = lookup.byId.get(l.childItemId);
+    const problem = qtyUomProblem(l.qtyPerSet, it?.uom, 'BOM Qty / Set');
+    if (problem) {
+      throw new ValidationError(`Line ${i + 1} (${it?.code ?? 'item'}): ${problem}`);
+    }
+  });
 }
 
 // Generate next BOM-NNNN per company. Mirrors legacy _nextBOMNo helper —
@@ -657,6 +687,14 @@ export async function createBomMaster(
     const itemsLookup = await assertItemIdsExist(tx, itemIds, companyId);
     assertParentIsUsable(input.parentItemId, input.lines, itemsLookup);
     assertNoDuplicateChildItems(input.lines, itemsLookup);
+    assertQtyPerSetFitsUom(input.lines, itemsLookup);
+
+    // S8: a new BOM starts as Draft or Active — never Obsolete.
+    if (!BOM_CREATE_STATUSES.includes(input.status)) {
+      throw new ConflictError(
+        `A new BOM can be saved as Draft or Active only, not ${BOM_STATUS_LABELS[input.status] ?? input.status}.`,
+      );
+    }
 
     // Auto bomNo when not supplied; reject if supplied + already used.
     // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
@@ -755,6 +793,15 @@ export async function updateBomMaster(
     const header = headers[0];
     if (!header) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
 
+    // S8: status moves follow BOM_STATUS_MOVES (Draft → Active / Obsolete,
+    // Active → Obsolete, Obsolete is final). The change itself is logged by the
+    // header audit row below ("BOM Status" field in bomHeaderChanges).
+    if (!canMoveStatus(BOM_STATUS_MOVES, header.status, input.status)) {
+      throw new ConflictError(
+        statusMoveRefusal(`BOM ${header.bomNo}`, header.status, input.status, BOM_STATUS_LABELS),
+      );
+    }
+
     // bomNo collision check (only when it changed).
     if (input.bomNo !== header.bomNo) {
       const dup = await tx
@@ -777,6 +824,7 @@ export async function updateBomMaster(
     const itemsLookup = await assertItemIdsExist(tx, itemIds, companyId);
     assertParentIsUsable(input.parentItemId, input.lines, itemsLookup);
     assertNoDuplicateChildItems(input.lines, itemsLookup);
+    assertQtyPerSetFitsUom(input.lines, itemsLookup);
 
     // Capture PRE-update lines for the revision snapshot + diff note.
     const oldLineRows = await tx
@@ -797,7 +845,7 @@ export async function updateBomMaster(
     const newSnapshot: DiffLine[] = input.lines.map((l) => ({
       childItemId: l.childItemId,
       childItemCode: itemsLookup.byId.get(l.childItemId)?.code ?? null,
-      qtyPerSet: l.qtyPerSet.toFixed(2),
+      qtyPerSet: l.qtyPerSet.toFixed(3),
       bomType: l.bomType,
     }));
 
@@ -1128,7 +1176,7 @@ function assignLineValues(
     bomMasterId,
     lineNo: i + 1,
     childItemId: l.childItemId,
-    qtyPerSet: l.qtyPerSet.toFixed(2),
+    qtyPerSet: l.qtyPerSet.toFixed(3),
     bomType: l.bomType,
     ...lineRawMaterial(l, rawMaterial),
     createdBy: userId,
@@ -1140,7 +1188,7 @@ function buildItemsSnapshot(lines: CreateBomMasterLineInput[], itemsLookup: Item
   return lines.map((l) => ({
     childItemId: l.childItemId,
     childItemCode: itemsLookup.byId.get(l.childItemId)?.code ?? null,
-    qtyPerSet: l.qtyPerSet.toFixed(2),
+    qtyPerSet: l.qtyPerSet.toFixed(3),
     bomType: l.bomType,
   }));
 }

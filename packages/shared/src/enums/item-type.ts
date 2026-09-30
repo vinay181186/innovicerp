@@ -26,7 +26,10 @@ export type ItemType = (typeof ITEM_TYPES)[number];
  *   - returnable:   handed out and expected back (tool / instrument register)
  *   - partyOwned:   customer's property (ADR-195) — never purchased, never
  *                   company-valued stock; its stock/value live in the zero-value
- *                   party store (ADR-194). A `-rm`-suffixed code. */
+ *                   party store (ADR-194). A `-rm`-suffixed code.
+ *   - sold:         we invoice it to a customer (Component / Assembly). The
+ *                   company "Check HSN" setting requires an HSN Code on these
+ *                   types only (plan v3 D3, lib/master-rules.ts). */
 export interface ItemTypeRule {
   label: string;
   jobMaterial: boolean;
@@ -35,6 +38,7 @@ export interface ItemTypeRule {
   reorderable: boolean;
   returnable: boolean;
   partyOwned: boolean;
+  sold: boolean;
 }
 
 export const ITEM_TYPE_RULES: Record<ItemType, ItemTypeRule> = {
@@ -46,6 +50,7 @@ export const ITEM_TYPE_RULES: Record<ItemType, ItemTypeRule> = {
     reorderable: true,
     returnable: false,
     partyOwned: false,
+    sold: false,
   },
   component: {
     label: 'Component',
@@ -55,6 +60,7 @@ export const ITEM_TYPE_RULES: Record<ItemType, ItemTypeRule> = {
     reorderable: true,
     returnable: false,
     partyOwned: false,
+    sold: true,
   },
   assembly: {
     label: 'Assembly',
@@ -64,6 +70,7 @@ export const ITEM_TYPE_RULES: Record<ItemType, ItemTypeRule> = {
     reorderable: false,
     returnable: false,
     partyOwned: false,
+    sold: true,
   },
   consumable: {
     label: 'Consumable',
@@ -73,6 +80,7 @@ export const ITEM_TYPE_RULES: Record<ItemType, ItemTypeRule> = {
     reorderable: true,
     returnable: false,
     partyOwned: false,
+    sold: false,
   },
   tool: {
     label: 'Tool / Instrument',
@@ -82,6 +90,7 @@ export const ITEM_TYPE_RULES: Record<ItemType, ItemTypeRule> = {
     reorderable: true,
     returnable: true,
     partyOwned: false,
+    sold: false,
   },
   party_supplied_material: {
     label: 'Party Supplied Material',
@@ -94,6 +103,7 @@ export const ITEM_TYPE_RULES: Record<ItemType, ItemTypeRule> = {
     reorderable: false,
     returnable: false,
     partyOwned: true,
+    sold: false,
   },
 };
 

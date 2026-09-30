@@ -28,7 +28,7 @@
 //                 | waiting (otherwise)
 
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, roundQty } from '@innovic/shared';
 import type {
   AssemblyComponentRow,
   AssemblyComponentStatus,
@@ -256,7 +256,7 @@ export async function getAssemblyTracker(
       for (const r of childRows) {
         const childCode = r.itemCode ?? '—';
         const qtyPerSet = Number(r.line.qtyPerSet);
-        const totalNeed = Math.round(qtyPerSet * unitsRequired);
+        const totalNeed = roundQty(qtyPerSet * unitsRequired); // S9: 0.25/set must not round to 0
         const stockQty = Math.max(0, Math.floor(stockMap.get(r.line.childItemId) ?? 0));
         // P30 — parts out on the bench for this SO, not store stock.
         const stillOut = Math.max(0, outMap?.get(r.line.childItemId)?.stillOut ?? 0);
@@ -265,7 +265,7 @@ export async function getAssemblyTracker(
         const finalReadyQty = Math.max(autoReadyQty, overrideQty);
         // Short = parts still to issue for the REMAINING units (fitted parts
         // left Still Out, and those units left remainingNeed, together).
-        const remainingNeed = Math.round(qtyPerSet * remainingUnits);
+        const remainingNeed = roundQty(qtyPerSet * remainingUnits);
         const shortfall = Math.max(0, remainingNeed - stillOut);
         const enoughForUnits =
           qtyPerSet > 0 ? Math.floor(Math.round((stillOut / qtyPerSet) * 1000) / 1000 + 1e-9) : 0;
@@ -1338,7 +1338,7 @@ async function computeListReadiness(
     let readyCount = 0;
     for (const l of lines) {
       const qtyPerSet = Number(l.qtyPerSet);
-      const remainingNeed = Math.round(qtyPerSet * remainingUnits);
+      const remainingNeed = roundQty(qtyPerSet * remainingUnits);
       const stillOut = Math.max(0, soOut?.get(l.childItemId)?.stillOut ?? 0);
       if (stillOut >= remainingNeed) readyCount++;
       const enoughForUnits =

@@ -40,7 +40,7 @@ export const deliveryChallanDetailRoute = createRoute({
 });
 
 /** Whole pieces print whole (12, not 12.00); a real fraction keeps ≤2dp. */
-const fmtQty = (n: number): string => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const fmtQty = (n: number): string => n.toLocaleString('en-IN', { maximumFractionDigits: 3 });
 
 interface LineAgg {
   receivedQty: number;

@@ -16,6 +16,7 @@
 // tables, badges, buttons, empty states or delete confirmation.
 
 import type { DrawingSource, SalesOrderDetail, SalesOrderLine } from '@innovic/shared';
+import { SO_CLOSABLE_STATUSES } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
@@ -139,9 +140,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // ADR-196 — Close (short) is a department-admin decision, the same edit +
   // approve pair the JWSO line short close takes (ADR-194 R8). The server
   // enforces it; this only hides the buttons.
-  // A draft or cancelled order has nothing to close (the server refuses too).
-  const canClose =
-    perms.edit && perms.approve && detail.status !== 'draft' && detail.status !== 'cancelled';
+  // A draft or cancelled order has nothing to close (the server refuses too) —
+  // the shared status map (S8) says which statuses Close is offered from.
+  const canClose = perms.edit && perms.approve && SO_CLOSABLE_STATUSES.includes(detail.status);
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   // Money hidden for L1 Viewers: the API nulls the SO's GST % and every line

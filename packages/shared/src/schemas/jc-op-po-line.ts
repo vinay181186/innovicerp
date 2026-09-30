@@ -27,8 +27,9 @@ export const jcOpPoLineSchema = z.object({
   jcOpId: z.string().uuid(),
   purchaseOrderLineId: z.string().uuid(),
   /** How much of this operation this particular PO line covers. Always > 0 — a
-   *  link that carries nothing is a deleted link, not a zero one. */
-  qty: z.number().int().positive(),
+   *  link that carries nothing is a deleted link, not a zero one. Up to 3
+   *  decimals, like the PO line it comes from (numeric(14,3), 0184 — S9). */
+  qty: z.number().positive(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -48,7 +49,7 @@ export const jcOpPoLinkViewSchema = z.object({
   /** Null when the viewer's access hides prices, matching every other rate in
    *  the system. */
   rate: z.string().nullable(),
-  qty: z.number().int().positive(),
+  qty: z.number().positive(),
   /** So the screen can grey out a link whose PO was cancelled instead of making
    *  the reader work out why the quantities no longer add up. */
   poStatus: z.string(),

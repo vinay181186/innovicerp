@@ -3,6 +3,12 @@ import { queryBoolean } from '../lib/query-boolean';
 import { ITEM_TYPES } from '../enums/item-type';
 import { ITEM_PROCUREMENT_TYPES } from '../enums/item-procurement-type';
 import { UOMS } from '../enums/uom';
+import type { MasterRuleWarnings } from '../lib/master-rules';
+import {
+  type MasterImportResult,
+  type MasterImportRowResult,
+  masterImportOptionsSchema,
+} from './master-import';
 
 export const itemTypeSchema = z.enum(ITEM_TYPES);
 export const itemProcurementTypeSchema = z.enum(ITEM_PROCUREMENT_TYPES);
@@ -41,6 +47,8 @@ export const itemSchema = z.object({
   deletedAt: z.string().nullable(),
 });
 export type Item = z.infer<typeof itemSchema>;
+/** A create / update answer: the saved item + any warn-mode HSN problem. */
+export type ItemSaveResponse = Item & MasterRuleWarnings;
 
 export const createItemInputSchema = z.object({
   // Optional: the server auto-generates the next ITM-#### in the company series
@@ -73,32 +81,29 @@ export type CreateItemInput = z.infer<typeof createItemInputSchema>;
 export const updateItemInputSchema = createItemInputSchema.partial().omit({ code: true });
 export type UpdateItemInput = z.infer<typeof updateItemInputSchema>;
 
-/** BULK CREATE — the Excel importer's whole sheet in ONE request.
+/** BULK IMPORT — the Excel importer's whole sheet in ONE request.
  *
- *  The importer used to POST /items once per row and wait for each answer, and
- *  every answer invalidated the on-screen item list, so the browser also
- *  re-downloaded the entire master after every row. Measured on the live system
- *  the same pattern on the vendor import ran at ~1 row per second — a 500-row
- *  sheet took nine minutes. One request, one transaction, one list reload puts
- *  that sheet in in seconds.
- *
- *  Capped at 2000 rows — comfortably past the largest item master anyone would
- *  paste in, and small enough that the whole insert stays one sane transaction. */
-export const bulkCreateItemsInputSchema = z.object({
-  items: z.array(createItemInputSchema).min(1).max(2000),
+ *  One request, one transaction, one list reload (the per-row POST loop took
+ *  ~1 row per second). Each row is checked on its own on the server — a bad
+ *  row is reported and left out, the rest go in (ERPNext Data Import). `mode`
+ *  'update' matches rows by Item Code and writes only the filled cells (Item
+ *  Type is not changed by import — use the item screen, which runs the stock
+ *  lock); `dryRun` is the preview (see master-import.ts). Capped at 2000 rows. */
+export const bulkCreateItemsInputSchema = masterImportOptionsSchema.extend({
+  items: z.array(z.unknown()).min(1).max(2000),
 });
-export type BulkCreateItemsInput = z.infer<typeof bulkCreateItemsInputSchema>;
+export type BulkCreateItemsInput = z.input<typeof bulkCreateItemsInputSchema>;
 
-/** One row the bulk create refused, with the reason in the user's words. */
-export interface BulkItemSkip {
-  /** 1-based position in the submitted array, so the UI can name the sheet row. */
-  index: number;
-  name: string;
-  reason: string;
-}
+/** Update Existing: one row — Item Code required, every other field optional
+ *  (a missing field is left as it is). */
+export const updateItemImportRowSchema = createItemInputSchema
+  .partial()
+  .extend({ code: z.string().trim().min(1, 'Item Code is required to update') });
 
-export interface BulkCreateItemsResponse {
-  created: number;
+/** One row the bulk import refused, with the reason in the user's words. */
+export type BulkItemSkip = Pick<MasterImportRowResult, 'index' | 'name'> & { reason: string };
+
+export interface BulkCreateItemsResponse extends MasterImportResult {
   /** Rows that were not written, each with a plain-English reason. */
   skipped: BulkItemSkip[];
   /** Codes assigned to the rows that were created, in insert order. */

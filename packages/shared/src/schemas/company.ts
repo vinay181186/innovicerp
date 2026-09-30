@@ -8,6 +8,14 @@
 // implemented without RLS-bypass keys).
 
 import { z } from 'zod';
+import { HSN_MIN_DIGITS_OPTIONS } from '../lib/gst';
+import { MASTER_RULES_MODES } from '../lib/master-rules';
+
+const hsnMinDigitsSchema = z.union([
+  z.literal(HSN_MIN_DIGITS_OPTIONS[0]),
+  z.literal(HSN_MIN_DIGITS_OPTIONS[1]),
+  z.literal(HSN_MIN_DIGITS_OPTIONS[2]),
+]);
 
 export const companySchema = z.object({
   id: z.string().uuid(),
@@ -22,6 +30,13 @@ export const companySchema = z.object({
   city: z.string().nullable(),
   state: z.string().nullable(),
   pincode: z.string().nullable(),
+  /** Master Rules Mode (migration 0183): 'warn' = GSTIN / State / HSN problems
+   *  are warnings, the record saves; 'enforce' = refused. Default 'warn'. */
+  masterRulesMode: z.enum(MASTER_RULES_MODES),
+  /** Check HSN (plan D3): require an HSN Code on items we sell. Default off. */
+  checkHsn: z.boolean(),
+  /** HSN Min Digits: 4 / 6 / 8, default 6. */
+  hsnMinDigits: z.number().int(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -40,5 +55,8 @@ export const updateCompanyInputSchema = z.object({
   city: z.string().max(64).optional(),
   state: z.string().max(64).optional(),
   pincode: z.string().max(16).optional(),
+  masterRulesMode: z.enum(MASTER_RULES_MODES).optional(),
+  checkHsn: z.boolean().optional(),
+  hsnMinDigits: hsnMinDigitsSchema.optional(),
 });
 export type UpdateCompanyInput = z.infer<typeof updateCompanyInputSchema>;

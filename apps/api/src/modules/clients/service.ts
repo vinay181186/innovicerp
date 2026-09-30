@@ -1,5 +1,11 @@
 import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
-import { ActivityAction } from '@innovic/shared';
+import {
+  ActivityAction,
+  checkPartyGst,
+  gstCategoryLabel,
+  type MasterImportRowResult,
+  type MasterRuleIssue,
+} from '@innovic/shared';
 import { clients } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -7,12 +13,23 @@ import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-tra
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import {
+  applyMasterRules,
+  dropBlankCells,
+  issueTexts,
+  loadMasterRuleSettings,
+  rawRowText,
+  withWarnings,
+  zodRowReason,
+} from '../../lib/master-rules';
 import { emitActivityLog } from '../activity-log/service';
+import { createClientInputSchema, updateClientImportRowSchema } from './schema';
 import type {
   BulkClientSkip,
   BulkCreateClientsInput,
   BulkCreateClientsResponse,
   Client,
+  ClientSaveResponse,
   CreateClientInput,
   ListClientsQuery,
   ListClientsResponse,
@@ -33,9 +50,15 @@ const activeLabel = (v: unknown): string | null =>
 const CLIENT_FIELDS: readonly DiffField[] = [
   { key: 'name', label: 'Customer' },
   { key: 'gstNumber', label: 'GSTIN' },
+  {
+    key: 'gstCategory',
+    label: 'GST Category',
+    format: (v) => gstCategoryLabel(v as string) || null,
+  },
   { key: 'addressLine1', label: 'Address' },
   { key: 'city', label: 'City' },
   { key: 'state', label: 'State' },
+  { key: 'stateCode', label: 'State Code' },
   { key: 'pincode', label: 'Pincode' },
   { key: 'contactPerson', label: 'Contact Person' },
   { key: 'phone', label: 'Phone' },
@@ -200,7 +223,10 @@ async function assertClientNameFree(
   }
 }
 
-export async function createClient(input: CreateClientInput, user: AuthContext): Promise<Client> {
+export async function createClient(
+  input: CreateClientInput,
+  user: AuthContext,
+): Promise<ClientSaveResponse> {
   requireWriteRole(user);
   await requireFormAccess(user, 'client_create', 'entry');
   const companyId = requireCompany(user);
@@ -209,6 +235,15 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
   // same CLI-### — so the loser retries with the next code instead of 500ing.
   return withUniqueRetry(() =>
     withUserContext(user, async (tx) => {
+      // GST rules (plan v3 Step 2): warn mode → saved + `warnings`; enforce → 400.
+      const settings = await loadMasterRuleSettings(tx, companyId);
+      const gst = checkPartyGst(input);
+      const warnings = applyMasterRules(
+        gst.issues,
+        settings.masterRulesMode,
+        `Customer "${input.name.trim()}"`,
+      );
+
       const code = input.code?.trim() || (await nextClientCode(tx, companyId));
       const existing = await tx
         .select({ id: clients.id, deletedAt: clients.deletedAt })
@@ -235,10 +270,12 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
           contactPerson: emptyToNull(input.contactPerson),
           email: emptyToNull(input.email),
           phone: emptyToNull(input.phone),
-          gstNumber: emptyToNull(input.gstNumber),
+          gstNumber: gst.values.gstNumber,
+          gstCategory: input.gstCategory ?? null,
           addressLine1: emptyToNull(input.addressLine1),
           city: emptyToNull(input.city),
-          state: emptyToNull(input.state),
+          state: gst.values.state,
+          stateCode: gst.values.stateCode,
           pincode: emptyToNull(input.pincode),
           paymentDays: input.paymentDays ?? null,
           isActive: input.isActive,
@@ -259,144 +296,324 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
         companyId,
         user,
       );
-      return row;
+      return withWarnings(row, warnings);
     }),
   );
 }
 
+type ClientRow = typeof clients.$inferSelect;
+
 /**
- * Create many clients in ONE transaction — the Excel importer's whole sheet.
+ * The GST part of an update: the rules run on the MERGED record (what the row
+ * will hold after this save), so a warning describes the record, not just the
+ * fields sent. The GST fields are written only when one of them was sent — an
+ * unrelated edit (a new phone number) does not rewrite State / GSTIN.
+ */
+function clientGstUpdate(
+  before: ClientRow,
+  input: UpdateClientInput,
+): { issues: MasterRuleIssue[]; updates: Record<string, unknown> } {
+  const gst = checkPartyGst({
+    gstCategory: input.gstCategory !== undefined ? input.gstCategory : before.gstCategory,
+    gstNumber: input.gstNumber !== undefined ? input.gstNumber : before.gstNumber,
+    stateCode:
+      input.stateCode !== undefined
+        ? input.stateCode
+        : input.state !== undefined
+          ? null
+          : before.stateCode,
+    state: input.state !== undefined ? input.state : input.stateCode === null ? null : before.state,
+  });
+  const touched =
+    input.gstCategory !== undefined ||
+    input.gstNumber !== undefined ||
+    input.stateCode !== undefined ||
+    input.state !== undefined;
+  const updates: Record<string, unknown> = {};
+  if (touched) {
+    if (input.gstCategory !== undefined) updates.gstCategory = input.gstCategory;
+    updates.gstNumber = gst.values.gstNumber;
+    updates.stateCode = gst.values.stateCode;
+    updates.state = gst.values.state;
+  }
+  return { issues: gst.issues, updates };
+}
+
+/** Plain-field part of an update (everything but the GST fields). */
+function clientPlainUpdates(input: UpdateClientInput): Record<string, unknown> {
+  const updates: Record<string, unknown> = {};
+  if (input.name !== undefined) updates.name = input.name.trim();
+  if (input.contactPerson !== undefined) updates.contactPerson = emptyToNull(input.contactPerson);
+  if (input.email !== undefined) updates.email = emptyToNull(input.email);
+  if (input.phone !== undefined) updates.phone = emptyToNull(input.phone);
+  if (input.addressLine1 !== undefined) updates.addressLine1 = emptyToNull(input.addressLine1);
+  if (input.city !== undefined) updates.city = emptyToNull(input.city);
+  if (input.pincode !== undefined) updates.pincode = emptyToNull(input.pincode);
+  if (input.paymentDays !== undefined) updates.paymentDays = input.paymentDays;
+  if (input.isActive !== undefined) updates.isActive = input.isActive;
+  return updates;
+}
+
+/** Excel column names for a refused row's reason (import template headers). */
+const CLIENT_IMPORT_LABELS: Record<string, string> = {
+  code: 'Code',
+  name: 'Customer Name',
+  contactPerson: 'Contact Person',
+  email: 'Email',
+  phone: 'Phone',
+  gstNumber: 'GSTIN',
+  gstCategory: 'GST Category',
+  addressLine1: 'Address',
+  city: 'City',
+  state: 'State',
+  stateCode: 'State',
+  pincode: 'Pincode',
+  paymentDays: 'Payment Days',
+  isActive: 'Status',
+};
+
+/**
+ * The Excel importer's whole sheet in ONE transaction — ERPNext Data Import
+ * behaviour (shared/schemas/master-import.ts):
+ *   - mode 'insert' creates new customers (name must be free; CLI-### series
+ *     continued in memory); mode 'update' finds each row's customer by Code and
+ *     writes only the filled cells, one History (EDIT) row per customer;
+ *   - EVERY row is parsed on its own — a bad email skips that row with its
+ *     reason, the rest go in (audit finding 35);
+ *   - the GST rules run per row: warn mode imports the row with its warnings,
+ *     enforce mode skips it;
+ *   - dryRun = the preview: the same answer, nothing written.
  *
- * Why this exists: the importer used to call createClient once per row and wait
- * for each round trip, and every success invalidated the on-screen client list,
- * so the browser re-downloaded the whole master after every row. Measured on the
- * live system, the identical vendor import ran at ~1 row/second and got slower
- * as the list grew — nine minutes for a 500-row sheet.
- *
- * What makes this fast is not batching the HTTP call alone — it is doing the
- * per-row work ONCE:
- *   - one access check, one transaction, one RLS context set;
- *   - existing codes and names read in a single query instead of two per row;
- *   - the CLI-### series continued in memory instead of re-scanning the table
- *     for every row;
- *   - one multi-row INSERT instead of N.
- *
- * Tolerant, not all-or-nothing: a bad row is reported and left out, the rest go
- * in. A sheet with one duplicate should not cost the operator the other 499.
+ * Speed (why this exists at all): one access check, one read of the whole
+ * master, multi-row INSERT — the per-row POST loop it replaced ran at ~1 row
+ * per second.
  */
 export async function createClientsBulk(
   input: BulkCreateClientsInput,
   user: AuthContext,
 ): Promise<BulkCreateClientsResponse> {
-  // Same gate as a single create — this raises clients, so it is `entry`.
+  const mode = input.mode ?? 'insert';
+  const dryRun = input.dryRun ?? false;
   requireWriteRole(user);
-  await requireFormAccess(user, 'client_create', 'entry');
+  // Insert raises customers (`entry`); Update Existing changes saved ones (`edit`).
+  await requireFormAccess(user, 'client_create', mode === 'update' ? 'edit' : 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    // One read of what already exists, rather than a duplicate-check per row.
-    // Deleted rows are included on purpose: their CODE is still taken (the
-    // single create refuses to reuse it), so the series must skip past them.
-    const existingRows = await tx
-      .select({ code: clients.code, name: clients.name, deletedAt: clients.deletedAt })
-      .from(clients)
-      .where(eq(clients.companyId, companyId));
-
+    const settings = await loadMasterRuleSettings(tx, companyId);
+    // One read of the whole master. Deleted rows are included on purpose:
+    // their CODE is still taken, so the series skips past them.
+    const existingRows = await tx.select().from(clients).where(eq(clients.companyId, companyId));
     const takenCodes = new Set(existingRows.map((r) => r.code.trim().toLowerCase()));
-    // NAME is the de-duplication key the Client Master importer has always used
-    // — the template carries no Code column, so a re-run of the same file has
-    // nothing else to match on. Kept exactly as it was, only moved here: on the
-    // page it compared against the clients loaded on screen, so anything past
-    // that page read as "new" and got created a second time. Here it compares
-    // against the whole company. Live rows only — a deleted client's name is
-    // free to use again.
-    const takenNames = new Set(
-      existingRows.filter((r) => !r.deletedAt).map((r) => r.name.trim().toLowerCase()),
+    const liveByCode = new Map(
+      existingRows.filter((r) => !r.deletedAt).map((r) => [r.code.trim().toLowerCase(), r]),
+    );
+    const trashCodes = new Set(
+      existingRows.filter((r) => r.deletedAt).map((r) => r.code.trim().toLowerCase()),
+    );
+    // Live name → owning code, so a rename to a taken name is refused and a
+    // duplicate INSIDE the sheet is caught too.
+    const nameOwner = new Map(
+      existingRows
+        .filter((r) => !r.deletedAt)
+        .map((r) => [r.name.trim().toLowerCase(), r.code.trim().toLowerCase()]),
     );
 
-    // Continue the CLI-### series in memory. nextClientCode() scans the table
-    // for the highest code; doing that per row is one query per client.
     let nextSeq = 0;
     for (const r of existingRows) {
       const m = /^CLI-(\d+)$/i.exec(r.code.trim());
       if (m) nextSeq = Math.max(nextSeq, Number(m[1]));
     }
 
-    const skipped: BulkClientSkip[] = [];
-    const values: Array<typeof clients.$inferInsert> = [];
+    const rows: MasterImportRowResult[] = [];
+    const inserts: Array<typeof clients.$inferInsert> = [];
     const codes: string[] = [];
+    const updates: Array<{
+      before: ClientRow;
+      set: Record<string, unknown>;
+      changes: ReturnType<typeof diffFields>;
+    }> = [];
+    const seenCodes = new Set<string>();
 
-    for (const [i, c] of input.clients.entries()) {
+    for (const [i, raw] of input.clients.entries()) {
       const index = i + 1;
-      const name = c.name.trim();
-      const nameKey = name.toLowerCase();
-      if (takenNames.has(nameKey)) {
-        skipped.push({ index, name, reason: 'a Customer with this name already exists' });
+      const rawName = rawRowText(raw, 'name');
+      const rawCode = rawRowText(raw, 'code') || null;
+      const skip = (reason: string, code: string | null = rawCode, name = rawName): void => {
+        rows.push({ index, code, name, action: 'skip', reason });
+      };
+
+      if (mode === 'insert') {
+        const parsed = createClientInputSchema.safeParse(raw);
+        if (!parsed.success) {
+          skip(zodRowReason(parsed.error, CLIENT_IMPORT_LABELS));
+          continue;
+        }
+        const c = parsed.data;
+        const name = c.name.trim();
+        const nameKey = name.toLowerCase();
+        if (nameOwner.has(nameKey)) {
+          skip('a Customer with this name already exists', c.code ?? null, name);
+          continue;
+        }
+        let code = c.code?.trim();
+        if (code) {
+          if (takenCodes.has(code.toLowerCase())) {
+            skip(`Customer Code "${code}" is already used`, code, name);
+            continue;
+          }
+        } else {
+          do {
+            nextSeq += 1;
+            code = `CLI-${String(nextSeq).padStart(3, '0')}`;
+          } while (takenCodes.has(code.toLowerCase()));
+        }
+        const gst = checkPartyGst(c);
+        if (settings.masterRulesMode === 'enforce' && gst.issues.length > 0) {
+          skip(issueTexts(gst.issues).join(' '), code, name);
+          continue;
+        }
+        takenCodes.add(code.toLowerCase());
+        nameOwner.set(nameKey, code.toLowerCase());
+        inserts.push({
+          companyId,
+          code,
+          name,
+          contactPerson: emptyToNull(c.contactPerson),
+          email: emptyToNull(c.email),
+          phone: emptyToNull(c.phone),
+          gstNumber: gst.values.gstNumber,
+          gstCategory: c.gstCategory ?? null,
+          addressLine1: emptyToNull(c.addressLine1),
+          city: emptyToNull(c.city),
+          state: gst.values.state,
+          stateCode: gst.values.stateCode,
+          pincode: emptyToNull(c.pincode),
+          paymentDays: c.paymentDays ?? null,
+          isActive: c.isActive,
+          createdBy: user.id,
+          updatedBy: user.id,
+        });
+        codes.push(code);
+        rows.push({
+          index,
+          code,
+          name,
+          action: 'insert',
+          ...(gst.issues.length ? { warnings: issueTexts(gst.issues) } : {}),
+        });
         continue;
       }
 
-      let code = c.code?.trim();
-      if (code) {
-        if (takenCodes.has(code.toLowerCase())) {
-          skipped.push({ index, name, reason: `Customer Code "${code}" is already used` });
+      // ── Update Existing ──
+      const parsed = updateClientImportRowSchema.safeParse(dropBlankCells(raw));
+      if (!parsed.success) {
+        skip(zodRowReason(parsed.error, CLIENT_IMPORT_LABELS));
+        continue;
+      }
+      const { code: codeIn, ...patch } = parsed.data;
+      const key = codeIn.toLowerCase();
+      if (seenCodes.has(key)) {
+        skip(`Code "${codeIn}" is repeated in the sheet`);
+        continue;
+      }
+      seenCodes.add(key);
+      const before = liveByCode.get(key);
+      if (!before) {
+        skip(
+          trashCodes.has(key)
+            ? `Customer ${codeIn} is in Trash — restore it first`
+            : `No customer with Code "${codeIn}"`,
+        );
+        continue;
+      }
+      if (patch.name !== undefined) {
+        const owner = nameOwner.get(patch.name.trim().toLowerCase());
+        if (owner && owner !== key) {
+          skip(
+            `another Customer is already named "${patch.name.trim()}"`,
+            before.code,
+            before.name,
+          );
           continue;
         }
-      } else {
-        nextSeq += 1;
-        code = `CLI-${String(nextSeq).padStart(3, '0')}`;
-        // Defensive: a company holding a hand-typed CLI-007 alongside the series
-        // could collide. Walk forward until the code is free.
-        while (takenCodes.has(code.toLowerCase())) {
-          nextSeq += 1;
-          code = `CLI-${String(nextSeq).padStart(3, '0')}`;
-        }
       }
-      // Claim both keys so a duplicate INSIDE the sheet is caught too, not just
-      // one against what was already stored.
-      takenCodes.add(code.toLowerCase());
-      takenNames.add(nameKey);
-
-      values.push({
-        companyId,
-        code,
-        name,
-        contactPerson: emptyToNull(c.contactPerson),
-        email: emptyToNull(c.email),
-        phone: emptyToNull(c.phone),
-        gstNumber: emptyToNull(c.gstNumber),
-        addressLine1: emptyToNull(c.addressLine1),
-        city: emptyToNull(c.city),
-        state: emptyToNull(c.state),
-        pincode: emptyToNull(c.pincode),
-        paymentDays: c.paymentDays ?? null,
-        isActive: c.isActive,
-        createdBy: user.id,
-        updatedBy: user.id,
+      const gst = clientGstUpdate(before, patch);
+      if (settings.masterRulesMode === 'enforce' && gst.issues.length > 0) {
+        skip(issueTexts(gst.issues).join(' '), before.code, before.name);
+        continue;
+      }
+      const set = { ...clientPlainUpdates(patch), ...gst.updates };
+      const changes = diffFields(before, set, CLIENT_FIELDS);
+      if (patch.name !== undefined) {
+        nameOwner.delete(before.name.trim().toLowerCase());
+        nameOwner.set(patch.name.trim().toLowerCase(), key);
+      }
+      if (changes.length > 0) updates.push({ before, set, changes });
+      rows.push({
+        index,
+        code: before.code,
+        name: patch.name?.trim() ?? before.name,
+        action: 'update',
+        changedFields: changes.length,
+        ...(gst.issues.length ? { warnings: issueTexts(gst.issues) } : {}),
       });
-      codes.push(code);
     }
 
-    if (values.length > 0) {
-      // One statement for the lot. Chunked because a single INSERT carries one
-      // parameter per column per row and Postgres caps a statement at 65535.
+    if (!dryRun) {
+      // Chunked: one INSERT carries one parameter per column per row and
+      // Postgres caps a statement at 65535.
       const CHUNK = 500;
-      for (let i = 0; i < values.length; i += CHUNK) {
-        await tx.insert(clients).values(values.slice(i, i + CHUNK));
+      for (let i = 0; i < inserts.length; i += CHUNK) {
+        await tx.insert(clients).values(inserts.slice(i, i + CHUNK));
       }
-      // One line for the whole import, as the Item Master import does.
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Create,
-          entity: 'Client',
-          detail: `Excel import — ${values.length} customer(s): ${codes[0]}…${codes[codes.length - 1]}`,
-        },
-        companyId,
-        user,
-      );
+      if (inserts.length > 0) {
+        // One line for the whole insert, as the Item Master import does.
+        await emitActivityLog(
+          tx,
+          {
+            action: ActivityAction.Create,
+            entity: 'Client',
+            detail: `Excel import — ${inserts.length} customer(s): ${codes[0]}…${codes[codes.length - 1]}`,
+          },
+          companyId,
+          user,
+        );
+      }
+      // Update Existing: one History row per customer, Before → After (ADR-197).
+      for (const u of updates) {
+        await tx
+          .update(clients)
+          .set({ ...u.set, updatedBy: user.id })
+          .where(eq(clients.id, u.before.id));
+        await emitActivityLog(
+          tx,
+          {
+            action: ActivityAction.Edit,
+            entity: 'Client',
+            entityId: u.before.id,
+            refId: u.before.code,
+            changes: u.changes,
+            detail: `Excel import (update) — ${u.before.code} — ${u.before.name}`,
+          },
+          companyId,
+          user,
+        );
+      }
     }
 
-    return { created: values.length, skipped, codes };
+    const skipped: BulkClientSkip[] = rows
+      .filter((r) => r.action === 'skip')
+      .map((r) => ({ index: r.index, name: r.name, reason: r.reason ?? '' }));
+    return {
+      dryRun,
+      mode,
+      created: inserts.length,
+      updated: rows.filter((r) => r.action === 'update').length,
+      rows,
+      skipped,
+      codes,
+    };
   });
 }
 
@@ -404,7 +621,7 @@ export async function updateClient(
   id: string,
   input: UpdateClientInput,
   user: AuthContext,
-): Promise<Client> {
+): Promise<ClientSaveResponse> {
   requireWriteRole(user);
   await requireFormAccess(user, 'client_create', 'edit');
   const companyId = requireCompany(user);
@@ -419,18 +636,19 @@ export async function updateClient(
     if (!before) throw new NotFoundError('Customer not found. It may have been moved to Trash.');
     if (input.name !== undefined) await assertClientNameFree(tx, companyId, input.name, id);
 
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.name !== undefined) updates.name = input.name.trim();
-    if (input.contactPerson !== undefined) updates.contactPerson = emptyToNull(input.contactPerson);
-    if (input.email !== undefined) updates.email = emptyToNull(input.email);
-    if (input.phone !== undefined) updates.phone = emptyToNull(input.phone);
-    if (input.gstNumber !== undefined) updates.gstNumber = emptyToNull(input.gstNumber);
-    if (input.addressLine1 !== undefined) updates.addressLine1 = emptyToNull(input.addressLine1);
-    if (input.city !== undefined) updates.city = emptyToNull(input.city);
-    if (input.state !== undefined) updates.state = emptyToNull(input.state);
-    if (input.pincode !== undefined) updates.pincode = emptyToNull(input.pincode);
-    if (input.paymentDays !== undefined) updates.paymentDays = input.paymentDays;
-    if (input.isActive !== undefined) updates.isActive = input.isActive;
+    const settings = await loadMasterRuleSettings(tx, companyId);
+    const gst = clientGstUpdate(before, input);
+    const warnings = applyMasterRules(
+      gst.issues,
+      settings.masterRulesMode,
+      `Customer ${before.code}`,
+    );
+
+    const updates: Record<string, unknown> = {
+      updatedBy: user.id,
+      ...clientPlainUpdates(input),
+      ...gst.updates,
+    };
 
     const changes = diffFields(before, updates, CLIENT_FIELDS);
     const updated = await tx.update(clients).set(updates).where(eq(clients.id, id)).returning();
@@ -450,7 +668,7 @@ export async function updateClient(
         user,
       );
     }
-    return row;
+    return withWarnings(row, warnings);
   });
 }
 

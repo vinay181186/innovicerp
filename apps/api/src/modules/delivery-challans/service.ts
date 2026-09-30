@@ -46,7 +46,14 @@ import {
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
-import { ActivityAction, opSrNo, parseDocRevision, withDocRevision } from '@innovic/shared';
+import {
+  ActivityAction,
+  opSrNo,
+  parseDocRevision,
+  qtyUomProblem,
+  roundQty,
+  withDocRevision,
+} from '@innovic/shared';
 import type { DocumentTraceability, ReceiveDeliveryChallanResponse } from '@innovic/shared';
 import type {
   CreateDeliveryChallanInput,
@@ -682,7 +689,8 @@ export async function getSendableForPo(
     for (const l of poLines) {
       const poQty = Number(l.qty ?? 0);
       const sentOnDcs = alreadyOnDcs.get(l.id) ?? 0;
-      const poBalance = Math.max(0, poQty - sentOnDcs);
+      // roundQty: a KGS / MTR line keeps 3 decimals without 0.1 + 0.2 drift.
+      const poBalance = Math.max(0, roundQty(poQty - sentOnDcs));
       const s = await loadOutwardSendable(tx, companyId, l.id);
 
       // A job-work line with no operation behind it can never be checked, so
@@ -1110,12 +1118,12 @@ export async function createDeliveryChallan(
         );
       }
       const prev = incomingByPoLine.get(l.purchaseOrderLineId) ?? 0;
-      incomingByPoLine.set(l.purchaseOrderLineId, prev + l.qty);
+      incomingByPoLine.set(l.purchaseOrderLineId, roundQty(prev + l.qty));
     }
     for (const [poLineId, inc] of incomingByPoLine) {
       const pol = poLines.get(poLineId)!;
       const already = alreadySent.get(poLineId) ?? 0;
-      const remaining = pol.qty - already;
+      const remaining = roundQty(pol.qty - already);
       if (inc > remaining) {
         throw new ConflictError(
           `Ln ${pol.lineNo}${pol.itemCodeText ? ` (${pol.itemCodeText})` : ''}: ` +
@@ -1125,6 +1133,22 @@ export async function createDeliveryChallan(
     }
 
     const lineNos = assignLineNos(input.lines, 1);
+
+    // The item master's unit wins over whatever the form sent: the line is
+    // what the print and the vendor go by (dc-create-po#1). Decimals follow
+    // that unit (S9): KGS / MTR take up to 3, NOS / SET must be whole. The form
+    // checked its own unit already; this checks the one that is stored.
+    const lineUoms = input.lines.map(
+      (l) => (l.itemId ? itemUoms.get(l.itemId) : undefined) ?? l.uom,
+    );
+    input.lines.forEach((l, i) => {
+      const problem = qtyUomProblem(l.qty, lineUoms[i], 'Qty');
+      if (problem) {
+        throw new ValidationError(
+          `Ln ${lineNos[i]}${l.itemCodeText ? ` (${l.itemCodeText})` : ''}: ${problem}`,
+        );
+      }
+    });
 
     const inserted = await tx
       .insert(deliveryChallans)
@@ -1157,10 +1181,8 @@ export async function createDeliveryChallan(
       itemId: l.itemId ?? null,
       itemCodeText: l.itemCodeText,
       itemNameText: l.itemNameText ?? null,
-      qty: String(l.qty),
-      // The item master's unit wins over whatever the form sent: the line is
-      // what the print and the vendor go by (dc-create-po#1).
-      uom: (l.itemId ? itemUoms.get(l.itemId) : undefined) ?? l.uom,
+      qty: roundQty(l.qty).toFixed(3),
+      uom: lineUoms[i]!,
       materialText: l.materialText ?? null,
       dcRemarks: l.dcRemarks ?? null,
       purchaseOrderLineId: l.purchaseOrderLineId ?? null,
@@ -1172,7 +1194,10 @@ export async function createDeliveryChallan(
     // Cascades: stock OUT ledger + jc_op flip per line.
     const opCascades: Array<{ jcCode: string; jobCardId: string; opSeq: number; qty: number }> = [];
     for (const dl of insertedLines) {
-      const qtyInt = Math.round(Number(dl.qty));
+      // Kept to 3 decimals: a buying PO line in KGS / MTR goes out as 12.5. A
+      // line tied to a JC operation is whole pieces — applyOutwardToJcOp
+      // refuses a fraction there rather than truncating it.
+      const lineQty = roundQty(Number(dl.qty));
       // Option A (ADR-067): OSP send is stock-neutral — issuing an outward JW
       // DC no longer debits finished stock. Material out for processing is
       // tracked as "at vendor" via v_osp_wip (jc_op counters); production is
@@ -1187,14 +1212,14 @@ export async function createDeliveryChallan(
           dcCode: header.code,
           dcDate: header.dcDate,
           purchaseOrderLineId: dl.purchaseOrderLineId,
-          qty: qtyInt,
+          qty: lineQty,
         });
         if (result.fired && result.jcCode && result.jobCardId && result.opSeq) {
           opCascades.push({
             jcCode: result.jcCode,
             jobCardId: result.jobCardId,
             opSeq: result.opSeq,
-            qty: qtyInt,
+            qty: lineQty,
           });
         }
       }
@@ -1202,7 +1227,7 @@ export async function createDeliveryChallan(
 
     // Audit emissions in the same tx (ADR-197): one SEND on the challan (qty =
     // everything that left on it), one SEND per Job Card op it moved.
-    const sentTotal = insertedLines.reduce((sum, dl) => sum + Number(dl.qty), 0);
+    const sentTotal = roundQty(insertedLines.reduce((sum, dl) => sum + Number(dl.qty), 0));
     await emitActivityLog(
       tx,
       {
@@ -1315,7 +1340,9 @@ export async function cancelDeliveryChallan(
       );
     }
     for (const dl of lineRows) {
-      const qtyInt = Math.round(Number(dl.qty));
+      // reverseOutwardFromJcOp takes back whole pieces from the op (its sent
+      // counter is a piece count); a buying line's decimals never reach it.
+      const lineQty = roundQty(Number(dl.qty));
       // Option A (ADR-067): OSP send no longer touches stock, so cancel has no
       // ledger movement to reverse — only the jc_op sent-qty is unwound below.
       if (dl.purchaseOrderLineId && !header.ncId) {
@@ -1326,14 +1353,14 @@ export async function cancelDeliveryChallan(
           dcCode: header.code,
           dcDate: header.dcDate,
           purchaseOrderLineId: dl.purchaseOrderLineId,
-          qty: qtyInt,
+          qty: lineQty,
         });
         if (result.fired && result.jcCode && result.jobCardId && result.opSeq) {
           opCascades.push({
             jcCode: result.jcCode,
             jobCardId: result.jobCardId,
             opSeq: result.opSeq,
-            qty: qtyInt,
+            qty: Math.round(lineQty),
           });
         }
       }
@@ -1355,7 +1382,7 @@ export async function cancelDeliveryChallan(
       .returning({ id: deliveryChallans.id });
     assertRowUpdated(cancelledRows, `DC ${header.code}`);
 
-    const cancelledQty = lineRows.reduce((sum, dl) => sum + Number(dl.qty), 0);
+    const cancelledQty = roundQty(lineRows.reduce((sum, dl) => sum + Number(dl.qty), 0));
     await emitActivityLog(
       tx,
       {
@@ -1537,16 +1564,29 @@ export async function receiveAgainstDeliveryChallan(
     const priorByLine = new Map<string, number>();
     for (const r of priorRows) priorByLine.set(r.dcLineId, Number(r.sumQty));
 
+    // Decimals follow the challan line's unit (S9): the receipt line carries
+    // no unit of its own, so a NOS / SET line must come back in whole pieces
+    // while a KGS / MTR line takes up to 3 decimals.
+    for (const il of input.lines) {
+      const dcLine = dcLineById.get(il.deliveryChallanLineId)!;
+      const problem = qtyUomProblem(il.receivedQty, dcLine.uom, 'Received Qty');
+      if (problem) {
+        throw new ValidationError(
+          `Ln ${dcLine.lineNo}${dcLine.itemCodeText ? ` (${dcLine.itemCodeText})` : ''}: ${problem}`,
+        );
+      }
+    }
+
     const incomingByLine = new Map<string, number>();
     for (const il of input.lines) {
       const prev = incomingByLine.get(il.deliveryChallanLineId) ?? 0;
-      incomingByLine.set(il.deliveryChallanLineId, prev + il.receivedQty);
+      incomingByLine.set(il.deliveryChallanLineId, roundQty(prev + il.receivedQty));
     }
     for (const [dcLineId, incReceived] of incomingByLine) {
       const dcLine = dcLineById.get(dcLineId)!;
       const sentQty = Number(dcLine.qty);
       const prior = priorByLine.get(dcLineId) ?? 0;
-      const totalAfter = prior + incReceived;
+      const totalAfter = roundQty(prior + incReceived);
       if (totalAfter > sentQty) {
         throw new ConflictError(
           `Ln ${dcLine.lineNo}: Received (${totalAfter}) cannot be more than Sent Qty (${sentQty}). Reduce the Qty.`,
@@ -1576,7 +1616,7 @@ export async function receiveAgainstDeliveryChallan(
       companyId,
       receiptId: receiptHeader.id,
       deliveryChallanLineId: il.deliveryChallanLineId,
-      receivedQty: il.receivedQty.toFixed(2),
+      receivedQty: roundQty(il.receivedQty).toFixed(3),
       // No reject at receive — rejected_qty defaults to 0, reject_reason null.
       // Quality accept/reject is decided at Incoming QC on the auto-GRN below.
       remarks: il.remarks ?? null,
@@ -1605,21 +1645,24 @@ export async function receiveAgainstDeliveryChallan(
     }> = [];
     for (const rl of insertedLines) {
       const dcLine = dcLineById.get(rl.deliveryChallanLineId)!;
-      const receivedInt = Math.round(Number(rl.receivedQty));
+      // 3 decimals kept (S9): 2.5 KGS back from the vendor lands on the GRN as
+      // 2.5, not 3. A JC operation's whole-piece rule is applied in
+      // applyReceiveToJcOp.
+      const receivedQty = roundQty(Number(rl.receivedQty));
 
-      if (receivedInt > 0) {
+      if (receivedQty > 0) {
         grnLines.push({
           purchaseOrderLineId: dcLine.purchaseOrderLineId,
           itemId: dcLine.itemId,
           itemCodeText: dcLine.itemCodeText,
           itemName: dcLine.itemNameText ?? dcLine.itemCodeText ?? 'Item',
-          receivedQty: receivedInt,
+          receivedQty,
         });
       }
 
       if (dcLine.purchaseOrderLineId) {
         const prev = poLineQtyAdded.get(dcLine.purchaseOrderLineId) ?? 0;
-        poLineQtyAdded.set(dcLine.purchaseOrderLineId, prev + receivedInt);
+        poLineQtyAdded.set(dcLine.purchaseOrderLineId, roundQty(prev + receivedQty));
       }
     }
 
@@ -1667,9 +1710,8 @@ export async function receiveAgainstDeliveryChallan(
     // over-receive check above, and the NC's own DB check
     // (rtv_received_qty <= rtv_sent_qty) backs it.
     if (dcHeader.ncId) {
-      const totalReceivedThisCall = insertedLines.reduce(
-        (sum, rl) => sum + Math.round(Number(rl.receivedQty)),
-        0,
+      const totalReceivedThisCall = roundQty(
+        insertedLines.reduce((sum, rl) => sum + Number(rl.receivedQty), 0),
       );
       if (totalReceivedThisCall > 0) {
         await onNcChallanReceived(

@@ -1,14 +1,44 @@
 import { and, eq, isNull } from 'drizzle-orm';
+import { ActivityAction, MASTER_RULES_MODE_LABEL, type MasterRulesMode } from '@innovic/shared';
 import { companies } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
+import { type DiffField, diffFields } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import type { Company, UpdateCompanyInput } from './schema';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+/** Company settings logged Before → After on EDIT (ADR-197). The master-rule
+ *  settings (migration 0183) change how every Customer / Vendor / Item save
+ *  behaves, so who switched them, and when, must be on record. */
+const COMPANY_FIELDS: readonly DiffField[] = [
+  { key: 'name', label: 'Company Name' },
+  { key: 'gstNumber', label: 'GSTIN' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'email', label: 'E-mail' },
+  { key: 'addressLine1', label: 'Address Line 1' },
+  { key: 'addressLine2', label: 'Address Line 2' },
+  { key: 'city', label: 'City' },
+  { key: 'state', label: 'State' },
+  { key: 'pincode', label: 'PIN Code' },
+  {
+    key: 'masterRulesMode',
+    label: 'Master Rules Mode',
+    format: (v) =>
+      typeof v === 'string' ? (MASTER_RULES_MODE_LABEL[v as MasterRulesMode] ?? v) : null,
+  },
+  {
+    key: 'checkHsn',
+    label: 'Check HSN',
+    format: (v) => (v === true ? 'On' : v === false ? 'Off' : null),
+  },
+  { key: 'hsnMinDigits', label: 'HSN Min Digits' },
+];
 
 function emptyToNull(s: string | undefined): string | null {
   if (s === undefined) return null;
@@ -37,12 +67,14 @@ export async function updateMyCompany(
   requireAdminRole(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // The whole row, read BEFORE the update — the "before" of Before → After.
     const existing = await tx
-      .select({ id: companies.id })
+      .select()
       .from(companies)
       .where(and(eq(companies.id, companyId), isNull(companies.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError('Company not found');
+    const before = existing[0];
+    if (!before) throw new NotFoundError('Company not found');
 
     const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
     if (input.name !== undefined) updates.name = input.name.trim();
@@ -54,12 +86,32 @@ export async function updateMyCompany(
     if (input.city !== undefined) updates.city = emptyToNull(input.city);
     if (input.state !== undefined) updates.state = emptyToNull(input.state);
     if (input.pincode !== undefined) updates.pincode = emptyToNull(input.pincode);
+    if (input.masterRulesMode !== undefined) updates.masterRulesMode = input.masterRulesMode;
+    if (input.checkHsn !== undefined) updates.checkHsn = input.checkHsn;
+    if (input.hsnMinDigits !== undefined) updates.hsnMinDigits = input.hsnMinDigits;
 
+    const changes = diffFields(before, updates, COMPANY_FIELDS);
     const updated = await tx
       .update(companies)
       .set(updates)
       .where(eq(companies.id, companyId))
       .returning();
-    return updated[0] as unknown as Company;
+    const row = updated[0] as unknown as Company;
+    if (changes.length > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Edit,
+          entity: 'Company',
+          entityId: companyId,
+          refId: row.name,
+          changes,
+          detail: `Company Settings edited — ${changes.map((c) => c.label).join(', ')}`,
+        },
+        companyId,
+        user,
+      );
+    }
+    return row;
   });
 }

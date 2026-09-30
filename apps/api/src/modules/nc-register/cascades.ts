@@ -43,7 +43,17 @@
 // pending, linked back through split_from_nc_id. Every NC row is therefore
 // exactly one disposition — there is no child table to reconcile.
 
-import { ActivityAction, NC_STATUS_LABELS, opSrNo } from '@innovic/shared';
+import {
+  ActivityAction,
+  NC_DISPOSITION_LABELS,
+  NC_STATUS_LABELS,
+  NC_STATUS_MOVES,
+  canMoveStatus,
+  opSrNo,
+  qtyUomProblem,
+  roundQty,
+  statusMoveRefusal,
+} from '@innovic/shared';
 import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
@@ -203,6 +213,12 @@ async function setPendingNc(
   ncCode: string,
   values: Partial<typeof ncRegister.$inferInsert>,
 ): Promise<void> {
+  // S8 — every disposition moves NC Raised to a status the map allows.
+  if (values.status && !canMoveStatus(NC_STATUS_MOVES, 'pending', values.status)) {
+    throw new ConflictError(
+      statusMoveRefusal(`NC ${ncCode}`, 'pending', values.status, NC_STATUS_LABELS),
+    );
+  }
   const rows = await tx
     .update(ncRegister)
     .set(values)
@@ -254,13 +270,39 @@ export async function disposeNcCascade(
 
   // Interlock 2: never disposition more than the NC still owes.
   const open = ncOpenQty(loaded);
-  const qty = input.qty ?? open;
+  const qty = roundQty(input.qty ?? open);
   if (qty > open) {
     throw new ValidationError(`Disposition Qty (${qty}) cannot be more than Open (${open}).`);
   }
   if (qty <= 0) {
     throw new ValidationError(
-      `Disposition Qty must be at least 1 (NC ${loaded.code} has ${open} open).`,
+      `Disposition Qty must be more than 0 (NC ${loaded.code} has ${open} open).`,
+    );
+  }
+  // S9 — decimals follow the item's unit: a NOS / SET item is disposed in
+  // whole pieces, a KG item may take up to 3 decimals.
+  const itemRows = await tx
+    .select({ uom: items.uom })
+    .from(items)
+    .where(eq(items.id, loaded.itemId))
+    .limit(1);
+  const uomProblem = qtyUomProblem(qty, itemRows[0]?.uom ?? null, 'Disposition Qty');
+  if (uomProblem) throw new ValidationError(uomProblem);
+  // Rework / repair / make fresh raise a job card, and Use As Is books the
+  // pieces back onto a job-card operation — both count whole pieces. Refuse a
+  // fraction rather than round it silently.
+  if (
+    loaded.jobCardId !== null &&
+    !Number.isInteger(qty) &&
+    (input.action === 'rework' ||
+      input.action === 'repair' ||
+      input.action === 'make_fresh' ||
+      input.action === 'use_as_is')
+  ) {
+    throw new ValidationError(
+      input.action === 'use_as_is'
+        ? `Use As Is books the pieces back on the job card in whole pieces — enter a whole Qty (not ${qty}).`
+        : `${NC_DISPOSITION_LABELS[input.action]} raises a job card in whole pieces — enter a whole Qty (not ${qty}).`,
     );
   }
 
@@ -305,9 +347,9 @@ export async function disposeNcCascade(
 
   // Partial disposition: this row keeps `qty`, the sibling takes the rest.
   let nc: NcRow = loaded;
-  const rejectedBefore = Math.round(Number(loaded.rejectedQty));
+  const rejectedBefore = roundQty(Number(loaded.rejectedQty));
   if (qty < rejectedBefore) {
-    const remainder = rejectedBefore - qty;
+    const remainder = roundQty(rejectedBefore - qty);
     const siblingCode = await nextSplitNcCode(tx, ctx.companyId, loaded);
     const sibling = await tx
       .insert(ncRegister)
@@ -323,10 +365,11 @@ export async function disposeNcCascade(
         itemId: loaded.itemId,
         itemCodeText: loaded.itemCodeText,
         itemNameText: loaded.itemNameText,
+        soId: loaded.soId,
         soCodeText: loaded.soCodeText,
         machineCodeText: loaded.machineCodeText,
         operatorText: loaded.operatorText,
-        rejectedQty: remainder.toFixed(2),
+        rejectedQty: remainder.toFixed(3),
         reasonCategory: loaded.reasonCategory,
         reason: loaded.reason,
         status: 'pending',
@@ -345,10 +388,10 @@ export async function disposeNcCascade(
     const sib = sibling[0];
     if (!sib) throw new ValidationError('Could not split the NC. Try again.');
     await setPendingNc(tx, ncId, loaded.code, {
-      rejectedQty: qty.toFixed(2),
+      rejectedQty: qty.toFixed(3),
       updatedBy: ctx.userId,
     });
-    nc = { ...loaded, rejectedQty: qty.toFixed(2) };
+    nc = { ...loaded, rejectedQty: qty.toFixed(3) };
     result.remainderNcId = sib.id;
     result.remainderNcCode = sib.code;
     // ADR-197 — one SPLIT row on each NC: the parent keeps `qty`, the new
@@ -386,7 +429,8 @@ export async function disposeNcCascade(
     );
   }
 
-  const rejectedQtyInt = Math.round(Number(nc.rejectedQty));
+  // Whole for a job-card NC (checked above); up to 3 decimals for a bought KG reject.
+  const rejectedQtyNow = roundQty(Number(nc.rejectedQty));
 
   // ADR-189 — a BOUGHT-MATERIAL reject: raised by Incoming QC on a GRN line
   // that no job card stands behind (job_card_id NULL, grn_line_id set). The
@@ -411,7 +455,7 @@ export async function disposeNcCascade(
         dispositionBy: ctx.userId,
         dispositionAt: new Date(),
         dispositionRemarks: input.remarks ?? null,
-        failedQty: rejectedQtyInt.toFixed(2),
+        failedQty: rejectedQtyNow.toFixed(3),
         scrapCost: Math.max(0, input.scrapCost ?? 0).toFixed(2),
         closedAt: new Date(),
         closedBy: ctx.userId,
@@ -483,7 +527,7 @@ export async function disposeNcCascade(
       // are unaffected: v_nc_op_breakup.scrap_qty and the production-order
       // loss sum both key scrap on disposition + rejected_qty, and
       // nc_closed_qty excludes scrap outright.
-      failedQty: rejectedQtyInt.toFixed(2),
+      failedQty: rejectedQtyNow.toFixed(3),
       closedAt: new Date(),
       closedBy: ctx.userId,
       updatedBy: ctx.userId,
@@ -538,7 +582,7 @@ export async function disposeNcCascade(
       .limit(1);
     const operatorId = opRows[0]?.id ?? null;
 
-    const baseRemarks = `Use As Is — from ${nc.code} (${rejectedQtyInt} pcs accepted with concession)`;
+    const baseRemarks = `Use As Is — from ${nc.code} (${rejectedQtyNow} pcs accepted with concession)`;
     const opLogRemarks = operatorId
       ? baseRemarks
       : `${baseRemarks} — disposition_by=${ctx.userName} (operator FK unresolved)`;
@@ -558,7 +602,7 @@ export async function disposeNcCascade(
         logType: await reinjectLogType(tx, nc),
         logDate: today,
         shift: 'day',
-        qty: rejectedQtyInt,
+        qty: rejectedQtyNow,
         rejectQty: 0,
         operatorId,
         operatorName: ctx.userName,
@@ -583,7 +627,7 @@ export async function disposeNcCascade(
       // open qty read the whole rejected qty forever. v_nc_op_breakup
       // (0131) counts a closed non-scrap NC by cleared_qty once a ledger is
       // present, which equals what it counted before (rejected_qty).
-      clearedQty: rejectedQtyInt.toFixed(2),
+      clearedQty: rejectedQtyNow.toFixed(3),
       closedAt: new Date(),
       closedBy: ctx.userId,
       updatedBy: ctx.userId,
@@ -643,7 +687,7 @@ export async function disposeNcCascade(
           jobCardId: nc.jobCardId,
           jcCode: jcRows[0].code,
           opSeq: nc.opSeq,
-          acceptedQty: rejectedQtyInt,
+          acceptedQty: rejectedQtyNow,
           txnDate: today,
         },
         ctx.user,
@@ -654,7 +698,7 @@ export async function disposeNcCascade(
       await climbRecoveryToAncestors(
         tx,
         nc.jobCardId,
-        rejectedQtyInt,
+        rejectedQtyNow,
         0,
         `use_as_is ${nc.code}`,
         today,
@@ -751,7 +795,7 @@ export async function disposeNcCascade(
       code: newJcCode,
       jcDate: today,
       itemId: origin.itemId,
-      orderQty: rejectedQtyInt,
+      orderQty: rejectedQtyNow,
       priority: origin.priority,
       dueDate: origin.dueDate,
       drawingFilePath: origin.drawingFilePath,
@@ -847,7 +891,7 @@ export async function disposeNcCascade(
     dispositionAt: new Date(),
     dispositionRemarks: input.remarks ?? null,
     reworkJcCodeText: newJc.code,
-    failedQty: rejectedQtyInt.toFixed(2),
+    failedQty: rejectedQtyNow.toFixed(3),
     closedAt: new Date(),
     closedBy: ctx.userId,
     updatedBy: ctx.userId,
@@ -1060,7 +1104,7 @@ export async function autoCreateMaterialNcFromIqcReject(
       itemId: line.itemId,
       itemCodeText: itemCode,
       itemNameText: line.itemName,
-      rejectedQty: ctx.rejectedQty.toFixed(2),
+      rejectedQty: ctx.rejectedQty.toFixed(3),
       reason,
       status: 'pending',
       reportedByText: ctx.reportedByText,
@@ -1081,7 +1125,7 @@ export async function autoCreateMaterialNcFromIqcReject(
       refId: nc.code,
       qty: ctx.rejectedQty,
       operatorName: ctx.reportedByText,
-      detail: `${nc.code} — ${itemCode} qty=${ctx.rejectedQty.toFixed(2)} (bought material rejected at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo})`,
+      detail: `${nc.code} — ${itemCode} qty=${ctx.rejectedQty.toFixed(3)} (bought material rejected at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo})`,
     },
     ctx.companyId,
     user,
@@ -1231,7 +1275,7 @@ export async function autoCreateNcFromQcReject(
       // The operator who produced the rejected pieces (design §3). Distinct from
       // reportedByText (the QC inspector who raised the NC).
       operatorText: ctx.operatorText ?? null,
-      rejectedQty: ctx.rejectedQty.toFixed(2),
+      rejectedQty: ctx.rejectedQty.toFixed(3),
       reasonCategory: 'other',
       reason,
       status: 'pending',

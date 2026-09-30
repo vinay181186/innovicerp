@@ -32,7 +32,7 @@
 // poId only.
 
 import type { CreateDeliveryChallanInput, DcSendableLine, Uom } from '@innovic/shared';
-import { poSendsMaterialOut, UOMS } from '@innovic/shared';
+import { poSendsMaterialOut, qtyStepForUom, qtyUomProblem, UOMS } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Truck } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -245,11 +245,16 @@ function sendNowIssue(
   typed: string,
   cap: DcSendableLine | undefined,
   poLineQty: number,
+  uom: string,
 ): string | null {
   if (typed.trim() === '') return null;
   const qty = Number(typed);
   if (Number.isNaN(qty)) return 'Enter a number of pieces.';
   if (qty < 0) return 'Enter 1 or more pieces.';
+  // Decimals follow the unit (S9): KGS / MTR up to 3, NOS / SET whole only.
+  // The server checks the same rule; saying it here saves a round trip.
+  const uomProblem = qtyUomProblem(qty, uom, 'Send Now');
+  if (uomProblem) return uomProblem;
   const max = maxSendNow(cap, poLineQty);
   if (qty <= max) return null;
   const pcs = max === 1 ? 'pc' : 'pcs';
@@ -505,7 +510,9 @@ function PoDcFormBody({
         if (l.shipQty === '') return true;
         const q = Number(l.shipQty);
         if (Number.isNaN(q) || q <= 0) return false;
-        return sendNowIssue(l.shipQty, capByLine.get(l.purchaseOrderLineId), l.poLineQty) === null;
+        return (
+          sendNowIssue(l.shipQty, capByLine.get(l.purchaseOrderLineId), l.poLineQty, l.uom) === null
+        );
       }),
     // codeValid flips asynchronously (the doc-number duplicate check); it MUST be
     // a dependency or the Save button's enabled state lags the real validity.
@@ -765,7 +772,7 @@ function PoDcFormBody({
             {lineDrafts.map((l, idx) => {
               const cap = capByLine.get(l.purchaseOrderLineId);
               const max = maxSendNow(cap, l.poLineQty);
-              const issue = sendNowIssue(l.shipQty, cap, l.poLineQty);
+              const issue = sendNowIssue(l.shipQty, cap, l.poLineQty, l.uom);
               // Nothing at all may go out on this line — worth saying out
               // loud, since there is no quantity the user could type that
               // would produce the explanation.
@@ -800,7 +807,7 @@ function PoDcFormBody({
                     <td className="td-num">
                       <input
                         type="number"
-                        step="1"
+                        step={qtyStepForUom(l.uom)}
                         min={0}
                         max={max}
                         className="innovic-input"

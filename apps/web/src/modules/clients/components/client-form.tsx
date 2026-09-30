@@ -11,6 +11,12 @@
 // Cancel + the blue Save top-right (Ctrl+S runs the same Save), and the
 // fields sit in four sections on the 12-column grid — Identity · Address ·
 // Contact · Terms. Same fields, same schema, same submit as before.
+//
+// Master rules (plan v3 Step 2): GST Category and a State pick-list (saving
+// the 2-digit State Code) join the form; the GSTIN / State / GST Category
+// problems show live under the fields — amber in Warn mode, red in Enforce
+// mode — and an enforce-mode refusal's field errors land under the same
+// fields. A valid GSTIN fills a blank State. See settings/master-rules-ui.
 
 import {
   type Client,
@@ -23,6 +29,18 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { type FieldErrors, type UseFormRegister, useForm } from 'react-hook-form';
+import {
+  GST_CATEGORY_OPTIONS,
+  type PartyGstNotes,
+  STATE_OPTIONS,
+  type ServerFieldErrors,
+  blankToNull,
+  initialStateCode,
+  oldStateHint,
+  ruleHelp,
+  unmappedOldState,
+  usePartyGstNotes,
+} from '@/modules/settings/master-rules-ui';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
@@ -43,6 +61,8 @@ type CreateMode = {
   onSubmit: (values: CreateClientInput) => Promise<void> | void;
   submitLabel?: string;
   submitError?: string | null;
+  /** Field errors from an enforce-mode 400 (master rules), shown under the fields. */
+  serverFieldErrors?: ServerFieldErrors | null;
   onCancel: () => void;
 };
 
@@ -53,6 +73,7 @@ type EditMode = {
   onSubmit: (values: UpdateClientInput) => Promise<void> | void;
   submitLabel?: string;
   submitError?: string | null;
+  serverFieldErrors?: ServerFieldErrors | null;
   onCancel: () => void;
 };
 
@@ -67,9 +88,10 @@ const CREATE_DEFAULTS: CreateClientInput = {
   email: undefined,
   phone: undefined,
   gstNumber: undefined,
+  gstCategory: null,
   addressLine1: undefined,
   city: undefined,
-  state: undefined,
+  stateCode: null,
   pincode: undefined,
   paymentDays: null,
   isActive: true,
@@ -82,9 +104,12 @@ function clientToUpdateDefaults(c: Client): UpdateClientInput {
     email: c.email ?? undefined,
     phone: c.phone ?? undefined,
     gstNumber: c.gstNumber ?? undefined,
+    gstCategory: c.gstCategory ?? null,
     addressLine1: c.addressLine1 ?? undefined,
     city: c.city ?? undefined,
-    state: c.state ?? undefined,
+    // The State pick-list saves the State Code; the free-text `state` is no
+    // longer sent (the server stores the list name for the code).
+    stateCode: initialStateCode(c.stateCode, c.state),
     pincode: c.pincode ?? undefined,
     paymentDays: c.paymentDays ?? null,
     isActive: c.isActive,
@@ -101,8 +126,22 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
     resolver: zodResolver(createClientInputSchema),
     defaultValues: { ...CREATE_DEFAULTS, ...props.defaultValues },
   });
-  const { register, formState } = form;
+  const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
+  const setStateCode = useCallback(
+    (code: string) => setValue('stateCode', code, { shouldDirty: true }),
+    [setValue],
+  );
+  const stateCode = watch('stateCode');
+  const notes = usePartyGstNotes({
+    gstNumber: watch('gstNumber'),
+    gstCategory: watch('gstCategory'),
+    stateCode,
+    setStateCode,
+    // An untouched new form does not open covered in amber.
+    show: formState.isDirty || formState.isSubmitted,
+    serverFieldErrors: props.serverFieldErrors,
+  });
 
   // Prefill the read-only code with the next server-assigned CLI-### so it is
   // visible before save. Only seed while still blank (don't clobber edits).
@@ -117,7 +156,13 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
     <ClientFormShell
       header={props.header}
       onSubmit={form.handleSubmit(async (values) => {
-        await props.onSubmit(values);
+        // A blank pick-list is simply not sent on a new customer.
+        const { stateCode: code, gstCategory, ...rest } = values;
+        await props.onSubmit({
+          ...rest,
+          ...(code ? { stateCode: code } : {}),
+          ...(gstCategory ? { gstCategory } : {}),
+        });
       })}
       isSubmitting={formState.isSubmitting}
       dirty={formState.isDirty}
@@ -130,6 +175,9 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
         // the two register functions is not callable as-is, so narrow to one.
         register={register as unknown as UseFormRegister<UpdateClientInput>}
         errors={errors as unknown as FieldErrors<UpdateClientInput>}
+        notes={notes}
+        oldState={null}
+        stateChosen={!!stateCode}
         autoFocusName
         codeField={
           <FormField label="Code" size="sm" htmlFor="code" error={errors.code?.message}>
@@ -159,14 +207,31 @@ function EditClientForm(props: EditMode): React.JSX.Element {
     resolver: zodResolver(updateClientInputSchema),
     defaultValues: clientToUpdateDefaults(props.client),
   });
-  const { register, formState } = form;
+  const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
+  const { client } = props;
+  const setStateCode = useCallback(
+    (code: string) => setValue('stateCode', code, { shouldDirty: true }),
+    [setValue],
+  );
+  const stateCode = watch('stateCode');
+  const notes = usePartyGstNotes({
+    gstNumber: watch('gstNumber'),
+    gstCategory: watch('gstCategory'),
+    stateCode,
+    setStateCode,
+    show: true,
+    serverFieldErrors: props.serverFieldErrors,
+  });
 
   return (
     <ClientFormShell
       header={props.header}
       onSubmit={form.handleSubmit(async (values) => {
-        await props.onSubmit(values);
+        // A State left blank on an old record that never had a State Code is
+        // not sent, so its old free-text State is kept rather than cleared.
+        const { stateCode: code, ...rest } = values;
+        await props.onSubmit(code || client.stateCode ? values : rest);
       })}
       isSubmitting={formState.isSubmitting}
       dirty={formState.isDirty}
@@ -177,6 +242,9 @@ function EditClientForm(props: EditMode): React.JSX.Element {
       <ClientFields
         register={register}
         errors={errors}
+        notes={notes}
+        oldState={unmappedOldState(client.stateCode, client.state)}
+        stateChosen={!!stateCode}
         codeField={
           <FormField label="Code" size="sm" htmlFor="code">
             <input id="code" className="innovic-input" value={props.client.code} readOnly />
@@ -240,14 +308,20 @@ function ClientFormShell(props: {
  *    Identity  Code 3 · Customer 6 · GSTIN 3
  *    Address   Address 12 · City 4 · State 4 · Pincode 4
  *    Contact   Contact Person 4 · Phone 4 · Email 4
- *    Terms     Payment Days 6 · Status 6 */
+ *    Terms     GST Category 4 · Payment Days 4 · Status 4 */
 function ClientFields(props: {
   register: UseFormRegister<UpdateClientInput>;
   errors: FieldErrors<UpdateClientInput>;
   codeField: ReactNode;
+  notes: PartyGstNotes;
+  /** Old free-text State with no list match (edit only), shown as a hint. */
+  oldState: string | null;
+  stateChosen: boolean;
   autoFocusName?: boolean;
 }): React.JSX.Element {
-  const { register, errors } = props;
+  const { register, errors, notes } = props;
+  const oldHint = props.stateChosen ? null : oldStateHint(props.oldState);
+  const stateError = errors.stateCode?.message ?? notes.stateCode.error;
   return (
     <>
       <Panel title="Identity">
@@ -269,7 +343,13 @@ function ClientFields(props: {
               {...register('name')}
             />
           </FormField>
-          <FormField label="GSTIN" size="sm" htmlFor="gstNumber">
+          <FormField
+            label="GSTIN"
+            size="sm"
+            htmlFor="gstNumber"
+            error={errors.gstNumber?.message ?? notes.gstNumber.error}
+            help={ruleHelp(notes.gstNumber)}
+          >
             <input
               id="gstNumber"
               className="innovic-input"
@@ -294,8 +374,34 @@ function ClientFields(props: {
           <FormField label="City" size="md" htmlFor="city">
             <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
           </FormField>
-          <FormField label="State" size="md" htmlFor="state">
-            <input id="state" className="innovic-input" autoComplete="off" {...register('state')} />
+          <FormField
+            label="State"
+            size="md"
+            htmlFor="stateCode"
+            error={stateError ? [stateError, oldHint].filter(Boolean).join(' ') : undefined}
+            help={
+              notes.stateCode.warning ? (
+                <>
+                  {ruleHelp(notes.stateCode)}
+                  {oldHint ? ` ${oldHint}` : null}
+                </>
+              ) : (
+                oldHint
+              )
+            }
+          >
+            <select
+              id="stateCode"
+              className="innovic-select"
+              {...register('stateCode', { setValueAs: blankToNull })}
+            >
+              <option value="">— choose —</option>
+              {STATE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </FormField>
           <FormField label="Pincode" size="md" htmlFor="pincode">
             <input
@@ -337,8 +443,28 @@ function ClientFields(props: {
 
       <Panel title="Terms">
         <FormGrid>
+          <FormField
+            label="GST Category"
+            size="md"
+            htmlFor="gstCategory"
+            error={errors.gstCategory?.message ?? notes.gstCategory.error}
+            help={ruleHelp(notes.gstCategory)}
+          >
+            <select
+              id="gstCategory"
+              className="innovic-select"
+              {...register('gstCategory', { setValueAs: blankToNull })}
+            >
+              <option value="">— choose —</option>
+              {GST_CATEGORY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
           <PaymentDaysField register={register} error={errors.paymentDays?.message} />
-          <FormField label="Status" size="lg" htmlFor="isActive">
+          <FormField label="Status" size="md" htmlFor="isActive">
             <select
               id="isActive"
               className="innovic-select"
@@ -368,7 +494,7 @@ function PaymentDaysField(props: {
   return (
     <FormField
       label="Payment Days"
-      size="lg"
+      size="md"
       htmlFor="paymentDays"
       error={props.error}
       help="Days the customer has to pay an invoice. Blank = not set."

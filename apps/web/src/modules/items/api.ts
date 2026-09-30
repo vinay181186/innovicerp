@@ -87,7 +87,9 @@ export function useBulkCreateItems() {
   return useMutation<BulkCreateItemsResponse, Error, BulkCreateItemsInput>({
     mutationFn: (input) =>
       apiFetch<BulkCreateItemsResponse>('/items/bulk', { method: 'POST', json: input }),
-    onSuccess: () => {
+    onSuccess: (_res, input) => {
+      // A preview (dryRun) writes nothing — nothing to reload.
+      if (input.dryRun) return;
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
     },

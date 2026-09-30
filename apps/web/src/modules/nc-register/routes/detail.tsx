@@ -10,7 +10,10 @@
 import {
   type DisposeNcResult,
   NC_REASON_CATEGORY_LABELS,
+  NC_STATUS_MOVES,
   type NcRegister,
+  QTY_STEP,
+  canMoveStatus,
   opSrNo,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -133,7 +136,9 @@ function NcRegisterDetailPage(): React.JSX.Element {
   }
 
   const isPending = detail.status === 'pending';
-  const isClosed = detail.status === 'closed';
+  // S8 — the buttons that move the NC follow the allowed status moves.
+  const mayMoveTo = (to: NcRegister['status']): boolean =>
+    detail.status !== to && canMoveStatus(NC_STATUS_MOVES, detail.status, to);
   // A legacy in-route rework row is the one that carries rework_op_seq; only
   // it keeps the old "Close rework" path. Every new row closes through the
   // gate (design §3, interlock 6).
@@ -143,7 +148,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // Return-to-vendor, chosen but the challan not yet issued (design §5).
   const awaitingDc =
     detail.disposition === 'return_to_vendor' &&
-    detail.status === 'disposed' &&
+    mayMoveTo('sent_to_vendor') &&
     !detail.deliveryChallanId;
   const isRtv = detail.disposition === 'return_to_vendor';
   // Tier-driven, per department (QC). Was a global role string
@@ -168,7 +173,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // The gate-driven Close: any non-legacy row that has been dispositioned and
   // is not yet closed. Disabled (never hidden) while the server says why not,
   // so the operator sees the shortfall rather than a missing button.
-  const showClose = canEdit && !isPending && !isClosed && !isLegacyRework;
+  const showClose = canEdit && !isPending && mayMoveTo('closed') && !isLegacyRework;
 
   // Resolve op_seq → operation label for the legacy rework dropdown.
   const reworkOpOptions = (jcOps ?? [])
@@ -306,7 +311,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 <input
                   type="number"
                   min={0}
-                  step="0.01"
+                  step={QTY_STEP}
                   className="innovic-input"
                   placeholder="Optional"
                   value={reworkDoneQty === '' ? '' : reworkDoneQty}
