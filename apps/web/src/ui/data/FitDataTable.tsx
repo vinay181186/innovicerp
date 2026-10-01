@@ -23,10 +23,12 @@ import { useTableDensity } from '@/lib/use-ui-settings';
 import { PageState } from '../layout/PageState';
 import { ColumnMeasurer } from './ColumnMeasurer';
 import { colId, colKind, colLabel, cx, defaultRowKey } from './data-table-cells';
+import { FitFoot } from './data-table-foot';
 import { headContent, thAriaSort, thClass, thStyle } from './data-table-head';
 import type { DataTableColumnKind, DataTableProps } from './data-table-types';
 import { canPin as canPinFn, fitColumns, type FitInput } from './fit-layout';
 import { FitRows } from './FitRows';
+import { SelectAllCheckbox, SelectionBar, useRowSelection } from './FitSelection';
 import { TableToolbar } from './TableToolbar';
 import { useFitMeasure } from './use-fit-measure';
 import './data-table-fit.css';
@@ -52,6 +54,14 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     rowActionsHeader = 'Action',
     loading = false,
     footer,
+    showTotals = false,
+    totalsLabel = 'Total',
+    selectable = false,
+    selectedKeys,
+    onToggleRow,
+    onToggleAll,
+    isRowSelectable,
+    selectionActions,
     emptyText = 'No records',
     empty,
     className,
@@ -59,6 +69,12 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     defaultPinned,
     defaultHidden,
   } = props;
+
+  // `showTotals` is the aligned totals row; `footer` is the legacy raw-tfoot
+  // escape hatch. Both at once is a mistake — `showTotals` wins.
+  if (import.meta.env.DEV && showTotals && footer) {
+    console.warn('[DataTable] `showTotals` and `footer` are both set; `showTotals` wins.');
+  }
 
   const ids = useMemo(() => columns.map((c, i) => colId(c, i)), [columns]);
   const firstId = ids[0] ?? 'col-0';
@@ -75,11 +91,23 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
   const layout = useTableLayout(tableKey, ids, { pins: defaultPinned, hidden: defaultHidden });
   const { density, setDensity } = useTableDensity();
 
+  const keyOf = rowKey ?? defaultRowKey;
+  const selection = useRowSelection({
+    rows,
+    keyOf,
+    selectable,
+    selectedKeys,
+    isRowSelectable,
+    onToggleRow,
+    onToggleAll,
+  });
+
   const tableClass = cx(
     'innovic-table',
     'tbl-grid',
     densityProp === 'compact' && 'tbl-compact',
     editable && 'tbl-edit',
+    selectable && 'dt-has-sel',
     className,
   );
   const measure = useFitMeasure({
@@ -88,9 +116,11 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     kinds,
     rows,
     hasActions: rowActions !== undefined,
+    selectable,
+    density,
     styleKey: [density, tableClass, sortBy, sortDir].join('|'),
   });
-  const { widths, avail, actionsW } = measure;
+  const { widths, avail, actionsW, selW } = measure;
 
   const fitInput: FitInput | null =
     widths && avail > 0
@@ -103,6 +133,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
           widths,
           avail,
           actionsW,
+          selW,
         }
       : null;
   // Cheap (one pass over at most 80 columns) — no memo needed.
@@ -135,15 +166,33 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     }
   });
 
-  const nCols = visible.length + (rowActions ? 1 : 0);
+  const nCols = visible.length + (rowActions ? 1 : 0) + (selectable ? 1 : 0);
   const hasRows = !loading && rows.length > 0;
   const wrapStyle: CSSProperties | undefined = maxHeight !== undefined ? { maxHeight } : undefined;
   const sort = { sortBy, sortDir, onSort };
-  const pickerCols = ids.map((id, i) => ({ id, label: colLabel(columns[i] ?? { header: '' }, i) }));
+  const pickerCols = ids.map((id, i) => ({
+    id,
+    label: colLabel(columns[i] ?? { header: '' }, i),
+    // A `control` column is force-pinned by its kind: not hide-able, not
+    // unpinnable — the Columns menu treats it like the always-first column.
+    control: kinds[id] === 'control',
+  }));
   const canPin = (id: string) => (fitInput ? canPinFn(fitInput, id) : true);
+  // Pins the data first column just after the tick-box column (see the sticky
+  // re-scope in innovic-theme.css for `.dt-has-sel`).
+  const tableStyle: CSSProperties | undefined = selectable
+    ? ({ '--dt-sel-w': `${selW}px` } as CSSProperties)
+    : undefined;
 
   return (
     <div className="dt-fit-root">
+      {selectable && selectionActions ? (
+        <SelectionBar
+          selectedCount={selection.selectedKeys.size}
+          selectedRows={selection.selectedRows}
+          actions={selectionActions}
+        />
+      ) : null}
       <TableToolbar
         columns={pickerCols}
         layout={layout}
@@ -164,9 +213,10 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
         className={cx('tbl-wrap', 'dt-fit-wrap', wrapClassName)}
         style={wrapStyle}
       >
-        <table className={cx(tableClass, 'dt-fit', !fit && 'dt-fit-pending')}>
+        <table className={cx(tableClass, 'dt-fit', !fit && 'dt-fit-pending')} style={tableStyle}>
           {fit ? (
             <colgroup>
+              {selectable ? <col className="dt-sel-col" style={{ width: selW }} /> : null}
               {visible.map((k) => (
                 <col key={k} style={{ width: fit.w[k] }} />
               ))}
@@ -175,6 +225,16 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
           ) : null}
           <thead>
             <tr>
+              {selectable ? (
+                <th scope="col" className="dt-sel-col">
+                  <SelectAllCheckbox
+                    checked={selection.allSelected}
+                    indeterminate={selection.someSelected}
+                    disabled={selection.selectableKeys.length === 0}
+                    onToggle={selection.toggleAll}
+                  />
+                </th>
+              ) : null}
               {visible.map((k) => {
                 const c = byId.get(k);
                 if (!c) return null;
@@ -206,7 +266,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
             ) : (
               <FitRows
                 rows={rows}
-                keyOf={rowKey ?? defaultRowKey}
+                keyOf={keyOf}
                 ids={ids}
                 byId={byId}
                 kinds={kinds}
@@ -222,10 +282,25 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
                 rowActions={rowActions}
                 openKeys={openKeys}
                 setOpenKeys={setOpenKeys}
+                selectable={selectable}
+                selection={selection}
               />
             )}
           </tbody>
-          {footer && hasRows ? <tfoot>{footer}</tfoot> : null}
+          {showTotals && hasRows ? (
+            <FitFoot
+              rows={rows}
+              visible={visible}
+              byId={byId}
+              kinds={kinds}
+              firstId={firstId}
+              totalsLabel={totalsLabel}
+              selectable={selectable}
+              hasActions={rowActions !== undefined}
+            />
+          ) : footer && hasRows ? (
+            <tfoot>{footer}</tfoot>
+          ) : null}
         </table>
       </div>
       <ColumnMeasurer

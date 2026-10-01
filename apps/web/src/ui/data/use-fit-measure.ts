@@ -12,9 +12,12 @@ import {
   useState,
 } from 'react';
 
+import type { TableDensity } from '@innovic/shared';
+
 import { MEASURE_ROWS, ACTIONS_ID, type Measured, type MeasureRow } from './ColumnMeasurer';
 import { cellTitle, nodeText, readField } from './data-table-cells';
 import type { DataTableColumn, DataTableColumnKind } from './data-table-types';
+import { selColWidth } from './FitSelection';
 import { columnWidth, type ColumnWidth } from './fit-layout';
 
 /** Rows beyond the measured sample with the longest value, per column. */
@@ -93,6 +96,10 @@ export interface FitMeasureInput<T> {
   kinds: Record<string, DataTableColumnKind>;
   rows: T[];
   hasActions: boolean;
+  /** A leading selection tick-box column is present. */
+  selectable: boolean;
+  /** Current row density — drives the fixed tick-box column width. */
+  density: TableDensity;
   /** Density + table classes + sort — anything that changes how cells draw. */
   styleKey: string;
 }
@@ -103,6 +110,8 @@ export function useFitMeasure<T>({
   kinds,
   rows,
   hasActions,
+  selectable,
+  density,
   styleKey,
 }: FitMeasureInput<T>) {
   // ---- available width: re-layout on every wrapper resize ----
@@ -204,6 +213,18 @@ export function useFitMeasure<T>({
     hasActions && measured
       ? Math.max(measured.head[ACTIONS_ID] ?? 0, measured.content[ACTIONS_ID] ?? 0)
       : 0;
+  // Fixed, never measured — the fit maths subtracts it up front.
+  const selW = selectable ? selColWidth(density) : 0;
 
-  return { wrapRef, avail, widths, actionsW, signature, extraRows, onMeasured, requestRemeasure };
+  return {
+    wrapRef,
+    avail,
+    widths,
+    actionsW,
+    selW,
+    signature,
+    extraRows,
+    onMeasured,
+    requestRemeasure,
+  };
 }

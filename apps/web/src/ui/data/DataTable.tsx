@@ -48,11 +48,20 @@
 import { Fragment } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 
+import { useTableDensity } from '@/lib/use-ui-settings';
+
 import { PageState } from '../layout/PageState';
 import { cellTitle, cellValue, cx, defaultRowKey, stopRowClick } from './data-table-cells';
 import { headContent, tdClass, thAriaSort, thClass, thStyle } from './data-table-head';
 import type { DataTableColumn, DataTableProps } from './data-table-types';
 import { FitDataTable } from './FitDataTable';
+import {
+  RowCheckbox,
+  SelectAllCheckbox,
+  SelectionBar,
+  selColWidth,
+  useRowSelection,
+} from './FitSelection';
 
 export type { DataTableColumn, DataTableColumnKind, DataTableProps } from './data-table-types';
 export { stopRowClick } from './data-table-cells';
@@ -85,6 +94,12 @@ function ClassicDataTable<T>({
   rowActionsWidth = '10%',
   loading = false,
   footer,
+  selectable = false,
+  selectedKeys,
+  onToggleRow,
+  onToggleAll,
+  isRowSelectable,
+  selectionActions,
   emptyText = 'No records',
   empty,
   className,
@@ -92,6 +107,18 @@ function ClassicDataTable<T>({
   variant = 'sheet',
 }: DataTableProps<T>): ReactElement {
   const legacy = variant === 'list';
+  const { density: userDensity } = useTableDensity();
+  const keyOf = rowKey ?? defaultRowKey;
+  const selection = useRowSelection({
+    rows,
+    keyOf,
+    selectable,
+    selectedKeys,
+    isRowSelectable,
+    onToggleRow,
+    onToggleAll,
+  });
+  const selW = selectable ? selColWidth(userDensity) : 0;
 
   const cols: Array<DataTableColumn<T>> = rowActions
     ? [
@@ -114,8 +141,12 @@ function ClassicDataTable<T>({
     density === 'compact' && 'tbl-compact',
     editable && 'tbl-edit',
     autoWidth && 'tbl-auto',
+    selectable && 'dt-has-sel',
     className,
   );
+  const tableStyle: CSSProperties | undefined = selectable
+    ? ({ '--dt-sel-w': `${selW}px` } as CSSProperties)
+    : undefined;
 
   const hasRows = !loading && rows.length > 0;
 
@@ -125,101 +156,134 @@ function ClassicDataTable<T>({
   // (auto layout, 2026-09-26), so a table wider than the screen must scroll
   // inside .tbl-wrap rather than clip its right-hand columns.
 
-  const showColgroup = !autoWidth && cols.some((c) => c.width !== undefined);
-  const keyOf = rowKey ?? defaultRowKey;
+  const showColgroup = !autoWidth && (selectable || cols.some((c) => c.width !== undefined));
   const sort = { sortBy, sortDir, onSort };
+  const spanCols = cols.length + (selectable ? 1 : 0);
 
   return (
-    <div
-      className={cx('tbl-wrap', wrapClassName)}
-      style={Object.keys(wrapStyle).length > 0 ? wrapStyle : undefined}
-    >
-      <table className={tableClass}>
-        {showColgroup ? (
-          <colgroup>
-            {cols.map((c, i) => (
-              <col key={i} style={c.width === undefined ? undefined : { width: c.width }} />
-            ))}
-          </colgroup>
-        ) : null}
+    <>
+      {selectable && selectionActions ? (
+        <SelectionBar
+          selectedCount={selection.selectedKeys.size}
+          selectedRows={selection.selectedRows}
+          actions={selectionActions}
+        />
+      ) : null}
+      <div
+        className={cx('tbl-wrap', wrapClassName)}
+        style={Object.keys(wrapStyle).length > 0 ? wrapStyle : undefined}
+      >
+        <table className={tableClass} style={tableStyle}>
+          {showColgroup ? (
+            <colgroup>
+              {selectable ? <col className="dt-sel-col" style={{ width: selW }} /> : null}
+              {cols.map((c, i) => (
+                <col key={i} style={c.width === undefined ? undefined : { width: c.width }} />
+              ))}
+            </colgroup>
+          ) : null}
 
-        <thead>
-          <tr>
-            {cols.map((c, i) => (
-              <th
-                key={i}
-                scope="col"
-                className={thClass(c)}
-                style={thStyle(c)}
-                aria-sort={thAriaSort(c, sort)}
-              >
-                {headContent(c, sort)}
-              </th>
-            ))}
-          </tr>
-        </thead>
+          <thead>
+            <tr>
+              {selectable ? (
+                <th scope="col" className="dt-sel-col">
+                  <SelectAllCheckbox
+                    checked={selection.allSelected}
+                    indeterminate={selection.someSelected}
+                    disabled={selection.selectableKeys.length === 0}
+                    onToggle={selection.toggleAll}
+                  />
+                </th>
+              ) : null}
+              {cols.map((c, i) => (
+                <th
+                  key={i}
+                  scope="col"
+                  className={thClass(c)}
+                  style={thStyle(c)}
+                  aria-sort={thAriaSort(c, sort)}
+                >
+                  {headContent(c, sort)}
+                </th>
+              ))}
+            </tr>
+          </thead>
 
-        <tbody>
-          {loading ? (
-            <PageState as="row" state="loading" colSpan={cols.length} />
-          ) : rows.length === 0 ? (
-            <PageState as="row" state="empty" message={empty ?? emptyText} colSpan={cols.length} />
-          ) : (
-            rows.map((row, ri) => {
-              const expanded = renderExpanded?.(row, ri);
-              const clickable = !!onRowClick && (isRowClickable?.(row, ri) ?? true);
-              return (
-                <Fragment key={keyOf(row, ri)}>
-                  <tr
-                    className={cx(
-                      rowClassName?.(row, ri),
-                      !!onRowClick && !clickable && 'dt-row-static',
-                    )}
-                    onClick={clickable ? () => onRowClick?.(row, ri) : undefined}
-                    style={clickable ? { cursor: 'pointer' } : undefined}
-                  >
-                    {cols.map((c, ci) => {
-                      const tdStyle: CSSProperties = {};
-                      if (c.ellipsis) {
-                        tdStyle.overflow = 'hidden';
-                        tdStyle.textOverflow = 'ellipsis';
-                        tdStyle.whiteSpace = 'nowrap';
-                      } else if (c.nowrap) {
-                        tdStyle.whiteSpace = 'nowrap';
-                      }
-                      return (
-                        <td
-                          key={ci}
-                          className={tdClass(c)}
-                          style={Object.keys(tdStyle).length > 0 ? tdStyle : undefined}
-                          title={cellTitle(c, row)}
-                          onClick={c.stopRowClick ? stopRowClick : undefined}
-                        >
-                          {cellValue(c, row, ri)}
+          <tbody>
+            {loading ? (
+              <PageState as="row" state="loading" colSpan={spanCols} />
+            ) : rows.length === 0 ? (
+              <PageState as="row" state="empty" message={empty ?? emptyText} colSpan={spanCols} />
+            ) : (
+              rows.map((row, ri) => {
+                const expanded = renderExpanded?.(row, ri);
+                const clickable = !!onRowClick && (isRowClickable?.(row, ri) ?? true);
+                const rk = keyOf(row, ri);
+                const selected = selectable && selection.isSelected(rk);
+                return (
+                  <Fragment key={rk}>
+                    <tr
+                      className={cx(
+                        rowClassName?.(row, ri),
+                        selected && 'row-selected',
+                        !!onRowClick && !clickable && 'dt-row-static',
+                      )}
+                      onClick={clickable ? () => onRowClick?.(row, ri) : undefined}
+                      style={clickable ? { cursor: 'pointer' } : undefined}
+                    >
+                      {selectable ? (
+                        <td className="dt-sel-col" onClick={stopRowClick}>
+                          {selection.canSelect(row, ri) ? (
+                            <RowCheckbox
+                              checked={selected}
+                              onToggle={() => selection.toggleRow(rk, row, ri)}
+                            />
+                          ) : null}
                         </td>
-                      );
-                    })}
-                  </tr>
-                  {/* The reveal is a second row spanning the whole sheet — it
+                      ) : null}
+                      {cols.map((c, ci) => {
+                        const tdStyle: CSSProperties = {};
+                        if (c.ellipsis) {
+                          tdStyle.overflow = 'hidden';
+                          tdStyle.textOverflow = 'ellipsis';
+                          tdStyle.whiteSpace = 'nowrap';
+                        } else if (c.nowrap) {
+                          tdStyle.whiteSpace = 'nowrap';
+                        }
+                        return (
+                          <td
+                            key={ci}
+                            className={tdClass(c)}
+                            style={Object.keys(tdStyle).length > 0 ? tdStyle : undefined}
+                            title={cellTitle(c, row)}
+                            onClick={c.stopRowClick ? stopRowClick : undefined}
+                          >
+                            {cellValue(c, row, ri)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {/* The reveal is a second row spanning the whole sheet — it
                       is part of the row above it, so it never takes a row
                       click of its own. */}
-                  {expanded ? (
-                    <tr>
-                      <td
-                        colSpan={cols.length}
-                        style={{ padding: 0, background: 'var(--bg3)', textAlign: 'left' }}
-                      >
-                        {expanded}
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              );
-            })
-          )}
-        </tbody>
-        {footer && hasRows ? <tfoot>{footer}</tfoot> : null}
-      </table>
-    </div>
+                    {expanded ? (
+                      <tr>
+                        <td
+                          colSpan={spanCols}
+                          style={{ padding: 0, background: 'var(--bg3)', textAlign: 'left' }}
+                        >
+                          {expanded}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })
+            )}
+          </tbody>
+          {footer && hasRows ? <tfoot>{footer}</tfoot> : null}
+        </table>
+      </div>
+    </>
   );
 }

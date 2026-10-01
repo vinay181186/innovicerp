@@ -828,6 +828,24 @@ table.tbl-ctr td .innovic-select {
   background: inherit;
 }
 
+/* Row-selection re-scope (ADR-199 Wave B). When the table carries a leading
+   tick-box column (`.dt-has-sel`), the first child is the tick-box — so the
+   rule above pins the tick-box, and THIS rule pins the DATA first column (the
+   doc-no / code the user reads) just to its right, at `--dt-sel-w` (the
+   tick-box column's width, set on the table). Both stay in view while the
+   table scrolls sideways, and the pin still lands on the doc-no column. */
+:is(.tbl-wrap, .tbl-frozen):not(.tbl-nofreeze)
+  > .innovic-table.dt-has-sel:not(.tbl-nofreeze)
+  > :is(thead, tbody)
+  > tr
+  > :is(th, td):nth-child(2):not([colspan]) {
+  position: sticky;
+  left: var(--dt-sel-w, 36px);
+  z-index: var(--pin-z);
+  background: var(--pin-bg);
+  border-right: 1px solid var(--border3);
+}
+
 /* ── MODIFIERS ───────────────────────────────────────────────────────────────
    One look for the whole system; these change behaviour or density only:
      .tbl-nofreeze (wrap or table)  do not pin the first column

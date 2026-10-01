@@ -13,6 +13,7 @@ import { ColumnPicker, type PickerColumn } from './ColumnPicker';
 import type { LayoutOp } from '@/lib/table-layout-ops';
 
 import type { LayoutState } from './fit-layout';
+import './data-table-toolbar.css';
 
 export interface TableToolbarProps {
   columns: PickerColumn[];

@@ -22,9 +22,22 @@ import type { SortDir } from './SortHeader';
  *   date    exact width, never cut
  *   badge   status chip — exact width, never cut
  *   actions buttons — exact width, never cut
+ *   control an in-cell input / picker (a qty field, a Vendor picker) — exact
+ *           width, NEVER shares spare width, NEVER drops into ▸, never clipped
+ *           (so a dropdown / popover is not cut off), and swallows the row click
+ *           on its own (the cell applies stopRowClick without the caller setting
+ *           it). Effectively force-pinned in the Columns menu — it cannot be
+ *           hidden or unpinned.
  * Default: align 'right' -> num; ellipsis -> text; otherwise code.
  */
-export type DataTableColumnKind = 'text' | 'code' | 'num' | 'date' | 'badge' | 'actions';
+export type DataTableColumnKind =
+  | 'text'
+  | 'code'
+  | 'num'
+  | 'date'
+  | 'badge'
+  | 'actions'
+  | 'control';
 
 export interface DataTableColumn<T> {
   header: ReactNode;
@@ -69,6 +82,14 @@ export interface DataTableColumn<T> {
   title?: ((row: T) => string) | undefined;
   /** Cell holds controls — swallow the click so it never opens the row. */
   stopRowClick?: boolean | undefined;
+  /**
+   * This column's totals-row cell (fit engine, with `showTotals`). A node, or a
+   * function given ALL loaded rows so it can sum them. Rendered in a `<tfoot>`
+   * that follows the visible columns — a column moved into ▸ simply does not
+   * emit its total, so the total always stays under its own column. `num`
+   * columns right-align it. The `firstId` column shows `totalsLabel` instead.
+   */
+  total?: ReactNode | ((rows: T[]) => ReactNode) | undefined;
 }
 
 export interface DataTableProps<T> {
@@ -168,6 +189,43 @@ export interface DataTableProps<T> {
    * Pass the `<tr>`(s) only; DataTable supplies the `<tfoot>`.
    */
   footer?: ReactNode | undefined;
+
+  /* ---- totals row (fit engine, ADR-199 Wave B) ---- */
+  /**
+   * Draw a totals `<tfoot>` row that follows the VISIBLE columns: each column's
+   * `total` is emitted under its own column and moves with it when the column
+   * drops into ▸, so the row never drifts out of alignment (the raw `footer`
+   * escape hatch could not do this). Replaces a hand-written tfoot.
+   * If both `showTotals` and `footer` are set, `showTotals` wins (dev-warn).
+   */
+  showTotals?: boolean | undefined;
+  /** Label shown in the first column's totals cell. Default "Total". */
+  totalsLabel?: ReactNode | undefined;
+
+  /* ---- row selection: tick-boxes + bulk actions (fit engine, Wave B) ---- */
+  /**
+   * Add a leading tick-box column + a select-all header tick, and show a bulk
+   * action strip above the table while anything is selected. The CALLER owns
+   * the selected set (like the server-sort model) — pass `selectedKeys` and the
+   * toggle handlers. Keys are the same `rowKey` the table already uses. The
+   * leading column lives OUTSIDE the layout / Columns menu, so it can never be
+   * reordered, hidden or dropped.
+   */
+  selectable?: boolean | undefined;
+  /** The keys of the currently selected rows (caller-owned). */
+  selectedKeys?: ReadonlySet<string | number> | undefined;
+  /** One row's tick toggled. `next` is its new checked state. */
+  onToggleRow?: ((key: string | number, row: T, next: boolean) => void) | undefined;
+  /** The select-all tick toggled. `keys` are every selectable row's key. */
+  onToggleAll?: ((next: boolean, keys: (string | number)[]) => void) | undefined;
+  /** Per-row gate: return false for a row that cannot be selected (no tick-box). */
+  isRowSelectable?: ((row: T, index: number) => boolean) | undefined;
+  /**
+   * The bulk-action content for the selection strip, given the loaded rows that
+   * are selected. Free-form — the caller supplies its own buttons. BULK only;
+   * per-row "⋯" menus are not drawn here.
+   */
+  selectionActions?: ((selectedRows: T[]) => ReactNode) | undefined;
 
   className?: string | undefined;
   wrapClassName?: string | undefined;
