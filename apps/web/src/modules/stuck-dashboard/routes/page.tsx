@@ -12,9 +12,9 @@ import { useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { apiFetch } from '@/lib/api';
 import { fmtDate } from '@/lib/date';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
+import { RowMenu, StatStrip } from '@/ui/data';
 import { ListHeader } from '@/ui/layout';
 
 export const stuckDashboardRoute = createRoute({
@@ -39,6 +39,8 @@ function StuckDashboardPage(): React.JSX.Element {
   });
   // Client-side search over the rows loaded — SO No., customer, stage, detail.
   const [term, setTerm] = useState('');
+  // The row whose ⋯ → Assign Task popup is open; null = closed.
+  const [assignFor, setAssignFor] = useState<StuckItem | null>(null);
 
   if (isLoading) {
     return (
@@ -150,7 +152,7 @@ function StuckDashboardPage(): React.JSX.Element {
                           <th className="th-num">Over By</th>
                           <th>Stuck Since</th>
                           <th>Detail</th>
-                          <th>Action</th>
+                          <th aria-label="Actions" />
                         </tr>
                       </thead>
                       <tbody>
@@ -183,15 +185,17 @@ function StuckDashboardPage(): React.JSX.Element {
                               <td style={{ fontSize: 11 }}>{it.detail}</td>
                               {/* Chase it: a task linked to the SO, titled with
                                   the stage it is stuck in. */}
-                              <td style={{ whiteSpace: 'nowrap' }}>
-                                <AssignTaskButton
-                                  linkedRef={{
-                                    type: 'sales_order',
-                                    id: it.soId,
-                                    display: `SO ${it.soNo}`,
-                                    navPage: `/sales-orders/${it.soId}`,
-                                  }}
-                                  suggestedTitle={`Unstick ${it.soNo} — ${it.stage}`}
+                              <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                                <RowMenu
+                                  items={[
+                                    {
+                                      key: 'assign',
+                                      label: 'Assign Task',
+                                      icon: 'user-round',
+                                      group: 'assign',
+                                      onSelect: () => setAssignFor(it),
+                                    },
+                                  ]}
                                 />
                               </td>
                             </tr>
@@ -214,6 +218,18 @@ function StuckDashboardPage(): React.JSX.Element {
           </div>
         </>
       )}
+      {assignFor ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'sales_order',
+            id: assignFor.soId,
+            display: `SO ${assignFor.soNo}`,
+            navPage: `/sales-orders/${assignFor.soId}`,
+          }}
+          suggestedTitle={`Unstick ${assignFor.soNo} — ${assignFor.stage}`}
+          onClose={() => setAssignFor(null)}
+        />
+      ) : null}
     </div>
   );
 }

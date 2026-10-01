@@ -1,6 +1,6 @@
 // Incoming QC (QC Wave 2). Ports legacy renderIncomingQC (HTML L23748):
 // pipeline dashboard + pending-GRN inspection queue + recently-completed
-// table. The "🔬 Inspect" action opens the accept/reject form as a popup OVER
+// table. The ⋯ menu's Inspect opens the accept/reject form as a popup OVER
 // this queue (IncomingQcInspectModal) — the same form the QC Call Register
 // draws inline in its expanded row — so the inspector never leaves the list
 // they are working through. Legacy chrome.
@@ -17,6 +17,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { Banner } from '@/ui/feedback/Banner';
 import { ListHeader } from '@/ui/layout';
 import { useIncomingQc } from '../api';
@@ -262,11 +263,12 @@ function IncomingQcPage(): React.JSX.Element {
                   <col style={{ width: '14%' }} />
                   <col style={{ width: '5%' }} />
                   <col style={{ width: '12%' }} />
-                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '17%' }} />
                   <col style={{ width: '7%' }} />
                   <col style={{ width: '7%' }} />
                   <col style={{ width: '6%' }} />
-                  <col style={{ width: '6%' }} />
+                  {/* The ⋯ row menu — one small button. */}
+                  <col style={{ width: '3%' }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -286,7 +288,7 @@ function IncomingQcPage(): React.JSX.Element {
                     <th className="th-num" style={{ color: 'var(--amber2)' }}>
                       QC Pending
                     </th>
-                    <th>Action</th>
+                    <th aria-label="Actions" />
                   </tr>
                 </thead>
                 <tbody>
@@ -428,15 +430,19 @@ function PendingRow({
       <td className="mono fw-700 td-num" style={{ fontSize: 14, color: 'var(--amber2)' }}>
         {r.pendingQty}
       </td>
-      <td>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          style={{ fontSize: 11, fontWeight: 700 }}
-          onClick={onInspect}
-        >
-          🔬 Inspect
-        </button>
+      {/* ⋯ row menu: Inspect opens the same accept/reject popup. */}
+      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+        <RowMenu
+          items={[
+            {
+              key: 'inspect',
+              label: 'Inspect',
+              icon: 'check',
+              group: 'workflow',
+              onSelect: onInspect,
+            },
+          ]}
+        />
       </td>
     </tr>
   );
