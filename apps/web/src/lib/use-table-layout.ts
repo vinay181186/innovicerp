@@ -26,6 +26,7 @@ import {
 
 import { ApiError, apiFetch } from './api';
 import { useSession } from './session';
+import { applyLayoutOp, type LayoutOp } from './table-layout-ops';
 
 export interface TableLayoutState {
   order: string[];
@@ -39,8 +40,8 @@ export interface TableLayoutDefaults {
 }
 
 export interface UseTableLayoutResult extends TableLayoutState {
-  setLayout: (next: TableLayoutState) => void;
-  reset: () => void;
+  /** One Columns-menu action (move / hide / show / pin / unpin / reset). */
+  apply: (op: LayoutOp) => void;
   /** The last save failed (after its one retry). */
   saveFailed: boolean;
   retrySave: () => void;
@@ -127,17 +128,21 @@ export function useTableLayout(
     staleTime: Infinity,
     retry: false,
     queryFn: async () => {
+      let body: unknown;
       try {
-        const parsed = tableLayoutSchema.safeParse(
-          await apiFetch<unknown>(layoutPath(tableKey ?? '')),
-        );
-        if (parsed.success) return parsed.data;
+        body = await apiFetch<unknown>(layoutPath(tableKey ?? ''));
       } catch (e) {
         // 404 = the API side is not deployed: work in memory, silently.
         if (isStatus(e, 404)) return null;
+        // Network / server errors: load-failed (nothing is saved).
         throw e;
       }
-      throw new Error('Unreadable saved layout');
+      const parsed = tableLayoutSchema.safeParse(body);
+      // A saved layout this code cannot read is treated as "never saved":
+      // defaults on screen, and the next change saves a good one over it.
+      return parsed.success
+        ? parsed.data
+        : { tableKey: tableKey ?? '', columns: [], updatedAt: null };
     },
   });
 
@@ -153,6 +158,9 @@ export function useTableLayout(
   const seq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const pending = useRef<Pending | null>(null);
+  // Changes made before the read finished, as operations to replay on top of
+  // the SAVED layout once it arrives (never a defaults-based state).
+  const queued = useRef<LayoutOp[]>([]);
 
   const idsKey = columnIds.join('|');
   const defaultState = useMemo<TableLayoutState>(
@@ -165,6 +173,7 @@ export function useTableLayout(
     setLocal(null);
     setSaveFailed(false);
     pending.current = null;
+    queued.current = [];
   }, [tableKey, userId]);
 
   const saved = query.data?.columns;
@@ -175,6 +184,11 @@ export function useTableLayout(
   }, [local, saved, defaultState, idsKey]);
 
   const first = columnIds[0];
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const loaded = query.isSuccess;
+  const loadedRef = useRef(loaded);
+  loadedRef.current = loaded;
 
   const send = useCallback(
     async (job: Pending, mySeq: number) => {
@@ -217,34 +231,55 @@ export function useTableLayout(
     if (job) void send(job, seq.current);
   }, [send]);
 
-  // The read just succeeded: save whatever the user changed while it loaded.
+  // The read just succeeded: replay what the user did while it loaded on top
+  // of the SAVED layout, show that, and save it.
   useEffect(() => {
-    if (canSave && pending.current) flush();
+    if (!loaded || queued.current.length === 0) return;
+    const ops = queued.current;
+    queued.current = [];
+    const base = saved !== undefined && saved.length > 0 ? fromSaved(saved) : defaultState;
+    const replayed = normalize(
+      ops.reduce((st, op) => applyLayoutOp(st, op, first, defaultState), base),
+      columnIds,
+      defaults,
+    );
+    const resetLast = ops[ops.length - 1]?.type === 'reset';
+    seq.current += 1;
+    setLocal(replayed);
+    pending.current = resetLast ? { kind: 'delete' } : { kind: 'put', state: replayed };
+    flush();
+  }, [loaded, saved, defaultState, first, idsKey, flush]);
+
+  useEffect(() => {
+    if (canSave && pending.current && queued.current.length === 0) flush();
   }, [canSave, flush]);
 
   // Leaving the page mid-debounce still saves the last change.
   useEffect(() => flush, [flush]);
 
-  const setLayout = useCallback(
-    (next: TableLayoutState) => {
+  const apply = useCallback(
+    (op: LayoutOp) => {
       seq.current += 1;
+      if (!loadedRef.current) queued.current.push(op);
+      const next = normalize(
+        applyLayoutOp(stateRef.current, op, first, defaultState),
+        columnIds,
+        defaults,
+      );
       setLocal(next);
-      pending.current = { kind: 'put', state: next };
       if (timer.current !== undefined) window.clearTimeout(timer.current);
+      timer.current = undefined;
+      if (op.type === 'reset') {
+        setSaveFailed(false);
+        pending.current = { kind: 'delete' };
+        flush();
+        return;
+      }
+      pending.current = { kind: 'put', state: next };
       timer.current = window.setTimeout(flush, SAVE_DELAY_MS);
     },
-    [flush],
+    [first, defaultState, idsKey, flush],
   );
-
-  const reset = useCallback(() => {
-    seq.current += 1;
-    if (timer.current !== undefined) window.clearTimeout(timer.current);
-    timer.current = undefined;
-    setLocal(defaultState);
-    setSaveFailed(false);
-    pending.current = { kind: 'delete' };
-    flush();
-  }, [defaultState, flush]);
 
   const retrySave = useCallback(() => {
     seq.current += 1;
@@ -256,8 +291,7 @@ export function useTableLayout(
 
   return {
     ...state,
-    setLayout,
-    reset,
+    apply,
     saveFailed,
     retrySave,
     loadFailed: query.isError,

@@ -3,7 +3,7 @@
 // (prototype layout: LABEL value items, one line each) followed by the
 // caller's own renderExpanded content. Split out of FitDataTable.tsx.
 
-import { Fragment, useState } from 'react';
+import { Fragment } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import { cellTitle, cellValue, colLabel, cx, stopRowClick } from './data-table-cells';
@@ -27,27 +27,36 @@ export interface FitRowsProps<T> {
   renderExpanded?: ((row: T, index: number) => ReactNode) | undefined;
   onToggleExpanded?: ((row: T, index: number) => void) | undefined;
   rowActions?: ((row: T, index: number) => ReactNode) | undefined;
+  /** Rows whose engine detail is open. Owned by FitDataTable, so it survives
+   *  the table showing loading / empty in between. */
+  openKeys: ReadonlySet<string | number>;
+  setOpenKeys: (update: (prev: Set<string | number>) => Set<string | number>) => void;
 }
 
 export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
-  const [open, setOpen] = useState<Set<string | number>>(() => new Set());
-  const toggle = (k: string | number, row: T, ri: number) => {
-    setOpen((prev) => {
+  // ONE ▸ per row. It shows open when EITHER the engine detail or the
+  // caller's own content is open; a click then closes both, else opens both —
+  // so the two can never drift apart.
+  const toggle = (k: string | number, row: T, ri: number, callerOpen: boolean) => {
+    const engineOpen = p.openKeys.has(k);
+    const closing = engineOpen || callerOpen;
+    p.setOpenKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(k)) next.delete(k);
+      if (closing) next.delete(k);
       else next.add(k);
       return next;
     });
-    // One ▸ per row: it opens the caller's own expanded content too.
-    p.onToggleExpanded?.(row, ri);
+    if (closing === callerOpen) p.onToggleExpanded?.(row, ri);
   };
 
   return (
     <>
       {p.rows.map((row, ri) => {
         const rk = p.keyOf(row, ri);
-        const isOpen = open.has(rk);
         const extra = p.renderExpanded?.(row, ri);
+        const callerOpen = extra !== null && extra !== undefined && extra !== false;
+        const engineOpen = p.openKeys.has(rk);
+        const isOpen = engineOpen || callerOpen;
         return (
           <Fragment key={rk}>
             <tr
@@ -73,7 +82,7 @@ export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
                         aria-label={isOpen ? 'Hide row details' : 'Show row details'}
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggle(rk, row, ri);
+                          toggle(rk, row, ri, callerOpen);
                         }}
                       >
                         {isOpen ? '▾' : '▸'}
@@ -89,7 +98,7 @@ export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
                 </td>
               ) : null}
             </tr>
-            {isOpen && (p.detailIds.length > 0 || !extra) ? (
+            {engineOpen && (p.detailIds.length > 0 || !extra) ? (
               <tr className="dt-detail-row">
                 <td colSpan={p.nCols}>
                   {p.detailIds.length > 0 ? (

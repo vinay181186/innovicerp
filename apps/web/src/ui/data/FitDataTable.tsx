@@ -14,7 +14,7 @@
 //      to the user's profile; R8 the Action column is always last and kept.
 // Measuring lives in use-fit-measure.ts, the body rows in FitRows.tsx.
 
-import { useMemo } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 
 import { useTableLayout } from '@/lib/use-table-layout';
@@ -112,6 +112,28 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
   const userHidden = layout.order.filter((k) => layout.hidden.includes(k));
   const detailIds = [...textVisible, ...dropped, ...userHidden];
 
+  // Which rows' ▸ detail is open — kept here, not in FitRows, so it outlives
+  // a loading / empty pass (e.g. searching to nothing and back).
+  const [openKeys, setOpenKeys] = useState<Set<string | number>>(() => new Set());
+
+  // After every draw: if a never-cut cell (code / num / date / badge /
+  // actions) overflows, its content changed since it was measured — ask for
+  // one re-measure (use-fit-measure caps it at one per measurement input).
+  const { wrapRef, requestRemeasure } = measure;
+  useLayoutEffect(() => {
+    const table = wrapRef.current?.querySelector('table');
+    if (!fit || !table) return;
+    const cells = table.querySelectorAll<HTMLElement>(
+      ':scope > tbody > tr > td.dt-k-code, :scope > tbody > tr > td.dt-k-num, :scope > tbody > tr > td.dt-k-date, :scope > tbody > tr > td.dt-k-badge, :scope > tbody > tr > td.dt-k-actions',
+    );
+    for (const td of cells) {
+      if (td.scrollWidth > td.clientWidth + 1) {
+        requestRemeasure();
+        return;
+      }
+    }
+  });
+
   const nCols = visible.length + (rowActions ? 1 : 0);
   const hasRows = !loading && rows.length > 0;
   const wrapStyle: CSSProperties | undefined = maxHeight !== undefined ? { maxHeight } : undefined;
@@ -128,8 +150,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
         dropped={dropped}
         warn={fit?.warn ?? false}
         canPin={canPin}
-        onChange={layout.setLayout}
-        onReset={layout.reset}
+        onOp={layout.apply}
         density={density}
         onDensity={setDensity}
         saveFailed={layout.saveFailed}
@@ -197,6 +218,8 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
                 renderExpanded={renderExpanded}
                 onToggleExpanded={onToggleExpanded}
                 rowActions={rowActions}
+                openKeys={openKeys}
+                setOpenKeys={setOpenKeys}
               />
             )}
           </tbody>

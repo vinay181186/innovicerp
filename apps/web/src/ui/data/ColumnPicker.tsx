@@ -7,6 +7,8 @@ import { useEffect, useRef } from 'react';
 import type { CSSProperties, ReactElement, RefObject } from 'react';
 
 import { cx } from './data-table-cells';
+import type { LayoutOp } from '@/lib/table-layout-ops';
+
 import type { LayoutState } from './fit-layout';
 
 export interface PickerColumn {
@@ -21,8 +23,7 @@ export interface ColumnPickerProps {
   dropped: string[];
   flash: string[];
   canPin: (id: string) => boolean;
-  onChange: (next: LayoutState) => void;
-  onReset: () => void;
+  onOp: (op: LayoutOp) => void;
   onToast: (msg: string) => void;
   onClose: () => void;
   /** The popover element — the toolbar positions it and tests outside clicks. */
@@ -38,8 +39,7 @@ export function ColumnPicker({
   dropped,
   flash,
   canPin,
-  onChange,
-  onReset,
+  onOp,
   onToast,
   onClose,
   popRef: ref,
@@ -70,46 +70,25 @@ export function ColumnPicker({
     el?.focus();
   }, [layout, ref]);
 
+  // Every action is an OPERATION, so one made before the saved layout has
+  // loaded can be replayed on top of it (lib/table-layout-ops.ts).
   const move = (id: string, d: -1 | 1) => {
     focusAfter.current = `${d < 0 ? 'up' : 'dn'}:${id}`;
-    const list = [...shown];
-    const i = list.indexOf(id);
-    const j = i + d;
-    if (i < 1 || j < 1 || j >= list.length) return;
-    const a = list[i];
-    const b = list[j];
-    if (a === undefined || b === undefined) return;
-    list[i] = b;
-    list[j] = a;
-    onChange({ ...layout, order: [...list, ...hidden] });
+    onOp({ type: 'move', id, dir: d });
   };
 
   const setShown = (id: string, show: boolean) => {
     focusAfter.current = `cb:${id}`;
-    if (show) {
-      const order = shown.filter((k) => k !== id);
-      order.push(id);
-      onChange({
-        ...layout,
-        hidden: layout.hidden.filter((k) => k !== id),
-        order: [...order, ...hidden.filter((k) => k !== id)],
-      });
-    } else {
-      onChange({
-        ...layout,
-        hidden: [...layout.hidden, id],
-        pins: layout.pins.filter((k) => k !== id),
-      });
-    }
+    onOp({ type: show ? 'show' : 'hide', id });
   };
 
   const togglePin = (id: string) => {
     focusAfter.current = `pin:${id}`;
     if (layout.pins.includes(id)) {
-      onChange({ ...layout, pins: layout.pins.filter((k) => k !== id) });
+      onOp({ type: 'unpin', id });
       onToast(`${labelOf(id)} unpinned — it may drop on a small screen`);
     } else if (canPin(id)) {
-      onChange({ ...layout, pins: [...layout.pins, id] });
+      onOp({ type: 'pin', id });
       onToast(`${labelOf(id)} pinned — it never moves to ▸`);
     } else {
       onToast('No room — unpin another column first');
@@ -219,7 +198,7 @@ export function ColumnPicker({
           type="button"
           className="btn btn-ghost btn-sm"
           onClick={() => {
-            onReset();
+            onOp({ type: 'reset' });
             onToast('Layout reset to default');
           }}
         >

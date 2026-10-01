@@ -10,6 +10,8 @@ import type { TableDensity } from '@innovic/shared';
 import { Z_OVERLAY } from '../feedback/Modal';
 import { ToastStack } from '../feedback/Toast';
 import { ColumnPicker, type PickerColumn } from './ColumnPicker';
+import type { LayoutOp } from '@/lib/table-layout-ops';
+
 import type { LayoutState } from './fit-layout';
 
 export interface TableToolbarProps {
@@ -19,8 +21,7 @@ export interface TableToolbarProps {
   dropped: string[];
   warn: boolean;
   canPin: (id: string) => boolean;
-  onChange: (next: LayoutState) => void;
-  onReset: () => void;
+  onOp: (op: LayoutOp) => void;
   density: TableDensity;
   onDensity: (d: TableDensity) => void;
   saveFailed: boolean;
@@ -200,8 +201,7 @@ export function TableToolbar(props: TableToolbarProps): ReactElement {
                 dropped={dropped}
                 flash={flash}
                 canPin={props.canPin}
-                onChange={props.onChange}
-                onReset={props.onReset}
+                onOp={props.onOp}
                 onToast={setToast}
                 onClose={close}
               />,

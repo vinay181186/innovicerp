@@ -25,6 +25,13 @@ export const MEASURE_ROWS = 200;
 /** id of the Action column in measurements. */
 export const ACTIONS_ID = '__actions';
 
+/** A row to measure, with its REAL index in the table (Sr No 1000 renders
+ *  as four digits, not as its place in the sample). */
+export interface MeasureRow<T> {
+  row: T;
+  index: number;
+}
+
 export interface Measured {
   head: Record<string, number>;
   content: Record<string, number>;
@@ -35,7 +42,7 @@ interface Props<T> extends SortProps {
   signature: string;
   columns: DataTableColumn<T>[];
   rows: T[];
-  extraRows: T[];
+  extraRows: Array<MeasureRow<T>>;
   rowActions?: ((row: T, index: number) => ReactNode) | undefined;
   rowActionsHeader?: ReactNode | undefined;
   tableClass: string | undefined;
@@ -56,7 +63,10 @@ function MeasurerImpl<T>({
   signature,
 }: Props<T>): ReactElement {
   const ref = useRef<HTMLDivElement>(null);
-  const sample = [...rows.slice(0, MEASURE_ROWS), ...extraRows];
+  const sample: Array<MeasureRow<T>> = [
+    ...rows.slice(0, MEASURE_ROWS).map((row, index) => ({ row, index })),
+    ...extraRows,
+  ];
   const ids = columns.map((c, i) => colId(c, i));
   if (rowActions) ids.push(ACTIONS_ID);
   const idsRef = useRef(ids);
@@ -103,7 +113,7 @@ function MeasurerImpl<T>({
         {sample.length > 0 ? (
           <table className={tableClass}>
             <tbody>
-              {sample.map((row, ri) => (
+              {sample.map(({ row, index: ri }) => (
                 <tr key={ri}>
                   {columns.map((c, ci) => (
                     <td key={ci} className={tdClass(c)}>

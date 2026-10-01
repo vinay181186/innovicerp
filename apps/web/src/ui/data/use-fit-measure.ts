@@ -12,7 +12,7 @@ import {
   useState,
 } from 'react';
 
-import { MEASURE_ROWS, ACTIONS_ID, type Measured } from './ColumnMeasurer';
+import { MEASURE_ROWS, ACTIONS_ID, type Measured, type MeasureRow } from './ColumnMeasurer';
 import { cellTitle, nodeText, readField } from './data-table-cells';
 import type { DataTableColumn, DataTableColumnKind } from './data-table-types';
 import { columnWidth, type ColumnWidth } from './fit-layout';
@@ -52,7 +52,7 @@ export function pickOutlierRows<T>(
   rows: T[],
   columns: DataTableColumn<T>[],
   kinds: DataTableColumnKind[],
-): T[] {
+): Array<MeasureRow<T>> {
   if (rows.length <= MEASURE_ROWS) return [];
   const picked = new Set<number>();
   columns.forEach((col, ci) => {
@@ -72,7 +72,7 @@ export function pickOutlierRows<T>(
   });
   return [...picked]
     .sort((a, b) => a - b)
-    .flatMap((ri) => (rows[ri] === undefined ? [] : [rows[ri] as T]));
+    .flatMap((ri) => (rows[ri] === undefined ? [] : [{ row: rows[ri] as T, index: ri }]));
 }
 
 /** A number that changes only when the rows really change (not on a new
@@ -157,9 +157,25 @@ export function useFitMeasure<T>({
     // Keyed on the rows' version and the column ids, not on identities.
     [rowsVersion, idsKey],
   );
-  const signature = [rowsVersion, idsKey, hasActions ? 'a' : '', styleKey, fontsTick, avail].join(
-    '§',
-  );
+  const baseSignature = [
+    rowsVersion,
+    idsKey,
+    hasActions ? 'a' : '',
+    styleKey,
+    fontsTick,
+    avail,
+  ].join('§');
+  // A cell's content can change without anything above changing (a Close
+  // button appearing once access loads). The table asks for ONE re-measure
+  // per base signature when a never-cut cell overflows — never a loop.
+  const [nonce, setNonce] = useState(0);
+  const nonceFor = useRef('');
+  const requestRemeasure = useCallback(() => {
+    if (nonceFor.current === baseSignature) return;
+    nonceFor.current = baseSignature;
+    setNonce((n) => n + 1);
+  }, [baseSignature]);
+  const signature = `${baseSignature}§${nonce}`;
 
   const widths = useMemo(() => {
     if (!measured) return null;
@@ -180,5 +196,5 @@ export function useFitMeasure<T>({
       ? Math.max(measured.head[ACTIONS_ID] ?? 0, measured.content[ACTIONS_ID] ?? 0)
       : 0;
 
-  return { wrapRef, avail, widths, actionsW, signature, extraRows, onMeasured };
+  return { wrapRef, avail, widths, actionsW, signature, extraRows, onMeasured, requestRemeasure };
 }
