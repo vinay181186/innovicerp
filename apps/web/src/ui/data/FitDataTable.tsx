@@ -40,6 +40,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     density: densityProp = 'regular',
     editable = false,
     onRowClick,
+    isRowClickable,
     rowClassName,
     renderExpanded,
     onToggleExpanded,
@@ -214,6 +215,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
                 detailIds={detailIds}
                 nCols={nCols}
                 onRowClick={onRowClick}
+                isRowClickable={isRowClickable}
                 rowClassName={rowClassName}
                 renderExpanded={renderExpanded}
                 onToggleExpanded={onToggleExpanded}

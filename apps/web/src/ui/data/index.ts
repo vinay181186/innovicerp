@@ -6,6 +6,9 @@
 // own exports without anyone having to touch this file.
 
 export * from './DataTable';
+export { ROW_TINT } from './data-table-cells';
+export * from './use-client-sort';
+export * from './dynamic-columns';
 export * from './EmptyState';
 export * from './ItemBadge';
 export * from './MachineCard';

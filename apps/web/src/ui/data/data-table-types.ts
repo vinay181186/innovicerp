@@ -106,6 +106,15 @@ export interface DataTableProps<T> {
 
   /* ---- behaviour ---- */
   onRowClick?: ((row: T, index: number) => void) | undefined;
+  /**
+   * Per-row gate on `onRowClick` (ADR-199). Return false for a row that must NOT
+   * open — a cancelled line, a disabled record — and that row loses its click,
+   * its pointer cursor and its clickable hover wash, while every other row stays
+   * clickable. The row's ▸ detail toggle, its checkboxes / inputs and its
+   * rowActions still work (they stop the row click already). No effect unless
+   * `onRowClick` is set; defaults to clickable.
+   */
+  isRowClickable?: ((row: T, index: number) => boolean) | undefined;
   rowClassName?: ((row: T, index: number) => string | undefined) | undefined;
   /**
    * Content revealed IN PLACE under a row — a BOM's part list, a route card's

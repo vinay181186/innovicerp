@@ -73,6 +73,7 @@ function ClassicDataTable<T>({
   editable = false,
   autoWidth = false,
   onRowClick,
+  isRowClickable,
   rowClassName,
   renderExpanded,
   maxHeight,
@@ -166,12 +167,16 @@ function ClassicDataTable<T>({
           ) : (
             rows.map((row, ri) => {
               const expanded = renderExpanded?.(row, ri);
+              const clickable = !!onRowClick && (isRowClickable?.(row, ri) ?? true);
               return (
                 <Fragment key={keyOf(row, ri)}>
                   <tr
-                    className={cx(rowClassName?.(row, ri))}
-                    onClick={onRowClick ? () => onRowClick(row, ri) : undefined}
-                    style={onRowClick ? { cursor: 'pointer' } : undefined}
+                    className={cx(
+                      rowClassName?.(row, ri),
+                      !!onRowClick && !clickable && 'dt-row-static',
+                    )}
+                    onClick={clickable ? () => onRowClick?.(row, ri) : undefined}
+                    style={clickable ? { cursor: 'pointer' } : undefined}
                   >
                     {cols.map((c, ci) => {
                       const tdStyle: CSSProperties = {};

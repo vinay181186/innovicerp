@@ -898,6 +898,46 @@ table.tbl-ctr td .innovic-select {
   border-left: inherit;
 }
 
+/* Semantic row tints (ADR-199 Wave A). A caller stamps one of these through the
+   existing `rowClassName` prop (see ROW_TINT in data-table-cells.ts) to wash a
+   whole row in a soft status colour: late=red, done=green, pending=amber,
+   cancelled=grey. Same mechanism as the inline-tint row above — set `--row-bg`
+   so the pinned first cell picks the wash up via its `--pin-bg` rule, and paint
+   the <tr> so the see-through body cells show it too. The soft badge tokens
+   (--red3/--green3/--amber3/--bg4) keep 13px text legible. Declared BELOW the
+   :hover (line ~669) and .row-selected rules on purpose: a td background on
+   hover paints over the <tr> wash, and hover/select also override `--pin-bg` at
+   higher specificity, so hover and selection always win over a tint. */
+.innovic-table tbody tr.row-late {
+  --row-bg: var(--red3);
+  background: var(--row-bg);
+}
+.innovic-table tbody tr.row-done {
+  --row-bg: var(--green3);
+  background: var(--row-bg);
+}
+.innovic-table tbody tr.row-pending {
+  --row-bg: var(--amber3);
+  background: var(--row-bg);
+}
+.innovic-table tbody tr.row-cancelled {
+  --row-bg: var(--bg4);
+  background: var(--row-bg);
+}
+
+/* A row the table has marked non-clickable (ADR-199 isRowClickable === false):
+   drop the clickable hover wash so it does not look openable. Only added when
+   the table HAS an onRowClick but this row opts out, so rows on a table with no
+   row click keep their normal hover as before. Higher specificity than the
+   :hover rules above, so it wins without depending on source order; the pinned
+   first cell is pinned back to its resting fill the same way. */
+.innovic-table tbody tr.dt-row-static:hover td {
+  background: var(--row-bg, transparent);
+}
+.innovic-table tbody tr.dt-row-static:hover > td {
+  --pin-bg: var(--row-bg, var(--bg2));
+}
+
 /* Ported verbatim from legacy L187-188 (main stylesheet). Task Board only.
    `--sig-*` already exist in tokens.css and are byte-identical to legacy's
    (L34/L37), so these are a clean copy. The port had approximated both:

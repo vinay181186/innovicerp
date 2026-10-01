@@ -23,6 +23,7 @@ export interface FitRowsProps<T> {
   detailIds: string[];
   nCols: number;
   onRowClick?: ((row: T, index: number) => void) | undefined;
+  isRowClickable?: ((row: T, index: number) => boolean) | undefined;
   rowClassName?: ((row: T, index: number) => string | undefined) | undefined;
   renderExpanded?: ((row: T, index: number) => ReactNode) | undefined;
   onToggleExpanded?: ((row: T, index: number) => void) | undefined;
@@ -57,12 +58,16 @@ export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
         const callerOpen = extra !== null && extra !== undefined && extra !== false;
         const engineOpen = p.openKeys.has(rk);
         const isOpen = engineOpen || callerOpen;
+        const clickable = !!p.onRowClick && (p.isRowClickable?.(row, ri) ?? true);
         return (
           <Fragment key={rk}>
             <tr
-              className={cx(p.rowClassName?.(row, ri))}
-              onClick={p.onRowClick ? () => p.onRowClick?.(row, ri) : undefined}
-              style={p.onRowClick ? { cursor: 'pointer' } : undefined}
+              className={cx(
+                p.rowClassName?.(row, ri),
+                !!p.onRowClick && !clickable && 'dt-row-static',
+              )}
+              onClick={clickable ? () => p.onRowClick?.(row, ri) : undefined}
+              style={clickable ? { cursor: 'pointer' } : undefined}
             >
               {p.visible.map((k) => {
                 const c = p.byId.get(k);
