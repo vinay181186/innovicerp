@@ -227,6 +227,7 @@ function QcHistoryPage(): React.JSX.Element {
                 tableKey={TABLE_KEYS.qcHistoryEntries}
                 columns={entryColumns}
                 rows={logs}
+                sortFilter={false}
                 rowKey={(l) => l.logId}
                 emptyText={t || dateFrom || dateTo ? 'No QC entries match.' : 'No QC entries yet.'}
                 defaultPinned={QC_HISTORY_DEFAULT_PINNED}

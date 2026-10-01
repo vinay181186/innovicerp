@@ -160,6 +160,7 @@ function JcOpsPage(): React.JSX.Element {
             tableKey={TABLE_KEYS.jcOpsBoard}
             columns={columns}
             rows={data?.items ?? []}
+            sortFilter={false}
             rowKey={(o) => o.jcOpId}
             loading={isLoading}
             emptyText="No Operations yet."

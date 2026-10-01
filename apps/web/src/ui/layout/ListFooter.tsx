@@ -13,6 +13,7 @@
 
 import type { ReactNode } from 'react';
 import { Icon } from '../core/Icon';
+import { useSfPartial } from '../data/sort-filter/scope';
 
 export interface ListFooterProps {
   /** Total matching records the server reports. */
@@ -50,6 +51,9 @@ export function ListFooter({
   const plural = nounPlural ?? `${noun}s`;
   const paged = page != null;
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  // Sort & Filter (ADR-200) filters the rows in the browser — wrong when the
+  // browser holds only part of the list (more pages, or a hit fetch cap).
+  useSfPartial((paged && pages > 1) || (limit != null && limit > 0 && total > limit));
   const text =
     total === 0
       ? `No ${plural}`

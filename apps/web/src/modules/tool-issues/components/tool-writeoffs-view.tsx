@@ -148,6 +148,7 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
             tableKey={TABLE_KEYS.toolWriteoffs}
             columns={columns}
             rows={data?.items ?? []}
+            sortFilter={false}
             rowKey={(w) => w.id}
             loading={isLoading}
             empty="No write-offs here."

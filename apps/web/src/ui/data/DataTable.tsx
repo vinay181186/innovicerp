@@ -63,6 +63,7 @@ import {
   useRowSelection,
 } from './FitSelection';
 import { RowMenu } from './RowMenu';
+import { useSortFilterTable } from './sort-filter/use-sort-filter-table';
 
 export type { DataTableColumn, DataTableColumnKind, DataTableProps } from './data-table-types';
 export { stopRowClick } from './data-table-cells';
@@ -84,7 +85,22 @@ const ROW_MENU_HEADER: ReactNode = (
   </span>
 );
 
-export function DataTable<T>(input: DataTableProps<T>): ReactElement {
+export function DataTable<T>(given: DataTableProps<T>): ReactElement {
+  // Sort & Filter (ADR-200): the ▾ header menus and the filtered / sorted rows.
+  // Untouched props come back while nothing is sorted or filtered.
+  const sf = useSortFilterTable(given);
+  const table = <DataTableBody {...sf.props} />;
+  return sf.bar ? (
+    <>
+      {sf.bar}
+      {table}
+    </>
+  ) : (
+    table
+  );
+}
+
+function DataTableBody<T>(input: DataTableProps<T>): ReactElement {
   // `rowMenu` is drawn through the existing rowActions column, so the classic
   // and the fit paths (and the fit engine's measuring) need no change of
   // their own.
