@@ -16,7 +16,6 @@ import {
   isQtyColumn,
   isStatusColumn,
   isTypeColumn,
-  statusBadge,
 } from './report-format';
 
 /** Column id of the '#' row-number column (a code name, never a report key). */
@@ -30,7 +29,6 @@ const CELL_PAD_W = 22;
 
 export interface ReportColumnsInput {
   columns: ReportColumn[];
-  rows: ReportRow[];
   numericKeys: ReadonlySet<string>;
   rowLink: ReportRowLink | undefined;
   /** Row number of the current page's first row (1-based). */
@@ -40,19 +38,14 @@ export interface ReportColumnsInput {
 }
 
 /** The engine's column kind for one report column. */
-export function reportColumnKind(
-  col: ReportColumn,
-  rows: ReportRow[],
-  numeric: boolean,
-): DataTableColumnKind {
+export function reportColumnKind(col: ReportColumn, numeric: boolean): DataTableColumnKind {
   if (isStatusColumn(col) || isTypeColumn(col)) return 'badge';
   if (isCodeColumn(col)) return 'code';
   if (numeric) return 'num';
   if (col.type === 'date' || col.type === 'datetime') return 'date';
-  // A column holding legacy status words (DELAYED, ON TIME…) draws pills.
-  if (rows.some((r) => typeof r[col.key] === 'string' && statusBadge(String(r[col.key])))) {
-    return 'badge';
-  }
+  // Any other column stays text even when some cells hold a legacy status
+  // word (DELAYED, ON TIME…): cellContent pills just those cells, so a
+  // free-text column (remarks) is still cut with an ellipsis.
   return 'text';
 }
 
@@ -73,9 +66,12 @@ function cellContent(
   if (isBlank(raw)) return <span className="rpt-muted">—</span>;
   const text = formatCell(col, raw);
   if (numeric && Number(raw) === 0) return <span className="rpt-muted">{text}</span>;
-  if (kind === 'badge' && typeof raw === 'string') {
+  if (typeof raw === 'string') {
     const tone = cellTone(col, raw);
-    return <Badge tone={tone ?? 'grey'}>{text}</Badge>;
+    // A status / type column pills every value; any other column pills only
+    // a cell that holds a legacy status word (a tone), else plain text.
+    if (kind === 'badge') return <Badge tone={tone ?? 'grey'}>{text}</Badge>;
+    if (tone && kind === 'text') return <Badge tone={tone}>{text}</Badge>;
   }
   // ADR-190: one column opens the row's document. A real link, so ctrl-click
   // opens a new tab; it swallows the click so the row's own click does not
@@ -102,7 +98,7 @@ function cellClass(col: ReportColumn, kind: DataTableColumnKind): string | undef
 }
 
 export function buildReportColumns(input: ReportColumnsInput): DataTableColumn<ReportRow>[] {
-  const { columns, rows, numericKeys, rowLink, firstRowNo, totals } = input;
+  const { columns, numericKeys, rowLink, firstRowNo, totals } = input;
   const rowNo: DataTableColumn<ReportRow> = {
     id: ROW_NO_ID,
     header: <span data-rpt-col={ROW_NO_ID}>#</span>,
@@ -117,7 +113,7 @@ export function buildReportColumns(input: ReportColumnsInput): DataTableColumn<R
     rowNo,
     ...columns.map((col): DataTableColumn<ReportRow> => {
       const numeric = numericKeys.has(col.key);
-      const kind = reportColumnKind(col, rows, numeric);
+      const kind = reportColumnKind(col, numeric);
       const total = totals.get(col.key);
       return {
         id: col.key,

@@ -86,6 +86,26 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
     return formatTotals(columns, sums);
   }, [columns, filtered, numericKeys]);
 
+  // A stable key per record, so an open ▸ stays on the same record after a
+  // sort / filter / page change: the row's document id when the report links
+  // rows and that id is unique in this result, else an id given to each row
+  // object as the rows arrive (the objects survive sort and filter).
+  const rowKeyOf = useMemo(() => {
+    const ids = new WeakMap<ReportRow, number>();
+    rows.forEach((r, i) => ids.set(r, i));
+    const idKey = rowLink?.idKey;
+    const docIds = idKey ? rows.map((r) => r[idKey]) : [];
+    const useDocId =
+      idKey !== undefined &&
+      docIds.every((v) => v != null && v !== '') &&
+      new Set(docIds.map(String)).size === rows.length;
+    return (row: ReportRow, i: number): string | number => {
+      if (useDocId && idKey) return `d:${String(row[idKey])}`;
+      const id = ids.get(row);
+      return id === undefined ? `p:${i}` : id;
+    };
+  }, [rows, rowLink]);
+
   const total = sorted.length;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, pages);
@@ -93,9 +113,8 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
   const pageRows = useMemo(() => sorted.slice(start, start + PAGE_SIZE), [sorted, start]);
 
   const tableColumns = useMemo(
-    () =>
-      buildReportColumns({ columns, rows, numericKeys, rowLink, firstRowNo: start + 1, totals }),
-    [columns, rows, numericKeys, rowLink, start, totals],
+    () => buildReportColumns({ columns, numericKeys, rowLink, firstRowNo: start + 1, totals }),
+    [columns, numericKeys, rowLink, start, totals],
   );
 
   // The engine's on-screen column order, read back off its header — lines the
@@ -178,7 +197,7 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
           tableKey={reportTableKey(slug)}
           columns={tableColumns}
           rows={errorText ? NO_ROWS : pageRows}
-          rowKey={(_row, i) => start + i}
+          rowKey={rowKeyOf}
           defaultPinned={defaultPinned}
           loading={loading && !errorText}
           emptyText={emptyText}

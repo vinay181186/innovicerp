@@ -92,9 +92,18 @@ export function isTypeColumn(col: ReportColumn): boolean {
   return /(^|_)type$/i.test(col.key);
 }
 
-/** Codes and document numbers: `*_code`, `*_no`, `code`, `pol`. */
+/** Codes, document numbers and other identifiers — never cut: `*_code`,
+ *  `*_no`, `code`, `pol`, `*gstin*`, `*revision*` (Drawing Rev),
+ *  `reference` / `*_reference` / `*_ref`, and `so_jc` (SO No. / JC No.). */
 export function isCodeColumn(col: ReportColumn): boolean {
-  return /(^|_)(code|no)$/i.test(col.key) || col.key === 'pol';
+  const k = col.key.toLowerCase();
+  return (
+    /(^|_)(code|no|ref|reference)$/.test(k) ||
+    k.includes('gstin') ||
+    k.includes('revision') ||
+    k === 'pol' ||
+    k === 'so_jc'
+  );
 }
 
 /** The value written to the CSV: the raw value, except that status / type
