@@ -69,7 +69,6 @@ export const TABLE_KEYS = {
   soOverview: 'so-overview',
   assemblies: 'assemblies',
   jwInvoices: 'jw-invoices',
-  soStatusDetail: 'so-status-detail',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];

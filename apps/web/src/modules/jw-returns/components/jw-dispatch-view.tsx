@@ -1,30 +1,31 @@
-// JW Dispatch (JW Return Challan) view — returns machined goods to the customer
-// against a Job Work Order line (ADR-079). Guard is server-side: qty <= produced
-// − already returned. Extracted from the standalone jw-returns list route so it
-// can render inside the Customer Dispatch screen as a tab. Behavior, hooks and
-// modals are identical to the original screen.
+// JW Return register — returns machined goods to the customer against a Job
+// Work Order line (ADR-079), on the shared FIT DataTable (ADR-199, table
+// standard 2026-10-01). The table always fits its width (no sideways scroll):
+// the rightmost columns drop into the ▸ detail row when the screen is narrow.
+//
+// Columns (first pinned = Return No.): Return No. · Return Date · JWSO ·
+// Customer · Item Code · Item Name · Return Qty · Return Status. The ▸ detail
+// row reveals Transporter and Vehicle No. JW Return has no detail page, so the
+// row is NOT clickable; per-row ⋯ carries History / Print / Cancel. The qty
+// guard stays server-side (qty <= produced − already returned).
+//
+// Split for the 400-line ceiling: the columns live in jw-returns-columns.tsx,
+// the create modal in new-jw-return-modal.tsx.
 
-import {
-  type CreateJwReturnChallanInput,
-  type JwReturnChallan,
-  type ListJwReturnChallansQuery,
-} from '@innovic/shared';
-import { Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { type JwReturnChallanListItem, type ListJwReturnChallansQuery } from '@innovic/shared';
+import { Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { SearchableSelect } from '@/components/shared/searchable-select';
-import { fmtDate, todayLocal } from '@/lib/date';
-import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
-import { statusText } from '@/lib/status-text';
-import { RowMenu } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Modal } from '@/ui/feedback';
-import { ListFooter, ListHeader } from '@/ui/layout';
-import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { useCreateJwReturnChallan, useJwReturnable, useJwReturnsList } from '../api';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { useJwReturnsList } from '../api';
 import { CancelJwReturnModal } from './cancel-jw-return-modal';
-import { PrintJwReturnButton } from './print-jw-return-button';
+import { jwReturnColumns } from './jw-returns-columns';
+import { NewJwReturnModal } from './new-jw-return-modal';
 import { usePrintJwReturn } from './use-print-jw-return';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
@@ -46,6 +47,7 @@ export function JwDispatchView({
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
@@ -70,13 +72,24 @@ export function JwDispatchView({
   const rows = data?.items ?? [];
 
   // The return the Cancel dialog is asking about, or null when closed. The
-  // dialog now captures a reason (R10, ADR-194) and runs the mutation itself.
+  // dialog captures a reason (R10, ADR-194) and runs the mutation itself.
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
   // ADR-197: the return whose History is open, or null. JW Return has no
   // detail page, so its History opens over the list.
   const [historyTarget, setHistoryTarget] = useState<{ id: string; code: string } | null>(null);
   // ⋯ Print — the row's old Print challan button's logic, as a hook.
   const printReturn = usePrintJwReturn();
+
+  const columns = useMemo(() => jwReturnColumns(), []);
+
+  const toggleExpand = useCallback((id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   return (
     <div>
@@ -87,7 +100,7 @@ export function JwDispatchView({
         noun="JW return"
         search={searchInput}
         onSearch={setSearchInput}
-        searchPlaceholder="Search return no., date, JWSO, customer, part, transport, status…"
+        searchPlaceholder="Search return no., date, JWSO, customer, item, transport, status…"
         updating={isFetching && !isLoading}
         primary={
           canWrite ? (
@@ -98,128 +111,58 @@ export function JwDispatchView({
         }
       />
 
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load JW returns. Try again.'}
-            </div>
-          </div>
-        ) : (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid tbl-auto">
-              <thead>
-                <tr>
-                  <th>Return No.</th>
-                  <th>Return Date</th>
-                  <th>JWSO No.</th>
-                  <th>Customer</th>
-                  <th>Item Name</th>
-                  <th className="th-num" style={{ color: 'var(--green2)' }}>
-                    Return Qty
-                  </th>
-                  <th>Transporter</th>
-                  <th>Vehicle No.</th>
-                  <th>Return Status</th>
-                  <th aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="empty-state">
-                      {term ? 'No JW Returns match.' : 'No JW Returns yet.'}
-                    </td>
-                  </tr>
-                ) : null}
-                {rows.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <span className="td-code" style={{ color: 'var(--cyan)' }}>
-                        {r.code}
-                      </span>
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {fmtDate(r.returnDate)}
-                    </td>
-                    <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--purple)' }}>
-                      {r.jwCodeText ?? '—'}
-                    </td>
-                    <td className="fw-700">{r.clientName ?? '—'}</td>
-                    <td className="text2">{r.partName ?? '—'}</td>
-                    <td
-                      className="td-num mono fw-700"
-                      style={{ fontSize: 14, color: 'var(--green2)' }}
-                    >
-                      {r.qty}
-                    </td>
-                    <td className="text3" style={{ fontSize: 11 }}>
-                      {r.transport ?? '—'}
-                    </td>
-                    <td className="mono text3" style={{ fontSize: 11 }}>
-                      {r.vehicleNo ?? '—'}
-                    </td>
-                    <td>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: 4,
-                          color: r.status === 'cancelled' ? 'var(--red2)' : 'var(--green2)',
-                          background:
-                            r.status === 'cancelled'
-                              ? 'rgba(239,68,68,0.10)'
-                              : 'rgba(34,197,94,0.10)',
-                        }}
-                      >
-                        {statusText(r.status)}
-                      </span>
-                    </td>
-                    <td className="td-ctr">
-                      {/* ⋯ Print · History · ─ · Cancel. A cancelled return
-                          offers no Print; its Cancel is greyed. */}
-                      <RowMenu
-                        items={[
-                          {
-                            key: 'print',
-                            label: 'Print challan',
-                            icon: 'printer',
-                            hidden: r.status === 'cancelled',
-                            onSelect: () => printReturn(r),
-                          },
-                          {
-                            key: 'history',
-                            label: 'History',
-                            icon: 'activity',
-                            onSelect: () => setHistoryTarget({ id: r.id, code: r.code }),
-                          },
-                          {
-                            key: 'cancel',
-                            label: 'Cancel Return',
-                            icon: 'x',
-                            group: 'danger',
-                            hidden: !canWrite,
-                            disabledReason:
-                              r.status === 'cancelled' ? 'Already Cancelled' : undefined,
-                            onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load JW returns. Try again.'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.jwReturns}
+            columns={columns}
+            rows={rows}
+            rowKey={(r) => r.id}
+            loading={isLoading}
+            empty={term ? 'No JW Returns match.' : 'No JW Returns yet.'}
+            // A cancelled return is washed; an issued one is the live state and
+            // stays untinted.
+            rowClassName={(r) => (r.status === 'cancelled' ? ROW_TINT.cancelled : undefined)}
+            // The fit table's ▸ is the row's one expand control: it reveals the
+            // transporter and vehicle for that return.
+            renderExpanded={(r) => (expanded.has(r.id) ? <ExpandedReturn row={r} /> : null)}
+            onToggleExpanded={(r) => toggleExpand(r.id)}
+            rowActionsWidth="1%"
+            // ⋯ Print · History · ─ · Cancel. A cancelled return offers no
+            // Print; its Cancel is greyed.
+            rowMenu={(r: JwReturnChallanListItem) => [
+              {
+                key: 'print',
+                label: 'Print challan',
+                icon: 'printer',
+                hidden: r.status === 'cancelled',
+                onSelect: () => printReturn(r),
+              },
+              {
+                key: 'history',
+                label: 'History',
+                icon: 'activity',
+                onSelect: () => setHistoryTarget({ id: r.id, code: r.code }),
+              },
+              {
+                key: 'cancel',
+                label: 'Cancel Return',
+                icon: 'x',
+                group: 'danger',
+                hidden: !canWrite,
+                disabledReason: r.status === 'cancelled' ? 'Already Cancelled' : undefined,
+                onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
+              },
+            ]}
+          />
+        </Panel>
+      )}
+
       <ListFooter total={data?.total ?? rows.length} noun="JW return" limit={LIST_LIMIT} />
 
       {historyTarget ? (
@@ -247,344 +190,19 @@ export function JwDispatchView({
   );
 }
 
-// ─── New JW Return modal ────────────────────────────────────────────────────
-
-function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [returnDate, setReturnDate] = useState(todayLocal());
-  const [jwSearch, setJwSearch] = useState('');
-  const [jwId, setJwId] = useState<string | null>(null);
-  const [jobWorkOrderLineId, setJobWorkOrderLineId] = useState('');
-  const [qty, setQty] = useState('');
-  const [transport, setTransport] = useState('');
-  const [vehicleNo, setVehicleNo] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  // Set once Save succeeds — the popup then offers Print challan.
-  const [saved, setSaved] = useState<JwReturnChallan | null>(null);
-
-  // ADR-104: NO status filter. A JWSO closes automatically the moment its Job
-  // Card's final QC passes (ADR-099) — which is exactly when the goods are
-  // ready to go back. Filtering to `open` made the finished order vanish from
-  // this screen, so it could never be returned. The server never checked JWSO
-  // status here; the qty guards (produced − already returned, and the ordered
-  // qty ceiling) are what actually bound a return.
-  const jwQuery = useJobWorkOrdersList({
-    search: jwSearch.trim() || undefined,
-    limit: 50,
-    offset: 0,
-  });
-  const jwHeaders = jwQuery.data?.items ?? [];
-
-  const jwDetailQ = useJobWorkOrder(jwId ?? undefined);
-  const jwLines = jwDetailQ.data?.lines ?? [];
-
-  // Returnable per line — the SAME limit the server enforces on Save.
-  const returnableQ = useJwReturnable(jwId ?? undefined);
-  const returnableById = useMemo(
-    () => new Map((returnableQ.data?.lines ?? []).map((l) => [l.jobWorkOrderLineId, l])),
-    [returnableQ.data],
-  );
-  const pickedReturnable = jobWorkOrderLineId ? returnableById.get(jobWorkOrderLineId) : undefined;
-
-  const saveKey = useSaveKey();
-  const createMut = useCreateJwReturnChallan(saveKey);
-
-  const onSave = (): void => {
-    setErr(null);
-    if (!jwId) {
-      setErr('Select a JWSO');
-      return;
-    }
-    if (!jobWorkOrderLineId) {
-      setErr('Select a JW line');
-      return;
-    }
-    const q = Number(qty);
-    if (!Number.isFinite(q) || q <= 0) {
-      setErr('Qty must be ≥ 1');
-      return;
-    }
-    if (pickedReturnable && q > pickedReturnable.returnableQty) {
-      setErr(
-        `Return Qty (${q}) cannot be more than Returnable (${pickedReturnable.returnableQty}).`,
-      );
-      return;
-    }
-    const input: CreateJwReturnChallanInput = {
-      returnDate,
-      jobWorkOrderLineId,
-      qty: q,
-    };
-    if (transport.trim()) input.transport = transport.trim();
-    if (vehicleNo.trim()) input.vehicleNo = vehicleNo.trim();
-    if (remarks.trim()) input.remarks = remarks.trim();
-
-    createMut.mutate(input, {
-      onSuccess: (row) => setSaved(row),
-      onError: (e) =>
-        setErr(
-          e instanceof Error
-            ? e.message
-            : 'Could not save JW Return. Check the lines and try again.',
-        ),
-    });
-  };
-
-  // After Save: say so and offer the challan for the goods going out.
-  if (saved) {
-    return (
-      <div
-        role="dialog"
-        aria-modal="true"
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100,
-        }}
-        onClick={onClose}
-      >
-        <div
-          style={{
-            background: 'var(--bg)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: 20,
-            width: 'min(480px, 96vw)',
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="section-hdr" style={{ marginBottom: 10 }}>
-            📦 JW Return saved
-          </div>
-          <div style={{ fontSize: 13, marginBottom: 16 }}>
-            <span className="mono fw-700">{saved.code}</span> — {saved.qty} pcs back to the customer
-            on {saved.jwCodeText ?? 'the JWSO'}. Print the challan to send with the goods.
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
-              Close
-            </button>
-            <PrintJwReturnButton returnId={saved.id} primary />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+/** Transporter + Vehicle No. for one return, under an opened ▸ row. These two
+ *  columns moved off the always-fits table into the detail reveal. */
+function ExpandedReturn({ row }: { row: JwReturnChallanListItem }): React.JSX.Element {
   return (
     <div
+      className="text3"
       style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
+        fontSize: 'var(--fs-xs)',
+        padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)',
       }}
-      onClick={onClose}
     >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(680px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          📦 New JW Return
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Return Date">
-            <input
-              type="date"
-              className="innovic-input"
-              value={returnDate}
-              onChange={(e) => setReturnDate(e.target.value)}
-            />
-          </Field>
-          <div />
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JWSO No. ★">
-              <SearchableSelect
-                id="jwret-jwso"
-                value={jwId}
-                onChange={(id) => {
-                  setJwId(id);
-                  setJobWorkOrderLineId('');
-                }}
-                onSearch={setJwSearch}
-                loading={jwQuery.isFetching}
-                placeholder="🔍 Select JWSO — type number or customer…"
-                options={jwHeaders.map((j) => ({
-                  id: j.jwId,
-                  code: j.code,
-                  name: j.customerName ?? '',
-                }))}
-              />
-            </Field>
-          </div>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Ln ★">
-              <select
-                className="innovic-input"
-                value={jobWorkOrderLineId}
-                onChange={(e) => {
-                  const lineId = e.target.value;
-                  setJobWorkOrderLineId(lineId);
-                  // Prefill with what can go back now; blank when nothing can.
-                  const rq = returnableById.get(lineId)?.returnableQty ?? 0;
-                  setQty(rq > 0 ? String(rq) : '');
-                }}
-                disabled={!jwId || jwDetailQ.isFetching}
-                style={{ width: '100%' }}
-              >
-                <option value="">
-                  {!jwId
-                    ? 'Select a JWSO first'
-                    : jwDetailQ.isFetching
-                      ? 'Loading lines…'
-                      : jwLines.length === 0
-                        ? 'No lines'
-                        : 'Select a line…'}
-                </option>
-                {jwLines.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    L{l.lineNo} · {l.partName} · Order Qty {l.orderQty}
-                    {returnableById.has(l.id)
-                      ? ` · Returnable ${returnableById.get(l.id)?.returnableQty ?? 0}`
-                      : ''}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <Field label="Return Qty ★">
-            <input
-              type="number"
-              min={1}
-              className="innovic-input"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              placeholder="0"
-              style={{
-                fontWeight: 700,
-                border: '2px solid var(--green)',
-                borderRadius: 4,
-              }}
-            />
-            {pickedReturnable ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                Returnable <b className="mono">{pickedReturnable.returnableQty}</b> · Ready{' '}
-                {pickedReturnable.readyQty} · Returned {pickedReturnable.returnedQty} · Pending{' '}
-                {pickedReturnable.pendingQty}
-                {pickedReturnable.returnableQty === 0 ? ' — complete final QC first' : ''}
-              </div>
-            ) : null}
-          </Field>
-          <Field label="Transporter">
-            <input
-              type="text"
-              className="innovic-input"
-              value={transport}
-              onChange={(e) => setTransport(e.target.value)}
-              placeholder="Transporter name"
-            />
-          </Field>
-
-          <Field label="Vehicle No.">
-            <input
-              type="text"
-              className="innovic-input"
-              value={vehicleNo}
-              onChange={(e) => setVehicleNo(e.target.value)}
-              placeholder="Vehicle number"
-            />
-          </Field>
-          <Field label="Remarks">
-            <input
-              type="text"
-              className="innovic-input"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Notes"
-            />
-          </Field>
-        </div>
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 8,
-              background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red2)',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={createMut.isPending}
-            onClick={onSave}
-          >
-            {createMut.isPending ? (
-              <>
-                <Loader2 size={14} className="inline animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save Return'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      {children}
+      <b>Transporter:</b> {row.transport ?? '—'} &nbsp;·&nbsp; <b>Vehicle No.:</b>{' '}
+      <span className="mono">{row.vehicleNo ?? '—'}</span>
     </div>
   );
 }

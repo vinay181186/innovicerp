@@ -1,10 +1,16 @@
 // Assembly Tracker list (PL-5 + PL-5b). All Equipment SOs with assembled /
 // dispatched counts + status badge. Click-through to the per-SO tracker.
 //
+// ADR-199: on the shared FIT table (<DataTable tableKey={TABLE_KEYS.assemblies}>)
+// so the Columns / density toolbar, the saved layout, the pinned first column
+// (SO No.) and the one ▸ expand control come for free. The ▸ reveals the BOM
+// Name in place under the row; the row itself opens the per-SO tracker. Rows
+// wash by assembly status (ROW_TINT) — waiting is pending work, done is green.
+//
 // PL-5b parity port (renderAssemblyTracker L28738–28787):
 //   - the 5 status tile counts (Total / Waiting / Ready / In Assembly / Completed)
-//     now ride in the status dropdown's option labels (owner decision
-//     2026-09-26: no tiles/capsules beside a filter dropdown)
+//     ride in the status dropdown's option labels (owner decision 2026-09-26:
+//     no tiles/capsules beside a filter dropdown)
 //   - Search input + status filter dropdown
 //   - Due Date column
 // Legacy renders ONE screen: an accordion of per-SO cards. The port splits it —
@@ -18,12 +24,13 @@
 
 import type { AssemblyListItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { fmtDate, todayIst } from '@/lib/date';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useAssembliesList } from '../api';
 
 export const assemblyListRoute = createRoute({
@@ -42,6 +49,17 @@ const STATUS_BADGE_CLASS: Record<StatusKey, string> = {
   ready: 'b-blue',
   assembling: 'b-amber',
   done: 'b-green',
+};
+
+// Row wash by the real status enum (ADR-199 ROW_TINT). Follows the GRN list's
+// pattern: the blocked/pending end (waiting on components) washes amber, the
+// finished end (done) washes green, and the active middle (ready / assembling)
+// stays untinted so the badge carries the signal there. No blue tint exists.
+const ROW_TINT_BY_STATUS: Record<StatusKey, string | undefined> = {
+  waiting: ROW_TINT.pending,
+  ready: undefined,
+  assembling: undefined,
+  done: ROW_TINT.done,
 };
 
 // Legacy badge text (L28778–28781). The waiting variant's "— <ready>/<total>"
@@ -74,10 +92,22 @@ function AssemblyListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useAssembliesList();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState<string>('');
+  // The soIds whose ▸ BOM Name row is open. The fit table's ▸ is the row's one
+  // expand control: it toggles this set AND its own detail row (ADR-199).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // IST today (the UTC date is yesterday before 05:30 IST).
   const today = todayIst();
   const navigate = useNavigate();
+
+  const toggleExpand = useCallback((soId: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(soId)) next.delete(soId);
+      else next.add(soId);
+      return next;
+    });
+  }, []);
 
   const counts = useMemo(() => {
     const c: Record<FilterKey, number> = { all: 0, waiting: 0, ready: 0, assembling: 0, done: 0 };
@@ -93,10 +123,10 @@ function AssemblyListPage(): React.JSX.Element {
     const q = normalizeSearchTerm(search);
     return data.items.filter((it) => {
       if (filter !== 'all' && it.status !== filter) return false;
-      // Every column the row shows (plus legacy's partName, L28768): SO no.,
-      // customer, BOM no. + name, due date and the status text. Shared matcher —
-      // case-insensitive, partial. Not the qty numbers: a bare "5" would match
-      // nearly every row.
+      // Every column the row shows (plus the ▸ BOM name and legacy's partName,
+      // L28768): SO no., customer, BOM no. + name, due date and the status text.
+      // Shared matcher — case-insensitive, partial. Not the qty numbers: a bare
+      // "5" would match nearly every row.
       return matchesSearchTerm(
         [
           it.soCode,
@@ -111,6 +141,103 @@ function AssemblyListPage(): React.JSX.Element {
       );
     });
   }, [data, filter, search]);
+
+  const columns = useMemo<DataTableColumn<AssemblyListItem>[]>(
+    () => [
+      {
+        id: 'so_no',
+        header: 'SO No.',
+        kind: 'code',
+        nowrap: true,
+        // The per-SO tracker opens from the row; the link is the same target —
+        // no chevron of its own (the fit ▸ owns expand, ADR-199).
+        render: (row) => (
+          <Link
+            to="/assemblies/$soId"
+            params={{ soId: row.soId }}
+            className="td-code"
+            style={{ color: 'var(--cyan)', fontWeight: 600 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {row.soCode}
+          </Link>
+        ),
+      },
+      {
+        id: 'customer',
+        header: 'Customer',
+        kind: 'text',
+        align: 'left',
+        ellipsis: true,
+        render: (row) => row.customerName ?? '—',
+        title: (row) => row.customerName ?? '',
+      },
+      {
+        id: 'bom_no',
+        header: 'BOM No.',
+        nowrap: true,
+        render: (row) => (
+          <span className="text3" style={{ fontSize: 12 }}>
+            {row.bomCode ?? '—'}
+            {/* Loose != null on purpose: web and API deploy independently, so for
+                a few minutes the old API returns no bomRevision. Strict !== null
+                would print "Rev undefined". */}
+            {row.bomRevision != null ? ` BOM Rev ${row.bomRevision}` : ''}
+          </span>
+        ),
+      },
+      {
+        id: 'due',
+        header: 'Due Date',
+        kind: 'date',
+        nowrap: true,
+        render: (row) => {
+          const overdue = row.dueDate !== null && row.dueDate < today && row.status !== 'done';
+          return (
+            <span
+              style={{
+                color: overdue ? 'var(--red2)' : undefined,
+                fontWeight: overdue ? 600 : undefined,
+              }}
+            >
+              {fmtDate(row.dueDate)}
+            </span>
+          );
+        },
+      },
+      {
+        id: 'required',
+        header: 'Required',
+        kind: 'num',
+        align: 'right',
+        render: (row) => row.orderQty,
+      },
+      {
+        id: 'assembled',
+        header: 'Assembled',
+        kind: 'num',
+        align: 'right',
+        render: (row) => <span style={{ color: 'var(--green2)' }}>{row.assembledQty}</span>,
+      },
+      {
+        id: 'dispatched',
+        header: 'Dispatched',
+        kind: 'num',
+        align: 'right',
+        render: (row) => <span style={{ color: 'var(--green2)' }}>{row.dispatchedQty}</span>,
+      },
+      {
+        id: 'status',
+        header: 'Assembly Status',
+        kind: 'badge',
+        nowrap: true,
+        render: (row) => (
+          <span className={`badge ${STATUS_BADGE_CLASS[row.status]}`}>{statusBadgeLabel(row)}</span>
+        ),
+      },
+    ],
+    [today],
+  );
 
   return (
     <div>
@@ -149,120 +276,48 @@ function AssemblyListPage(): React.JSX.Element {
         filtersActive={search !== '' || filter !== 'all'}
       />
 
-      {isLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        </div>
-      ) : isError ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load assemblies. Try again.'}
-            </div>
-          </div>
-        </div>
-      ) : data ? (
-        <>
-          {filtered.length === 0 ? (
-            <div className="panel">
-              <div className="panel-body">
-                <div className="empty-state">
-                  {data.items.length === 0
-                    ? 'No assembly orders yet.'
-                    : 'No assembly orders match.'}
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load assemblies. Try again.'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.assemblies}
+            columns={columns}
+            rows={filtered}
+            loading={isLoading}
+            rowKey={(row) => row.soId}
+            empty={
+              data && data.items.length === 0
+                ? 'No assembly orders yet.'
+                : 'No assembly orders match.'
+            }
+            onRowClick={(row) =>
+              void navigate({ to: '/assemblies/$soId', params: { soId: row.soId } })
+            }
+            rowClassName={(row) => ROW_TINT_BY_STATUS[row.status]}
+            // The ▸ reveals the BOM Name in place. Returning null for a closed
+            // row keeps the row collapsed; the caller owns the open set.
+            renderExpanded={(row) =>
+              expanded.has(row.soId) ? (
+                <div style={{ padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)' }}>
+                  <span
+                    className="fw-700"
+                    style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)' }}
+                  >
+                    BOM Name — {row.bomName ?? '—'}
+                  </span>
                 </div>
-              </div>
-            </div>
-          ) : (
-            <div className="panel">
-              <div className="tbl-wrap">
-                <table className="innovic-table tbl-grid">
-                  <thead>
-                    <tr>
-                      <th>SO No.</th>
-                      <th>Customer</th>
-                      <th>BOM No.</th>
-                      <th>Due Date</th>
-                      <th className="th-num">Required</th>
-                      <th className="th-num">Assembled</th>
-                      <th className="th-num">Dispatched</th>
-                      <th>Assembly Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((row) => {
-                      const overdue =
-                        row.dueDate !== null && row.dueDate < today && row.status !== 'done';
-                      return (
-                        <tr
-                          key={row.soId}
-                          onClick={() =>
-                            void navigate({ to: '/assemblies/$soId', params: { soId: row.soId } })
-                          }
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            <Link
-                              to="/assemblies/$soId"
-                              params={{ soId: row.soId }}
-                              className="td-code"
-                              style={{ color: 'var(--cyan)', fontWeight: 600 }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {row.soCode}
-                            </Link>
-                          </td>
-                          <td>{row.customerName ?? '—'}</td>
-                          {/* Legacy prints "BOM: <bomNo> Rev <n>" plus the BOM
-                              NAME in the card title (L28784-28785). Both were
-                              absent from the list payload until now. */}
-                          <td>
-                            <span className="text3" style={{ fontSize: 12 }}>
-                              {row.bomCode ?? '—'}
-                              {/* Loose != null on purpose: web and API deploy
-                                  independently, so for a few minutes the old
-                                  API returns no bomRevision at all. Strict
-                                  !== null would print "Rev undefined". */}
-                              {row.bomRevision != null ? ` BOM Rev ${row.bomRevision}` : ''}
-                            </span>
-                            {row.bomName ? <div style={{ fontSize: 11 }}>{row.bomName}</div> : null}
-                          </td>
-                          <td
-                            style={{
-                              whiteSpace: 'nowrap',
-                              color: overdue ? 'var(--red2)' : undefined,
-                              fontWeight: overdue ? 600 : undefined,
-                            }}
-                          >
-                            {fmtDate(row.dueDate)}
-                          </td>
-                          <td className="td-num">{row.orderQty}</td>
-                          <td className="td-num" style={{ color: 'var(--green2)' }}>
-                            {row.assembledQty}
-                          </td>
-                          <td className="td-num" style={{ color: 'var(--green2)' }}>
-                            {row.dispatchedQty}
-                          </td>
-                          <td>
-                            <span className={`badge ${STATUS_BADGE_CLASS[row.status]}`}>
-                              {statusBadgeLabel(row)}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          <ListFooter total={data.items.length} shown={filtered.length} noun="assembly order" />
-        </>
-      ) : null}
+              ) : null
+            }
+            onToggleExpanded={(row) => toggleExpand(row.soId)}
+          />
+        </Panel>
+      )}
+
+      <ListFooter total={data?.items.length ?? 0} shown={filtered.length} noun="assembly order" />
     </div>
   );
 }
