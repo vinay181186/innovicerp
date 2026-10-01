@@ -46,7 +46,7 @@
 // state without a data fetch.
 
 import { Fragment } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
 import { useTableDensity } from '@/lib/use-ui-settings';
 
@@ -62,11 +62,42 @@ import {
   selColWidth,
   useRowSelection,
 } from './FitSelection';
+import { RowMenu } from './RowMenu';
 
 export type { DataTableColumn, DataTableColumnKind, DataTableProps } from './data-table-types';
 export { stopRowClick } from './data-table-cells';
 
-export function DataTable<T>(props: DataTableProps<T>): ReactElement {
+// Header of the ⋯ column: empty on screen (keeps the column narrow), still
+// named for a screen reader. Absolutely placed, so the fit engine measures 0.
+const ROW_MENU_HEADER: ReactNode = (
+  <span
+    style={{
+      position: 'absolute',
+      width: 1,
+      height: 1,
+      overflow: 'hidden',
+      clipPath: 'inset(50%)',
+      whiteSpace: 'nowrap',
+    }}
+  >
+    Actions
+  </span>
+);
+
+export function DataTable<T>(input: DataTableProps<T>): ReactElement {
+  // `rowMenu` is drawn through the existing rowActions column, so the classic
+  // and the fit paths (and the fit engine's measuring) need no change of
+  // their own.
+  const { rowMenu, renderLink } = input;
+  const props: DataTableProps<T> = rowMenu
+    ? {
+        ...input,
+        rowActions: (row: T, index: number) => (
+          <RowMenu items={rowMenu(row, index)} renderLink={renderLink} />
+        ),
+        rowActionsHeader: input.rowActionsHeader ?? ROW_MENU_HEADER,
+      }
+    : input;
   const { tableKey } = props;
   if (tableKey !== undefined && props.variant !== 'list') {
     return <FitDataTable {...props} tableKey={tableKey} />;
