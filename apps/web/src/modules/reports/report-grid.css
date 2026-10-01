@@ -74,105 +74,75 @@
   animation: rpt-spin 0.8s linear infinite;
 }
 
-/* ─── Report grid (frappe-datatable style) ─────────────────────────── */
+/* ─── Report grid (ADR-199 Phase 4) ─────────────────────────────────
+   The table itself is the shared fit engine (<DataTable tableKey>): its look
+   comes from innovic-theme.css + ui/data/data-table-fit.css. Only what is
+   report-specific lives here. */
 .rpt-grid-wrap {
   position: relative;
   min-width: 0;
 }
-.rpt-grid {
-  /* Leaves the app header, the report header, the filter bar and the status
-     line on screen, so the pinned totals row is visible without page scroll. */
-  max-height: max(240px, calc(100vh - 330px));
-  overflow: auto;
-  background: var(--bg2);
+/* Item Code is THE main value of a row: bold mono, body colour. */
+.innovic-table td.rpt-item-code {
+  color: var(--text);
+}
+.innovic-table td.rpt-rn {
+  color: var(--text3);
+}
+/* Pinned Total row under the body. */
+.rpt-table .innovic-table > tfoot > tr.rpt-total > td {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  height: var(--tbl-row-h, 28px);
+  padding: 0 var(--tbl-pad-x);
+  border-top: 2px solid var(--border3);
+  border-right: 1px solid var(--border);
+  background: var(--bg3);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rpt-table .innovic-table > tfoot > tr.rpt-total > td:last-child {
+  border-right: 0;
+}
+.rpt-table .innovic-table > tfoot > tr.rpt-total > td:first-child {
+  text-align: right;
+  color: var(--text);
+}
+.rpt-error {
+  color: var(--red2);
+}
+
+/* Column filters: a strip above the grid, one small box per column on
+   screen, in the grid's order. */
+.rpt-colfilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: var(--radius2);
 }
-.rpt-grid table {
-  width: max-content;
-  min-width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: var(--fs-sm);
-}
-.rpt-grid th,
-.rpt-grid td {
-  box-sizing: border-box;
-  height: 32px;
-  padding: 6px 10px;
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg2);
-  color: var(--text);
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: middle;
-}
-/* Cell content clip. An auto-layout table ignores max-width on the td
-   itself, so the width cap + ellipsis sit on a block inside it; the td's
-   title attribute keeps the full text. */
-.rpt-cell {
-  display: block;
-  min-width: 0;
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Sortable header: a real button filling the th, so Tab + Enter/Space sort. */
-.rpt-sort-btn {
+.rpt-colfilter-item {
   display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: inherit;
-  cursor: pointer;
+  flex-direction: column;
+  gap: 2px;
+  width: 128px;
 }
-.rpt-grid th.is-num .rpt-sort-btn {
-  justify-content: flex-end;
-}
-.rpt-sort-btn:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
-}
-.rpt-grid th:last-child,
-.rpt-grid td:last-child {
-  border-right: 0;
-}
-.rpt-grid thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--bg3);
+.rpt-colfilter-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--text2);
-  cursor: pointer;
-  user-select: none;
-}
-.rpt-grid thead th:hover {
-  background: var(--bg4);
-}
-.rpt-grid thead tr.rpt-grid-filters th {
-  top: 32px;
-  height: 32px;
-  padding: 3px 4px;
-  cursor: default;
-}
-.rpt-grid thead tr.rpt-grid-filters th:hover {
-  background: var(--bg3);
+  color: var(--text3);
 }
 .rpt-colfilter {
   box-sizing: border-box;
   width: 100%;
-  min-width: 60px;
   height: 24px;
   padding: 0 6px;
   border: 1px solid var(--border);
@@ -185,90 +155,6 @@
 .rpt-colfilter:focus {
   outline: none;
   border-color: var(--blue);
-}
-.rpt-grid .rpt-rn {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  width: 52px;
-  min-width: 52px;
-  background: var(--bg3);
-  color: var(--text3);
-  font-family: var(--mono);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  cursor: default;
-}
-.rpt-grid thead .rpt-rn {
-  z-index: 3;
-}
-.rpt-grid .is-num {
-  text-align: right;
-}
-.rpt-grid td.is-num {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-.rpt-grid td.is-muted {
-  color: var(--text3);
-}
-.rpt-grid tbody tr:hover td {
-  background: var(--bg4);
-}
-.rpt-grid tfoot td {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  border-top: 2px solid var(--border3);
-  background: var(--bg3);
-  font-weight: 700;
-}
-.rpt-grid tfoot .rpt-rn {
-  z-index: 3;
-  font-family: var(--bfont);
-  color: var(--text);
-}
-.rpt-sort {
-  font-size: var(--fs-xs);
-  color: var(--blue);
-}
-.rpt-grid td.rpt-grid-msg {
-  height: 120px;
-  max-width: none;
-  text-align: center;
-  white-space: normal;
-  color: var(--text3);
-}
-.rpt-grid tbody tr:hover td.rpt-grid-msg {
-  background: var(--bg2);
-}
-.rpt-grid td.rpt-grid-msg.is-error {
-  color: var(--red2);
-}
-.rpt-pill {
-  display: inline-block;
-  padding: 0 8px;
-  border-radius: 999px;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  line-height: 18px;
-}
-.rpt-pill.tone-red {
-  background: var(--red3);
-  color: var(--red2);
-}
-.rpt-pill.tone-green {
-  background: var(--green3);
-  color: var(--green2);
-}
-.rpt-pill.tone-blue {
-  background: var(--blue3);
-  color: var(--blue2);
-}
-.rpt-pill.tone-amber {
-  background: var(--amber3);
-  color: var(--amber2);
 }
 .rpt-bar {
   position: absolute;
@@ -319,7 +205,7 @@
   .rpt-status-right {
     margin-left: 0;
   }
-  .rpt-grid {
-    max-height: max(240px, calc(100vh - 200px));
+  .rpt-colfilter-item {
+    width: calc(50% - var(--sp-2));
   }
 }
