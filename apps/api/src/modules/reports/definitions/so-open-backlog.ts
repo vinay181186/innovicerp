@@ -3,9 +3,11 @@
 // fields (pending_qty, line_value), date-range filter, joins
 // sales_order_lines → sales_orders → items → clients → v_jc_status.
 
+import { SELECTABLE_SO_TYPES, SO_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { jcEffectiveQtySql } from '../../../lib/jc-effective-qty';
 import type { RegisteredReport } from '../registry';
+import { enumFilter } from './report-helpers';
 
 export const soOpenBacklogReport: RegisteredReport = {
   definition: {
@@ -23,7 +25,9 @@ export const soOpenBacklogReport: RegisteredReport = {
         key: 'soType',
         label: 'SO Type',
         kind: 'enum',
-        options: ['standard', 'job_work'],
+        // The real SO types (so_type enum). 'standard' / 'job_work' were never
+        // values of that enum, so picking one crashed the report (2026-10-01).
+        options: [...SELECTABLE_SO_TYPES],
       },
     ],
     columns: [
@@ -51,13 +55,13 @@ export const soOpenBacklogReport: RegisteredReport = {
   async run({ tx, companyId, filters }) {
     const fromDate = filters['fromDueDate'];
     const toDate = filters['toDueDate'];
-    const soType = filters['soType'];
-    const validTypes = ['standard', 'job_work'];
+    // Validated against every stored type, so an old With-Material SO can
+    // still be reached by URL even though the dropdown no longer offers it.
+    const soType = enumFilter(filters['soType'], SO_TYPES);
 
     const fromFrag = fromDate ? sql`AND sol.due_date >= ${fromDate}::date` : sql``;
     const toFrag = toDate ? sql`AND sol.due_date <= ${toDate}::date` : sql``;
-    const typeFrag =
-      soType && validTypes.includes(soType) ? sql`AND so.type = ${soType}::so_type` : sql``;
+    const typeFrag = soType ? sql`AND so.type = ${soType}::so_type` : sql``;
 
     const result = await tx.execute(sql`
       SELECT

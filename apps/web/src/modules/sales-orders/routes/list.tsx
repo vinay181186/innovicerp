@@ -914,7 +914,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
               <tr
                 key={c.childItemId}
                 style={{
-                  background: c.shortfall > 0 ? 'rgba(239,68,68,0.03)' : 'rgba(34,197,94,0.03)',
+                  background: c.shortfall > 0 ? 'var(--red3)' : 'var(--green3)',
                 }}
               >
                 <td className="td-ctr mono fw-700">{idx + 1}</td>

@@ -35,6 +35,7 @@ import { startAlertsWorker, stopAlertsWorker } from './modules/alerts/worker-boo
 import { bomMasterRoutes } from './modules/bom-master/routes';
 import { clientsRoutes } from './modules/clients/routes';
 import { dashboardRoutes } from './modules/dashboard/routes';
+import { userPrefsRoutes } from './modules/user-prefs/routes';
 import { deliveryChallansRoutes } from './modules/delivery-challans/routes';
 import { itemsRoutes } from './modules/items/routes';
 import { jobCardsRoutes } from './modules/job-cards/routes';
@@ -228,6 +229,7 @@ await app.register(storeTransactionsRoutes);
 await app.register(ncRegisterRoutes);
 await app.register(deliveryChallansRoutes);
 await app.register(dashboardRoutes);
+await app.register(userPrefsRoutes);
 await app.register(incomingQcRoutes);
 await app.register(qcHistoryRoutes);
 await app.register(capaRoutes);

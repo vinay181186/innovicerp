@@ -15,9 +15,10 @@ The ~50 missing historical snapshots cannot be reconstructed, so the metadata wa
 than left as a trap. The `.sql` files below are the real, authoritative migration history.
 
 ## How to add a migration
-1. Create `NNNN_short_description.sql` with the **next number** — the current highest is `0062`,
-   so the next new file is `0063_…`. (Some historical numbers have two files; ignore that — just
-   continue past the highest number.)
+1. Create `NNNN_short_description.sql` with the **next free number**: list this folder and take
+   the highest number + 1 (do not trust a number written in any doc — parallel branches add files).
+   Some historical numbers have two files; ignore that — just continue past the highest number.
+   Separate statements with `--> statement-breakpoint`.
 2. Write plain SQL. Prefer idempotent, safe statements:
    - Views: `CREATE OR REPLACE VIEW …` when the column set is unchanged (no drop, dependents safe).
    - Tables/columns: `… IF NOT EXISTS` / `IF EXISTS` where possible.
@@ -26,16 +27,25 @@ than left as a trap. The `.sql` files below are the real, authoritative migratio
    types match the DB.
 
 ## How to apply a migration
-Use the project's own runner, `apps/api/src/db/apply-sql.ts` (splits on `--> statement-breakpoint`
-and executes each statement against `DATABASE_URL`):
+Use the project's own runner, `apps/api/src/db/apply-sql.ts` (its header is the authority). It
+splits on `--> statement-breakpoint`, runs the file in ONE transaction (unless the file carries
+`-- no-transaction`, has its own `BEGIN;`/`COMMIT;`, or adds an enum value), and records the file
+in `public.schema_migrations`. **`DB_TARGET` is required** and the run is refused when
+`DATABASE_URL` is not the project it names (TEST = `uitsrhyulidubnddzcex`,
+PROD = `ctbrlcdwfddhlscnoyos`):
 
 ```
-pnpm --filter api exec dotenv -e <path-to-env> -- tsx src/db/apply-sql.ts src/db/migrations/00NN_x.sql
+DB_TARGET=TEST pnpm --filter @innovic/api exec dotenv -e <test.env> -- tsx src/db/apply-sql.ts src/db/migrations/NNNN_x.sql
+DB_TARGET=PROD pnpm --filter @innovic/api exec dotenv -e <prod.env> -- tsx src/db/apply-sql.ts src/db/migrations/NNNN_x.sql
 ```
 
-Point `-e` at an env file whose `DATABASE_URL` targets the intended database. Apply to **dev first**,
-verify, then apply the same file to production. There is no automatic migration step in the
-Railway/Cloudflare deploy — code deploys and DB migrations are separate, manual actions.
+(`--target TEST|PROD|LOCAL` anywhere in the arguments works instead of the env var.)
+
+TEST and PROD are **separate databases** — every migration runs on both. Apply to TEST first,
+verify, then PROD. PROD migrations ship through the release script
+(`release/release-prod.sh`), which applies every migration on `test` but not on `main` before it
+merges. Code deploys and DB migrations are separate actions: a migration the code depends on must
+be on the database **before** that code deploys.
 
 ## What NOT to do
 - Do **not** run `pnpm --filter api db:migrate` or `db:generate` expecting them to work — they

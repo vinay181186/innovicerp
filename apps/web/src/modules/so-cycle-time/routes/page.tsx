@@ -230,10 +230,7 @@ function SoCycleTimePage(): React.JSX.Element {
                   const totalOverAvg =
                     r.durations.total != null && r.durations.total > averages.total;
                   return (
-                    <tr
-                      key={r.soId}
-                      style={done ? { background: 'rgba(34,197,94,0.02)' } : undefined}
-                    >
+                    <tr key={r.soId} style={done ? { background: 'var(--green3)' } : undefined}>
                       <td>
                         <Link
                           to="/sales-orders/$id"

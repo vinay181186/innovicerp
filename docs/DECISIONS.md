@@ -10666,3 +10666,37 @@ part of ADR-134; every other control in ADR-134 stays.
 - Risk: segregation of duty on purchasing is now a matter of how approve rights are
   handed out, not a hard block. Mitigated by keeping the matrix/tier gates: approve
   rights are still granted per department in Access Control.
+
+## ADR-199: One table standard — white rows, one line, always fits the screen, per-user columns and density
+
+**Date:** 2026-10-01
+**Status:** Accepted (owner approved `Table-Standard-Prototype.html`; plan: `Innovic - Table Standard Implementation Plan.pdf`)
+
+### Context
+
+The ERP had three table looks: the ruled sheet (`.innovic-table.tbl-grid`, cream/white zebra, wrapping text, sideways scroll), the plain legacy list (`.innovic-table` without `tbl-grid`), and the reports grid (`rpt-*`, ERPNext-style, ADR-191). The owner compared them (SO/WO Planning vs SO open backlog) and decided: all-white rows; **no wrapped lines**; **no sideways scrolling**; each user chooses columns and density.
+
+### Decision
+
+1. **Look (every on-screen table):** white rows, grey on mouse-over; dark-blue CAPITALS header on a light-grey band with a blue rule; light gridlines; ~28px rows (Compact ~22px); numbers right-aligned with their header; first column frozen.
+2. **One line:** every row and header is one line. Long text is cut with "…" (full text on mouse-over and in the row's ▸ expand). Codes, numbers, dates and status are never cut. Cells holding form controls are never clipped.
+3. **Always fits:** text columns shrink first (min 120px); then the rightmost **unpinned** columns move into the row's ▸ expand. The first column and the row-actions column never drop. A pin is refused when there is no room; on a smaller screen the rightmost pin moves to ▸ with a warning. There is no "Fit to screen" switch — fitting is always on.
+4. **Per user, saved to the profile:** a Columns ▾ picker per table (order, pin, hide, Reset to default) and one Comfortable/Compact choice for all tables. Stored in `user_table_columns` (one row per column — no JSON blob, CLAUDE.md §12) and `user_ui_settings` (migration 0189). Last write wins; saves are debounced, idempotent and transactional; preferences are not business events and are not written to the activity log.
+5. **Engine lives in `ui/data/DataTable`** (opt-in via a `tableKey` prop) and is reused by the reports grid. Hand-built LIST tables move onto DataTable in batches; the shared stylesheet gives every other table the look and the one-line rule.
+6. **Excel export always contains every column; printed documents are unchanged.**
+
+### Exceptions
+
+Editable FORM line tables keep full-width inputs, and the 31-day Production Schedule Gantt — if they cannot fit they scroll inside their own box, never the page.
+
+### Alternatives considered
+
+- **Fit to screen as a switch** — rejected: with "no wrap" and "no sideways scroll" both required there is nothing left to switch.
+- **Wrap long text** — rejected by the owner (rows of uneven height).
+- **Layouts per browser (localStorage)** — rejected: users move between shop-floor, office and laptop PCs.
+- **One JSON layout column per user** — rejected: CLAUDE.md §12.
+
+### Consequences
+
+- Reverses the 2026-09-19/26 "wrap + scroll + cream" sheet decisions recorded in innovic-theme.css.
+- Playwright specs that read columns by position or assert a header visible must run at a wide viewport or rely on default pins.

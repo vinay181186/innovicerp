@@ -536,149 +536,153 @@
   margin-top: var(--sp-1);
 }
 
-/* ═══ TABLES ═══ */
+/* ═══ TABLES ═══
+   TABLE STANDARD — owner decision 2026-10-01 (ADR-199, approved prototype
+   Table-Standard-Prototype.html). Applies to EVERY on-screen table through
+   `.innovic-table`, with or without `.tbl-grid`, inside or outside `.tbl-wrap`:
+     - Rows are all white: the TABLE is painted --bg2 and ordinary body cells
+       stay see-through, so a row tint set on the <tr> (QC / OSP rows on the
+       Route Card, totals rows) still shows. No zebra, no cream — the
+       `--sheet-cream` token is unused since ADR-199 (kept: design-sync owns
+       tokens). Hover (--bg4) is the only wash.
+     - Header: condensed 800 uppercase in --blue2 on a --bg4 band with a
+       --blue2 rule under it; the table is closed top and bottom by a 2px
+       --blue2 rule. A header is ONE line and is never cut.
+     - Gridlines between every cell, both directions, in --border (the old
+       sheet drew them in --border2; tokens.css now makes --border a real
+       colour, so the workaround is gone).
+     - ONE line per row: a body cell never wraps — long text ends in an
+       ellipsis, and components/shared/cell-overflow-title.ts gives a cut cell
+       its full text as a hover title. Cells holding a form control, and every
+       cell of a `.tbl-edit` table, keep overflow visible so the control is
+       never clipped. Full-width colSpan cells (expanded detail rows, loading /
+       empty / message rows) are not data cells and wrap normally.
+     - Text centred, numbers right (th-num / td-num); codes never cut.
+     - Making the columns FIT the screen is the Phase 3 engine's job, not this
+       stylesheet's; until then a wide table scrolls inside its .tbl-wrap.
+     - Density: comfortable by default; `body.density-compact` tightens every
+       row (set by a hook in Phase 3).
+     - The first column is pinned inside any `.tbl-wrap`; opt out with
+       `.tbl-nofreeze` on the wrap or the table.
+     - `border-collapse: separate` means a border written on a <tr> is not
+       drawn. Row borders live on the cells: `.row-alert-left` (red bar),
+       `.row-total` (rule above a totals row); see the end of this section.
+   This replaces the 2026-09-19 / 09-26 "sheet" rules (cream rows, wrapping
+   prose, wrapping headers). `.tbl-grid` stays valid markup; it now looks the
+   same as a plain `.innovic-table`. */
+body {
+  --tbl-pad-y: 5px;
+  --tbl-pad-x: 8px;
+  --tbl-row-h: 28px;
+  --tbl-th-pad-y: 6px;
+}
+body.density-compact {
+  --tbl-pad-y: 2px;
+  --tbl-pad-x: 6px;
+  --tbl-row-h: 22px;
+  --tbl-th-pad-y: 4px;
+}
 .tbl-wrap {
   overflow-x: auto;
   overflow-y: auto;
   max-height: calc(100vh - 220px);
   position: relative;
 }
+/* `separate` + zero spacing, not `collapse`: with collapsed borders a sticky
+   header / pinned column loses its gridlines as soon as it scrolls. Each cell
+   draws its own right + bottom line instead. */
 .innovic-table {
   width: 100%;
-  border-collapse: collapse;
-}
-.innovic-table th {
-  background: var(--bg3);
-  color: var(--text2);
-  font-size: var(--fs-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  /* 9px 12px -> 6px 10px -> the reference's 4x8. Compounds over a 20-row
-     list: ~180px recovered. */
-  padding: var(--sp-1) var(--sp-2);
-  /* Table-alignment standard: the column name centres with its values so the
-     column reads as one line. See the block under `.td-ctr`. */
-  text-align: center;
-  font-family: var(--mono);
-  white-space: nowrap;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  user-select: none;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  box-shadow: inset 0 -1px 0 var(--border);
-}
-.innovic-table th:hover {
-  color: var(--cyan);
-}
-.innovic-table td {
-  padding: var(--sp-1) var(--sp-2);
-  border-bottom: 1px solid var(--border);
-  font-size: var(--fs-control);
-  vertical-align: middle;
-  white-space: nowrap;
-}
-/* No zebra striping (theme 2026-09): rows are white, hover is the only wash. */
-.innovic-table tbody tr:hover td {
-  background: var(--bg4);
-}
-/* ── SHEET VARIANT (`.innovic-table.tbl-grid`) ──────────────────────────────
-   The reference the user supplied for the Plans screen (2026-09-19): a ruled
-   sheet rather than the quiet zebra list. Bold blue uppercase column names on
-   a pale band closed top and bottom by a blue rule, vertical gridlines between
-   every cell, cream / white alternating rows, one size up on the body text so
-   the codes read at a glance, and a fixed layout so the whole sheet fits the
-   page with no horizontal scroll. Opt-in per table: everything on
-   `.innovic-table` above still holds where a rule below does not override it. */
-.innovic-table.tbl-grid {
-  /* AUTO, not fixed (2026-09-26, "overflowing text" on the Job Card list):
-     with a fixed layout the %-widths are hard, so a one-line cell (JC No. +
-     badges, a DD-MMM-YYYY date in a 7% column) wider than its share spilled
-     over the next column. Auto sizes each column to at least its one-line
-     content; long prose (names, remarks) still wraps, and a sheet wider than
-     the screen scrolls inside its .tbl-wrap. Column widths are now minimum
-     hints. `.tbl-fixed` restores the old behaviour where a sheet needs it. */
+  background: var(--bg2);
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: auto;
   border-top: 2px solid var(--blue2);
   border-bottom: 2px solid var(--blue2);
 }
-.innovic-table.tbl-grid th {
+.innovic-table th {
   background: var(--bg4);
   color: var(--blue2);
   font-family: var(--hfont);
   font-weight: 800;
   font-size: var(--fs-xs);
+  text-transform: uppercase;
   letter-spacing: 0.06em;
-  padding: var(--sp-1) var(--sp-2);
-  border-right: 1px solid var(--border2);
-  border-bottom: 1px solid var(--blue2);
-  box-shadow: none;
-  /* Table-alignment standard: names and values share one centre line. */
-  text-align: center;
-  /* A long column name WRAPS rather than forcing the column wider; with the
-     auto layout (2026-09-26) the column's width comes from its values.
-     `.tbl-auto` keeps headers on one line for side-scrolling registers. */
-  white-space: normal;
   line-height: 1.25;
+  padding: var(--tbl-th-pad-y) var(--tbl-pad-x);
+  /* Table-alignment standard: the column name centres with its values so the
+     column reads as one line. See the block under `.td-ctr`. */
+  text-align: center;
+  white-space: nowrap;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--blue2);
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
-.innovic-table.tbl-grid th:last-child {
-  border-right: none;
+.innovic-table th:hover {
+  color: var(--cyan);
 }
-.innovic-table.tbl-grid td {
+/* No background here on purpose: the cell is see-through so the table's
+   white, or a tint on its <tr>, shows. */
+.innovic-table td {
+  padding: var(--tbl-pad-y) var(--tbl-pad-x);
+  height: var(--tbl-row-h);
   font-size: var(--fs-sm);
-  padding: var(--sp-1) var(--sp-2);
   line-height: 1.35;
-  /* --border2, not --border: the shadcn token block in index.css redefines
-     `--border` as an HSL triplet ("218 27% 86%"), so `1px solid var(--border)`
-     is invalid at computed time and the browser drops the whole declaration —
-     no line at all. --border2 is only ever the hex colour. */
-  border-right: 1px solid var(--border2);
-  border-bottom: 1px solid var(--border2);
-  text-align: center;
-  white-space: normal;
-  /* break-word, NOT anywhere: with the auto layout, `anywhere` counts toward
-     a column's minimum width, so the browser squeezed columns to one letter
-     and split codes mid-string instead of letting .tbl-wrap scroll.
-     break-word only breaks a word that cannot fit its own line. */
-  overflow-wrap: break-word;
-}
-/* Codes, document numbers, dates and numbers never wrap — a JC No. or a
-   DD-MMM-YYYY date split at its hyphens is unreadable. Mono cells are those. */
-.innovic-table.tbl-grid td.td-code,
-.innovic-table.tbl-grid td.mono,
-.innovic-table.tbl-grid td.td-num,
-.innovic-table.tbl-grid td .td-code {
+  vertical-align: middle;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.innovic-table.tbl-grid td:last-child {
+.innovic-table th:last-child,
+.innovic-table td:last-child {
   border-right: none;
 }
-/* Two actions stack, one under the other, so the column never has to be wider
-   than its widest button and the sheet never scrolls sideways. */
-.innovic-table.tbl-grid td:last-child .btn-sm {
-  display: inline-block;
-  white-space: nowrap;
-  margin: 1px 0;
+/* Never clipped: editable-table cells, the explicit `td.td-ctl` opt-in, and
+   codes / document numbers / numbers. */
+.innovic-table.tbl-edit td,
+.innovic-table td.td-ctl,
+.innovic-table td.td-code,
+.innovic-table td.mono,
+.innovic-table td.td-num {
+  overflow: visible;
+  text-overflow: clip;
 }
-.innovic-table.tbl-grid td.td-ctr,
-.innovic-table.tbl-grid th.td-ctr {
-  text-align: center;
+/* Any cell holding a form control. Its own rule: a browser without :has()
+   drops only this block, and the `.tbl-edit` / `td-ctl` route above holds. */
+.innovic-table td:has(input, select, textarea, button) {
+  overflow: visible;
+  text-overflow: clip;
 }
-/* cream on the odd rows, paper on the even — the reference, not the zebra */
-.innovic-table.tbl-grid tbody tr td {
-  background: var(--bg2);
+/* Full-width cells are not data cells: expanded detail rows, loading, empty
+   and message rows wrap and show everything. */
+.innovic-table td[colspan] {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
-.innovic-table.tbl-grid tbody tr:nth-child(odd) td {
-  background: var(--sheet-cream);
-}
-.innovic-table.tbl-grid tbody tr:hover td {
+.innovic-table tbody tr:hover td {
   background: var(--bg4);
 }
 .innovic-table.tbl-grid .td-code {
   font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--blue);
+}
+/* Two row actions stack one under the other, so the action column is never
+   wider than its widest button. */
+.innovic-table.tbl-grid td:last-child:has(.btn-sm) {
+  white-space: normal;
+}
+.innovic-table.tbl-grid td:last-child .btn-sm {
+  display: inline-block;
+  white-space: nowrap;
+  margin: 1px 0;
 }
 /* Height / padding / size come from the base `.btn-sm`; the sheet only adds
    the outline that makes a button read as a control inside a ruled cell. */
@@ -770,103 +774,128 @@ table.tbl-ctr td .innovic-input,
 table.tbl-ctr td .innovic-select {
   text-align: center;
 }
+/* Left for long prose, right for numbers — the only sanctioned escapes from
+   the centring. */
+.innovic-table th.th-left,
+.innovic-table td.td-left {
+  text-align: left;
+}
 
-/* Ported verbatim from legacy's main stylesheet (L119-122). Pins the first
-   column while `.tbl-wrap` scrolls horizontally — legacy composes them as
-   `<div class="tbl-wrap tbl-frozen">` on its widest tables: Job Cards (L5784,
-   15 cols), Sales Orders (L11970), PO (L25349), GRN (L26492). The port shipped
-   `tbl-wrap` alone, so those tables lost the JC/SO No. as soon as you scrolled
-   right. The background rules exist so the pinned cell stays opaque over the
-   hover rule — without them the scrolled content shows through. */
-.tbl-frozen tbody td:first-child,
-.tbl-frozen thead th:first-child {
+/* ── PINNED FIRST COLUMN (default inside .tbl-wrap, ADR-199) ────────────────
+   Any `.innovic-table` sitting directly in a `.tbl-wrap` keeps its first
+   column (JC No., SO No., item code…) in view while the table scrolls
+   sideways. Only the wrap's own table — the child-combinator chain means a
+   nested line table inside an expanded row is never pinned against its
+   parent's scroller — and never a full-width colSpan cell.
+   Opt out with `.tbl-nofreeze` on the wrap or on the table. `.tbl-frozen`
+   (the old opt-in, on .tbl-wrap) is an alias with the same chain.
+   ONE selector. What changes per state is read from custom properties set on
+   the cells below, so hover / tint / blink never need the chain again:
+     --pin-bg  the pinned cell's (opaque) fill — white, hover grey, header grey.
+               A page that tints a row can set `--row-bg` on the <tr>; a tint
+               written as an inline `background` on the <tr> is picked up by
+               the `background: inherit` rule after this one.
+     --pin-z   header cell above body cells. */
+:is(.tbl-wrap, .tbl-frozen):not(.tbl-nofreeze)
+  > .innovic-table:not(.tbl-nofreeze)
+  > :is(thead, tbody)
+  > tr
+  > :is(th, td):first-child:not([colspan]) {
   position: sticky;
   left: 0;
-  z-index: 4;
-  background: var(--bg2);
-  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.08);
+  z-index: var(--pin-z);
+  background: var(--pin-bg);
+  border-right: 1px solid var(--border3);
 }
-.tbl-frozen thead th:first-child {
-  z-index: 6;
-  background: var(--bg3);
+.innovic-table th {
+  --pin-bg: var(--bg4);
+  --pin-z: 6;
 }
-.tbl-frozen tbody tr:hover td:first-child {
-  background: var(--bg4);
+.innovic-table td {
+  --pin-bg: var(--row-bg, var(--bg2));
+  --pin-z: 4;
 }
-/* ── UNIFIED TABLE (canonical) ───────────────────────────────────────────────
-   ONE table design for the whole system: the ruled sheet
-   (`.innovic-table.tbl-grid`). Behaviour and density are MODIFIERS on it,
-   never a different look:
-     .tbl-frozen   (on .tbl-wrap)  pin the first column
-     .tbl-compact                  nested line tables inside an expanded row
-     .tbl-edit                     editable rows (inputs / selects in cells)
-     .tbl-auto                     auto column widths + side-scroll (wide registers)
-   The plain `.innovic-table` list look above is LEGACY — kept only so
-   un-migrated markup still renders. */
-/* The four rules above pin the column but paint it flat white; on a sheet
-   that leaves the frozen column out of step with the cream alternation. These
-   re-state the sheet's own backgrounds for the pinned cell. */
-.tbl-frozen .innovic-table.tbl-grid tbody tr td:first-child {
-  background: var(--bg2);
+.innovic-table tbody tr:hover > td {
+  --pin-bg: var(--bg4);
 }
-.tbl-frozen .innovic-table.tbl-grid tbody tr:nth-child(odd) td:first-child {
-  background: var(--sheet-cream);
+/* A row tinted by an inline style (Route Card QC / OSP rows): the pinned cell
+   takes the row's own fill instead of white. Not on hover, blink or select —
+   those have their own fills. */
+.innovic-table
+  > tbody
+  > tr[style*='background']:not(:hover):not(.qc-alert-blink):not(.row-selected)
+  > td:first-child:not([colspan]) {
+  background: inherit;
 }
-.tbl-frozen .innovic-table.tbl-grid tbody tr:hover td:first-child {
-  background: var(--bg4);
-}
-.tbl-frozen .innovic-table.tbl-grid thead th:first-child {
-  background: var(--bg4);
-}
-/* Wide registers: columns size to their content and the sheet scrolls
-   sideways, so headers and cells stop wrapping. */
-.innovic-table.tbl-grid.tbl-auto {
-  table-layout: auto;
-}
-.innovic-table.tbl-grid.tbl-fixed {
+
+/* ── MODIFIERS ───────────────────────────────────────────────────────────────
+   One look for the whole system; these change behaviour or density only:
+     .tbl-nofreeze (wrap or table)  do not pin the first column
+     .tbl-compact                   nested line tables inside an expanded row
+     .tbl-edit                      editable rows (inputs / selects in cells)
+     .tbl-auto                      no-op: auto widths are the default now
+     .tbl-fixed                     fixed layout: column widths are hard */
+.innovic-table.tbl-fixed {
   table-layout: fixed;
 }
-.innovic-table.tbl-grid.tbl-auto th {
-  white-space: nowrap;
-}
-.innovic-table.tbl-grid.tbl-auto td {
-  white-space: nowrap;
-}
 /* A line table nested inside an expanded row: hairline cells, thin rules. */
-.innovic-table.tbl-grid.tbl-compact {
+.innovic-table.tbl-compact {
   border-top-width: 1px;
   border-bottom-width: 1px;
 }
-.innovic-table.tbl-grid.tbl-compact th,
-.innovic-table.tbl-grid.tbl-compact td {
+.innovic-table.tbl-compact th,
+.innovic-table.tbl-compact td {
   padding: var(--sp-0) var(--sp-2);
+  height: auto;
 }
 /* Editable rows: the cell gives its padding to the control inside it. */
-.innovic-table.tbl-grid.tbl-edit td {
+.innovic-table.tbl-edit td {
   padding: var(--sp-0) var(--sp-1);
 }
-.innovic-table.tbl-grid.tbl-edit td .innovic-input,
-.innovic-table.tbl-grid.tbl-edit td .innovic-select {
+.innovic-table.tbl-edit td .innovic-input,
+.innovic-table.tbl-edit td .innovic-select {
   height: var(--control-h-sm);
 }
-/* Selected row. An inset shadow, not a background, so it survives the
-   cream / white alternation underneath it. */
-.innovic-table.tbl-grid tbody tr.row-selected td {
+
+/* ── ROW STATES ──────────────────────────────────────────────────────────────
+   With `border-collapse: separate` a border on a <tr> is not drawn, so every
+   row-level line is drawn on the cells. */
+/* Selected row. An inset shadow, not a background, so it sits over the
+   table's white / the hover fill. */
+.innovic-table tbody tr.row-selected td {
   box-shadow: inset 0 0 0 9999px var(--cyan3);
 }
-/* The blink animation paints the row itself; the cell must not cover it. */
-.innovic-table.tbl-grid tbody tr.qc-alert-blink td {
+/* Overdue QC (`.qc-alert-blink`, QC History / QC Call Register). The row's
+   own animation paints the cells, so they stay see-through — on hover too,
+   so the whole row behaves alike. The first cell may be pinned and must stay
+   opaque, so it carries the same blink as an inset shadow over white, plus
+   the red left bar the <tr> border can no longer draw. */
+.innovic-table tbody tr.qc-alert-blink td {
   background: transparent;
 }
-/* The sheet centres every column. These are the only sanctioned escapes:
-   left for long prose, right for numbers. */
-.innovic-table.tbl-grid th.th-left,
-.innovic-table.tbl-grid td.td-left {
-  text-align: left;
+.innovic-table tbody tr.qc-alert-blink > td:first-child {
+  --pin-bg: var(--bg2);
+  background: var(--bg2);
+  animation: qcBlinkCell 1s ease-in-out infinite;
 }
-.innovic-table.tbl-grid th.th-right,
-.innovic-table.tbl-grid td.td-num {
-  text-align: right;
+/* Red left bar on a row needing attention (e.g. an overdue CAPA). */
+.innovic-table tbody tr.row-alert-left > td:first-child {
+  box-shadow: inset 3px 0 0 var(--red);
+}
+/* Totals row: a heavier rule above it. */
+.innovic-table tr.row-total > td {
+  border-top: 2px solid var(--border2);
+}
+/* Fallback for a row border still written inline on the <tr> (e.g.
+   `reportTotalRowStyle` in ui/data/ReportShell.tsx): hand it to the cells. */
+.innovic-table tr[style*='border-top'] > td {
+  border-top: inherit;
+}
+.innovic-table tr[style*='border-bottom'] > td {
+  border-bottom: inherit;
+}
+.innovic-table tr[style*='border-left'] > td:first-child {
+  border-left: inherit;
 }
 
 /* Ported verbatim from legacy L187-188 (main stylesheet). Task Board only.
@@ -1561,6 +1590,22 @@ input[type='radio'] {
   }
   50% {
     background: rgba(240, 68, 56, 0.35);
+  }
+}
+/* The same blink as an inset shadow, for a table row's first cell, which may
+   be pinned and so must stay opaque; carries the red left bar too. See
+   ROW STATES in the TABLES section. */
+@keyframes qcBlinkCell {
+  0%,
+  100% {
+    box-shadow:
+      inset 3px 0 0 var(--red),
+      inset 0 0 0 9999px rgba(240, 68, 56, 0.15);
+  }
+  50% {
+    box-shadow:
+      inset 3px 0 0 var(--red),
+      inset 0 0 0 9999px rgba(240, 68, 56, 0.35);
   }
 }
 .qc-alert-blink {
