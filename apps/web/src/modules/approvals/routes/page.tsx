@@ -12,14 +12,16 @@
 
 import type { ApprovalInboxRow } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
-import { fmtDate } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader, PageState } from '@/ui/layout';
 import { useApprovalInbox } from '../api';
 import { LogEntryApprovals } from '../components/log-entry-approvals';
+import { prPoColumns } from '../components/pr-po-columns';
 
 export const approvalsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -51,11 +53,6 @@ const SECTION_NO_MATCH: Record<Exclude<Section, 'logEntry'>, string> = {
   pr: 'No Purchase Requests match.',
   po: 'No Purchase Orders match.',
 };
-
-const fmtQty = (n: number | null): string => (n == null ? '—' : n.toLocaleString('en-IN'));
-
-const fmtAmount = (n: number): string =>
-  `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function ApprovalsPage(): React.JSX.Element {
   const { data: me } = useSession();
@@ -135,7 +132,7 @@ function InboxSection({
   );
   // Amount is null when the caller's access hides prices — then the column goes.
   const showAmount = rows.some((r) => r.docAmount != null);
-  const colSpan = showAmount ? 7 : 6;
+  const columns = useMemo(() => prPoColumns(section, showAmount), [section, showAmount]);
 
   return (
     <div>
@@ -152,74 +149,21 @@ function InboxSection({
         {tabs}
       </ListHeader>
 
-      <div className="panel">
-        <div style={{ overflowX: 'auto' }}>
-          <table className="innovic-table tbl-grid">
-            <thead>
-              <tr>
-                <th>{section === 'pr' ? 'PR No.' : 'PO No.'}</th>
-                <th>Vendor</th>
-                <th>Item</th>
-                <th className="th-num">{section === 'pr' ? 'PR Qty' : 'PO Qty'}</th>
-                {showAmount ? (
-                  <th className="th-num">{section === 'pr' ? 'Est. Amount' : 'Subtotal'}</th>
-                ) : null}
-                <th>Raised By</th>
-                <th>Raised On</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <PageState as="row" state="loading" colSpan={colSpan} />
-              ) : error ? (
-                <PageState as="row" state="error" message={error.message} colSpan={colSpan} />
-              ) : shown.length === 0 ? (
-                <PageState
-                  as="row"
-                  state="empty"
-                  message={term ? SECTION_NO_MATCH[section] : SECTION_EMPTY[section]}
-                  colSpan={colSpan}
-                />
-              ) : (
-                shown.map((r) => (
-                  <tr
-                    key={r.id}
-                    style={{ cursor: 'pointer' }}
-                    title={`Open ${r.docCode}`}
-                    onClick={() => void navigate({ to: r.navPage })}
-                  >
-                    <td className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
-                      {r.docCode}
-                    </td>
-                    <td>{r.vendorName ?? '—'}</td>
-                    <td>
-                      {r.itemCode ? (
-                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                          {r.itemCode}
-                        </span>
-                      ) : null}
-                      {r.itemName ? (
-                        <div className="text2" style={{ fontSize: 11 }}>
-                          {r.itemName}
-                        </div>
-                      ) : null}
-                      {!r.itemCode && !r.itemName ? '—' : null}
-                    </td>
-                    <td className="td-num">{fmtQty(r.docQty)}</td>
-                    {showAmount ? (
-                      <td className="td-num" style={{ whiteSpace: 'nowrap' }}>
-                        {r.docAmount != null ? fmtAmount(r.docAmount) : '—'}
-                      </td>
-                    ) : null}
-                    <td>{r.createdByName ?? '—'}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.createdAt)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {error ? (
+        <PageState state="error" message={error.message} />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.approvalsPrPo}
+            columns={columns}
+            rows={shown}
+            rowKey={(r) => r.id}
+            loading={loading}
+            empty={term ? SECTION_NO_MATCH[section] : SECTION_EMPTY[section]}
+            onRowClick={(r) => void navigate({ to: r.navPage })}
+          />
+        </Panel>
+      )}
     </div>
   );
 }

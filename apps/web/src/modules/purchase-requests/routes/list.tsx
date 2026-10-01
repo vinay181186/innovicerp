@@ -1,29 +1,14 @@
 // Purchase Requests list (UI-003-04).
-// Ports legacy renderPurchaseRequests (legacy/InnovicERP_v82_12_3_DataLossFix
-// _29-04-2026.html L6217-6310): status counts → filter row → the PR book.
 //
-// Styled to SO Master (sales-orders/routes/list.tsx) 2026-08-13:
-//  - The four status COUNTS ride in the status dropdown's option labels
-//    (2026-09-26 filter bar; they were a clickable StatStrip row before).
-//  - Title + search + status filter + New PR sit in the frozen header band.
-//  - The 11-column table (nowrap on every cell, three free-text columns) is one
-//    `.panel` card per PR, so the page no longer scrolls sideways and the PR No.
-//    stays in view. Every column it showed is still on the card.
-// Nothing about the data, the filters, the mutations or the API changed.
-//
-// Legacy deltas kept deliberately (see docs/ISSUES.md ISSUE-025..027):
-//  - No SO filter: the list API has no SO/JC filter param.
-//  - 2026-09-26 (round-2): each orderable PR card carries a tick box; ticked
-//    PRs of ONE vendor go to /purchase-orders/from-pr?prIds=… as one PO with a
-//    line per PR (the club-PO flow). The Outsource Jobs tab's "Create PO from
-//    Selected" goes to the same form the same way (2026-09-28; its old popup
-//    and from-pr-batch call are retired).
-//  - Approve / Reject buttons (L4 Approver and above, open PRs) call the dedicated
-//    /approve + /reject endpoints, which stamp approvedBy/approvedAt (approve)
-//    or record a reason + cancel (reject). A raw PATCH can no longer change
-//    status — that path is immutable now, closing ISSUE-025.
-//  - Headings say "Open" where legacy says "Pending" — `open` is this port's
-//    status name, shown by the badge and the status filter on this same page.
+// ADR-199 conversion (2026-10-01): the PR book was a CARD per request (PrCard);
+// it is now the shared FIT table (<DataTable tableKey={prList}>). Every field the
+// card showed is kept — the ten visible columns carry identity + metrics, and the
+// ▸ expand (PrListExpand) carries POL, source, operation, est. rate, approval and
+// PO details. Data, filters, mutations and the API are unchanged. Columns, expand,
+// row actions and the selection hook live in sibling files to keep this < 400.
+// Unchanged: status counts ride in the status dropdown labels (owner 2026-09-26);
+// Approve/Reject call /approve + /reject (no raw status PATCH); tick-boxes build
+// one PO of ONE vendor (vendor lock via sel.isRowSelectable); Outsource Jobs tab.
 
 import {
   type ListPurchaseRequestsQuery,
@@ -32,44 +17,35 @@ import {
   type PurchaseRequestListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
-import { PrCard } from '../components/pr-card';
+import { prListColumns } from '../components/pr-list-columns';
+import { PrListExpand } from '../components/pr-list-expand';
+import { PrListRowActions } from '../components/pr-list-row-actions';
+import { PrListTabs, type PrListTab } from '../components/pr-list-tabs';
 import { prOrderBalance } from '../lib/pr-balance';
+import { usePrApprovalOn } from '../lib/pr-convertible';
 import { PR_STATUS_LABELS } from '../lib/pr-labels';
-import { prVendorKey } from '../lib/pr-vendor-key';
+import { usePrSelection } from '../lib/use-pr-selection';
 
 const PAGE_SIZE = 25;
 
-// Legacy's cards count every PR regardless of the search box / SO filter
-// (renderPurchaseRequests L6221-6223 counts the whole array). Module-level
-// constants keep the query keys stable so these are fetched once and cached.
+// Module-level constants keep the count query keys stable (fetched once, cached).
 const COUNT_ALL: ListPurchaseRequestsQuery = { limit: 1, offset: 0 };
 const COUNT_OPEN: ListPurchaseRequestsQuery = { status: 'open', limit: 1, offset: 0 };
 const COUNT_APPROVED: ListPurchaseRequestsQuery = { status: 'approved', limit: 1, offset: 0 };
 const COUNT_PO_CREATED: ListPurchaseRequestsQuery = { status: 'po_created', limit: 1, offset: 0 };
 const COUNT_CANCELLED: ListPurchaseRequestsQuery = { status: 'cancelled', limit: 1, offset: 0 };
-
-/** One ticked PR on the list — kept by id so a tick survives paging. */
-interface SelectedPr {
-  id: string;
-  /** null = vendor still TBD: fits any vendor. */
-  vendorKey: string | null;
-  vendorLabel: string;
-}
-
-/** Same gate as the card's own "Create PO" button: not cancelled and still has
- *  quantity left to order (ADR-152). */
-function isOrderable(pr: PurchaseRequestListItem): boolean {
-  return pr.status !== 'cancelled' && prOrderBalance(pr).balance > 0;
-}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -87,34 +63,23 @@ export const purchaseRequestsListRoute = createRoute({
 function PurchaseRequestsListPage(): React.JSX.Element {
   const search = purchaseRequestsListRoute.useSearch();
   const navigate = purchaseRequestsListRoute.useNavigate();
-  // Tier-driven, per department (Purchase). Entry raises a PR or a PO off one;
-  // approve signs one off. They are separate rights: the old
-  // `role === 'admin' || role === 'manager'` flag collapsed all seven tiers
-  // into two, letting an L3 Editor approve and denying an L4 Approver nothing.
+  // Tier-driven, per department (Purchase). Entry raises a PR; approve signs one
+  // off; the card's 📝 PO raises a PURCHASE ORDER, so it follows po_create.entry.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'pr_create');
-  // The card's 📝 PO action raises a PURCHASE ORDER off this PR, so it follows
-  // po_create, not pr_create. Its destination (/purchase-orders/from-pr) guards
-  // on po_create.entry; gating the button on a different key would show it to
-  // someone the next page then refuses.
   const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
+  const prApprovalOn = usePrApprovalOn();
 
-  // Outsource Jobs folded in as a second tab (UI-only merge). The standalone
-  // /outsource-jobs route still exists for now — retirement is a later step.
-  const [tab, setTab] = useState<'pr' | 'osp'>('pr');
+  const [tab, setTab] = useState<PrListTab>('pr');
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
-    // raw draft (a typed trailing space) when it already normalises to it.
     setSearchInput((prev) =>
       normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
     );
   }, [search.search]);
 
   useEffect(() => {
-    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
-    // "  IN-PR  00012 " and "IN-PR 00012" are one query, one cache entry, one URL.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
@@ -136,9 +101,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query);
 
-  // Approve / Reject are the only paths that advance an open PR — they stamp
-  // approvedBy/approvedAt (approve) or record a reason + cancel (reject),
-  // which a raw status edit deliberately no longer can (ISSUE-025).
+  // Approve / Reject — the only paths that advance an open PR.
   const approveMut = useApprovePr();
   const rejectMut = useRejectPr();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -159,7 +122,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     (pr: PurchaseRequestListItem): void => {
       setActionError(null);
       const reason = window.prompt(`Reject ${pr.code} — reason:`);
-      if (reason === null) return; // cancelled prompt
+      if (reason === null) return;
       if (!reason.trim()) {
         setActionError('Rejection reason is required.');
         return;
@@ -175,30 +138,28 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     [rejectMut],
   );
 
-  // Legacy status cards (L6229-6242) count the whole PR set, not the filtered
-  // page — the list endpoint returns a `total` per filter, so one count query
-  // per stat.
+  // Status counts (whole set per filter), shown in the dropdown option labels.
   const allCount = usePurchaseRequestsList(COUNT_ALL).data?.total ?? 0;
   const openCount = usePurchaseRequestsList(COUNT_OPEN).data?.total ?? 0;
   const approvedCount = usePurchaseRequestsList(COUNT_APPROVED).data?.total ?? 0;
   const poCreatedCount = usePurchaseRequestsList(COUNT_PO_CREATED).data?.total ?? 0;
   const cancelledCount = usePurchaseRequestsList(COUNT_CANCELLED).data?.total ?? 0;
-
-  const setStatusFilter = useCallback(
-    (next: PrStatus | undefined): void => {
-      void navigate({ search: (prev) => ({ ...prev, status: next, page: 1 }), replace: true });
-    },
-    [navigate],
-  );
-
-  // Status counts ride in the status dropdown's option labels (owner decision
-  // 2026-09-26: one filter bar, no capsule row).
   const statusCounts: Partial<Record<PrStatus, number>> = {
     open: openCount,
     approved: approvedCount,
     po_created: poCreatedCount,
     cancelled: cancelledCount,
   };
+
+  const setStatusFilter = useCallback(
+    (nextStatus: PrStatus | undefined): void => {
+      void navigate({
+        search: (prev) => ({ ...prev, status: nextStatus, page: 1 }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
 
   const clearFilters = useCallback((): void => {
     setSearchInput('');
@@ -208,87 +169,86 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     });
   }, [navigate]);
 
-  const rows = data?.items ?? [];
+  const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
+  const today = todayIst();
+  const columns = useMemo(() => prListColumns(), []);
 
-  // — "Create PO from Selected" (round-2). Ticks survive paging and filtering
-  //    (the map is keyed by PR id), and are limited to ONE vendor: once a PR
-  //    with a vendor is ticked, a PR of a different vendor cannot be. A PR whose
-  //    vendor is still TBD fits any vendor — the PO form treats it the same way.
-  const [selected, setSelected] = useState<Map<string, SelectedPr>>(() => new Map());
-  const selectedList = useMemo(() => [...selected.values()], [selected]);
-  const lockedVendor = useMemo(() => {
-    const hit = selectedList.find((x) => x.vendorKey !== null);
-    return hit && hit.vendorKey !== null ? { key: hit.vendorKey, label: hit.vendorLabel } : null;
-  }, [selectedList]);
-  const toggleSelect = useCallback((pr: PurchaseRequestListItem): void => {
-    setSelected((m) => {
-      const next = new Map(m);
-      if (next.has(pr.id)) next.delete(pr.id);
-      else
-        next.set(pr.id, {
-          id: pr.id,
-          vendorKey: prVendorKey(pr),
-          vendorLabel: pr.vendorName ?? pr.vendorCodeText ?? '—',
-        });
-      return next;
+  // Selection: one vendor per PO (sel.isRowSelectable locks to the first vendor).
+  const sel = usePrSelection(rows, canCreatePo);
+
+  // ▸ expand — all content is on the row already, so no extra fetch.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string): void => {
+    setExpanded((prev) => {
+      const nextSet = new Set(prev);
+      if (nextSet.has(id)) nextSet.delete(id);
+      else nextSet.add(id);
+      return nextSet;
     });
   }, []);
-  const clearSelection = useCallback(() => setSelected(new Map()), []);
 
-  // "Hide page" (Access Control → Config): once access has loaded, a user
-  // whose VIEW was removed for this page sees the no-access panel, not the
-  // page. `eff` is undefined only while access is still loading — don't block
-  // then, or every legitimate user flashes this panel on cold load.
+  // Row tint from the REAL PR status enum + order balance (ADR-199): cancelled →
+  // cancelled, overdue-and-still-owing → late, approved/po_created/closed → done,
+  // open → pending.
+  const tintFor = useCallback(
+    (pr: PurchaseRequestListItem): string | undefined => {
+      if (pr.status === 'cancelled') return ROW_TINT.cancelled;
+      const bal = prOrderBalance(pr);
+      const overdue =
+        pr.requiredDate != null &&
+        pr.requiredDate < today &&
+        (pr.status === 'open' || pr.status === 'approved') &&
+        bal.balance > 0;
+      if (overdue) return ROW_TINT.late;
+      if (pr.status === 'po_created' || pr.status === 'approved' || bal.closed)
+        return ROW_TINT.done;
+      if (pr.status === 'open') return ROW_TINT.pending;
+      return undefined;
+    },
+    [today],
+  );
+
+  // Per-row action cluster — reuses the module's existing handlers / targets.
+  const rowActionsFor = useCallback(
+    (pr: PurchaseRequestListItem): React.ReactNode => (
+      <PrListRowActions
+        pr={pr}
+        canApprove={perms.approve}
+        canCreatePo={canCreatePo}
+        prApprovalOn={prApprovalOn}
+        approving={approveMut.isPending}
+        rejecting={rejectMut.isPending}
+        onApprove={handleApprove}
+        onReject={handleReject}
+      />
+    ),
+    [
+      perms.approve,
+      canCreatePo,
+      prApprovalOn,
+      approveMut.isPending,
+      rejectMut.isPending,
+      handleApprove,
+      handleReject,
+    ],
+  );
+
+  // Hide-page: a user whose VIEW was removed sees the no-access panel.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Purchase Requests. Ask an admin.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        {(['pr', 'osp'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t === 'pr' ? 'Purchase Requests' : 'Outsource Jobs'}
-          </button>
-        ))}
-      </div>
+      <PrListTabs tab={tab} onChange={setTab} />
 
       {tab === 'osp' ? (
         <OutsourceJobsView />
       ) : (
         <>
-          {/* THE list header (ui/layout ListHeader): title · count · + New PR,
-              then the filter bar (search · status with counts · Clear), with
-              the "Create PO from Selected" bar pinned inside the same band. */}
           <ListHeader
             title="Purchase Requests"
             icon="📄"
@@ -329,41 +289,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                 </Link>
               ) : null
             }
-          >
-            {selectedList.length > 0 ? (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  flexWrap: 'wrap',
-                  marginTop: 8,
-                  fontSize: 12,
-                }}
-              >
-                <span className="fw-700">
-                  {selectedList.length} PR{selectedList.length === 1 ? '' : 's'} selected
-                </span>
-                {lockedVendor ? (
-                  <span className="text3">
-                    · Vendor <span className="text2 fw-700">{lockedVendor.label}</span>
-                  </span>
-                ) : null}
-                <span style={{ flex: 1 }} />
-                <button type="button" className="btn btn-ghost btn-sm" onClick={clearSelection}>
-                  Clear
-                </button>
-                <Link
-                  to="/purchase-orders/from-pr"
-                  search={{ prIds: selectedList.map((x) => x.id).join(',') }}
-                  className="btn btn-primary btn-sm"
-                  title="Raises one PO per vendor from the ticked PRs."
-                >
-                  Create PO from Selected ({selectedList.length})
-                </Link>
-              </div>
-            ) : null}
-          </ListHeader>
+          />
 
           {actionError ? (
             <div
@@ -381,52 +307,59 @@ function PurchaseRequestsListPage(): React.JSX.Element {
             </div>
           ) : null}
 
-          {isLoading ? (
-            <div className="panel empty-state" style={{ padding: 24 }}>
-              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-              Loading…
-            </div>
-          ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load PRs. Try again.'}
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="panel empty-state" style={{ padding: 24 }}>
-              {search.search || search.status ? 'No PRs match.' : 'No PRs yet.'}
-            </div>
+          {isError ? (
+            <PageState
+              state="error"
+              message={error instanceof Error ? error.message : 'Could not load PRs. Try again.'}
+            />
           ) : (
-            rows.map((pr) => {
-              const orderable = canCreatePo && isOrderable(pr);
-              const key = prVendorKey(pr);
-              const clashWith =
-                lockedVendor && key !== null && key !== lockedVendor.key && !selected.has(pr.id)
-                  ? lockedVendor.label
-                  : null;
-              return (
-                <PrCard
-                  key={pr.id}
-                  pr={pr}
-                  canApprove={perms.approve}
-                  canEntry={canCreatePo}
-                  approving={approveMut.isPending}
-                  rejecting={rejectMut.isPending}
-                  onApprove={handleApprove}
-                  onReject={handleReject}
-                  select={
-                    orderable
-                      ? {
-                          checked: selected.has(pr.id),
-                          disabledReason:
-                            clashWith !== null
-                              ? `Only one vendor per PO — ${clashWith} is already selected`
-                              : undefined,
-                          onToggle: () => toggleSelect(pr),
-                        }
-                      : undefined
-                  }
-                />
-              );
-            })
+            <Panel bodyPadding="none">
+              <DataTable
+                tableKey={TABLE_KEYS.prList}
+                columns={columns}
+                rows={rows}
+                loading={isLoading}
+                defaultHidden={['sr_no']}
+                emptyText={search.search || search.status ? 'No PRs match.' : 'No PRs yet.'}
+                onRowClick={(pr) =>
+                  void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
+                }
+                rowClassName={(pr) => tintFor(pr)}
+                renderExpanded={(pr) =>
+                  expanded.has(pr.id) ? (
+                    <PrListExpand pr={pr} priceHidden={pr.priceVisible === false} />
+                  ) : null
+                }
+                onToggleExpanded={(pr) => toggleExpand(pr.id)}
+                rowActionsHeader="Actions"
+                rowActions={rowActionsFor}
+                selectable
+                selectedKeys={sel.selectedKeys}
+                isRowSelectable={sel.isRowSelectable}
+                onToggleRow={sel.onToggleRow}
+                onToggleAll={sel.onToggleAll}
+                selectionActions={() => (
+                  <>
+                    {sel.lockedVendor ? (
+                      <span className="text3" style={{ fontSize: 12 }}>
+                        Vendor <span className="text2 fw-700">{sel.lockedVendor.label}</span>
+                      </span>
+                    ) : null}
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={sel.clear}>
+                      Clear
+                    </button>
+                    <Link
+                      to="/purchase-orders/from-pr"
+                      search={{ prIds: sel.selectedIds.join(',') }}
+                      className="btn btn-primary btn-sm"
+                      title="Raises one PO from the ticked PRs."
+                    >
+                      Create PO from Selected ({sel.selectedCount})
+                    </Link>
+                  </>
+                )}
+              />
+            </Panel>
           )}
 
           <ListFooter
