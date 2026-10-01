@@ -1,10 +1,11 @@
 // PRs waiting for THIS user's approval — the PR half of GET /approvals/inbox
 // (ADR-190). The rules are approvePurchaseRequest's own: Approve on Purchase
-// Requests in the Access Control matrix, PR Status Open, and not raised by the
-// caller (segregation of duty, 0100). Nothing else gates a PR approval today.
+// Requests in the Access Control matrix and PR Status Open. The raiser's own PRs
+// are INCLUDED — self-approval is allowed (owner decision 2026-10-01). Nothing
+// else gates a PR approval today.
 
 import type { ApprovalInboxRow } from '@innovic/shared';
-import { and, eq, isNull, ne } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { items, purchaseRequests, users, vendors } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { canSeeFormPrice, hasFormAccess } from '../../lib/access';
@@ -55,7 +56,6 @@ export async function listPrApprovalInbox(
         eq(purchaseRequests.companyId, companyId),
         isNull(purchaseRequests.deletedAt),
         eq(purchaseRequests.status, 'open'),
-        ne(purchaseRequests.createdBy, user.id),
       ),
     )
     .orderBy(purchaseRequests.createdAt);

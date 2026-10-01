@@ -3,12 +3,13 @@
 //   - Approve on Purchase Orders in the Access Control matrix, and a write role
 //   - on approval_config.po_approvers (admins always) — loadApprovalContext
 //   - PO Status Draft
-//   - not raised by the caller (assertNotSelfApproval's rule)
-//   - PO value (Σ qty × rate, no tax) within the caller's approval ceiling
+//   - PO value (Σ qty × rate, no tax) within the caller's approval ceiling —
+//     EXCEPT the caller's own POs, which show at any value (self-approval skips
+//     the limit, owner decision 2026-10-01). Own POs are included, not excluded.
 // so every row listed is one the Approve button would accept.
 
 import type { ApprovalInboxRow } from '@innovic/shared';
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { purchaseOrderLines, purchaseOrders, users, vendors } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { canSeeFormPrice, hasFormAccess } from '../../lib/access';
@@ -52,6 +53,7 @@ export async function listPoApprovalInbox(
       vendorName: vendors.name,
       vendorCodeText: purchaseOrders.vendorCodeText,
       createdAt: purchaseOrders.createdAt,
+      createdBy: purchaseOrders.createdBy,
       createdByName: users.fullName,
       qty: sql<number>`coalesce(sum(${purchaseOrderLines.qty}), 0)::float`,
       poValue: sql<number>`coalesce(sum(${purchaseOrderLines.qty} * ${purchaseOrderLines.rate}), 0)::float`,
@@ -71,14 +73,13 @@ export async function listPoApprovalInbox(
         eq(purchaseOrders.companyId, companyId),
         isNull(purchaseOrders.deletedAt),
         eq(purchaseOrders.status, 'draft'),
-        ne(purchaseOrders.createdBy, user.id),
       ),
     )
     .groupBy(purchaseOrders.id, vendors.name, users.fullName)
     .orderBy(purchaseOrders.createdAt);
 
   return rows
-    .filter((r) => isAdmin || Number(r.poValue) <= approvalCeiling)
+    .filter((r) => isAdmin || r.createdBy === user.id || Number(r.poValue) <= approvalCeiling)
     .map((r) => ({
       id: r.id,
       docCode: r.code,
