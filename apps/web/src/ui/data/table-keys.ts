@@ -69,6 +69,15 @@ export const TABLE_KEYS = {
   soOverview: 'so-overview',
   assemblies: 'assemblies',
   jwInvoices: 'jw-invoices',
+
+  // ADR-199 conversions — Planning / Finance (batch PF)
+  planningList: 'planning-list',
+  planningLineSearch: 'planning-line-search',
+  plansList: 'plans-list',
+  pendingSoValue: 'pending-so-value',
+  soCosting: 'so-costing',
+  soCycleTime: 'so-cycle-time',
+  stockValuation: 'stock-valuation',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];
