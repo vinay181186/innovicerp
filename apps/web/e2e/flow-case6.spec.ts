@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
+import { clickRowMenuItem } from './row-menu';
 import { createSO, dispatch, invoice, ITEM_CODE, makeGuard, makeLog, opEntryLoad, planExecuteInhouse, snap } from './case-helpers';
 
 // CASE 6 — ALL-OP JC with a mid-route IN-HOUSE → OSP switch (dual-lane).
@@ -102,8 +103,9 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   log('receive', `${BAL} received`);
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2800);
-  const qcRow = page.locator('table tbody tr').filter({ hasText: ITEM_CODE }).filter({ has: page.getByRole('link', { name: /Inspect/i }) }).first();
-  await qcRow.getByRole('link', { name: /Inspect/i }).click();
+  // Only pending rows carry the ⋯ row menu; Inspect is its item.
+  const qcRow = page.locator('table tbody tr').filter({ hasText: ITEM_CODE }).filter({ has: page.getByRole('button', { name: 'Actions' }) }).first();
+  await clickRowMenuItem(page, qcRow, /^Inspect/);
   await page.waitForTimeout(2000);
   await page.locator('input[type="number"]').first().fill(String(BAL));
   await page.getByRole('button', { name: /Submit Inspection/i }).click();

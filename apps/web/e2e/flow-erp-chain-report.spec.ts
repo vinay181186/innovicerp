@@ -58,6 +58,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { type Locator, type Page, expect, test } from '@playwright/test';
+import { clickRowMenuItem, hasRowMenuItem } from './row-menu';
 
 const WEB = 'C:/Innovic_projects/innovic-erp/wt-test/apps/web';
 const STATE_FILE = WEB + '/.playwright/erp-chain-report-state.json';
@@ -607,9 +608,9 @@ function opRow(page: Page, opName: string): Locator {
 /** Start + Log (stop) a process op with `qty` made, then return the ops table text. */
 async function runProcessOp(page: Page, jc: string, opName: string, qty: number): Promise<string> {
   await loadJc(page, jc);
-  const startBtn = opRow(page, opName).getByRole('button', { name: /Start/ });
-  if (await startBtn.count()) {
-    await startBtn.click();
+  // Row actions live in the ⋯ menu; a greyed item counts as "not offered".
+  if (await hasRowMenuItem(page, opRow(page, opName), /^Start Operation/)) {
+    await clickRowMenuItem(page, opRow(page, opName), /^Start Operation/);
     await page.waitForTimeout(1200);
     await fillEntryHeader(page, 'E2E_ Operator');
     // ADR-164: Start asks for the ACTUAL machine (defaults to planned).
@@ -617,9 +618,8 @@ async function runProcessOp(page: Page, jc: string, opName: string, qty: number)
     await popupGone(page);
     await loadJc(page, jc);
   }
-  const logBtn = opRow(page, opName).getByRole('button', { name: /✓ Complete/ });
-  if (await logBtn.count()) {
-    await logBtn.click();
+  if (await hasRowMenuItem(page, opRow(page, opName), /^Complete/)) {
+    await clickRowMenuItem(page, opRow(page, opName), /^Complete/);
     await page.waitForTimeout(1200);
     await fillEntryHeader(page, 'E2E_ Operator');
     await page.locator('#opf-qty').fill(String(qty));
@@ -634,7 +634,7 @@ async function runProcessOp(page: Page, jc: string, opName: string, qty: number)
 /** QC entry on a qc op: accept / reject. */
 async function qcOp(page: Page, jc: string, opName: string, acc: number, rej: number): Promise<void> {
   await loadJc(page, jc);
-  await opRow(page, opName).getByRole('button', { name: /Inspect/ }).click();
+  await clickRowMenuItem(page, opRow(page, opName), /^Inspect/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E_ Inspector');
   await page.locator('#opf-qty').fill(String(acc));
@@ -992,7 +992,7 @@ async function incomingQc(page: Page, grnCode: string, acc: number, rej: number,
   const row = pendingTable.locator('tbody tr').filter({ hasText: grnCode }).first();
   await expect(row, 'pending Incoming QC row for ' + grnCode).toBeVisible({ timeout: 60_000 });
   const rowText = (await row.innerText()).replace(/\s+/g, ' ').trim();
-  await row.getByRole('link', { name: /Inspect/ }).click();
+  await clickRowMenuItem(page, row, /^Inspect/);
   await expect(page).toHaveURL(/qc-call-register\?line=/, { timeout: 60_000 });
   await page.waitForTimeout(3000);
   // Only one row is ever open on the register (openId), so page-level

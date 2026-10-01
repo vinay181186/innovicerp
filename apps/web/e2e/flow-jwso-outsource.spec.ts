@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { clickRowMenuItem } from './row-menu';
 
 // JWSO + FULL OUTSOURCE, end to end.
 //
@@ -460,7 +461,8 @@ test('@jwout 08 — incoming QC accepts the vendor return', async ({ page }) => 
   test.skip(!state.poCode, 'no PO');
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4500);
-  const row = page.locator('tr', { hasText: state.poCode }).first();
+  // The pending row is the one with the ⋯ row menu (Inspect lives in it).
+  const row = page.locator('tr', { hasText: state.poCode }).filter({ has: page.getByRole('button', { name: 'Actions' }) }).first();
   const found = (await row.count()) > 0;
   // eslint-disable-next-line no-console
   console.log(`>> incoming QC row for ${state.poCode}: ${found}`);
@@ -476,7 +478,7 @@ test('@jwout 08 — incoming QC accepts the vendor return', async ({ page }) => 
     return;
   }
   state.vendorGrn = ((await row.innerText()).match(/IN-GRN-\d+/) ?? [''])[0];
-  await row.getByText(/Inspect/i).first().click();
+  await clickRowMenuItem(page, row, /^Inspect/);
   await page.waitForTimeout(3500);
   await page.getByPlaceholder(/QC ?By|Inspector|Inspected/i).first().fill('E2E QC').catch(() => {});
   await page.getByRole('spinbutton').first().fill(String(QTY));

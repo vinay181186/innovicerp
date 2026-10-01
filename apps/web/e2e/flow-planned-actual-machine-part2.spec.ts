@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { clickRowMenuItem, hasRowMenuItem } from './row-menu';
 
 // Planned vs Actual machine (ADR-164), driven through the deployed TEST stack:
 //
@@ -89,10 +90,14 @@ async function popupGone(page: Page): Promise<void> {
   await page.waitForTimeout(800);
 }
 
-/** The first op row that offers the named action. */
-function rowWith(page: Page, action: RegExp): Locator {
-  return page.locator('table tbody tr').filter({ has: page.getByRole('button', { name: action }) }).first();
+/** The first op row whose text matches (row actions now sit behind its ⋯
+ *  menu, so the row is found by its own text, not by an action button). */
+function rowWith(page: Page, text: RegExp): Locator {
+  return page.locator('table tbody tr').filter({ hasText: text }).first();
 }
+
+/** The op planned on PLANNED (the plan stays PLANNED even while it runs on ACTUAL). */
+const PLANNED_ROW = new RegExp(`\\b${PLANNED}\\b`);
 
 /** Pick a machine in the Actual Machine picker (SearchableSelect). */
 async function pickActual(page: Page, code: string): Promise<void> {
@@ -112,7 +117,7 @@ test('planned vs actual machine part 2: log, stop, verify', async ({ page }) => 
   else {
   // ── 5. Log 4 on the running session ────────────────────────────────────
     await loadJc(page, JC);
-    await rowWith(page, /✓ Complete/).getByRole('button', { name: /✓ Complete/ }).click();
+    await clickRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/);
     await page.locator('#opf-machine').waitFor({ timeout: 30_000 });
     await step(page, 'Log popup', `${JC} → ✚ Log`, `Machine box reads ${ACTUAL} with "planned ${PLANNED}"`, async () => {
       const m = await page.locator('#opf-machine').inputValue();
@@ -128,13 +133,14 @@ test('planned vs actual machine part 2: log, stop, verify', async ({ page }) => 
     await popupGone(page);
     await step(page, 'Log 4', `Qty ${LOG_QTY} → ✓ Submit completion`, `${LOG_QTY} pcs booked on ${ACTUAL}; session still running`, async () => {
       await loadJc(page, JC);
-      const body = await page.locator('body').innerText();
-      if (!/✓ Complete/.test(body)) throw new Error('session ended unexpectedly');
+      if (!(await hasRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/))) {
+        throw new Error('session ended unexpectedly');
+      }
       return 'Entry accepted; row still offers Log (session open)';
     });
   
     // ── 6. Stop with 3 ───────────────────────────────────────────────────────
-    await rowWith(page, /✓ Complete/).getByRole('button', { name: /✓ Complete/ }).click();
+    await clickRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/);
     await page.locator('#opf-qty').waitFor({ timeout: 30_000 });
     await fillEntryHeader(page, 'E2E Operator');
     await page.locator('#opf-qty').fill(String(STOP_QTY));
@@ -143,9 +149,10 @@ test('planned vs actual machine part 2: log, stop, verify', async ({ page }) => 
     await popupGone(page);
     await step(page, 'Stop 3', `Qty ${STOP_QTY} → ■ Stop`, `${STOP_QTY} pcs booked on ${ACTUAL}; ${ACTUAL} freed; row offers Start again`, async () => {
       await loadJc(page, JC);
-      const body = await page.locator('body').innerText();
-      if (!/Start/.test(body)) throw new Error('row does not offer Start after stop');
-      return 'Stopped; row offers ▶ Start (3 pcs still available)';
+      if (!(await hasRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Start Operation/))) {
+        throw new Error('row does not offer Start after stop');
+      }
+      return 'Stopped; row ⋯ offers Start Operation (3 pcs still available)';
     });
   
   

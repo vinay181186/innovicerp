@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { clickRowMenuItem, hasRowMenuItem } from './row-menu';
 
 // Planned vs Actual machine (ADR-164), driven through the deployed TEST stack:
 //
@@ -88,10 +89,14 @@ async function popupGone(page: Page): Promise<void> {
   await page.waitForTimeout(800);
 }
 
-/** The first op row that offers the named action. */
-function rowWith(page: Page, action: RegExp): Locator {
-  return page.locator('table tbody tr').filter({ has: page.getByRole('button', { name: action }) }).first();
+/** The first op row whose text matches (row actions now sit behind its ⋯
+ *  menu, so the row is found by its own text, not by an action button). */
+function rowWith(page: Page, text: RegExp): Locator {
+  return page.locator('table tbody tr').filter({ hasText: text }).first();
 }
+
+/** The op planned on PLANNED (the plan stays PLANNED even while it runs on ACTUAL). */
+const PLANNED_ROW = new RegExp(`\\b${PLANNED}\\b`);
 
 /** Pick a machine in the Actual Machine picker (SearchableSelect). */
 async function pickActual(page: Page, code: string): Promise<void> {
@@ -109,7 +114,7 @@ test('planned vs actual machine: start on cnc-2, plan stays cnc-1', async ({ pag
 
   // ── 1. Open Start on the planned-cnc-1 op ───────────────────────────────
   await loadJc(page, JC);
-  await rowWith(page, /Start/).getByRole('button', { name: /Start/ }).click();
+  await clickRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Start Operation/);
   await page.locator('[role="dialog"]').first().waitFor({ timeout: 30_000 });
   await page.locator('#opf-actual-machine').waitFor({ timeout: 30_000 });
   // The picker is seeded once the machines list is in; wait for a value, not a clock.
@@ -145,14 +150,15 @@ test('planned vs actual machine: start on cnc-2, plan stays cnc-1', async ({ pag
   await popupGone(page);
   await step(page, 'Start on cnc-2', 'date/time/shift/operator → ▶ Start Operation', `Session running on ${ACTUAL}; ops row offers Log`, async () => {
     await loadJc(page, JC);
-    const body = await page.locator('body').innerText();
-    if (!/✓ Complete/.test(body)) throw new Error('op did not show as running');
-    return 'Op running; row now offers ✚ Log';
+    if (!(await hasRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/))) {
+      throw new Error('op did not show as running');
+    }
+    return 'Op running; row ⋯ now offers Complete';
   });
 
   // ── 4. Busy gate keys on the ACTUAL machine ─────────────────────────────
   await loadJc(page, JC_OTHER);
-  await rowWith(page, /Start/).getByRole('button', { name: /Start/ }).click();
+  await clickRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Start Operation/);
   await page.locator('#opf-actual-machine').waitFor({ timeout: 30_000 });
   await expect(page.locator('#opf-actual-machine')).toHaveValue(PLANNED, { timeout: 45_000 });
   await step(page, 'Other JC, planned cnc-1', `${JC_OTHER} → ▶ Start`, `No busy notice — ${PLANNED} is free`, async () => {

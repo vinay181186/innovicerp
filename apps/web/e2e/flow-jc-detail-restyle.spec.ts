@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { closeRowMenu, hasRowMenuItem, openRowMenu } from './row-menu';
 
 // Job Card DETAIL restyle (commit ba9c495a) + Op Entry "operator pre-fill from
 // Start", verified on the deployed TEST stack (playwright.pages.config.ts).
@@ -515,9 +516,13 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
     await page.waitForTimeout(1000);
     const r1 = opRow(page, '10');
-    const startBtn = r1.getByRole('button', { name: /Start/ });
-    await expect(startBtn).toBeVisible({ timeout: 30_000 });
-    await startBtn.click();
+    // Row actions live in the ⋯ menu (portalled to <body>).
+    await expect(r1.getByRole('button', { name: 'Actions' })).toBeVisible({ timeout: 30_000 });
+    await openRowMenu(page, r1);
+    const startItem = page.getByRole('menuitem', { name: /^Start Operation/ });
+    await expect(startItem).toBeVisible({ timeout: 30_000 });
+    await expect(startItem).not.toHaveAttribute('aria-disabled', 'true');
+    await startItem.click();
     const dlg = page.locator('[role="dialog"]').first();
     await dlg.waitFor({ timeout: 30_000 });
     await page.waitForTimeout(1500);
@@ -538,8 +543,14 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await page.goto(`/op-entry?jc=${JC_START}`, { waitUntil: 'domcontentloaded' });
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
     await page.waitForTimeout(1000);
-    const logBtn = opRow(page, '10').getByRole('button', { name: /✓ Complete/ });
-    await expect(logBtn).toBeVisible({ timeout: 30_000 });
+    await expect(opRow(page, '10').getByRole('button', { name: 'Actions' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await openRowMenu(page, opRow(page, '10'));
+    const logItem = page.getByRole('menuitem', { name: /^Complete/ });
+    await expect(logItem).toBeVisible({ timeout: 30_000 });
+    await expect(logItem).not.toHaveAttribute('aria-disabled', 'true');
+    await closeRowMenu(page);
     row(
       {
         action: `Start OP10 (E2E_ TURNING) on ${ACTUAL_MACHINE} with operator "${OPERATOR}"`,
@@ -624,7 +635,8 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await page.goto(`/op-entry?jc=${JC_START}`, { waitUntil: 'domcontentloaded' });
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
     await page.waitForTimeout(1000);
-    await opRow(page, '10').getByRole('button', { name: /✓ Complete/ }).click();
+    await openRowMenu(page, opRow(page, '10'));
+    await page.getByRole('menuitem', { name: /^Complete/ }).click();
     await dlg.waitFor({ timeout: 30_000 });
     await expect(page.locator('#opf-op')).toHaveValue(OPERATOR, { timeout: 45_000 });
     await page.locator('#opf-date').fill(today());
@@ -637,8 +649,9 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await page.goto(`/op-entry?jc=${JC_START}`, { waitUntil: 'domcontentloaded' });
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
     await page.waitForTimeout(1000);
-    const startAgain = await opRow(page, '10').getByRole('button', { name: /Start/ }).count();
-    const logStill = await opRow(page, '10').getByRole('button', { name: /✓ Complete/ }).count();
+    // ⋯ menu: an enabled "Start Operation" item = 1, else 0 (same for Complete).
+    const startAgain = Number(await hasRowMenuItem(page, opRow(page, '10'), /^Start Operation/));
+    const logStill = Number(await hasRowMenuItem(page, opRow(page, '10'), /^Complete/));
     await shot(page, '11-after-stop');
     row(
       {
@@ -646,8 +659,8 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
           'Stop the session with qty 0 (stop only — no production row) so OP10 is back to not running',
         document: JC_START,
         qty: '0',
-        headerStatus: `row offers ▶ Start again: ${startAgain === 1}`,
-        overallStatus: `✚ Log still offered: ${logStill === 1}`,
+        headerStatus: `row ⋯ offers Start Operation again: ${startAgain === 1}`,
+        overallStatus: `⋯ Complete still offered: ${logStill === 1}`,
         note: 'stopOpInputSchema: qty 0 = stop only; the running_ops row is kept as stopped history',
       },
       () => {
@@ -659,16 +672,20 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
 
   test('9. QC op entry: inspector box NOT auto-filled', async ({ page }) => {
     test.setTimeout(600_000);
-    // IN-JC-26-00003 OP20 is `waiting` with nothing to inspect, so its row has no
-    // button (jc-ops-table: qcPending <= 0 → null). IN-JC-26-00002 OP20 (Final
+    // IN-JC-26-00003 OP20 is `waiting` with nothing to inspect, so its row's ⋯
+    // shows a greyed "Inspect" item (jc-ops-table: qcPending <= 0 → disabledReason
+    // 'Nothing Pending', aria-disabled). IN-JC-26-00002 OP20 (Final
     // Inspection, qc_pending) opens the very same QC form — opened and closed,
     // nothing submitted.
     await page.goto(`/op-entry?jc=${JC_VIEW}`, { waitUntil: 'domcontentloaded' });
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
     await page.waitForTimeout(1000);
     const qcRow = opRow(page, '20');
-    const qcBtn = qcRow.getByRole('button', { name: /Inspect/ });
+    await expect(qcRow.getByRole('button', { name: 'Actions' })).toBeVisible({ timeout: 30_000 });
+    await openRowMenu(page, qcRow);
+    const qcBtn = page.getByRole('menuitem', { name: /^Inspect/ });
     await expect(qcBtn).toBeVisible({ timeout: 30_000 });
+    await expect(qcBtn).not.toHaveAttribute('aria-disabled', 'true');
     const qcLabel = await qcBtn.innerText();
     await qcBtn.click();
     const dlg = page.locator('[role="dialog"]').first();
