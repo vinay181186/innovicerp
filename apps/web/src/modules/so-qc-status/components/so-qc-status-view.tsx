@@ -530,9 +530,7 @@ function TotalRow({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
     total > 0 && done >= total ? 'var(--green)' : 'var(--amber)';
 
   return (
-    <tr
-      style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border2)' }}
-    >
+    <tr className="row-total" style={{ background: 'var(--bg4)', fontWeight: 700 }}>
       <td colSpan={5} style={{ fontSize: 11, color: 'var(--text2)' }}>
         Total ({lines.length} lines)
       </td>

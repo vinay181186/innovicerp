@@ -1,5 +1,7 @@
 import { createRoute, Outlet, redirect } from '@tanstack/react-router';
+import { useEffect } from 'react';
 import { Breadcrumbs } from '@/components/shared/breadcrumbs';
+import { installCellOverflowTitles } from '@/components/shared/cell-overflow-title';
 import { OpenTabsBar } from '@/components/shared/open-tabs-bar';
 import { TopNav } from '@/components/shared/top-nav';
 import { supabase } from '@/lib/supabase';
@@ -51,6 +53,7 @@ export const authenticatedRoute = createRoute({
 // between the chrome and whatever a list pinned at `top: 0`. See the
 // #app-header block in innovic-theme.css for the full reasoning.
 function AuthenticatedLayout(): React.JSX.Element {
+  useEffect(() => installCellOverflowTitles(), []); // ADR-199: tooltip on ellipsised table cells
   return (
     <div id="app-shell">
       <div id="main">

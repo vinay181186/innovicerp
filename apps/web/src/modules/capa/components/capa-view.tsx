@@ -210,10 +210,8 @@ export function CapaView(props: {
                     filtered.map((c) => (
                       <tr
                         key={c.id}
-                        style={{
-                          cursor: 'pointer',
-                          ...(c.overdue ? { borderLeft: '3px solid var(--red)' } : {}),
-                        }}
+                        className={c.overdue ? 'row-alert-left' : undefined}
+                        style={{ cursor: 'pointer' }}
                         onClick={() => setModal({ kind: 'edit', capa: c, readOnly: true })}
                         title={`Open CAPA ${c.code}`}
                       >
