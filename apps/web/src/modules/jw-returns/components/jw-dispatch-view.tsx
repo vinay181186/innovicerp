@@ -18,12 +18,14 @@ import { fmtDate, todayLocal } from '@/lib/date';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
 import { statusText } from '@/lib/status-text';
+import { RowMenu } from '@/ui/data';
 import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwReturnChallan, useJwReturnable, useJwReturnsList } from '../api';
 import { CancelJwReturnModal } from './cancel-jw-return-modal';
 import { PrintJwReturnButton } from './print-jw-return-button';
+import { usePrintJwReturn } from './use-print-jw-return';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
 // exactly the cap this list already ran under, so nothing that was visible
@@ -73,6 +75,8 @@ export function JwDispatchView({
   // ADR-197: the return whose History is open, or null. JW Return has no
   // detail page, so its History opens over the list.
   const [historyTarget, setHistoryTarget] = useState<{ id: string; code: string } | null>(null);
+  // ⋯ Print — the row's old Print challan button's logic, as a hook.
+  const printReturn = usePrintJwReturn();
 
   return (
     <div>
@@ -123,7 +127,7 @@ export function JwDispatchView({
                   <th>Transporter</th>
                   <th>Vehicle No.</th>
                   <th>Return Status</th>
-                  <th className="td-ctr">Actions</th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -178,30 +182,36 @@ export function JwDispatchView({
                         {statusText(r.status)}
                       </span>
                     </td>
-                    <td className="td-ctr" style={{ whiteSpace: 'nowrap' }}>
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        onClick={() => setHistoryTarget({ id: r.id, code: r.code })}
-                        title="Who did what on this return"
-                      >
-                        History
-                      </button>
-                      {r.status === 'cancelled' ? null : (
-                        <>
-                          <PrintJwReturnButton returnId={r.id} row={r} />
-                          {canWrite ? (
-                            <button
-                              type="button"
-                              className="btn btn-ghost"
-                              style={{ color: 'var(--red2)' }}
-                              onClick={() => setCancelTarget({ id: r.id, code: r.code })}
-                            >
-                              Cancel
-                            </button>
-                          ) : null}
-                        </>
-                      )}
+                    <td className="td-ctr">
+                      {/* ⋯ Print · History · ─ · Cancel. A cancelled return
+                          offers no Print; its Cancel is greyed. */}
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'print',
+                            label: 'Print challan',
+                            icon: 'printer',
+                            hidden: r.status === 'cancelled',
+                            onSelect: () => printReturn(r),
+                          },
+                          {
+                            key: 'history',
+                            label: 'History',
+                            icon: 'activity',
+                            onSelect: () => setHistoryTarget({ id: r.id, code: r.code }),
+                          },
+                          {
+                            key: 'cancel',
+                            label: 'Cancel Return',
+                            icon: 'x',
+                            group: 'danger',
+                            hidden: !canWrite,
+                            disabledReason:
+                              r.status === 'cancelled' ? 'Already Cancelled' : undefined,
+                            onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

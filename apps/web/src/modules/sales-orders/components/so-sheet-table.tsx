@@ -1,10 +1,9 @@
 // SO / WO Orders — LIST VIEW. The same orders the card list shows, laid out as
 // the app's ruled sheet (`.innovic-table.tbl-grid`, the Plans / Job Cards
 // look) — one row per order, a ▸ chevron on the SO No. that opens the order's
-// lines right under it, and the card's actions as one row of icon buttons at
-// the end (hover names the action). Per the user-approved mock-up
-// SO-List-Sheet-Mockup.html (2026-09-21) and the icons-only rule added the
-// same day.
+// lines right under it, and the card's actions in the row's ⋯ menu at the end
+// (Edit · Assign Task · ─ · Delete, owner-approved spec 2026-10-01). Per the
+// user-approved mock-up SO-List-Sheet-Mockup.html (2026-09-21).
 //
 // Nothing here owns data or state: rows, the expanded-id set, the permission
 // flags and every handler come from the list route, so both views share one
@@ -14,9 +13,11 @@
 
 import type { SalesOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
-import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
+import { RowMenu } from '@/ui/data';
 import { SoStatusBadge } from './so-status-badge';
 import { SoFulfilmentBadge } from './so-fulfilment-badge';
 import { soTypeLabel } from '../lib/so-status-label';
@@ -24,12 +25,6 @@ import { soTypeLabel } from '../lib/so-status-label';
 /** Column count — the expanded row's <td colSpan> must always match the
  *  <colgroup> below, so it is named once here. */
 const COLUMN_COUNT = 12;
-/** Icon size inside the Action buttons. */
-const ICON = 13;
-/** The icon buttons' inline trim: the sheet's `.jc-row-acts .btn-sm` rule
- *  pads 2px 6px (a labelled button's fit); an icon alone needs 3px a side so
- *  four of them sit on one row inside a 10% column at 1280px wide. */
-const ICON_BTN: React.CSSProperties = { padding: '2px 3px' };
 /** The Type chip's word. */
 const TYPE_SHORT: Record<string, string> = {
   component_manufacturing: 'Component',
@@ -65,6 +60,8 @@ export function SoSheetTable({
   /** The expanded panel (component lines / equipment BOM) for one order. */
   renderExpanded: (so: SalesOrderListItem) => React.ReactNode;
 }): React.JSX.Element {
+  // The order whose Assign Task dialog is open (from its ⋯ menu), or null.
+  const [assignSo, setAssignSo] = useState<SalesOrderListItem | null>(null);
   return (
     <>
       {/* The sheet look (tbl-grid): bold blue column names, gridlines, cream /
@@ -78,7 +75,7 @@ export function SoSheetTable({
             <col style={{ width: '4%' }} />
             <col style={{ width: '11%' }} />
             <col style={{ width: '7%' }} />
-            <col style={{ width: '22%' }} />
+            <col style={{ width: '28%' }} />
             <col style={{ width: '5%' }} />
             <col style={{ width: '6%' }} />
             <col style={{ width: '6%' }} />
@@ -86,7 +83,7 @@ export function SoSheetTable({
             <col style={{ width: '6%' }} />
             <col style={{ width: '8%' }} />
             <col style={{ width: '8%' }} />
-            <col style={{ width: '10%' }} />
+            <col style={{ width: '4%' }} />
           </colgroup>
           <thead>
             <tr>
@@ -101,7 +98,7 @@ export function SoSheetTable({
               <th className="th-num">Pending</th>
               <th>Due Date</th>
               <th>SO Status</th>
-              <th>Action</th>
+              <th aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -262,68 +259,39 @@ export function SoSheetTable({
                       <SoFulfilmentBadge status={so.fulfilmentStatus} />
                     </div>
                   </td>
-                  {/* The card's actions, same gates: View is the code link;
-                      + Line needs edit; Assign needs edit on a non-closed
-                      order; Del needs edit + approve on a non-closed order.
-                      Icons only, one row, centred — the title / aria-label
-                      names the action on hover. Side padding trimmed on the
-                      cell so four icons fit the column without spilling. */}
-                  <td style={{ padding: '8px 2px' }}>
-                    <div
-                      className="jc-row-acts"
-                      style={{
-                        display: 'flex',
-                        gap: 4,
-                        justifyContent: 'center',
-                        flexWrap: 'nowrap',
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {canEdit ? (
-                        <Link
-                          to="/sales-orders/$id/edit"
-                          params={{ id: so.id }}
-                          className="btn btn-ghost btn-sm btn-icon"
-                          style={ICON_BTN}
-                          title="Edit"
-                          aria-label="Edit"
-                        >
-                          <Pencil size={ICON} />
-                        </Link>
-                      ) : null}
-                      {canEdit && so.status !== 'closed' ? (
-                        <AssignTaskButton
-                          linkedRef={{
-                            type: 'sales_order',
-                            id: so.id,
-                            display: `SO ${so.code}`,
-                            navPage: `/sales-orders/${so.id}`,
-                          }}
-                          suggestedTitle={
-                            so.type === 'equipment' && so.bomStatus === 'BOM Pending'
-                              ? `Create BOM for ${so.code}`
-                              : `Follow up ${so.code}`
-                          }
-                          className="btn btn-ghost btn-sm btn-icon"
-                          label=""
-                        />
-                      ) : null}
-                      {canDelete && so.status !== 'closed' ? (
-                        // The sheet paints every .btn-sm on paper (theme rule), which
-                        // would leave btn-danger's white icon invisible — so the
-                        // icon is told to be red here, tokens only.
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm btn-icon"
-                          style={{ ...ICON_BTN, color: 'var(--red2)' }}
-                          onClick={() => onDeleteSo(so)}
-                          title="Delete"
-                          aria-label="Delete"
-                        >
-                          <Trash2 size={ICON} />
-                        </button>
-                      ) : null}
-                    </div>
+                  {/* The card's actions in the ⋯, same gates: View is the
+                      row click; Edit needs edit; Assign Task needs edit on a
+                      non-closed order; Delete needs edit + approve on a
+                      non-closed order (it opens the route's reason dialog). */}
+                  <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                    <RowMenu
+                      renderLink={(p) => <Link {...p} />}
+                      items={[
+                        {
+                          key: 'edit',
+                          label: 'Edit',
+                          icon: 'pencil',
+                          hidden: !canEdit,
+                          to: `/sales-orders/${so.id}/edit`,
+                        },
+                        {
+                          key: 'assign',
+                          label: 'Assign Task',
+                          icon: 'user-round',
+                          group: 'assign',
+                          hidden: !canEdit || so.status === 'closed',
+                          onSelect: () => setAssignSo(so),
+                        },
+                        {
+                          key: 'delete',
+                          label: 'Delete',
+                          icon: 'trash-2',
+                          group: 'danger',
+                          hidden: !canDelete || so.status === 'closed',
+                          onSelect: () => onDeleteSo(so),
+                        },
+                      ]}
+                    />
                   </td>
                 </tr>,
                 // The order's lines, right under its row — the same panel the
@@ -344,6 +312,22 @@ export function SoSheetTable({
           </tbody>
         </table>
       </div>
+      {assignSo ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'sales_order',
+            id: assignSo.id,
+            display: `SO ${assignSo.code}`,
+            navPage: `/sales-orders/${assignSo.id}`,
+          }}
+          suggestedTitle={
+            assignSo.type === 'equipment' && assignSo.bomStatus === 'BOM Pending'
+              ? `Create BOM for ${assignSo.code}`
+              : `Follow up ${assignSo.code}`
+          }
+          onClose={() => setAssignSo(null)}
+        />
+      ) : null}
     </>
   );
 }
