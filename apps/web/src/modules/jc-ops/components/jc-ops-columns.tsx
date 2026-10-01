@@ -248,7 +248,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
       ellipsis: true,
       className: 'text3',
       render: (o) => (isOutsource(o) ? (o.outsourceVendorName ?? '—') : '—'),
-      title: (o) => o.outsourceVendorName ?? '',
+      title: (o) => (isOutsource(o) ? (o.outsourceVendorName ?? '') : ''),
     },
     {
       id: 'qty_per_machine',
@@ -257,6 +257,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
       ellipsis: true,
       className: 'text3',
       render: (o) => {
+        if (isOutsource(o)) return '—'; // an outsourced op has no machine split
         const a = resolveActualMachine({ planned: o.machineCode, machines: o.machines });
         return a.split.length
           ? a.split.map((m) => formatMachineQty(m.machineCode, m.qty)).join(' · ')
