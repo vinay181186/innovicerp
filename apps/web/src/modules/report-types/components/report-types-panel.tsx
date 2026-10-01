@@ -7,6 +7,7 @@ import { REPORT_TYPE_STATUSES, type CreateReportTypeInput, type ReportType } fro
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
+import { RowMenu } from '@/ui/data';
 import {
   useCreateReportType,
   useDeleteReportType,
@@ -63,7 +64,7 @@ export function ReportTypesPanel(): React.JSX.Element {
                 <th>Description</th>
                 <th>Default</th>
                 <th>Active</th>
-                <th>Actions</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -105,28 +106,28 @@ export function ReportTypesPanel(): React.JSX.Element {
                         {r.status}
                       </span>
                     </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        {canWrite ? (
-                          <>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => setModal({ kind: 'edit', row: r })}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-danger btn-sm"
-                              disabled={del.isPending}
-                              onClick={() => void onDelete(r)}
-                            >
-                              Del
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
+                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'edit',
+                            label: 'Edit',
+                            icon: 'pencil',
+                            hidden: !canWrite,
+                            onSelect: () => setModal({ kind: 'edit', row: r }),
+                          },
+                          {
+                            key: 'delete',
+                            label: 'Delete',
+                            icon: 'trash-2',
+                            group: 'danger',
+                            hidden: !canWrite,
+                            // As before: no second delete while one is saving.
+                            disabledReason: del.isPending ? 'Deleting…' : undefined,
+                            onSelect: () => onDelete(r),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))
