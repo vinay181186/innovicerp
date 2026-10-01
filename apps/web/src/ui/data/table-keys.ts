@@ -90,6 +90,23 @@ export const TABLE_KEYS = {
   machineGroups: 'machine-groups',
   rawMaterialGrade: 'raw-material-grade',
   rawMaterialSize: 'raw-material-size',
+
+  // ADR-199 conversions — Quality (batch Q)
+  qcCallPending: 'qc-call-pending',
+  qcCallCompleted: 'qc-call-completed',
+  incomingQcPending: 'incoming-qc-pending',
+  incomingQcDone: 'incoming-qc-done',
+  qcCommandQueue: 'qc-command-queue',
+  qcCommandFpy: 'qc-command-fpy',
+  qcCommandInspector: 'qc-command-inspector',
+  qcCommandPareto: 'qc-command-pareto',
+  qcCommandRework: 'qc-command-rework',
+  ncRegister: 'nc-register',
+  capaList: 'capa-list',
+  qcDocsMatrix: 'qc-docs-matrix',
+  qcDocsRegister: 'qc-docs-register',
+  qcDocsStatus: 'qc-docs-status',
+  reportTypes: 'report-types',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];
