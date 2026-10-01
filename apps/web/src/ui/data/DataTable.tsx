@@ -89,15 +89,22 @@ export function DataTable<T>(input: DataTableProps<T>): ReactElement {
   // and the fit paths (and the fit engine's measuring) need no change of
   // their own.
   const { rowMenu, renderLink } = input;
-  const props: DataTableProps<T> = rowMenu
-    ? {
-        ...input,
-        rowActions: (row: T, index: number) => (
-          <RowMenu items={rowMenu(row, index)} renderLink={renderLink} />
-        ),
-        rowActionsHeader: input.rowActionsHeader ?? ROW_MENU_HEADER,
-      }
-    : input;
+  // No ⋯ column when not one row has a visible item (the user lacks every
+  // right): an empty column of nothing is noise. An empty list keeps it.
+  const anyMenu =
+    rowMenu !== undefined &&
+    (input.rows.length === 0 ||
+      input.rows.some((row, i) => rowMenu(row, i).some((item) => !item.hidden)));
+  const props: DataTableProps<T> =
+    rowMenu && anyMenu
+      ? {
+          ...input,
+          rowActions: (row: T, index: number) => (
+            <RowMenu items={rowMenu(row, index)} renderLink={renderLink} />
+          ),
+          rowActionsHeader: input.rowActionsHeader ?? ROW_MENU_HEADER,
+        }
+      : input;
   const { tableKey } = props;
   if (tableKey !== undefined && props.variant !== 'list') {
     return <FitDataTable {...props} tableKey={tableKey} />;

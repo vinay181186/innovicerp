@@ -56,22 +56,22 @@ describe('placeRowMenu', () => {
 
   it('opens under the button, right edges aligned', () => {
     const p = placeRowMenu(btn, { width: 200, height: 150 }, vp);
-    expect(p.left).toBe(726);
-    expect(p.top).toBe(122 + MENU_GAP);
+    expect(p?.left).toBe(726);
+    expect(p?.top).toBe(122 + MENU_GAP);
   });
 
   it('flips above near the bottom of the screen', () => {
     const low = { top: 700, bottom: 722, left: 900, right: 926 };
     const p = placeRowMenu(low, { width: 200, height: 150 }, vp);
-    expect(p.top).toBe(700 - MENU_GAP - 150);
-    expect(p.maxHeight).toBe(700 - MENU_GAP - MENU_EDGE);
+    expect(p?.top).toBe(700 - MENU_GAP - 150);
+    expect(p?.maxHeight).toBe(700 - MENU_GAP - MENU_EDGE);
   });
 
   it('stays inside the viewport on both sides', () => {
     const nearLeft = { top: 100, bottom: 122, left: 10, right: 36 };
-    expect(placeRowMenu(nearLeft, { width: 200, height: 50 }, vp).left).toBe(MENU_EDGE);
-    const pastRight = { top: 100, bottom: 122, left: 1100, right: 1126 };
-    expect(placeRowMenu(pastRight, { width: 200, height: 50 }, vp).left).toBe(
+    expect(placeRowMenu(nearLeft, { width: 200, height: 50 }, vp)?.left).toBe(MENU_EDGE);
+    const atRight = { top: 100, bottom: 122, left: 980, right: 1006 };
+    expect(placeRowMenu(atRight, { width: 200, height: 50 }, vp)?.left).toBe(
       1000 - 200 - MENU_EDGE,
     );
   });
@@ -79,7 +79,44 @@ describe('placeRowMenu', () => {
   it('clamps a menu taller than the room above to the top edge', () => {
     const low = { top: 300, bottom: 322, left: 900, right: 926 };
     const p = placeRowMenu(low, { width: 200, height: 900 }, { width: 1000, height: 400 });
-    expect(p.top).toBe(MENU_EDGE);
+    expect(p?.top).toBe(MENU_EDGE);
+    expect(p?.maxHeight).toBe(300 - MENU_GAP - MENU_EDGE);
+  });
+
+  it('never lets the max height run past the screen edge', () => {
+    // Little room either side: the larger side wins, capped at that room.
+    const mid = { top: 30, bottom: 52, left: 900, right: 926 };
+    const p = placeRowMenu(mid, { width: 200, height: 300 }, { width: 1000, height: 100 });
+    expect(p?.top).toBe(52 + MENU_GAP);
+    expect(p?.maxHeight).toBe(100 - 52 - MENU_GAP - MENU_EDGE);
+    // Button flush with the bottom edge: room below is 0, never negative.
+    const flush = { top: 380, bottom: 400, left: 900, right: 926 };
+    const q = placeRowMenu(flush, { width: 200, height: 50 }, { width: 1000, height: 400 });
+    expect(q?.maxHeight).toBeGreaterThanOrEqual(0);
+  });
+
+  it('gives null once the button has left the viewport', () => {
+    expect(
+      placeRowMenu(
+        { top: -40, bottom: -18, left: 900, right: 926 },
+        { width: 200, height: 50 },
+        vp,
+      ),
+    ).toBeNull();
+    expect(
+      placeRowMenu(
+        { top: 810, bottom: 832, left: 900, right: 926 },
+        { width: 200, height: 50 },
+        vp,
+      ),
+    ).toBeNull();
+    expect(
+      placeRowMenu(
+        { top: 100, bottom: 122, left: 1100, right: 1126 },
+        { width: 200, height: 50 },
+        vp,
+      ),
+    ).toBeNull();
   });
 });
 
@@ -97,6 +134,18 @@ describe('nextMenuIndex', () => {
     expect(nextMenuIndex(1, 'End', 3)).toBe(2);
     expect(nextMenuIndex(1, 'Enter', 3)).toBeNull();
     expect(nextMenuIndex(0, 'ArrowDown', 0)).toBeNull();
+  });
+
+  it('skips disabled items with the arrows and Home / End', () => {
+    const dis = [true, false, true, false, true];
+    expect(nextMenuIndex(-1, 'ArrowDown', 5, dis)).toBe(1);
+    expect(nextMenuIndex(1, 'ArrowDown', 5, dis)).toBe(3);
+    expect(nextMenuIndex(3, 'ArrowDown', 5, dis)).toBe(1);
+    expect(nextMenuIndex(1, 'ArrowUp', 5, dis)).toBe(3);
+    expect(nextMenuIndex(-1, 'ArrowUp', 5, dis)).toBe(3);
+    expect(nextMenuIndex(3, 'Home', 5, dis)).toBe(1);
+    expect(nextMenuIndex(1, 'End', 5, dis)).toBe(3);
+    expect(nextMenuIndex(0, 'ArrowDown', 2, [true, true])).toBeNull();
   });
 });
 

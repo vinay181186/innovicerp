@@ -17,19 +17,22 @@
 //     button and menu; a click / tap opens at once and keeps it open;
 //   - Esc, Tab or a click outside closes; ↑ ↓ Home End move, Enter runs;
 //   - only one row menu is open at a time, app-wide;
-//   - the menu is portalled to <body> (position fixed, z Z_OVERLAY), so no
+//   - the menu is portalled to <body> (position fixed, picker-popover z 1000
+//     on the Modal.tsx ladder, so it opens above a modal too), so no
 //     `overflow: hidden` cell or panel can clip it; it flips up near the
-//     bottom of the screen and follows scroll / resize;
+//     bottom of the screen, follows scroll / resize, and closes once the ⋯
+//     scrolls out of view;
+//   - Esc closes only the menu, never the modal it sits in;
 //   - clicks inside it never reach the row underneath;
 //   - an onSelect that returns a Promise makes the ⋯ busy: nothing else in
-//     this row's menu can run until it settles (no double submit).
+//     this row's menu can run until it settles (no double submit). A failed
+//     action (rejected Promise or a throw) clears busy and is reported.
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Icon } from '../core/Icon';
-import { Z_OVERLAY } from '../feedback/Modal';
 import { LinkSlot, type RenderLink } from '../layout/link-slot';
 import {
   arrangeRowMenu,
@@ -56,6 +59,16 @@ type OpenMode = 'hover' | 'click' | 'key';
 
 const HOVER_OPEN_MS = 150;
 const HOVER_CLOSE_MS = 200;
+
+// "picker popover 1000" on the app's z-index ladder (ui/feedback/Modal.tsx):
+// above the overlay (500) and an elevated dialog (600), below toasts (9999).
+const Z_PICKER = 1000;
+
+/** No app-wide toast is mounted outside /__ui-kit, so a failed action is
+ *  logged; the mutation's own onError still shows the user its message. */
+function reportFailure(err: unknown): void {
+  console.error('Row action failed:', err);
+}
 
 // One row menu open at a time, app-wide: opening one closes the last.
 let closeOpenMenu: (() => void) | null = null;
@@ -125,6 +138,11 @@ export function RowMenu({
       { width: menu.offsetWidth, height: menu.scrollHeight },
       { width: window.innerWidth, height: window.innerHeight },
     );
+    // The row scrolled out of view: close rather than pin to an edge.
+    if (!p) {
+      close();
+      return;
+    }
     setPos({ left: p.left, top: p.top, maxHeight: p.maxHeight });
   }, [close]);
 
@@ -144,7 +162,12 @@ export function RowMenu({
 
   useEffect(() => {
     if (mode !== 'click' && mode !== 'key') return;
-    menuRef.current?.querySelector<HTMLElement>('.row-menu-item')?.focus();
+    // First item that can run; a menu of only greyed items focuses the first.
+    const menu = menuRef.current;
+    (
+      menu?.querySelector<HTMLElement>('.row-menu-item:not(.is-disabled)') ??
+      menu?.querySelector<HTMLElement>('.row-menu-item')
+    )?.focus();
   }, [mode]);
 
   useEffect(() => {
@@ -155,14 +178,20 @@ export function RowMenu({
       if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
       close(focusInside());
     };
+    // Esc belongs to the open menu. Window CAPTURE runs before the Modal's
+    // document-capture listener, and preventDefault is what that listener
+    // checks, so a menu inside a dialog closes alone.
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') close(focusInside() || document.activeElement === btnRef.current);
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      close(focusInside() || document.activeElement === btnRef.current);
     };
     document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKey, true);
     };
   }, [open, close]);
 
@@ -176,19 +205,31 @@ export function RowMenu({
       return;
     }
     close(true);
-    const result = item.onSelect?.();
+    let result: unknown;
+    try {
+      result = item.onSelect?.();
+    } catch (err) {
+      reportFailure(err);
+      return;
+    }
     if (isThenable(result)) {
       setBusy(true);
       const done = () => {
         if (alive.current) setBusy(false);
       };
-      result.then(done, done);
+      result.then(done, (err: unknown) => {
+        done();
+        reportFailure(err);
+      });
     }
   };
 
   const onMenuKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Tab' || e.key === 'Escape') {
       e.preventDefault();
+      // Esc closes this menu only — never a modal around it.
+      e.stopPropagation();
+      e.nativeEvent.stopImmediatePropagation();
       close(true);
       return;
     }
@@ -197,6 +238,7 @@ export function RowMenu({
       els.findIndex((el) => el === document.activeElement),
       e.key,
       els.length,
+      els.map((el) => el.classList.contains('is-disabled')),
     );
     if (next === null) return;
     e.preventDefault();
@@ -235,6 +277,7 @@ export function RowMenu({
           to={item.to}
           renderLink={renderLink}
           className={cls}
+          role="menuitem"
           onClick={() => close()}
         >
           {face(item)}
@@ -306,7 +349,7 @@ export function RowMenu({
               role="menu"
               aria-label={label}
               className="row-menu"
-              style={{ position: 'fixed', zIndex: Z_OVERLAY, ...pos }}
+              style={{ position: 'fixed', zIndex: Z_PICKER, ...pos }}
               // The menu sits inside the row in the React tree: keep its
               // clicks away from the row's onClick.
               onClick={(e) => e.stopPropagation()}

@@ -20,6 +20,9 @@ export interface RenderLinkArgs {
   className?: string | undefined;
   style?: CSSProperties | undefined;
   title?: string | undefined;
+  /** ARIA role for the link, e.g. "menuitem" inside the row ⋯ menu. Spread
+   *  into `<Link {...p} />` it lands on the rendered <a>. */
+  role?: string | undefined;
   /**
    * The caller's own side effect (close a menu, log the jump). Spread into
    * `<Link {...p} />` it runs alongside the navigation rather than instead of
@@ -40,6 +43,8 @@ export interface LinkSlotProps {
   className?: string | undefined;
   style?: CSSProperties | undefined;
   title?: string | undefined;
+  /** ARIA role, passed to whichever element the slot renders. */
+  role?: string | undefined;
   /**
    * Strip the UA button chrome when this slot falls back to a <button>.
    *
@@ -76,16 +81,26 @@ export function LinkSlot({
   className,
   style,
   title,
+  role,
   buttonReset = true,
   children,
 }: LinkSlotProps): React.JSX.Element {
   if (to && renderLink) {
-    return <>{renderLink({ to, className, style, title, onClick, children })}</>;
+    return (
+      <>
+        {renderLink(
+          role === undefined
+            ? { to, className, style, title, onClick, children }
+            : { to, className, style, title, role, onClick, children },
+        )}
+      </>
+    );
   }
   if (to) {
     return (
       <a
         href={to}
+        role={role}
         className={className}
         style={style}
         title={title}
@@ -112,6 +127,7 @@ export function LinkSlot({
     return (
       <button
         type="button"
+        role={role}
         className={className}
         style={buttonReset ? { ...BUTTON_RESET, ...style } : style}
         title={title}
@@ -122,7 +138,7 @@ export function LinkSlot({
     );
   }
   return (
-    <div className={className} style={style} title={title}>
+    <div className={className} style={style} title={title} role={role}>
       {children}
     </div>
   );

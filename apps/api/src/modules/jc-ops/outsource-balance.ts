@@ -26,6 +26,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { items, jcOps, jobCards, purchaseRequests, runningOps, vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import {
   AuthorizationError,
   ConflictError,
@@ -254,6 +255,9 @@ export async function outsourceOpBalance(
       })
       .where(eq(jcOps.id, op.id));
 
+    // Pick the PR number under the series lock, so two raises at once
+    // cannot read the same last code (lib/doc-series-lock).
+    await lockDocSeries(tx, companyId, 'purchase_requests');
     const prCode = await nextSeriesCode(tx, 'pr', companyId, 'IN-JWPR-');
 
     // Raise the jw_osp PR via the shared create path, in THIS transaction.

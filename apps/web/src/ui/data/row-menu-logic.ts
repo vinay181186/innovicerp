@@ -71,49 +71,69 @@ export interface MenuPlacement {
 
 export const MENU_GAP = 4;
 export const MENU_EDGE = 8;
-const MIN_HEIGHT = 120;
 
 /**
  * Right edge on the button's right edge, under it — or above it when the
  * room below is too small and there is more room above. Always inside the
- * viewport (same rule as the Columns popover in TableToolbar.tsx).
+ * viewport (same rule as the Columns popover in TableToolbar.tsx): the max
+ * height never exceeds the room on the chosen side, so the menu scrolls
+ * inside rather than running off the screen.
+ *
+ * Returns null when the ⋯ button has left the viewport (the row scrolled
+ * away): the caller then closes the menu instead of pinning it to an edge.
  */
 export function placeRowMenu(
   btn: Rect,
   menu: { width: number; height: number },
   viewport: { width: number; height: number },
-): MenuPlacement {
-  const below = viewport.height - btn.bottom - MENU_GAP - MENU_EDGE;
-  const above = btn.top - MENU_GAP - MENU_EDGE;
+): MenuPlacement | null {
+  // Wholly past an edge (strict, so an unlaid-out 0×0 rect still places).
+  const gone =
+    btn.bottom < 0 || btn.top > viewport.height || btn.right < 0 || btn.left > viewport.width;
+  if (gone) return null;
+  const below = Math.max(0, viewport.height - btn.bottom - MENU_GAP - MENU_EDGE);
+  const above = Math.max(0, btn.top - MENU_GAP - MENU_EDGE);
   const maxLeft = viewport.width - menu.width - MENU_EDGE;
   const left = Math.max(MENU_EDGE, Math.min(btn.right - menu.width, maxLeft));
   if (menu.height <= below || below >= above) {
-    return { left, top: btn.bottom + MENU_GAP, maxHeight: Math.max(MIN_HEIGHT, below) };
+    return { left, top: btn.bottom + MENU_GAP, maxHeight: below };
   }
   const h = Math.min(menu.height, above);
-  return {
-    left,
-    top: Math.max(MENU_EDGE, btn.top - MENU_GAP - h),
-    maxHeight: Math.max(MIN_HEIGHT, above),
-  };
+  return { left, top: Math.max(MENU_EDGE, btn.top - MENU_GAP - h), maxHeight: above };
 }
 
 /**
- * Where a key moves the focus among `count` items: ↓ / ↑ wrap round, Home is
- * the first, End the last. `current` -1 = nothing focused yet. Returns null
- * for any other key (the caller then leaves the event alone).
+ * Where a key moves the focus among `count` items: ↓ / ↑ wrap round and skip
+ * the greyed-out items (`disabled[i]` true), Home is the first enabled item,
+ * End the last. `current` -1 = nothing focused yet. Returns null for any
+ * other key (the caller then leaves the event alone) or when no item is
+ * enabled.
  */
-export function nextMenuIndex(current: number, key: string, count: number): number | null {
+export function nextMenuIndex(
+  current: number,
+  key: string,
+  count: number,
+  disabled: readonly boolean[] = [],
+): number | null {
   if (count <= 0) return null;
+  const ok = (i: number) => !disabled[i];
+  // Walk from `start` in `step` direction, wrapping, until an enabled item.
+  const seek = (start: number, step: 1 | -1): number | null => {
+    for (let n = 0; n < count; n += 1) {
+      const i = (((start + step * n) % count) + count) % count;
+      if (ok(i)) return i;
+    }
+    return null;
+  };
   switch (key) {
     case 'ArrowDown':
-      return current < 0 ? 0 : (current + 1) % count;
+      return seek(current < 0 ? 0 : current + 1, 1);
     case 'ArrowUp':
-      return current < 0 ? count - 1 : (current - 1 + count) % count;
+      return seek(current < 0 ? count - 1 : current - 1, -1);
     case 'Home':
-      return 0;
+      return seek(0, 1);
     case 'End':
-      return count - 1;
+      return seek(count - 1, -1);
     default:
       return null;
   }

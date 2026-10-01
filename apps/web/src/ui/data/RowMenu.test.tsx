@@ -88,6 +88,77 @@ describe('RowMenu', () => {
     expect(document.activeElement).toBe(btn);
   });
 
+  it('clears busy and reports a rejected Promise action', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let fail: (e: Error) => void = () => undefined;
+    const slow = vi.fn(() => new Promise<void>((_, rej) => (fail = rej)));
+    inRow([{ key: 'x', label: 'Approve', onSelect: slow }]);
+    const btn = screen.getByRole('button', { name: 'Actions' });
+    fireEvent.click(btn);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Approve' }));
+    expect(btn.getAttribute('aria-busy')).toBe('true');
+    await act(async () => fail(new Error('boom')));
+    expect(btn.getAttribute('aria-busy')).toBeNull();
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('catches an action that throws', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    inRow([
+      {
+        key: 'x',
+        label: 'Boom',
+        onSelect: () => {
+          throw new Error('boom');
+        },
+      },
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Boom' }));
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('gives a renderLink item the menuitem role', () => {
+    render(
+      <RowMenu
+        items={[{ key: 'v', label: 'View', to: '/x/1' }]}
+        renderLink={(p) => (
+          <a href={p.to} role={p.role} className={p.className}>
+            {p.children}
+          </a>
+        )}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+    expect(screen.getByRole('menuitem', { name: 'View' }).getAttribute('href')).toBe('/x/1');
+  });
+
+  it('skips a greyed item with the arrows', () => {
+    inRow([
+      { key: 'a', label: 'A' },
+      { key: 'b', label: 'B', disabledReason: 'No' },
+      { key: 'c', label: 'C' },
+    ]);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Actions' }), { key: 'ArrowDown' });
+    const menu = screen.getByRole('menu');
+    expect(document.activeElement?.textContent).toBe('A');
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(document.activeElement?.textContent).toBe('C');
+  });
+
+  it('keeps Escape away from listeners outside the menu (a Modal)', () => {
+    const outer = vi.fn();
+    document.addEventListener('keydown', outer, true);
+    inRow([{ key: 'a', label: 'A' }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(outer).not.toHaveBeenCalled();
+    document.removeEventListener('keydown', outer, true);
+  });
+
   it('renders nothing when every item is hidden', () => {
     const { container } = render(<RowMenu items={[{ key: 'a', label: 'A', hidden: true }]} />);
     expect(container.innerHTML).toBe('');
