@@ -78,6 +78,18 @@ export const TABLE_KEYS = {
   soCosting: 'so-costing',
   soCycleTime: 'so-cycle-time',
   stockValuation: 'stock-valuation',
+
+  // ADR-199 conversions — Production (batch PR)
+  productionOrders: 'production-orders',
+  jobQueue: 'job-queue',
+  machineLoading: 'machine-loading',
+  dailyReport: 'daily-report',
+  opEntryShopFloor: 'op-entry-shop-floor',
+  runningOps: 'running-ops',
+  prodDashboardReady: 'prod-dashboard-ready',
+  machineGroups: 'machine-groups',
+  rawMaterialGrade: 'raw-material-grade',
+  rawMaterialSize: 'raw-material-size',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];
