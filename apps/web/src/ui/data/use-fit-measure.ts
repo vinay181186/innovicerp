@@ -141,7 +141,14 @@ export function useFitMeasure<T>({
   }, []);
 
   const [measured, setMeasured] = useState<Measured | null>(null);
+  // Which measurement input the last measure ran for. The overflow check is
+  // only trusted once the measurer has caught up with the CURRENT input —
+  // otherwise the first draw after new rows (still on old widths) would spend
+  // the one allowed re-measure before late content (a Close button) arrives.
+  const sigRef = useRef('');
+  const measuredFor = useRef('');
   const onMeasured = useCallback((m: Measured) => {
+    measuredFor.current = sigRef.current;
     setMeasured((prev) => (sameMeasured(prev, m) ? prev : m));
   }, []);
 
@@ -171,11 +178,13 @@ export function useFitMeasure<T>({
   const [nonce, setNonce] = useState(0);
   const nonceFor = useRef('');
   const requestRemeasure = useCallback(() => {
+    if (measuredFor.current !== sigRef.current) return; // not measured for this input yet
     if (nonceFor.current === baseSignature) return;
     nonceFor.current = baseSignature;
     setNonce((n) => n + 1);
   }, [baseSignature]);
   const signature = `${baseSignature}§${nonce}`;
+  sigRef.current = signature;
 
   const widths = useMemo(() => {
     if (!measured) return null;
