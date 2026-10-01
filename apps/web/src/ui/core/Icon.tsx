@@ -23,11 +23,13 @@ import {
   Eye,
   KeyRound,
   Loader2,
+  Lock,
   LogOut,
   type LucideIcon,
   Package,
   Paperclip,
   Pencil,
+  Play,
   Plus,
   Printer,
   RefreshCw,
@@ -35,6 +37,7 @@ import {
   Settings,
   Square,
   Trash2,
+  Truck,
   Upload,
   UserRound,
   X,
@@ -66,7 +69,13 @@ export type IconName =
   | 'square'
   | 'user-round'
   | 'paperclip'
-  | 'loader-2';
+  | 'loader-2'
+  /** Start Operation (JC Ops row menu). */
+  | 'play'
+  /** Outsource / send to vendor (JC Ops row menu). */
+  | 'truck'
+  /** Access rights (Users row menu). */
+  | 'lock';
 
 const GLYPHS: Record<IconName, LucideIcon> = {
   search: Search,
@@ -93,6 +102,9 @@ const GLYPHS: Record<IconName, LucideIcon> = {
   'user-round': UserRound,
   paperclip: Paperclip,
   'loader-2': Loader2,
+  play: Play,
+  truck: Truck,
+  lock: Lock,
 };
 
 /** Every name the Icon set carries — for the UI kit and for exhaustiveness checks. */

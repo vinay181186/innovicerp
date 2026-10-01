@@ -1,0 +1,95 @@
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { RowMenu } from './RowMenu';
+import type { RowMenuItem } from './row-menu-logic';
+
+function inRow(items: RowMenuItem[], onRow = vi.fn()) {
+  render(
+    <table>
+      <tbody>
+        <tr onClick={onRow}>
+          <td>
+            <RowMenu items={items} />
+          </td>
+        </tr>
+      </tbody>
+    </table>,
+  );
+  return onRow;
+}
+
+describe('RowMenu', () => {
+  it('opens on click, runs an item, closes, and never fires the row click', () => {
+    const edit = vi.fn();
+    const onRow = inRow([{ key: 'edit', label: 'Edit', onSelect: edit }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    expect(edit).toHaveBeenCalledTimes(1);
+    expect(onRow).not.toHaveBeenCalled();
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('shows a greyed item with its reason and does not run it', () => {
+    const del = vi.fn();
+    inRow([
+      { key: 'edit', label: 'Edit' },
+      { key: 'del', label: 'Delete', group: 'danger', onSelect: del, disabledReason: 'Closed' },
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+    const item = screen.getByRole('menuitem', { name: /Delete/ });
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    expect(item.textContent).toContain('Closed');
+    fireEvent.click(item);
+    expect(del).not.toHaveBeenCalled();
+    expect(screen.getByRole('menu')).toBeTruthy();
+  });
+
+  it('stays busy while a Promise action runs', async () => {
+    let finish: () => void = () => undefined;
+    const slow = vi.fn(() => new Promise<void>((r) => (finish = r)));
+    inRow([{ key: 'xls', label: 'Download Excel', onSelect: slow }]);
+    const btn = screen.getByRole('button', { name: 'Actions' });
+    fireEvent.click(btn);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Download Excel' }));
+    expect(btn.getAttribute('aria-busy')).toBe('true');
+    fireEvent.click(btn);
+    expect(screen.queryByRole('menu')).toBeNull();
+    await act(async () => finish());
+    expect(btn.getAttribute('aria-busy')).toBeNull();
+  });
+
+  it('keeps only one row menu open at a time', () => {
+    render(
+      <>
+        <RowMenu label="Row 1" items={[{ key: 'a', label: 'A' }]} />
+        <RowMenu label="Row 2" items={[{ key: 'b', label: 'B' }]} />
+      </>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Row 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Row 2' }));
+    expect(screen.getAllByRole('menu')).toHaveLength(1);
+    expect(screen.getByRole('menuitem', { name: 'B' })).toBeTruthy();
+  });
+
+  it('moves with the arrow keys and closes on Escape, focus back on ⋯', () => {
+    inRow([
+      { key: 'a', label: 'A' },
+      { key: 'b', label: 'B' },
+    ]);
+    const btn = screen.getByRole('button', { name: 'Actions' });
+    fireEvent.keyDown(btn, { key: 'ArrowDown' });
+    const menu = screen.getByRole('menu');
+    expect(document.activeElement?.textContent).toBe('A');
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(document.activeElement?.textContent).toBe('B');
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(btn);
+  });
+
+  it('renders nothing when every item is hidden', () => {
+    const { container } = render(<RowMenu items={[{ key: 'a', label: 'A', hidden: true }]} />);
+    expect(container.innerHTML).toBe('');
+  });
+});

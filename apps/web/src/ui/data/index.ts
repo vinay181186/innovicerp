@@ -22,3 +22,5 @@ export * from './Skeleton';
 export * from './SortHeader';
 export * from './StatStrip';
 export * from './Timeline';
+// ⋯ row-action menu (owner-approved spec 2026-10-01).
+export * from './RowMenu';
