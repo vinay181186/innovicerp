@@ -27,9 +27,10 @@
 // row click -> detail, Item Code -> detail, the thumbnail's own click (the
 // picture opens large; it never opens the row).
 //
-// The Item column is the shared <ItemBadge> (user decision 2026-09-21) with the
-// picture in its OWN column before it (user decision 2026-09-22). It stays the
-// APP badge from components/shared/item-badge, not ui/data's pure one: this
+// Item Code and Item Name are separate one-line columns (ADR-199 table
+// standard, 2026-10-01 — replaced the stacked <ItemBadge> cell), with the
+// picture in its OWN column before them (user decision 2026-09-22). The
+// picture is the APP ItemImageBox from components/shared/item-badge: this
 // list has a storage path, and resolving it to a signed URL plus owning the
 // preview modal is exactly what the app wrapper does.
 //
@@ -57,7 +58,6 @@ import {
   ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPES,
   ITEM_TYPE_RULES,
-  type Item,
   type ItemProcurementType,
   type ItemType,
   type ListItemsQuery,
@@ -65,13 +65,14 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { ItemBadge, ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Badge, Button, Icon, Tag } from '@/ui/core';
-import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { Button, Icon } from '@/ui/core';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { itemListColumns } from '../components/item-list-columns';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
@@ -195,104 +196,7 @@ function ItemsListPage(): React.JSX.Element {
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
 
-  // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+8+22+24+15+7+9 = 89, + 11 = 100, so the
-  // table never scrolls sideways. Centred by the standard; only the item code ·
-  // name is left-aligned, so the code starts at the same x in every row.
-  const columns = useMemo<DataTableColumn<Item>[]>(
-    () => [
-      { header: 'Sr No', width: '4%', className: 'text3', render: (_it, i) => i + 1 },
-      {
-        header: 'Thumbnail',
-        width: THUMBNAIL_COL_WIDTH,
-        // The picture fills the cell edge to edge, the gridlines being its
-        // frame (user decision 2026-09-22). The negative margins cancel the
-        // sheet's own cell padding (--sp-1 --sp-2) so the box reaches the
-        // rules; `position: relative` is what `fill` pins itself to.
-        // `stopRowClick` is NOT set: ItemImageBox already stops its own click,
-        // and a dead cell around it should still open the row like any other.
-        render: (it) => (
-          <div
-            style={{
-              position: 'relative',
-              height: 40,
-              margin: 'calc(var(--sp-1) * -1) calc(var(--sp-2) * -1)',
-            }}
-          >
-            <ItemImageBox imagePath={it.imagePath} size="row" alt={it.name} fill />
-          </div>
-        ),
-      },
-      {
-        header: 'Item Code · Name',
-        width: '22%',
-        align: 'left',
-        render: (it) => (
-          // No item-level revision here, deliberately (see the header comment):
-          // the badge gets the bare code, never `items.revision`. The picture
-          // is the column to the left, so the badge is text only.
-          <ItemBadge
-            size="row"
-            showImage={false}
-            code={it.code}
-            name={it.name}
-            imagePath={it.imagePath}
-            codeColor="var(--text)"
-            nameMaxWidth="none"
-            renderCode={(text) => (
-              // A real link, so the code can be ctrl/middle-clicked into a new
-              // tab. stopPropagation sits on the link so clicking the rest of
-              // the cell still opens the row, exactly as before.
-              <Link
-                to="/items/$id"
-                params={{ id: it.id }}
-                className="td-code fw-700"
-                style={{ color: 'var(--text)', textDecoration: 'none' }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {text}
-              </Link>
-            )}
-          />
-        ),
-      },
-      // Description / Material are free text — clip at the column edge rather
-      // than wrap, full value on hover (styling skill Rule 1's exception).
-      {
-        header: 'Description',
-        width: '24%',
-        className: 'text2',
-        ellipsis: true,
-        render: (it) => it.description ?? '—',
-        title: (it) => it.description ?? '',
-      },
-      {
-        header: 'Material',
-        width: '15%',
-        ellipsis: true,
-        render: (it) => it.material ?? '—',
-        title: (it) => it.material ?? '',
-      },
-      {
-        header: 'UOM',
-        width: '7%',
-        nowrap: true,
-        render: (it) => <Tag tone="neutral">{it.uom}</Tag>,
-      },
-      {
-        header: 'Make / Buy',
-        width: '9%',
-        nowrap: true,
-        // ADR-171 — Buy stands out (blue), Make is the quiet default.
-        render: (it) => (
-          <Badge tone={it.procurementType === 'buy' ? 'blue' : 'grey'}>
-            {ITEM_PROCUREMENT_TYPE_LABEL[it.procurementType]}
-          </Badge>
-        ),
-      },
-    ],
-    [],
-  );
+  const columns = useMemo(() => itemListColumns(), []);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -389,6 +293,7 @@ function ItemsListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.itemsList}
             columns={columns}
             rows={rows}
             loading={isLoading}

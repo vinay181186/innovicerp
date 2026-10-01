@@ -9,6 +9,33 @@
 // A title the page wrote itself is never touched.
 
 const MARK = 'data-auto-title';
+/** The fit table's ▸ row toggle (ui/data/FitDataTable) — a control, but not
+ *  one that makes the cell's text meaningless as a tooltip. */
+const TOGGLE = '.dt-exp';
+const CONTROLS = 'input, select, textarea, button';
+
+/** Is the cell's text cut — on the cell itself, or on an inner element that
+ *  does its own ellipsis (a fit-table `.dt-cell`, a badge's name span…)? */
+function isCut(td: HTMLElement): boolean {
+  if (td.scrollWidth > td.clientWidth) return true;
+  const inner = td.querySelectorAll<HTMLElement>('.dt-cell, span, div');
+  for (let i = 0; i < inner.length && i < 20; i += 1) {
+    const el = inner[i];
+    if (el && el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === 'ellipsis')
+      return true;
+  }
+  return false;
+}
+
+/** The cell's text without the ▸ toggle's glyph. */
+function cellText(td: HTMLElement): string {
+  let text = '';
+  td.childNodes.forEach((n) => {
+    if (n instanceof Element && n.matches(TOGGLE)) return;
+    text += n.textContent ?? '';
+  });
+  return text.replace(/\s+/g, ' ').trim();
+}
 
 function onMouseOver(e: MouseEvent): void {
   const target = e.target;
@@ -16,14 +43,16 @@ function onMouseOver(e: MouseEvent): void {
   const td = target.closest('td');
   if (!td || td.hasAttribute('colspan') || !td.closest('.innovic-table')) return;
   // A cell holding controls is allowed to spill over, and its text would be
-  // every <option> / button label run together — never a useful tooltip.
-  if (td.querySelector('input, select, textarea, button')) return;
+  // every <option> / button label run together — never a useful tooltip. The
+  // fit table's ▸ toggle does not count: column 0 still gets its tooltip.
+  const controls = td.querySelectorAll(CONTROLS);
+  for (const c of controls) if (!c.matches(TOGGLE)) return;
 
   const ours = td.hasAttribute(MARK);
   if (td.hasAttribute('title') && !ours) return;
 
-  if (td.scrollWidth > td.clientWidth) {
-    const text = (td.textContent ?? '').replace(/\s+/g, ' ').trim();
+  if (isCut(td)) {
+    const text = cellText(td);
     if (text) {
       td.setAttribute('title', text);
       td.setAttribute(MARK, '');

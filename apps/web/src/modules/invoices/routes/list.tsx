@@ -18,6 +18,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { DataTable, StatStrip, type DataTableColumn, type StatStripItem } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useInvoiceList } from '../api';
@@ -157,6 +158,7 @@ function InvoiceListPage(): React.JSX.Element {
     ? []
     : [
         {
+          id: 'grand_total',
           header: 'Grand Total',
           width: '9%',
           align: 'right',
@@ -167,6 +169,7 @@ function InvoiceListPage(): React.JSX.Element {
           ),
         },
         {
+          id: 'paid_amount',
           header: 'Paid',
           width: '8%',
           align: 'right',
@@ -175,6 +178,7 @@ function InvoiceListPage(): React.JSX.Element {
           render: (inv) => <span style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</span>,
         },
         {
+          id: 'outstanding_amount',
           header: 'Outstanding Amount',
           width: '9%',
           align: 'right',
@@ -190,6 +194,7 @@ function InvoiceListPage(): React.JSX.Element {
 
   const columns: DataTableColumn<InvoiceListRow>[] = [
     {
+      id: 'code',
       header: 'Invoice No.',
       width: priceHidden ? '15%' : '12%',
       className: 'td-code',
@@ -207,12 +212,15 @@ function InvoiceListPage(): React.JSX.Element {
       ),
     },
     {
+      id: 'invoice_date',
+      kind: 'date',
       header: 'Invoice Date',
       width: priceHidden ? '11%' : '8%',
       nowrap: true,
       render: (inv) => fmtDate(inv.invoiceDate),
     },
     {
+      id: 'so_code',
       header: 'SO No.',
       width: priceHidden ? '12%' : '9%',
       className: 'td-code',
@@ -220,6 +228,7 @@ function InvoiceListPage(): React.JSX.Element {
       key: 'soCode',
     },
     {
+      id: 'customer',
       header: 'Customer',
       width: priceHidden ? '31%' : '17%',
       align: 'left',
@@ -229,6 +238,8 @@ function InvoiceListPage(): React.JSX.Element {
     },
     ...moneyColumns,
     {
+      id: 'status',
+      kind: 'badge',
       header: 'Invoice Status',
       width: priceHidden ? '13%' : '11%',
       nowrap: true,
@@ -254,6 +265,8 @@ function InvoiceListPage(): React.JSX.Element {
       ),
     },
     {
+      id: 'due_date',
+      kind: 'date',
       header: 'Due Date',
       width: priceHidden ? '8%' : '7%',
       nowrap: true,
@@ -293,6 +306,7 @@ function InvoiceListPage(): React.JSX.Element {
         <>
           <div className="panel">
             <DataTable
+              tableKey={TABLE_KEYS.invoicesList}
               columns={columns}
               rows={data?.invoices ?? []}
               loading={isLoading}

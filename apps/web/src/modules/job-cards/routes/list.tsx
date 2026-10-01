@@ -56,7 +56,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
-import { ItemBadge, ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
+import { ItemBadge } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
@@ -66,13 +66,15 @@ import { useOperatorsList } from '@/modules/operators/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Badge, StatusBadge } from '@/ui/core';
-import { DataTable, Panel, ProgressBar, QtyStrip, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, ProgressBar, QtyStrip } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Input, Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions, ViewToggle } from '@/ui/layout';
 import { useDeleteJobCard, useJobCardsList } from '../api';
 import { ExcelJcButton } from '../components/excel-jc-button';
 import { JC_STATUS_LABEL } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
+import { jobCardListColumns, sourceRoute } from '../components/jc-list-columns';
 
 // One fetch, cap 200 (mirrors the SO/WO list).
 const LIST_LIMIT = 200;
@@ -104,40 +106,6 @@ function isOverdueJc(jc: JobCardListItem, today: string): boolean {
     jc.computedStatus !== 'closed' &&
     jc.computedStatus !== 'complete'
   );
-}
-
-/** A job is "done" when it has reached complete or closed — the Days Left
- *  column's rule. */
-function isDone(jc: JobCardListItem): boolean {
-  return jc.computedStatus === 'complete' || jc.computedStatus === 'closed';
-}
-
-/** Days from today until the due date (negative = late). null when there is no
- *  due date or the job is already done, so the column shows "—" instead of a
- *  meaningless countdown. */
-function daysLeftFor(jc: JobCardListItem, today: string): number | null {
-  if (jc.dueDate == null || isDone(jc)) return null;
-  const ms = Date.parse(jc.dueDate) - Date.parse(today);
-  return Math.round(ms / 86_400_000);
-}
-
-/** The Days Left colour — late red, due within the working week amber, else
- *  green; muted when there is nothing to count down to. */
-function daysLeftColor(days: number | null): string {
-  if (days == null) return 'var(--text3)';
-  if (days < 0) return 'var(--red)';
-  if (days <= 5) return 'var(--amber)';
-  return 'var(--green)';
-}
-
-/** Where a job card's source document lives — the SO / JWSO link in the row. */
-function sourceRoute(link: NonNullable<JobCardListItem['sourceLink']>): {
-  to: '/sales-orders/$id' | '/job-work-orders/$id';
-  id: string;
-} {
-  return link.type === 'so'
-    ? { to: '/sales-orders/$id', id: link.salesOrderId }
-    : { to: '/job-work-orders/$id', id: link.jobWorkOrderId };
 }
 
 const listSearchSchema = z.object({
@@ -385,211 +353,8 @@ function JobCardsListPage(): React.JSX.Element {
     />
   );
 
-  // The sheet's columns. The sheet lays out AUTO (2026-09-26, the owner's
-  // "overflowing text" on this list), so there are no % widths any more except
-  // the two fixed-content columns (Sr No, Thumbnail): every short value — JC
-  // No., SO No., qty, status, dates, days left — sits on ONE line and sizes its
-  // own column, and only the item NAME wraps, taking whatever width is left.
-  // Centred by the standard; only the item code · name is left-aligned, so the
-  // code starts at the same x in every row.
-  const columns = useMemo<DataTableColumn<JobCardListItem>[]>(
-    () => [
-      {
-        header: 'Sr No',
-        width: '4%',
-        className: 'text3',
-        render: (_jc, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
-      },
-      {
-        header: 'JC No.',
-        nowrap: true,
-        render: (jc) => (
-          <Link
-            to="/job-cards/$id"
-            params={{ id: jc.id }}
-            className="td-code"
-            style={{ color: 'var(--blue)', fontWeight: 800 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {jc.code}
-          </Link>
-        ),
-      },
-      {
-        header: 'Image',
-        width: THUMBNAIL_COL_WIDTH,
-        // The picture fills the cell edge to edge, the gridlines being its
-        // frame (user decision 2026-09-22 — the thumbnail column sits before
-        // the item code · name on every list). The negative margins cancel the
-        // sheet's own cell padding so the box reaches the rules;
-        // `position: relative` is what `fill` pins itself to. ItemImageBox
-        // stops its own click, so opening the picture never opens the row.
-        render: (jc) => (
-          <div
-            style={{
-              position: 'relative',
-              height: 40,
-              margin: 'calc(var(--sp-1) * -1) calc(var(--sp-2) * -1)',
-            }}
-          >
-            <ItemImageBox
-              imagePath={jc.itemImagePath}
-              size="row"
-              alt={jc.itemName || itemCodeWithRev(jc.itemCode, jc.itemRevision)}
-              fill
-            />
-          </div>
-        ),
-      },
-      {
-        // The CUSTOMER's PO line no. (never our SO line no.), beside CODE/REV.
-        header: 'POL',
-        width: '4%',
-        nowrap: true,
-        render: (jc) =>
-          jc.clientPoLineNo ? (
-            <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-              {jc.clientPoLineNo}
-            </span>
-          ) : (
-            <span className="text3">—</span>
-          ),
-      },
-      {
-        header: 'Item Code',
-        align: 'left',
-        // CODE/REV + name, text only — the picture is the column to the left.
-        // The revision is the customer's drawing revision off the SO line
-        // (null → the bare code, never a trailing slash). Drawn here rather
-        // than with <ItemBadge size="row">, whose name line is one clipped
-        // line: on this list the code stays on one line and the NAME wraps,
-        // so a long part name never pushes the sheet wider than the screen.
-        render: (jc) => {
-          const codeText = itemCodeWithRev(jc.itemCode, jc.itemRevision);
-          return (
-            <div style={{ textAlign: 'left', minWidth: 140 }}>
-              <div
-                className="mono fw-700"
-                style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}
-                title={codeText}
-              >
-                {codeText}
-              </div>
-              <div className="text2" style={{ fontSize: 'var(--fs-xs)', lineHeight: 1.25 }}>
-                {jc.itemName?.trim() || '—'}
-              </div>
-            </div>
-          );
-        },
-      },
-      {
-        header: 'SO / JWSO No.',
-        nowrap: true,
-        render: (jc) => {
-          const s = jc.sourceLink;
-          if (!s) return <span className="text3">—</span>;
-          const route = sourceRoute(s);
-          return (
-            <Link
-              to={route.to}
-              params={{ id: route.id }}
-              className="mono"
-              style={{
-                fontSize: 'var(--fs-xs)',
-                color: 'var(--blue)',
-                textDecoration: 'none',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {s.code}
-              {s.lineNo !== 1 ? <span>/{s.lineNo}</span> : null}
-            </Link>
-          );
-        },
-      },
-      {
-        header: 'Order Qty',
-        align: 'right',
-        nowrap: true,
-        render: (jc) => (
-          <>
-            <span className="mono fw-700">{jc.orderQty}</span>{' '}
-            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-              Nos
-            </span>
-          </>
-        ),
-      },
-      {
-        header: 'Progress',
-        // Completed pieces at the LAST operation over the order qty — the
-        // same figure the card view's Completed box shows.
-        render: (jc) => {
-          const done = jc.lastOpCompletedQty;
-          const pct = jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
-          return (
-            <>
-              <ProgressBar
-                value={pct}
-                color="var(--green)"
-                label={`${done} of ${jc.orderQty} Completed`}
-              />
-              <div
-                className="mono text3"
-                style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
-              >
-                {done} / {jc.orderQty} · {pct}%
-              </div>
-            </>
-          );
-        },
-      },
-      {
-        header: 'JC Status',
-        nowrap: true,
-        render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} />,
-      },
-      {
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (jc) => fmtDate(jc.jcDate),
-      },
-      {
-        header: 'Due Date',
-        className: 'mono',
-        nowrap: true,
-        render: (jc) => (
-          <>
-            {fmtDate(jc.dueDate)}
-            {/* The plan's Customer Dispatch Date under the due date — a second
-                line, not a column, so the sheet stays one column narrower. */}
-            {jc.customerDispatchDate ? (
-              <div
-                className="text3"
-                style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
-                title="Customer Dispatch Date (from the plan)"
-              >
-                Dispatch {fmtDate(jc.customerDispatchDate)}
-              </div>
-            ) : null}
-          </>
-        ),
-      },
-      {
-        header: 'Days Left',
-        align: 'right',
-        nowrap: true,
-        render: (jc) => {
-          const dLeft = daysLeftFor(jc, today);
-          return (
-            <span className="mono fw-700" style={{ color: daysLeftColor(dLeft) }}>
-              {dLeft == null ? '—' : dLeft}
-            </span>
-          );
-        },
-      },
-    ],
+  const columns = useMemo(
+    () => jobCardListColumns((currentPage - 1) * PAGE_SIZE + 1, today),
     [currentPage, today],
   );
 
@@ -721,6 +486,7 @@ function JobCardsListPage(): React.JSX.Element {
         // ── LIST VIEW (the ruled sheet) ──────────────────────────────────────
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.jobCardsList}
             columns={columns}
             rows={pagedRows}
             loading={isLoading}

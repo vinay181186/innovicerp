@@ -45,6 +45,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useCostCentersList, useSoftDeleteCostCenter } from '../api';
@@ -129,6 +130,7 @@ function CostCentersListPage(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<CostCenter>[]>(
     () => [
       {
+        id: 'code',
         header: 'Cost Centre Code',
         width: '11%',
         nowrap: true,
@@ -149,6 +151,7 @@ function CostCentersListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'name',
         header: 'Cost Centre Name',
         width: '27%',
         align: 'left',
@@ -157,16 +160,19 @@ function CostCentersListPage(): React.JSX.Element {
         key: 'name',
       },
       {
+        id: 'department',
         header: 'Department',
         width: '12%',
         render: (cc) => cc.department ?? '—',
       },
       {
+        id: 'type',
         header: 'Cost Centre Type',
         width: '10%',
         render: (cc) => cc.type ?? '—',
       },
       {
+        id: 'description',
         header: 'Description',
         width: '20%',
         className: 'text3',
@@ -175,6 +181,8 @@ function CostCentersListPage(): React.JSX.Element {
         title: (cc) => cc.description ?? '',
       },
       {
+        id: 'is_active',
+        kind: 'badge',
         header: 'Active',
         width: '10%',
         nowrap: true,
@@ -313,6 +321,7 @@ function CostCentersListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.costCentersList}
             columns={columns}
             rows={rows}
             loading={isLoading}

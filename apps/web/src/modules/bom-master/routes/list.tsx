@@ -2,8 +2,9 @@
 //
 // PHASE 4 — composed exactly like the reference list
 // (modules/clients/routes/list.tsx), with the one thing this screen adds:
-// the ▸ chevron on the BOM No. still reveals the part list IN PLACE, right
-// under the row (legacy UX), while the row itself opens the detail page.
+// the row's ▸ (the fit table's one expand control, ADR-199) still reveals the
+// part list IN PLACE, right under the row (legacy UX), while the row itself
+// opens the detail page.
 //
 //   <ListHeader>            title · count · ⟳ Updating… · + New BOM; filter bar:
 //                           SearchInput · BOM Status dropdown (All | Draft |
@@ -26,17 +27,18 @@
 // param the query reads, row click -> detail, BOM No. -> detail, and the
 // lazily-fetched part list (one detail request per OPENED row, not per row).
 
-import type { BomMasterListItem, BomStatus } from '@innovic/shared';
+import type { BomStatus } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
 import { statusText } from '@/lib/status-text';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Icon, StatusBadge } from '@/ui/core';
+import { Icon } from '@/ui/core';
+import { bomListColumns } from '../components/bom-list-columns';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useBomMaster, useBomMastersList } from '../api';
@@ -105,134 +107,7 @@ function BomMastersListPage(): React.JSX.Element {
     });
   }, []);
 
-  // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
-  // only Sr No keeps a width; codes, revs, dates and counts sit on one line
-  // and the BOM name / parent item name wrap into what is left. Centred by the
-  // standard; BOM Name and Parent Item read from their left edge.
-  const columns = useMemo<DataTableColumn<BomMasterListItem>[]>(
-    () => [
-      {
-        header: 'Sr No',
-        width: '4%',
-        className: 'text3',
-        align: 'right',
-        render: (_b, i) => i + 1,
-      },
-      {
-        header: 'BOM No.',
-        nowrap: true,
-        render: (b) => (
-          <span style={{ whiteSpace: 'nowrap' }}>
-            {/* ▸ / ▾ opens the part list in place; the row itself navigates. */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpand(b.id);
-              }}
-              title={expanded.has(b.id) ? 'Hide part list' : 'Show part list'}
-              aria-expanded={expanded.has(b.id)}
-              style={{
-                background: 'none',
-                border: 0,
-                padding: 0,
-                marginRight: 'var(--sp-0)',
-                cursor: 'pointer',
-                color: 'var(--blue)',
-                display: 'inline-flex',
-                verticalAlign: 'middle',
-              }}
-            >
-              <Icon name={expanded.has(b.id) ? 'chevron-down' : 'chevron-right'} size={14} />
-            </button>
-            <Link
-              to="/bom-masters/$id"
-              params={{ id: b.id }}
-              className="td-code"
-              title="Open this BOM"
-              // stopPropagation sits on the two controls, not on the cell, so
-              // clicking the rest of the cell still opens the row — exactly as
-              // before.
-              onClick={(e) => e.stopPropagation()}
-            >
-              {b.bomNo}
-            </Link>
-          </span>
-        ),
-      },
-      {
-        header: 'BOM Name',
-        align: 'left',
-        className: 'fw-700',
-        key: 'bomName',
-      },
-      {
-        header: 'Parent Item',
-        align: 'left',
-        title: (b) =>
-          b.parentItemCode ? `${b.parentItemCode} — ${b.parentItemName ?? ''}` : 'not set',
-        // Item code strong, name quiet: the code is the value on this row.
-        render: (b) =>
-          b.parentItemCode ? (
-            <>
-              <div className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                {b.parentItemCode}
-              </div>
-              {b.parentItemName ? (
-                <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                  {b.parentItemName}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <span style={{ color: 'var(--amber2)' }}>not set</span>
-          ),
-      },
-      {
-        header: 'Items',
-        align: 'right',
-        className: 'mono fw-700',
-        nowrap: true,
-        render: (b) => <span style={{ color: 'var(--purple)' }}>{b.lineCount}</span>,
-      },
-      {
-        header: 'BOM Rev',
-        className: 'mono fw-700',
-        nowrap: true,
-        render: (b) => <span style={{ color: 'var(--cyan)' }}>BOM Rev {b.revision}</span>,
-      },
-      {
-        header: 'Revision Date',
-        className: 'mono text2',
-        nowrap: true,
-        key: 'revisionDate',
-        render: (b) => fmtDate(b.revisionDate),
-      },
-      {
-        // Counts SO LINES that use this BOM (not orders) — same label as the detail.
-        header: 'Linked SO Lines',
-        align: 'right',
-        nowrap: true,
-        render: (b) =>
-          b.linkedSoCount > 0 ? (
-            <span className="fw-700" style={{ color: 'var(--green2)' }}>
-              {b.linkedSoCount}
-            </span>
-          ) : (
-            <span className="text3">—</span>
-          ),
-      },
-      {
-        header: 'BOM Status',
-        nowrap: true,
-        // `bom`, not the generic `doc` map: draft happens to agree, but active
-        // and obsolete are not in `doc` at all. Same kind the BOM detail page
-        // draws, so the two cannot disagree.
-        render: (b) => <StatusBadge kind="bom" status={b.status} />,
-      },
-    ],
-    [expanded, toggleExpand],
-  );
+  const columns = useMemo(() => bomListColumns(), []);
 
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
@@ -294,6 +169,7 @@ function BomMastersListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.bomMasterList}
             columns={columns}
             rows={rows}
             loading={isLoading}
@@ -303,6 +179,9 @@ function BomMastersListPage(): React.JSX.Element {
             // returning null for a collapsed row means ExpandedLines (and its
             // detail query) never mounts for it.
             renderExpanded={(b) => (expanded.has(b.id) ? <ExpandedLines bomId={b.id} /> : null)}
+            // The fit table's ▸ is the row's one expand control: it opens the
+            // part list too.
+            onToggleExpanded={(b) => toggleExpand(b.id)}
           />
         </Panel>
       )}

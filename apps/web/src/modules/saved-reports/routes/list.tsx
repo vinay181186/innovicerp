@@ -10,6 +10,7 @@ import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useDeleteSavedReport, useSavedReportsList, useSourceCatalog } from '../api';
 
@@ -48,12 +49,14 @@ function SavedReportsListPage(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<(typeof rows)[number]>[]>(
     () => [
       {
+        id: 'sr_no',
         header: 'Sr No',
         width: '5%',
         className: 'text3',
         render: (_r, i) => i + 1,
       },
       {
+        id: 'name',
         header: 'Report Name',
         width: '30%',
         align: 'left',
@@ -62,6 +65,7 @@ function SavedReportsListPage(): React.JSX.Element {
         render: (r) => <span className="fw-700">{r.name}</span>,
       },
       {
+        id: 'description',
         header: 'Description',
         width: '27%',
         align: 'left',
@@ -71,12 +75,14 @@ function SavedReportsListPage(): React.JSX.Element {
         render: (r) => r.description || '—',
       },
       {
+        id: 'source',
         header: 'Source',
         width: '14%',
         nowrap: true,
         render: (r) => sourceLabel.get(r.sourceKey) ?? '—',
       },
       {
+        id: 'is_shared',
         header: 'Shared',
         width: '9%',
         nowrap: true,
@@ -88,6 +94,7 @@ function SavedReportsListPage(): React.JSX.Element {
           ),
       },
       {
+        id: 'owner',
         header: 'Owner',
         width: '15%',
         ellipsis: true,
@@ -126,6 +133,7 @@ function SavedReportsListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.savedReportsList}
             columns={columns}
             rows={rows}
             rowKey={(r) => r.id}

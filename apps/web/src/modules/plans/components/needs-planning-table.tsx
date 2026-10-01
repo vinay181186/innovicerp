@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { SearchInput } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
 import { useUnplannedOrders } from '../api';
@@ -40,6 +41,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<UnplannedOrderRow>[]>(
     () => [
       {
+        id: 'so_code',
         header: 'SO / JWSO No.',
         width: '10%',
         nowrap: true,
@@ -53,6 +55,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
       {
         // POL — the CUSTOMER's own PO line number. Not the "Ln" column to its
         // left, which is OUR SO line number.
+        id: 'client_po_line_no',
         header: 'POL',
         width: '5%',
         className: 'mono fw-700',
@@ -64,6 +67,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         // `CODE/REV` — the customer's drawing revision typed on this very SO
         // line. nowrap because a short code must never break across two lines.
         // The item code is the main thing on the row: mono, bold, full --text.
+        id: 'item_code',
         header: 'Item Code',
         width: '12%',
         className: 'mono fw-700',
@@ -71,6 +75,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         render: (r) => itemCodeWithRev(r.itemCode, r.itemRevision),
       },
       {
+        id: 'part_name',
         header: 'Item Name',
         width: '16%',
         align: 'left',
@@ -87,6 +92,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         key: 'orderQty',
       },
       {
+        id: 'planned_qty',
         header: 'Plan Qty',
         width: '6%',
         align: 'right',
@@ -97,6 +103,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         ),
       },
       {
+        id: 'remaining_qty',
         header: 'To Plan',
         width: '6%',
         align: 'right',
@@ -106,6 +113,8 @@ export function NeedsPlanningTable(): React.JSX.Element {
         render: (r) => <span style={{ color: 'var(--red2)' }}>{r.remainingQty}</span>,
       },
       {
+        id: 'due_date',
+        kind: 'date',
         header: 'Due Date',
         width: '8%',
         className: 'mono',
@@ -113,6 +122,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         render: (r) => fmtDate(r.dueDate),
       },
       {
+        id: 'customer_name',
         header: 'Customer',
         width: '12%',
         align: 'left',
@@ -152,6 +162,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         />
       ) : (
         <DataTable
+          tableKey={TABLE_KEYS.plansNeedsPlanning}
           columns={columns}
           rows={filtered}
           rowKey={(r) => r.soLineId}

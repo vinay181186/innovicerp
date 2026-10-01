@@ -23,8 +23,6 @@ import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
-import { ItemBadge } from '@/components/shared/item-badge';
-import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -36,16 +34,18 @@ import { SoLevelMatrixPanel } from '@/modules/flow-views/components/so-level-mat
 import { useHistoryTab } from '@/components/shared/document-history';
 import { SoDocumentsSection } from '@/modules/so-documents/components/so-documents-section';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import { DataTable, Panel, QtyStrip, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, QtyStrip } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import { SoCloseModal, closableQty } from '../components/so-close-modal';
 import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
-import { SoFulfilmentBadge, SoLineShortClosedBadge } from '../components/so-fulfilment-badge';
+import { SoFulfilmentBadge } from '../components/so-fulfilment-badge';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
+import { MILESTONE_COLUMNS, lineColumns } from '../components/so-line-columns';
 
 /** ₹ with Indian grouping, to the paise — the SO totals strip. */
 function fmtInr(n: number): string {
@@ -290,6 +290,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
       >
         <DataTable<SalesOrderLine>
+          tableKey={TABLE_KEYS.soDetailLines}
           columns={lineColumns({
             priceHidden,
             soCode: detail.code,
@@ -304,6 +305,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
       {detail.milestones.length > 0 ? (
         <Panel title={`Delivery Schedule (${detail.milestones.length})`} bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.soDetailMilestones}
             columns={MILESTONE_COLUMNS}
             rows={detail.milestones}
             empty="No delivery lots scheduled."
@@ -388,228 +390,6 @@ function SalesOrderDetailPage(): React.JSX.Element {
     </div>
   );
 }
-
-/* ── Line items ─────────────────────────────────────────────────────────────
-   Built as a column list rather than hand-written <tr>/<td>, so the ruled
-   sheet, the sticky header, the centring and the empty row all come from
-   <DataTable>. Widths are % and sum to 100 — `table-layout: fixed` needs them
-   to, and dropping the Rate column hands its share to the Item cell. */
-
-function lineColumns(opts: {
-  priceHidden: boolean;
-  /** Carried down only so the drawing access log reads "IN-SO-26-00521 L3"
-   *  instead of a storage path nobody recognises. */
-  soCode: string;
-  onPreview: (file: PreviewFile) => void;
-  /** ADR-196 — opens the Close dialog for one line; null when the viewer may
-   *  not close (then no button is drawn). */
-  onCloseLine: ((line: SalesOrderLine) => void) | null;
-}): DataTableColumn<SalesOrderLine>[] {
-  const { priceHidden, soCode, onPreview, onCloseLine } = opts;
-  return [
-    {
-      header: 'Ln',
-      width: '4%',
-      className: 'mono',
-      nowrap: true,
-      render: (l) => <span style={{ color: 'var(--blue)' }}>{l.lineNo}</span>,
-    },
-    {
-      // The customer's PO line number. It is typed on this line and every
-      // downstream document repeats it, so it belongs next to the line number
-      // here, where it is authored. Purple, mono, 700 — unchanged.
-      header: 'POL',
-      width: '5%',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (l) => <span style={{ color: 'var(--purple)' }}>{l.clientPoLineNo ?? '—'}</span>,
-    },
-    {
-      // Image · CODE/REV · Part Name in one badge cell (user decision
-      // 2026-09-21) — the former separate Part Name column folded in. The Rev
-      // is the customer's drawing revision, typed on this line, and it travels
-      // with the item code wherever an SO line is shown (the badge formats it
-      // via itemCodeWithRev).
-      header: 'Item',
-      width: priceHidden ? '24%' : '17%',
-      align: 'left',
-      render: (l) => (
-        <>
-          <ItemBadge
-            size="row"
-            code={l.itemCode ?? l.itemCodeText}
-            name={l.partName}
-            revision={l.revision}
-            imagePath={l.itemImagePath}
-          />
-          <MasterItemNameNote lineName={l.partName} masterItemName={l.masterItemName} />
-        </>
-      ),
-    },
-    {
-      header: 'Material',
-      width: '8%',
-      className: 'text3',
-      ellipsis: true,
-      render: (l) => l.material ?? '—',
-      title: (l) => l.material ?? '',
-    },
-    {
-      header: 'Drawing',
-      width: '10%',
-      className: 'mono',
-      render: (l) => {
-        const drawingFilePath = l.drawingFilePath ?? null;
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-0)' }}>
-            <span>{l.drawingNo ?? '—'}</span>
-            {/* No Rev line here any more. It is the same value the Item Code cell
-              now carries as CODE/REV, and printing one fact twice in one row
-              reads as two facts that might disagree. */}
-            {drawingFilePath ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                title="Preview drawing"
-                icon={<Icon name="paperclip" size={11} />}
-                style={{ alignSelf: 'center' }}
-                onClick={() =>
-                  onPreview({
-                    storagePath: drawingFilePath,
-                    kind: 'drawing',
-                    source: 'so_line',
-                    refCode: `${soCode} L${l.lineNo}`,
-                  })
-                }
-              >
-                Drawing
-              </Button>
-            ) : null}
-          </div>
-        );
-      },
-    },
-    {
-      header: 'Order Qty',
-      key: 'orderQty',
-      width: '6%',
-      align: 'right',
-      className: 'mono',
-      nowrap: true,
-    },
-    {
-      header: 'Dispatched',
-      align: 'right',
-      width: '7%',
-      headColor: 'var(--green)',
-      className: 'mono',
-      nowrap: true,
-      render: (l) => <span style={{ color: 'var(--green2)' }}>{l.dispatchedQty}</span>,
-    },
-    {
-      header: 'Billed',
-      align: 'right',
-      width: '6%',
-      headColor: 'var(--green)',
-      className: 'mono',
-      nowrap: true,
-      render: (l) => <span style={{ color: 'var(--green2)' }}>{l.billedQty}</span>,
-    },
-    {
-      // Order − Billed: still to invoice (NAMING.md "To Bill"), not the
-      // qty still owed on the order ("Pending"). A line closed short
-      // (ADR-196) will ship nothing more, so only its dispatched qty is left
-      // to bill.
-      header: 'To Bill',
-      align: 'right',
-      width: '7%',
-      headColor: 'var(--red)',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (l) => {
-        const toBill = Math.max(0, (l.shortClosedAt ? l.dispatchedQty : l.orderQty) - l.billedQty);
-        return <span style={{ color: toBill > 0 ? 'var(--red)' : 'var(--green)' }}>{toBill}</span>;
-      },
-    },
-    { header: 'UOM', key: 'uom', width: '5%', nowrap: true },
-    ...(priceHidden
-      ? []
-      : [
-          {
-            header: 'Rate',
-            width: '7%',
-            align: 'right' as const,
-            className: 'mono',
-            nowrap: true,
-            render: (l: SalesOrderLine) =>
-              Number(l.rate) > 0 ? `₹ ${inrFormat(Number(l.rate))}` : '—',
-          },
-        ]),
-    {
-      header: 'Due Date',
-      width: '8%',
-      className: 'mono text2',
-      nowrap: true,
-      render: (l) => fmtDate(l.dueDate),
-    },
-    {
-      header: 'SO Status',
-      width: '10%',
-      render: (l) => (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 'var(--sp-1)',
-          }}
-        >
-          <StatusBadge kind="so" status={l.status} label={SO_STATUS_LABEL[l.status]} />
-          {/* ADR-196 — closed short: the undelivered qty was dropped. */}
-          <SoLineShortClosedBadge
-            shortClosedAt={l.shortClosedAt}
-            shortCloseReason={l.shortCloseReason}
-          />
-          {onCloseLine && closableQty(l) > 0 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              title={`Close line ${l.lineNo} — drop the ${closableQty(l)} not yet dispatched`}
-              onClick={() => onCloseLine(l)}
-            >
-              Close
-            </Button>
-          ) : null}
-        </div>
-      ),
-    },
-  ];
-}
-
-/* ── Delivery schedule ─────────────────────────────────────────────────── */
-
-type Milestone = SalesOrderDetail['milestones'][number];
-
-const MILESTONE_COLUMNS: DataTableColumn<Milestone>[] = [
-  { header: 'Lot No.', key: 'lotNo', width: '18%', className: 'mono fw-700', nowrap: true },
-  { header: 'Qty', key: 'qty', width: '14%', align: 'right', className: 'mono', nowrap: true },
-  {
-    header: 'Due Date',
-    width: '20%',
-    className: 'mono',
-    nowrap: true,
-    render: (m) => fmtDate(m.dueDate),
-  },
-  {
-    header: 'Remarks',
-    width: '48%',
-    align: 'left',
-    ellipsis: true,
-    render: (m) => m.remarks ?? '—',
-    title: (m) => m.remarks ?? '',
-  },
-];
 
 /* ── Client PO + email reference ────────────────────────────────────────────
    Client-PO document bar (ISSUE-013). Stores the client PO file in the unified

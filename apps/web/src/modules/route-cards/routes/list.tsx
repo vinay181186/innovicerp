@@ -2,8 +2,9 @@
 //
 // PHASE 4 — composed exactly like the reference list
 // (modules/clients/routes/list.tsx), with the one thing this screen adds:
-// the ▸ chevron on the RC No. still reveals the operation sequence IN PLACE,
-// right under the row (legacy UX), while the row itself opens the detail page.
+// the row's ▸ (the fit table's one expand control, ADR-199) still reveals the
+// operation sequence IN PLACE, right under the row (legacy UX), while the row
+// itself opens the detail page.
 // Legacy renders that sequence as an inline 8th column, but
 // `RouteCardListItem` carries only `opCount` — the ops live behind the detail
 // endpoint — so the expand-row lazily fetches them instead of firing a detail
@@ -49,6 +50,7 @@ import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, Tag } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
@@ -125,50 +127,30 @@ function RouteCardsListPage(): React.JSX.Element {
   // Name is left-aligned, the op count sits right.
   const columns = useMemo<DataTableColumn<RouteCardListItem>[]>(
     () => [
-      { header: 'Sr No', width: '4%', className: 'text3', render: (_rc, i) => i + 1 },
+      { id: 'sr_no', header: 'Sr No', width: '4%', className: 'text3', render: (_rc, i) => i + 1 },
       {
+        id: 'code',
         header: 'RC No.',
         nowrap: true,
+        // The op sequence opens from the fit table's ▸ (the row's ONE expand
+        // control, ADR-199) — no chevron of its own, so hiding or dropping
+        // this column can never take the op sequence away.
         render: (rc) => (
-          <span style={{ whiteSpace: 'nowrap' }}>
-            {/* ▸ / ▾ opens the op sequence in place; the row itself navigates. */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpand(rc.id);
-              }}
-              title={expanded.has(rc.id) ? 'Hide operation sequence' : 'Show operation sequence'}
-              aria-expanded={expanded.has(rc.id)}
-              style={{
-                background: 'none',
-                border: 0,
-                padding: 0,
-                marginRight: 'var(--sp-0)',
-                cursor: 'pointer',
-                color: 'var(--blue)',
-                display: 'inline-flex',
-                verticalAlign: 'middle',
-              }}
-            >
-              <Icon name={expanded.has(rc.id) ? 'chevron-down' : 'chevron-right'} size={14} />
-            </button>
-            <Link
-              to="/route-cards/$id"
-              params={{ id: rc.id }}
-              className="td-code"
-              title="Open this route card"
-              // stopPropagation sits on the two controls, not on the cell, so
-              // clicking the rest of the cell still opens the row — exactly as
-              // before.
-              onClick={(e) => e.stopPropagation()}
-            >
-              {rc.code}
-            </Link>
-          </span>
+          <Link
+            to="/route-cards/$id"
+            params={{ id: rc.id }}
+            className="td-code"
+            title="Open this route card"
+            // stopPropagation on the link, not the cell, so clicking the rest
+            // of the cell still opens the row.
+            onClick={(e) => e.stopPropagation()}
+          >
+            {rc.code}
+          </Link>
         ),
       },
       {
+        id: 'item_code',
         header: 'Item Code',
         // The item code is the main thing on this row: mono, bold, full --text.
         className: 'mono fw-700',
@@ -176,6 +158,8 @@ function RouteCardsListPage(): React.JSX.Element {
         render: (rc) => rc.itemCode ?? '—',
       },
       {
+        id: 'item_name',
+        kind: 'text',
         header: 'Item Name',
         align: 'left',
         className: 'fw-700',
@@ -185,6 +169,8 @@ function RouteCardsListPage(): React.JSX.Element {
       {
         // Grade then size on one line — the stock this card is cut from, so the
         // master answers "what is it made of" without opening a card.
+        id: 'raw_material',
+        kind: 'text',
         header: 'RM Grade / RM Size',
         className: 'mono',
         title: (rc) => `${rc.rawMaterialGradeText ?? '—'} / ${rc.rawMaterialSizeText ?? '—'}`,
@@ -195,21 +181,31 @@ function RouteCardsListPage(): React.JSX.Element {
           </>
         ),
       },
-      { header: 'Ops', align: 'right', className: 'mono', nowrap: true, key: 'opCount' },
       {
+        id: 'op_count',
+        header: 'Ops',
+        align: 'right',
+        className: 'mono',
+        nowrap: true,
+        key: 'opCount',
+      },
+      {
+        id: 'current_revision',
         header: 'Route Card Rev',
         className: 'mono fw-700',
         nowrap: true,
         render: (rc) => <span style={{ color: 'var(--cyan)' }}>R{rc.currentRevision}</span>,
       },
       {
+        id: 'updated_at',
+        kind: 'date',
         header: 'Last Updated',
         className: 'mono text2',
         nowrap: true,
         render: (rc) => fmtDate(rc.updatedAt),
       },
     ],
-    [expanded, toggleExpand],
+    [],
   );
 
   if (eff && !perms.view) {
@@ -248,6 +244,7 @@ function RouteCardsListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.routeCardsList}
             columns={columns}
             rows={rows}
             loading={isLoading}
@@ -257,6 +254,9 @@ function RouteCardsListPage(): React.JSX.Element {
             // returning null for a collapsed row means ExpandedOps (and its
             // detail query) never mounts for it.
             renderExpanded={(rc) => (expanded.has(rc.id) ? <ExpandedOps rcId={rc.id} /> : null)}
+            // The fit table's ▸ is the row's one expand control: it opens the
+            // op sequence too.
+            onToggleExpanded={(rc) => toggleExpand(rc.id)}
             rowActionsWidth="1%"
             rowActions={(rc) => (
               <RowActions

@@ -44,6 +44,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
@@ -123,8 +124,9 @@ function TpiMastersListPage(): React.JSX.Element {
   // the whole value on hover.
   const columns = useMemo<DataTableColumn<TpiMaster>[]>(
     () => [
-      { header: 'Sr No', width: '5%', className: 'text3', render: (_t, i) => i + 1 },
+      { id: 'sr_no', header: 'Sr No', width: '5%', className: 'text3', render: (_t, i) => i + 1 },
       {
+        id: 'name',
         header: 'Inspector Name',
         width: '22%',
         align: 'left',
@@ -148,6 +150,7 @@ function TpiMastersListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'organization',
         header: 'Organisation',
         width: '24%',
         className: 'text2',
@@ -156,6 +159,7 @@ function TpiMastersListPage(): React.JSX.Element {
         title: (t) => t.organization ?? '',
       },
       {
+        id: 'contact_no',
         header: 'Contact No.',
         width: '12%',
         className: 'mono',
@@ -163,6 +167,7 @@ function TpiMastersListPage(): React.JSX.Element {
         render: (t) => t.contactNo ?? '—',
       },
       {
+        id: 'email',
         header: 'Email',
         width: '19%',
         className: 'text2',
@@ -171,6 +176,8 @@ function TpiMastersListPage(): React.JSX.Element {
         title: (t) => t.email ?? '',
       },
       {
+        id: 'is_active',
+        kind: 'badge',
         header: 'Active',
         width: '8%',
         nowrap: true,
@@ -266,6 +273,7 @@ function TpiMastersListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.tpiMastersList}
             columns={columns}
             rows={rows}
             loading={isLoading}

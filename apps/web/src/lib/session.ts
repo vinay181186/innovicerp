@@ -40,6 +40,13 @@ export function setupAuthListener(queryClient: QueryClient, router: AnyRouter): 
     data: { subscription },
   } = supabase.auth.onAuthStateChange((event) => {
     queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+    if (event === 'SIGNED_OUT') {
+      // Shared PCs (ADR-199): the next person must not inherit the last
+      // person's table layouts or density. Every per-user preference query is
+      // keyed ['me', …, userId]; drop them all, and the Compact class with them.
+      queryClient.removeQueries({ queryKey: ['me'] });
+      if (typeof document !== 'undefined') document.body.classList.remove('density-compact');
+    }
     if (event === 'SIGNED_OUT' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
       void router.invalidate();
     }

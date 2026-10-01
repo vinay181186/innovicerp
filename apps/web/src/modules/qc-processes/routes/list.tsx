@@ -41,6 +41,7 @@ import { ReportTypesPanel } from '@/modules/report-types/components/report-types
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
@@ -136,6 +137,7 @@ function QcProcessesListPage(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<QcProcess>[]>(
     () => [
       {
+        id: 'sr_no',
         header: 'Sr No',
         width: '5%',
         className: 'text3',
@@ -143,6 +145,7 @@ function QcProcessesListPage(): React.JSX.Element {
         render: (_p, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
       },
       {
+        id: 'name',
         header: 'QC Process Name',
         width: '24%',
         align: 'left',
@@ -166,6 +169,7 @@ function QcProcessesListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'description',
         header: 'Description',
         width: '40%',
         className: 'text2',
@@ -174,6 +178,7 @@ function QcProcessesListPage(): React.JSX.Element {
         title: (p) => p.description ?? '',
       },
       {
+        id: 'default_cycle_time',
         header: 'Default Cycle Time (min)',
         width: '11%',
         className: 'mono',
@@ -182,6 +187,8 @@ function QcProcessesListPage(): React.JSX.Element {
           Number(p.defaultCycleTimeMin) > 0 ? Number(p.defaultCycleTimeMin).toFixed(2) : '—',
       },
       {
+        id: 'is_active',
+        kind: 'badge',
         header: 'Active',
         width: '10%',
         nowrap: true,
@@ -302,6 +309,7 @@ function QcProcessesListPage(): React.JSX.Element {
           ) : (
             <Panel bodyPadding="none">
               <DataTable
+                tableKey={TABLE_KEYS.qcProcessesList}
                 columns={columns}
                 rows={rows}
                 loading={isLoading}

@@ -54,6 +54,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { Select } from '@/ui/forms';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { useUserAccessList } from '@/modules/access-control/api';
@@ -184,12 +185,14 @@ function UsersListPage(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<(typeof rows)[number]>[]>(
     () => [
       {
+        id: 'sr_no',
         header: 'Sr No',
         width: '4%',
         className: 'text3',
         render: (_u, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
       },
       {
+        id: 'full_name',
         header: 'Name',
         width: '17%',
         align: 'left',
@@ -212,6 +215,7 @@ function UsersListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'department',
         header: 'Department',
         width: '11%',
         nowrap: true,
@@ -230,6 +234,7 @@ function UsersListPage(): React.JSX.Element {
         },
       },
       {
+        id: 'access',
         header: 'Access',
         width: '14%',
         ellipsis: true,
@@ -237,6 +242,7 @@ function UsersListPage(): React.JSX.Element {
         render: (u) => <AccessCell access={accessByUser.get(u.id)} />,
       },
       {
+        id: 'email',
         header: 'Email',
         width: '20%',
         className: 'mono',
@@ -244,6 +250,7 @@ function UsersListPage(): React.JSX.Element {
         key: 'email',
       },
       {
+        id: 'phone',
         header: 'Phone',
         width: '10%',
         className: 'text2',
@@ -251,6 +258,8 @@ function UsersListPage(): React.JSX.Element {
         render: (u) => u.phone ?? '—',
       },
       {
+        id: 'status',
+        kind: 'badge',
         header: 'Status',
         width: '8%',
         nowrap: true,
@@ -259,6 +268,7 @@ function UsersListPage(): React.JSX.Element {
         render: (u) => <StatusBadge kind="useractive" status={String(u.isActive)} />,
       },
       {
+        id: 'approver',
         header: 'Approver',
         width: '8%',
         nowrap: true,
@@ -374,6 +384,7 @@ function UsersListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.usersList}
             columns={columns}
             rows={rows}
             loading={isLoading}
