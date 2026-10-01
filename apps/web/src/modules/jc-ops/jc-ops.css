@@ -1,0 +1,9 @@
+/* JC Operations board (ADR-199 fit table). An outsource op keeps the amber
+   tint it always had, now as a row class instead of an inline style: the
+   body cells are see-through, so the row's fill shows through them, and
+   `--row-bg` hands the same solid token to the pinned first cell. Hover keeps
+   the theme's own grey. */
+.innovic-table > tbody > tr.jc-ops-osp-row {
+  --row-bg: var(--amber3);
+  background: var(--amber3);
+}

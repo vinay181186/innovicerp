@@ -25,9 +25,22 @@ export const TABLE_KEYS = {
   plansNeedsPlanning: 'plans-needs-planning',
   soDetailLines: 'so-detail-lines',
   soDetailMilestones: 'so-detail-milestones',
+  opLogList: 'op-log-list',
+  tpiCompleted: 'tpi-completed',
+  jcOpsBoard: 'jc-ops-board',
+  ospAtVendorRegister: 'osp-at-vendor-register',
+  qcHistoryPending: 'qc-history-pending',
+  qcHistoryEntries: 'qc-history-entries',
 
   // Reports
   savedReportsList: 'saved-reports-list',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];
+
+// Screens that keep one saved layout PER RECORD append a stable code id to a
+// prefix registered here. Same rules as above: never rename a shipped prefix.
+export const TABLE_KEY_PREFIXES = {
+  /** One layout per report: `report-<slug>` (reports/$slug, ADR-199 Phase 4). */
+  report: 'report-',
+} as const;

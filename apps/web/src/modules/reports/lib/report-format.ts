@@ -72,14 +72,87 @@ export function formatCell(col: ReportColumn, raw: unknown): string {
   if (typeof raw === 'string' && col.type === 'datetime') return fmtDateTime(raw);
   // A status column carries the stored code (qc_pending); show its label.
   // The pill rule below still reads the raw value.
-  if (typeof raw === 'string' && /status$/i.test(col.key)) {
+  if (typeof raw === 'string' && isStatusColumn(col)) {
     if (/^NC\b/.test(col.label) && raw === 'pending') return 'NC Raised';
     return statusText(raw, col.label.toLowerCase());
   }
+  // A type column carries the stored code too (component_manufacturing);
+  // show the words (Component Manufacturing).
+  if (typeof raw === 'string' && isTypeColumn(col)) return statusText(raw);
   return String(raw);
 }
 
+/** `*status` columns carry a stored status code. */
+export function isStatusColumn(col: ReportColumn): boolean {
+  return /status$/i.test(col.key);
+}
+
+/** `*_type` / `type` columns carry a stored type code. */
+export function isTypeColumn(col: ReportColumn): boolean {
+  return /(^|_)type$/i.test(col.key);
+}
+
+/** Codes, document numbers and other identifiers — never cut: `*_code`,
+ *  `*_no`, `code`, `pol`, `*gstin*`, `*revision*` (Drawing Rev),
+ *  `reference` / `*_reference` / `*_ref`, and `so_jc` (SO No. / JC No.). */
+export function isCodeColumn(col: ReportColumn): boolean {
+  const k = col.key.toLowerCase();
+  return (
+    /(^|_)(code|no|ref|reference)$/.test(k) ||
+    k.includes('gstin') ||
+    k.includes('revision') ||
+    k === 'pol' ||
+    k === 'so_jc'
+  );
+}
+
+/** The value written to the CSV: the raw value, except that status / type
+ *  codes are written as the words the grid shows (ADR-199 Phase 4). */
+export function csvValue(col: ReportColumn, raw: unknown): unknown {
+  if (typeof raw === 'string' && raw !== '' && (isStatusColumn(col) || isTypeColumn(col))) {
+    return formatCell(col, raw);
+  }
+  return raw;
+}
+
 export type StatusTone = 'red' | 'green' | 'blue' | 'amber';
+
+/** Stored status code → pill tone (ADR-199 Phase 4), for `*status` columns.
+ *  Matched after the legacy word list below; any `partial*` code is amber. */
+const CODE_TONES: Record<string, StatusTone> = {
+  complete: 'green',
+  completed: 'green',
+  closed: 'green',
+  accepted: 'green',
+  paid: 'green',
+  dispatched: 'green',
+  pending: 'amber',
+  in_progress: 'amber',
+  qc_pending: 'amber',
+  pending_qc: 'amber',
+  at_vendor: 'amber',
+  rejected: 'red',
+  cancelled: 'red',
+  overdue: 'red',
+  short_closed: 'red',
+  open: 'blue',
+  planned: 'blue',
+  approved: 'blue',
+  draft: 'blue',
+};
+
+/** Pill tone for one cell: the legacy word list first (any column), then —
+ *  for a status column — the stored-code map. */
+export function cellTone(col: ReportColumn, raw: string): StatusTone | undefined {
+  const legacy = statusBadge(raw);
+  if (legacy || !isStatusColumn(col)) return legacy;
+  const code = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  if (code.startsWith('partial')) return 'amber';
+  return CODE_TONES[code];
+}
 
 /** Status keyword → pill tone, transcribed from legacy `_rptTbl`
  *  (HTML L20097–20100) — same keywords, same order, no additions. */

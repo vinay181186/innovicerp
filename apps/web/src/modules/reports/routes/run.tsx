@@ -207,6 +207,7 @@ function ReportRunPage() {
       {/* Keyed by report: sort, column filters and page start fresh per report. */}
       <ReportGrid
         key={`g-${slug}`}
+        slug={slug}
         viewRowsRef={viewRows}
         columns={columns}
         rows={data?.rows}

@@ -1,4 +1,6 @@
-// JC Operations — mirrors legacy renderJCOps (HTML L11349).
+// JC Operations — mirrors legacy renderJCOps (HTML L11349). The board is the
+// ADR-199 fit table (DataTable + tableKey); its columns and row actions live
+// in ../components/jc-ops-columns.tsx.
 
 import {
   type ChangeJcOpMachineInput,
@@ -10,8 +12,7 @@ import { opSrNo } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
-import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
+import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useDebounce } from '@/lib/use-debounce';
@@ -21,10 +22,19 @@ import { useGenerateOspPr } from '@/modules/op-entry/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Select } from '@/ui/forms';
-import { ListHeader } from '@/ui/layout';
-import { OP_STATUS } from '../../job-cards/lib/jc-op-labels';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListHeader, PageState } from '@/ui/layout';
 import { useMachinesList } from '../../machines/api';
 import { jcOpsBoardKeys, useChangeJcOpMachine, useJcOpsBoard, useOutsourceOpBalance } from '../api';
+import {
+  JC_OPS_DEFAULT_HIDDEN,
+  JC_OPS_DEFAULT_PINNED,
+  type JcOpsActionProps,
+  JcOpsRowActions,
+  jcOpsColumns,
+} from '../components/jc-ops-columns';
+import '../jc-ops.css';
 
 export const jcOpsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -51,6 +61,15 @@ function JcOpsPage(): React.JSX.Element {
   const [editRow, setEditRow] = useState<JcOpsBoardRow | null>(null);
   const [prRow, setPrRow] = useState<JcOpsBoardRow | null>(null);
   const [outsourceRow, setOutsourceRow] = useState<JcOpsBoardRow | null>(null);
+  const columns = useMemo(() => jcOpsColumns(), []);
+  const actionProps: JcOpsActionProps = {
+    canWrite,
+    canCreatePr,
+    canOpEntry,
+    onEdit: setEditRow,
+    onCreatePr: setPrRow,
+    onOutsource: setOutsourceRow,
+  };
 
   const { data, isLoading, isFetching, isError, error } = useJcOpsBoard({
     jcCode: jcCode || undefined,
@@ -129,73 +148,28 @@ function JcOpsPage(): React.JSX.Element {
         }
       />
 
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load operations. Try again.'}
-            </div>
-          </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">No Operations yet.</div>
-          </div>
-        ) : data ? (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>JC No.</th>
-                  {/* POL — the line number printed on the CUSTOMER's own
-                      purchase order, not any line number of ours. */}
-                  <th style={{ color: 'var(--purple)' }}>POL</th>
-                  <th>Item Code</th>
-                  <th className="td-ctr">Op</th>
-                  <th>Planned Machine</th>
-                  <th>Actual Machine</th>
-                  <th>Operation</th>
-                  <th className="th-num">Cycle Time (h)</th>
-                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
-                    QC
-                  </th>
-                  <th className="th-num">JC Qty</th>
-                  <th className="th-num" style={{ color: 'var(--green2)' }}>
-                    Completed
-                  </th>
-                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                    Available
-                  </th>
-                  <th className="th-num" style={{ color: 'var(--red2)' }}>
-                    Pending Hrs
-                  </th>
-                  <th>Op Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((o) => (
-                  <Row
-                    key={o.jcOpId}
-                    o={o}
-                    canWrite={canWrite}
-                    canCreatePr={canCreatePr}
-                    canOpEntry={canOpEntry}
-                    onEdit={() => setEditRow(o)}
-                    onCreatePr={() => setPrRow(o)}
-                    onOutsource={() => setOutsourceRow(o)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load operations. Try again.'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.jcOpsBoard}
+            columns={columns}
+            rows={data?.items ?? []}
+            rowKey={(o) => o.jcOpId}
+            loading={isLoading}
+            emptyText="No Operations yet."
+            defaultPinned={JC_OPS_DEFAULT_PINNED}
+            defaultHidden={JC_OPS_DEFAULT_HIDDEN}
+            // An outsource op keeps its amber tint (jc-ops.css, solid token).
+            rowClassName={(o) => (o.opType === 'outsource' ? 'jc-ops-osp-row' : undefined)}
+            rowActions={(o) => <JcOpsRowActions o={o} p={actionProps} />}
+          />
+        </Panel>
+      )}
 
       {editRow ? <ChangeMachineModal row={editRow} onClose={() => setEditRow(null)} /> : null}
 
@@ -205,345 +179,6 @@ function JcOpsPage(): React.JSX.Element {
         <OutsourceBalanceModal row={outsourceRow} onClose={() => setOutsourceRow(null)} />
       ) : null}
     </div>
-  );
-}
-
-// Legacy L11359/L11363/L11368 render the outsource sub-status in Title Case
-// (`o.outsourceStatus||'Pending'`); our enum values are snake_case.
-const OUTSOURCE_STATUS_LABELS: Record<string, string> = {
-  pending: 'Pending',
-  pr_raised: 'PR Raised',
-  po_created: 'PO Created',
-  sent: 'At Vendor',
-  received: 'Received',
-};
-
-function Row({
-  o,
-  canWrite,
-  canCreatePr,
-  canOpEntry,
-  onEdit,
-  onCreatePr,
-  onOutsource,
-}: {
-  o: JcOpsBoardRow;
-  canWrite: boolean;
-  canCreatePr: boolean;
-  canOpEntry: boolean;
-  onEdit: () => void;
-  onCreatePr: () => void;
-  onOutsource: () => void;
-}): React.JSX.Element {
-  const isOutsource = o.opType === 'outsource';
-  const outsourceStatus = o.outsourceStatus || 'pending';
-  const bg = isOutsource ? 'var(--amber3)' : undefined; // solid tint: the pinned first cell copies it (ADR-199)
-  // ▶ Start / ✚ Log — the Job Queue's rule (job-queue/routes/list.tsx): an
-  // in-house op with pieces waiting and no session running is the next thing
-  // to do. Pieces already made → ✚ Log (the Complete half); none yet → ▶
-  // Start. This board is not split per machine, so "started" is the op total.
-  const isNext =
-    !isOutsource && o.available > 0 && o.status !== 'running' && o.status !== 'complete';
-  const startLink =
-    canOpEntry && isNext ? (
-      o.completed > 0 ? (
-        <Link
-          to="/op-entry"
-          search={{ jc: o.jcCode, op: o.jcOpId, mode: 'complete' }}
-          className="btn btn-sm"
-          style={{
-            background: 'var(--green3)',
-            border: '1px solid var(--green2)',
-            color: 'var(--green2)',
-            fontSize: 11,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          ✚ Log Op
-        </Link>
-      ) : (
-        <Link
-          to="/op-entry"
-          search={{ jc: o.jcCode, op: o.jcOpId, mode: 'start' }}
-          className="btn btn-sm"
-          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-        >
-          ▶ Start
-        </Link>
-      )
-    ) : null;
-  return (
-    <tr style={{ background: bg }}>
-      <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
-        {/* The JC number opens that card. `jcId` is nullable on this board's row
-            (jc-ops.ts) — an op can be listed whose job card is not resolvable,
-            and /job-cards/$id with a missing id would be a dead link to a route
-            that cannot load. So the code only becomes a link when there is a
-            card to reach; otherwise it renders exactly as it always has. The
-            link inherits the cell's colour and mono weight so a reachable code
-            looks no different from an unreachable one. */}
-        {o.jcId ? (
-          <Link
-            to="/job-cards/$id"
-            params={{ id: o.jcId }}
-            title="View job card status"
-            style={{ color: 'inherit', textDecoration: 'none', whiteSpace: 'nowrap' }}
-          >
-            {o.jcCode}
-          </Link>
-        ) : (
-          o.jcCode
-        )}
-      </td>
-      {/* POL — the customer's own PO line number, immediately before the item
-          code. '—' when no sales order sits behind this job card. */}
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-        {o.clientPoLineNo ?? '—'}
-      </td>
-      {/* A job-card number says WHICH JOB, not WHICH PART, so the board names the
-          item next to the code. `jcItemName` has always been on this row
-          (packages/shared/src/schemas/jc-ops.ts) and was simply never drawn —
-          the board asked an operator to pick an op by job number alone. The
-          code stays on one line; a long part name WRAPS under it
-          (sheet rule, 2026-09-26), so one wordy item cannot stretch the board
-          sideways. */}
-      <td style={{ fontSize: 11 }}>
-        {/* The code carries weight; the NAME under it stays muted. The cell used
-            to be text2 throughout, which left the board reading fainter than the
-            two modals it launches -- and the code is what someone scans this
-            board for. */}
-        <span className="mono fw-700" style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}>
-          {itemCodeWithRev(o.jcItemCode, o.itemRevision, '')}
-        </span>
-        {o.jcItemName ? (
-          <div className="text3" style={{ fontSize: 11 }} title={o.jcItemName}>
-            {o.jcItemName}
-          </div>
-        ) : null}
-      </td>
-      <td className="td-ctr mono fw-700">{opSrNo(o.opSeq)}</td>
-      {/* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs) and
-          ACTUAL (the machine(s) that made the Done qty, else the plan) each get
-          their own column. Same value when nothing changed; the actual turns
-          amber when it differs, with the per-machine breakdown for a 2+ machine
-          split. */}
-      <td>
-        {isOutsource ? (
-          <span style={{ fontSize: 11, color: 'var(--amber2)' }}>—</span>
-        ) : (
-          <PlannedMachineCell planned={o.machineCode} />
-        )}
-      </td>
-      <td>
-        {isOutsource ? (
-          <span style={{ fontSize: 11, color: 'var(--amber2)' }}>—</span>
-        ) : (
-          <ActualMachineCell planned={o.machineCode} machines={o.machines} />
-        )}
-      </td>
-      <td>
-        {o.operation}
-        {isOutsource ? (
-          <>
-            {' '}
-            {/* Legacy L11379 [OSP] tag — marks the row as outside-processing. */}
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: 'var(--purple)',
-                background: 'rgba(124,58,237,0.12)',
-                padding: '1px 6px',
-                borderRadius: 3,
-              }}
-            >
-              [OSP]
-            </span>
-            <br />
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: 'var(--amber2)',
-                background: 'rgba(255,176,32,0.15)',
-                padding: '2px 6px',
-                borderRadius: 3,
-                display: 'inline-block',
-                marginTop: 2,
-              }}
-            >
-              Outsource
-            </span>
-            <div
-              style={{
-                fontSize: 11,
-                color:
-                  outsourceStatus === 'pending'
-                    ? 'var(--text3)'
-                    : outsourceStatus === 'pr_raised'
-                      ? 'var(--amber)'
-                      : outsourceStatus === 'po_created'
-                        ? 'var(--blue)'
-                        : outsourceStatus === 'sent'
-                          ? 'var(--amber)'
-                          : outsourceStatus === 'received'
-                            ? 'var(--cyan)'
-                            : 'var(--green)',
-                fontWeight: 600,
-              }}
-            >
-              {OUTSOURCE_STATUS_LABELS[outsourceStatus] ?? outsourceStatus.replace(/_/g, ' ')}
-            </div>
-            {o.outsourceVendorName ? (
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{o.outsourceVendorName}</div>
-            ) : null}
-          </>
-        ) : null}
-      </td>
-      <td className="mono td-num">{o.cycleTime ? o.cycleTime.toFixed(3) : '—'}</td>
-      <td className="td-ctr">
-        {o.qcRequired ? (
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: 'var(--green2)',
-              background: 'rgba(34,197,94,0.15)',
-              padding: '2px 6px',
-              borderRadius: 3,
-            }}
-          >
-            Yes
-          </span>
-        ) : (
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>No</span>
-        )}
-      </td>
-      <td className="td-num">{o.jcOrderQty}</td>
-      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
-        {o.completed}
-        {/* The per-machine breakdown of that total lives in the Planned /
-            Actual machine cell (ADR-164), so it is not repeated here. */}
-        {o.qcRequired && o.qcPending > 0 ? (
-          <div style={{ fontSize: 11, color: 'var(--amber2)' }}>⏳{o.qcPending} QC</div>
-        ) : null}
-      </td>
-      <td className="td-num">
-        <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--amber2)' }}>
-          {o.available}
-        </span>
-      </td>
-      <td className="td-num">
-        <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
-          {o.pendingHrs.toFixed(1)}h
-        </span>
-      </td>
-      <td>
-        <StatusBadge status={o.status} />
-      </td>
-      <td>
-        {isOutsource ? (
-          outsourceStatus === 'pending' ? (
-            // Legacy L11369 — raise a PR from a pending outsource op. The
-            // server-side cascade (purchase-requests service) stamps this op
-            // as pr_raised + links the new PR; the board then reflects it.
-            canCreatePr ? (
-              <button
-                type="button"
-                className="btn btn-sm"
-                style={{
-                  background: 'var(--amber)',
-                  color: '#000',
-                  fontSize: 11,
-                  fontWeight: 700,
-                }}
-                onClick={onCreatePr}
-              >
-                📋 Create PR
-              </button>
-            ) : null
-          ) : outsourceStatus === 'pr_raised' ? (
-            <span style={{ fontSize: 11, color: 'var(--amber2)' }}>
-              ⏳ PR: {o.outsourcePrCode ?? ''}
-            </span>
-          ) : outsourceStatus === 'po_created' ? (
-            o.outsourcePoId ? (
-              <Link
-                to="/purchase-orders/$id"
-                params={{ id: o.outsourcePoId }}
-                style={{
-                  fontSize: 11,
-                  color: 'var(--blue)',
-                  textDecoration: 'underline dotted',
-                }}
-              >
-                PO: {o.outsourcePoCode ?? ''}
-              </Link>
-            ) : (
-              <span style={{ fontSize: 11, color: 'var(--blue)' }}>
-                PO: {o.outsourcePoCode ?? ''}
-              </span>
-            )
-          ) : outsourceStatus === 'sent' ? (
-            <span style={{ fontSize: 11, color: 'var(--amber2)' }}>
-              📦 At Vendor ({o.sentQty} pcs)
-            </span>
-          ) : null
-        ) : (
-          // In-house process op — the existing machine/status action, plus the
-          // ADR-081 "Outsource balance" action when there's remaining qty to
-          // send out (op_type='process', available > 0, not yet complete).
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            {startLink}
-            {/* ADR-125 — a half-done op CAN now change machine: since 0095 each
-                op_log row carries the machine that made its qty, so the switch
-                only routes the REMAINING pieces and rewrites no history. Only
-                two cases stay blocked, matching changeJcOpMachine exactly:
-                'complete' (nothing left to run) and an open running session
-                (stop first, so the pieces already made are recorded against the
-                current machine). */}
-            {canWrite && o.status !== 'complete' && o.status !== 'running' ? (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11 }}
-                onClick={onEdit}
-              >
-                Change Machine
-              </button>
-            ) : (
-              <span style={{ fontSize: 11, color: 'var(--text3)', fontStyle: 'italic' }}>
-                {o.status === 'complete' ? '✓ Locked' : '🔒 Running'}
-              </span>
-            )}
-            {canWrite && o.opType === 'process' && o.available > 0 && o.status !== 'complete' ? (
-              <button
-                type="button"
-                className="btn btn-sm"
-                style={{
-                  background: 'rgba(124,58,237,0.15)',
-                  color: 'var(--purple)',
-                  fontSize: 11,
-                  fontWeight: 700,
-                }}
-                onClick={onOutsource}
-              >
-                🏭 Outsource Available
-              </button>
-            ) : null}
-          </div>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function StatusBadge({ status }: { status: string }): React.JSX.Element {
-  // One shared op-status map (job-cards/lib/jc-op-labels) — same words and
-  // colours as the Job Card page.
-  const s = OP_STATUS[status.toLowerCase()];
-  return (
-    <span className={`badge ${s?.cls ?? ''}`.trim()}>{s?.label ?? status.replace(/_/g, ' ')}</span>
   );
 }
 

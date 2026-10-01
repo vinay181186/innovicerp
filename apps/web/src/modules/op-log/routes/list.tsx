@@ -13,18 +13,17 @@
 // "Reversed by LOG-…" with its figures struck through. The Reverse button needs
 // edit AND approve on the 'op_entry' Access Control form.
 
-import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 import { Loader2, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { DocRefLink } from '@/modules/activity-log/components/doc-ref-link';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useOpLog, type ListOpLogQuery, type OpLogListItem } from '../api';
+import { isReversalRow, OP_LOG_DEFAULT_PINNED, opLogColumns } from '../components/op-log-columns';
 import { ReverseOpLogModal } from '../components/reverse-op-log-modal';
 import { exportOpLog } from '../lib/export';
 
@@ -46,22 +45,15 @@ export const opLogListRoute = createRoute({
   component: OpLogListPage,
 });
 
-const LOG_TYPE_LABEL: Record<'start' | 'complete' | 'qc', string> = {
-  start: 'Start',
-  complete: 'Completed',
-  qc: 'QC Inspection',
-};
-
-function logTypeBadge(t: 'start' | 'complete' | 'qc'): string {
-  if (t === 'start') return 'b-amber';
-  if (t === 'qc') return 'b-purple';
-  return 'b-green';
-}
-
-/** A reversal row: it names the entry it cancels, or (older payloads) it
- *  carries a negative figure. */
-function isReversalRow(r: OpLogListItem): boolean {
-  return Boolean(r.reversalOfId) || r.qty < 0 || r.rejectQty < 0;
+/** Reverse is offered on a Completed / QC entry that is neither a reversal
+ *  nor already reversed, and never on a non-conformance entry. */
+function canReverseRow(r: OpLogListItem): boolean {
+  return (
+    (r.logType === 'complete' || r.logType === 'qc') &&
+    !isReversalRow(r) &&
+    !r.reversedById &&
+    !r.logNo.startsWith('LOG-NC-')
+  );
 }
 
 function OpLogListPage(): React.JSX.Element {
@@ -74,7 +66,7 @@ function OpLogListPage(): React.JSX.Element {
   const opEntryPerms = effectiveFormPerms(eff, 'op_entry');
   const canReverse = Boolean(eff) && opEntryPerms.edit && opEntryPerms.approve;
   const [reversing, setReversing] = useState<OpLogListItem | null>(null);
-  const colCount = canReverse ? 17 : 16;
+  const columns = useMemo(() => opLogColumns(), []);
 
   const [jcInput, setJcInput] = useState(search.jcNo ?? '');
   useEffect(() => setJcInput(search.jcNo ?? ''), [search.jcNo]);
@@ -246,263 +238,38 @@ function OpLogListPage(): React.JSX.Element {
         }
       />
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            <thead>
-              <tr>
-                <th>Log No.</th>
-                <th>JC No.</th>
-                {/* POL — the line number printed on the CUSTOMER's own purchase
-                    order, immediately before the item. Not any line number of
-                    ours. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
-                {/* The item the card makes. A JC number identifies the JOB; only
-                    this column says which PART the logged qty belongs to. */}
-                <th>Item Code</th>
-                <th>Log Date</th>
-                <th>Op</th>
-                <th>Log Type</th>
-                <th>Shift</th>
-                <th>Planned Machine</th>
-                <th>Actual Machine</th>
-                <th>Operation</th>
-                <th className="th-num" style={{ color: 'var(--green2)' }}>
-                  Completed
-                </th>
-                <th className="th-num" style={{ color: 'var(--red2)' }}>
-                  Rejected
-                </th>
-                <th>Operator</th>
-                <th>Remarks</th>
-                <th>Logged By</th>
-                {canReverse ? <th></th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={colCount} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={colCount} className="empty-state" style={{ color: 'var(--red2)' }}>
-                    {error instanceof Error ? error.message : 'Could not load op log. Try again.'}
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={colCount} className="empty-state">
-                    No log entries match these filters.
-                  </td>
-                </tr>
-              ) : (
-                items.map((r) => {
-                  const reversal = isReversalRow(r);
-                  const reversed = Boolean(r.reversedById);
-                  const showReverse =
-                    canReverse &&
-                    (r.logType === 'complete' || r.logType === 'qc') &&
-                    !reversal &&
-                    !reversed &&
-                    !r.logNo.startsWith('LOG-NC-');
-                  // A reversed original keeps its row; its figures no longer count.
-                  const struck: React.CSSProperties | undefined = reversed
-                    ? { textDecoration: 'line-through' }
-                    : undefined;
-                  return (
-                    <tr key={r.id}>
-                      {/* Log No. and JC No. both open the job card the entry was
-                        logged against — straight to /job-cards/$id when the row
-                        carries the card's id (ADR-190 addendum), else resolved
-                        from the JC number through search. */}
-                      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        {r.jobCardId ? (
-                          <Link
-                            to="/job-cards/$id"
-                            params={{ id: r.jobCardId }}
-                            className="mono fw-700"
-                            title={`Open ${r.jcNo}`}
-                          >
-                            {r.logNo}
-                          </Link>
-                        ) : (
-                          <DocRefLink entity="Job Card" refId={r.jcNo} label={r.logNo} />
-                        )}
-                      </td>
-                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
-                        {r.jobCardId ? (
-                          <Link
-                            to="/job-cards/$id"
-                            params={{ id: r.jobCardId }}
-                            className="mono fw-700"
-                            title={`Open ${r.jcNo}`}
-                          >
-                            {r.jcNo}
-                          </Link>
-                        ) : (
-                          <DocRefLink entity="Job Card" refId={r.jcNo} />
-                        )}
-                      </td>
-                      {/* POL — '—' when no sales order sits behind the card. */}
-                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                        {r.clientPoLineNo ?? '—'}
-                      </td>
-                      {/* The item code is the value anyone scans this log for — it
-                        is how the drawing and the batch get identified — so it
-                        carries the darkest text token and the bold weight. The
-                        cell used to be `text2` throughout, which muted the code
-                        along with the part name under it; the name keeps its own
-                        `text3` and stays quiet, which is the intended contrast. */}
-                      <td style={{ fontSize: 11 }}>
-                        <span
-                          className="mono fw-700"
-                          style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}
-                        >
-                          {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
-                        </span>
-                        {r.itemName ? (
-                          <div
-                            className="text3"
-                            style={{
-                              fontSize: 11,
-                              maxWidth: 160,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                            title={r.itemName}
-                          >
-                            {r.itemName}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="text2" style={{ whiteSpace: 'nowrap' }}>
-                        {fmtDate(r.logDate)}
-                      </td>
-                      <td className="mono">{opSrNo(r.opSeq)}</td>
-                      <td>
-                        <span className={`badge ${logTypeBadge(r.logType)}`}>
-                          {LOG_TYPE_LABEL[r.logType]}
-                        </span>
-                        {r.isTpi ? (
-                          <span className="badge b-purple" style={{ marginLeft: 4, fontSize: 11 }}>
-                            TPI
-                          </span>
-                        ) : null}
-                        {reversal ? (
-                          <div style={{ marginTop: 3 }}>
-                            <span
-                              className="badge b-red"
-                              title={r.reversalReason ? `Reason: ${r.reversalReason}` : undefined}
-                            >
-                              Reversal of {r.reversalOfLogNo ?? 'an earlier entry'}
-                            </span>
-                            {r.reversalReason ? (
-                              <div
-                                className="text2"
-                                style={{
-                                  fontSize: 11,
-                                  maxWidth: 200,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                                title={r.reversalReason}
-                              >
-                                {r.reversalReason}
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : reversed ? (
-                          <div style={{ marginTop: 3 }}>
-                            <span className="badge b-grey">
-                              Reversed by {r.reversedByLogNo ?? 'a later entry'}
-                            </span>
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="text2">{SHIFT_LABELS[r.shift as Shift] ?? r.shift}</td>
-                      {/* ADR-164 — PLANNED is the op's jc_ops machine; ACTUAL is
-                        the machine this entry was stamped with. The actual
-                        turns amber only when it is not the plan. */}
-                      <td>
-                        <span
-                          className="tag"
-                          style={{ background: 'var(--bg4)', color: 'var(--cyan)' }}
-                        >
-                          {r.plannedMachineCode ?? '—'}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          className="tag"
-                          style={{
-                            background: 'var(--bg4)',
-                            color:
-                              r.machineCode &&
-                              r.plannedMachineCode &&
-                              r.machineCode.trim().toLowerCase() !==
-                                r.plannedMachineCode.trim().toLowerCase()
-                                ? 'var(--amber)'
-                                : 'var(--cyan)',
-                          }}
-                        >
-                          {r.machineCode ?? '—'}
-                        </span>
-                      </td>
-                      <td>{r.operation ?? '—'}</td>
-                      <td
-                        className="td-num mono fw-700"
-                        style={{
-                          color:
-                            r.qty < 0 ? 'var(--red2)' : reversed ? 'var(--text3)' : 'var(--green2)',
-                          ...struck,
-                        }}
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load op log. Try again.'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.opLogList}
+            columns={columns}
+            rows={items}
+            loading={isLoading}
+            emptyText="No log entries match these filters."
+            defaultPinned={OP_LOG_DEFAULT_PINNED}
+            rowActions={
+              canReverse
+                ? (r) =>
+                    canReverseRow(r) ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        title="Reverse this entry — the original stays and an opposite entry is added"
+                        onClick={() => setReversing(r)}
                       >
-                        {r.qty}
-                      </td>
-                      <td
-                        className="td-num mono fw-700"
-                        style={{
-                          color: r.rejectQty !== 0 && !reversed ? 'var(--red2)' : 'var(--text3)',
-                          ...struck,
-                        }}
-                      >
-                        {r.rejectQty}
-                      </td>
-                      <td className="text2">{r.operatorName ?? '—'}</td>
-                      <td className="text3" style={{ fontSize: 11 }}>
-                        {r.remarks ?? ''}
-                      </td>
-                      <td className="text3" style={{ fontSize: 11 }}>
-                        {r.createdByName ?? '—'}
-                      </td>
-                      {canReverse ? (
-                        <td>
-                          {showReverse ? (
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              title="Reverse this entry — the original stays and an opposite entry is added"
-                              onClick={() => setReversing(r)}
-                            >
-                              <Undo2 size={12} /> Reverse
-                            </button>
-                          ) : null}
-                        </td>
-                      ) : null}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                        <Undo2 size={12} /> Reverse
+                      </button>
+                    ) : null
+                : undefined
+            }
+          />
+        </Panel>
+      )}
 
       {reversing ? <ReverseOpLogModal row={reversing} onClose={() => setReversing(null)} /> : null}
 
