@@ -107,6 +107,27 @@ export const TABLE_KEYS = {
   qcDocsRegister: 'qc-docs-register',
   qcDocsStatus: 'qc-docs-status',
   reportTypes: 'report-types',
+
+  // ADR-199 conversions — Design / Tasks / System / Dashboards (batch D)
+  designProjects: 'design-projects',
+  designProjectTasks: 'design-project-tasks',
+  designProjectIssues: 'design-project-issues',
+  designProjectDcr: 'design-project-dcr',
+  designProjectDcn: 'design-project-dcn',
+  designIssues: 'design-issues',
+  designTracker: 'design-tracker',
+  taskBoard: 'task-board',
+  dailyTaskReports: 'daily-task-reports',
+  alertsDashboard: 'alerts-dashboard',
+  alertDrill: 'alert-drill',
+  activityLog: 'activity-log',
+  trashList: 'trash-list',
+  accessControlList: 'access-control-list',
+  approvalHistory: 'approval-history',
+  globalSearch: 'global-search',
+  scDashboard: 'sc-dashboard',
+  stuckDashboard: 'stuck-dashboard',
+  homeOperator: 'home-operator',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];
