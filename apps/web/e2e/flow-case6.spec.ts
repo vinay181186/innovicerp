@@ -43,7 +43,8 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await page.waitForTimeout(1800);
   // Turning's Outsource balance (the row whose OPERATION is Turning)
   const turnRow = page.locator('table tbody tr', { hasText: 'Turning' }).first();
-  await turnRow.getByRole('button', { name: /Outsource Available/i }).click();
+  await turnRow.getByRole('button', { name: 'Actions' }).click(); // ⋯ row menu
+  await page.getByRole('menuitem', { name: /Outsource Available/i }).click();
   await page.waitForTimeout(1200);
   const bqty = page.locator('input[type="number"]').first();
   const bval = await bqty.inputValue().catch(() => '');
