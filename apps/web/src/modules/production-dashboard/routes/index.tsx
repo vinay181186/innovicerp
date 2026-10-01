@@ -567,12 +567,8 @@ function ReadyRow({
   const hasMachine = Boolean(op.machineCode || op.machines.length);
   const logging = op.completedQty > 0;
   // Running / nothing waiting → the server refuses, so the item is greyed.
-  const startReason =
-    op.computedStatus === 'running'
-      ? 'Already running'
-      : op.available > 0
-        ? undefined
-        : 'Nothing Pending';
+  const running = op.computedStatus === 'running';
+  const startReason = running || op.available > 0 ? undefined : 'Nothing Pending';
   return (
     <tr>
       {/* DESTINATION CHANGED (user request, 2026-09-11): this code used to open
@@ -651,7 +647,7 @@ function ReadyRow({
               label: logging ? 'Log Op' : 'Start Operation',
               icon: logging ? 'plus' : 'play',
               group: 'workflow',
-              hidden: !canOpEntry || !hasMachine,
+              hidden: !canOpEntry || !hasMachine || running,
               disabledReason: startReason,
               ...(startReason
                 ? {}

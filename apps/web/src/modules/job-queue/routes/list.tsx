@@ -412,12 +412,10 @@ function JobQueuePage(): React.JSX.Element {
                                   label: startedHere ? 'Complete' : 'Start Operation',
                                   icon: startedHere ? 'check' : 'play',
                                   group: 'workflow',
-                                  hidden: !canOpEntry,
-                                  disabledReason: isNext
-                                    ? undefined
-                                    : r.isRunning
-                                      ? 'Already running'
-                                      : 'Nothing Pending',
+                                  // A running job is completed from its own row, so the
+                                  // item is hidden (not greyed) while it runs.
+                                  hidden: !canOpEntry || (r.isRunning && !isNext),
+                                  disabledReason: isNext ? undefined : 'Nothing Pending',
                                   ...(isNext
                                     ? {
                                         to: `/op-entry?${new URLSearchParams({
