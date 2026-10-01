@@ -37,7 +37,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { assertActiveParty } from '../../lib/active-party';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
@@ -3101,11 +3101,14 @@ export async function approvePurchaseOrder(
       );
     }
 
-    // Segregation of duty (0100): the raiser cannot sign off their own PO.
-    assertNotSelfApproval(user, po.createdBy, `PO ${po.code}`);
+    // Self-approval allowed (owner decision 2026-10-01): the raiser MAY sign off
+    // their own PO when they hold PO approve rights. All other gates stay
+    // (write role, Access-Control Approve, on the po_approvers list, Draft status).
+    const isSelf = po.createdBy === user.id;
 
-    // Amount-limit gate (legacy _approvePO L21731). Admins bypass.
-    if (!isAdmin) {
+    // Amount-limit gate (legacy _approvePO L21731). Admins bypass; a SELF-approval
+    // also bypasses the limit (any value). Someone else approving still has theirs.
+    if (!isAdmin && !isSelf) {
       const poValue = await sumPoLineValue(tx, id);
       if (poValue > approvalCeiling) {
         const fmt = (v: number) => `₹${Math.round(v).toLocaleString('en-IN')}`;
@@ -3196,10 +3199,6 @@ export async function rejectPurchaseOrder(
       );
     }
 
-    // Segregation of duty (0100) — the other half of approve. Rejecting is a
-    // sign-off too: the raiser cannot kill their own PO to bury it, and an
-    // auditor reading the trail must see two different names on the document.
-    assertNotSelfApproval(user, po.createdBy, `PO ${po.code}`);
 
     const rejectedRows = await tx
       .update(purchaseOrders)

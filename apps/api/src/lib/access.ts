@@ -165,24 +165,3 @@ export async function canSeeFormPrice(user: AuthContext, formKey: AccessFormKey)
   return effectiveFormPerms(eff, formKey).price;
 }
 
-/**
- * Segregation of duty — the approver may not be the person who raised the
- * document. Structural check #4 of the Generic Role Audit Checklist.
- *
- * Applies to admins too. An approval that the raiser signed themselves is
- * not an approval, and "the admin did it" is exactly the case an auditor
- * cares about. Where a company genuinely has one person, the answer is a
- * second approver account, not an exemption.
- */
-export function assertNotSelfApproval(
-  user: AuthContext,
-  createdBy: string | null,
-  docLabel: string,
-): void {
-  if (createdBy && createdBy === user.id) {
-    throw new AuthorizationError(
-      `You raised ${docLabel}, so you cannot approve it yourself. ` +
-        `Someone else with approve rights has to sign it off.`,
-    );
-  }
-}

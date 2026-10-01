@@ -23,7 +23,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { assertActiveParty } from '../../lib/active-party';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
@@ -1302,8 +1302,8 @@ export async function approvePurchaseRequest(
       );
     }
 
-    // Segregation of duty (0100): the raiser cannot sign off their own PR.
-    assertNotSelfApproval(user, pr.createdBy, `PR ${pr.code}`);
+    // Self-approval allowed (owner decision 2026-10-01): the raiser MAY approve
+    // their own PR when they hold PR approve rights (requireFormAccess above).
 
     const now = new Date();
     const approvedRows = await tx
@@ -1387,10 +1387,6 @@ export async function rejectPurchaseRequest(
       );
     }
 
-    // Segregation of duty (0100): rejecting is the other half of approving, so
-    // the raiser cannot kill their own PR either — approve had this guard and
-    // reject did not.
-    assertNotSelfApproval(user, pr.createdBy, `PR ${pr.code}`);
 
     // ADR-197 (0178): who / when / why are stamped on the dedicated columns.
     // The reason is ALSO still appended to remarks, because the PR screens read
