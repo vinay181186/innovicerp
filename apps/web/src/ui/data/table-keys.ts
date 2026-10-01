@@ -44,6 +44,22 @@ export const TABLE_KEYS = {
   jwDcInward: 'jw-dc-inward',
   approvalsPrPo: 'approvals-pr-po',
   approvalsOpEntry: 'approvals-op-entry',
+
+  // ADR-199 conversions — Store (batch S)
+  grnList: 'grn-list',
+  partyGrn: 'party-grn',
+  partyMaterialIssues: 'party-material-issues',
+  partyMaterials: 'party-materials',
+  storeInventory: 'store-inventory',
+  reorderList: 'reorder-list',
+  reservationDrilldown: 'reservation-drilldown',
+  stockLedger: 'stock-ledger',
+  issueRegister: 'issue-register',
+  toolIssues: 'tool-issues',
+  toolHolders: 'tool-holders',
+  toolWriteoffs: 'tool-writeoffs',
+  stockCounts: 'stock-counts',
+  instruments: 'instruments',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];
