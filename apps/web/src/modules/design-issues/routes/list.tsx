@@ -6,8 +6,10 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { useSession } from '@/lib/session';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useDesignIssuesAll } from '../api';
@@ -33,6 +35,13 @@ function DesignIssuesAllPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
   const navigate = useNavigate();
+  const { data: me } = useSession();
+  // The issue whose ⋯ → Assign Task is open (one modal for the whole list).
+  const [assignTarget, setAssignTarget] = useState<{
+    id: string;
+    title: string;
+    designProjectId: string;
+  } | null>(null);
 
   const { data, isLoading, isFetching, isError, error } = useDesignIssuesAll({
     search: search.trim() || undefined,
@@ -115,7 +124,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
                   <th>Assigned To</th>
                   <th>Raised Date</th>
                   <th>Days Open</th>
-                  <th>Action</th>
+                  <th className="td-ctr" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -169,18 +178,30 @@ function DesignIssuesAllPage(): React.JSX.Element {
                       >
                         {i.ageDays}d
                       </td>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        {i.status !== 'Closed' && i.status !== 'Resolved' ? (
-                          <AssignTaskButton
-                            linkedRef={{
-                              type: 'design_issue',
-                              id: i.id,
-                              display: `Design issue: ${i.title}`,
-                              navPage: `/design-projects/${i.designProjectId}`,
-                            }}
-                            suggestedTitle={`Resolve design issue: ${i.title}`}
-                          />
-                        ) : null}
+                      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                        <RowMenu
+                          items={[
+                            {
+                              // Same rule as the old button: none on a resolved /
+                              // closed issue; a viewer is refused by the server.
+                              key: 'assign',
+                              label: 'Assign Task',
+                              icon: 'user-round',
+                              group: 'assign',
+                              hidden:
+                                i.status === 'Closed' ||
+                                i.status === 'Resolved' ||
+                                !me ||
+                                me.role === 'viewer',
+                              onSelect: () =>
+                                setAssignTarget({
+                                  id: i.id,
+                                  title: i.title,
+                                  designProjectId: i.designProjectId,
+                                }),
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   );
@@ -191,6 +212,18 @@ function DesignIssuesAllPage(): React.JSX.Element {
         ) : null}
       </div>
       {data ? <ListFooter total={data.total} noun="issue" limit={200} /> : null}
+      {assignTarget ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'design_issue',
+            id: assignTarget.id,
+            display: `Design issue: ${assignTarget.title}`,
+            navPage: `/design-projects/${assignTarget.designProjectId}`,
+          }}
+          suggestedTitle={`Resolve design issue: ${assignTarget.title}`}
+          onClose={() => setAssignTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

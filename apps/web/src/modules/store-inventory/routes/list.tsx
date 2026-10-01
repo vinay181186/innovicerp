@@ -21,6 +21,7 @@ import { useMemo, useState } from 'react';
 import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { ListHeader } from '@/ui/layout';
 import { useAdjustStock, useStoreInventory } from '../api';
 import { useItemsList } from '@/modules/items/api';
@@ -219,7 +220,7 @@ function StoreInventoryPage(): React.JSX.Element {
                         <th className="th-num" style={{ color: 'var(--amber2)' }}>
                           Pending from Production
                         </th>
-                        {showActions ? <th>Actions</th> : null}
+                        {showActions ? <th aria-label="Actions" /> : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -347,43 +348,39 @@ function StoreInventoryPage(): React.JSX.Element {
                               </span>
                             </td>
                             {showActions ? (
-                              <td>
-                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                  {/* Below Reorder → the Reorder List (ADR-193 phase 5,
-                                      review): the one place PRs are raised for it, so an
-                                      item that already has an open PR is never bought twice. */}
-                                  {canRaisePr && row.belowReorder ? (
-                                    <Link
-                                      to="/reorder-list"
-                                      className="btn btn-primary btn-sm"
-                                      style={{ fontSize: 11 }}
-                                      title="Open the Reorder List — one PR per item, open PRs shown"
-                                    >
-                                      Raise PR
-                                    </Link>
-                                  ) : null}
-                                  {canEdit ? (
-                                    <>
-                                      <button
-                                        type="button"
-                                        className="btn btn-ghost btn-sm"
-                                        onClick={() => setAdjustRow(row)}
-                                        style={{ fontSize: 11 }}
-                                      >
-                                        ± Adjust
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn btn-ghost btn-sm"
-                                        onClick={() => setMinRow(row)}
-                                        title="Reorder Level and Reorder Qty"
-                                        style={{ fontSize: 11 }}
-                                      >
-                                        Reorder
-                                      </button>
-                                    </>
-                                  ) : null}
-                                </div>
+                              <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                                <RowMenu
+                                  renderLink={(p) => <Link {...p} />}
+                                  items={[
+                                    {
+                                      key: 'adjust',
+                                      label: '± Adjust',
+                                      icon: 'pencil',
+                                      hidden: !canEdit,
+                                      onSelect: () => setAdjustRow(row),
+                                    },
+                                    {
+                                      // Reorder Level and Reorder Qty.
+                                      key: 'reorder',
+                                      label: 'Reorder',
+                                      icon: 'settings',
+                                      hidden: !canEdit,
+                                      onSelect: () => setMinRow(row),
+                                    },
+                                    {
+                                      // Below Reorder → the Reorder List (ADR-193
+                                      // phase 5, review): the one place PRs are
+                                      // raised for it, so an item that already has
+                                      // an open PR is never bought twice.
+                                      key: 'raise-pr',
+                                      label: 'Raise PR',
+                                      icon: 'plus',
+                                      group: 'workflow',
+                                      hidden: !(canRaisePr && row.belowReorder),
+                                      to: '/reorder-list',
+                                    },
+                                  ]}
+                                />
                               </td>
                             ) : null}
                           </tr>

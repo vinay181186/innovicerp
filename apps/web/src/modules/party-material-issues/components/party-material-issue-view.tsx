@@ -9,7 +9,7 @@ import {
   type ListPartyMaterialIssuesQuery,
   type PartyMaterialIssueListItem,
 } from '@innovic/shared';
-import { Loader2, Plus, XCircle } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -21,6 +21,7 @@ import { useJobWorkOrder, useJobWorkOrdersList } from '@/modules/job-work-orders
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
 import { partyMaterialFitsJwLine } from '@/modules/party-materials/fits-jw-line';
 import { useDiscardGuard } from '@/modules/store-inventory/components/discard-guard';
+import { RowMenu } from '@/ui/data';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   useCancelPartyMaterialIssue,
@@ -145,7 +146,7 @@ export function PartyMaterialIssueView({
                     Issue Qty
                   </th>
                   <th>Remarks</th>
-                  {canCancel ? <th>Actions</th> : null}
+                  {canCancel ? <th aria-label="Actions" /> : null}
                 </tr>
               </thead>
               <tbody>
@@ -215,21 +216,20 @@ export function PartyMaterialIssueView({
                       {it.remarks ?? '—'}
                     </td>
                     {canCancel ? (
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          style={{
-                            background: 'var(--red3)',
-                            color: 'var(--red2)',
-                            border: '1px solid var(--red)',
-                            padding: '2px 8px',
-                          }}
-                          onClick={() => setCancelRow(it)}
-                          title="Cancel this issue and put the qty back on party stock"
-                        >
-                          <XCircle size={12} /> Cancel
-                        </button>
+                      <td className="td-ctr">
+                        {/* ⋯ Cancel Issue — puts the qty back on party stock
+                            (the reason dialog below). */}
+                        <RowMenu
+                          items={[
+                            {
+                              key: 'cancel',
+                              label: 'Cancel Issue',
+                              icon: 'x',
+                              group: 'danger',
+                              onSelect: () => setCancelRow(it),
+                            },
+                          ]}
+                        />
                       </td>
                     ) : null}
                   </tr>

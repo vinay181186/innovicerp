@@ -17,6 +17,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useClientsList } from '../../clients/api';
 import { useItem } from '../../items/api';
@@ -152,7 +153,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                   <th className="th-num" style={{ color: 'var(--purple)' }}>
                     Returned
                   </th>
-                  <th>Actions</th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -208,49 +209,41 @@ function PartyMaterialsListPage(): React.JSX.Element {
                     >
                       {pm.returnedQty}
                     </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        {canReturn ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 11, color: 'var(--purple)' }}
-                            disabled={pm.stockQty <= 0}
-                            title={
-                              pm.stockQty <= 0 ? 'Nothing in the party store to return' : undefined
-                            }
-                            onClick={() => setReturnRow(pm)}
-                          >
-                            Return
-                          </button>
-                        ) : null}
-                        {canEdit ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 11 }}
-                            onClick={() => setEditRow(pm)}
-                          >
-                            Edit
-                          </button>
-                        ) : null}
-                        {canDelete ? (
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            style={{ fontSize: 11 }}
-                            disabled={pm.stockQty > 0}
-                            title={
+                    <td className="td-ctr">
+                      {/* ⋯ Edit · Return · ─ · Delete, same gates as the old
+                          buttons; greyed where the server would refuse. */}
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'edit',
+                            label: 'Edit',
+                            icon: 'pencil',
+                            hidden: !canEdit,
+                            onSelect: () => setEditRow(pm),
+                          },
+                          {
+                            key: 'return',
+                            label: 'Return',
+                            icon: 'arrow-left',
+                            group: 'workflow',
+                            hidden: !canReturn,
+                            disabledReason: pm.stockQty <= 0 ? 'Nothing in stock' : undefined,
+                            onSelect: () => setReturnRow(pm),
+                          },
+                          {
+                            key: 'delete',
+                            label: 'Delete',
+                            icon: 'trash-2',
+                            group: 'danger',
+                            hidden: !canDelete,
+                            disabledReason:
                               pm.stockQty > 0
-                                ? `Cannot delete: ${pm.stockQty} in stock. Issue it first.`
-                                : undefined
-                            }
-                            onClick={() => setDeleteRow(pm)}
-                          >
-                            Delete
-                          </button>
-                        ) : null}
-                      </div>
+                                ? `${pm.stockQty} in stock — issue it first`
+                                : undefined,
+                            onSelect: () => setDeleteRow(pm),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

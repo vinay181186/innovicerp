@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { ListHeader } from '@/ui/layout';
 import { useUserAccessList } from '../api';
 import { ConfigureAccessModal } from '../components/configure-modal';
@@ -116,7 +117,7 @@ function AccessControlListPage(): React.JSX.Element {
                 <th>Tiers by Department</th>
                 <th>Departments</th>
                 <th>Extras</th>
-                <th style={{ width: 130 }}>Actions</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -240,15 +241,10 @@ function UserAccessRow({
           </div>
         ) : null}
       </td>
-      <td>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          onClick={onConfigure}
-          style={{ fontSize: 11 }}
-        >
-          🔒 Configure
-        </button>
+      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+        <RowMenu
+          items={[{ key: 'configure', label: 'Configure', icon: 'lock', onSelect: onConfigure }]}
+        />
       </td>
     </tr>
   );

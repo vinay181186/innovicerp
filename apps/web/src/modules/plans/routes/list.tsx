@@ -22,7 +22,8 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { RowMenu, type RowMenuItem } from '@/ui/data';
+import { ListFooter, ListHeader, PageState, type RenderLink } from '@/ui/layout';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { NeedsPlanningTable } from '../components/needs-planning-table';
 import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
@@ -98,6 +99,105 @@ const STATUS_KPI_KEY: Record<
 // One fetch, then scroll — no Prev / Next (user, 2026-09-19). The list-query
 // cap is 500; the count line under the table flags a rarer larger set.
 const LIMIT = 500;
+
+/** The ⋯ menu's link renderer: the Create … steps carry a query string
+ *  (`/production-orders/new?planId=…`), and the router's <Link> wants it as
+ *  `search`, so it is split off here. */
+const renderPlanLink: RenderLink = ({ to, ...rest }) => {
+  const q = to.indexOf('?');
+  if (q < 0) return <Link {...rest} to={to} />;
+  const search = Object.fromEntries(new URLSearchParams(to.slice(q + 1)));
+  return <Link {...rest} to={to.slice(0, q)} search={search} />;
+};
+
+/** `path?a=1&b=2`, leaving out the empty values. */
+function withQuery(path: string, params: Record<string, string | null | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
+  const qs = q.toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
+/**
+ * The row's ⋯ menu (owner-approved spec 2026-10-01): the step that moves the
+ * plan out of the state it shows, under "Workflow". Same steps, links and
+ * gates as the old Action buttons. An item the user has no right to is left
+ * out; one the server would refuse for this plan's state is greyed with why.
+ */
+function planRowMenu(
+  row: ListPlansResponse['items'][number],
+  opts: { canCreateRouteCard: boolean; canProductionOrder: boolean },
+): RowMenuItem[] {
+  const itemLabel = (row.itemCode ?? row.itemCodeText) as string | null;
+  const itemName = row.itemName ?? row.itemNameText;
+  const newPoTo = withQuery('/production-orders/new', { planId: row.id, planCode: row.code });
+  if (row.derivedStatus === 'route_card_pending') {
+    return [
+      {
+        key: 'create-route-card',
+        label: 'Create Route Card',
+        icon: 'plus',
+        group: 'workflow',
+        hidden: !opts.canCreateRouteCard,
+        to: withQuery('/route-cards/new', {
+          itemId: row.itemId,
+          itemCode: itemLabel,
+          itemName,
+        }),
+      },
+    ];
+  }
+  if (row.derivedStatus === 'gen_production_order') {
+    return [
+      {
+        key: 'create-po',
+        label: 'Create Production Order',
+        icon: 'plus',
+        group: 'workflow',
+        hidden: !opts.canProductionOrder,
+        to: newPoTo,
+      },
+    ];
+  }
+  if (row.derivedStatus !== 'in_production') return [];
+  // ADR-182 — a plan part-covered by earlier orders still needs one for its
+  // Pending qty; with nothing Pending the server refuses a new order.
+  const nothingPending = row.pendingQty > 0 ? undefined : 'Nothing Pending';
+  // Close only once the Job Card has finished — before that the server
+  // refuses it.
+  const jcDone = row.jcStatus === 'complete' || row.jcStatus === 'closed';
+  return [
+    {
+      key: 'create-po',
+      label: 'Create Production Order',
+      icon: 'plus',
+      group: 'workflow',
+      hidden: !opts.canProductionOrder,
+      disabledReason: nothingPending,
+      ...(nothingPending ? {} : { to: newPoTo }),
+    },
+    {
+      // The Job Card: status, then Op Entry from there.
+      key: 'op-entry',
+      label: 'Op Entry',
+      icon: 'play',
+      group: 'workflow',
+      hidden: !row.jcId,
+      to: row.jcId ? `/job-cards/${row.jcId}` : undefined,
+    },
+    {
+      key: 'close-po',
+      label: 'Close Production Order',
+      icon: 'lock',
+      group: 'workflow',
+      hidden: !opts.canProductionOrder,
+      disabledReason: jcDone ? undefined : 'Job Card not complete',
+      ...(jcDone
+        ? { to: withQuery('/production-orders/close', { planId: row.id, planCode: row.code }) }
+        : {}),
+    },
+  ];
+}
 
 function PlansListPage(): React.JSX.Element {
   const navigate = useNavigate();
@@ -311,9 +411,8 @@ function Table({
   filtered: boolean;
 }): React.JSX.Element {
   const navigate = useNavigate();
-  // The Status column's next-step buttons: each one is the action that moves
-  // the plan out of the state it shows, offered only to someone allowed to
-  // take it.
+  // The ⋯ menu's next steps: each one is the action that moves the plan out
+  // of the state it shows, offered only to someone allowed to take it.
   const { data: eff } = useMyAccess();
   const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
   const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
@@ -337,18 +436,20 @@ function Table({
         <div className="tbl-wrap">
           <table className="innovic-table tbl-grid">
             {/* Widths total exactly 100. POL took 5% — one each off Plan No.,
-                SO and Action, two off Item — when it was added (2026-09-23). */}
+                SO and Action, two off Item — when it was added (2026-09-23).
+                The Action buttons became the ⋯ (2026-10-01): its 4% gave the
+                rest back to Item and Plan Status. */}
             <colgroup>
               <col style={{ width: '11%' }} />
               <col style={{ width: '5%' }} />
-              <col style={{ width: '17%' }} />
+              <col style={{ width: '22%' }} />
               <col style={{ width: '10%' }} />
               <col style={{ width: '6%' }} />
               <col style={{ width: '6%' }} />
               <col style={{ width: '11%' }} />
               <col style={{ width: '11%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '13%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '4%' }} />
             </colgroup>
             <thead>
               <tr>
@@ -363,7 +464,7 @@ function Table({
                 <th>Production Order No.</th>
                 <th>JC No.</th>
                 <th>Plan Status</th>
-                <th>Action</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -500,78 +601,13 @@ function Table({
                     <td>
                       <span className={`badge ${badge.cls}`}>{badge.label}</span>
                     </td>
-                    <td>
-                      {/* The one action that moves the plan out of the state
-                          it shows — offered only to someone allowed to take
-                          it. In production the Job Card comes first (status,
-                          then Op Entry from there); closing the order is the
-                          later step and sits second. */}
-                      {row.derivedStatus === 'route_card_pending' && canCreateRouteCard ? (
-                        <Link
-                          to="/route-cards/new"
-                          search={{
-                            ...(row.itemId ? { itemId: row.itemId } : {}),
-                            ...(itemLabel ? { itemCode: itemLabel } : {}),
-                            ...(itemName ? { itemName } : {}),
-                          }}
-                          className="btn btn-sm btn-primary"
-                          title="Create the route card for this item, then come back to raise the Production Order"
-                        >
-                          + Create Route Card
-                        </Link>
-                      ) : row.derivedStatus === 'gen_production_order' && canProductionOrder ? (
-                        <Link
-                          to="/production-orders/new"
-                          search={{ planId: row.id, planCode: row.code }}
-                          className="btn btn-sm btn-primary"
-                          title="Raise the Production Order for this plan"
-                        >
-                          + Create Production Order
-                        </Link>
-                      ) : row.derivedStatus === 'in_production' ? (
-                        <>
-                          {/* ADR-182 — a plan part-covered by earlier orders
-                              still needs one for its Pending qty, so the
-                              action stays offered alongside Op Entry. */}
-                          {canProductionOrder && row.pendingQty > 0 ? (
-                            <Link
-                              to="/production-orders/new"
-                              search={{ planId: row.id, planCode: row.code }}
-                              className="btn btn-sm btn-primary"
-                              title={`Raise a Production Order for the ${row.pendingQty} still Pending on this plan`}
-                            >
-                              + Create Production Order
-                            </Link>
-                          ) : null}
-                          {row.jcId ? (
-                            <Link
-                              to="/job-cards/$id"
-                              params={{ id: row.jcId }}
-                              className="btn btn-sm btn-primary"
-                              title={`Open Job Card ${row.jcCode ?? ''} — status and Op Entry`}
-                            >
-                              ▶ Op Entry
-                            </Link>
-                          ) : null}
-                          {/* Close is offered only once the Job Card has
-                              actually finished — before that the server
-                              would refuse it, so the button would only be a
-                              way to meet an error. */}
-                          {canProductionOrder &&
-                          (row.jcStatus === 'complete' || row.jcStatus === 'closed') ? (
-                            <Link
-                              to="/production-orders/close"
-                              search={{ planId: row.id, planCode: row.code }}
-                              className="btn btn-sm"
-                              title="Close this plan's Production Order — its Job Card is complete"
-                            >
-                              🔒 Close
-                            </Link>
-                          ) : null}
-                        </>
-                      ) : (
-                        <span className="text3">—</span>
-                      )}
+                    {/* The ⋯: the step that moves the plan out of the state
+                        it shows. Its clicks never open the plan. */}
+                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                      <RowMenu
+                        items={planRowMenu(row, { canCreateRouteCard, canProductionOrder })}
+                        renderLink={renderPlanLink}
+                      />
                     </td>
                   </tr>
                 );

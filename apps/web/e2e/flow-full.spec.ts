@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { clickRowMenuItem } from './row-menu';
 
 // FULLY AUTONOMOUS end-to-end: SO → plan(4 ops incl OSP) → execute → op logs →
 // OSP loop (PR→PO→DC→receive→Incoming QC) → final op → dispatch → invoice.
@@ -145,10 +146,11 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   // Incoming QC: find the GRN row for our PO and accept full qty
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
-  const grnRow = page.locator('tr', { hasText: docs['OSP PO']! }).first();
+  // The pending row is the one with the ⋯ row menu (Inspect lives in it).
+  const grnRow = page.locator('tr', { hasText: docs['OSP PO']! }).filter({ has: page.getByRole('button', { name: 'Actions' }) }).first();
   const grnNo = (await grnRow.innerText().catch(() => '')).match(/IN-GRN-\d+/);
   if (grnNo) rec('OSP GRN', grnNo[0]);
-  await grnRow.getByText(/Inspect/i).first().click();
+  await clickRowMenuItem(page, grnRow, /^Inspect/);
   await page.waitForTimeout(3000);
   await page.getByPlaceholder(/QC ?By|Inspector|Inspected/i).first().fill('E2E QC').catch(() => {});
   await page.getByRole('spinbutton').first().fill(QTY);

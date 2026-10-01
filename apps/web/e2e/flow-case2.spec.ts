@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
+import { clickRowMenuItem } from './row-menu';
 import { createSO, ITEM_CODE, makeGuard, makeLog, planExecuteInhouse, snap } from './case-helpers';
 
 // CASE 2 — ALL OSP VIA JC (dual-lane): make a JC, outsource its op balance →
@@ -112,8 +113,9 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   // 5 — Incoming QC: inspect the newest pending row for our item → accept
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2800);
-  const qcRow = page.locator('table tbody tr').filter({ hasText: ITEM_CODE }).filter({ has: page.getByRole('link', { name: /Inspect/i }) }).first();
-  await qcRow.getByRole('link', { name: /Inspect/i }).click();
+  // Only pending rows carry the ⋯ row menu; Inspect is its item.
+  const qcRow = page.locator('table tbody tr').filter({ hasText: ITEM_CODE }).filter({ has: page.getByRole('button', { name: 'Actions' }) }).first();
+  await clickRowMenuItem(page, qcRow, /^Inspect/);
   await page.waitForTimeout(2000);
   await snap(page, 'c2', '11-qc-form');
   await page.locator('input[type="number"]').first().fill(String(QTY)); // accepted

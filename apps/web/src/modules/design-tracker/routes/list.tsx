@@ -18,6 +18,7 @@ import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
@@ -175,7 +176,7 @@ function DesignTrackerListPage(): React.JSX.Element {
                   <th>Design Status</th>
                   <th className="td-ctr">Design Rev</th>
                   <th className="td-ctr">Hours</th>
-                  <th>Actions</th>
+                  <th className="td-ctr" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -294,65 +295,52 @@ function Row({
         </span>
         <span style={{ color: 'var(--text3)', fontSize: 11 }}> / {row.estimatedHours}h</span>
       </td>
-      <td>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            onClick={onLogTime}
-          >
-            ⏱ Log
-          </button>
-          {perms.edit && row.status !== 'Approved' ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 11 }}
-              onClick={onEdit}
-            >
-              ✏ Edit
-            </button>
-          ) : null}
-          {canWrite && row.status === 'In Progress' ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 11, color: 'var(--blue)' }}
-              disabled={submitMut.isPending}
-              onClick={() => setAsk('submit')}
-            >
-              ✔ Submit
-            </button>
-          ) : null}
-          {isAdmin && row.status === 'Review' ? (
-            <>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11, color: 'var(--green2)' }}
-                disabled={approveMut.isPending}
-                onClick={() => setAsk('approve')}
-              >
-                ✅ Approve
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11, color: 'var(--red2)' }}
-                disabled={reviseMut.isPending}
-                onClick={() => {
-                  const reason = window.prompt('Revision reason:');
-                  if (reason && reason.trim()) {
-                    reviseMut.mutate({ id: row.id, input: { reason: reason.trim() } });
-                  }
-                }}
-              >
-                ↩ Revise
-              </button>
-            </>
-          ) : null}
-        </div>
+      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+        <RowMenu
+          items={[
+            { key: 'log', label: 'Log Time', icon: 'plus', onSelect: onLogTime },
+            {
+              key: 'edit',
+              label: 'Edit',
+              icon: 'pencil',
+              hidden: !perms.edit || row.status === 'Approved',
+              onSelect: onEdit,
+            },
+            {
+              key: 'submit',
+              label: 'Submit',
+              icon: 'check',
+              group: 'workflow',
+              hidden: !canWrite || row.status !== 'In Progress',
+              onSelect: () => setAsk('submit'),
+            },
+            {
+              key: 'approve',
+              label: 'Approve',
+              icon: 'check',
+              group: 'workflow',
+              hidden: !isAdmin || row.status !== 'Review',
+              onSelect: () => setAsk('approve'),
+            },
+            {
+              // Sends the design back for revision — red, as the old button was.
+              key: 'revise',
+              label: 'Revise',
+              icon: 'arrow-left',
+              group: 'danger',
+              hidden: !isAdmin || row.status !== 'Review',
+              onSelect: () => {
+                const reason = window.prompt('Revision reason:');
+                if (reason && reason.trim()) {
+                  return reviseMut
+                    .mutateAsync({ id: row.id, input: { reason: reason.trim() } })
+                    .then(() => undefined);
+                }
+                return undefined;
+              },
+            },
+          ]}
+        />
         <ConfirmDialog
           open={ask === 'submit'}
           title={`Submit ${row.code} for review?`}

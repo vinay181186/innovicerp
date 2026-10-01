@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSaveKey } from '@/lib/use-save-key';
+import { RowMenu } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListHeader } from '@/ui/layout';
@@ -155,7 +156,7 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
                 <th>Group</th>
                 <th>Description</th>
                 <th>Active</th>
-                <th>Actions</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -212,34 +213,33 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
                         {row.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td>
-                      {/* Stop once on the wrapper so an action never also fires
-                          the row's own open-for-edit click. */}
-                      <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                        {canEdit ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => setModal({ kind: 'edit', row })}
-                          >
-                            Edit
-                          </button>
-                        ) : null}
-                        {canDelete ? (
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            disabled={softDelete.isPending}
-                            onClick={() => {
+                    {/* Stopped so a menu click never also fires the row's own
+                        open-for-edit click. */}
+                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'edit',
+                            label: 'Edit',
+                            icon: 'pencil',
+                            hidden: !canEdit,
+                            onSelect: () => setModal({ kind: 'edit', row }),
+                          },
+                          {
+                            key: 'trash',
+                            label: 'Move to Trash',
+                            icon: 'trash-2',
+                            group: 'danger',
+                            hidden: !canDelete,
+                            disabledReason: softDelete.isPending ? 'Working…' : undefined,
+                            onSelect: () => {
                               // A failed earlier delete must not greet this one.
                               softDelete.reset();
                               setTrashRow(row);
-                            }}
-                          >
-                            Delete
-                          </button>
-                        ) : null}
-                      </div>
+                            },
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))

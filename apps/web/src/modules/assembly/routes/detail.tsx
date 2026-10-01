@@ -22,12 +22,14 @@ import type {
   AssemblyVariancePart,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, CheckCircle2, Loader2, Play, RotateCcw, Truck } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { fmtDate, todayIst } from '@/lib/date';
+import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
 import { VarianceConfirm } from '../components/variance-confirm';
@@ -724,7 +726,8 @@ function UnitsPanel({
               <th>Assembled By</th>
               <th>Remarks</th>
               <th>Dispatch</th>
-              <th>Actions</th>
+              <th>Good Qty</th>
+              <th aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -780,51 +783,52 @@ function UnitsPanel({
                   </td>
                   <td>
                     {wip ? (
-                      /* STOP: enter how many came out good; the rest stays in
-                         assembly (ADR-129). */
-                      <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                        <input
-                          type="number"
-                          min={1}
-                          max={u.qty}
-                          className="innovic-input"
-                          style={{ width: 64, textAlign: 'center', padding: '3px 4px' }}
-                          value={stopQty[u.id] ?? String(u.qty)}
-                          onChange={(e) => setStopQty((s) => ({ ...s, [u.id]: e.target.value }))}
-                          title="Good qty to complete now"
-                        />
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary"
-                          onClick={() => onStop(u)}
-                          disabled={stop.isPending}
-                          title="Complete this many — the rest stays in assembly"
-                        >
-                          {stop.isPending ? (
-                            <Loader2 size={13} className="animate-spin" />
-                          ) : (
-                            <CheckCircle2 size={13} />
-                          )}
-                          Complete
-                        </button>
-                      </div>
-                    ) : !u.dispatched ? (
-                      // Opens Customer Dispatch (create) preselected to this SO —
-                      // the real dispatch (stock move + SO dispatched qty) happens
-                      // there, not as an internal flag on the batch.
-                      <Link
-                        to="/customer-dispatches/new"
-                        search={{ so: soId }}
-                        className="btn btn-sm btn-success"
-                        title="Create a customer dispatch for this order"
-                      >
-                        <Truck size={13} /> Dispatch
-                      </Link>
+                      /* STOP: enter how many came out good, then ⋯ → Complete;
+                         the rest stays in assembly (ADR-129). */
+                      <input
+                        type="number"
+                        min={1}
+                        max={u.qty}
+                        className="innovic-input"
+                        style={{ width: 64, textAlign: 'center', padding: '3px 4px' }}
+                        value={stopQty[u.id] ?? String(u.qty)}
+                        onChange={(e) => setStopQty((s) => ({ ...s, [u.id]: e.target.value }))}
+                        title="Good qty to complete now"
+                      />
                     ) : (
                       <span className="text3" style={{ fontSize: 11 }}>
                         —
                       </span>
                     )}
+                  </td>
+                  <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                    <RowMenu
+                      renderLink={renderJcOpsLink}
+                      items={[
+                        {
+                          // Completes the Good Qty typed in the row; the rest
+                          // stays in assembly.
+                          key: 'complete',
+                          label: 'Complete',
+                          icon: 'check',
+                          group: 'workflow',
+                          hidden: !wip,
+                          disabledReason: stop.isPending ? 'Working…' : undefined,
+                          onSelect: () => onStop(u),
+                        },
+                        {
+                          // Opens Customer Dispatch (create) preselected to this
+                          // SO — the real dispatch (stock move + SO dispatched
+                          // qty) happens there, not as a flag on the batch.
+                          key: 'dispatch',
+                          label: 'Dispatch',
+                          icon: 'truck',
+                          group: 'workflow',
+                          hidden: wip || u.dispatched,
+                          to: `/customer-dispatches/new?${new URLSearchParams({ so: soId }).toString()}`,
+                        },
+                      ]}
+                    />
                   </td>
                 </tr>
               );
