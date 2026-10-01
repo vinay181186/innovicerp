@@ -160,15 +160,25 @@ export function RowMenu({
     };
   }, [open, place]);
 
+  // Focus moves into the menu once it is placed: a browser refuses focus on
+  // an element that is still `visibility: hidden`. Only once per opening, so a
+  // re-place on scroll never pulls focus back to the first item.
+  const focusedRef = useRef(false);
   useEffect(() => {
-    if (mode !== 'click' && mode !== 'key') return;
+    if (mode !== 'click' && mode !== 'key') {
+      focusedRef.current = false;
+      return;
+    }
+    if (pos.visibility === 'hidden' || focusedRef.current) return;
     // First item that can run; a menu of only greyed items focuses the first.
     const menu = menuRef.current;
-    (
+    const first =
       menu?.querySelector<HTMLElement>('.row-menu-item:not(.is-disabled)') ??
-      menu?.querySelector<HTMLElement>('.row-menu-item')
-    )?.focus();
-  }, [mode]);
+      menu?.querySelector<HTMLElement>('.row-menu-item');
+    if (!first) return;
+    first.focus();
+    focusedRef.current = true;
+  }, [mode, pos]);
 
   useEffect(() => {
     if (!open) return undefined;
