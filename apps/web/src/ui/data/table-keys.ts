@@ -34,6 +34,16 @@ export const TABLE_KEYS = {
 
   // Reports
   savedReportsList: 'saved-reports-list',
+
+  // ADR-199 conversions — Purchase (batch P)
+  prList: 'pr-list',
+  outsourceJobs: 'outsource-jobs',
+  poList: 'po-list',
+  ospOutwardDc: 'osp-outward-dc',
+  jwDcOutward: 'jw-dc-outward',
+  jwDcInward: 'jw-dc-inward',
+  approvalsPrPo: 'approvals-pr-po',
+  approvalsOpEntry: 'approvals-op-entry',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];
