@@ -60,6 +60,16 @@ export const TABLE_KEYS = {
   toolWriteoffs: 'tool-writeoffs',
   stockCounts: 'stock-counts',
   instruments: 'instruments',
+
+  // ADR-199 conversions — Sales (batch SA)
+  soMaster: 'so-master',
+  jwsoList: 'jwso-list',
+  customerDispatches: 'customer-dispatches',
+  jwReturns: 'jw-returns',
+  soOverview: 'so-overview',
+  assemblies: 'assemblies',
+  jwInvoices: 'jw-invoices',
+  soStatusDetail: 'so-status-detail',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];
