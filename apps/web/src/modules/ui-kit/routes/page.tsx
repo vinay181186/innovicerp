@@ -52,6 +52,7 @@ import {
   Timeline,
   nextSort,
   type DataTableColumn,
+  type RowMenuItem,
   type SortState,
 } from '@/ui/data';
 import {
@@ -1162,6 +1163,34 @@ const RELATED_SECTIONS = [
   { key: 'nc', title: 'NC Register', icon: '⚠', items: [] },
 ];
 
+// The ⋯ row menu demo: every group, a greyed item with its reason, a link,
+// and a slow (Promise) action that keeps the ⋯ busy until it settles.
+function demoRowMenu(row: DemoRow): RowMenuItem[] {
+  const slow = () => new Promise<void>((resolve) => window.setTimeout(resolve, 1500));
+  return [
+    { key: 'edit', label: 'Edit', icon: 'pencil', to: `#edit-${row.id}` },
+    { key: 'print', label: 'Print', icon: 'printer', onSelect: () => undefined },
+    { key: 'xls', label: 'Download Excel', icon: 'download', onSelect: slow },
+    {
+      key: 'start',
+      label: 'Start Operation',
+      icon: 'play',
+      group: 'workflow',
+      onSelect: slow,
+      disabledReason: row.status === 'open' ? 'Already running' : undefined,
+    },
+    { key: 'osp', label: 'Outsource Available', icon: 'truck', group: 'workflow' },
+    { key: 'assign', label: 'Assign Task', icon: 'user-round', group: 'assign' },
+    {
+      key: 'del',
+      label: 'Move to Trash',
+      icon: 'trash-2',
+      group: 'danger',
+      disabledReason: row.status === 'closed' ? 'Closed' : undefined,
+    },
+  ];
+}
+
 function DataSection() {
   const [sort, setSort] = useState<SortState>({ sortBy: 'doc', sortDir: 'asc' });
   const [activeStat, setActiveStat] = useState('open');
@@ -1409,6 +1438,17 @@ function DataSection() {
           )}
         />
         <ListFooter total={3} noun="job card" hint="Click a row to open its detail page." />
+      </Panel>
+
+      <Panel title="DataTable — ⋯ row menu (rowMenu)">
+        {/* Classic path only: a fit-engine demo would need a registered
+            tableKey, and its layout saves to the user's profile. */}
+        <DataTable
+          columns={columns.slice(0, 5)}
+          rows={DEMO_ROWS}
+          onRowClick={() => undefined}
+          rowMenu={demoRowMenu}
+        />
       </Panel>
 
       <Panel title="DataTable — compact density (a nested line table)">
@@ -2162,6 +2202,15 @@ function LayoutSection() {
               extra={
                 <IconButton icon={<Icon name="printer" size={12} />} title="Print" size="sm" />
               }
+            />
+            <RowActions
+              viewTo="#view"
+              onDelete={() => undefined}
+              deleteConfirm={{}}
+              items={[
+                { key: 'print', label: 'Print', icon: 'printer', onSelect: () => undefined },
+                { key: 'assign', label: 'Assign Task', icon: 'user-round', group: 'assign' },
+              ]}
             />
           </div>
         </State>
