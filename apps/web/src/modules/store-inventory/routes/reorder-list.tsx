@@ -3,16 +3,22 @@
 // vendor of its last PO. Tick rows, adjust qty / vendor, Raise PRs — one Open PR
 // per item, approved as usual. An item that already has an open PR shows it and
 // cannot be ticked. Nothing is raised automatically.
+//
+// ADR-199 conversion (2026-10-01): now the shared fit table (<DataTable
+// tableKey={reorderList}>). The tick-boxes + select-all + bulk "Raise PRs" ride
+// the engine's selection props; "PR Qty" and "Vendor" are `control` columns
+// (sibling file reorder-list-columns.tsx). Data, mutations and the raise-PR flow
+// are unchanged.
 import type { ReorderListRow, ReorderPrResult } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { SearchableSelect } from '@/ui/forms';
-import { ListHeader } from '@/ui/layout';
-import { useVendorsList } from '../../vendors/api';
+import { DataTable, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListHeader, PageState } from '@/ui/layout';
 import { useRaiseReorderPrs, useReorderList } from '../api';
+import { reorderListColumns, type Draft } from '../components/reorder-list-columns';
 
 export const reorderListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -20,72 +26,84 @@ export const reorderListRoute = createRoute({
   component: ReorderListPage,
 });
 
-interface Draft {
-  ticked: boolean;
-  qty: string;
-  vendorId: string | null;
-  vendorLabel: string | undefined;
-}
-
-function VendorPicker({
-  value,
-  label,
-  onChange,
-}: {
-  value: string | null;
-  label: string | undefined;
-  onChange: (id: string | null, label: string | undefined) => void;
-}): React.JSX.Element {
-  const [search, setSearch] = useState('');
-  const { data, isFetching } = useVendorsList({
-    search: search.trim() || undefined,
-    isActive: true,
-    limit: 30,
-    offset: 0,
-  });
-  const options = useMemo(
-    () => (data?.vendors ?? []).map((v) => ({ id: v.id, code: v.code, name: v.name })),
-    [data],
-  );
-  return (
-    <SearchableSelect
-      value={value}
-      valueLabel={label}
-      onChange={(id) => onChange(id, options.find((o) => o.id === id)?.code)}
-      options={options}
-      onSearch={setSearch}
-      loading={isFetching}
-      placeholder="🔍 Vendor…"
-      emptyText="No matching vendor"
-    />
-  );
-}
-
 function ReorderListPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const canRaise = effectiveFormPerms(eff, 'pr_create').entry;
   const { data, isLoading, isError, error } = useReorderList();
   const raise = useRaiseReorderPrs();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  // The ticked rows (caller-owned selection set — the engine renders it).
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<ReorderPrResult | null>(null);
 
-  const draftOf = (r: ReorderListRow): Draft =>
-    drafts[r.itemId] ?? {
-      ticked: false,
-      qty: String(r.suggestedQty),
-      vendorId: r.suggestedVendor?.id ?? null,
-      vendorLabel: r.suggestedVendor?.code,
-    };
-  const setDraft = (r: ReorderListRow, patch: Partial<Draft>): void =>
-    setDrafts((d) => ({ ...d, [r.itemId]: { ...draftOf(r), ...patch } }));
+  const rows = useMemo(() => data ?? [], [data]);
 
-  const rows = data ?? [];
-  const ticked = rows.filter((r) => draftOf(r).ticked);
+  const draftOf = useCallback(
+    (r: ReorderListRow): Draft =>
+      drafts[r.itemId] ?? {
+        qty: String(r.suggestedQty),
+        vendorId: r.suggestedVendor?.id ?? null,
+        vendorLabel: r.suggestedVendor?.code,
+      },
+    [drafts],
+  );
+  const setDraft = useCallback(
+    (r: ReorderListRow, patch: Partial<Draft>): void =>
+      setDrafts((d) => ({
+        ...d,
+        [r.itemId]: {
+          ...(d[r.itemId] ?? {
+            qty: String(r.suggestedQty),
+            vendorId: r.suggestedVendor?.id ?? null,
+            vendorLabel: r.suggestedVendor?.code,
+          }),
+          ...patch,
+        },
+      })),
+    [],
+  );
 
-  const onRaise = (): void => {
+  const columns = useMemo(
+    () => reorderListColumns({ draftOf, setDraft, canRaise }),
+    [draftOf, setDraft, canRaise],
+  );
+
+  // A row can be ticked only when the user may raise PRs and it has no open PR.
+  const isRowSelectable = useCallback(
+    (r: ReorderListRow): boolean => canRaise && r.openPrs.length === 0,
+    [canRaise],
+  );
+
+  const onToggleRow = useCallback(
+    (key: string | number, _r: ReorderListRow, next: boolean): void => {
+      setSelectedKeys((s) => {
+        const ns = new Set(s);
+        if (next) ns.add(String(key));
+        else ns.delete(String(key));
+        return ns;
+      });
+    },
+    [],
+  );
+
+  const onToggleAll = useCallback((next: boolean, keys: (string | number)[]): void => {
+    setSelectedKeys((s) => {
+      const ns = new Set(s);
+      for (const k of keys) {
+        if (next) ns.add(String(k));
+        else ns.delete(String(k));
+      }
+      return ns;
+    });
+  }, []);
+
+  const tickedCount = selectedKeys.size;
+
+  const onRaise = useCallback((): void => {
     setErr(null);
     setResult(null);
+    const ticked = rows.filter((r) => selectedKeys.has(r.itemId));
     const lines: Array<{ itemId: string; qty: number; vendorId: string }> = [];
     for (const r of ticked) {
       const d = draftOf(r);
@@ -101,32 +119,16 @@ function ReorderListPage(): React.JSX.Element {
         onSuccess: (res) => {
           setResult(res);
           setDrafts({});
+          setSelectedKeys(new Set());
         },
         onError: (e) => setErr(e.message || 'Could not raise the PRs.'),
       },
     );
-  };
+  }, [rows, selectedKeys, draftOf, raise]);
 
   return (
     <div>
-      <ListHeader
-        title="Reorder List"
-        icon="🔁"
-        count={rows.length}
-        noun="item below reorder"
-        primary={
-          canRaise ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={raise.isPending || ticked.length === 0}
-              onClick={onRaise}
-            >
-              {raise.isPending ? 'Raising…' : `Raise PRs (${ticked.length})`}
-            </button>
-          ) : null
-        }
-      />
+      <ListHeader title="Reorder List" icon="🔁" count={rows.length} noun="item below reorder" />
       {result ? (
         <div className="panel" style={{ marginBottom: 10 }}>
           <div className="panel-body" style={{ fontSize: 12 }}>
@@ -155,109 +157,50 @@ function ReorderListPage(): React.JSX.Element {
       {err ? (
         <div style={{ color: 'var(--red2)', fontSize: 12, marginBottom: 8 }}>{err}</div>
       ) : null}
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body text3" style={{ fontSize: 12 }}>
-            <Loader2 size={14} className="inline animate-spin" /> Loading…
-          </div>
-        ) : isError ? (
-          <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Could not load the reorder list.'}
-          </div>
-        ) : (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Item Code</th>
-                  <th>UOM</th>
-                  <th className="th-num">Available</th>
-                  <th className="th-num">On PO</th>
-                  <th className="th-num" title="Listed when Available + On PO is under this level">
-                    Reorder Level
-                  </th>
-                  <th className="th-num">Reorder Qty</th>
-                  <th className="th-num">PR Qty</th>
-                  <th>Vendor</th>
-                  <th>Open PR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const d = draftOf(r);
-                  const blocked = r.openPrs.length > 0;
-                  return (
-                    <tr key={r.itemId} style={{ opacity: blocked ? 0.6 : 1 }}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          disabled={!canRaise || blocked}
-                          checked={d.ticked}
-                          onChange={(e) => setDraft(r, { ticked: e.target.checked })}
-                          aria-label={`Raise PR for ${r.itemCode}`}
-                        />
-                      </td>
-                      <td>
-                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                          {r.itemCode}
-                        </span>
-                        {r.itemName ? (
-                          <div className="text3" style={{ fontSize: 11 }}>
-                            {r.itemName}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="text3">{r.uom}</td>
-                      <td className="mono td-num">{r.availableQty}</td>
-                      <td className="mono td-num">{r.onPoQty}</td>
-                      <td className="mono td-num">{r.reorderLevel}</td>
-                      <td className="mono td-num">{r.reorderQty || '—'}</td>
-                      <td className="td-num">
-                        <input
-                          type="number"
-                          min={0}
-                          step="any"
-                          className="innovic-input mono fw-700"
-                          style={{ width: 100, textAlign: 'right' }}
-                          disabled={blocked}
-                          value={d.qty}
-                          onChange={(e) => setDraft(r, { qty: e.target.value })}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          aria-label={`PR Qty for ${r.itemCode}`}
-                        />
-                      </td>
-                      <td style={{ minWidth: 200 }}>
-                        {blocked ? (
-                          '—'
-                        ) : (
-                          <VendorPicker
-                            value={d.vendorId}
-                            label={d.vendorLabel}
-                            onChange={(id, label) =>
-                              setDraft(r, { vendorId: id, vendorLabel: label })
-                            }
-                          />
-                        )}
-                      </td>
-                      <td className="mono" style={{ fontSize: 11 }}>
-                        {r.openPrs.map((p) => `${p.code} × ${p.qty}`).join(', ') || '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="empty-state">
-                      Nothing is below its Reorder Level.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load the reorder list.'}
+        />
+      ) : (
+        <div className="panel">
+          <DataTable
+            tableKey={TABLE_KEYS.reorderList}
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            rowKey={(r) => r.itemId}
+            editable
+            emptyText="Nothing is below its Reorder Level."
+            // A blocked row (has an open PR) is washed, as it was greyed before.
+            rowClassName={(r) => (r.openPrs.length > 0 ? ROW_TINT.cancelled : undefined)}
+            selectable
+            selectedKeys={selectedKeys}
+            isRowSelectable={isRowSelectable}
+            onToggleRow={onToggleRow}
+            onToggleAll={onToggleAll}
+            selectionActions={() => (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setSelectedKeys(new Set())}
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={raise.isPending || tickedCount === 0}
+                  onClick={onRaise}
+                >
+                  {raise.isPending ? 'Raising…' : `Raise PRs (${tickedCount})`}
+                </button>
+              </>
+            )}
+          />
+        </div>
+      )}
     </div>
   );
 }

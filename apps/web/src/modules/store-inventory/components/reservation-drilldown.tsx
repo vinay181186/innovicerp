@@ -1,10 +1,14 @@
 // "Where is my stock reserved?" — the drill-down behind the Reserved number on
 // the Store / Inventory list (ADR-180 §H).
 //
-// Reserved stock is still on the shelf; this box answers which SO lines have
-// been promised it. Every code that has a detail page in this app is a real
-// link (Sales Order, Production Order, Job Card); anything without one is
-// printed as plain reference text rather than a link that goes nowhere.
+// Reserved stock is still on the shelf; this box answers which SO lines have been
+// promised it. Every code that has a detail page in this app is a real link
+// (Sales Order, Production Order, Job Card); anything without one is printed as
+// plain reference text rather than a link that goes nowhere.
+//
+// ADR-199 conversion (2026-10-01): the hand-rolled table is now the shared fit
+// table (<DataTable tableKey={reservationDrilldown}>). Columns and behaviour are
+// unchanged; the item is named once in the title, so every row is the same item.
 
 import {
   RESERVATION_SOURCE_LABEL,
@@ -16,6 +20,8 @@ import { Loader2 } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useStockReservations } from '@/modules/plans/api';
+import { DataTable, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ModalShell } from './modal-shell';
 
 /** A code with no page of its own — plain reference text, never a dead link. */
@@ -49,6 +55,166 @@ function StatusBadge({ row }: { row: ReservationDetail }): React.JSX.Element {
   );
 }
 
+function reservationColumns(itemCode: string): DataTableColumn<ReservationDetail>[] {
+  return [
+    {
+      id: 'so_no',
+      header: 'SO No.',
+      kind: 'code',
+      nowrap: true,
+      className: 'td-code',
+      render: (row) =>
+        row.salesOrderId ? (
+          <Link
+            to="/sales-orders/$id"
+            params={{ id: row.salesOrderId }}
+            className="mono fw-700"
+            style={linkStyle}
+          >
+            {row.soCodeText}
+          </Link>
+        ) : (
+          <PlainRef code={row.soCodeText} />
+        ),
+    },
+    {
+      id: 'line_no',
+      header: 'Ln',
+      kind: 'code',
+      nowrap: true,
+      className: 'mono text3',
+      render: (row) => row.lineNo ?? '—',
+    },
+    {
+      // POL — the CUSTOMER's own purchase-order line number, beside our SO line.
+      id: 'pol',
+      header: 'POL',
+      kind: 'code',
+      nowrap: true,
+      headColor: 'var(--purple)',
+      className: 'mono fw-700',
+      render: (row) => <span style={{ color: 'var(--purple)' }}>{row.clientPoLineNo ?? '—'}</span>,
+    },
+    {
+      // CODE/REV — the item code with the customer's drawing revision on that SO
+      // line; the revision is never shown alone (NAMING section A).
+      id: 'code_rev',
+      header: 'CODE/REV',
+      kind: 'code',
+      nowrap: true,
+      className: 'mono fw-700',
+      render: (row) => itemCodeWithRev(itemCode, row.itemRevision),
+    },
+    {
+      id: 'customer',
+      header: 'Customer',
+      align: 'left',
+      ellipsis: true,
+      render: (row) => row.customerName ?? '—',
+      title: (row) => row.customerName ?? '',
+    },
+    {
+      id: 'reserved',
+      header: 'Reserved',
+      kind: 'num',
+      align: 'right',
+      nowrap: true,
+      headColor: 'var(--purple)',
+      className: 'mono fw-700',
+      render: (row) => <span style={{ color: 'var(--purple)' }}>{row.qty}</span>,
+    },
+    {
+      id: 'consumed',
+      header: 'Consumed',
+      kind: 'num',
+      align: 'right',
+      nowrap: true,
+      className: 'mono text3',
+      render: (row) => row.consumedQty,
+    },
+    {
+      id: 'pending',
+      header: 'Pending',
+      kind: 'num',
+      align: 'right',
+      nowrap: true,
+      headColor: 'var(--green2)',
+      className: 'mono fw-700',
+      render: (row) => <span style={{ color: 'var(--green2)' }}>{row.remainingQty}</span>,
+    },
+    {
+      id: 'source',
+      header: 'Source',
+      align: 'left',
+      ellipsis: true,
+      render: (row) => RESERVATION_SOURCE_LABEL[row.source],
+    },
+    {
+      id: 'reservation_status',
+      header: 'Reservation Status',
+      kind: 'badge',
+      nowrap: true,
+      render: (row) => <StatusBadge row={row} />,
+    },
+    {
+      id: 'production_order_no',
+      header: 'Production Order No.',
+      kind: 'code',
+      nowrap: true,
+      className: 'td-code',
+      render: (row) =>
+        row.productionOrderId && row.productionOrderCode ? (
+          <Link
+            to="/production-orders/$id"
+            params={{ id: row.productionOrderId }}
+            className="mono fw-700"
+            style={linkStyle}
+          >
+            {row.productionOrderCode}
+          </Link>
+        ) : (
+          <PlainRef code={row.productionOrderCode} />
+        ),
+    },
+    {
+      id: 'jc_no',
+      header: 'JC No.',
+      kind: 'code',
+      nowrap: true,
+      className: 'td-code',
+      render: (row) =>
+        row.jobCardId && row.jobCardCode ? (
+          <Link
+            to="/job-cards/$id"
+            params={{ id: row.jobCardId }}
+            className="mono fw-700"
+            style={linkStyle}
+          >
+            {row.jobCardCode}
+          </Link>
+        ) : (
+          <PlainRef code={row.jobCardCode} />
+        ),
+    },
+    {
+      id: 'reserved_on',
+      header: 'Reserved On',
+      kind: 'date',
+      nowrap: true,
+      className: 'mono',
+      render: (row) => fmtDate(row.reservedAt),
+    },
+    {
+      id: 'reserved_by',
+      header: 'Reserved By',
+      align: 'left',
+      ellipsis: true,
+      render: (row) => row.reservedByName ?? '—',
+      title: (row) => row.remarks ?? '',
+    },
+  ];
+}
+
 export function ReservationDrilldown({
   itemId,
   itemCode,
@@ -63,6 +229,7 @@ export function ReservationDrilldown({
   // Closed rows (released / cancelled / fully dispatched) are left out: the
   // question this box answers is "who is holding my stock right now".
   const { data, isLoading, isError, error } = useStockReservations({ itemId });
+  const columns = reservationColumns(itemCode);
 
   return (
     // The item is named once, in the title — every row is the same item.
@@ -83,123 +250,13 @@ export function ReservationDrilldown({
               {data?.totalReserved ?? 0}
             </b>
           </div>
-          <div className="tbl-wrap">
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>SO No.</th>
-                  <th>Ln</th>
-                  {/* POL — the CUSTOMER's own purchase-order line number, an
-                      extra value beside our SO line number. */}
-                  <th style={{ color: 'var(--purple)' }}>POL</th>
-                  {/* CODE/REV — the item code with the customer's drawing
-                      revision on that SO line; the revision is never shown
-                      alone (NAMING section A). */}
-                  <th>CODE/REV</th>
-                  <th>Customer</th>
-                  <th className="th-num" style={{ color: 'var(--purple)' }}>
-                    Reserved
-                  </th>
-                  <th className="th-num">Consumed</th>
-                  <th className="th-num" style={{ color: 'var(--green2)' }}>
-                    Pending
-                  </th>
-                  <th>Source</th>
-                  <th>Reservation Status</th>
-                  <th>Production Order No.</th>
-                  <th>JC No.</th>
-                  <th>Reserved On</th>
-                  <th>Reserved By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.rows.length ?? 0) === 0 ? (
-                  <tr>
-                    <td colSpan={14} className="empty-state">
-                      No stock is reserved for this item.
-                    </td>
-                  </tr>
-                ) : (
-                  data?.rows.map((row) => (
-                    <tr key={row.id}>
-                      <td className="td-code">
-                        {row.salesOrderId ? (
-                          <Link
-                            to="/sales-orders/$id"
-                            params={{ id: row.salesOrderId }}
-                            className="mono fw-700"
-                            style={linkStyle}
-                          >
-                            {row.soCodeText}
-                          </Link>
-                        ) : (
-                          <PlainRef code={row.soCodeText} />
-                        )}
-                      </td>
-                      <td className="mono text3">{row.lineNo ?? '—'}</td>
-                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                        {row.clientPoLineNo ?? '—'}
-                      </td>
-                      <td className="mono fw-700">{itemCodeWithRev(itemCode, row.itemRevision)}</td>
-                      <td
-                        style={{
-                          maxWidth: 160,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                        title={row.customerName ?? ''}
-                      >
-                        {row.customerName ?? '—'}
-                      </td>
-                      <td className="mono fw-700 td-num" style={{ color: 'var(--purple)' }}>
-                        {row.qty}
-                      </td>
-                      <td className="mono text3 td-num">{row.consumedQty}</td>
-                      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
-                        {row.remainingQty}
-                      </td>
-                      <td style={{ fontSize: 11 }}>{RESERVATION_SOURCE_LABEL[row.source]}</td>
-                      <td>
-                        <StatusBadge row={row} />
-                      </td>
-                      <td className="td-code">
-                        {row.productionOrderId && row.productionOrderCode ? (
-                          <Link
-                            to="/production-orders/$id"
-                            params={{ id: row.productionOrderId }}
-                            className="mono fw-700"
-                            style={linkStyle}
-                          >
-                            {row.productionOrderCode}
-                          </Link>
-                        ) : (
-                          <PlainRef code={row.productionOrderCode} />
-                        )}
-                      </td>
-                      <td className="td-code">
-                        {row.jobCardId && row.jobCardCode ? (
-                          <Link
-                            to="/job-cards/$id"
-                            params={{ id: row.jobCardId }}
-                            className="mono fw-700"
-                            style={linkStyle}
-                          >
-                            {row.jobCardCode}
-                          </Link>
-                        ) : (
-                          <PlainRef code={row.jobCardCode} />
-                        )}
-                      </td>
-                      <td className="mono">{fmtDate(row.reservedAt)}</td>
-                      <td style={{ fontSize: 11 }} title={row.remarks ?? ''}>
-                        {row.reservedByName ?? '—'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            tableKey={TABLE_KEYS.reservationDrilldown}
+            columns={columns}
+            rows={data?.rows ?? []}
+            rowKey={(row) => row.id}
+            emptyText="No stock is reserved for this item."
+          />
         </>
       )}
     </ModalShell>

@@ -1,14 +1,16 @@
 // GRN list (UI-003-05). Ports legacy renderGRN L26444.
 //
-// Rendered as one CARD per GRN, the same layout the SO Master list uses
-// (sales-orders/routes/list.tsx, reference supplied 2026-08-11): frozen header
-// band with the filter bar, accent bar, identity row with badges, metric strip,
-// meta line, and the GRN's lines inside an expandable panel. Replaced a
-// twelve-column table; no field was dropped in the move, only regrouped.
+// ADR-199 table standard: ONE shared FIT table (<DataTable tableKey=…>), one
+// line per GRN, the fit engine sizing columns to the screen and dropping the
+// rightmost unpinned ones into a ▸ detail row when it is too narrow. Replaced
+// the per-GRN card layout (frozen band, accent bar, metric strip, meta line);
+// no field was dropped in the move — Received / Accepted / Rejected are now
+// columns, Source and PO/NC No. are columns, and the card's DC / invoice /
+// remarks meta line moved into the ▸ expand beside the GRN's line items.
 //
-// The table machinery (TanStack column defs + SortableHead) is gone with it:
-// a card list has no column headers to click. It only ever sorted the 25 rows
-// already on screen.
+// Pagination is KEPT (unlike SO/WO masters): the GRN API is paginated and the
+// receipt book grows every day, so the list stays a pager register (ListFooter
+// pager mode) rather than a one-fetch scroll.
 
 import {
   GRN_QC_STATUSES,
@@ -17,66 +19,34 @@ import {
   type ListGoodsReceiptNotesQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { fmtDate } from '@/lib/date';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader } from '@/ui/layout';
-import { useGoodsReceiptNote, useGoodsReceiptNotesList } from '../api';
-import { QcStatusBadge } from '../components/qc-status-badge';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
+import { useGoodsReceiptNotesList } from '../api';
+import { GrnExpandedLines } from '../components/grn-expanded-lines';
+import { goodsReceiptNoteListColumns } from '../components/grn-list-columns';
 import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
 // Pagination is KEPT here (unlike SO Master): the GRN API is paginated and the
 // receipt book grows every day, so the whole list is not loaded in one go.
 const PAGE_SIZE = 25;
 
-/** One cell of the card's metric strip — big number over a small caps label.
- *  Local copy of the SO list's QtyBox (it is local there too — no cross-module
- *  import). */
-function QtyBox({
-  label,
-  value,
-  color,
-  bordered,
-}: {
-  label: string;
-  value: number;
-  color?: string | undefined;
-  bordered?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        padding: '4px 12px',
-        textAlign: 'center',
-        minWidth: 58,
-        borderLeft: bordered ? '1px solid var(--border)' : undefined,
-      }}
-    >
-      <div
-        className="mono fw-700"
-        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
-      >
-        {value}
-      </div>
-      <div
-        className="mono"
-        style={{
-          fontSize: 11,
-          color: 'var(--text3)',
-        }}
-      >
-        {label}
-      </div>
-    </div>
-  );
-}
+// Card QC status → row tint (ADR-199 ROW_TINT). Real GrnQcStatus enum only:
+// QC Pending reads as pending work, QC Cleared is done; QC In Progress is the
+// active middle and stays untinted.
+const ROW_TINT_BY_QC: Record<GrnQcStatus, string | undefined> = {
+  pending: ROW_TINT.pending,
+  in_progress: undefined,
+  completed: ROW_TINT.done,
+};
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -134,9 +104,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNotesList(query);
   // The KPI summary has no "QC In Progress" count, so the QC-status dropdown's
   // In Progress count reads the pager total of the same list filtered to it
-  // (same endpoint). The rows also tell each card whether a line is in QC right
-  // now — the same rule (a line with QC status 'in_progress'), so card and
-  // count always agree.
+  // (same endpoint). The rows also tell each line whether it is in QC right now
+  // — the same rule (a line with QC status 'in_progress'), so row and count
+  // always agree.
   const { data: inProgressData } = useGoodsReceiptNotesList({
     search: search.search,
     qcStatus: 'in_progress',
@@ -149,38 +119,58 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   );
   const filtered = Boolean(search.search) || search.qcStatus !== undefined;
 
-  // Many cards can be open at once, so this is a Set. Nothing auto-expands on
-  // load: each open card fetches that GRN's detail, and expanding 25 of them on
-  // arrival would fire 25 requests nobody asked for.
+  // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
+  // expand control (onToggleExpanded), and renderExpanded returns null for a
+  // collapsed row so a closed GRN never fetches its lines.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const toggleExpand = (id: string): void =>
+  const toggleExpand = useCallback((id: string): void => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  }, []);
 
   const rows = data?.items ?? [];
-  const allExpanded = rows.length > 0 && rows.every((r) => expandedIds.has(r.id));
-
-  /** Left accent bar — green once every line is QC-cleared, amber while any
-   *  line still waits on QC. Same two tokens the status badge uses. */
-  const accentFor = (grn: GoodsReceiptNoteListItem): string =>
-    grn.grnStatus === 'close' ? 'var(--green)' : 'var(--amber)';
 
   /** Card QC status: cleared once every line is inspected; "In Progress" only
    *  when a line's QC status is 'in_progress' (the tile's rule); else pending. */
-  const qcStatusFor = (grn: GoodsReceiptNoteListItem): GrnQcStatus =>
-    grn.grnStatus === 'close'
-      ? 'completed'
-      : search.qcStatus === 'in_progress' || inProgressIds.has(grn.id)
-        ? 'in_progress'
-        : 'pending';
+  const qcStatusFor = useCallback(
+    (grn: GoodsReceiptNoteListItem): GrnQcStatus =>
+      grn.grnStatus === 'close'
+        ? 'completed'
+        : search.qcStatus === 'in_progress' || inProgressIds.has(grn.id)
+          ? 'in_progress'
+          : 'pending',
+    [search.qcStatus, inProgressIds],
+  );
+
+  const columns = useMemo(() => goodsReceiptNoteListColumns(qcStatusFor), [qcStatusFor]);
+
+  // Row action — Assign (link a task to this GRN), the same gate the retired
+  // card used: shown only while a line still awaits QC (qcPendingCount > 0).
+  const rowActions = (grn: GoodsReceiptNoteListItem): React.JSX.Element | undefined =>
+    grn.qcPendingCount > 0 ? (
+      <RowActions
+        renderLink={(p) => <Link {...p} />}
+        extra={
+          <AssignTaskButton
+            linkedRef={{
+              type: 'GRN',
+              id: grn.id,
+              display: grn.code,
+              navPage: '/incoming-qc',
+            }}
+            suggestedTitle={`Inspect ${grn.code}`}
+            className="btn btn-ghost btn-sm btn-icon"
+            label=""
+          />
+        }
+      />
+    ) : undefined;
 
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = search.page;
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -196,9 +186,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* THE list header (ui/layout ListHeader): title · count · Expand All ·
-          + New GRN, then the filter bar (search · QC status with counts ·
-          Clear), with the read-only "Today" tile inside the same band. */}
+      {/* THE list header (ui/layout ListHeader): title · count · + New GRN, then
+          the filter bar (search · QC status with counts · Clear), with the
+          read-only "Today" tile inside the same band. */}
       <ListHeader
         title="GRN"
         icon="📥"
@@ -245,17 +235,6 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           });
         }}
         filtersActive={search.qcStatus !== undefined || searchInput !== ''}
-        tools={
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))}
-            disabled={rows.length === 0}
-            title={allExpanded ? 'Hide every card’s lines' : 'Show every card’s lines'}
-          >
-            {allExpanded ? 'Collapse All' : 'Expand All'}
-          </button>
-        }
         primary={
           perms.entry ? (
             <Link to="/goods-receipt-notes/new" className="btn btn-primary">
@@ -270,326 +249,55 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         {data?.summary ? <GrnTodayStrip today={data.summary.today} /> : null}
       </ListHeader>
 
-      {isLoading ? (
-        <div className="panel empty-state" style={{ padding: 24 }}>
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-          Loading…
-        </div>
-      ) : isError ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
-          {error instanceof Error ? error.message : 'Could not load GRNs. Try again.'}
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="panel empty-state" style={{ padding: 24 }}>
-          {filtered ? 'No GRNs match.' : 'No GRNs yet.'}
-        </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load GRNs. Try again.'}
+        />
       ) : (
-        rows.map((grn) => {
-          const isExpanded = expandedIds.has(grn.id);
-          const poRef = grn.poCode ?? grn.poCodeText;
-          return (
-            <div
-              key={grn.id}
-              className="panel"
-              style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
-            >
-              {/* Accent bar — green cleared, amber still under QC. */}
-              <div style={{ width: 4, flexShrink: 0, background: accentFor(grn) }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {/* ── Band 1: identity + badges — actions ── */}
-                <div
-                  onClick={() => toggleExpand(grn.id)}
-                  title={isExpanded ? 'Hide lines' : 'Show lines'}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    flexWrap: 'wrap',
-                    padding: '10px 14px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span style={{ color: 'var(--text3)', display: 'inline-flex' }} aria-hidden>
-                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  </span>
-                  {/* The card body toggles the lines, so the CODE is the way to
-                      the detail page — stopPropagation keeps the click off the
-                      toggle underneath it. */}
-                  <Link
-                    to="/goods-receipt-notes/$id"
-                    params={{ id: grn.id }}
-                    className="td-code"
-                    style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
-                    title="Open the GRN detail page"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {grn.code}
-                  </Link>
-                  <span className="fw-700" style={{ fontSize: 13 }}>
-                    {grn.vendorName ?? grn.vendorCodeText ?? '—'}
-                  </span>
-                  {/* GRN status: 'close' once every line is fully QC-inspected,
-                      else 'pending' (any line still has QC qty remaining, incl.
-                      partial approval). */}
-                  <QcStatusBadge status={qcStatusFor(grn)} />
-                  {/* Source: an NC's return-to-vendor challan (ADR-161), an OSP
-                      delivery challan (ADR-080) or a purchase PO. An NC GRN
-                      also carries deliveryChallanId, so NC is checked first. */}
-                  {grn.ncId ? (
-                    <span className="badge b-red">Against NC</span>
-                  ) : grn.deliveryChallanId ? (
-                    <span className="badge b-cyan">Against DC</span>
-                  ) : grn.purchaseOrderId ? (
-                    <span className="badge b-grey">Against PO</span>
-                  ) : null}
-                  <span style={{ flex: 1 }} />
-                  {/* Legacy L26458-26460/L26472 — "assign to QC user" button.
-                      Legacy gates on qcStatus==='Pending'; our nearest signal is
-                      "has any line awaiting QC" (qcPendingCount>0), which also
-                      covers legacy's 'Partial'. AssignTaskButton self-gates to
-                      admin/manager. */}
-                  {grn.qcPendingCount > 0 ? (
-                    <div
-                      style={{ display: 'flex', gap: 4, alignItems: 'center' }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <AssignTaskButton
-                        linkedRef={{
-                          type: 'GRN',
-                          id: grn.id,
-                          display: grn.code,
-                          navPage: '/incoming-qc',
-                        }}
-                        suggestedTitle={`Inspect ${grn.code}`}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* ── Band 2: metric boxes + meta line ── */}
-                <div
-                  onClick={() => toggleExpand(grn.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    flexWrap: 'wrap',
-                    padding: '0 14px 10px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div
-                    style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
-                  >
-                    <QtyBox label="Received" value={grn.totalReceivedQty} />
-                    <QtyBox
-                      label="Accepted"
-                      value={grn.totalQcAcceptedQty}
-                      color={grn.totalQcAcceptedQty > 0 ? 'var(--green)' : undefined}
-                      bordered
-                    />
-                    <QtyBox
-                      label="Rejected"
-                      value={grn.totalQcRejectedQty}
-                      color={grn.totalQcRejectedQty > 0 ? 'var(--red)' : undefined}
-                      bordered
-                    />
-                    <QtyBox label="Lines" value={grn.lineCount} bordered />
-                  </div>
-                  <div
-                    className="mono"
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--text3)',
-                      display: 'flex',
-                      gap: 6,
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <span className="text2" style={{ whiteSpace: 'nowrap' }}>
-                      {fmtDate(grn.grnDate)}
-                    </span>
-                    <span>·</span>
-                    {/* On an NC-return GRN poCodeText holds the NC code (no PO
-                        exists), so the same slot reads "NC …" instead. */}
-                    <span style={{ whiteSpace: 'nowrap' }}>
-                      {grn.ncId ? 'NC' : 'PO'}{' '}
-                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                        {grn.ncId ? (grn.poCodeText ?? '—') : (poRef ?? '—')}
-                      </span>
-                    </span>
-                    {grn.dcNo ? (
-                      <>
-                        <span>·</span>
-                        <span style={{ whiteSpace: 'nowrap' }}>
-                          {grn.deliveryChallanId ? 'DC No.' : 'Vendor Challan No.'}{' '}
-                          <span className="text2">{grn.dcNo}</span>
-                        </span>
-                      </>
-                    ) : null}
-                    {grn.invoiceNo ? (
-                      <>
-                        <span>·</span>
-                        <span style={{ whiteSpace: 'nowrap' }}>
-                          Vendor Invoice No. <span className="text2">{grn.invoiceNo}</span>
-                        </span>
-                      </>
-                    ) : null}
-                    {grn.remarks ? (
-                      <>
-                        <span>·</span>
-                        <span title={grn.remarks}>{grn.remarks}</span>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* ── Band 3: lines ── */}
-                {isExpanded ? (
-                  <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}>
-                    <GrnExpandedPanel grnId={grn.id} />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          );
-        })
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.grnList}
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            emptyText={filtered ? 'No GRNs match.' : 'No GRNs yet.'}
+            onRowClick={(grn) =>
+              void navigate({ to: '/goods-receipt-notes/$id', params: { id: grn.id } })
+            }
+            rowClassName={(grn) => ROW_TINT_BY_QC[qcStatusFor(grn)]}
+            rowActions={(grn) => rowActions(grn)}
+            // The lines are fetched only for a row actually open — returning null
+            // for a collapsed row means GrnExpandedLines (and its detail query)
+            // never mounts for it.
+            renderExpanded={(grn) =>
+              expandedIds.has(grn.id) ? <GrnExpandedLines grnId={grn.id} /> : null
+            }
+            // The fit table's ▸ is the row's one expand control: it opens the
+            // line items too.
+            onToggleExpanded={(grn) => toggleExpand(grn.id)}
+          />
+        </Panel>
       )}
 
-      {/* Legacy L26502-26503 — the tip line under the register. */}
+      {/* Legacy L26502-26503 — the tip line under the register. GRN keeps the
+          Prev/Next pager (ListFooter pager mode) — an unbounded register. */}
       <ListFooter
         total={total}
         noun="goods receipt note"
-        page={currentPage}
+        page={search.page}
         pageSize={PAGE_SIZE}
         onPage={(p) =>
           void navigate({
-            search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+            search: (prev) => ({
+              ...prev,
+              page: Math.min(Math.max(1, Math.ceil(total / PAGE_SIZE)), Math.max(1, p)),
+            }),
             replace: true,
           })
         }
         hint="Only QC-accepted qty goes into stock."
       />
-    </div>
-  );
-}
-
-/** Expanded card body — the GRN's lines, fetched lazily from the detail
- *  endpoint the first time the card is opened (same shape as SoExpandedPanel). */
-function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
-  const { data, isLoading, isError, error } = useGoodsReceiptNote(grnId);
-  if (isLoading) {
-    return (
-      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}>
-        <Loader2 size={12} className="inline animate-spin" /> Loading lines…
-      </div>
-    );
-  }
-  if (isError || !data) {
-    return (
-      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red2)' }}>
-        {error instanceof Error ? error.message : 'Could not load GRN detail. Try again.'}
-      </div>
-    );
-  }
-  return (
-    <div style={{ padding: '8px 12px 8px 36px' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 6,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div
-          style={{
-            fontSize: 11,
-            color: 'var(--blue)',
-            fontFamily: 'var(--mono)',
-            fontWeight: 700,
-          }}
-        >
-          Lines — {data.code}
-        </div>
-      </div>
-      {/* The sheet (tbl-grid), compact because it sits inside an expanded
-          card. Codes / qty / dates one line; Item Name may wrap. */}
-      <div className="tbl-wrap">
-        <table className="innovic-table tbl-grid tbl-compact">
-          <thead>
-            <tr>
-              <th style={{ width: 36 }}>Ln</th>
-              {/* POL = the CUSTOMER's own PO line number off the SO line behind
-                this receipt line. Not our SO line number. */}
-              <th style={{ color: 'var(--purple)' }}>POL</th>
-              <th>Item Code</th>
-              <th className="th-left">Item Name</th>
-              <th className="th-num">Received</th>
-              <th className="th-num" style={{ color: 'var(--green2)' }}>
-                Accepted
-              </th>
-              <th className="th-num" style={{ color: 'var(--red2)' }}>
-                Rejected
-              </th>
-              <th>QC Status</th>
-              <th>QC Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.lines.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="empty-state">
-                  No lines yet.
-                </td>
-              </tr>
-            ) : (
-              data.lines.map((l) => (
-                <tr key={l.id}>
-                  <td className="mono fw-700">{l.lineNo}</td>
-                  {/* POL — the CUSTOMER's PO line number off the SO line behind
-                    this row; '—' when there is no sales order behind it. */}
-                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                    {l.clientPoLineNo ?? '—'}
-                  </td>
-                  {/* Item code is THE main thing — strong, never the faint text3.
-                    CODE/REV (ADR-177); bare code when the line has no revision. */}
-                  <td
-                    className="mono fw-700"
-                    style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
-                  >
-                    {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
-                  </td>
-                  <td className="td-left" title={l.masterItemName ?? l.itemName}>
-                    {l.masterItemName ?? l.itemName}
-                  </td>
-                  <td className="mono fw-700 td-num">{l.receivedQty}</td>
-                  <td
-                    className="mono fw-700 td-num"
-                    style={{ color: l.qcAcceptedQty > 0 ? 'var(--green)' : undefined }}
-                  >
-                    {l.qcAcceptedQty}
-                  </td>
-                  <td
-                    className="mono td-num"
-                    style={{ color: l.qcRejectedQty > 0 ? 'var(--red)' : undefined }}
-                  >
-                    {l.qcRejectedQty}
-                  </td>
-                  <td>
-                    <QcStatusBadge status={l.qcStatus} />
-                  </td>
-                  <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                    {fmtDate(l.qcDate)}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

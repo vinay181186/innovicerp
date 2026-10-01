@@ -2,17 +2,27 @@
 // Instrument piece: Instrument Status, calibration dates, who holds it. Click a
 // row for its calibration history and actions. Registering never moves stock;
 // the strip above the table lists pieces received but not yet registered.
+//
+// Migrated onto the standard <DataTable tableKey> sheet (ADR-199): the
+// hand-written <table> is replaced, the FIRST (pinned) column is the Instrument
+// Serial No. (ADR-199 decision #4 for this register), and an overdue-calibration
+// row is washed with ROW_TINT.late. The query, the status + calibration-due
+// filters, the "received but not registered" banner, the permission gate and the
+// register / detail modals are unchanged.
 import {
   INSTRUMENT_STATUSES,
   INSTRUMENT_STATUS_LABELS,
+  type InstrumentListItem,
   type InstrumentStatus,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
@@ -60,6 +70,109 @@ function InstrumentsListPage(): React.JSX.Element {
   const { data: unregistered } = useUnregisteredInstruments();
   const pending = (unregistered ?? []).filter((u) => u.unregisteredQty > 0);
 
+  const filtered = Boolean(search.trim() || status || due);
+
+  // The ruled sheet's columns. Serial No. is the pinned first column (ADR-199
+  // #4). Instrument Status is a badge; Calibration Due keeps its amber/red
+  // colour and "· Overdue" tag; the long free-text columns clip with a tooltip.
+  const columns = useMemo<DataTableColumn<InstrumentListItem>[]>(
+    () => [
+      {
+        id: 'serial_no',
+        header: 'Instrument Serial No.',
+        nowrap: true,
+        className: 'mono fw-700',
+        key: 'serialNo',
+      },
+      {
+        id: 'item_code',
+        header: 'Item Code',
+        nowrap: true,
+        render: (ins) => (
+          <span className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
+            {ins.itemCode}
+          </span>
+        ),
+      },
+      {
+        id: 'item_name',
+        header: 'Item Name',
+        align: 'left',
+        ellipsis: true,
+        render: (ins) => ins.itemName || '—',
+        title: (ins) => ins.itemName ?? '',
+      },
+      {
+        id: 'status',
+        header: 'Instrument Status',
+        kind: 'badge',
+        nowrap: true,
+        render: (ins) => (
+          <>
+            <span className={`badge ${INSTRUMENT_STATUS_BADGE[ins.status]}`}>
+              {INSTRUMENT_STATUS_LABELS[ins.status]}
+            </span>
+            {ins.writeoffPending ? (
+              <span className="badge b-red" style={{ marginLeft: 4 }}>
+                Write-off pending
+              </span>
+            ) : null}
+          </>
+        ),
+      },
+      {
+        id: 'calibration_due',
+        header: 'Calibration Due',
+        kind: 'date',
+        nowrap: true,
+        render: (ins) => {
+          const tone = dueTone(ins.calibrationDueOn, ins.isCalibrationOverdue);
+          return (
+            <span
+              style={{
+                color: DUE_COLOUR[tone],
+                fontWeight: tone === 'overdue' || tone === 'soon' ? 700 : undefined,
+              }}
+            >
+              {fmtDate(ins.calibrationDueOn)}
+              {tone === 'overdue' ? ' · Overdue' : ''}
+            </span>
+          );
+        },
+      },
+      {
+        id: 'last_calibrated',
+        header: 'Last Calibrated',
+        kind: 'date',
+        nowrap: true,
+        render: (ins) => fmtDate(ins.lastCalibratedOn),
+      },
+      {
+        id: 'location',
+        header: 'Location',
+        ellipsis: true,
+        render: (ins) => ins.location || '—',
+        title: (ins) => ins.location ?? '',
+      },
+      {
+        id: 'held_by',
+        header: 'Held By',
+        nowrap: true,
+        render: (ins) => (
+          <>
+            {ins.heldBy || '—'}
+            {ins.toolIssueCode ? (
+              <span className="mono" style={{ marginLeft: 6, color: 'var(--purple)' }}>
+                {ins.toolIssueCode}
+              </span>
+            ) : null}
+          </>
+        ),
+      },
+    ],
+    [],
+  );
+
   if (!allowed) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
@@ -67,8 +180,6 @@ function InstrumentsListPage(): React.JSX.Element {
       </div>
     );
   }
-
-  const filtered = Boolean(search.trim() || status || due);
 
   return (
     <div>
@@ -155,103 +266,25 @@ function InstrumentsListPage(): React.JSX.Element {
         </Banner>
       ) : null}
 
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body text3">
-            <Loader2 size={14} className="inline animate-spin" /> Loading…
-          </div>
-        ) : isError ? (
+      {isError ? (
+        <div className="panel">
           <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load instruments.'}
           </div>
-        ) : (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Item Code</th>
-                  <th>Item Name</th>
-                  <th>Instrument Serial No.</th>
-                  <th>Instrument Status</th>
-                  <th>Calibration Due</th>
-                  <th>Last Calibrated</th>
-                  <th>Location</th>
-                  <th>Held By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.items ?? []).map((ins) => {
-                  const tone = dueTone(ins.calibrationDueOn, ins.isCalibrationOverdue);
-                  return (
-                    <tr
-                      key={ins.id}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => setViewId(ins.id)}
-                    >
-                      <td>
-                        <span className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
-                          {ins.itemCode}
-                        </span>
-                      </td>
-                      <td
-                        title={ins.itemName ?? ''}
-                        style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                      >
-                        {ins.itemName || '—'}
-                      </td>
-                      <td className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
-                        {ins.serialNo}
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <span className={`badge ${INSTRUMENT_STATUS_BADGE[ins.status]}`}>
-                          {INSTRUMENT_STATUS_LABELS[ins.status]}
-                        </span>
-                        {ins.writeoffPending ? (
-                          <span className="badge b-red" style={{ marginLeft: 4 }}>
-                            Write-off pending
-                          </span>
-                        ) : null}
-                      </td>
-                      <td
-                        style={{
-                          whiteSpace: 'nowrap',
-                          color: DUE_COLOUR[tone],
-                          fontWeight: tone === 'overdue' || tone === 'soon' ? 700 : undefined,
-                        }}
-                      >
-                        {fmtDate(ins.calibrationDueOn)}
-                        {tone === 'overdue' ? ' · Overdue' : ''}
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(ins.lastCalibratedOn)}</td>
-                      <td
-                        title={ins.location ?? ''}
-                        style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                      >
-                        {ins.location || '—'}
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        {ins.heldBy || '—'}
-                        {ins.toolIssueCode ? (
-                          <span className="mono" style={{ marginLeft: 6, color: 'var(--purple)' }}>
-                            {ins.toolIssueCode}
-                          </span>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {(data?.items ?? []).length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="empty-state">
-                      {filtered ? 'No instruments match.' : 'No instruments registered yet.'}
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.instruments}
+            columns={columns}
+            rows={data?.items ?? []}
+            loading={isLoading}
+            emptyText={filtered ? 'No instruments match.' : 'No instruments registered yet.'}
+            onRowClick={(ins) => setViewId(ins.id)}
+            rowClassName={(ins) => (ins.isCalibrationOverdue ? ROW_TINT.late : undefined)}
+          />
+        </Panel>
+      )}
       {data ? (
         <ListFooter
           total={data.total}

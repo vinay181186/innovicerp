@@ -2,36 +2,29 @@
 // materials for Job Work orders.
 // Mirrors legacy renderPartyMaterial (HTML L24129) + addPartyMaterial
 // (L24173) + editPartyMaterial (L24214) + delPartyMaterial (L24233).
+//
+// ADR-199 table standard (2026-10-01): the master table runs on the shared FIT
+// <DataTable tableKey={TABLE_KEYS.partyMaterials}>. The six master columns
+// (Code · Name · UOM · Customer · In Stock · Issued) live in
+// ../components/party-material-columns; the ▸ detail row reveals Description,
+// Grade, Total Received, Returned and who/when recorded it. The two big Add /
+// Edit modals moved to their own files so this route file stays under the
+// 400-line ceiling. No row click — there is no Customer Material detail page.
 
-import {
-  type CreatePartyMaterialInput,
-  PARTY_MATERIAL_UOMS,
-  type PartyMaterialListItem,
-  type PartyMaterialUom,
-  type UpdatePartyMaterialInput,
-} from '@innovic/shared';
+import { type PartyMaterialListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { Plus } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu } from '@/ui/data';
-import { ListFooter, ListHeader } from '@/ui/layout';
-import { useClientsList } from '../../clients/api';
-import { useItem } from '../../items/api';
-import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
-import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
-import { usePlanningSoDetail } from '../../so-planning/api';
-import {
-  useCreatePartyMaterial,
-  useNextPartyMaterialCode,
-  usePartyMaterialsList,
-  useUpdatePartyMaterial,
-} from '../api';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { usePartyMaterialsList } from '../api';
+import { AddPartyMaterialModal } from '../components/add-party-material-modal';
+import { PartyMaterialDetails, partyMaterialColumns } from '../components/party-material-columns';
 import { DeletePartyMaterialModal } from '../components/delete-party-material-modal';
+import { EditPartyMaterialModal } from '../components/edit-party-material-modal';
 import { ReturnPartyMaterialModal } from '../components/return-party-material-modal';
 
 const PAGE_SIZE = 50;
@@ -66,6 +59,11 @@ function PartyMaterialsListPage(): React.JSX.Element {
   const [showAdd, setShowAdd] = useState(false);
   const [editRow, setEditRow] = useState<PartyMaterialListItem | null>(null);
   const [returnRow, setReturnRow] = useState<PartyMaterialListItem | null>(null);
+  // The material the Delete dialog is asking about, or null when closed. A row
+  // with stock on hand never gets here — its Delete item is disabled.
+  const [deleteRow, setDeleteRow] = useState<PartyMaterialListItem | null>(null);
+  // Which rows have their ▸ detail open (the fit table's one expand control).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, error } = usePartyMaterialsList({
     search: search.trim() || undefined,
@@ -74,10 +72,17 @@ function PartyMaterialsListPage(): React.JSX.Element {
   });
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
+  const rows = useMemo(() => data?.items ?? [], [data?.items]);
+  const columns = useMemo(() => partyMaterialColumns(), []);
 
-  // The material the Delete dialog is asking about, or null when closed. A row
-  // with stock on hand never gets here — its Delete button is disabled.
-  const [deleteRow, setDeleteRow] = useState<PartyMaterialListItem | null>(null);
+  const toggleExpand = useCallback((id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -105,7 +110,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
           setSearch(v);
           setPage(1);
         }}
-        searchPlaceholder="Search material, customer…"
+        searchPlaceholder="Search code, material, customer…"
         primary={
           canAdd ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
@@ -115,143 +120,59 @@ function PartyMaterialsListPage(): React.JSX.Element {
         }
       />
 
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error
-                ? error.message
-                : 'Could not load party materials. Try again.'}
-            </div>
-          </div>
-        ) : data ? (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Material Name</th>
-                  <th>Description</th>
-                  <th>Grade</th>
-                  <th>UOM</th>
-                  <th>Customer</th>
-                  <th className="th-num" style={{ color: 'var(--green2)' }}>
-                    In Stock
-                  </th>
-                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                    Issued
-                  </th>
-                  <th className="th-num" style={{ color: 'var(--cyan)' }}>
-                    Total Received
-                  </th>
-                  <th className="th-num" style={{ color: 'var(--purple)' }}>
-                    Returned
-                  </th>
-                  <th aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} className="empty-state">
-                      {search.trim() ? 'No customer materials match.' : 'No customer materials yet.'}
-                    </td>
-                  </tr>
-                ) : null}
-                {data.items.map((pm) => (
-                  <tr key={pm.id}>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <span className="td-code" style={{ color: 'var(--purple)' }}>
-                        {pm.code}
-                      </span>
-                    </td>
-                    <td className="fw-700">{pm.name}</td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {pm.description ?? '—'}
-                    </td>
-                    <td>{pm.material ?? '—'}</td>
-                    <td>
-                      <span
-                        className="tag"
-                        style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
-                      >
-                        {pm.uom}
-                      </span>
-                    </td>
-                    <td className="fw-700">{pm.clientName ?? pm.clientCodeText ?? '—'}</td>
-                    <td
-                      className="mono fw-700 td-num"
-                      style={{
-                        fontSize: 14,
-                        color: pm.stockQty > 0 ? 'var(--green)' : 'var(--text3)',
-                      }}
-                    >
-                      {pm.stockQty}
-                    </td>
-                    <td className="mono td-num" style={{ fontSize: 12, color: 'var(--amber2)' }}>
-                      {pm.issuedQty}
-                    </td>
-                    <td className="mono td-num" style={{ fontSize: 12, color: 'var(--cyan)' }}>
-                      {pm.receivedQty}
-                    </td>
-                    <td
-                      className="mono td-num"
-                      style={{
-                        fontSize: 12,
-                        color: pm.returnedQty > 0 ? 'var(--purple)' : 'var(--text3)',
-                      }}
-                    >
-                      {pm.returnedQty}
-                    </td>
-                    <td className="td-ctr">
-                      {/* ⋯ Edit · Return · ─ · Delete, same gates as the old
-                          buttons; greyed where the server would refuse. */}
-                      <RowMenu
-                        items={[
-                          {
-                            key: 'edit',
-                            label: 'Edit',
-                            icon: 'pencil',
-                            hidden: !canEdit,
-                            onSelect: () => setEditRow(pm),
-                          },
-                          {
-                            key: 'return',
-                            label: 'Return',
-                            icon: 'arrow-left',
-                            group: 'workflow',
-                            hidden: !canReturn,
-                            disabledReason: pm.stockQty <= 0 ? 'Nothing in stock' : undefined,
-                            onSelect: () => setReturnRow(pm),
-                          },
-                          {
-                            key: 'delete',
-                            label: 'Delete',
-                            icon: 'trash-2',
-                            group: 'danger',
-                            hidden: !canDelete,
-                            disabledReason:
-                              pm.stockQty > 0
-                                ? `${pm.stockQty} in stock — issue it first`
-                                : undefined,
-                            onSelect: () => setDeleteRow(pm),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load customer materials. Try again.'
+          }
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.partyMaterials}
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            emptyText={
+              search.trim() ? 'No customer materials match.' : 'No customer materials yet.'
+            }
+            // No row click — there is no Customer Material detail page.
+            renderExpanded={(pm) => (expanded.has(pm.id) ? <PartyMaterialDetails pm={pm} /> : null)}
+            onToggleExpanded={(pm) => toggleExpand(pm.id)}
+            // ⋯ menu: Edit · Return (workflow) · ─ · Delete (danger) — same gates
+            // as before; greyed with a reason where the server would refuse.
+            rowMenu={(pm) => [
+              {
+                key: 'edit',
+                label: 'Edit',
+                icon: 'pencil',
+                hidden: !canEdit,
+                onSelect: () => setEditRow(pm),
+              },
+              {
+                key: 'return',
+                label: 'Return',
+                icon: 'arrow-left',
+                group: 'workflow',
+                hidden: !canReturn,
+                disabledReason: pm.stockQty <= 0 ? 'Nothing in stock' : undefined,
+                onSelect: () => setReturnRow(pm),
+              },
+              {
+                key: 'delete',
+                label: 'Delete',
+                icon: 'trash-2',
+                group: 'danger',
+                hidden: !canDelete,
+                disabledReason:
+                  pm.stockQty > 0 ? `${pm.stockQty} in stock — issue it first` : undefined,
+                onSelect: () => setDeleteRow(pm),
+              },
+            ]}
+          />
+        </Panel>
+      )}
 
       {data ? (
         <ListFooter
@@ -276,615 +197,6 @@ function PartyMaterialsListPage(): React.JSX.Element {
           onClose={() => setDeleteRow(null)}
         />
       ) : null}
-    </div>
-  );
-}
-
-// ─── Add modal ─────────────────────────────────────────────────────────────
-
-function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  // Material code — auto, read-only (PM-NNNN from the server).
-  const [code, setCode] = useState('');
-  const [uom, setUom] = useState<PartyMaterialUom>('NOS');
-  const [err, setErr] = useState<string | null>(null);
-
-  // Cascade: Client → SO/JWSO → Item(line). Picking a parent resets its children.
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [clientSearch, setClientSearch] = useState('');
-  const [orderId, setOrderId] = useState<string | null>(null);
-  const [orderSource, setOrderSource] = useState<'so' | 'jw' | null>(null);
-  const [orderSearch, setOrderSearch] = useState('');
-  const [lineId, setLineId] = useState<string | null>(null); // picked SO/JW line id
-  const [description, setDescription] = useState(''); // auto-filled from item, editable
-
-  const createMut = useCreatePartyMaterial();
-
-  const nextCodeQ = useNextPartyMaterialCode();
-  useEffect(() => {
-    if (nextCodeQ.data?.code && !code) setCode(nextCodeQ.data.code);
-  }, [nextCodeQ.data, code]);
-
-  // 1) Clients — server ?search=.
-  const { data: clientsData, isFetching: clientsFetching } = useClientsList({
-    ...(clientSearch.trim() ? { search: clientSearch.trim() } : {}),
-    limit: 50,
-    offset: 0,
-  });
-  const clientOptions = (clientsData?.clients ?? []).map((c) => ({
-    id: c.id,
-    code: c.code,
-    name: c.name,
-  }));
-
-  // 2) SO + JWSO for the picked client — server ?search= + clientId.
-  const { data: soData, isFetching: soFetching } = useSalesOrdersList(
-    {
-      ...(orderSearch.trim() ? { search: orderSearch.trim() } : {}),
-      clientId: clientId ?? undefined,
-      limit: 50,
-      offset: 0,
-    },
-    { enabled: !!clientId },
-  );
-  const { data: jwData, isFetching: jwFetching } = useJobWorkOrdersList(
-    {
-      ...(orderSearch.trim() ? { search: orderSearch.trim() } : {}),
-      clientId: clientId ?? undefined,
-      limit: 50,
-      offset: 0,
-    },
-    { enabled: !!clientId },
-  );
-  const orderSourceById = useMemo(() => {
-    const m = new Map<string, 'so' | 'jw'>();
-    (soData?.items ?? []).forEach((o) => m.set(o.id, 'so'));
-    (jwData?.items ?? []).forEach((o) => m.set(o.jwId, 'jw'));
-    return m;
-  }, [soData, jwData]);
-  const orderOptions = useMemo(
-    () => [
-      ...(soData?.items ?? []).map((o) => ({
-        id: o.id,
-        code: o.code,
-        name: o.customerName ?? 'SO',
-      })),
-      ...(jwData?.items ?? []).map((o) => ({
-        id: o.jwId,
-        code: o.code,
-        name: o.customerName ?? 'JWSO',
-      })),
-    ],
-    [soData, jwData],
-  );
-
-  // 3) Line items of the picked order (client-side filtered by the picker).
-  const soDetail = useSalesOrder(orderSource === 'so' ? (orderId ?? undefined) : undefined);
-  const jwDetail = useJobWorkOrder(orderSource === 'jw' ? (orderId ?? undefined) : undefined);
-  const orderLines = useMemo(() => {
-    if (orderSource === 'so') return soDetail.data?.lines ?? [];
-    if (orderSource === 'jw') return jwDetail.data?.lines ?? [];
-    return [];
-  }, [orderSource, soDetail.data, jwDetail.data]);
-  const itemOptions = useMemo(
-    () =>
-      orderLines.map((l) => {
-        const code = (l as { itemCode?: string | null }).itemCode ?? l.itemCodeText ?? null;
-        // CODE/REV: the row IS an order line (SO or JWSO), so the customer's
-        // drawing revision typed on that line belongs with the code wherever it
-        // is shown (user rule 2026-09-23). A line with no code stays null.
-        return {
-          id: l.id,
-          code: code
-            ? itemCodeWithRev(code, (l as { revision?: string | null }).revision, code)
-            : null,
-          name: l.partName,
-        };
-      }),
-    [orderLines],
-  );
-  const selectedLine = useMemo(
-    () => orderLines.find((l) => l.id === lineId) ?? null,
-    [orderLines, lineId],
-  );
-  const itemId = selectedLine?.itemId ?? null;
-
-  // 4) Item-master detail → auto-fetched Material Name + Material/Grade.
-  const itemDetail = useItem(itemId ?? undefined);
-  const autoName = itemDetail.data?.name ?? selectedLine?.partName ?? '';
-  const autoMaterial = itemDetail.data?.material ?? selectedLine?.material ?? '';
-
-  // Description auto-fills from the item on pick, then stays editable.
-  useEffect(() => {
-    if (!lineId) {
-      setDescription('');
-      return;
-    }
-    setDescription(itemDetail.data?.description ?? '');
-  }, [lineId, itemDetail.data?.description]);
-
-  // 5) JC No linked to the selected SO/JW line (via planning detail).
-  const planningDetail = usePlanningSoDetail(orderId);
-  const jcNo = useMemo(() => {
-    if (!lineId || !planningDetail.data) return '';
-    const ln = planningDetail.data.lines.find((l) => l.soLineId === lineId);
-    if (!ln) return '';
-    const codes = [
-      ...ln.plans.map((p) => p.jcCode).filter((v): v is string => !!v),
-      ...ln.directJcCodes,
-    ];
-    return codes.join(', ');
-  }, [lineId, planningDetail.data]);
-
-  // Cascade resets: picking a parent clears its children + auto-fetched fields.
-  const onClientChange = (id: string | null): void => {
-    setClientId(id);
-    setOrderId(null);
-    setOrderSource(null);
-    setOrderSearch('');
-    setLineId(null);
-    setDescription('');
-  };
-  const onOrderChange = (id: string | null): void => {
-    setOrderId(id);
-    setOrderSource(id ? (orderSourceById.get(id) ?? null) : null);
-    setLineId(null);
-    setDescription('');
-  };
-
-  // ESC / a click outside asks before throwing away what was picked.
-  const guard = useDiscardGuard(
-    Boolean(clientId || orderId || lineId || description.trim()) || uom !== 'NOS',
-    onClose,
-  );
-
-  const onSave = (): void => {
-    setErr(null);
-    const c = code.trim();
-    const nm = autoName.trim();
-    if (!c) {
-      setErr('Code is required.');
-      return;
-    }
-    if (!clientId) {
-      setErr('Customer is required.');
-      return;
-    }
-    if (!orderId) {
-      setErr('SO / JWSO No. is required — the Item Code is picked from its lines.');
-      return;
-    }
-    if (!nm) {
-      setErr('Item Code is required. Material Name fills from it.');
-      return;
-    }
-    const input: CreatePartyMaterialInput = { code: c, name: nm, uom, clientId };
-    if (description.trim()) input.description = description.trim();
-    if (autoMaterial.trim()) input.material = autoMaterial.trim();
-    if (itemId) input.itemId = itemId;
-    createMut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) =>
-        setErr(e instanceof Error ? e.message : 'Could not save Material. Try again.'),
-    });
-  };
-
-  return (
-    <ModalShell onClose={guard.requestClose} title="Add Customer Material">
-      {guard.dialog}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        {/* 1. Material Code (auto, read-only) + UOM */}
-        <Field label="Code">
-          <input type="text" className="innovic-input" value={code} readOnly disabled />
-        </Field>
-        <Field label="UOM">
-          <select
-            className="innovic-select"
-            value={uom}
-            onChange={(e) => setUom(e.target.value as PartyMaterialUom)}
-          >
-            {PARTY_MATERIAL_UOMS.map((u) => (
-              <option key={u} value={u}>
-                {u}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        {/* 2. Client — who supplies the material */}
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Customer" required>
-            <SearchableSelect
-              id="pmClient"
-              value={clientId}
-              onChange={onClientChange}
-              onSearch={setClientSearch}
-              loading={clientsFetching}
-              options={clientOptions}
-              placeholder="🔍 Type customer code or name…"
-            />
-          </Field>
-        </div>
-
-        {/* 3. SO / JWSO — filtered to the picked client */}
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="SO / JWSO No." required>
-            <SearchableSelect
-              id="pmOrder"
-              value={orderId}
-              onChange={onOrderChange}
-              onSearch={setOrderSearch}
-              loading={soFetching || jwFetching}
-              options={orderOptions}
-              disabled={!clientId}
-              placeholder={clientId ? '🔍 Type SO / JWSO no…' : 'Pick a customer first'}
-              emptyText="No orders for this customer"
-            />
-          </Field>
-        </div>
-
-        {/* 4. Item Code — from the picked order's line items */}
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Item Code" required>
-            <SearchableSelect
-              id="pmItem"
-              value={lineId}
-              onChange={setLineId}
-              onSearch={() => undefined}
-              loading={soDetail.isFetching || jwDetail.isFetching}
-              options={itemOptions}
-              disabled={!orderId}
-              placeholder={orderId ? '🔍 Pick an item from this order…' : 'Pick an order first'}
-              emptyText="No items on this order"
-            />
-          </Field>
-        </div>
-
-        {/* 5. Material Name — auto-fetched from the item, read-only */}
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material Name">
-            <input
-              type="text"
-              className="innovic-input"
-              value={autoName}
-              readOnly
-              disabled
-            />
-          </Field>
-        </div>
-
-        {/* 6. Description — auto-filled from the item, editable */}
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Description">
-            <input
-              type="text"
-              className="innovic-input"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        {/* 7. Material / Grade — auto-fetched from the item, read-only */}
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Grade">
-            <input
-              type="text"
-              className="innovic-input"
-              value={autoMaterial}
-              readOnly
-              disabled
-            />
-          </Field>
-        </div>
-
-        {/* 8. JC No — auto-fetched Job Card linked to the SO/JW line, read-only */}
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JC No.">
-            <input
-              type="text"
-              className="innovic-input"
-              value={lineId ? jcNo || '—' : ''}
-              readOnly
-              disabled
-            />
-          </Field>
-        </div>
-      </div>
-
-      {err ? <ErrorBox message={err} /> : null}
-
-      <ModalActions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending}
-        saveLabel="Save Material"
-      />
-    </ModalShell>
-  );
-}
-
-// ─── Edit modal ────────────────────────────────────────────────────────────
-
-function EditPartyMaterialModal({
-  row,
-  onClose,
-}: {
-  row: PartyMaterialListItem;
-  onClose: () => void;
-}): React.JSX.Element {
-  const [name, setName] = useState(row.name);
-  const [description, setDescription] = useState(row.description ?? '');
-  const [material, setMaterial] = useState(row.material ?? '');
-  const [uom, setUom] = useState<PartyMaterialUom>(
-    (PARTY_MATERIAL_UOMS.includes(row.uom as PartyMaterialUom)
-      ? row.uom
-      : 'NOS') as PartyMaterialUom,
-  );
-  const [clientSearch, setClientSearch] = useState('');
-  const [clientId, setClientId] = useState<string | null>(row.clientId);
-  const [err, setErr] = useState<string | null>(null);
-
-  const { data: clientsData, isFetching: clientsFetching } = useClientsList({
-    search: clientSearch.trim() || undefined,
-    limit: 50,
-    offset: 0,
-  });
-  const selectedClient = useMemo(() => {
-    if (clientId === row.clientId) {
-      // Default: preserve the existing display until user types a search
-      return {
-        id: row.clientId ?? '',
-        code: row.clientCodeText ?? '',
-        name: row.clientName ?? row.clientCodeText ?? '',
-      };
-    }
-    return clientsData?.clients.find((c) => c.id === clientId) ?? null;
-  }, [clientId, clientsData, row]);
-
-  const updateMut = useUpdatePartyMaterial();
-
-  const onSave = (): void => {
-    setErr(null);
-    const nm = name.trim();
-    if (!nm) {
-      setErr('Material Name is required.');
-      return;
-    }
-    if (!clientId) {
-      setErr('Customer is required.');
-      return;
-    }
-    const input: UpdatePartyMaterialInput = {
-      name: nm,
-      uom,
-      clientId,
-    };
-    input.description = description.trim();
-    input.material = material.trim();
-    updateMut.mutate(
-      { id: row.id, input },
-      {
-        onSuccess: () => onClose(),
-        onError: (e) =>
-          setErr(e instanceof Error ? e.message : 'Could not save changes. Try again.'),
-      },
-    );
-  };
-
-  return (
-    <ModalShell onClose={onClose} title={`Edit Customer Material ${row.code}`}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Code">
-          <input
-            type="text"
-            className="innovic-input"
-            value={row.code}
-            readOnly
-            style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-          />
-        </Field>
-        <Field label="UOM">
-          <select
-            className="innovic-select"
-            value={uom}
-            onChange={(e) => setUom(e.target.value as PartyMaterialUom)}
-          >
-            {PARTY_MATERIAL_UOMS.map((u) => (
-              <option key={u} value={u}>
-                {u}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Item Code">
-            <input
-              type="text"
-              className="innovic-input"
-              value={`${row.itemCode ?? row.itemCodeText ?? '—'}${
-                row.itemName ? ` — ${row.itemName}` : ''
-              }`}
-              readOnly
-              style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-            />
-          </Field>
-        </div>
-
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material Name" required>
-            <input
-              type="text"
-              className="innovic-input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Description">
-            <input
-              type="text"
-              className="innovic-input"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Grade">
-            <input
-              type="text"
-              className="innovic-input"
-              value={material}
-              onChange={(e) => setMaterial(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Customer" required>
-            <SearchableSelect
-              id="pmEditClient"
-              value={clientId}
-              onChange={setClientId}
-              onSearch={setClientSearch}
-              loading={clientsFetching}
-              options={(clientsData?.clients ?? []).map((c) => ({
-                id: c.id,
-                code: c.code,
-                name: c.name,
-              }))}
-              placeholder="🔍 Type customer code or name…"
-              valueLabel={
-                selectedClient?.code ? `${selectedClient.code} — ${selectedClient.name}` : undefined
-              }
-            />
-          </Field>
-        </div>
-      </div>
-
-      {err ? <ErrorBox message={err} /> : null}
-
-      <ModalActions
-        onClose={onClose}
-        onSave={onSave}
-        saving={updateMut.isPending}
-        saveLabel="Save Changes"
-      />
-    </ModalShell>
-  );
-}
-
-// ─── Shared bits ───────────────────────────────────────────────────────────
-
-function ModalShell({
-  onClose,
-  title,
-  children,
-}: {
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          {title}
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function ModalActions({
-  onClose,
-  onSave,
-  saving,
-  saveLabel,
-}: {
-  onClose: () => void;
-  onSave: () => void;
-  saving: boolean;
-  saveLabel: string;
-}): React.JSX.Element {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-      <button type="button" className="btn btn-ghost" onClick={onClose}>
-        Cancel
-      </button>
-      <button type="button" className="btn btn-primary" disabled={saving} onClick={onSave}>
-        {saving ? (
-          <>
-            <Loader2 size={14} className="inline animate-spin" /> Saving…
-          </>
-        ) : (
-          saveLabel
-        )}
-      </button>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  required = false,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-        {label}
-        {required ? <span className="req">★</span> : null}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function ErrorBox({ message }: { message: string }): React.JSX.Element {
-  return (
-    <div
-      style={{
-        marginTop: 12,
-        padding: 8,
-        background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red2)',
-        borderRadius: 4,
-        fontSize: 12,
-      }}
-    >
-      {message}
     </div>
   );
 }

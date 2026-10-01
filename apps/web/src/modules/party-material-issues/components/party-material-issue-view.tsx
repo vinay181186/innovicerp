@@ -1,33 +1,31 @@
-// Party Material Issue (ADR-079 — job-work cycle completion) — folded in as the
-// "Issue" tab of the Party Material screen (formerly standalone
+// Customer Material Issue (ADR-079 — job-work cycle completion) — folded in as
+// the "Issue" tab of the Party Material screen (formerly standalone
 // /party-material-issues). Issues client-supplied ("party") material to a Job
 // Card for in-house machining; debits the separate party stock, never own-stock
-// store_transactions. Self-contained: its own hooks + inline modals.
+// store_transactions.
+//
+// ADR-199 conversion (table standard 2026-10-01): the hand-written
+// `.innovic-table` is now the shared FIT table (<DataTable tableKey={
+// partyMaterialIssues}>). Columns, the ▸ Remarks expand and both modals live in
+// sibling files so every file clears the 400-line rule (this one was 724). Data,
+// filters, the server-side search and the mutations are unchanged.
 
 import {
-  type CreatePartyMaterialIssueInput,
   type ListPartyMaterialIssuesQuery,
   type PartyMaterialIssueListItem,
 } from '@innovic/shared';
-import { Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { SearchableSelect } from '@/components/shared/searchable-select';
-import { fmtDate, todayLocal } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useJobCardsList } from '@/modules/job-cards/api';
-import { useJobWorkOrder, useJobWorkOrdersList } from '@/modules/job-work-orders/api';
-import { usePartyMaterialsList } from '@/modules/party-materials/api';
-import { partyMaterialFitsJwLine } from '@/modules/party-materials/fits-jw-line';
-import { useDiscardGuard } from '@/modules/store-inventory/components/discard-guard';
-import { RowMenu } from '@/ui/data';
-import { ListFooter, ListHeader } from '@/ui/layout';
-import {
-  useCancelPartyMaterialIssue,
-  useCreatePartyMaterialIssue,
-  usePartyMaterialIssuesList,
-} from '../api';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { usePartyMaterialIssuesList } from '../api';
+import { CancelIssueModal } from './cancel-issue-modal';
+import { NewPartyMaterialIssueModal } from './new-party-material-issue-modal';
+import { partyMaterialIssueColumns } from './party-material-issue-columns';
+import { PartyMaterialIssueExpand } from './party-material-issue-expand';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
 // exactly the cap this list already ran under, so nothing that was visible
@@ -78,6 +76,18 @@ export function PartyMaterialIssueView({
 
   const { data, isLoading, isError, error } = usePartyMaterialIssuesList(query);
   const rows = data?.items ?? [];
+  const columns = useMemo(() => partyMaterialIssueColumns(), []);
+
+  // ▸ expand — Remarks are already on the row, so no extra fetch.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -112,133 +122,50 @@ export function PartyMaterialIssueView({
         }
       />
 
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error
-                ? error.message
-                : 'Could not load party material issues. Try again.'}
-            </div>
-          </div>
-        ) : data ? (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Issue No.</th>
-                  <th>Issue Date</th>
-                  <th>JWSO No.</th>
-                  <th>JC No.</th>
-                  {/* TWO different items sit side by side here and the headers
-                      have to keep them apart. "Item Code" is OUR produced part
-                      (CODE/REV, name under it), off the job card; "Material" is
-                      the CUSTOMER'S supplied stock this issue debits. */}
-                  <th>Item Code</th>
-                  <th>Material</th>
-                  <th className="th-num" style={{ color: 'var(--green2)' }}>
-                    Issue Qty
-                  </th>
-                  <th>Remarks</th>
-                  {canCancel ? <th aria-label="Actions" /> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={canCancel ? 9 : 8} className="empty-state">
-                      {term ? 'No Customer Material Issues match.' : 'No Customer Material Issues yet.'}
-                    </td>
-                  </tr>
-                ) : null}
-                {rows.map((it) => (
-                  <tr key={it.id}>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <span className="td-code" style={{ color: 'var(--cyan)' }}>
-                        {it.code}
-                      </span>
-                    </td>
-                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {fmtDate(it.issueDate)}
-                    </td>
-                    <td
-                      className="mono fw-700"
-                      style={{ fontSize: 11, color: 'var(--purple)', whiteSpace: 'nowrap' }}
-                    >
-                      {it.jwCodeText ?? '—'}
-                    </td>
-                    <td className="mono text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {it.jcCodeText ?? '—'}
-                    </td>
-                    {/* The job card's PRODUCED part — not the party material in
-                        the next cell. Null renders nothing: an issue raised
-                        without a job card has no part to name, and a dash here
-                        would read as "no item" on a row that does have one. */}
-                    <td style={{ fontSize: 11 }}>
-                      {/* The item code is the primary value on any row that
-                          carries one, so it takes the bold weight to match the
-                          rest of the system. Its colour already comes from the
-                          cell's own default text, which is the darkest token,
-                          so only the weight was missing. */}
-                      <span className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
-                        {itemCodeWithRev(it.jcItemCode, it.jcItemRevision, '')}
-                      </span>
-                      {it.jcItemName ? (
-                        <div className="text3" style={{ fontSize: 11 }} title={it.jcItemName}>
-                          {it.jcItemName}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="fw-700">
-                      <span style={{ color: 'var(--purple)' }}>
-                        {it.partyMaterialCodeText ?? '—'}
-                      </span>
-                      {it.partyMaterialName ? (
-                        <span className="text3" style={{ fontSize: 11 }}>
-                          {' '}
-                          — {it.partyMaterialName}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td
-                      className="td-num mono fw-700"
-                      style={{ fontSize: 14, color: 'var(--green2)' }}
-                    >
-                      {it.qty}
-                    </td>
-                    <td className="text3" style={{ fontSize: 11 }} title={it.remarks ?? ''}>
-                      {it.remarks ?? '—'}
-                    </td>
-                    {canCancel ? (
-                      <td className="td-ctr">
-                        {/* ⋯ Cancel Issue — puts the qty back on party stock
-                            (the reason dialog below). */}
-                        <RowMenu
-                          items={[
-                            {
-                              key: 'cancel',
-                              label: 'Cancel Issue',
-                              icon: 'x',
-                              group: 'danger',
-                              onSelect: () => setCancelRow(it),
-                            },
-                          ]}
-                        />
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error
+              ? error.message
+              : 'Could not load party material issues. Try again.'
+          }
+        />
+      ) : (
+        // THE shared FIT table (ADR-199). First column (Issue No.) is pinned;
+        // the ▸ reveals Remarks. There is no detail page for an issue, so a row
+        // is not clickable. Cancelled/reversed issues are soft-deleted and
+        // filtered out by the API, so the only tint is the defensive cancelled
+        // wash. The one per-row action is Cancel, gated by canCancel exactly as
+        // the old ⋯ menu was.
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.partyMaterialIssues}
+            columns={columns}
+            rows={rows}
+            rowKey={(it) => it.id}
+            loading={isLoading}
+            emptyText={
+              term ? 'No Customer Material Issues match.' : 'No Customer Material Issues yet.'
+            }
+            rowClassName={(it) => (it.deletedAt ? ROW_TINT.cancelled : undefined)}
+            renderExpanded={(it) =>
+              expanded.has(it.id) ? <PartyMaterialIssueExpand it={it} /> : null
+            }
+            onToggleExpanded={(it) => toggleExpand(it.id)}
+            rowMenu={(it) => [
+              {
+                key: 'cancel',
+                label: 'Cancel Issue',
+                icon: 'x',
+                group: 'danger',
+                hidden: !canCancel,
+                onSelect: () => setCancelRow(it),
+              },
+            ]}
+          />
+        </Panel>
+      )}
 
       {data ? (
         <ListFooter total={data.total} shown={rows.length} noun="issue" limit={LIST_LIMIT} />
@@ -246,479 +173,6 @@ export function PartyMaterialIssueView({
 
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
       {cancelRow ? <CancelIssueModal row={cancelRow} onClose={() => setCancelRow(null)} /> : null}
-    </div>
-  );
-}
-
-function CancelIssueModal({
-  row,
-  onClose,
-}: {
-  row: PartyMaterialIssueListItem;
-  onClose: () => void;
-}): React.JSX.Element {
-  const [reason, setReason] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const cancelMut = useCancelPartyMaterialIssue();
-
-  const onConfirm = (): void => {
-    setErr(null);
-    if (!reason.trim()) {
-      setErr('Give a reason — it is stored on the cancelled issue.');
-      return;
-    }
-    cancelMut.mutate(
-      { id: row.id, reason: reason.trim() },
-      {
-        onSuccess: () => onClose(),
-        onError: (e) =>
-          setErr(e instanceof Error ? e.message : 'Could not cancel issue. Try again.'),
-      },
-    );
-  };
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(520px, 94vw)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 12 }}>
-          ⚠ Cancel {row.code}
-        </div>
-        <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
-          Returns <b style={{ color: 'var(--green2)' }}>{row.qty}</b> to party stock. Refused if
-          already machined.
-        </div>
-        <Field label="Reason" required>
-          <input
-            type="text"
-            className="innovic-input"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. wrong qty entered"
-            autoFocus
-          />
-        </Field>
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 8,
-              background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red2)',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Keep it
-          </button>
-          <button
-            type="button"
-            className="btn btn-danger"
-            disabled={cancelMut.isPending}
-            onClick={onConfirm}
-          >
-            {cancelMut.isPending ? (
-              <>
-                <Loader2 size={14} className="inline animate-spin" /> Cancelling…
-              </>
-            ) : (
-              'Cancel Issue'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [issueDate, setIssueDate] = useState(todayLocal());
-  const [jwSearch, setJwSearch] = useState('');
-  const [jobWorkOrderId, setJobWorkOrderId] = useState<string | null>(null);
-  const [jcSearch, setJcSearch] = useState('');
-  const [jobCardId, setJobCardId] = useState<string | null>(null);
-  const [pmSearch, setPmSearch] = useState('');
-  const [partyMaterialId, setPartyMaterialId] = useState<string | null>(null);
-  const [qty, setQty] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-
-  const jwQuery = useJobWorkOrdersList({
-    search: jwSearch.trim() || undefined,
-    status: 'open',
-    limit: 50,
-    offset: 0,
-  });
-  const jwHeaders = jwQuery.data?.items ?? [];
-
-  // Cascade JWSO → JC → Party Material (party-material-issue-create#1). The
-  // picked JWSO / JC are remembered, since the pickers' option lists change
-  // with every search. The server still makes the same checks on Save.
-  const [pickedJw, setPickedJw] = useState<{ code: string; clientId: string | null } | null>(null);
-  const [pickedJcItemId, setPickedJcItemId] = useState<string | null>(null);
-
-  // Only this JWSO's job cards: the JC search also matches the source JWSO
-  // code, so with no JC typed the JWSO code brings its cards.
-  const jcQuery = useJobCardsList(
-    {
-      search: jcSearch.trim() || pickedJw?.code || undefined,
-      limit: 200,
-      offset: 0,
-    },
-    { enabled: Boolean(jobWorkOrderId) },
-  );
-  const jcItems = useMemo(
-    () =>
-      (jcQuery.data?.items ?? []).filter(
-        (jc) => jc.sourceLink?.type === 'jw' && jc.sourceLink.jobWorkOrderId === jobWorkOrderId,
-      ),
-    [jcQuery.data, jobWorkOrderId],
-  );
-
-  // ADR-195: the JWSO's own customer material (-rm item code) — a material
-  // pinned to it is valid for every job card on this JWSO.
-  const jwDetailQ = useJobWorkOrder(jobWorkOrderId ?? undefined);
-  const jwClientMaterial =
-    jwDetailQ.data && jwDetailQ.data.id === jobWorkOrderId ? jwDetailQ.data.clientMaterial : null;
-
-  // Only the JWSO customer's materials, and — once a JC is picked — only the
-  // ones for the part that JC makes or the JWSO's customer material (a
-  // material with no Item Code still shows). Same rule the API enforces.
-  const {
-    data: pmData,
-    isFetching: pmFetching,
-    isPlaceholderData: pmStale,
-  } = usePartyMaterialsList(
-    {
-      search: pmSearch.trim() || undefined,
-      ...(pickedJw?.clientId ? { clientId: pickedJw.clientId } : {}),
-      limit: 200,
-      offset: 0,
-    },
-    { enabled: Boolean(jobWorkOrderId) },
-  );
-  const pmAll = useMemo(
-    () =>
-      (pmData?.items ?? []).filter((p) =>
-        partyMaterialFitsJwLine(p, pickedJcItemId, jwClientMaterial),
-      ),
-    [pmData, pickedJcItemId, jwClientMaterial],
-  );
-  const selectedPm = useMemo(
-    () => pmAll.find((p) => p.id === partyMaterialId) ?? null,
-    [pmAll, partyMaterialId],
-  );
-
-  const onJwChange = (id: string | null): void => {
-    setJobWorkOrderId(id);
-    const jw = jwHeaders.find((j) => j.jwId === id);
-    setPickedJw(jw ? { code: jw.code, clientId: jw.clientId ?? null } : null);
-    setJcSearch('');
-    setJobCardId(null);
-    setPickedJcItemId(null);
-    setPmSearch('');
-    setPartyMaterialId(null);
-  };
-  const onJcChange = (id: string | null): void => {
-    setJobCardId(id);
-    setPickedJcItemId(jcItems.find((jc) => jc.id === id)?.itemId ?? null);
-    setPartyMaterialId(null);
-  };
-
-  // Auto-pick when only one fits — once per parent pick, so clearing it by
-  // hand is not undone.
-  const autoJcFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!jobWorkOrderId || jobCardId || jcSearch.trim()) return;
-    if (!jcQuery.data || jcQuery.isFetching || jcQuery.isPlaceholderData) return;
-    if (autoJcFor.current === jobWorkOrderId) return;
-    autoJcFor.current = jobWorkOrderId;
-    const only = jcItems.length === 1 ? jcItems[0] : undefined;
-    if (only) {
-      setJobCardId(only.id);
-      setPickedJcItemId(only.itemId);
-    }
-  }, [
-    jobWorkOrderId,
-    jobCardId,
-    jcSearch,
-    jcQuery.data,
-    jcQuery.isFetching,
-    jcQuery.isPlaceholderData,
-    jcItems,
-  ]);
-  const autoPmFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!jobCardId || partyMaterialId || pmSearch.trim()) return;
-    if (!pmData || pmFetching || pmStale) return;
-    if (autoPmFor.current === jobCardId) return;
-    autoPmFor.current = jobCardId;
-    const only = pmAll.length === 1 ? pmAll[0] : undefined;
-    if (only) setPartyMaterialId(only.id);
-  }, [jobCardId, partyMaterialId, pmSearch, pmData, pmFetching, pmStale, pmAll]);
-
-  const dirty = Boolean(jobWorkOrderId || qty.trim() || remarks.trim());
-  const guard = useDiscardGuard(dirty, onClose);
-
-  const createMut = useCreatePartyMaterialIssue();
-
-  const onSave = (): void => {
-    setErr(null);
-    if (!jobWorkOrderId) {
-      setErr('JWSO No. is required.');
-      return;
-    }
-    if (!jobCardId) {
-      setErr('JC No. is required. Work cannot start without it.');
-      return;
-    }
-    if (!partyMaterialId) {
-      setErr('Customer Material is required.');
-      return;
-    }
-    const q = Number(qty);
-    if (!Number.isFinite(q) || q <= 0) {
-      setErr('Issue Qty must be 1 or more.');
-      return;
-    }
-    const input: CreatePartyMaterialIssueInput = {
-      issueDate,
-      jobWorkOrderId,
-      jobCardId,
-      partyMaterialId,
-      qty: q,
-    };
-    if (remarks.trim()) input.remarks = remarks.trim();
-
-    createMut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) =>
-        setErr(
-          e instanceof Error ? e.message : 'Could not save Issue. Check the lines and try again.',
-        ),
-    });
-  };
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) guard.requestClose();
-      }}
-    >
-      {guard.dialog}
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(680px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          New Customer Material Issue
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Issue Date">
-            <input
-              type="date"
-              className="innovic-input"
-              value={issueDate}
-              onChange={(e) => setIssueDate(e.target.value)}
-            />
-          </Field>
-          <Field label="Issue Qty" required>
-            <input
-              type="number"
-              min={1}
-              className="innovic-input"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              placeholder="0"
-              style={{
-                fontSize: 14,
-                fontWeight: 700,
-                border: '2px solid var(--green)',
-                borderRadius: 4,
-              }}
-            />
-          </Field>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JWSO No." required>
-              <SearchableSelect
-                id="pmi-jwso"
-                value={jobWorkOrderId}
-                onChange={onJwChange}
-                valueLabel={pickedJw?.code}
-                onSearch={setJwSearch}
-                loading={jwQuery.isFetching}
-                placeholder="🔍 Select JWSO — type number or customer…"
-                options={jwHeaders.map((j) => ({
-                  id: j.jwId,
-                  code: j.code,
-                  name: j.customerName ?? '',
-                }))}
-              />
-            </Field>
-          </div>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JC No." required>
-              <SearchableSelect
-                id="pmi-jc"
-                value={jobCardId}
-                onChange={onJcChange}
-                onSearch={setJcSearch}
-                loading={jcQuery.isFetching}
-                disabled={!jobWorkOrderId}
-                emptyText="No Job Card on this JWSO"
-                placeholder={
-                  jobWorkOrderId ? '🔍 Select Job Card of this JWSO…' : 'Pick the JWSO first'
-                }
-                options={jcItems.map((jc) => ({ id: jc.id, code: jc.code, name: jc.itemName }))}
-              />
-            </Field>
-          </div>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Customer Material" required>
-              <SearchableSelect
-                id="pmi-material"
-                value={partyMaterialId}
-                onChange={setPartyMaterialId}
-                onSearch={setPmSearch}
-                loading={pmFetching}
-                disabled={!jobWorkOrderId}
-                emptyText="No material of this customer for this part"
-                placeholder={
-                  jobWorkOrderId
-                    ? '🔍 Select party material — type code or name…'
-                    : 'Pick the JWSO first'
-                }
-                options={pmAll.map((p) => ({
-                  id: p.id,
-                  code: p.code,
-                  name: `${p.name} · Available ${p.stockQty}`,
-                }))}
-              />
-            </Field>
-            {selectedPm ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                Available:{' '}
-                <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
-                  {selectedPm.stockQty}
-                </span>{' '}
-                {selectedPm.uom}
-              </div>
-            ) : null}
-          </div>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Remarks">
-              <input
-                type="text"
-                className="innovic-input"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Lot info, purpose, etc."
-              />
-            </Field>
-          </div>
-        </div>
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 8,
-              background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red2)',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={createMut.isPending}
-            onClick={onSave}
-          >
-            {createMut.isPending ? (
-              <>
-                <Loader2 size={14} className="inline animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save Issue'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  required = false,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-        {label}
-        {required ? <span className="req">★</span> : null}
-      </div>
-      {children}
     </div>
   );
 }

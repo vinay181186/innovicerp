@@ -1,35 +1,33 @@
 // Store / Inventory (PL-SI-1) — per-item current stock dashboard.
-// Mirrors legacy renderStore (HTML L24803). 4-tile KPI strip + filter +
-// per-item table with In Stock, Reorder Level, On PO, Mfg Pending, + actions:
-// ± Adjust (modal), Reorder (modal).
+// Mirrors legacy renderStore (HTML L24803). KPI strip + filter + the per-item
+// stock table, now on the ADR-199 fit table (<DataTable tableKey={storeInventory}>).
+// Per-row ⋯ menu: ± Adjust (modal), Reorder (modal), Raise PR (→ Reorder List).
+//
+// Columns, the Adjust modal and the Manual Receipt modal live in sibling files
+// so this route stays under 400 lines. A row below its Reorder Level is washed
+// with ROW_TINT.late (the old "⚠ Below Reorder" sub-line is gone — the fit table
+// draws one line per row and the tint carries the same meaning).
 //
 // Two legacy features are NOT ported (reported as parity gaps):
-//   - per-row History button (legacy L24847/24953) — needs a per-item txn
-//     fetch; /store-transactions cannot filter by item from the URL today.
+//   - per-row History button (legacy L24847/24953) — needs a per-item txn fetch;
+//     /store-transactions cannot filter by item from the URL today.
 //   - Recent Store Transactions panel (legacy L24903) — not on this payload.
 
-import type {
-  AdjustStockInput,
-  ListStoreInventoryResponse,
-  ManualReceiptSource,
-  StoreInventoryRow,
-} from '@innovic/shared';
-import { MANUAL_RECEIPT_SOURCE_LABEL } from '@innovic/shared';
+import type { ListStoreInventoryResponse, StoreInventoryRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu } from '@/ui/data';
-import { ListHeader } from '@/ui/layout';
-import { useAdjustStock, useStoreInventory } from '../api';
-import { useItemsList } from '@/modules/items/api';
-import { SearchableSelect } from '@/ui/forms';
-import { useDiscardGuard } from '../components/discard-guard';
-import { ModalShell } from '../components/modal-shell';
+import { DataTable, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListHeader, PageState } from '@/ui/layout';
+import { useStoreInventory } from '../api';
+import { AdjustStockModal } from '../components/adjust-stock-modal';
+import { ManualReceiptModal } from '../components/manual-receipt-modal';
 import { ReorderModal } from '../components/reorder-modal';
 import { ReservationDrilldown } from '../components/reservation-drilldown';
+import { storeInventoryColumns } from '../components/store-inventory-columns';
 import { StockLedger } from '@/modules/store-transactions/components/stock-ledger';
 
 type FilterKey = 'all' | 'below' | 'zero';
@@ -41,17 +39,16 @@ export const storeInventoryRoute = createRoute({
 });
 
 function StoreInventoryPage(): React.JSX.Element {
-  // Tier-driven, per department (Store). Was admin/manager on `users.role`.
-  // Every write on this screen — ± Adjust, Reorder and Manual Receipt, which
-  // posts through the same adjust-stock endpoint — moves a saved balance, so
-  // all three sit on `edit`: an L2 Data Entry hand cannot restate stock.
+  // Tier-driven, per department (Store). Every write on this screen — ± Adjust,
+  // Reorder and Manual Receipt, which posts through the same adjust-stock
+  // endpoint — moves a saved balance, so all three sit on `edit`: an L2 Data
+  // Entry hand cannot restate stock.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'item_create');
   const canEdit = perms.edit;
   // "Raise PR" on a low-stock row opens a new Purchase Request — gated on the
   // PR's own entry right, the same gate /purchase-requests/new enforces.
   const canRaisePr = effectiveFormPerms(eff, 'pr_create').entry;
-  const showActions = canEdit || canRaisePr;
   // Inventory | Stock Ledger tabs — Stock Ledger is the former standalone screen.
   const [tab, setTab] = useState<'inventory' | 'ledger'>('inventory');
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -66,6 +63,11 @@ function StoreInventoryPage(): React.JSX.Element {
     filter,
     search: search.trim() || undefined,
   });
+
+  const columns = useMemo(
+    () => storeInventoryColumns({ onReservedClick: (row) => setReservedRow(row) }),
+    [],
+  );
 
   return (
     <div>
@@ -157,246 +159,69 @@ function StoreInventoryPage(): React.JSX.Element {
             {data ? <KpiStrip summary={data.summary} /> : null}
           </ListHeader>
 
-          {isLoading ? (
+          {isError ? (
+            <PageState
+              state="error"
+              message={
+                error instanceof Error ? error.message : 'Could not load inventory. Try again.'
+              }
+            />
+          ) : (
             <div className="panel">
-              <div className="panel-body">
-                <div className="text3" style={{ fontSize: 12 }}>
-                  <Loader2 size={14} className="inline animate-spin" /> Loading…
-                </div>
+              <div className="panel-hdr">
+                <span className="panel-title">Stock Levels</span>
               </div>
+              <DataTable
+                tableKey={TABLE_KEYS.storeInventory}
+                columns={columns}
+                rows={data?.rows ?? []}
+                loading={isLoading}
+                rowKey={(row) => row.itemId}
+                // Below Reorder row → late wash; the fit table's one-line rows
+                // make an inline "⚠ Below Reorder" impossible, the tint says it.
+                rowClassName={(row) => (row.belowReorder ? ROW_TINT.late : undefined)}
+                // Material ships off the default view (kept so no data is lost).
+                defaultHidden={['material']}
+                emptyText={search.trim() || filter !== 'all' ? 'No items match.' : 'No items yet.'}
+                renderLink={(p) => <Link {...p} />}
+                rowMenu={(row) => [
+                  {
+                    key: 'adjust',
+                    label: '± Adjust',
+                    icon: 'pencil',
+                    hidden: !canEdit,
+                    onSelect: () => setAdjustRow(row),
+                  },
+                  {
+                    // Reorder Level and Reorder Qty.
+                    key: 'reorder',
+                    label: 'Reorder',
+                    icon: 'settings',
+                    hidden: !canEdit,
+                    onSelect: () => setMinRow(row),
+                  },
+                  {
+                    // Below Reorder → the Reorder List (ADR-193 phase 5): the one
+                    // place PRs are raised for it, so an item that already has an
+                    // open PR is never bought twice.
+                    key: 'raise-pr',
+                    label: 'Raise PR',
+                    icon: 'plus',
+                    group: 'workflow',
+                    hidden: !(canRaisePr && row.belowReorder),
+                    to: '/reorder-list',
+                  },
+                ]}
+              />
             </div>
-          ) : isError ? (
-            <div className="panel">
-              <div className="panel-body">
-                <div className="empty-state" style={{ color: 'var(--red2)' }}>
-                  {error instanceof Error ? error.message : 'Could not load inventory. Try again.'}
-                </div>
-              </div>
-            </div>
-          ) : data ? (
-            <>
-              <div className="panel">
-                <div className="panel-hdr">
-                  <span className="panel-title">Stock Levels</span>
-                </div>
-                <div className="tbl-wrap">
-                  <table className="innovic-table tbl-grid">
-                    <thead>
-                      <tr>
-                        <th>Item Code</th>
-                        <th>Item Name</th>
-                        <th>Material</th>
-                        <th>UOM</th>
-                        {/* ADR-180 — three numbers, three columns, always in
-                            this order: Physical − Reserved = Available. */}
-                        <th
-                          className="th-num"
-                          style={{ color: 'var(--green2)' }}
-                          title="On the shelf, reserved or not. Reserving never changes it."
-                        >
-                          Physical
-                        </th>
-                        <th
-                          className="th-num"
-                          style={{ color: 'var(--purple)' }}
-                          title="Promised to SO lines but still on the shelf — click a number to see where"
-                        >
-                          Reserved
-                        </th>
-                        <th
-                          className="th-num"
-                          style={{ color: 'var(--cyan)' }}
-                          title="Physical − Reserved: what a new order may still be promised"
-                        >
-                          Available
-                        </th>
-                        <th className="th-num">Reorder Level</th>
-                        <th className="th-num" style={{ color: 'var(--blue)' }}>
-                          On PO
-                        </th>
-                        <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                          At Vendor
-                        </th>
-                        <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                          Pending from Production
-                        </th>
-                        {showActions ? <th aria-label="Actions" /> : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.rows.length === 0 ? (
-                        <tr>
-                          <td colSpan={showActions ? 12 : 11} className="empty-state">
-                            {search.trim() || filter !== 'all'
-                              ? 'No items match.'
-                              : 'No items yet.'}
-                          </td>
-                        </tr>
-                      ) : (
-                        data.rows.map((row) => (
-                          <tr key={row.itemId}>
-                            {/* Item code opens the Item Master record. */}
-                            <td style={{ whiteSpace: 'nowrap' }}>
-                              <Link
-                                to="/items/$id"
-                                params={{ id: row.itemId }}
-                                className="td-code fw-700"
-                                style={{ color: 'var(--text)' }}
-                                title="Open this item in the Item Master"
-                              >
-                                {row.itemCode}
-                              </Link>
-                            </td>
-                            <td className="fw-700">{row.itemName}</td>
-                            <td className="text2" style={{ fontSize: 11 }}>
-                              {row.material ?? '—'}
-                            </td>
-                            <td>
-                              <span
-                                className="tag"
-                                style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
-                              >
-                                {row.uom}
-                              </span>
-                            </td>
-                            <td className="td-num">
-                              <span
-                                className="mono fw-700"
-                                style={{
-                                  fontSize: 15,
-                                  color:
-                                    row.inStock > 0
-                                      ? 'var(--green)'
-                                      : row.inStock === 0
-                                        ? 'var(--red)'
-                                        : 'var(--text3)',
-                                }}
-                              >
-                                {row.inStock}
-                              </span>
-                              {row.belowReorder ? (
-                                <div
-                                  style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}
-                                >
-                                  ⚠ Below Reorder
-                                </div>
-                              ) : null}
-                            </td>
-                            {/* Reserved is clickable: it opens the list of SO
-                                lines holding this item's stock. */}
-                            <td className="td-num">
-                              {row.reservedQty > 0 ? (
-                                <button
-                                  type="button"
-                                  className="mono fw-700"
-                                  onClick={() => setReservedRow(row)}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    padding: 0,
-                                    fontSize: 15,
-                                    color: 'var(--purple)',
-                                    textDecoration: 'underline',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  {row.reservedQty}
-                                </button>
-                              ) : (
-                                <span className="mono text3">—</span>
-                              )}
-                            </td>
-                            <td className="td-num">
-                              <span
-                                className="mono fw-700"
-                                style={{
-                                  fontSize: 15,
-                                  color: row.availableQty > 0 ? 'var(--cyan)' : 'var(--text3)',
-                                }}
-                              >
-                                {row.availableQty}
-                              </span>
-                            </td>
-                            <td className="mono text3 td-num">{row.reorderLevel || '—'}</td>
-                            <td className="td-num">
-                              <span
-                                className="mono"
-                                style={{ color: row.onPoQty > 0 ? 'var(--blue)' : 'var(--text3)' }}
-                              >
-                                {row.onPoQty || '—'}
-                              </span>
-                            </td>
-                            <td className="td-num">
-                              <span
-                                className="mono"
-                                style={{
-                                  color: row.atVendorQty > 0 ? 'var(--amber2)' : 'var(--text3)',
-                                }}
-                                title={row.atVendorQty > 0 ? 'At an OSP vendor' : undefined}
-                              >
-                                {row.atVendorQty || '—'}
-                              </span>
-                            </td>
-                            <td className="td-num">
-                              <span
-                                className="mono"
-                                style={{
-                                  color: row.mfgPendingQty > 0 ? 'var(--amber)' : 'var(--text3)',
-                                }}
-                              >
-                                {row.mfgPendingQty || '—'}
-                              </span>
-                            </td>
-                            {showActions ? (
-                              <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                                <RowMenu
-                                  renderLink={(p) => <Link {...p} />}
-                                  items={[
-                                    {
-                                      key: 'adjust',
-                                      label: '± Adjust',
-                                      icon: 'pencil',
-                                      hidden: !canEdit,
-                                      onSelect: () => setAdjustRow(row),
-                                    },
-                                    {
-                                      // Reorder Level and Reorder Qty.
-                                      key: 'reorder',
-                                      label: 'Reorder',
-                                      icon: 'settings',
-                                      hidden: !canEdit,
-                                      onSelect: () => setMinRow(row),
-                                    },
-                                    {
-                                      // Below Reorder → the Reorder List (ADR-193
-                                      // phase 5, review): the one place PRs are
-                                      // raised for it, so an item that already has
-                                      // an open PR is never bought twice.
-                                      key: 'raise-pr',
-                                      label: 'Raise PR',
-                                      icon: 'plus',
-                                      group: 'workflow',
-                                      hidden: !(canRaisePr && row.belowReorder),
-                                      to: '/reorder-list',
-                                    },
-                                  ]}
-                                />
-                              </td>
-                            ) : null}
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          ) : null}
+          )}
 
-          {adjustRow ? <AdjustModal row={adjustRow} onClose={() => setAdjustRow(null)} /> : null}
+          {adjustRow ? (
+            <AdjustStockModal row={adjustRow} onClose={() => setAdjustRow(null)} />
+          ) : null}
           {minRow ? <ReorderModal row={minRow} onClose={() => setMinRow(null)} /> : null}
           {showManualReceipt ? (
-            <ManualReceiveModal onClose={() => setShowManualReceipt(false)} />
+            <ManualReceiptModal onClose={() => setShowManualReceipt(false)} />
           ) : null}
           {reservedRow ? (
             <ReservationDrilldown
@@ -412,12 +237,12 @@ function StoreInventoryPage(): React.JSX.Element {
   );
 }
 
-// ONE strip, one row — the shared <StatStrip>, not a grid of cards. Item
-// counts only: the ADR-180 piece totals (Reserved, Available) were removed
-// because they summed kg + Nos + m into one meaningless number.
+// ONE strip, one row — the shared <StatStrip>, not a grid of cards. Item counts
+// only: the ADR-180 piece totals (Reserved, Available) were removed because they
+// summed kg + Nos + m into one meaningless number.
 // 2026-09-26 filter bar: Total / Low / Zero filtered the table, so they are now
-// the counts in the Stock filter dropdown. "Items in Stock" never filtered —
-// it stays here as a read-only tile.
+// the counts in the Stock filter dropdown. "Items in Stock" never filtered — it
+// stays here as a read-only tile.
 function KpiStrip({
   summary,
 }: {
@@ -437,345 +262,4 @@ function KpiStrip({
 /** "Label (N)" when a count is known, bare label otherwise. */
 function withCount(label: string, n: number | undefined): string {
   return n === undefined ? label : `${label} (${n})`;
-}
-
-function AdjustModal({
-  row,
-  onClose,
-}: {
-  row: StoreInventoryRow;
-  onClose: () => void;
-}): React.JSX.Element {
-  const [direction, setDirection] = useState<'add' | 'remove'>('add');
-  const [qty, setQty] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const mut = useAdjustStock();
-
-  const onSave = (): void => {
-    setErr(null);
-    const q = Number(qty);
-    if (qty.trim() === '') {
-      setErr('Quantity is required.');
-      return;
-    }
-    if (!Number.isFinite(q) || q <= 0) {
-      setErr('Quantity must be more than 0.');
-      return;
-    }
-    if (!remarks.trim()) {
-      setErr('Reason / Remarks is required.');
-      return;
-    }
-    const input: AdjustStockInput = {
-      itemId: row.itemId,
-      direction,
-      qty: q,
-      remarks: remarks.trim(),
-    };
-    mut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not adjust stock. Try again.'),
-    });
-  };
-
-  return (
-    <ModalShell onClose={onClose} title={`Adjust Stock — ${row.itemCode}`}>
-      <div
-        style={{
-          marginBottom: 12,
-          padding: 10,
-          background: 'var(--bg3)',
-          borderRadius: 8,
-        }}
-      >
-        <span className="text3" style={{ fontSize: 11 }}>
-          Physical:
-        </span>
-        <span
-          className="mono fw-700"
-          style={{ fontSize: 18, color: 'var(--green2)', marginLeft: 8 }}
-        >
-          {row.inStock} {row.uom}
-        </span>
-        <span className="text3" style={{ fontSize: 11, marginLeft: 10 }}>
-          Reserved{' '}
-          <b className="mono" style={{ color: 'var(--purple)' }}>
-            {row.reservedQty}
-          </b>{' '}
-          · Available{' '}
-          <b className="mono" style={{ color: 'var(--cyan)' }}>
-            {row.availableQty}
-          </b>
-        </span>
-      </div>
-      <div className="form-grid">
-        <div className="form-grp">
-          <label className="form-label">Adjustment Type</label>
-          <select
-            className="innovic-select"
-            value={direction}
-            onChange={(e) => setDirection(e.target.value as 'add' | 'remove')}
-          >
-            <option value="add">+ Add Stock</option>
-            <option value="remove">- Remove Stock</option>
-          </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label">
-            Quantity <span className="req">★</span>
-          </label>
-          <input
-            type="number"
-            min={1}
-            className="innovic-input"
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            placeholder="0"
-            style={{ fontSize: 16, fontWeight: 700 }}
-          />
-        </div>
-        <div className="form-grp form-full">
-          <label className="form-label">
-            Reason / Remarks <span className="req">★</span>
-          </label>
-          <input
-            type="text"
-            className="innovic-input"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Physical count correction, damage, etc."
-          />
-        </div>
-      </div>
-      {err ? (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 8,
-            background: 'rgba(239,68,68,0.08)',
-            color: 'var(--red2)',
-            fontSize: 12,
-            borderRadius: 4,
-          }}
-        >
-          {err}
-        </div>
-      ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
-          {mut.isPending ? (
-            <>
-              <Loader2 size={14} className="inline animate-spin" /> Saving…
-            </>
-          ) : (
-            'Adjust'
-          )}
-        </button>
-      </div>
-    </ModalShell>
-  );
-}
-
-// Legacy storeReceiveManual (HTML L24981) — manual stock IN entry. Today the
-// underlying ledger writes `source_type='manual_adjust'` via the existing
-// AdjustStock service; the "Source" dropdown is sent as its own `source` field
-// (the server refuses 'purchase'), and the Ref No + remarks stay free text.
-//
-// The Item is picked from the whole Item Master (shared type-to-search), not
-// from the rows on the inventory page — with "Low Stock" on, most items used
-// to be unreachable. 'Purchase' is NOT a source here: bought material comes in
-// through a GRN (PO link + incoming QC); the server refuses it too.
-/** Sources a Manual Receipt may pick — every one but Purchase (GRN only). */
-const RECEIPT_SOURCES: ReadonlyArray<Exclude<ManualReceiptSource, 'purchase'>> = [
-  'production',
-  'return',
-  'other',
-];
-
-function ManualReceiveModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [itemId, setItemId] = useState<string | null>(null);
-  const [itemSearch, setItemSearch] = useState('');
-  const [qty, setQty] = useState('');
-  const [source, setSource] = useState<Exclude<ManualReceiptSource, 'purchase'>>('production');
-  const [refNo, setRefNo] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const mut = useAdjustStock();
-
-  const { data: itemsData, isFetching: itemsFetching } = useItemsList({
-    search: itemSearch.trim() || undefined,
-    limit: 50,
-    offset: 0,
-  });
-  // Remember the picked item so its code / UOM stay shown after the search changes.
-  const [picked, setPicked] = useState<{ code: string; name: string; uom: string | null } | null>(
-    null,
-  );
-  const itemOptions = useMemo(
-    () => (itemsData?.items ?? []).map((it) => ({ id: it.id, code: it.code, name: it.name })),
-    [itemsData],
-  );
-  // Current stock of the picked item, whatever the inventory page's filter is.
-  const { data: stockData } = useStoreInventory(
-    { search: picked?.code ?? '', filter: 'all' },
-    Boolean(picked),
-  );
-  const stockRow = picked ? (stockData?.rows ?? []).find((r) => r.itemId === itemId) : undefined;
-
-  const dirty = Boolean(itemId || qty.trim() || refNo.trim() || remarks.trim());
-  const guard = useDiscardGuard(dirty, onClose);
-
-  const onSave = (): void => {
-    setErr(null);
-    if (!itemId) {
-      setErr('Item is required.');
-      return;
-    }
-    const q = Number(qty);
-    if (qty.trim() === '') {
-      setErr('Quantity is required.');
-      return;
-    }
-    if (!Number.isFinite(q) || q <= 0) {
-      setErr('Quantity must be more than 0.');
-      return;
-    }
-    const composedRemarks = [
-      'Manual receipt',
-      refNo.trim() ? `ref=${refNo.trim()}` : null,
-      remarks.trim() || null,
-    ]
-      .filter(Boolean)
-      .join(' · ');
-
-    const input: AdjustStockInput = {
-      itemId,
-      direction: 'add',
-      qty: q,
-      remarks: composedRemarks,
-      source,
-    };
-    mut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save receipt. Try again.'),
-    });
-  };
-
-  return (
-    <ModalShell onClose={guard.requestClose} title="Manual Receipt">
-      {guard.dialog}
-      <div className="form-grid">
-        <div className="form-grp">
-          <label className="form-label" htmlFor="mr-item">
-            Item <span className="req">★</span>
-          </label>
-          <SearchableSelect
-            id="mr-item"
-            value={itemId}
-            onChange={(id) => {
-              setItemId(id);
-              const it = itemsData?.items.find((x) => x.id === id);
-              setPicked(it ? { code: it.code, name: it.name, uom: it.uom ?? null } : null);
-            }}
-            options={itemOptions}
-            valueLabel={picked ? `${picked.code} — ${picked.name}` : undefined}
-            onSearch={setItemSearch}
-            loading={itemsFetching}
-            placeholder="Type item code or name…"
-            emptyText="No matching item"
-          />
-          {picked ? (
-            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-              In stock now: {stockRow ? stockRow.inStock : '—'} {picked.uom ?? ''}
-            </div>
-          ) : null}
-        </div>
-        <div className="form-grp">
-          <label className="form-label">
-            Quantity <span className="req">★</span>
-            {picked?.uom ? <span className="text3"> ({picked.uom})</span> : null}
-          </label>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            className="innovic-input"
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            onWheel={(e) => e.currentTarget.blur()}
-            placeholder="0"
-            style={{ fontSize: 16, fontWeight: 700 }}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">Source</label>
-          <select
-            className="innovic-select"
-            value={source}
-            onChange={(e) => setSource(e.target.value as Exclude<ManualReceiptSource, 'purchase'>)}
-          >
-            {RECEIPT_SOURCES.map((s) => (
-              <option key={s} value={s}>
-                {MANUAL_RECEIPT_SOURCE_LABEL[s]}
-              </option>
-            ))}
-          </select>
-          <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-            Bought material is received through a GRN (against its PO, with incoming QC) — not here.
-          </div>
-        </div>
-        <div className="form-grp">
-          <label className="form-label">Ref No.</label>
-          <input
-            type="text"
-            className="innovic-input"
-            value={refNo}
-            onChange={(e) => setRefNo(e.target.value)}
-            placeholder="JC / return slip number"
-          />
-        </div>
-        <div className="form-grp form-full">
-          <label className="form-label">Remarks</label>
-          <input
-            type="text"
-            className="innovic-input"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-          />
-        </div>
-      </div>
-      {err ? (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 8,
-            background: 'rgba(239,68,68,0.08)',
-            color: 'var(--red2)',
-            fontSize: 12,
-            borderRadius: 4,
-          }}
-        >
-          {err}
-        </div>
-      ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
-          {mut.isPending ? (
-            <>
-              <Loader2 size={14} className="inline animate-spin" /> Saving…
-            </>
-          ) : (
-            'Save Receipt'
-          )}
-        </button>
-      </div>
-    </ModalShell>
-  );
 }
