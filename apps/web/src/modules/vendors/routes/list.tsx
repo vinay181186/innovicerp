@@ -46,6 +46,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateVendors, useSoftDeleteVendor, useVendorsList } from '../api';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
@@ -164,8 +165,9 @@ function VendorsListPage(): React.JSX.Element {
   // row taller.
   const columns = useMemo<DataTableColumn<Vendor>[]>(
     () => [
-      { header: 'Sr No', width: '4%', className: 'text3', render: (_v, i) => i + 1 },
+      { id: 'sr_no', header: 'Sr No', width: '4%', className: 'text3', render: (_v, i) => i + 1 },
       {
+        id: 'code',
         header: 'Vendor Code',
         width: '8%',
         nowrap: true,
@@ -185,6 +187,7 @@ function VendorsListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'name',
         header: 'Vendor Name',
         width: '12%',
         align: 'left',
@@ -193,14 +196,16 @@ function VendorsListPage(): React.JSX.Element {
         key: 'name',
       },
       {
+        id: 'contact_person',
         header: 'Contact Person',
         width: '9%',
         ellipsis: true,
         render: (v) => v.contactPerson ?? '—',
         title: (v) => v.contactPerson ?? '',
       },
-      { header: 'Phone', width: '8%', nowrap: true, render: (v) => v.phone ?? '—' },
+      { id: 'phone', header: 'Phone', width: '8%', nowrap: true, render: (v) => v.phone ?? '—' },
       {
+        id: 'email',
         header: 'Email',
         width: '10%',
         className: 'text3',
@@ -208,8 +213,15 @@ function VendorsListPage(): React.JSX.Element {
         render: (v) => v.email ?? '—',
         title: (v) => v.email ?? '',
       },
-      { header: 'GSTIN', width: '12%', nowrap: true, render: (v) => v.gstNumber ?? '—' },
       {
+        id: 'gst_number',
+        header: 'GSTIN',
+        width: '12%',
+        nowrap: true,
+        render: (v) => v.gstNumber ?? '—',
+      },
+      {
+        id: 'payment_terms_days',
         header: 'Payment Terms (days)',
         width: '6%',
         align: 'right',
@@ -217,6 +229,7 @@ function VendorsListPage(): React.JSX.Element {
         render: (v) => v.paymentTermsDays ?? '—',
       },
       {
+        id: 'address',
         header: 'Address',
         width: '8%',
         className: 'text3',
@@ -225,6 +238,7 @@ function VendorsListPage(): React.JSX.Element {
         title: (v) => v.addressLine1 ?? '',
       },
       {
+        id: 'rating',
         header: 'Rating',
         width: '6%',
         nowrap: true,
@@ -234,6 +248,8 @@ function VendorsListPage(): React.JSX.Element {
         render: (v) => <StatusBadge kind="rating" status={v.rating} />,
       },
       {
+        id: 'is_active',
+        kind: 'badge',
         header: 'Vendor Status',
         width: '6%',
         nowrap: true,
@@ -308,6 +324,7 @@ function VendorsListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.vendorsList}
             columns={columns}
             rows={visibleRows}
             loading={isLoading}

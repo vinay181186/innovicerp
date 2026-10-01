@@ -49,6 +49,7 @@ import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, Tag } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
@@ -125,8 +126,9 @@ function RouteCardsListPage(): React.JSX.Element {
   // Name is left-aligned, the op count sits right.
   const columns = useMemo<DataTableColumn<RouteCardListItem>[]>(
     () => [
-      { header: 'Sr No', width: '4%', className: 'text3', render: (_rc, i) => i + 1 },
+      { id: 'sr_no', header: 'Sr No', width: '4%', className: 'text3', render: (_rc, i) => i + 1 },
       {
+        id: 'code',
         header: 'RC No.',
         nowrap: true,
         render: (rc) => (
@@ -169,6 +171,7 @@ function RouteCardsListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'item_code',
         header: 'Item Code',
         // The item code is the main thing on this row: mono, bold, full --text.
         className: 'mono fw-700',
@@ -176,6 +179,8 @@ function RouteCardsListPage(): React.JSX.Element {
         render: (rc) => rc.itemCode ?? '—',
       },
       {
+        id: 'item_name',
+        kind: 'text',
         header: 'Item Name',
         align: 'left',
         className: 'fw-700',
@@ -185,6 +190,8 @@ function RouteCardsListPage(): React.JSX.Element {
       {
         // Grade then size on one line — the stock this card is cut from, so the
         // master answers "what is it made of" without opening a card.
+        id: 'raw_material',
+        kind: 'text',
         header: 'RM Grade / RM Size',
         className: 'mono',
         title: (rc) => `${rc.rawMaterialGradeText ?? '—'} / ${rc.rawMaterialSizeText ?? '—'}`,
@@ -195,14 +202,24 @@ function RouteCardsListPage(): React.JSX.Element {
           </>
         ),
       },
-      { header: 'Ops', align: 'right', className: 'mono', nowrap: true, key: 'opCount' },
       {
+        id: 'op_count',
+        header: 'Ops',
+        align: 'right',
+        className: 'mono',
+        nowrap: true,
+        key: 'opCount',
+      },
+      {
+        id: 'current_revision',
         header: 'Route Card Rev',
         className: 'mono fw-700',
         nowrap: true,
         render: (rc) => <span style={{ color: 'var(--cyan)' }}>R{rc.currentRevision}</span>,
       },
       {
+        id: 'updated_at',
+        kind: 'date',
         header: 'Last Updated',
         className: 'mono text2',
         nowrap: true,
@@ -248,6 +265,7 @@ function RouteCardsListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.routeCardsList}
             columns={columns}
             rows={rows}
             loading={isLoading}

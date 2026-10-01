@@ -1,0 +1,314 @@
+/* Fit engine (ADR-199, table standard) — styles for <DataTable tableKey="…">.
+   Theme tokens only; every class is `dt-` prefixed. The sheet's own look
+   (.innovic-table.tbl-grid in innovic-theme.css) is untouched; this file only
+   adds: one line per row, fixed px columns, no sideways scroll, the ▸ detail
+   row, the toolbar and the Columns popover.
+   Child combinators (`> thead > tr > th`) on purpose: a nested table inside an
+   expanded row must keep its own rules. */
+
+.dt-fit-root {
+  position: relative;
+  min-width: 0;
+}
+
+/* R2 — never a sideways scroll inside a fitted table. */
+.tbl-wrap.dt-fit-wrap {
+  overflow-x: hidden;
+}
+
+.innovic-table.tbl-grid.dt-fit {
+  table-layout: fixed;
+  width: 100%;
+}
+.innovic-table.tbl-grid.dt-fit.dt-fit-pending {
+  table-layout: auto;
+}
+
+/* R1 — every row one line; text cut with "…". Headers are never narrower
+   than their measured width, so `clip` never actually cuts one. */
+.innovic-table.tbl-grid.dt-fit > thead > tr > th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+.innovic-table.tbl-grid.dt-fit > tbody > tr > td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+
+/* Compact density is the theme's (`body.density-compact` sets --tbl-pad-*
+   in innovic-theme.css); the hidden ruler table carries the same classes, so
+   it measures in whatever density is on. Cells holding controls are never
+   clipped. */
+.innovic-table.tbl-grid.dt-fit.tbl-edit > tbody > tr > td {
+  overflow: visible;
+}
+
+/* ONE line per row at exactly the row height (owner rule, ADR-199): 28px
+   Comfortable / 22px Compact from the theme's --tbl-row-h. The vertical
+   padding goes; the content is centred in the fixed-height cell instead, so a
+   badge, a thumbnail or a button can never push the row taller. */
+.innovic-table.tbl-grid.dt-fit > tbody > tr:not(.dt-detail-row):not(.dt-caller-row) > td {
+  padding-top: 0;
+  padding-bottom: 0;
+  height: var(--tbl-row-h, 28px);
+  max-height: var(--tbl-row-h, 28px);
+}
+/* Row buttons fit inside the row, side by side — never stacked. */
+.innovic-table.tbl-grid.dt-fit > tbody > tr > td.dt-k-actions,
+.dt-measure-inner td.dt-k-actions {
+  white-space: nowrap;
+}
+.innovic-table.tbl-grid.dt-fit > tbody > tr > td .btn-sm,
+.innovic-table.tbl-grid.dt-fit > tbody > tr > td.dt-k-actions .btn-sm,
+.dt-measure-inner td.dt-k-actions .btn-sm {
+  height: calc(var(--tbl-row-h, 28px) - 6px);
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  vertical-align: middle;
+}
+
+.dt-pin-mark {
+  font-size: 9px;
+  margin-left: 3px;
+}
+
+/* ▸ / ▾ toggle at the start of the first cell. */
+.dt-exp {
+  border: 0;
+  background: none;
+  padding: 0 var(--sp-0);
+  margin-right: var(--sp-0);
+  color: var(--blue);
+  font-size: var(--fs-xs);
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.dt-exp:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+/* R3 — the detail row: every dropped column + full text of text columns. */
+.innovic-table.tbl-grid.dt-fit > tbody > tr.dt-detail-row > td {
+  background: var(--blue3);
+  white-space: normal;
+  overflow: visible;
+  text-align: left;
+  padding: var(--sp-1) var(--sp-3);
+}
+.dt-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-1) var(--sp-4);
+}
+.dt-detail-item {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.dt-detail-label {
+  color: var(--text3);
+  font-family: var(--hfont);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-right: var(--sp-2);
+}
+
+/* The caller's own renderExpanded content (BOM parts, route-card ops). */
+.innovic-table.tbl-grid.dt-fit > tbody > tr.dt-caller-row > td.dt-expand-cell {
+  padding: 0;
+  background: var(--bg3);
+  text-align: left;
+  white-space: normal;
+  overflow: visible;
+}
+
+/* The ruler — never seen, never in the way. */
+.dt-measure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+.dt-measure-inner {
+  width: max-content;
+}
+.dt-measure-inner .innovic-table {
+  width: auto;
+}
+
+/* R4 — toolbar strip, right-aligned and compact. */
+.dt-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text2);
+  min-width: 0;
+}
+.dt-chip {
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  padding: var(--sp-0) var(--sp-2);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dt-chip-warn {
+  background: var(--amber3);
+  border-color: var(--amber);
+  color: var(--amber2);
+}
+.dt-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--blue);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dt-link:hover {
+  text-decoration: underline;
+}
+.dt-seg {
+  display: inline-flex;
+  border: 1px solid var(--border3);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.dt-seg button {
+  border: 0;
+  background: var(--bg2);
+  color: var(--text);
+  padding: var(--sp-0) var(--sp-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dt-seg button + button {
+  border-left: 1px solid var(--border3);
+}
+.dt-seg button.is-on {
+  background: var(--blue3);
+  color: var(--blue2);
+}
+.dt-pick-anchor {
+  position: relative;
+}
+
+/* R5 — the Columns popover. */
+.dt-pick {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--sp-1));
+  width: 340px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border3);
+  border-radius: var(--radius2);
+  box-shadow: var(--shadow-modal);
+  z-index: 30;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  text-align: left;
+}
+.dt-pick-head {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border2);
+  font-family: var(--hfont);
+  font-weight: 800;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--blue2);
+}
+.dt-pick-grp {
+  padding: var(--sp-1) var(--sp-3) var(--sp-0);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text3);
+}
+.dt-pick-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-0) var(--sp-2);
+  white-space: nowrap;
+}
+.dt-pick-item.is-drop {
+  color: var(--text3);
+}
+.dt-pick-item.is-flash {
+  background: var(--amber3);
+}
+.dt-pick-btn {
+  border: 0;
+  background: none;
+  padding: var(--sp-0) var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text2);
+  cursor: pointer;
+}
+.dt-pick-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.dt-pick-btn:focus-visible,
+.dt-pick-name input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.dt-pick-pin {
+  font-size: var(--fs-sm);
+}
+.dt-pick-pin.is-off {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+.dt-pick-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  cursor: pointer;
+}
+.dt-pick-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dt-pick-tag {
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+.dt-pick-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border2);
+}
+.dt-pick-note {
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}

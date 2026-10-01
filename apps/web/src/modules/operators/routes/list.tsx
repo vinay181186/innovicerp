@@ -39,6 +39,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
@@ -179,6 +180,7 @@ function OperatorsListPage(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<Operator>[]>(
     () => [
       {
+        id: 'sr_no',
         header: 'Sr No',
         width: '5%',
         className: 'text3',
@@ -186,6 +188,7 @@ function OperatorsListPage(): React.JSX.Element {
         render: (_op, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
       },
       {
+        id: 'code',
         header: 'Code',
         nowrap: true,
         // A real link, so the code can be ctrl/middle-clicked into a new tab.
@@ -205,17 +208,22 @@ function OperatorsListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'name',
+        kind: 'text',
         header: 'Name',
         align: 'left',
         className: 'fw-700',
         key: 'name',
       },
       {
+        id: 'department',
         header: 'Department',
         className: 'text2',
         render: (op) => op.department ?? '—',
       },
       {
+        id: 'skills',
+        kind: 'text',
         header: 'Skills / Machines',
         align: 'left',
         className: 'text2',
@@ -223,6 +231,8 @@ function OperatorsListPage(): React.JSX.Element {
         title: (op) => op.skills ?? '',
       },
       {
+        id: 'is_active',
+        kind: 'badge',
         header: 'Active',
         nowrap: true,
         // kind="active" — the same chip the operator DETAIL page draws, so the
@@ -308,6 +318,7 @@ function OperatorsListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.operatorsList}
             columns={columns}
             rows={rows}
             loading={isLoading}

@@ -37,6 +37,7 @@ import { statusText } from '@/lib/status-text';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useBomMaster, useBomMastersList } from '../api';
@@ -112,6 +113,7 @@ function BomMastersListPage(): React.JSX.Element {
   const columns = useMemo<DataTableColumn<BomMasterListItem>[]>(
     () => [
       {
+        id: 'sr_no',
         header: 'Sr No',
         width: '4%',
         className: 'text3',
@@ -119,6 +121,7 @@ function BomMastersListPage(): React.JSX.Element {
         render: (_b, i) => i + 1,
       },
       {
+        id: 'bom_no',
         header: 'BOM No.',
         nowrap: true,
         render: (b) => (
@@ -161,34 +164,39 @@ function BomMastersListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'bom_name',
+        kind: 'text',
         header: 'BOM Name',
         align: 'left',
         className: 'fw-700',
         key: 'bomName',
       },
+      // Parent item code and name are two one-line columns (ADR-199 table
+      // standard: every row one line). Code strong, name quiet.
       {
-        header: 'Parent Item',
-        align: 'left',
-        title: (b) =>
-          b.parentItemCode ? `${b.parentItemCode} — ${b.parentItemName ?? ''}` : 'not set',
-        // Item code strong, name quiet: the code is the value on this row.
+        id: 'parent_item_code',
+        header: 'Parent Item Code',
+        nowrap: true,
         render: (b) =>
           b.parentItemCode ? (
-            <>
-              <div className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                {b.parentItemCode}
-              </div>
-              {b.parentItemName ? (
-                <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                  {b.parentItemName}
-                </div>
-              ) : null}
-            </>
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {b.parentItemCode}
+            </span>
           ) : (
             <span style={{ color: 'var(--amber2)' }}>not set</span>
           ),
       },
       {
+        id: 'parent_item_name',
+        header: 'Parent Item Name',
+        align: 'left',
+        ellipsis: true,
+        className: 'text3',
+        render: (b) => b.parentItemName ?? '—',
+        title: (b) => b.parentItemName ?? '',
+      },
+      {
+        id: 'line_count',
         header: 'Items',
         align: 'right',
         className: 'mono fw-700',
@@ -196,12 +204,15 @@ function BomMastersListPage(): React.JSX.Element {
         render: (b) => <span style={{ color: 'var(--purple)' }}>{b.lineCount}</span>,
       },
       {
+        id: 'revision',
         header: 'BOM Rev',
         className: 'mono fw-700',
         nowrap: true,
         render: (b) => <span style={{ color: 'var(--cyan)' }}>BOM Rev {b.revision}</span>,
       },
       {
+        id: 'revision_date',
+        kind: 'date',
         header: 'Revision Date',
         className: 'mono text2',
         nowrap: true,
@@ -210,6 +221,7 @@ function BomMastersListPage(): React.JSX.Element {
       },
       {
         // Counts SO LINES that use this BOM (not orders) — same label as the detail.
+        id: 'linked_so_count',
         header: 'Linked SO Lines',
         align: 'right',
         nowrap: true,
@@ -223,6 +235,8 @@ function BomMastersListPage(): React.JSX.Element {
           ),
       },
       {
+        id: 'status',
+        kind: 'badge',
         header: 'BOM Status',
         nowrap: true,
         // `bom`, not the generic `doc` map: draft happens to agree, but active
@@ -294,6 +308,7 @@ function BomMastersListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.bomMasterList}
             columns={columns}
             rows={rows}
             loading={isLoading}

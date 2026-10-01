@@ -27,9 +27,10 @@
 // row click -> detail, Item Code -> detail, the thumbnail's own click (the
 // picture opens large; it never opens the row).
 //
-// The Item column is the shared <ItemBadge> (user decision 2026-09-21) with the
-// picture in its OWN column before it (user decision 2026-09-22). It stays the
-// APP badge from components/shared/item-badge, not ui/data's pure one: this
+// Item Code and Item Name are separate one-line columns (ADR-199 table
+// standard, 2026-10-01 — replaced the stacked <ItemBadge> cell), with the
+// picture in its OWN column before them (user decision 2026-09-22). The
+// picture is the APP ItemImageBox from components/shared/item-badge: this
 // list has a storage path, and resolving it to a signed URL plus owning the
 // preview modal is exactly what the app wrapper does.
 //
@@ -65,13 +66,14 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { ItemBadge, ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
+import { ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Badge, Button, Icon, Tag } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
@@ -201,10 +203,19 @@ function ItemsListPage(): React.JSX.Element {
   // name is left-aligned, so the code starts at the same x in every row.
   const columns = useMemo<DataTableColumn<Item>[]>(
     () => [
-      { header: 'Sr No', width: '4%', className: 'text3', render: (_it, i) => i + 1 },
       {
+        id: 'sr_no',
+        header: 'Sr No',
+        width: '4%',
+        className: 'text3',
+        render: (_it, i) => i + 1,
+      },
+      {
+        id: 'thumbnail',
         header: 'Thumbnail',
         width: THUMBNAIL_COL_WIDTH,
+        // The picture fills its cell and has no width of its own to measure.
+        minWidth: 64,
         // The picture fills the cell edge to edge, the gridlines being its
         // frame (user decision 2026-09-22). The negative margins cancel the
         // sheet's own cell padding (--sp-1 --sp-2) so the box reaches the
@@ -215,50 +226,52 @@ function ItemsListPage(): React.JSX.Element {
           <div
             style={{
               position: 'relative',
-              height: 40,
-              margin: 'calc(var(--sp-1) * -1) calc(var(--sp-2) * -1)',
+              // Exactly one row high (28px Comfortable / 22px Compact); the
+              // fit table gives this cell no vertical padding, and the
+              // negative side margins cancel its horizontal padding.
+              height: 'calc(var(--tbl-row-h, 28px) - 1px)',
+              margin: '0 calc(var(--tbl-pad-x, var(--sp-2)) * -1)',
             }}
           >
             <ItemImageBox imagePath={it.imagePath} size="row" alt={it.name} fill />
           </div>
         ),
       },
+      // Item Code and Item Name are two one-line columns (table standard,
+      // ADR-199: every row one line) — the code no longer stacks over the name.
+      // No item-level revision, deliberately (see the header comment).
       {
-        header: 'Item Code · Name',
-        width: '22%',
-        align: 'left',
+        id: 'item_code',
+        header: 'Item Code',
+        width: '10%',
+        nowrap: true,
         render: (it) => (
-          // No item-level revision here, deliberately (see the header comment):
-          // the badge gets the bare code, never `items.revision`. The picture
-          // is the column to the left, so the badge is text only.
-          <ItemBadge
-            size="row"
-            showImage={false}
-            code={it.code}
-            name={it.name}
-            imagePath={it.imagePath}
-            codeColor="var(--text)"
-            nameMaxWidth="none"
-            renderCode={(text) => (
-              // A real link, so the code can be ctrl/middle-clicked into a new
-              // tab. stopPropagation sits on the link so clicking the rest of
-              // the cell still opens the row, exactly as before.
-              <Link
-                to="/items/$id"
-                params={{ id: it.id }}
-                className="td-code fw-700"
-                style={{ color: 'var(--text)', textDecoration: 'none' }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {text}
-              </Link>
-            )}
-          />
+          // A real link, so the code can be ctrl/middle-clicked into a new
+          // tab. stopPropagation sits on the link so clicking the rest of
+          // the cell still opens the row, exactly as before.
+          <Link
+            to="/items/$id"
+            params={{ id: it.id }}
+            className="td-code fw-700"
+            style={{ color: 'var(--text)', textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {it.code}
+          </Link>
         ),
+      },
+      {
+        id: 'item_name',
+        header: 'Item Name',
+        width: '12%',
+        align: 'left',
+        ellipsis: true,
+        key: 'name',
       },
       // Description / Material are free text — clip at the column edge rather
       // than wrap, full value on hover (styling skill Rule 1's exception).
       {
+        id: 'description',
         header: 'Description',
         width: '24%',
         className: 'text2',
@@ -267,6 +280,7 @@ function ItemsListPage(): React.JSX.Element {
         title: (it) => it.description ?? '',
       },
       {
+        id: 'material',
         header: 'Material',
         width: '15%',
         ellipsis: true,
@@ -274,12 +288,15 @@ function ItemsListPage(): React.JSX.Element {
         title: (it) => it.material ?? '',
       },
       {
+        id: 'uom',
         header: 'UOM',
         width: '7%',
         nowrap: true,
         render: (it) => <Tag tone="neutral">{it.uom}</Tag>,
       },
       {
+        id: 'procurement_type',
+        kind: 'badge',
         header: 'Make / Buy',
         width: '9%',
         nowrap: true,
@@ -389,6 +406,7 @@ function ItemsListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.itemsList}
             columns={columns}
             rows={rows}
             loading={isLoading}

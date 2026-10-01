@@ -54,6 +54,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
@@ -200,6 +201,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   const columns = useMemo<DataTableColumn<Machine>[]>(
     () => [
       {
+        id: 'sr_no',
         header: 'Sr No',
         width: '5%',
         className: 'text3',
@@ -207,6 +209,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         render: (_m, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
       },
       {
+        id: 'code',
         header: 'Code',
         nowrap: true,
         // A real link, so the code can be ctrl/middle-clicked into a new tab.
@@ -226,17 +229,21 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         ),
       },
       {
+        id: 'name',
+        kind: 'text',
         header: 'Name',
         align: 'left',
         className: 'fw-700',
         key: 'name',
       },
       {
+        id: 'machine_type',
         header: 'Machine Type',
         className: 'text2',
         render: (m) => m.machineType ?? '—',
       },
       {
+        id: 'machine_group',
         header: 'Machine Group',
         nowrap: true,
         className: 'text2',
@@ -245,6 +252,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         render: (m) => (m.machineGroupId ? groupLookup.get(m.machineGroupId)?.code : null) ?? '—',
       },
       {
+        id: 'hours_per_shift',
         header: 'Hours per Shift',
         align: 'right',
         className: 'mono',
@@ -256,6 +264,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         ? []
         : [
             {
+              id: 'hour_rate',
               header: 'Hour Rate (₹/hr)',
               align: 'right' as const,
               headColor: 'var(--green)',
@@ -265,6 +274,8 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
             },
           ]),
       {
+        id: 'status',
+        kind: 'badge',
         header: 'Machine Status',
         nowrap: true,
         // kind="machine" carries this screen's own four colours — Running blue,
@@ -340,6 +351,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.machinesList}
             columns={columns}
             rows={rows}
             loading={isLoading}

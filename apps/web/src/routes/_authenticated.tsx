@@ -5,6 +5,7 @@ import { installCellOverflowTitles } from '@/components/shared/cell-overflow-tit
 import { OpenTabsBar } from '@/components/shared/open-tabs-bar';
 import { TopNav } from '@/components/shared/top-nav';
 import { supabase } from '@/lib/supabase';
+import { useUiSettings } from '@/lib/use-ui-settings';
 import { rootRoute } from './__root';
 
 export const authenticatedRoute = createRoute({
@@ -54,6 +55,7 @@ export const authenticatedRoute = createRoute({
 // #app-header block in innovic-theme.css for the full reasoning.
 function AuthenticatedLayout(): React.JSX.Element {
   useEffect(() => installCellOverflowTitles(), []); // ADR-199: tooltip on ellipsised table cells
+  useUiSettings(); // ADR-199: the user's Comfortable/Compact choice reaches EVERY table
   return (
     <div id="app-shell">
       <div id="main">

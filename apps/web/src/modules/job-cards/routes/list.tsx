@@ -67,6 +67,7 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Badge, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, ProgressBar, QtyStrip, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Input, Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions, ViewToggle } from '@/ui/layout';
 import { useDeleteJobCard, useJobCardsList } from '../api';
@@ -385,22 +386,21 @@ function JobCardsListPage(): React.JSX.Element {
     />
   );
 
-  // The sheet's columns. The sheet lays out AUTO (2026-09-26, the owner's
-  // "overflowing text" on this list), so there are no % widths any more except
-  // the two fixed-content columns (Sr No, Thumbnail): every short value — JC
-  // No., SO No., qty, status, dates, days left — sits on ONE line and sizes its
-  // own column, and only the item NAME wraps, taking whatever width is left.
-  // Centred by the standard; only the item code · name is left-aligned, so the
-  // code starts at the same x in every row.
+  // The sheet's columns (ADR-199 table standard): every row is ONE line, the
+  // fit engine sizes the columns to the screen and moves the rightmost
+  // unpinned ones into ▸ when it is too narrow. Centred by the standard; only
+  // the Item Name is left-aligned.
   const columns = useMemo<DataTableColumn<JobCardListItem>[]>(
     () => [
       {
+        id: 'sr_no',
         header: 'Sr No',
         width: '4%',
         className: 'text3',
         render: (_jc, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
       },
       {
+        id: 'jc_code',
         header: 'JC No.',
         nowrap: true,
         render: (jc) => (
@@ -416,6 +416,8 @@ function JobCardsListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'image',
+        minWidth: 64,
         header: 'Image',
         width: THUMBNAIL_COL_WIDTH,
         // The picture fills the cell edge to edge, the gridlines being its
@@ -428,8 +430,11 @@ function JobCardsListPage(): React.JSX.Element {
           <div
             style={{
               position: 'relative',
-              height: 40,
-              margin: 'calc(var(--sp-1) * -1) calc(var(--sp-2) * -1)',
+              // Exactly one row high (28px Comfortable / 22px Compact); the
+              // fit table gives this cell no vertical padding, and the
+              // negative side margins cancel its horizontal padding.
+              height: 'calc(var(--tbl-row-h, 28px) - 1px)',
+              margin: '0 calc(var(--tbl-pad-x, var(--sp-2)) * -1)',
             }}
           >
             <ItemImageBox
@@ -443,6 +448,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         // The CUSTOMER's PO line no. (never our SO line no.), beside CODE/REV.
+        id: 'client_po_line_no',
         header: 'POL',
         width: '4%',
         nowrap: true,
@@ -455,34 +461,31 @@ function JobCardsListPage(): React.JSX.Element {
             <span className="text3">—</span>
           ),
       },
+      // Item Code and Item Name are two one-line columns (ADR-199 table
+      // standard: every row one line) — the code no longer stacks over the
+      // name. CODE/REV: the revision is the customer's drawing revision off the
+      // SO line (null -> the bare code, never a trailing slash).
       {
+        id: 'item_code',
         header: 'Item Code',
-        align: 'left',
-        // CODE/REV + name, text only — the picture is the column to the left.
-        // The revision is the customer's drawing revision off the SO line
-        // (null → the bare code, never a trailing slash). Drawn here rather
-        // than with <ItemBadge size="row">, whose name line is one clipped
-        // line: on this list the code stays on one line and the NAME wraps,
-        // so a long part name never pushes the sheet wider than the screen.
-        render: (jc) => {
-          const codeText = itemCodeWithRev(jc.itemCode, jc.itemRevision);
-          return (
-            <div style={{ textAlign: 'left', minWidth: 140 }}>
-              <div
-                className="mono fw-700"
-                style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}
-                title={codeText}
-              >
-                {codeText}
-              </div>
-              <div className="text2" style={{ fontSize: 'var(--fs-xs)', lineHeight: 1.25 }}>
-                {jc.itemName?.trim() || '—'}
-              </div>
-            </div>
-          );
-        },
+        nowrap: true,
+        render: (jc) => (
+          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+            {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
+          </span>
+        ),
       },
       {
+        id: 'item_name',
+        header: 'Item Name',
+        align: 'left',
+        ellipsis: true,
+        className: 'text2',
+        render: (jc) => jc.itemName?.trim() || '—',
+        title: (jc) => jc.itemName ?? '',
+      },
+      {
+        id: 'source_code',
         header: 'SO / JWSO No.',
         nowrap: true,
         render: (jc) => {
@@ -508,6 +511,7 @@ function JobCardsListPage(): React.JSX.Element {
         },
       },
       {
+        id: 'order_qty',
         header: 'Order Qty',
         align: 'right',
         nowrap: true,
@@ -521,62 +525,62 @@ function JobCardsListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'progress',
+        minWidth: 150,
         header: 'Progress',
         // Completed pieces at the LAST operation over the order qty — the
-        // same figure the card view's Completed box shows.
+        // same figure the card view's Completed box shows. Bar and figures
+        // side by side on ONE line (ADR-199).
         render: (jc) => {
           const done = jc.lastOpCompletedQty;
           const pct = jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
           return (
-            <>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 'var(--sp-1)',
+                whiteSpace: 'nowrap',
+              }}
+            >
               <ProgressBar
                 value={pct}
                 color="var(--green)"
                 label={`${done} of ${jc.orderQty} Completed`}
+                style={{ width: 48, flex: '0 0 48px' }}
               />
-              <div
-                className="mono text3"
-                style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
-              >
+              <span className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {done} / {jc.orderQty} · {pct}%
-              </div>
-            </>
+              </span>
+            </span>
           );
         },
       },
       {
+        id: 'jc_status',
+        kind: 'badge',
         header: 'JC Status',
         nowrap: true,
         render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} />,
       },
       {
+        id: 'jc_date',
+        kind: 'date',
         header: 'JC Date',
         className: 'mono',
         nowrap: true,
         render: (jc) => fmtDate(jc.jcDate),
       },
       {
+        id: 'due_date',
+        kind: 'date',
         header: 'Due Date',
         className: 'mono',
         nowrap: true,
-        render: (jc) => (
-          <>
-            {fmtDate(jc.dueDate)}
-            {/* The plan's Customer Dispatch Date under the due date — a second
-                line, not a column, so the sheet stays one column narrower. */}
-            {jc.customerDispatchDate ? (
-              <div
-                className="text3"
-                style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
-                title="Customer Dispatch Date (from the plan)"
-              >
-                Dispatch {fmtDate(jc.customerDispatchDate)}
-              </div>
-            ) : null}
-          </>
-        ),
+        render: (jc) => fmtDate(jc.dueDate),
       },
       {
+        id: 'days_left',
         header: 'Days Left',
         align: 'right',
         nowrap: true,
@@ -588,6 +592,18 @@ function JobCardsListPage(): React.JSX.Element {
             </span>
           );
         },
+      },
+      {
+        // The plan's Customer Dispatch Date — its own column now (it used to
+        // be a second line under Due Date). Last, so it is the first column
+        // to move into ▸ on a narrow screen.
+        id: 'customer_dispatch_date',
+        kind: 'date',
+        header: 'Customer Dispatch Date',
+        className: 'mono text3',
+        nowrap: true,
+        title: () => 'Customer Dispatch Date (from the plan)',
+        render: (jc) => (jc.customerDispatchDate ? fmtDate(jc.customerDispatchDate) : '—'),
       },
     ],
     [currentPage, today],
@@ -721,6 +737,7 @@ function JobCardsListPage(): React.JSX.Element {
         // ── LIST VIEW (the ruled sheet) ──────────────────────────────────────
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.jobCardsList}
             columns={columns}
             rows={pagedRows}
             loading={isLoading}

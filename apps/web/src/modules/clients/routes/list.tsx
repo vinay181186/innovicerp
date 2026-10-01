@@ -37,6 +37,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateClients, useClientsList, useSoftDeleteClient } from '../api';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
@@ -146,8 +147,9 @@ function ClientsListPage(): React.JSX.Element {
   // ellipsize with the full value on hover rather than wrapping the row taller.
   const columns = useMemo<DataTableColumn<Client>[]>(
     () => [
-      { header: 'Sr No', width: '4%', className: 'text3', render: (_c, i) => i + 1 },
+      { id: 'sr_no', header: 'Sr No', width: '4%', className: 'text3', render: (_c, i) => i + 1 },
       {
+        id: 'code',
         header: 'Code',
         width: '9%',
         nowrap: true,
@@ -167,6 +169,7 @@ function ClientsListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'name',
         header: 'Customer',
         width: '22%',
         align: 'left',
@@ -175,6 +178,7 @@ function ClientsListPage(): React.JSX.Element {
         key: 'name',
       },
       {
+        id: 'address',
         header: 'Address',
         width: '19%',
         className: 'text2',
@@ -183,6 +187,7 @@ function ClientsListPage(): React.JSX.Element {
         title: (c) => c.addressLine1 ?? '',
       },
       {
+        id: 'contact',
         header: 'Contact',
         width: '13%',
         className: 'text2',
@@ -191,6 +196,7 @@ function ClientsListPage(): React.JSX.Element {
         title: (c) => c.contactPerson ?? '',
       },
       {
+        id: 'email',
         header: 'Email',
         width: '15%',
         className: 'text2',
@@ -199,6 +205,8 @@ function ClientsListPage(): React.JSX.Element {
         title: (c) => c.email ?? '',
       },
       {
+        id: 'is_active',
+        kind: 'badge',
         header: 'Active',
         width: '7%',
         nowrap: true,
@@ -272,6 +280,7 @@ function ClientsListPage(): React.JSX.Element {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.clientsList}
             columns={columns}
             rows={visibleRows}
             loading={isLoading}

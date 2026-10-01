@@ -23,8 +23,8 @@ import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
-import { ItemBadge } from '@/components/shared/item-badge';
-import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
+import { ItemImageBox } from '@/components/shared/item-badge';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -37,6 +37,7 @@ import { useHistoryTab } from '@/components/shared/document-history';
 import { SoDocumentsSection } from '@/modules/so-documents/components/so-documents-section';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, QtyStrip, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
@@ -290,6 +291,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
       >
         <DataTable<SalesOrderLine>
+          tableKey={TABLE_KEYS.soDetailLines}
           columns={lineColumns({
             priceHidden,
             soCode: detail.code,
@@ -304,6 +306,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
       {detail.milestones.length > 0 ? (
         <Panel title={`Delivery Schedule (${detail.milestones.length})`} bodyPadding="none">
           <DataTable
+            tableKey={TABLE_KEYS.soDetailMilestones}
             columns={MILESTONE_COLUMNS}
             rows={detail.milestones}
             empty="No delivery lots scheduled."
@@ -408,6 +411,7 @@ function lineColumns(opts: {
   const { priceHidden, soCode, onPreview, onCloseLine } = opts;
   return [
     {
+      id: 'line_no',
       header: 'Ln',
       width: '4%',
       className: 'mono',
@@ -418,6 +422,7 @@ function lineColumns(opts: {
       // The customer's PO line number. It is typed on this line and every
       // downstream document repeats it, so it belongs next to the line number
       // here, where it is authored. Purple, mono, 700 — unchanged.
+      id: 'client_po_line_no',
       header: 'POL',
       width: '5%',
       headColor: 'var(--purple)',
@@ -425,29 +430,62 @@ function lineColumns(opts: {
       nowrap: true,
       render: (l) => <span style={{ color: 'var(--purple)' }}>{l.clientPoLineNo ?? '—'}</span>,
     },
+    // Image · Item Code (CODE/REV) · Item Name as three one-line columns
+    // (ADR-199 table standard: every row one line; this replaced the stacked
+    // badge cell of 2026-09-21). The Rev is the customer's drawing revision,
+    // typed on this line, and it travels with the item code wherever an SO
+    // line is shown (itemCodeWithRev).
     {
-      // Image · CODE/REV · Part Name in one badge cell (user decision
-      // 2026-09-21) — the former separate Part Name column folded in. The Rev
-      // is the customer's drawing revision, typed on this line, and it travels
-      // with the item code wherever an SO line is shown (the badge formats it
-      // via itemCodeWithRev).
-      header: 'Item',
-      width: priceHidden ? '24%' : '17%',
-      align: 'left',
+      id: 'image',
+      header: 'Image',
+      minWidth: 48,
       render: (l) => (
-        <>
-          <ItemBadge
-            size="row"
-            code={l.itemCode ?? l.itemCodeText}
-            name={l.partName}
-            revision={l.revision}
+        <div
+          style={{
+            position: 'relative',
+            height: 'calc(var(--tbl-row-h, 28px) - 1px)',
+            margin: '0 calc(var(--tbl-pad-x, var(--sp-2)) * -1)',
+          }}
+        >
+          <ItemImageBox
             imagePath={l.itemImagePath}
+            size="row"
+            alt={l.partName ?? l.itemCode ?? l.itemCodeText ?? ''}
+            fill
           />
-          <MasterItemNameNote lineName={l.partName} masterItemName={l.masterItemName} />
-        </>
+        </div>
       ),
     },
     {
+      id: 'item_code',
+      header: 'Item Code',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (l) => itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision),
+    },
+    {
+      id: 'item_name',
+      header: 'Item Name',
+      align: 'left',
+      ellipsis: true,
+      title: (l) =>
+        masterNote(l.partName, l.masterItemName)
+          ? `${l.partName ?? ''} — Master: ${l.masterItemName ?? ''}`
+          : (l.partName ?? ''),
+      render: (l) => {
+        const master = masterNote(l.partName, l.masterItemName);
+        return (
+          <>
+            {l.partName ?? '—'}
+            {/* The Item Master's own name, as a grey note BESIDE the line's
+                Item Name (NAMING.md) — only when the two differ. */}
+            {master ? <span className="text3"> · Master: {master}</span> : null}
+          </>
+        );
+      },
+    },
+    {
+      id: 'material',
       header: 'Material',
       width: '8%',
       className: 'text3',
@@ -456,13 +494,21 @@ function lineColumns(opts: {
       title: (l) => l.material ?? '',
     },
     {
+      id: 'drawing',
       header: 'Drawing',
       width: '10%',
       className: 'mono',
       render: (l) => {
         const drawingFilePath = l.drawingFilePath ?? null;
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-0)' }}>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--sp-1)',
+              whiteSpace: 'nowrap',
+            }}
+          >
             <span>{l.drawingNo ?? '—'}</span>
             {/* No Rev line here any more. It is the same value the Item Code cell
               now carries as CODE/REV, and printing one fact twice in one row
@@ -486,7 +532,7 @@ function lineColumns(opts: {
                 Drawing
               </Button>
             ) : null}
-          </div>
+          </span>
         );
       },
     },
@@ -499,6 +545,7 @@ function lineColumns(opts: {
       nowrap: true,
     },
     {
+      id: 'dispatched_qty',
       header: 'Dispatched',
       align: 'right',
       width: '7%',
@@ -508,6 +555,7 @@ function lineColumns(opts: {
       render: (l) => <span style={{ color: 'var(--green2)' }}>{l.dispatchedQty}</span>,
     },
     {
+      id: 'billed_qty',
       header: 'Billed',
       align: 'right',
       width: '6%',
@@ -521,6 +569,7 @@ function lineColumns(opts: {
       // qty still owed on the order ("Pending"). A line closed short
       // (ADR-196) will ship nothing more, so only its dispatched qty is left
       // to bill.
+      id: 'to_bill_qty',
       header: 'To Bill',
       align: 'right',
       width: '7%',
@@ -537,6 +586,7 @@ function lineColumns(opts: {
       ? []
       : [
           {
+            id: 'rate',
             header: 'Rate',
             width: '7%',
             align: 'right' as const,
@@ -547,6 +597,8 @@ function lineColumns(opts: {
           },
         ]),
     {
+      id: 'due_date',
+      kind: 'date',
       header: 'Due Date',
       width: '8%',
       className: 'mono text2',
@@ -554,15 +606,18 @@ function lineColumns(opts: {
       render: (l) => fmtDate(l.dueDate),
     },
     {
+      id: 'status',
+      kind: 'badge',
       header: 'SO Status',
       width: '10%',
       render: (l) => (
-        <div
+        // One line (ADR-199): status, closed-short chip and Close side by side.
+        <span
           style={{
-            display: 'flex',
-            flexDirection: 'column',
+            display: 'inline-flex',
             alignItems: 'center',
             gap: 'var(--sp-1)',
+            whiteSpace: 'nowrap',
           }}
         >
           <StatusBadge kind="so" status={l.status} label={SO_STATUS_LABEL[l.status]} />
@@ -581,10 +636,19 @@ function lineColumns(opts: {
               Close
             </Button>
           ) : null}
-        </div>
+        </span>
       ),
     },
   ];
+}
+
+/** The Item Master's name when it differs from the line's own Item Name. */
+function masterNote(
+  lineName: string | null | undefined,
+  masterItemName: string | null | undefined,
+): string | null {
+  const master = masterItemName?.trim() ?? '';
+  return master === '' || master === (lineName ?? '').trim() ? null : master;
 }
 
 /* ── Delivery schedule ─────────────────────────────────────────────────── */
@@ -595,6 +659,8 @@ const MILESTONE_COLUMNS: DataTableColumn<Milestone>[] = [
   { header: 'Lot No.', key: 'lotNo', width: '18%', className: 'mono fw-700', nowrap: true },
   { header: 'Qty', key: 'qty', width: '14%', align: 'right', className: 'mono', nowrap: true },
   {
+    id: 'due_date',
+    kind: 'date',
     header: 'Due Date',
     width: '20%',
     className: 'mono',
@@ -602,6 +668,7 @@ const MILESTONE_COLUMNS: DataTableColumn<Milestone>[] = [
     render: (m) => fmtDate(m.dueDate),
   },
   {
+    id: 'remarks',
     header: 'Remarks',
     width: '48%',
     align: 'left',
