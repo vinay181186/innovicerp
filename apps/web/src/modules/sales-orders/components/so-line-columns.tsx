@@ -3,13 +3,13 @@
 // Every row is one line: Image · Item Code (CODE/REV) · Item Name are three
 // columns, Drawing and SO Status draw their parts side by side.
 
-import type { DrawingSource, SalesOrderDetail, SalesOrderLine } from '@innovic/shared';
+import type { DrawingSource, SalesOrderDetail, SalesOrderLine, SoStatus } from '@innovic/shared';
 import { ItemImageBox } from '@/components/shared/item-badge';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { inrFormat } from '@/lib/print/doc-print';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import type { DataTableColumn } from '@/ui/data';
+import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { SO_STATUS_LABEL } from '../lib/so-status-label';
 import { closableQty } from './so-close-modal';
 import { SoLineShortClosedBadge } from './so-fulfilment-badge';
@@ -34,11 +34,8 @@ export function lineColumns(opts: {
    *  instead of a storage path nobody recognises. */
   soCode: string;
   onPreview: (file: DrawingPreview) => void;
-  /** ADR-196 — opens the Close dialog for one line; null when the viewer may
-   *  not close (then no button is drawn). */
-  onCloseLine: ((line: SalesOrderLine) => void) | null;
 }): DataTableColumn<SalesOrderLine>[] {
-  const { priceHidden, soCode, onPreview, onCloseLine } = opts;
+  const { priceHidden, soCode, onPreview } = opts;
   return [
     {
       id: 'line_no',
@@ -241,7 +238,7 @@ export function lineColumns(opts: {
       header: 'SO Status',
       width: '10%',
       render: (l) => (
-        // One line (ADR-199): status, closed-short chip and Close side by side.
+        // One line (ADR-199): status and closed-short chip side by side.
         <span
           style={{
             display: 'inline-flex',
@@ -256,18 +253,50 @@ export function lineColumns(opts: {
             shortClosedAt={l.shortClosedAt}
             shortCloseReason={l.shortCloseReason}
           />
-          {onCloseLine && closableQty(l) > 0 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              title={`Close line ${l.lineNo} — drop the ${closableQty(l)} not yet dispatched`}
-              onClick={() => onCloseLine(l)}
-            >
-              Close
-            </Button>
-          ) : null}
         </span>
       ),
+    },
+  ];
+}
+
+/**
+ * ADR-196 — the line's ⋯ menu: "Close line" (closed short: the qty not yet
+ * dispatched is dropped). Hidden without so_create edit + approve; greyed with
+ * the reason the server would refuse it (role, SO status, line state).
+ */
+export function lineRowMenu(
+  l: SalesOrderLine,
+  opts: {
+    /** so_create edit + approve. */
+    canClose: boolean;
+    /** Role admin / manager — the server's write-role check. */
+    isWriteRole: boolean;
+    soStatus: SoStatus;
+    onCloseLine: (line: SalesOrderLine) => void;
+  },
+): RowMenuItem[] {
+  const { canClose, isWriteRole, soStatus, onCloseLine } = opts;
+  const why = !isWriteRole
+    ? 'Needs admin or manager role'
+    : soStatus === 'draft'
+      ? 'SO is draft'
+      : soStatus === 'cancelled'
+        ? 'SO is cancelled'
+        : l.shortClosedAt
+          ? 'Already Short Closed'
+          : l.status === 'cancelled'
+            ? 'Line cancelled'
+            : closableQty(l) === 0
+              ? 'Fully dispatched'
+              : undefined;
+  return [
+    {
+      key: 'close-line',
+      label: 'Close line',
+      icon: 'x',
+      hidden: !canClose,
+      disabledReason: why,
+      onSelect: () => onCloseLine(l),
     },
   ];
 }
