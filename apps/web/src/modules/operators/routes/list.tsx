@@ -30,16 +30,17 @@
 // which owns the wait — both buttons go dead, the button reads "Moving to
 // Trash…", and it closes only once the operator really is in the Trash.
 
-import type { ListOperatorsQuery, Operator } from '@innovic/shared';
+import type { ListOperatorsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Button, Icon, StatusBadge } from '@/ui/core';
-import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { Button, Icon } from '@/ui/core';
+import { DataTable, Panel } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { operatorListColumns } from '../components/operator-list-columns';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
@@ -171,77 +172,8 @@ function OperatorsListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const currentPage = search.page;
 
-  // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
-  // only Sr No keeps a width; codes, qty and badges sit on one line and size
-  // their own column, and the name columns wrap into whatever is left, so
-  // nothing spills over a gridline and the Action column (1% = shrink to its
-  // buttons) is never pushed off the screen. Centred by the standard; names
-  // read from their left edge, numbers sit right.
-  const columns = useMemo<DataTableColumn<Operator>[]>(
-    () => [
-      {
-        id: 'sr_no',
-        header: 'Sr No',
-        width: '5%',
-        className: 'text3',
-        // Server-paged list: the serial number continues across pages.
-        render: (_op, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
-      },
-      {
-        id: 'code',
-        header: 'Code',
-        nowrap: true,
-        // A real link, so the code can be ctrl/middle-clicked into a new tab.
-        // stopPropagation sits on the link (not the cell) so clicking the rest
-        // of the cell still opens the row, exactly as before.
-        render: (op) => (
-          <Link
-            to="/operators/$id"
-            params={{ id: op.id }}
-            className="td-code"
-            title="Open this operator"
-            style={{ textDecoration: 'none' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {op.code}
-          </Link>
-        ),
-      },
-      {
-        id: 'name',
-        kind: 'text',
-        header: 'Name',
-        align: 'left',
-        className: 'fw-700',
-        key: 'name',
-      },
-      {
-        id: 'department',
-        header: 'Department',
-        className: 'text2',
-        render: (op) => op.department ?? '—',
-      },
-      {
-        id: 'skills',
-        kind: 'text',
-        header: 'Skills / Machines',
-        align: 'left',
-        className: 'text2',
-        render: (op) => op.skills ?? '—',
-        title: (op) => op.skills ?? '',
-      },
-      {
-        id: 'is_active',
-        kind: 'badge',
-        header: 'Active',
-        nowrap: true,
-        // kind="active" — the same chip the operator DETAIL page draws, so the
-        // two cannot disagree, and the same one the Client Master reference
-        // list uses for a master's Active flag. The hand-written chip this
-        // replaces was green / grey.
-        render: (op) => <StatusBadge kind="active" status={String(op.isActive)} />,
-      },
-    ],
+  const columns = useMemo(
+    () => operatorListColumns((currentPage - 1) * PAGE_SIZE + 1),
     [currentPage],
   );
 

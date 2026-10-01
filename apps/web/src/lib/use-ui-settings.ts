@@ -17,13 +17,16 @@ import {
 } from '@innovic/shared';
 
 import { apiFetch } from './api';
+import { useSession } from './session';
 
-export const UI_SETTINGS_QUERY_KEY = ['me', 'ui-settings'] as const;
+/** Keyed by the logged-in user (shared PCs); every ['me', …] query is removed
+ *  on sign-out (lib/session.ts). */
+export const uiSettingsQueryKey = (userId: string) => ['me', 'ui-settings', userId] as const;
 export const DENSITY_BODY_CLASS = 'density-compact';
 
 const FALLBACK: UiSettings = { tableDensity: DEFAULT_TABLE_DENSITY };
 
-function applyDensity(density: TableDensity): void {
+export function applyDensity(density: TableDensity): void {
   if (typeof document === 'undefined') return;
   document.body.classList.toggle(DENSITY_BODY_CLASS, density === 'compact');
 }
@@ -33,8 +36,11 @@ export function useUiSettings(): {
   save: (next: SaveUiSettingsInput) => void;
 } {
   const qc = useQueryClient();
+  const userId = useSession().data?.id;
+  const queryKey = uiSettingsQueryKey(userId ?? '');
   const query = useQuery<UiSettings>({
-    queryKey: UI_SETTINGS_QUERY_KEY,
+    queryKey,
+    enabled: userId !== undefined,
     queryFn: async () => {
       try {
         const parsed = uiSettingsSchema.safeParse(await apiFetch<unknown>('/me/ui-settings'));
@@ -65,14 +71,16 @@ export function useUiSettings(): {
   const save = useCallback(
     (next: SaveUiSettingsInput) => {
       // Instant: the class and the cache flip now; the save follows.
-      qc.setQueryData<UiSettings>(UI_SETTINGS_QUERY_KEY, (prev) => ({
+      // Only ever on the user's own click — never on mount — and density is
+      // one value, so the last write is the right one.
+      qc.setQueryData<UiSettings>(uiSettingsQueryKey(userId ?? ''), (prev) => ({
         ...(prev ?? FALLBACK),
         ...next,
       }));
       applyDensity(next.tableDensity);
       mutate(next);
     },
-    [qc, mutate],
+    [qc, mutate, userId],
   );
 
   return { settings, save };

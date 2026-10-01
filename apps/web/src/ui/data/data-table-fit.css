@@ -216,18 +216,14 @@
 }
 
 /* R5 — the Columns popover. */
+/* Portalled to <body> and placed (fixed, flipped, max-height) by
+   TableToolbar's placePopover — so a panel's overflow:hidden never clips it. */
 .dt-pick {
-  position: absolute;
-  right: 0;
-  top: calc(100% + var(--sp-1));
-  width: 340px;
-  max-height: 70vh;
   overflow-y: auto;
   background: var(--bg2);
   border: 1px solid var(--border3);
   border-radius: var(--radius2);
   box-shadow: var(--shadow-modal);
-  z-index: 30;
   font-size: var(--fs-sm);
   color: var(--text);
   text-align: left;
@@ -311,4 +307,13 @@
 .dt-pick-note {
   font-size: var(--fs-xs);
   color: var(--text3);
+}
+
+.dt-pick-divider {
+  border-top: 1px solid var(--border2);
+  margin-top: var(--sp-1);
+}
+.dt-detail-none {
+  color: var(--text3);
+  font-size: var(--fs-xs);
 }

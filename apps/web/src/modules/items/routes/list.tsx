@@ -58,7 +58,6 @@ import {
   ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPES,
   ITEM_TYPE_RULES,
-  type Item,
   type ItemProcurementType,
   type ItemType,
   type ListItemsQuery,
@@ -66,14 +65,14 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Badge, Button, Icon, Tag } from '@/ui/core';
-import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { Button, Icon } from '@/ui/core';
+import { DataTable, Panel } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { itemListColumns } from '../components/item-list-columns';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
@@ -197,119 +196,7 @@ function ItemsListPage(): React.JSX.Element {
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
 
-  // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+8+22+24+15+7+9 = 89, + 11 = 100, so the
-  // table never scrolls sideways. Centred by the standard; only the item code ·
-  // name is left-aligned, so the code starts at the same x in every row.
-  const columns = useMemo<DataTableColumn<Item>[]>(
-    () => [
-      {
-        id: 'sr_no',
-        header: 'Sr No',
-        width: '4%',
-        className: 'text3',
-        render: (_it, i) => i + 1,
-      },
-      {
-        id: 'thumbnail',
-        header: 'Thumbnail',
-        width: THUMBNAIL_COL_WIDTH,
-        // The picture fills its cell and has no width of its own to measure.
-        minWidth: 64,
-        // The picture fills the cell edge to edge, the gridlines being its
-        // frame (user decision 2026-09-22). The negative margins cancel the
-        // sheet's own cell padding (--sp-1 --sp-2) so the box reaches the
-        // rules; `position: relative` is what `fill` pins itself to.
-        // `stopRowClick` is NOT set: ItemImageBox already stops its own click,
-        // and a dead cell around it should still open the row like any other.
-        render: (it) => (
-          <div
-            style={{
-              position: 'relative',
-              // Exactly one row high (28px Comfortable / 22px Compact); the
-              // fit table gives this cell no vertical padding, and the
-              // negative side margins cancel its horizontal padding.
-              height: 'calc(var(--tbl-row-h, 28px) - 1px)',
-              margin: '0 calc(var(--tbl-pad-x, var(--sp-2)) * -1)',
-            }}
-          >
-            <ItemImageBox imagePath={it.imagePath} size="row" alt={it.name} fill />
-          </div>
-        ),
-      },
-      // Item Code and Item Name are two one-line columns (table standard,
-      // ADR-199: every row one line) — the code no longer stacks over the name.
-      // No item-level revision, deliberately (see the header comment).
-      {
-        id: 'item_code',
-        header: 'Item Code',
-        width: '10%',
-        nowrap: true,
-        render: (it) => (
-          // A real link, so the code can be ctrl/middle-clicked into a new
-          // tab. stopPropagation sits on the link so clicking the rest of
-          // the cell still opens the row, exactly as before.
-          <Link
-            to="/items/$id"
-            params={{ id: it.id }}
-            className="td-code fw-700"
-            style={{ color: 'var(--text)', textDecoration: 'none' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {it.code}
-          </Link>
-        ),
-      },
-      {
-        id: 'item_name',
-        header: 'Item Name',
-        width: '12%',
-        align: 'left',
-        ellipsis: true,
-        key: 'name',
-      },
-      // Description / Material are free text — clip at the column edge rather
-      // than wrap, full value on hover (styling skill Rule 1's exception).
-      {
-        id: 'description',
-        header: 'Description',
-        width: '24%',
-        className: 'text2',
-        ellipsis: true,
-        render: (it) => it.description ?? '—',
-        title: (it) => it.description ?? '',
-      },
-      {
-        id: 'material',
-        header: 'Material',
-        width: '15%',
-        ellipsis: true,
-        render: (it) => it.material ?? '—',
-        title: (it) => it.material ?? '',
-      },
-      {
-        id: 'uom',
-        header: 'UOM',
-        width: '7%',
-        nowrap: true,
-        render: (it) => <Tag tone="neutral">{it.uom}</Tag>,
-      },
-      {
-        id: 'procurement_type',
-        kind: 'badge',
-        header: 'Make / Buy',
-        width: '9%',
-        nowrap: true,
-        // ADR-171 — Buy stands out (blue), Make is the quiet default.
-        render: (it) => (
-          <Badge tone={it.procurementType === 'buy' ? 'blue' : 'grey'}>
-            {ITEM_PROCUREMENT_TYPE_LABEL[it.procurementType]}
-          </Badge>
-        ),
-      },
-    ],
-    [],
-  );
+  const columns = useMemo(() => itemListColumns(), []);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`

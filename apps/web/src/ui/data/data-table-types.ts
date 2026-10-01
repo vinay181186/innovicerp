@@ -119,6 +119,14 @@ export interface DataTableProps<T> {
    * and the full-width <td>; the caller supplies only what goes inside.
    */
   renderExpanded?: ((row: T, index: number) => ReactNode) | undefined;
+  /**
+   * Fit engine (`tableKey`) only: the engine's ▸ is the ONE expand control on
+   * a row. It opens the engine's detail AND calls this, so the caller can
+   * open its own `renderExpanded` content for the same row. A caller with
+   * renderExpanded must not draw a chevron of its own in a keyed table — a
+   * hidden or dropped column would take it away.
+   */
+  onToggleExpanded?: ((row: T, index: number) => void) | undefined;
   /** Any CSS length — `400` (px) or `calc(100vh - 220px)`. Overrides .tbl-wrap. */
   maxHeight?: number | string | undefined;
 

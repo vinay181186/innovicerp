@@ -10,8 +10,10 @@
 // A change shows at once (local state); the save follows, debounced 600 ms.
 // A sequence number makes sure an older save's answer never touches the state
 // of a newer change. One retry on a network error, then a "Not saved — retry"
-// flag for the toolbar. A 404 (API side not deployed yet) is silent — the
-// layout then simply lives in memory for the session.
+// flag for the toolbar. Nothing is written until the saved layout has been
+// READ: changes made while it loads queue and are saved after; if the read
+// fails nothing is saved (the toolbar offers Retry). A 404 on the read (API
+// side not deployed) is silent — the layout then lives in memory only.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,6 +25,7 @@ import {
 } from '@innovic/shared';
 
 import { ApiError, apiFetch } from './api';
+import { useSession } from './session';
 
 export interface TableLayoutState {
   order: string[];
@@ -41,11 +44,16 @@ export interface UseTableLayoutResult extends TableLayoutState {
   /** The last save failed (after its one retry). */
   saveFailed: boolean;
   retrySave: () => void;
+  /** The saved layout could not be read: defaults are shown and nothing is saved. */
+  loadFailed: boolean;
+  /** Read the saved layout again. */
+  retryLoad: () => void;
 }
 
 const SAVE_DELAY_MS = 600;
 
-export const tableLayoutQueryKey = (tableKey: string) => ['me', 'table-layout', tableKey] as const;
+export const tableLayoutQueryKey = (userId: string, tableKey: string) =>
+  ['me', 'table-layout', userId, tableKey] as const;
 
 function layoutPath(tableKey: string): string {
   return `/me/table-layouts/${encodeURIComponent(tableKey)}`;
@@ -100,15 +108,22 @@ function toSaveInput(state: TableLayoutState, first: string | undefined): SaveTa
   };
 }
 
+type Pending = { kind: 'put'; state: TableLayoutState } | { kind: 'delete' };
+
 export function useTableLayout(
   tableKey: string | undefined,
   columnIds: string[],
   defaults: TableLayoutDefaults,
 ): UseTableLayoutResult {
   const qc = useQueryClient();
+  // Keyed by the logged-in user: on a shared PC the next person never sees
+  // (or overwrites) the previous person's layout. Cleared on sign-out.
+  const userId = useSession().data?.id;
+  const enabled = tableKey !== undefined && userId !== undefined;
+  const queryKey = tableLayoutQueryKey(userId ?? '', tableKey ?? '');
   const query = useQuery<TableLayout | null>({
-    queryKey: tableLayoutQueryKey(tableKey ?? ''),
-    enabled: tableKey !== undefined,
+    queryKey,
+    enabled,
     staleTime: Infinity,
     retry: false,
     queryFn: async () => {
@@ -116,20 +131,28 @@ export function useTableLayout(
         const parsed = tableLayoutSchema.safeParse(
           await apiFetch<unknown>(layoutPath(tableKey ?? '')),
         );
-        return parsed.success ? parsed.data : null;
-      } catch {
-        // 404 = API side not deployed; anything else = keep the defaults.
-        return null;
+        if (parsed.success) return parsed.data;
+      } catch (e) {
+        // 404 = the API side is not deployed: work in memory, silently.
+        if (isStatus(e, 404)) return null;
+        throw e;
       }
+      throw new Error('Unreadable saved layout');
     },
   });
+
+  // NEVER write before the saved layout has been read: a PUT built from the
+  // defaults would wipe what the user saved. Until the read succeeds, changes
+  // stay local and queue; on a failed read nothing is saved at all.
+  const canSave = query.isSuccess && query.data !== null;
+  const canSaveRef = useRef(canSave);
+  canSaveRef.current = canSave;
 
   const [local, setLocal] = useState<TableLayoutState | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const seq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
-  const pending = useRef<TableLayoutState | null>(null);
-  const apiMissing = useRef(false);
+  const pending = useRef<Pending | null>(null);
 
   const idsKey = columnIds.join('|');
   const defaultState = useMemo<TableLayoutState>(
@@ -137,11 +160,12 @@ export function useTableLayout(
     [idsKey, (defaults.pins ?? []).join('|'), (defaults.hidden ?? []).join('|')],
   );
 
-  // A different table on the same mounted component starts clean.
+  // A different table / user on the same mounted component starts clean.
   useEffect(() => {
     setLocal(null);
     setSaveFailed(false);
-  }, [tableKey]);
+    pending.current = null;
+  }, [tableKey, userId]);
 
   const saved = query.data?.columns;
   const state = useMemo(() => {
@@ -153,42 +177,50 @@ export function useTableLayout(
   const first = columnIds[0];
 
   const send = useCallback(
-    async (next: TableLayoutState, mySeq: number) => {
-      if (tableKey === undefined || apiMissing.current) return;
-      const body = toSaveInput(next, first);
-      const put = () => apiFetch<TableLayout>(layoutPath(tableKey), { method: 'PUT', json: body });
+    async (job: Pending, mySeq: number) => {
+      if (tableKey === undefined || !canSaveRef.current) return;
+      const path = layoutPath(tableKey);
+      const body = job.kind === 'put' ? toSaveInput(job.state, first) : null;
+      const call = () =>
+        body
+          ? apiFetch<TableLayout>(path, { method: 'PUT', json: body })
+          : apiFetch(path, { method: 'DELETE' });
       try {
         try {
-          await put();
+          await call();
         } catch (e) {
-          if (isStatus(e, 0)) await put();
+          if (isStatus(e, 0)) await call();
           else throw e;
         }
         if (mySeq !== seq.current) return;
         setSaveFailed(false);
-        qc.setQueryData<TableLayout | null>(tableLayoutQueryKey(tableKey), {
+        qc.setQueryData<TableLayout | null>(queryKey, {
           tableKey,
-          columns: body.columns,
-          updatedAt: new Date().toISOString(),
+          columns: body ? body.columns : [],
+          updatedAt: body ? new Date().toISOString() : null,
         });
-      } catch (e) {
-        if (isStatus(e, 404)) {
-          apiMissing.current = true;
-          return;
-        }
+      } catch {
         if (mySeq === seq.current) setSaveFailed(true);
       }
     },
-    [tableKey, first, qc],
+    // queryKey is derived from userId + tableKey.
+    [tableKey, userId, first, qc],
   );
 
   const flush = useCallback(() => {
     if (timer.current !== undefined) window.clearTimeout(timer.current);
     timer.current = undefined;
-    const next = pending.current;
+    // Not readable yet (or the read failed): keep the change queued.
+    if (!canSaveRef.current) return;
+    const job = pending.current;
     pending.current = null;
-    if (next) void send(next, seq.current);
+    if (job) void send(job, seq.current);
   }, [send]);
+
+  // The read just succeeded: save whatever the user changed while it loaded.
+  useEffect(() => {
+    if (canSave && pending.current) flush();
+  }, [canSave, flush]);
 
   // Leaving the page mid-debounce still saves the last change.
   useEffect(() => flush, [flush]);
@@ -197,7 +229,7 @@ export function useTableLayout(
     (next: TableLayoutState) => {
       seq.current += 1;
       setLocal(next);
-      pending.current = next;
+      pending.current = { kind: 'put', state: next };
       if (timer.current !== undefined) window.clearTimeout(timer.current);
       timer.current = window.setTimeout(flush, SAVE_DELAY_MS);
     },
@@ -206,28 +238,29 @@ export function useTableLayout(
 
   const reset = useCallback(() => {
     seq.current += 1;
-    const mySeq = seq.current;
     if (timer.current !== undefined) window.clearTimeout(timer.current);
     timer.current = undefined;
-    pending.current = null;
     setLocal(defaultState);
     setSaveFailed(false);
-    if (tableKey === undefined || apiMissing.current) return;
-    qc.setQueryData<TableLayout | null>(tableLayoutQueryKey(tableKey), {
-      tableKey,
-      columns: [],
-      updatedAt: null,
-    });
-    apiFetch(layoutPath(tableKey), { method: 'DELETE' }).catch((e: unknown) => {
-      if (isStatus(e, 404)) apiMissing.current = true;
-      else if (mySeq === seq.current) setSaveFailed(true);
-    });
-  }, [defaultState, tableKey, qc]);
+    pending.current = { kind: 'delete' };
+    flush();
+  }, [defaultState, flush]);
 
   const retrySave = useCallback(() => {
     seq.current += 1;
-    void send(state, seq.current);
+    void send({ kind: 'put', state }, seq.current);
   }, [send, state]);
 
-  return { ...state, setLayout, reset, saveFailed, retrySave };
+  const { refetch } = query;
+  const retryLoad = useCallback(() => void refetch(), [refetch]);
+
+  return {
+    ...state,
+    setLayout,
+    reset,
+    saveFailed,
+    retrySave,
+    loadFailed: query.isError,
+    retryLoad,
+  };
 }

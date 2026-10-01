@@ -3,11 +3,16 @@
 // padding, badges and buttons all count. Header and body are two separate
 // tables: a header's width must not be inflated by its values, and in an
 // auto-layout table the first body row's cells are already each column's
-// widest content. Only the first MEASURE_ROWS rows are drawn.
+// widest content.
 //
-// It is memoised and measures after each of its own renders, so it re-measures
-// exactly when its inputs change (rows, columns, density, fonts) and not on
-// the table's own state changes (expand, popover).
+// What it draws: the first MEASURE_ROWS rows, plus the `extraRows` the engine
+// picked from the rest as the longest values per column (see
+// pickOutlierRows), so a long code on row 900 still sets its column's width.
+//
+// Cost control: it re-renders ONLY when `signature` changes (rows, column
+// ids, density, fonts, sort, container width) — not on every render of the
+// page around it — and it measures in a requestAnimationFrame after commit,
+// so a measurement never runs inside the render that caused it.
 
 import { memo, useLayoutEffect, useRef } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -26,20 +31,21 @@ export interface Measured {
 }
 
 interface Props<T> extends SortProps {
+  /** Everything the measurement depends on, as one string. */
+  signature: string;
   columns: DataTableColumn<T>[];
   rows: T[];
+  extraRows: T[];
   rowActions?: ((row: T, index: number) => ReactNode) | undefined;
   rowActionsHeader?: ReactNode | undefined;
   tableClass: string | undefined;
-  /** Not drawn — only here so a change re-renders (and re-measures). */
-  densityToken: string;
-  fontsTick: number;
   onMeasured: (m: Measured) => void;
 }
 
 function MeasurerImpl<T>({
   columns,
   rows,
+  extraRows,
   rowActions,
   rowActionsHeader,
   tableClass,
@@ -47,28 +53,36 @@ function MeasurerImpl<T>({
   sortBy,
   sortDir,
   onSort,
+  signature,
 }: Props<T>): ReactElement {
   const ref = useRef<HTMLDivElement>(null);
-  const sample = rows.slice(0, MEASURE_ROWS);
+  const sample = [...rows.slice(0, MEASURE_ROWS), ...extraRows];
   const ids = columns.map((c, i) => colId(c, i));
   if (rowActions) ids.push(ACTIONS_ID);
+  const idsRef = useRef(ids);
+  idsRef.current = ids;
+  const cbRef = useRef(onMeasured);
+  cbRef.current = onMeasured;
 
   useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ths = el.querySelectorAll<HTMLElement>('thead th');
-    const tds = el.querySelectorAll<HTMLElement>('tbody tr:first-child > td');
-    const head: Record<string, number> = {};
-    const content: Record<string, number> = {};
-    ids.forEach((id, i) => {
-      const th = ths[i];
-      const td = tds[i];
-      // +2: half-pixel borders of the collapsed grid, and rounding.
-      head[id] = th ? Math.ceil(th.getBoundingClientRect().width) + 2 : 0;
-      content[id] = td ? Math.ceil(td.getBoundingClientRect().width) + 2 : 0;
+    const frame = requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      const ths = el.querySelectorAll<HTMLElement>('thead th');
+      const tds = el.querySelectorAll<HTMLElement>('tbody tr:first-child > td');
+      const head: Record<string, number> = {};
+      const content: Record<string, number> = {};
+      idsRef.current.forEach((id, i) => {
+        const th = ths[i];
+        const td = tds[i];
+        // +2: half-pixel borders of the grid, and rounding.
+        head[id] = th ? Math.ceil(th.getBoundingClientRect().width) + 2 : 0;
+        content[id] = td ? Math.ceil(td.getBoundingClientRect().width) + 2 : 0;
+      });
+      cbRef.current({ head, content });
     });
-    onMeasured({ head, content });
-  });
+    return () => cancelAnimationFrame(frame);
+  }, [signature]);
 
   const sort = { sortBy, sortDir, onSort };
   return (
@@ -112,4 +126,9 @@ function MeasurerImpl<T>({
   );
 }
 
-export const ColumnMeasurer = memo(MeasurerImpl) as typeof MeasurerImpl;
+// Only the signature decides a re-render: columns / rowActions are new
+// closures on most page renders but draw the same thing.
+export const ColumnMeasurer = memo(
+  MeasurerImpl,
+  (a, b) => a.signature === b.signature,
+) as typeof MeasurerImpl;
