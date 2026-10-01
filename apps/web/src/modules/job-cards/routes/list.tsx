@@ -74,6 +74,7 @@ import { useDeleteJobCard, useJobCardsList } from '../api';
 import { ExcelJcButton } from '../components/excel-jc-button';
 import { JC_STATUS_LABEL } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
+import { JcRowMenu } from '../components/jc-row-menu';
 import { jobCardListColumns, sourceRoute } from '../components/jc-list-columns';
 
 // One fetch, cap 200 (mirrors the SO/WO list).
@@ -313,14 +314,15 @@ function JobCardsListPage(): React.JSX.Element {
     });
   };
 
-  /** The six row actions, in the sheet's order: View · Edit · Print · Excel ·
-   *  Assign · Delete. `labelled` draws the card view's text buttons instead of
-   *  the sheet's icons. Delete now raises the shared ConfirmDialog and hands
-   *  it the mutation's promise, so the dialog owns the wait and a second click
-   *  cannot fire a no-op delete. */
-  const rowActions = (jc: JobCardListItem, labelled: boolean): React.JSX.Element => (
+  /** The card view's row actions: View · Edit · Print · Excel · Assign ·
+   *  Delete as text buttons (`labelled`). The sheet draws <JcRowMenu> — the
+   *  same actions in one ⋯ menu, without View (the row click opens the card).
+   *  Delete raises the shared ConfirmDialog and hands it the mutation's
+   *  promise, so the dialog owns the wait and a second click cannot fire a
+   *  no-op delete. */
+  const cardActions = (jc: JobCardListItem): React.JSX.Element => (
     <RowActions
-      labelled={labelled}
+      labelled
       // View and Edit are ROUTES, so they stay real links — ctrl-click /
       // middle-click / "open in new tab" keep working.
       viewTo={`/job-cards/${jc.id}`}
@@ -328,8 +330,8 @@ function JobCardsListPage(): React.JSX.Element {
       renderLink={(p) => <Link {...p} />}
       extra={
         <>
-          <PrintJcButton jc={jc} iconOnly={!labelled} />
-          <ExcelJcButton jc={jc} iconOnly={!labelled} />
+          <PrintJcButton jc={jc} />
+          <ExcelJcButton jc={jc} />
           <AssignTaskButton
             linkedRef={{
               type: 'job_card',
@@ -338,7 +340,6 @@ function JobCardsListPage(): React.JSX.Element {
               navPage: '/job-cards',
             }}
             suggestedTitle={`Follow up on JC ${jc.code}`}
-            {...(labelled ? {} : { className: 'btn btn-ghost btn-sm btn-icon', label: '' })}
           />
         </>
       }
@@ -494,7 +495,14 @@ function JobCardsListPage(): React.JSX.Element {
             onRowClick={(jc) => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
             frozen
             rowActionsWidth="1%"
-            rowActions={(jc) => rowActions(jc, false)}
+            rowActions={(jc) => (
+              <JcRowMenu
+                jc={jc}
+                canEdit={canEditJc}
+                onDelete={canDeleteJc ? (): Promise<void> => del.mutateAsync(jc.id) : undefined}
+                deleteDisabled={del.isPending}
+              />
+            )}
           />
         </Panel>
       ) : isLoading ? (
@@ -617,7 +625,7 @@ function JobCardsListPage(): React.JSX.Element {
                     </span>
                   ) : null}
                   <span style={{ flex: 1 }} />
-                  {rowActions(jc, true)}
+                  {cardActions(jc)}
                 </div>
                 {/* Band 2: metric strip + progress + meta line */}
                 <div

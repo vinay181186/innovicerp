@@ -11,18 +11,34 @@
 
 import type { RouteCardListItem } from '@innovic/shared';
 import { Loader2, Printer } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useItem } from '@/modules/items/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { useRouteCard } from '../api';
 import { printRouteCard } from '../lib/print-route-card';
 
-export function PrintRouteCardButton({ rc }: { rc: RouteCardListItem }): React.JSX.Element {
+/**
+ * The Print click logic, shared by the row button and the sheet's ⋯ menu
+ * item. `start()` arms the lazy fetches and prints once they resolve; its
+ * Promise settles when the print has fired (or failed), so the ⋯ menu shows
+ * busy and cannot fire a second print meanwhile.
+ */
+export function usePrintRouteCard(rc: RouteCardListItem): {
+  start: () => Promise<void>;
+  loading: boolean;
+} {
   // `armed` gates the on-demand fetches; `pending` means "print as soon as the
   // queries resolve". A ref guards against printing twice if a query re-settles.
   const [armed, setArmed] = useState(false);
   const [pending, setPending] = useState(false);
   const printedRef = useRef(false);
+  const waitRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
+  const settle = useCallback((): void => {
+    waitRef.current?.resolve();
+    waitRef.current = null;
+  }, []);
+  // A row that unmounts mid-fetch must not leave the ⋯ busy for ever.
+  useEffect(() => settle, [settle]);
 
   const { data: company } = useMyCompany();
   // useRouteCard / useItem enable themselves off Boolean(id), so passing
@@ -34,6 +50,7 @@ export function PrintRouteCardButton({ rc }: { rc: RouteCardListItem }): React.J
     if (!pending || printedRef.current) return;
     if (rcQuery.isError) {
       setPending(false);
+      settle();
       window.alert('Could not load Route Card. Try again.');
       return;
     }
@@ -43,6 +60,7 @@ export function PrintRouteCardButton({ rc }: { rc: RouteCardListItem }): React.J
     if (!itemQuery.data && !itemQuery.isError) return;
     printedRef.current = true;
     setPending(false);
+    settle();
     const ok = printRouteCard({ rc: rcQuery.data, item: itemQuery.data, company });
     if (!ok) window.alert('Allow popups to print.');
   }, [
@@ -53,16 +71,32 @@ export function PrintRouteCardButton({ rc }: { rc: RouteCardListItem }): React.J
     itemQuery.data,
     itemQuery.isError,
     company,
+    settle,
   ]);
 
-  const onClick = (e: React.MouseEvent): void => {
-    e.stopPropagation();
+  const start = useCallback((): Promise<void> => {
+    if (waitRef.current) return waitRef.current.promise;
+    let resolve: () => void = () => undefined;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+    waitRef.current = { promise, resolve };
     printedRef.current = false;
     setArmed(true);
     setPending(true);
-  };
+    return promise;
+  }, []);
 
-  const loading = pending && (rcQuery.isFetching || itemQuery.isFetching);
+  return { start, loading: pending && (rcQuery.isFetching || itemQuery.isFetching) };
+}
+
+export function PrintRouteCardButton({ rc }: { rc: RouteCardListItem }): React.JSX.Element {
+  const { start, loading } = usePrintRouteCard(rc);
+
+  const onClick = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    void start();
+  };
 
   // Icon-only, like the other Action-column buttons on the Route Card sheet
   // (Eye / Pencil / Trash2): same trim, hover names the action.

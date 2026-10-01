@@ -1,4 +1,4 @@
-// JC Operations board — columns + row actions (ADR-199 fit table: one line
+// JC Operations board — columns + the ⋯ row menu (ADR-199 fit table: one line
 // per row, always fits the screen). Moved out of routes/list.tsx, where they
 // were a hand-built <Row>. What used to stack inside one cell is now a column
 // of its own:
@@ -17,14 +17,14 @@ import {
   resolveActualMachine,
 } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import type { DataTableColumn, RowMenuItem } from '@/ui/data';
+import type { RenderLink } from '@/ui/layout';
 import { OP_STATUS } from '../../job-cards/lib/jc-op-labels';
 
 export const JC_OPS_DEFAULT_PINNED = ['item_code'];
 export const JC_OPS_DEFAULT_HIDDEN = ['qty_per_machine'];
 
-// Legacy L11359/L11363/L11368 render the outsource sub-status in Title Case
-// (`o.outsourceStatus||'Pending'`); our enum values are snake_case.
+// Our snake_case enum values, shown in Title Case (legacy L11359-L11368).
 const OUTSOURCE_STATUS_LABELS: Record<string, string> = {
   pending: 'Pending',
   pr_raised: 'PR Raised',
@@ -52,6 +52,36 @@ function OpStatusBadge({ status }: { status: string }): React.JSX.Element {
   return (
     <span className={`badge ${s?.cls ?? ''}`.trim()}>{s?.label ?? status.replace(/_/g, ' ')}</span>
   );
+}
+
+/** The PR / PO / at-vendor detail beside the outsource status — what the old
+ *  action cell showed as text ("⏳ PR: …", "PO: …" link, "📦 At Vendor"). */
+function OutsourceRef({ o, st }: { o: JcOpsBoardRow; st: string }): React.JSX.Element | null {
+  if (st === 'pr_raised' && o.outsourcePrCode) {
+    return <span className="mono"> · {o.outsourcePrCode}</span>;
+  }
+  if (st === 'po_created' && o.outsourcePoCode) {
+    return (
+      <>
+        {' · '}
+        {o.outsourcePoId ? (
+          <Link
+            to="/purchase-orders/$id"
+            params={{ id: o.outsourcePoId }}
+            className="mono"
+            style={{ color: 'var(--blue)', textDecoration: 'underline dotted' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {o.outsourcePoCode}
+          </Link>
+        ) : (
+          <span className="mono">{o.outsourcePoCode}</span>
+        )}
+      </>
+    );
+  }
+  if (st === 'sent') return <span> ({o.sentQty} pcs)</span>;
+  return null;
 }
 
 export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
@@ -237,6 +267,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
             >
               {OUTSOURCE_STATUS_LABELS[st] ?? st.replace(/_/g, ' ')}
             </span>
+            <OutsourceRef o={o} st={st} />
           </>
         );
       },
@@ -276,109 +307,94 @@ export interface JcOpsActionProps {
   onOutsource: (o: JcOpsBoardRow) => void;
 }
 
-/** The row's Action cell — every button / state the old Actions column had,
- *  side by side on one line. */
-export function JcOpsRowActions({
-  o,
-  p,
-}: {
-  o: JcOpsBoardRow;
-  p: JcOpsActionProps;
-}): React.JSX.Element | null {
+/** The ⋯ menu's link renderer: Start / Log Op deep-link to `/op-entry?…`,
+ *  and the router's <Link> wants that query as `search`, so it is split off. */
+export const renderJcOpsLink: RenderLink = ({ to, ...rest }) => {
+  const q = to.indexOf('?');
+  if (q < 0) return <Link {...rest} to={to} />;
+  const search = Object.fromEntries(new URLSearchParams(to.slice(q + 1)));
+  return <Link {...rest} to={to.slice(0, q)} search={search} />;
+};
+
+/**
+ * The row's ⋯ menu items — only the ones valid for that op (owner-approved
+ * spec 2026-10-01). An item the user has no right to is left out; one the
+ * server would refuse for this op's state is greyed with the reason. The
+ * outsource state that used to sit in the action cell as text ("PR: …",
+ * "PO: …", "At Vendor (n pcs)") now shows in the Outsource Status column, and
+ * "✓ Locked / 🔒 Running" is Change Machine's greyed reason.
+ */
+export function jcOpsRowMenu(o: JcOpsBoardRow, p: JcOpsActionProps): RowMenuItem[] {
   if (isOutsource(o)) {
-    const st = outsourceStatusOf(o);
     // Legacy L11369 — raise a PR from a pending outsource op. The server-side
     // cascade stamps this op as pr_raised + links the new PR.
-    if (st === 'pending') {
-      return p.canCreatePr ? (
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{ background: 'var(--amber)', color: 'var(--text)', fontWeight: 700 }}
-          onClick={() => p.onCreatePr(o)}
-        >
-          📋 Create PR
-        </button>
-      ) : null;
-    }
-    if (st === 'pr_raised') {
-      return <span style={{ color: 'var(--amber2)' }}>⏳ PR: {o.outsourcePrCode ?? ''}</span>;
-    }
-    if (st === 'po_created') {
-      return o.outsourcePoId ? (
-        <Link
-          to="/purchase-orders/$id"
-          params={{ id: o.outsourcePoId }}
-          style={{ color: 'var(--blue)', textDecoration: 'underline dotted' }}
-        >
-          PO: {o.outsourcePoCode ?? ''}
-        </Link>
-      ) : (
-        <span style={{ color: 'var(--blue)' }}>PO: {o.outsourcePoCode ?? ''}</span>
-      );
-    }
-    if (st === 'sent') {
-      return <span style={{ color: 'var(--amber2)' }}>📦 At Vendor ({o.sentQty} pcs)</span>;
-    }
-    return null;
+    return [
+      {
+        key: 'raise-pr',
+        label: 'Raise PR',
+        icon: 'plus',
+        group: 'workflow',
+        hidden: !p.canCreatePr,
+        disabledReason: outsourceStatusOf(o) === 'pending' ? undefined : 'PR already raised',
+        onSelect: () => p.onCreatePr(o),
+      },
+    ];
   }
 
+  const running = o.status === 'running';
+  const complete = o.status === 'complete';
+  // Running / complete op: why the server refuses a machine change or an
+  // outsource send for it.
+  const stateReason = complete ? 'Completed' : running ? 'Running — stop it first' : undefined;
   // ▶ Start / ✚ Log — the Job Queue's rule: an in-house op with pieces waiting
   // and no session running is the next thing to do. Pieces already made →
-  // ✚ Log (the Complete half); none yet → ▶ Start.
-  const isNext = o.available > 0 && o.status !== 'running' && o.status !== 'complete';
-  const startLink =
-    p.canOpEntry && isNext ? (
-      o.completed > 0 ? (
-        <Link
-          to="/op-entry"
-          search={{ jc: o.jcCode, op: o.jcOpId, mode: 'complete' }}
-          className="btn btn-sm"
-          style={{
-            background: 'var(--green3)',
-            border: '1px solid var(--green2)',
-            color: 'var(--green2)',
-          }}
-        >
-          ✚ Log Op
-        </Link>
-      ) : (
-        <Link
-          to="/op-entry"
-          search={{ jc: o.jcCode, op: o.jcOpId, mode: 'start' }}
-          className="btn btn-sm"
-        >
-          ▶ Start
-        </Link>
-      )
-    ) : null;
+  // Log Op (the Complete half); none yet → Start Operation.
+  const logging = o.completed > 0;
+  const startReason = running
+    ? 'Already running'
+    : complete
+      ? 'Completed'
+      : o.available > 0
+        ? undefined
+        : 'Nothing Pending';
+  const opEntryTo = `/op-entry?${new URLSearchParams({
+    jc: o.jcCode,
+    op: o.jcOpId,
+    mode: logging ? 'complete' : 'start',
+  }).toString()}`;
 
-  return (
-    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
-      {startLink}
-      {/* ADR-125 — a half-done op CAN change machine (each op_log row carries
-          the machine that made its qty). Blocked only when 'complete' or a
-          session is running, matching changeJcOpMachine exactly. */}
-      {p.canWrite && o.status !== 'complete' && o.status !== 'running' ? (
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => p.onEdit(o)}>
-          Change Machine
-        </button>
-      ) : (
-        <span className="text3" style={{ fontStyle: 'italic' }}>
-          {o.status === 'complete' ? '✓ Locked' : '🔒 Running'}
-        </span>
-      )}
-      {/* ADR-081 — send the remaining qty out. */}
-      {p.canWrite && o.opType === 'process' && o.available > 0 && o.status !== 'complete' ? (
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{ background: 'var(--purple3)', color: 'var(--purple)', fontWeight: 700 }}
-          onClick={() => p.onOutsource(o)}
-        >
-          🏭 Outsource Available
-        </button>
-      ) : null}
-    </span>
-  );
+  return [
+    {
+      key: 'start',
+      label: logging ? 'Log Op' : 'Start Operation',
+      icon: logging ? 'plus' : 'play',
+      group: 'workflow',
+      hidden: !p.canOpEntry,
+      disabledReason: startReason,
+      ...(startReason ? {} : { to: opEntryTo }),
+    },
+    {
+      // ADR-125 — a half-done op CAN change machine (each op_log row carries
+      // the machine that made its qty). Blocked only when 'complete' or a
+      // session is running, matching changeJcOpMachine exactly.
+      key: 'change-machine',
+      label: 'Change Machine',
+      icon: 'settings',
+      group: 'workflow',
+      hidden: !p.canWrite,
+      disabledReason: stateReason,
+      onSelect: () => p.onEdit(o),
+    },
+    {
+      // ADR-081 — send the remaining qty out. Qty already covered by open PRs
+      // is not on the row; the server refuses it and the dialog shows why.
+      key: 'outsource',
+      label: 'Outsource Available',
+      icon: 'truck',
+      group: 'workflow',
+      hidden: !p.canWrite || o.opType !== 'process',
+      disabledReason: stateReason ?? (o.available > 0 ? undefined : 'Nothing Pending'),
+      onSelect: () => p.onOutsource(o),
+    },
+  ];
 }

@@ -31,8 +31,9 @@ import {
   JC_OPS_DEFAULT_HIDDEN,
   JC_OPS_DEFAULT_PINNED,
   type JcOpsActionProps,
-  JcOpsRowActions,
   jcOpsColumns,
+  jcOpsRowMenu,
+  renderJcOpsLink,
 } from '../components/jc-ops-columns';
 import '../jc-ops.css';
 
@@ -166,7 +167,8 @@ function JcOpsPage(): React.JSX.Element {
             defaultHidden={JC_OPS_DEFAULT_HIDDEN}
             // An outsource op keeps its amber tint (jc-ops.css, solid token).
             rowClassName={(o) => (o.opType === 'outsource' ? 'jc-ops-osp-row' : undefined)}
-            rowActions={(o) => <JcOpsRowActions o={o} p={actionProps} />}
+            rowMenu={(o) => jcOpsRowMenu(o, actionProps)}
+            renderLink={renderJcOpsLink}
           />
         </Panel>
       )}
