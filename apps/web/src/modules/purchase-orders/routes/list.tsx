@@ -1,41 +1,26 @@
-// Purchase Orders list (UI-003-04). Ports legacy renderPurchaseOrders L25209.
+// Purchase Orders list (UI-003-04).
 //
-// Column order follows legacy L25350-25355: PO No. | Lines | Date | Vendor |
-// SO/JW | Total Qty | Received | Pending | Value | Status | Actions.
+// ADR-199 table standard: ONE shared FIT table (<DataTable tableKey=…>), one
+// line per PO, the fit engine sizing columns to the screen and dropping the
+// rightmost unpinned ones into a ▸ detail row when it is too narrow. The old
+// List View / Card View toggle is gone — the hand-built card layout and the
+// hand-rolled PoSheetTable it toggled with are both retired. Row click opens
+// the PO; the ▸ reveals the PO's line items (own fetch, PoExpandedLines).
 //
-// Legacy puts its cell classes on the <td> itself (e.g. `<td class="td-ctr mono
-// fw-700">` for Total Qty), not on a wrapper span — `td-ctr` is
-// text-align:center, which only takes effect on the block-level cell. Carry the
-// class through the column def so the flexRender loop can put it where legacy
-// has it (ISSUE-020).
+// Columns (first pinned): PO No. · PO Date · PO Type · Vendor · PR No. · Qty ·
+// Received · Pending · Value · PO Status — see components/po-list-columns.tsx.
+// Value keeps its price gate (API nulls totalAmount for viewers without price).
 //
-// Two layouts, one data set: "List View" is the ruled sheet (PoSheetTable,
-// components/po-sheet-table.tsx — the Job Cards list's look); "Card View" is
-// the original one-panel-per-PO layout below, untouched. The toggle sits at the
-// right end of the filter row and the choice is remembered per browser. Search,
-// filters, permissions and row actions are shared — the sheet renders the same
-// rows through the same gates.
+// Row actions (RowActions prop): Edit (edit tier, not closed), Create DC (edit
+// tier, Job Work / Service, not draft), Assign (open-ish POs) — the same gates
+// the retired card / sheet used, carried over verbatim.
 //
-// Legacy deltas kept deliberately (see docs/ISSUES.md ISSUE-030):
-//  - The CARD shows no "Value" (legacy L25256): when it was built the list
-//    payload carried no amount. The list payload now has `totalAmount`
-//    (migration 0078, nulled when the viewer may not see prices), so the sheet
-//    shows it; the card stays as it was.
-//  - "PR ref" occupies legacy's SO/JW slot: the payload has `prCodeText` but no
-//    SO/JW back-reference (legacy reads first.soRefId → CASCADE.findOrder).
-//  - No stat-card filter row (L25332-25345) and no "PO Creation Pending —
-//    Approved PRs" panel (L25315-25331). See ISSUE-030.
-//  - No expand-to-lines (L25276-25303) — the list payload has no lines — and so
-//    the tip line at L25358 that advertises it is not shipped either (trap 1,
-//    ISSUE-017).
-//  - No Approve/Reject/Print row actions: see ISSUE-030. Both live on the
-//    detail page, one click away via View.
-//  - Search placeholder does not list columns (trap 1 — legacy's "Search PO,
-//    vendor, item…" box is a client-side filter over rendered rows; ours is a
-//    server-side match). The API now matches PO code, PR ref, vendor code AND
-//    vendor name, status, PO type, PO date and the item code / item name on the
-//    lines — too many to name in a 240px box, and a listed-columns placeholder
-//    goes stale the moment the API widens again, so it stays generic.
+// Row tint by PO status (rowClassName + ROW_TINT): draft / qc_pending = pending,
+// closed = done, cancelled = cancelled; open and partial carry no tint (active).
+//
+// Search is server-side: the API matches PO code, PR ref, vendor code AND name,
+// status, PO type, PO date and the item code / name on the lines, so the
+// placeholder names the columns rather than listing every matched field.
 
 import {
   type ListPurchaseOrdersQuery,
@@ -44,69 +29,39 @@ import {
   poSendsMaterialOut,
   type PoStatus,
   type PoType,
+  type PurchaseOrderListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader, ViewToggle } from '@/ui/layout';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { usePurchaseOrdersList } from '../api';
-import { PoSheetTable } from '../components/po-sheet-table';
-import { PoStatusBadge } from '../components/po-status-badge';
+import { PoExpandedLines } from '../components/po-expanded-lines';
+import { purchaseOrderListColumns } from '../components/po-list-columns';
 import { PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 
 // No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
 // PO list-query cap is 200; the count line flags a rare larger set.
 const LIST_LIMIT = 200;
 
-// Where the List / Card choice is remembered (per browser).
-const VIEW_STORAGE_KEY = 'po-list-view';
-
-/** One cell of the card's metric strip — big mono number over a small label,
- *  mirroring the SO/WO list (Qty / Received / Pending / Lines). */
-function QtyBox({
-  label,
-  value,
-  color,
-  bordered,
-}: {
-  label: string;
-  value: number;
-  color?: string;
-  bordered?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        padding: '4px 12px',
-        textAlign: 'center',
-        minWidth: 58,
-        borderLeft: bordered ? '1px solid var(--border)' : undefined,
-      }}
-    >
-      <div
-        className="mono fw-700"
-        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
-      >
-        {value}
-      </div>
-      <div
-        className="mono"
-        style={{
-          fontSize: 11,
-          color: 'var(--text3)',
-        }}
-      >
-        {label}
-      </div>
-    </div>
-  );
-}
+// PO status → row tint (ADR-199 ROW_TINT). Real status enum only: draft and
+// qc_pending read as pending work, closed is done, cancelled is cancelled; the
+// active middle (open, partly received) stays untinted.
+const ROW_TINT_BY_STATUS: Record<PoStatus, string | undefined> = {
+  draft: ROW_TINT.pending,
+  open: undefined,
+  partial: undefined,
+  qc_pending: ROW_TINT.pending,
+  closed: ROW_TINT.done,
+  cancelled: ROW_TINT.cancelled,
+};
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -134,25 +89,6 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
     );
   }, [search.search]);
-
-  // List View (the sheet) vs Card View (the original cards). List is the
-  // default; the choice is remembered per browser, wrapped in try/catch so a
-  // locked-down browser (no localStorage) still renders.
-  const [view, setView] = useState<'list' | 'card'>(() => {
-    try {
-      return localStorage.getItem(VIEW_STORAGE_KEY) === 'card' ? 'card' : 'list';
-    } catch {
-      return 'list';
-    }
-  });
-  const changeView = (next: 'list' | 'card'): void => {
-    setView(next);
-    try {
-      localStorage.setItem(VIEW_STORAGE_KEY, next);
-    } catch {
-      // ignore — persistence is best-effort
-    }
-  };
 
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
@@ -191,6 +127,58 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
 
+  // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
+  // expand control (onToggleExpanded), and renderExpanded returns null for a
+  // collapsed row so a closed PO never fetches its lines.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string): void => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const columns = useMemo(() => purchaseOrderListColumns(), []);
+
+  // Row actions — Edit · Create DC · Assign, with the gates the retired card and
+  // sheet used, unchanged. No View button: the row click opens the PO.
+  const rowActions = (po: PurchaseOrderListItem): React.JSX.Element => (
+    <RowActions
+      editTo={canEdit && po.status !== 'closed' ? `/purchase-orders/${po.id}/edit` : undefined}
+      renderLink={(p) => <Link {...p} />}
+      extra={
+        <>
+          {/* Job Work AND Service both send material out — same DC lane. */}
+          {canEdit && poSendsMaterialOut(po.poType) && po.status !== 'draft' ? (
+            <Link
+              to="/delivery-challans/new"
+              search={{ poId: po.id }}
+              className="btn btn-ghost btn-sm"
+              title="Create DC"
+            >
+              Create DC
+            </Link>
+          ) : null}
+          {po.status !== 'closed' && po.status !== 'cancelled' ? (
+            <AssignTaskButton
+              linkedRef={{
+                type: 'purchase_order',
+                id: po.id,
+                display: `PO ${po.code}`,
+                navPage: `/purchase-orders/${po.id}`,
+              }}
+              suggestedTitle={`Follow up ${po.code}`}
+              className="btn btn-ghost btn-sm btn-icon"
+              label=""
+            />
+          ) : null}
+        </>
+      }
+    />
+  );
+
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
   // page. `eff` is undefined only while access is still loading — don't block
@@ -203,10 +191,13 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     );
   }
 
+  const emptyText =
+    search.search || search.status || search.poType ? 'No POs match.' : 'No POs yet.';
+
   return (
     <div>
-      {/* THE list header (ui/layout ListHeader): title · count · view toggle ·
-          + New PO, then the filter bar (search · status · type · Clear). */}
+      {/* THE list header (ui/layout ListHeader): title · count · + New PO, then
+          the filter bar (search · status · type · Clear). */}
       <ListHeader
         title="Purchase Orders"
         icon="📋"
@@ -284,7 +275,6 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         filtersActive={
           search.status !== undefined || search.poType !== undefined || searchInput !== ''
         }
-        tools={<ViewToggle value={view} onChange={changeView} />}
         primary={
           canAdd ? (
             <Link to="/purchase-orders/from-pr" className="btn btn-primary">
@@ -294,181 +284,37 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         }
       />
 
-      {isLoading ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 20 }}>
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-            Loading…
-          </div>
-        </div>
-      ) : isError ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 20, color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Could not load purchase orders. Try again.'}
-          </div>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 20 }}>
-            {search.search || search.status || search.poType ? 'No POs match.' : 'No POs yet.'}
-          </div>
-        </div>
-      ) : view === 'list' ? (
-        // ── LIST VIEW (the sheet) ────────────────────────────────────────────
-        <PoSheetTable
-          rows={rows}
-          canEdit={canEdit}
-          onOpen={(id) => void navigate({ to: '/purchase-orders/$id', params: { id } })}
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load purchase orders. Try again.'
+          }
         />
       ) : (
-        // ── CARD VIEW (the original layout, unchanged) ───────────────────────
-        rows.map((po) => {
-          const isJW = po.poType === 'job_work';
-          const isSvc = po.poType === 'service';
-          const pending = po.pendingQty;
-          const accent =
-            po.status === 'closed'
-              ? 'var(--green)'
-              : po.status === 'cancelled'
-                ? 'var(--text3)'
-                : 'var(--blue)';
-          return (
-            <div
-              key={po.id}
-              className="panel"
-              style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
-            >
-              {/* Accent bar — green closed, grey cancelled, blue otherwise. */}
-              <div style={{ width: 4, flexShrink: 0, background: accent }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {/* Band 1: identity + type + status + actions */}
-                <div
-                  onClick={() =>
-                    void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })
-                  }
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    flexWrap: 'wrap',
-                    padding: '10px 14px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Link
-                    to="/purchase-orders/$id"
-                    params={{ id: po.id }}
-                    className="td-code"
-                    style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
-                    title="Open the PO detail page"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {po.code}
-                  </Link>
-                  <span className={`badge ${isJW ? 'b-amber' : isSvc ? 'b-teal' : 'b-blue'}`}>
-                    {PO_TYPE_LABELS[po.poType]}
-                  </span>
-                  <span className="fw-700" style={{ fontSize: 13 }}>
-                    {po.vendorName ?? po.vendorCodeText ?? '—'}
-                  </span>
-                  <PoStatusBadge status={po.status} />
-                  <span style={{ flex: 1 }} />
-                  <div
-                    style={{ display: 'flex', gap: 4, alignItems: 'center' }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {canEdit && po.status !== 'closed' ? (
-                      <Link
-                        to="/purchase-orders/$id/edit"
-                        params={{ id: po.id }}
-                        className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 11 }}
-                      >
-                        ✎ Edit
-                      </Link>
-                    ) : null}
-                    {/* Job Work AND Service both send material out — same DC lane. */}
-                    {canEdit && poSendsMaterialOut(po.poType) && po.status !== 'draft' ? (
-                      <Link
-                        to="/delivery-challans/new"
-                        search={{ poId: po.id }}
-                        className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 11 }}
-                      >
-                        Create DC
-                      </Link>
-                    ) : null}
-                    {po.status !== 'closed' && po.status !== 'cancelled' ? (
-                      <AssignTaskButton
-                        linkedRef={{
-                          type: 'purchase_order',
-                          id: po.id,
-                          display: `PO ${po.code}`,
-                          navPage: `/purchase-orders/${po.id}`,
-                        }}
-                        suggestedTitle={`Follow up ${po.code}`}
-                        label=""
-                      />
-                    ) : null}
-                  </div>
-                </div>
-                {/* Band 2: metric strip + meta line */}
-                <div
-                  onClick={() =>
-                    void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })
-                  }
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    flexWrap: 'wrap',
-                    padding: '0 14px 10px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div
-                    style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
-                  >
-                    <QtyBox label="Qty" value={po.totalQty} />
-                    <QtyBox
-                      label="Received"
-                      value={po.receivedQty}
-                      color={po.receivedQty > 0 ? 'var(--green)' : 'var(--text3)'}
-                      bordered
-                    />
-                    <QtyBox
-                      label="Pending"
-                      value={pending}
-                      color={pending > 0 ? 'var(--blue)' : 'var(--green)'}
-                      bordered
-                    />
-                    <QtyBox label="Lines" value={po.lineCount} bordered />
-                  </div>
-                  <div
-                    className="mono"
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--text3)',
-                      display: 'flex',
-                      gap: 6,
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <span className="text2">{fmtDate(po.poDate)}</span>
-                    <span>·</span>
-                    <span>
-                      PR{' '}
-                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                        {po.prCodeText ?? '—'}
-                      </span>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.poList}
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            emptyText={emptyText}
+            onRowClick={(po) =>
+              void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })
+            }
+            rowClassName={(po) => ROW_TINT_BY_STATUS[po.status]}
+            rowActions={(po) => rowActions(po)}
+            // The part list is fetched only for a row that is actually open —
+            // returning null for a collapsed row means PoExpandedLines (and its
+            // detail query) never mounts for it.
+            renderExpanded={(po) =>
+              expandedIds.has(po.id) ? <PoExpandedLines poId={po.id} /> : null
+            }
+            // The fit table's ▸ is the row's one expand control: it opens the
+            // line items too.
+            onToggleExpanded={(po) => toggleExpand(po.id)}
+          />
+        </Panel>
       )}
 
       <ListFooter total={total} noun="purchase order" limit={LIST_LIMIT} />

@@ -25,16 +25,18 @@
 import type { ListDeliveryChallansQuery } from '@innovic/shared';
 import { DC_STATUSES, type DcStatus } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2, Plus, Printer } from 'lucide-react';
+import { Inbox, Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
 import { useDeliveryChallansList } from '../api';
-import { DcCard } from '../components/dc-card';
+import { DC_LIST_DEFAULT_HIDDEN, dcListColumns } from '../components/dc-list-columns';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { printDispatchRegister } from '../lib/print-dispatch-register';
 import { OspAtVendorRegister } from '@/modules/osp-wip/components/osp-at-vendor-register';
@@ -101,6 +103,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
   const rows = data?.items ?? [];
+  const columns = useMemo(() => dcListColumns(), []);
 
   function onPrintRegister(): void {
     if (!data) return;
@@ -277,21 +280,60 @@ function DeliveryChallansListPage(): React.JSX.Element {
             />
           </ListHeader>
 
-          {isLoading ? (
-            <div className="panel empty-state" style={{ padding: 24 }}>
-              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-              Loading…
-            </div>
-          ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load DCs. Try again.'}
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="panel empty-state" style={{ padding: 24 }}>
-              {search.search || search.status ? 'No DCs match.' : 'No DCs yet.'}
-            </div>
+          {isError ? (
+            <PageState
+              state="error"
+              message={error instanceof Error ? error.message : 'Could not load DCs. Try again.'}
+            />
           ) : (
-            rows.map((dc) => <DcCard key={dc.id} dc={dc} />)
+            // THE shared FIT table (ADR-199). First column (DC No.) is pinned;
+            // JC No. / Drawing Rev / Transport live in the ▸ detail row by
+            // default (DC_LIST_DEFAULT_HIDDEN). Rows tint by DC status, the row
+            // click opens the DC, and the only per-row action is Receive while
+            // the DC is still out at the vendor (status === 'issued') — the same
+            // gate the card carried.
+            <Panel bodyPadding="none">
+              <DataTable
+                tableKey={TABLE_KEYS.ospOutwardDc}
+                columns={columns}
+                rows={rows}
+                loading={isLoading}
+                emptyText={search.search || search.status ? 'No DCs match.' : 'No DCs yet.'}
+                defaultHidden={DC_LIST_DEFAULT_HIDDEN}
+                onRowClick={(dc) =>
+                  void navigate({ to: '/delivery-challans/$id', params: { id: dc.id } })
+                }
+                rowClassName={(dc) =>
+                  dc.status === 'received'
+                    ? ROW_TINT.done
+                    : dc.status === 'cancelled'
+                      ? ROW_TINT.cancelled
+                      : ROW_TINT.pending
+                }
+                rowActionsWidth="1%"
+                rowActions={(dc) => (
+                  <RowActions
+                    viewTo={`/delivery-challans/${dc.id}`}
+                    renderLink={(p) => <Link {...p} />}
+                    extra={
+                      dc.status === 'issued' ? (
+                        <Link
+                          to="/delivery-challans/$id/receive"
+                          params={{ id: dc.id }}
+                          className="btn btn-ghost btn-sm btn-icon"
+                          style={{ padding: 'var(--sp-1)', color: 'var(--green2)' }}
+                          title="Receive material back from the vendor"
+                          aria-label="Receive"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Inbox size={13} />
+                        </Link>
+                      ) : undefined
+                    }
+                  />
+                )}
+              />
+            </Panel>
           )}
 
           <ListFooter
