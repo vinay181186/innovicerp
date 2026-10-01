@@ -121,5 +121,16 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       nowrap: true,
       render: (r) => <b>{r.stockAfter}</b>,
     },
+    {
+      // Shipped hidden by default (defaultHidden in stock-ledger.tsx): remarks is
+      // server-searchable, so it must be readable somewhere — it rides in the ▸.
+      header: 'Remarks',
+      id: 'remarks',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      render: (r) => r.remarks ?? '',
+      title: (r) => r.remarks ?? '',
+    },
   ];
 }

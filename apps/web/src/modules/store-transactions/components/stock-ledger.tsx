@@ -195,6 +195,7 @@ export function StockLedger(): React.JSX.Element {
           <DataTable
             tableKey={TABLE_KEYS.stockLedger}
             columns={columns}
+            defaultHidden={['remarks']}
             rows={rows}
             loading={isLoading}
             sortBy={sortBy}
