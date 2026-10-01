@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { clickRowMenuItem } from './row-menu';
 
 // Second half of the §9 rework cycle, resumed from the state the first spec
 // left on the TEST stack (its steps.json carries the document numbers):
@@ -99,13 +100,13 @@ test('QC → NC → Rework → Re-QC → Closure — part 2 (child run to closur
   });
 
   // ── 13. Run the child op: Start, Stop with 2 ──────────────────────────────
-  await opRow(page, 'Rework polish').getByRole('button', { name: /Start/ }).click();
+  await clickRowMenuItem(page, opRow(page, 'Rework polish'), /^Start Operation/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
   await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
   await popupGone(page);
   await loadJc(page, CHILD);
-  await opRow(page, 'Rework polish').getByRole('button', { name: /✓ Complete/ }).click();
+  await clickRowMenuItem(page, opRow(page, 'Rework polish'), /^Complete/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
   await page.locator('#opf-qty').fill(String(REJECT_1));
@@ -120,7 +121,7 @@ test('QC → NC → Rework → Re-QC → Closure — part 2 (child run to closur
   });
 
   // ── 14. Re-QC after rework: accept both ───────────────────────────────────
-  await opRow(page, 'DIR').getByRole('button', { name: /Inspect/ }).click();
+  await clickRowMenuItem(page, opRow(page, 'DIR'), /^Inspect/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Inspector');
   await page.locator('#opf-qty').fill(String(REJECT_1));

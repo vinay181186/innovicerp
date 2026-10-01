@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { clickRowMenuItem } from './row-menu';
 
 // QC → NC → Rework → Re-QC → Closure, exactly the worked example in §9 of
 // Innovic_ERP_QC_NC_Handling_Procedure_R2-1.pdf, driven through the deployed
@@ -226,7 +227,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
     return 'Turning (process) and DIR (qc) both listed';
   });
 
-  await opRow(page, 'Turning').getByRole('button', { name: /Start/ }).click();
+  await clickRowMenuItem(page, opRow(page, 'Turning'), /^Start Operation/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
   await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
@@ -235,10 +236,10 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
     await loadJc(page, JC);
     const body = await page.locator('body').innerText();
     if (!/Running|✓ Complete/.test(body)) throw new Error('op did not show as running');
-    return 'Op 1 running; row now offers ✚ Log';
+    return 'Op 1 running; row ⋯ now offers Complete';
   });
 
-  await opRow(page, 'Turning').getByRole('button', { name: /✓ Complete/ }).click();
+  await clickRowMenuItem(page, opRow(page, 'Turning'), /^Complete/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
   await page.locator('#opf-qty').fill(String(ORDER_QTY));
@@ -252,7 +253,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   });
 
   // ── 4. QC: accept 8, reject 2 → NC auto-raised ────────────────────────────
-  await opRow(page, 'DIR').getByRole('button', { name: /Inspect/ }).click();
+  await clickRowMenuItem(page, opRow(page, 'DIR'), /^Inspect/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Inspector');
   await page.locator('#opf-qty').fill(String(ACCEPT_1));
@@ -388,13 +389,13 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   });
 
   // ── 10. Run the child: start, stop with 2, QC accept 2 ────────────────────
-  await opRow(page, 'Rework polish').getByRole('button', { name: /Start/ }).click();
+  await clickRowMenuItem(page, opRow(page, 'Rework polish'), /^Start Operation/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
   await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
   await popupGone(page);
   await loadJc(page, docs['CHILD_JC']!);
-  await opRow(page, 'Rework polish').getByRole('button', { name: /✓ Complete/ }).click();
+  await clickRowMenuItem(page, opRow(page, 'Rework polish'), /^Complete/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
   await page.locator('#opf-qty').fill(String(REJECT_1));
@@ -406,7 +407,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
     return 'child op logged';
   });
 
-  await opRow(page, 'DIR').getByRole('button', { name: /Inspect/ }).click();
+  await clickRowMenuItem(page, opRow(page, 'DIR'), /^Inspect/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Inspector');
   await page.locator('#opf-qty').fill(String(REJECT_1));

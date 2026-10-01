@@ -3,10 +3,10 @@
 // Sortable by age / due date / customer.
 
 import { type QcCommandQueueRow, opSrNo } from '@innovic/shared';
-import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { RowMenu } from '@/ui/data';
 
 type Sort = 'age' | 'due' | 'customer';
 const SORTS: { id: Sort; label: string }[] = [
@@ -117,7 +117,7 @@ export function QueueTab({
                     <th className="td-ctr">Attempts</th>
                     <th>Due Date</th>
                     <th>Assigned To</th>
-                    {showActions ? <th>Actions</th> : null}
+                    {showActions ? <th aria-label="Actions" /> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -233,34 +233,29 @@ export function QueueTab({
                           )}
                         </td>
                         {showActions ? (
-                          <td>
-                            <div style={{ display: 'flex', gap: 4 }}>
-                              {canPickUp ? (
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost btn-sm"
-                                  style={{ fontSize: 11, color: 'var(--green2)' }}
-                                  disabled={busyId === it.jcOpId}
-                                  onClick={() => onPickUp(it.jcOpId)}
-                                >
-                                  {busyId === it.jcOpId ? (
-                                    <Loader2 className="inline h-3 w-3 animate-spin" />
-                                  ) : (
-                                    '✋ Pick Up'
-                                  )}
-                                </button>
-                              ) : null}
-                              {canAssign ? (
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost btn-sm"
-                                  style={{ fontSize: 11, color: 'var(--blue)' }}
-                                  onClick={() => onAssign(it)}
-                                >
-                                  👤 Assign
-                                </button>
-                              ) : null}
-                            </div>
+                          <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                            <RowMenu
+                              items={[
+                                {
+                                  key: 'pick-up',
+                                  label: 'Pick Up',
+                                  icon: 'check',
+                                  group: 'workflow',
+                                  hidden: !canPickUp,
+                                  // The pick-up for this op is already on its way.
+                                  disabledReason: busyId === it.jcOpId ? 'Working…' : undefined,
+                                  onSelect: () => onPickUp(it.jcOpId),
+                                },
+                                {
+                                  key: 'assign',
+                                  label: 'Assign',
+                                  icon: 'user-round',
+                                  group: 'workflow',
+                                  hidden: !canAssign,
+                                  onSelect: () => onAssign(it),
+                                },
+                              ]}
+                            />
                           </td>
                         ) : null}
                       </tr>

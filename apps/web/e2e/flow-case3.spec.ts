@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
+import { clickRowMenuItem } from './row-menu';
 import { createSO, dispatch, invoice, ITEM_CODE, makeGuard, makeLog, snap } from './case-helpers';
 
 // CASE 3 — FULL OUTSOURCE (plan_type=full_outsource): SO → Plan(Full Outsource)
@@ -107,8 +108,9 @@ test('CASE 3 — full outsource SO→…→invoice', async ({ page }) => {
   // 6 — Incoming QC
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2800);
-  const qcRow = page.locator('table tbody tr').filter({ hasText: ITEM_CODE }).filter({ has: page.getByRole('link', { name: /Inspect/i }) }).first();
-  await qcRow.getByRole('link', { name: /Inspect/i }).click();
+  // Only pending rows carry the ⋯ row menu; Inspect is its item.
+  const qcRow = page.locator('table tbody tr').filter({ hasText: ITEM_CODE }).filter({ has: page.getByRole('button', { name: 'Actions' }) }).first();
+  await clickRowMenuItem(page, qcRow, /^Inspect/);
   await page.waitForTimeout(2000);
   await page.locator('input[type="number"]').first().fill(String(QTY));
   await page.getByRole('button', { name: /Submit Inspection/i }).click();

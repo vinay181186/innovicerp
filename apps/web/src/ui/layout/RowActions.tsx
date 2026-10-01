@@ -1,8 +1,10 @@
-// RowActions — the ONE row-action cluster, last column of every table.
+// RowActions — the ONE row-action control, last column of every table.
 //
-// Fixed order: View · Edit · (extra) · Delete. Lucide icons in sheet rows
-// (13px, named on hover via title), text buttons in nested line tables
-// (`labelled`). Every button stops the row click from firing underneath it.
+// In a sheet row it is ONE ⋯ button (ui/data/RowMenu, owner spec
+// 2026-10-01): View (eye) · Edit (pencil) · the caller's `items` · Delete
+// last, in red, after a line. `labelled` (nested line tables and cards) keeps
+// the text buttons View / Edit / Del side by side. Every control stops the row
+// click from firing underneath it.
 //
 // Delete NEVER uses window.confirm and never deletes on the first click. Two
 // sanctioned shapes:
@@ -12,8 +14,8 @@
 //   2. built-in      — pass `deleteConfirm` and this component raises the
 //                      shared ConfirmDialog itself, calling `onDelete` only
 //                      once the user confirms
-// In a sheet the Delete button is a red icon on white, never white-on-red:
-// a filled icon disappears against the sheet's paper-coloured buttons.
+// In the ⋯ menu Delete is the last item, red, after a line; its label is the
+// word the confirm button will say ("Move to Trash" / "Delete").
 
 // NAVIGATION IS A LINK, NOT A CLICK. View and Edit go to a route, so they take
 // `viewTo` / `editTo` + `renderLink` and render a real anchor — ctrl-click,
@@ -25,7 +27,8 @@
 // `onView` / `onEdit` stay for a row action that is not navigation.
 
 import { useState, type ReactNode } from 'react';
-import { Icon } from '../core/Icon';
+import { RowMenu } from '../data/RowMenu';
+import type { RowMenuItem } from '../data/row-menu-logic';
 import { ConfirmDialog } from '../feedback/ConfirmDialog';
 import { LinkSlot, type RenderLink } from './link-slot';
 
@@ -63,7 +66,16 @@ export interface RowActionsProps {
   /** Greys out Delete — e.g. `mutation.isPending` while another row deletes.
    *  A disabled button SAYS no; an ignored click says nothing at all. */
   deleteDisabled?: boolean | undefined;
-  /** Extra action buttons (Assign, + Line) — always before Delete. */
+  /**
+   * More ⋯ menu items (Print, Assign Task, workflow steps …), merged after
+   * View / Edit and before Delete; each item's `group` places it.
+   */
+  items?: RowMenuItem[] | undefined;
+  /**
+   * @deprecated Move these buttons into `items`. A ReactNode cannot go inside
+   * the ⋯ menu, so it is drawn beside the ⋯ — and dropped when `items` is
+   * given. Still rendered as before in `labelled` mode.
+   */
   extra?: ReactNode | undefined;
   /** Text buttons (View / Edit / Del) for nested line tables and cards. */
   labelled?: boolean | undefined;
@@ -72,7 +84,6 @@ export interface RowActionsProps {
 type Kind = 'view' | 'edit' | 'delete';
 
 const LABEL: Record<Kind, string> = { view: 'View', edit: 'Edit', delete: 'Delete' };
-const TITLE: Record<Kind, string> = { view: 'View', edit: 'Edit', delete: 'Delete' };
 
 export function RowActions({
   viewTo,
@@ -83,64 +94,38 @@ export function RowActions({
   onDelete,
   deleteConfirm,
   deleteDisabled = false,
+  items,
   extra,
   labelled = false,
 }: RowActionsProps): React.JSX.Element {
   const [confirming, setConfirming] = useState(false);
 
-  // One look, two elements: a link and a button that are indistinguishable on
-  // screen, so a row's View can navigate without changing how the row reads.
+  // `labelled` text buttons. One look, two elements: a link and a button that
+  // are indistinguishable on screen, so View can navigate without changing
+  // how the row reads.
   const classOf = (kind: Kind): string =>
-    `btn btn-sm ${kind === 'delete' ? 'btn-danger' : 'btn-ghost'}${labelled ? '' : ' btn-icon'}`;
-
-  const styleOf = (kind: Kind): React.CSSProperties | undefined =>
-    labelled
-      ? undefined
-      : {
-          // The reference's tight 4px box. .btn-icon's 0 8px is sized for
-          // a toolbar button; in a sheet row it widens the Action column
-          // past spec on every list.
-          padding: 'var(--sp-1)',
-          ...(kind === 'delete'
-            ? {
-                color: 'var(--red2)',
-                background: 'var(--bg2)',
-                borderColor: 'var(--border3)',
-              }
-            : null),
-        };
-
-  const face = (kind: Kind): ReactNode =>
-    labelled ? (
-      LABEL[kind]
-    ) : (
-      <Icon name={kind === 'view' ? 'eye' : kind === 'edit' ? 'pencil' : 'trash-2'} size={13} />
-    );
+    `btn btn-sm ${kind === 'delete' ? 'btn-danger' : 'btn-ghost'}`;
 
   const button = (kind: Kind, fn?: () => void, disabled = false): ReactNode => {
     if (!fn) return null;
     return (
       <button
         type="button"
-        title={TITLE[kind]}
-        aria-label={TITLE[kind]}
+        title={LABEL[kind]}
         className={classOf(kind)}
-        style={styleOf(kind)}
         disabled={disabled}
         onClick={(e) => {
           e.stopPropagation();
           fn();
         }}
       >
-        {face(kind)}
+        {LABEL[kind]}
       </button>
     );
   };
 
-  // `title` is the anchor's accessible name here (the Icon is decorative), so
-  // the link reads exactly like the button it replaces. `buttonReset={false}`:
-  // .btn already declares display, height, padding and font — the reset would
-  // flatten all four (see link-slot.tsx).
+  // `buttonReset={false}`: .btn already declares display, height, padding and
+  // font — the reset would flatten all four (see link-slot.tsx).
   const link = (kind: Kind, to?: string): ReactNode => {
     if (to === undefined) return null;
     return (
@@ -148,11 +133,10 @@ export function RowActions({
         to={to}
         renderLink={renderLink}
         className={classOf(kind)}
-        style={styleOf(kind)}
-        title={TITLE[kind]}
+        title={LABEL[kind]}
         buttonReset={false}
       >
-        {face(kind)}
+        {LABEL[kind]}
       </LinkSlot>
     );
   };
@@ -165,15 +149,68 @@ export function RowActions({
         }
     : undefined;
 
+  // The ⋯ menu's items, in the old cluster's order. Delete's label is the
+  // word the confirm dialog's button will say.
+  const deleteLabel = deleteConfirm
+    ? (deleteConfirm.confirmLabel ?? (deleteConfirm.title ? 'Delete' : 'Move to Trash'))
+    : 'Delete';
+  const navItem = (kind: 'view' | 'edit', to?: string, fn?: () => void): RowMenuItem[] =>
+    to !== undefined || fn
+      ? [
+          {
+            key: kind,
+            label: LABEL[kind],
+            icon: kind === 'view' ? 'eye' : 'pencil',
+            ...(to !== undefined ? { to } : { onSelect: fn }),
+          },
+        ]
+      : [];
+  const menuItems: RowMenuItem[] = labelled
+    ? []
+    : [
+        ...navItem('view', viewTo, onView),
+        ...navItem('edit', editTo, onEdit),
+        ...(items ?? []),
+        ...(onDelete
+          ? [
+              {
+                key: 'delete',
+                label: deleteLabel,
+                icon: 'trash-2' as const,
+                group: 'danger' as const,
+                disabledReason: deleteDisabled ? 'Working…' : undefined,
+                // Without a confirm the delete's own Promise is handed to the
+                // menu, which stays busy until it settles.
+                onSelect: deleteConfirm ? () => setConfirming(true) : onDelete,
+              },
+            ]
+          : []),
+      ];
+
   return (
     <div
-      style={{ display: 'flex', gap: 'var(--sp-1)', justifyContent: 'center', flexWrap: 'nowrap' }}
+      style={{
+        display: 'flex',
+        gap: 'var(--sp-1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        flexWrap: 'nowrap',
+      }}
       onClick={(e) => e.stopPropagation()}
     >
-      {link('view', viewTo) ?? button('view', onView)}
-      {link('edit', editTo) ?? button('edit', onEdit)}
-      {extra}
-      {button('delete', deleteClick, deleteDisabled)}
+      {labelled ? (
+        <>
+          {link('view', viewTo) ?? button('view', onView)}
+          {link('edit', editTo) ?? button('edit', onEdit)}
+          {extra}
+          {button('delete', deleteClick, deleteDisabled)}
+        </>
+      ) : (
+        <>
+          {items ? null : extra}
+          <RowMenu items={menuItems} renderLink={renderLink} />
+        </>
+      )}
       {confirming && deleteConfirm ? (
         <ConfirmDialog
           title={deleteConfirm.title ?? 'Move this record to Trash?'}
@@ -181,9 +218,7 @@ export function RowActions({
             deleteConfirm.message ??
             (deleteConfirm.title ? 'This cannot be undone.' : 'You can restore it from Trash.')
           }
-          confirmLabel={
-            deleteConfirm.confirmLabel ?? (deleteConfirm.title ? 'Delete' : 'Move to Trash')
-          }
+          confirmLabel={deleteLabel}
           cancelLabel={deleteConfirm.cancelLabel ?? 'Cancel'}
           tone="danger"
           onCancel={() => setConfirming(false)}

@@ -3,12 +3,12 @@
 import type { RunningOp, StopOpInput } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Square } from 'lucide-react';
 import { useState } from 'react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { RowMenu } from '@/ui/data';
 import { useStopOp } from '../api';
 import { RunningOpStatusBadge } from './status-badge';
 import { StopOpModal } from './stop-op-modal';
@@ -136,7 +136,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                 <th>Actual Machine</th>
                 <th>Operator</th>
                 <th>Started</th>
-                <th>Action</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -180,20 +180,23 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                     <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {fmtDateAndTime(r.startDate, r.startTime)}
                     </td>
-                    <td>
-                      {canOpEntry ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          disabled={stop.isPending}
-                          onClick={() => {
-                            setStopError(null);
-                            setStopRow(r);
-                          }}
-                        >
-                          <Square size={13} /> Stop Operation
-                        </button>
-                      ) : null}
+                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'stop',
+                            label: 'Stop Operation',
+                            icon: 'square',
+                            group: 'workflow',
+                            hidden: !canOpEntry,
+                            disabledReason: stop.isPending ? 'Stopping…' : undefined,
+                            onSelect: () => {
+                              setStopError(null);
+                              setStopRow(r);
+                            },
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))

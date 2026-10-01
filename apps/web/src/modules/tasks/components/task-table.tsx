@@ -1,12 +1,13 @@
 // The Task Board table (ADR-176, approved board). Columns: Task# | Title |
-// <Person> | Related To | Priority | Due Date | Status | Last Update | Actions.
+// <Person> | Related To | Priority | Due Date | Status | Last Update | ⋯.
 // The person column is the OTHER party of the current view — who assigned it
 // (Inbox), who it went to (Outbox / All), "Me" on My To-Do. Rows open the
-// detail (no separate View button); the small action buttons appear only when the server says the
+// detail (no separate View item); the ⋯ menu lists an action only when the server says the
 // caller may take that action on that row.
 
 import type { TaskRow, TaskView } from '@innovic/shared';
 import { TASK_PRIORITY_LABELS } from '@innovic/shared';
+import { RowMenu } from '@/ui/data';
 import { fmtTaskDate, fmtTaskDateTime, isOpenTask, priorityColor, statusPill } from '../lib/format';
 import { RelatedRefLink } from './related-ref-link';
 
@@ -23,28 +24,6 @@ export function personName(t: TaskRow, view: TaskView): string {
   if (view === 'inbox') return t.assignedByName ?? t.createdByName ?? '—';
   if (view === 'todo') return 'Me';
   return t.assignedToName ?? '—';
-}
-
-function IconBtn({
-  title,
-  onClick,
-  children,
-}: {
-  title: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      className="btn btn-ghost btn-sm"
-      style={{ fontSize: 11, padding: '3px 6px' }}
-      title={title}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
 }
 
 export function TaskTableRow({
@@ -126,32 +105,42 @@ export function TaskTableRow({
       <td className="mono text3" style={{ fontSize: 11 }}>
         {fmtTaskDateTime(t.updatedAt)}
       </td>
-      <td>
-        <div
-          style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {p.canUpdateStatus && open ? (
-            <IconBtn title="Update status" onClick={() => onAction('status', t)}>
-              ✏
-            </IconBtn>
-          ) : null}
-          {p.canComplete && open ? (
-            <IconBtn title="Mark completed" onClick={() => onAction('complete', t)}>
-              ✅
-            </IconBtn>
-          ) : null}
-          {p.canReassign && open ? (
-            <IconBtn title="Reassign" onClick={() => onAction('reassign', t)}>
-              👤
-            </IconBtn>
-          ) : null}
-          {p.canCancel && open ? (
-            <IconBtn title="Cancel task" onClick={() => onAction('cancel', t)}>
-              ✖
-            </IconBtn>
-          ) : null}
-        </div>
+      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+        <RowMenu
+          items={[
+            {
+              key: 'status',
+              label: 'Update Status',
+              icon: 'pencil',
+              hidden: !(p.canUpdateStatus && open),
+              onSelect: () => onAction('status', t),
+            },
+            {
+              key: 'complete',
+              label: 'Mark Completed',
+              icon: 'check',
+              group: 'workflow',
+              hidden: !(p.canComplete && open),
+              onSelect: () => onAction('complete', t),
+            },
+            {
+              key: 'reassign',
+              label: 'Reassign',
+              icon: 'user-round',
+              group: 'assign',
+              hidden: !(p.canReassign && open),
+              onSelect: () => onAction('reassign', t),
+            },
+            {
+              key: 'cancel',
+              label: 'Cancel Task',
+              icon: 'x',
+              group: 'danger',
+              hidden: !(p.canCancel && open),
+              onSelect: () => onAction('cancel', t),
+            },
+          ]}
+        />
       </td>
     </tr>
   );
@@ -183,7 +172,7 @@ export function TaskTable({
               <th>Due Date</th>
               <th>Task Status</th>
               <th>Last Update</th>
-              <th>Actions</th>
+              <th aria-label="Actions" />
             </tr>
           </thead>
           <tbody>

@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { ListHeader } from '@/ui/layout';
 import { useDailyReportList } from '../api';
 import { EditReportModal, NewReportModal, ViewReportModal } from '../components/report-modals';
@@ -133,7 +134,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
                 <th>Shift</th>
                 <th className="th-num">Tasks</th>
                 <th className="th-num">Hours</th>
-                <th>Actions</th>
+                <th className="td-ctr" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -159,19 +160,18 @@ function DailyTaskReportsPage(): React.JSX.Element {
                     <td className="td-num mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {r.totalHours.toFixed(1)}h
                     </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 3 }} onClick={(e) => e.stopPropagation()}>
-                        {r.canEdit ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 11 }}
-                            onClick={() => setModal({ kind: 'edit', id: r.id })}
-                          >
-                            ✏ Edit
-                          </button>
-                        ) : null}
-                      </div>
+                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'edit',
+                            label: 'Edit',
+                            icon: 'pencil',
+                            hidden: !r.canEdit,
+                            onSelect: () => setModal({ kind: 'edit', id: r.id }),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))

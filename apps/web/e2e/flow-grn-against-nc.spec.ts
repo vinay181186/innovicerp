@@ -20,6 +20,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { type Locator, type Page, expect, test } from '@playwright/test';
+import { clickRowMenuItem, hasRowMenuItem } from './row-menu';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -397,18 +398,17 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     expect(ops, 'Turning listed').toMatch(/Turning/);
     expect(ops, 'DIR QC op appended').toMatch(/DIR/);
 
-    const startBtn = opRow(page, 'Turning').getByRole('button', { name: /Start/ });
-    if (await startBtn.count()) {
-      await startBtn.click();
+    // Row actions live in the ⋯ menu; a greyed item counts as "not offered".
+    if (await hasRowMenuItem(page, opRow(page, 'Turning'), /^Start Operation/)) {
+      await clickRowMenuItem(page, opRow(page, 'Turning'), /^Start Operation/);
       await page.waitForTimeout(1200);
       await fillEntryHeader(page, 'E2E_ Operator');
       await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
       await popupGone(page);
       await loadJc(page, JC);
     }
-    const logBtn = opRow(page, 'Turning').getByRole('button', { name: /✓ Complete/ });
-    if (await logBtn.count()) {
-      await logBtn.click();
+    if (await hasRowMenuItem(page, opRow(page, 'Turning'), /^Complete/)) {
+      await clickRowMenuItem(page, opRow(page, 'Turning'), /^Complete/);
       await page.waitForTimeout(1200);
       await fillEntryHeader(page, 'E2E_ Operator');
       await page.locator('#opf-qty').fill(String(ORDER_QTY));
@@ -419,7 +419,7 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     }
     log('C0: Turning started + stopped with ' + ORDER_QTY + ' made');
 
-    await opRow(page, 'DIR').getByRole('button', { name: /Inspect/ }).click();
+    await clickRowMenuItem(page, opRow(page, 'DIR'), /^Inspect/);
     await page.waitForTimeout(1200);
     await fillEntryHeader(page, 'E2E_ Inspector');
     await page.locator('#opf-qty').fill(String(QC_OK));

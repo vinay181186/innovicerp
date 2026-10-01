@@ -19,12 +19,13 @@ import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
+import { RowMenu } from '@/ui/data';
 import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoiceableLines, useJwInvoicesList } from '../api';
 import { CancelJwInvoiceModal } from './cancel-jw-invoice-modal';
-import { PrintJwInvoiceButton } from './print-jw-invoice-button';
+import { usePrintJwInvoice } from './use-print-jw-invoice';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
 // exactly the cap this list already ran under, so nothing that was visible
@@ -97,6 +98,10 @@ export function JwInvoiceView({
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
+  // Print: no permission gate — anyone who can see the row can print it, as
+  // on the DC detail page. Money a viewer may not see is already gone from the
+  // row AND the printed sheet (printed with money suppressed, not blocked).
+  const printInvoice = usePrintJwInvoice(!priceHidden);
 
   return (
     <div>
@@ -157,22 +162,14 @@ export function JwInvoiceView({
                   {/* R5 (ADR-194): issued | cancelled. A cancelled invoice
                       reads visibly cancelled and offers no Cancel again. */}
                   <th>Status</th>
-                  {/* Print. No new permission gate: anyone who can see the row
-                      can print it, exactly as on the DC detail page. What a
-                      viewer without price rights may not see is already gone
-                      from the row AND from the printed sheet — the invoice
-                      prints with the money suppressed, not blocked. */}
-                  <th>Print</th>
-                  {canCancel ? <th className="td-ctr">Actions</th> : null}
+                  {/* The ⋯ row menu: Print · History · Cancel Invoice. */}
+                  <th className="td-ctr" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={priceHidden ? (canCancel ? 10 : 9) : canCancel ? 15 : 14}
-                      className="empty-state"
-                    >
+                    <td colSpan={priceHidden ? 9 : 14} className="empty-state">
                       {term ? 'No JW Invoices match.' : 'No JW Invoices yet.'}
                     </td>
                   </tr>
@@ -248,35 +245,35 @@ export function JwInvoiceView({
                         {r.status === 'cancelled' ? 'Cancelled' : 'Issued'}
                       </span>
                     </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <PrintJwInvoiceButton invoice={r} priceVisible={!priceHidden} />
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        onClick={() => setHistoryTarget({ id: r.id, code: r.code })}
-                        title="Who did what on this invoice"
-                      >
-                        History
-                      </button>
+                    <td className="td-ctr">
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'print',
+                            label: 'Print',
+                            icon: 'printer',
+                            onSelect: () => printInvoice(r),
+                          },
+                          {
+                            key: 'history',
+                            label: 'History',
+                            icon: 'activity',
+                            onSelect: () => setHistoryTarget({ id: r.id, code: r.code }),
+                          },
+                          {
+                            // R5 (ADR-194): a cancelled invoice offers no Cancel.
+                            key: 'cancel',
+                            label: 'Cancel Invoice',
+                            icon: 'x',
+                            group: 'danger',
+                            hidden: !canCancel,
+                            disabledReason:
+                              r.status === 'cancelled' ? 'Already Cancelled' : undefined,
+                            onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
+                          },
+                        ]}
+                      />
                     </td>
-                    {canCancel ? (
-                      <td className="td-ctr">
-                        {r.status === 'cancelled' ? (
-                          <span className="text3" style={{ fontSize: 11 }}>
-                            —
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            style={{ color: 'var(--red2)' }}
-                            onClick={() => setCancelTarget({ id: r.id, code: r.code })}
-                          >
-                            Cancel
-                          </button>
-                        )}
-                      </td>
-                    ) : null}
                   </tr>
                 ))}
               </tbody>

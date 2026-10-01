@@ -29,7 +29,9 @@ import { addDaysLocal, fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { ListHeader } from '@/ui/layout';
+import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { useMachineLoading } from '@/modules/machine-loading/api';
 import { useProductionDashboard } from '../api';
 
@@ -197,7 +199,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                       <th style={{ color: 'var(--amber2)' }}>Available</th>
                       <th>Pending Hrs</th>
                       <th>Op Status</th>
-                      {canOpEntry ? <th>Action</th> : null}
+                      <th aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody>
@@ -563,7 +565,10 @@ function ReadyRow({
   // half), none yet → ▶ Start. Only for a machine op with no session running;
   // an OSP op (no machine) is booked from its DC, not from Op Entry.
   const hasMachine = Boolean(op.machineCode || op.machines.length);
-  const showLink = hasMachine && op.available > 0 && op.computedStatus !== 'running';
+  const logging = op.completedQty > 0;
+  // Running / nothing waiting → the server refuses, so the item is greyed.
+  const running = op.computedStatus === 'running';
+  const startReason = running || op.available > 0 ? undefined : 'Nothing Pending';
   return (
     <tr>
       {/* DESTINATION CHANGED (user request, 2026-09-11): this code used to open
@@ -633,37 +638,30 @@ function ReadyRow({
       <td>
         <OpStatusBadge status={op.computedStatus} />
       </td>
-      {canOpEntry ? (
-        <td style={{ whiteSpace: 'nowrap' }}>
-          {showLink ? (
-            op.completedQty > 0 ? (
-              <Link
-                to="/op-entry"
-                search={{ jc: op.jobCardCode, op: op.jcOpId, mode: 'complete' }}
-                className="btn btn-sm"
-                style={{
-                  background: 'var(--green3)',
-                  border: '1px solid var(--green2)',
-                  color: 'var(--green2)',
-                  fontSize: 11,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                ✚ Log Op
-              </Link>
-            ) : (
-              <Link
-                to="/op-entry"
-                search={{ jc: op.jobCardCode, op: op.jcOpId, mode: 'start' }}
-                className="btn btn-sm"
-                style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-              >
-                ▶ Start
-              </Link>
-            )
-          ) : null}
-        </td>
-      ) : null}
+      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+        <RowMenu
+          renderLink={renderJcOpsLink}
+          items={[
+            {
+              key: 'op-entry',
+              label: logging ? 'Log Op' : 'Start Operation',
+              icon: logging ? 'plus' : 'play',
+              group: 'workflow',
+              hidden: !canOpEntry || !hasMachine || running,
+              disabledReason: startReason,
+              ...(startReason
+                ? {}
+                : {
+                    to: `/op-entry?${new URLSearchParams({
+                      jc: op.jobCardCode,
+                      op: op.jcOpId,
+                      mode: logging ? 'complete' : 'start',
+                    }).toString()}`,
+                  }),
+            },
+          ]}
+        />
+      </td>
     </tr>
   );
 }

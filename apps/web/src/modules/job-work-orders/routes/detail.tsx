@@ -7,7 +7,7 @@ import {
   SO_DOC_CATEGORY_LABELS,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
@@ -26,6 +26,7 @@ import {
 } from '@/modules/jwso-documents/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { useJobWorkOrder } from '../api';
@@ -289,7 +290,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 )}
                 <th>Due Date</th>
                 <th>JWSO Status</th>
-                {canShortCloseAction ? <th className="td-ctr">Actions</th> : null}
+                {canShortCloseAction ? <th aria-label="Actions" /> : null}
               </tr>
             </thead>
             <tbody>
@@ -464,7 +465,7 @@ function JwDocumentsPanel(props: {
               <th>Document Type</th>
               <th>Category</th>
               <th>Uploaded By</th>
-              <th />
+              <th aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -487,7 +488,9 @@ function JwDocumentsPanel(props: {
                   file={f}
                   canDelete={props.canDelete}
                   onView={onView}
-                  onDelete={(id) => del.mutate(id)}
+                  onDelete={async (id) => {
+                    await del.mutateAsync(id);
+                  }}
                   deleting={del.isPending}
                 />
               ))
@@ -520,7 +523,7 @@ function DocRow(props: {
   file: JwDocumentFile;
   canDelete: boolean;
   onView: (file: JwDocumentFile) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
   deleting: boolean;
 }): React.JSX.Element {
   const { file: f } = props;
@@ -545,18 +548,23 @@ function DocRow(props: {
       <td className="text3" style={{ fontSize: 11 }}>
         {f.uploadedByText ?? '—'}
       </td>
-      <td>
-        {props.canDelete ? (
-          <button
-            type="button"
-            className="btn btn-danger btn-sm btn-icon"
-            onClick={() => props.onDelete(f.id)}
-            disabled={props.deleting}
-            aria-label={`Delete ${f.fileName}`}
-          >
-            <Trash2 size={12} />
-          </button>
-        ) : null}
+      <td className="td-ctr">
+        {/* ⋯ — Delete removes the file at once, as the old button did; greyed
+            while another delete is still running. */}
+        <RowMenu
+          label={`Actions for ${f.fileName}`}
+          items={[
+            {
+              key: 'delete',
+              label: 'Delete',
+              icon: 'trash-2',
+              group: 'danger',
+              hidden: !props.canDelete,
+              disabledReason: props.deleting ? 'Deleting…' : undefined,
+              onSelect: () => props.onDelete(f.id),
+            },
+          ]}
+        />
       </td>
     </tr>
   );
@@ -572,14 +580,18 @@ function LineRow(props: {
   const { line: l, priceHidden, onPreview, canShortClose, onShortClose } = props;
   const drawingFilePath = l.drawingFilePath ?? null;
   // R6 (ADR-194): an OPEN line with an unmet balance can be short-closed; a line
-  // already short-closed shows the badge and offers no action.
+  // already short-closed shows the badge and its Short Close is greyed.
   const shortClosed = Boolean(l.shortClosedAt);
-  const canOfferShortClose =
-    canShortClose &&
-    !shortClosed &&
-    l.status !== 'closed' &&
-    l.status !== 'cancelled' &&
-    l.returnedQty < l.orderQty;
+  // Why the server would refuse a short close for this line, or undefined.
+  const shortCloseBlock = shortClosed
+    ? 'Already Short Closed'
+    : l.status === 'closed'
+      ? 'Line closed'
+      : l.status === 'cancelled'
+        ? 'Line cancelled'
+        : l.returnedQty >= l.orderQty
+          ? 'Fully returned'
+          : undefined;
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>
@@ -658,21 +670,21 @@ function LineRow(props: {
       </td>
       {canShortClose ? (
         <td className="td-ctr">
-          {canOfferShortClose ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ color: 'var(--amber2)', fontSize: 11 }}
-              onClick={onShortClose}
-              title="Close this line with its balance left unmet"
-            >
-              Short Close
-            </button>
-          ) : (
-            <span className="text3" style={{ fontSize: 11 }}>
-              —
-            </span>
-          )}
+          {/* ⋯ — Short Close closes the line with its balance left unmet;
+              greyed with the reason the server would refuse it. */}
+          <RowMenu
+            label={`Actions for line ${l.lineNo}`}
+            items={[
+              {
+                key: 'short-close',
+                label: 'Short Close',
+                icon: 'x',
+                group: 'workflow',
+                disabledReason: shortCloseBlock,
+                onSelect: onShortClose,
+              },
+            ]}
+          />
         </td>
       ) : null}
     </tr>

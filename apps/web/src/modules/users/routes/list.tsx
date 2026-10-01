@@ -45,7 +45,6 @@ import {
   type UserRole,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Lock } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -403,28 +402,27 @@ function UsersListPage(): React.JSX.Element {
                 // middle-click still open a new tab. There is no View (no
                 // detail page) and no Delete (Supabase Auth owns the account).
                 editTo={`/users/${u.id}/edit`}
-                renderLink={(p) => <Link {...p} />}
-                extra={
-                  // The Access shortcut is this screen's own action, not one of
-                  // the three RowActions knows about, so it comes in through
-                  // `extra` — still a real <Link>, carrying `configure=<id>` so
-                  // Access Control opens straight onto this person.
-                  <Link
-                    to="/access-control"
-                    search={{ configure: u.id }}
-                    className="btn btn-ghost btn-sm btn-icon"
-                    style={{ padding: 'var(--sp-1)' }}
-                    title="Access"
-                    aria-label="Access"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {/* The padlock is the app's access glyph (users/routes/edit.tsx,
-                        access-control, trash, backup). The Icon set carries no
-                        lock, and swapping in a different glyph on one screen
-                        would break that association. */}
-                    <Lock size={13} />
-                  </Link>
-                }
+                // `/access-control?configure=<id>` is split back into path +
+                // search so the router gets a real search param.
+                renderLink={(p) => {
+                  const [path = p.to, qs] = p.to.split('?');
+                  return qs ? (
+                    <Link {...p} to={path} search={Object.fromEntries(new URLSearchParams(qs))} />
+                  ) : (
+                    <Link {...p} />
+                  );
+                }}
+                // ⋯ menu: Edit · Access. Access is still a real link, carrying
+                // `configure=<id>` so Access Control opens straight onto this
+                // person (padlock = the app's access glyph).
+                items={[
+                  {
+                    key: 'access',
+                    label: 'Access',
+                    icon: 'lock',
+                    to: `/access-control?configure=${encodeURIComponent(u.id)}`,
+                  },
+                ]}
               />
             )}
           />

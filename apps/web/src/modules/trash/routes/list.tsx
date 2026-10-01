@@ -9,13 +9,14 @@
 // count only the matching documents.
 
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Lock, RotateCcw } from 'lucide-react';
+import { Loader2, Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import { SearchInput } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
@@ -209,7 +210,7 @@ function TrashListPage(): React.JSX.Element {
                   <th>Document Type</th>
                   <th>Document</th>
                   <th>Deleted By</th>
-                  <th>Actions</th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -239,15 +240,19 @@ function TrashListPage(): React.JSX.Element {
                       <td className="text3" style={{ fontSize: 11 }}>
                         {it.deletedByName ?? '—'}
                       </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={restore.isPending}
-                          onClick={() => setRestoring(it)}
-                        >
-                          <RotateCcw size={12} /> Restore
-                        </button>
+                      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                        <RowMenu
+                          items={[
+                            {
+                              key: 'restore',
+                              label: 'Restore',
+                              icon: 'refresh-cw',
+                              // As before: no second Restore while one is saving.
+                              disabledReason: restore.isPending ? 'Restoring…' : undefined,
+                              onSelect: () => setRestoring(it),
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))

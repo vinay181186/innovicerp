@@ -9,10 +9,10 @@
 // machineId), so the JC No. column legacy leads with would be constant here and
 // is omitted. Closing that gap needs a data-layer change, not a markup change.
 //
-// The ACTION column is the point of this table now. The entry fields used to
+// The ⋯ column is the point of this table now. The entry fields used to
 // sit permanently beside it, belonging to whichever row happened to be
 // selected — which is not something you can see while typing a quantity. Each
-// row therefore carries its own button, and pressing it opens the entry popup
+// row therefore carries its own ⋯ menu, and its item opens the entry popup
 // headed by that job card and that operation. Clicking anywhere else on the row
 // still just selects it, which is what drives the Machine-wise output / Recent
 // log panel underneath.
@@ -21,6 +21,8 @@ import type { JcOpEnriched } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import type { IconName } from '@/ui/core';
+import { RowMenu } from '@/ui/data';
 import type { OpEntryModalTarget } from './op-entry-modal';
 import { JcOpStatusBadge } from './status-badge';
 
@@ -40,8 +42,8 @@ const OP_TYPE_LABEL: Record<string, string> = {
   qc: 'QC',
 };
 
-/** What the row's button should say, or null when this operation has no action
- *  the operator can perform right now.
+/** The row's ⋯ menu item, or null when this operation offers the user no
+ *  action at all (an outsource op, or one they have no right to log).
  *
  *  Same rule as the Job Card detail page (job-cards/components/jc-op-actions.tsx
  *  → JcOpFooter), deliberately — the two screens show the same operations and
@@ -49,16 +51,15 @@ const OP_TYPE_LABEL: Record<string, string> = {
  *
  *    • An outsource op gets nothing here. It moves through PR → PO → DC →
  *      Receive in Procurement, not through a production entry.
- *    • Nothing shows while `available <= 0` (the previous op has cleared no
- *      pieces into this one) or while the op is `qc_pending` (waiting on an
- *      inspection). Both mirror the server's own refusals in
- *      op-entry/service.ts, so the button can never be the one that only fails
+ *    • `available <= 0` (the previous op has cleared no pieces into this one)
+ *      or the op `qc_pending` (waiting on an inspection) → the item is greyed
+ *      with the reason. Both mirror the server's own refusals in
+ *      op-entry/service.ts, so the item can never be the one that only fails
  *      on click.
- *    • Start vs Log is a SESSION question, not a status one: `activeRunningOpId`
- *      is the running_ops row holding this op right now, or null. Something
- *      running → ✓ Complete (add production to it); nothing running →
- *      ▶ Start Operation.
- *      They are branches of one chain, so exactly one can ever render.
+ *    • Start vs Complete is a SESSION question, not a status one:
+ *      `activeRunningOpId` is the running_ops row holding this op right now,
+ *      or null. Something running → Complete (add production to it); nothing
+ *      running → Start Operation. Branches of one chain, so exactly one shows.
  *
  *  QC diverges from the Job Card page on purpose. There, 🔬 QC sends the
  *  inspector to the QC Call Register; here the popup renders the QC inspection
@@ -72,29 +73,43 @@ function rowAction(
   op: JcOpEnriched,
   canOpEntry: boolean,
   canQcSubmit: boolean,
-): { label: string; mode: 'start' | 'complete'; primary: boolean } | null {
+): {
+  label: string;
+  icon: IconName;
+  mode: 'start' | 'complete';
+  disabledReason: string | undefined;
+} | null {
   if (op.opType === 'outsource') return null;
 
   // A qc-bearing op is a dedicated QC op OR a process op flagged qc_required —
   // the same test OpEntryForm uses to decide it will render the inspection
-  // form, so the button and the form it opens can never disagree.
+  // form, so the item and the form it opens can never disagree.
   if (op.opType === 'qc' || op.qcRequired) {
-    if (!canQcSubmit || op.qcPending <= 0) return null;
-    return { label: `🔬 Inspect (${op.qcPending})`, mode: 'complete', primary: true };
+    if (!canQcSubmit) return null;
+    return {
+      label: op.qcPending > 0 ? `Inspect (${op.qcPending})` : 'Inspect',
+      icon: 'search',
+      mode: 'complete',
+      disabledReason: op.qcPending > 0 ? undefined : 'Nothing Pending',
+    };
   }
 
   if (!canOpEntry) return null;
-  if (op.available <= 0 || op.computedStatus === 'qc_pending') return null;
+  const disabledReason =
+    op.computedStatus === 'qc_pending'
+      ? 'Waiting for inspection'
+      : op.available <= 0
+        ? 'Nothing Pending'
+        : undefined;
   return op.activeRunningOpId !== null
-    ? { label: '✓ Complete', mode: 'complete', primary: true }
-    : { label: '▶ Start Operation', mode: 'start', primary: false };
+    ? { label: 'Complete', icon: 'check', mode: 'complete', disabledReason }
+    : { label: 'Start Operation', icon: 'play', mode: 'start', disabledReason };
 }
 
 export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props): React.JSX.Element {
   // Gated on the same keys the entry form itself checks (op-entry-form.tsx:77-78),
-  // so a user who could not save is never shown the button. Hidden, never
-  // disabled — what every other action button in this app does — and hidden
-  // too while the access matrix is still loading.
+  // so a user who could not save is never shown the item — hidden too while
+  // the access matrix is still loading.
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const canQcSubmit = effectiveFormPerms(eff, 'qc_submit').entry;
@@ -116,7 +131,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
               Available
             </th>
             <th>Op Status</th>
-            <th>Action</th>
+            <th aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
@@ -232,27 +247,29 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                   <td>
                     <JcOpStatusBadge status={op.computedStatus} />
                   </td>
-                  {/* The button is wrapped so pressing it does not also fire the
+                  {/* The ⋯ cell stops the click so it never also fires the
                       row's own click. The host still selects the row from
                       onOpenEntry, so the panel underneath follows the operation
                       being logged. */}
-                  <td>
+                  <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
                     {action ? (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          className={`btn btn-sm${action.primary ? ' btn-primary' : ''}`}
-                          onClick={() =>
-                            onOpenEntry({
-                              op,
-                              activeRunningId: op.activeRunningOpId,
-                              mode: action.mode,
-                            })
-                          }
-                        >
-                          {action.label}
-                        </button>
-                      </div>
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'op-entry',
+                            label: action.label,
+                            icon: action.icon,
+                            group: 'workflow',
+                            disabledReason: action.disabledReason,
+                            onSelect: () =>
+                              onOpenEntry({
+                                op,
+                                activeRunningId: op.activeRunningOpId,
+                                mode: action.mode,
+                              }),
+                          },
+                        ]}
+                      />
                     ) : null}
                   </td>
                 </tr>

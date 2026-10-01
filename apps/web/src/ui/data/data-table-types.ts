@@ -6,6 +6,8 @@
 
 import type { ReactNode } from 'react';
 
+import type { RenderLink } from '../layout/link-slot';
+import type { RowMenuItem } from './row-menu-logic';
 import type { SortDir } from './SortHeader';
 
 // Every optional prop below is written `?: X | undefined` on purpose. The repo
@@ -168,6 +170,14 @@ export interface DataTableProps<T> {
   /* ---- row actions: rendered as the last column ---- */
   rowActions?: ((row: T, index: number) => ReactNode) | undefined;
   rowActionsHeader?: ReactNode | undefined;
+  /**
+   * The ONE ⋯ row menu (owner spec 2026-10-01): when set, the last column
+   * shows a ⋯ button listing these items. Wins over `rowActions` if both are
+   * given. The column header is empty (read aloud as "Actions").
+   */
+  rowMenu?: ((row: T, index: number) => RowMenuItem[]) | undefined;
+  /** How a `rowMenu` item's `to` becomes an SPA link: `(p) => <Link {...p} />`. */
+  renderLink?: RenderLink | undefined;
   /** % width of the Action column. Default 10% — budget the caller's own
    *  widths to 90 so the colgroup still sums to 100 under table-layout:fixed. */
   rowActionsWidth?: string | undefined;

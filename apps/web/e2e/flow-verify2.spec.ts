@@ -1,4 +1,5 @@
 import { test, type Page } from '@playwright/test';
+import { closeRowMenu, openRowMenu } from './row-menu';
 
 // Behavioral verification — batch 2. Each fix is its own test (fresh page) so a
 // crash in one doesn't abort the rest. Logs PASS/FAIL per check.
@@ -26,8 +27,18 @@ test('T33 job queue Start', async ({ page }: { page: Page }) => {
   test.setTimeout(90_000);
   await page.goto('/job-queue', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
-  const starts = await page.getByText(/▶ Start/).count();
-  const logs = await page.getByText(/✓ Complete/).count();
+  // Row actions live in each row's ⋯ menu now: open each (first 30 rows) and
+  // count its "Start Operation" / "Complete" item, then close it again.
+  let starts = 0;
+  let logs = 0;
+  const rows = page.locator('table tbody tr').filter({ has: page.getByRole('button', { name: 'Actions' }) });
+  const n = Math.min(await rows.count(), 30);
+  for (let i = 0; i < n; i += 1) {
+    await openRowMenu(page, rows.nth(i));
+    starts += await page.getByRole('menuitem', { name: /^Start Operation/ }).count();
+    logs += await page.getByRole('menuitem', { name: /^Complete/ }).count();
+    await closeRowMenu(page);
+  }
   log(starts > 0, 'T33 job queue offers Start for not-started ops', `starts=${starts} logs=${logs}`);
 });
 
