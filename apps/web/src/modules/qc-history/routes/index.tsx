@@ -3,22 +3,19 @@
 // filters + pending QC table + completed QC-entries table + Excel export.
 // Read-only, legacy chrome.
 
-import {
-  type QcHistoryLogRow,
-  type QcHistoryPendingRow,
-  SHIFT_LABELS,
-  opSrNo,
-} from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { QcReportLink } from '@/components/shared/qc-report-attach';
-import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
+import { DataTable, StatStrip } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ActionMenu, ListHeader } from '@/ui/layout';
 import { useQcHistory } from '../api';
+import {
+  QC_HISTORY_DEFAULT_PINNED,
+  qcEntryColumns,
+  qcPendingColumns,
+} from '../components/qc-history-columns';
 import { exportCompletedQc, exportPendingQc } from '../lib/export';
 
 export const qcHistoryRoute = createRoute({
@@ -42,6 +39,8 @@ function QcHistoryPage(): React.JSX.Element {
   const [term, setTerm] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const pendingColumns = useMemo(() => qcPendingColumns(), []);
+  const entryColumns = useMemo(() => qcEntryColumns(), []);
 
   const t = term.trim().toLowerCase();
   const matchText = (...vals: (string | null)[]): boolean =>
@@ -200,50 +199,20 @@ function QcHistoryPage(): React.JSX.Element {
                   ⏳ QC Pending ({pending.length})
                 </span>
               </div>
-              <div className="tbl-wrap">
-                <table className="innovic-table tbl-grid">
-                  <thead>
-                    <tr>
-                      <th>JC No.</th>
-                      <th>Op</th>
-                      <th>SO No.</th>
-                      {/* POL — the CUSTOMER's own purchase-order line number,
-                          immediately before the item code as everywhere else. */}
-                      <th style={{ color: 'var(--purple)' }}>POL</th>
-                      <th>Item Code</th>
-                      {/* The code says which part number is waiting; it does not
-                          say what the part is. The name gets its own column so
-                          the code column stays a clean key. */}
-                      <th>Item Name</th>
-                      <th>Operation</th>
-                      <th className="th-num">Order Qty</th>
-                      <th className="th-num">Completed</th>
-                      <th className="th-num" style={{ color: 'var(--green2)' }}>
-                        Accepted
-                      </th>
-                      <th className="th-num" style={{ color: 'var(--red2)' }}>
-                        Rejected
-                      </th>
-                      <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                        QC Pending
-                      </th>
-                      <th>Pending Since</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pending.length === 0 ? (
-                      <tr>
-                        <td colSpan={14} className="empty-state">
-                          {t ? 'Nothing QC Pending matches.' : 'Nothing QC Pending.'}
-                        </td>
-                      </tr>
-                    ) : (
-                      pending.map((o) => <PendRow key={o.jcOpId} o={o} />)
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                tableKey={TABLE_KEYS.qcHistoryPending}
+                columns={pendingColumns}
+                rows={pending}
+                rowKey={(o) => o.jcOpId}
+                rowClassName={(o) => (o.overdue ? 'qc-alert-blink' : undefined)}
+                emptyText={t ? 'Nothing QC Pending matches.' : 'Nothing QC Pending.'}
+                defaultPinned={QC_HISTORY_DEFAULT_PINNED}
+                rowActions={() => (
+                  <Link to="/qc-call-register" className="btn btn-primary btn-sm">
+                    🔬 QC
+                  </Link>
+                )}
+              />
             </div>
           ) : null}
 
@@ -254,174 +223,18 @@ function QcHistoryPage(): React.JSX.Element {
                   ✅ QC Entries ({logs.length})
                 </span>
               </div>
-              <div className="tbl-wrap">
-                <table className="innovic-table tbl-grid">
-                  <thead>
-                    <tr>
-                      <th>JC No.</th>
-                      <th>Op</th>
-                      <th>SO No.</th>
-                      <th style={{ color: 'var(--purple)' }}>POL</th>
-                      <th>Item Code</th>
-                      {/* Same reason as the pending table above: reading a QC
-                          entry back months later, the part number alone does not
-                          tell you what was inspected. */}
-                      <th>Item Name</th>
-                      <th>Operation</th>
-                      <th className="th-num" style={{ color: 'var(--green2)' }}>
-                        Accepted
-                      </th>
-                      <th className="th-num" style={{ color: 'var(--red2)' }}>
-                        Rejected
-                      </th>
-                      <th>QC Date</th>
-                      <th>Shift</th>
-                      <th>Inspected By</th>
-                      <th>Remarks</th>
-                      <th>Report</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {logs.length === 0 ? (
-                      <tr>
-                        <td colSpan={14} className="empty-state">
-                          {t || dateFrom || dateTo ? 'No QC entries match.' : 'No QC entries yet.'}
-                        </td>
-                      </tr>
-                    ) : (
-                      logs.map((l) => <LogRow key={l.logId} l={l} />)
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                tableKey={TABLE_KEYS.qcHistoryEntries}
+                columns={entryColumns}
+                rows={logs}
+                rowKey={(l) => l.logId}
+                emptyText={t || dateFrom || dateTo ? 'No QC entries match.' : 'No QC entries yet.'}
+                defaultPinned={QC_HISTORY_DEFAULT_PINNED}
+              />
             </div>
           ) : null}
         </>
       )}
     </div>
-  );
-}
-
-function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
-  return (
-    <tr className={o.overdue ? 'qc-alert-blink' : undefined}>
-      <td className="td-code cyan">{o.jcCode}</td>
-      <td className="td-ctr mono">Op {opSrNo(o.opSeq)}</td>
-      <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
-        {o.soCode ?? '—'}
-      </td>
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-        {o.clientPoLineNo ?? '—'}
-      </td>
-      <td className="td-code" style={{ color: 'var(--text)' }}>
-        {itemCodeWithRev(o.itemCode, o.itemRevision)}
-      </td>
-      {/* Free text of any length, so it clips to a fixed width and keeps the
-          full name on hover rather than stretching a twelve-column row. An
-          unresolved item prints nothing — a dash would read as a part that was
-          deliberately left unnamed. */}
-      <td
-        className="fw-700"
-        style={{
-          fontSize: 12,
-          maxWidth: 200,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-        {...(o.itemName ? { title: o.itemName } : {})}
-      >
-        {o.itemName ? o.itemName : null}
-      </td>
-      <td style={{ fontSize: 11 }}>{o.operation}</td>
-      <td className="td-num mono fw-700">{o.orderQty}</td>
-      <td className="td-num mono fw-700">{o.completed}</td>
-      <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
-        {o.qcAccepted}
-      </td>
-      <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
-        {o.qcRejected}
-      </td>
-      <td className="td-num mono fw-700" style={{ fontSize: 16, color: 'var(--amber2)' }}>
-        {o.qcPending}
-      </td>
-      <td className="text3" style={{ fontSize: 11 }}>
-        {fmtDate(o.pendSince)}
-        {o.overdue ? <span style={{ color: 'var(--red2)', fontWeight: 700 }}> ⚠</span> : null}
-      </td>
-      <td>
-        <Link
-          to="/qc-call-register"
-          className="btn btn-primary btn-sm"
-          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-        >
-          🔬 QC
-        </Link>
-      </td>
-    </tr>
-  );
-}
-
-function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
-  return (
-    <tr>
-      <td className="td-code cyan">{l.jcCode}</td>
-      <td className="td-ctr mono">Op {opSrNo(l.opSeq)}</td>
-      <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
-        {l.soCode ?? '—'}
-      </td>
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-        {l.clientPoLineNo ?? '—'}
-      </td>
-      <td className="td-code" style={{ color: 'var(--text)' }}>
-        {itemCodeWithRev(l.itemCode, l.itemRevision)}
-      </td>
-      {/* Clipped with the full name on hover, the same as the pending table, so
-          a long part name cannot widen the log row. Nothing is printed when the
-          item did not resolve. */}
-      <td
-        className="fw-700"
-        style={{
-          fontSize: 12,
-          maxWidth: 200,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-        {...(l.itemName ? { title: l.itemName } : {})}
-      >
-        {l.itemName ? l.itemName : null}
-      </td>
-      <td style={{ fontSize: 11 }}>{l.operation}</td>
-      <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
-        {l.accepted}
-      </td>
-      <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
-        {l.rejected}
-      </td>
-      <td style={{ fontSize: 11 }}>{fmtDate(l.logDate)}</td>
-      <td style={{ fontSize: 11 }}>
-        {l.shift ? ((SHIFT_LABELS as Record<string, string>)[l.shift] ?? l.shift) : '—'}
-      </td>
-      <td style={{ fontSize: 11 }}>{l.inspector ?? '—'}</td>
-      <td
-        style={{
-          fontSize: 11,
-          maxWidth: 100,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {l.remarks ?? '—'}
-      </td>
-      <td style={{ fontSize: 11 }}>
-        {l.qcReportPath ? (
-          <QcReportLink path={l.qcReportPath} name={l.qcReportName} label="Report" />
-        ) : (
-          '—'
-        )}
-      </td>
-    </tr>
   );
 }

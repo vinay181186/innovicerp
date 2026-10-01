@@ -20,7 +20,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { ListHeader } from '@/ui/layout';
@@ -31,7 +31,10 @@ import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { useTpiMastersList } from '@/modules/tpi-masters/api';
+import { DataTable } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { tpiKeys, useTpi } from '../api';
+import { TPI_COMPLETED_DEFAULT_PINNED, tpiCompletedColumns } from './tpi-completed-columns';
 
 // Excel export of completed TPI records (legacy _tpiExport L21572 / "⬇ Excel"
 // button). Client-side from the loaded `completed` rows — columns mirror the
@@ -106,6 +109,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
 export function TpiView(props: { title?: string }): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useTpi();
   const [openId, setOpenId] = useState<string | null>(null);
+  const completedColumns = useMemo(() => tpiCompletedColumns(), []);
 
   // Client-side search over the rows already loaded — every text column the
   // two lists show (JC, SO, POL, item code / name, operation, inspector,
@@ -224,138 +228,14 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                 )
               </span>
             </div>
-            <div className="tbl-wrap">
-              <table className="innovic-table tbl-grid">
-                <thead>
-                  <tr>
-                    <th>JC No.</th>
-                    <th>Op</th>
-                    <th>SO No.</th>
-                    {/* POL — the CUSTOMER's own purchase-order line number,
-                        immediately before the item code. */}
-                    <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item Code</th>
-                    {/* The item code says which part number was inspected but not
-                        what the part IS, so the name gets its own column next to
-                        it rather than being crammed into the same cell. */}
-                    <th>Item Name</th>
-                    <th>Operation</th>
-                    <th className="th-num">Accepted</th>
-                    <th className="th-num">Rejected</th>
-                    <th>Call Date</th>
-                    <th>TPI Date</th>
-                    <th>Days to Attend</th>
-                    <th>Inspector Name</th>
-                    <th>Organisation</th>
-                    <th>TPI Certificate No.</th>
-                    <th>Report</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {completed.length === 0 ? (
-                    <tr>
-                      <td colSpan={16} className="empty-state">
-                        No TPI records yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    completed.map((l, i) => (
-                      // Legacy L21451 stripes rows inline: odd --bg, even --bg3.
-                      // `.innovic-table tbody tr:nth-child(even) td` already paints
-                      // the even ones (td beats tr), so this supplies the --bg the
-                      // odd rows would otherwise miss.
-                      <tr
-                        key={l.logId}
-                        style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}
-                      >
-                        <td className="fw-700 cyan" style={{ fontSize: 12 }}>
-                          {l.jcCode}
-                        </td>
-                        <td style={{ fontSize: 11 }}>Op {opSrNo(l.opSeq)}</td>
-                        <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{l.soCode ?? '—'}</td>
-                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                          {l.clientPoLineNo ?? '—'}
-                        </td>
-                        <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--text)' }}>
-                          {itemCodeWithRev(l.itemCode, l.itemRevision)}
-                        </td>
-                        {/* A part name is free text of any length, so it is capped
-                            and clipped rather than allowed to stretch a row that
-                            already carries thirteen other columns; the full name
-                            stays available on hover. An item the join could not
-                            resolve prints nothing at all — a dash here would read
-                            as a part deliberately left unnamed. */}
-                        <td
-                          className="fw-700"
-                          style={{
-                            fontSize: 11,
-                            maxWidth: 180,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          {...(l.itemName ? { title: l.itemName } : {})}
-                        >
-                          {l.itemName ? l.itemName : null}
-                        </td>
-                        <td style={{ fontSize: 11 }}>{l.operation}</td>
-                        <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
-                          {l.accepted}
-                        </td>
-                        <td
-                          className="td-num mono fw-700"
-                          style={{ color: l.rejected > 0 ? 'var(--red2)' : 'var(--text3)' }}
-                        >
-                          {l.rejected}
-                        </td>
-                        <td style={{ fontSize: 11, color: 'var(--amber2)' }}>
-                          {fmtDate(l.callDate)}
-                        </td>
-                        <td style={{ fontSize: 11, color: 'var(--green2)' }}>
-                          {fmtDate(l.attendedDate)}
-                        </td>
-                        <td
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color:
-                              l.respDays !== null && l.respDays <= 0
-                                ? 'var(--green)'
-                                : 'var(--amber)',
-                          }}
-                        >
-                          {l.respDays === null
-                            ? '—'
-                            : l.respDays <= 0
-                              ? 'Same day'
-                              : `${l.respDays} day${l.respDays === 1 ? '' : 's'}`}
-                        </td>
-                        <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)' }}>
-                          {l.inspector ?? '—'}
-                        </td>
-                        <td className="text2" style={{ fontSize: 11 }}>
-                          {l.organization ?? '—'}
-                        </td>
-                        <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)' }}>
-                          {l.certNo ?? '—'}
-                        </td>
-                        <td style={{ fontSize: 11 }}>
-                          {l.qcReportPath ? (
-                            <QcReportLink
-                              path={l.qcReportPath}
-                              name={l.qcReportName}
-                              label="Report"
-                            />
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              tableKey={TABLE_KEYS.tpiCompleted}
+              columns={completedColumns}
+              rows={completed}
+              rowKey={(l) => l.logId}
+              emptyText="No TPI records yet."
+              defaultPinned={TPI_COMPLETED_DEFAULT_PINNED}
+            />
           </div>
         </>
       )}
