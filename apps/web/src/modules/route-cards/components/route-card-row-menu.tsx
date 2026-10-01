@@ -47,19 +47,21 @@ export function RouteCardRowMenu({
         },
         { key: 'print', label: 'Print', icon: 'printer', onSelect: print.start },
         {
-          key: 'delete-blocked',
+          // Caller-owned confirm (routes/list.tsx): it asks for the reason,
+          // owns the wait, and keeps a failure on screen inside the dialog.
+          key: 'delete',
           label: 'Move to Trash',
           icon: 'trash-2',
           group: 'danger',
-          hidden: !onDelete || !deleteBlocked,
-          disabledReason: 'Only an admin can delete',
+          hidden: !onDelete,
+          disabledReason: deleteBlocked
+            ? 'Only an admin can delete'
+            : deleteDisabled
+              ? 'Working…'
+              : undefined,
+          onSelect: deleteBlocked ? undefined : onDelete,
         },
       ]}
-      // Caller-owned confirm (routes/list.tsx): it asks for the reason, owns
-      // the wait, and keeps a failure on screen inside the dialog.
-      onDelete={deleteBlocked ? undefined : onDelete}
-      // Every row's Delete greys out while one is in flight.
-      deleteDisabled={deleteDisabled}
     />
   );
 }

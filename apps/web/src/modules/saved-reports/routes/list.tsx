@@ -32,7 +32,7 @@ function SavedReportsListPage(): React.JSX.Element {
   // reports show both ⋯ items greyed with the reason.
   const { data: me } = useSession();
   const ownerBlock = (ownerId: string): string | undefined =>
-    me && (me.id === ownerId || me.role === 'admin' || me.role === 'manager')
+    !me || me.id === ownerId || me.role === 'admin' || me.role === 'manager'
       ? undefined
       : 'Only the owner can change this';
 

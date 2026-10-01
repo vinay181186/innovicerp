@@ -82,7 +82,7 @@ function CostCentersListPage(): React.JSX.Element {
   // without it the two ⋯ items show greyed with the reason.
   const { data: me } = useSession();
   const roleBlock =
-    me?.role === 'admin' || me?.role === 'manager' ? undefined : 'Needs admin or manager role';
+    !me || me.role === 'admin' || me.role === 'manager' ? undefined : 'Needs admin or manager role';
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {

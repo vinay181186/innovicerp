@@ -118,7 +118,7 @@ function ClientsListPage(): React.JSX.Element {
   // ⋯ items greyed with the reason instead of a refusal after the click.
   const { data: me } = useSession();
   const roleBlock =
-    me?.role === 'admin' || me?.role === 'manager' ? undefined : 'Needs admin or manager role';
+    !me || me.role === 'admin' || me.role === 'manager' ? undefined : 'Needs admin or manager role';
 
   // Excel import — ONE shared dialog (components/shared/master-import-dialog):
   // Import Type (Insert new / Update existing by Code) → preview (dryRun, the
