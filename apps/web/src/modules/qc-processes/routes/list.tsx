@@ -31,7 +31,7 @@
 // and a refusal from the server keeps the question open instead of closing
 // over a delete that never happened.
 
-import type { ListQcProcessesQuery, QcProcess } from '@innovic/shared';
+import { DEFAULT_FINAL_QC_OP, type ListQcProcessesQuery, type QcProcess } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -326,6 +326,20 @@ function QcProcessesListPage(): React.JSX.Element {
                     // real link so ctrl-click / middle-click open a new tab.
                     editTo={perms.edit ? `/qc-processes/${p.id}/edit` : undefined}
                     renderLink={(p2) => <Link {...p2} />}
+                    // ⋯ menu: Edit · ─ · Move to Trash. The automatic Final
+                    // Inspection step is always refused by the server
+                    // (qc-processes/service.ts), so its row shows Trash greyed
+                    // with the reason instead (no handler).
+                    items={[
+                      {
+                        key: 'delete-final',
+                        label: 'Move to Trash',
+                        icon: 'trash-2',
+                        group: 'danger',
+                        hidden: !(canDelete && p.code === DEFAULT_FINAL_QC_OP),
+                        disabledReason: 'Cannot delete Final Inspection',
+                      },
+                    ]}
                     // The PROMISE is handed back, not swallowed: the confirm
                     // dialog owns the wait, and the server's refusal (a process
                     // job cards, plans or route cards still name —
@@ -333,7 +347,7 @@ function QcProcessesListPage(): React.JSX.Element {
                     // of closing over a delete that never happened. reset()
                     // first so a second attempt clears the previous banner.
                     onDelete={
-                      canDelete
+                      canDelete && p.code !== DEFAULT_FINAL_QC_OP
                         ? (): Promise<void> => {
                             softDelete.reset();
                             return softDelete.mutateAsync(p.id);

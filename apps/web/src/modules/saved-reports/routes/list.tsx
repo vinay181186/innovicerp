@@ -7,6 +7,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -26,6 +27,14 @@ function SavedReportsListPage(): React.JSX.Element {
   const { data: catalog } = useSourceCatalog();
   const deleteMutation = useDeleteSavedReport();
   const [term, setTerm] = useState('');
+  // The server lets only the report's owner or role admin/manager edit or
+  // delete it (saved-reports service, assertCanWrite). Other users' shared
+  // reports show both ⋯ items greyed with the reason.
+  const { data: me } = useSession();
+  const ownerBlock = (ownerId: string): string | undefined =>
+    me && (me.id === ownerId || me.role === 'admin' || me.role === 'manager')
+      ? undefined
+      : 'Only the owner can change this';
 
   // Source label ("Sales Orders"), never the raw source key.
   const sourceLabel = useMemo(
@@ -143,9 +152,31 @@ function SavedReportsListPage(): React.JSX.Element {
             rowActionsWidth="10%"
             rowActions={(r) => (
               <RowActions
-                editTo={`/saved-reports/${r.id}/edit`}
+                // Row click runs the report, so no View. ⋯ menu: Edit · ─ ·
+                // Delete; without the owner right both are greyed `items`
+                // (Delete then has no handler).
+                editTo={ownerBlock(r.ownerId) ? undefined : `/saved-reports/${r.id}/edit`}
                 renderLink={(p) => <Link {...p} />}
-                onDelete={() => deleteMutation.mutateAsync(r.id)}
+                items={[
+                  {
+                    key: 'edit-owner',
+                    label: 'Edit',
+                    icon: 'pencil',
+                    hidden: !ownerBlock(r.ownerId),
+                    disabledReason: ownerBlock(r.ownerId),
+                  },
+                  {
+                    key: 'delete-owner',
+                    label: 'Delete',
+                    icon: 'trash-2',
+                    group: 'danger',
+                    hidden: !ownerBlock(r.ownerId),
+                    disabledReason: ownerBlock(r.ownerId),
+                  },
+                ]}
+                onDelete={
+                  ownerBlock(r.ownerId) ? undefined : () => deleteMutation.mutateAsync(r.id)
+                }
                 deleteDisabled={deleteMutation.isPending}
                 deleteConfirm={{
                   title: `Delete saved report ${r.name}?`,

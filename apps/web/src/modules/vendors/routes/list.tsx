@@ -238,12 +238,23 @@ function VendorsListPage(): React.JSX.Element {
                 // ROUTE, so it stays a real link — ctrl/middle-click work.
                 editTo={canEdit ? `/vendors/${v.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
-                // Delete opens the Trash dialog below, which asks for a reason
-                // (ADR-197) and owns the wait until the record is in the Trash.
-                onDelete={canDelete ? () => setDeleteTarget({ id: v.id, code: v.code }) : undefined}
-                // And every OTHER row's Delete greys out while one is in
-                // flight, exactly as `disabled={softDelete.isPending}` did.
-                deleteDisabled={softDelete.isPending}
+                // ⋯ menu: Edit · ─ · Move to Trash. The Trash item opens the
+                // dialog below, which asks for a reason (ADR-197) and owns the
+                // wait until the record is in the Trash. It is an `items` entry
+                // (not `onDelete`) so it carries the dialog's own words.
+                items={[
+                  {
+                    key: 'delete',
+                    label: 'Move to Trash',
+                    icon: 'trash-2',
+                    group: 'danger',
+                    hidden: !canDelete,
+                    // Every OTHER row's Trash greys out while one is in flight,
+                    // exactly as `disabled={softDelete.isPending}` did.
+                    disabledReason: softDelete.isPending ? 'Working…' : undefined,
+                    onSelect: () => setDeleteTarget({ id: v.id, code: v.code }),
+                  },
+                ]}
               />
             )}
           />
