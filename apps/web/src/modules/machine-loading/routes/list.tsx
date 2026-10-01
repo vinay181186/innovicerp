@@ -1,24 +1,29 @@
 // Machine Loading (Production Wave 3). Ports legacy renderLoading (HTML L5021):
 // machine cards + the open-operations table + Capacity Summary.
 //
+// ADR-199 table standard (2026-10-01): the open-operations table is now THE
+// Innovic fit table — JC No. pinned first and carrying the row's ▸ reveal, the
+// primary facts each their own column, the secondary facts (POL, Item Name, SO,
+// Priority, JC Qty, Completed) in the ▸ detail. Columns / tint / reveal live in
+// components/machine-loading-columns; the machine card strip and the Capacity
+// Summary live in components/machine-load-cards.
+//
 // The old "Job Queue View" toggle is gone (2026-09-26): it drew a second copy
 // of the Job Queue screen. There is now ONE queue screen — the "Job Queue →"
 // button opens /job-queue?machine=<code> for the picked machine (or all).
-// Legacy chrome (.panel / .innovic-table / .badge); cards use inline tokens
-// (.mach-card not ported to theme).
 
-import type { MachineLoadCard, MachineLoadOp, MachineLoadStatus } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import type { MachineLoadCard, MachineLoadOp } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
-import { fmtDate } from '@/lib/date';
-import { ActualMachineLine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader } from '@/ui/layout';
+import { CapacitySummary, MachineLoadCardView } from '../components/machine-load-cards';
+import { OpsExpanded, opRowTint, opsColumns } from '../components/machine-loading-columns';
 import { useMyCompany } from '../../settings/api';
 import { useMachineLoading } from '../api';
 import { printMachineQueue } from '../lib/print-machine-queue';
@@ -36,41 +41,6 @@ export const machineLoadingRoute = createRoute({
   validateSearch: searchSchema,
   component: MachineLoadingPage,
 });
-
-// Legacy badge() (HTML L1959-1970) maps load status → colour:
-// Overloaded→b-red · High Load→b-amber · Manageable→b-green · Clear→b-green.
-function loadBadgeClass(status: MachineLoadStatus): string {
-  if (status === 'Overloaded') return 'b-red';
-  if (status === 'High Load') return 'b-amber';
-  return 'b-green'; // Manageable + Clear (legacy L1963)
-}
-
-// Op status words + colours: the ONE shared map (job-cards/lib/jc-op-labels).
-function OpStatusBadge({ status }: { status: string }): React.JSX.Element {
-  const known = OP_STATUS[status];
-  const label = known?.label ?? status.replaceAll('_', ' ');
-  return <span className={`badge ${known?.cls || 'b-grey'}`}>{label}</span>;
-}
-
-function barColor(pct: number): string {
-  if (pct > 100) return 'var(--red)';
-  if (pct > 70) return 'var(--amber)';
-  if (pct > 0) return 'var(--green)';
-  return 'var(--bg5)';
-}
-
-// Legacy progBar() (L1972-1975) — .prog-wrap/.prog-bar are ported to our theme
-// (innovic-theme.css L763/L769); only the width+colour are inline, as in legacy.
-function ProgBar({ pct }: { pct: number }): React.JSX.Element {
-  return (
-    <div className="prog-wrap">
-      <div
-        className="prog-bar"
-        style={{ width: `${Math.min(100, pct)}%`, background: barColor(pct) }}
-      />
-    </div>
-  );
-}
 
 function MachineLoadingPage(): React.JSX.Element {
   const search = machineLoadingRoute.useSearch();
@@ -121,6 +91,18 @@ function MachineLoadingPage(): React.JSX.Element {
   const selMachineCode = selMachineId
     ? (machines.find((m) => m.machineId === selMachineId)?.machineCode ?? null)
     : null;
+
+  // The row's ▸ opens its detail reveal; a Set — many can be open at once.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string): void =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const columns = useMemo(() => opsColumns(), []);
 
   function selectMachine(id: string): void {
     void navigate({
@@ -205,7 +187,7 @@ function MachineLoadingPage(): React.JSX.Element {
               marginBottom: 16,
             }}
           >
-            {machines.map((m) => (
+            {machines.map((m: MachineLoadCard) => (
               <MachineLoadCardView
                 key={m.machineId}
                 card={m}
@@ -220,297 +202,36 @@ function MachineLoadingPage(): React.JSX.Element {
             ) : null}
           </div>
 
-          <OperationView
-            ops={filteredOps}
-            selMachineCode={selMachineCode}
-            searching={term !== ''}
-          />
+          {/* The open-operations fit table (ADR-199). */}
+          <Panel
+            title={selMachineCode ? `${selMachineCode} — Job Queue` : 'All Open Operations'}
+            actions={
+              <span className="mono" style={{ color: 'var(--amber2)', fontSize: 12 }}>
+                {filteredOps.length} ops
+              </span>
+            }
+            bodyPadding="none"
+          >
+            <DataTable
+              tableKey={TABLE_KEYS.machineLoading}
+              columns={columns}
+              rows={filteredOps}
+              rowKey={(op: MachineLoadOp) => op.jcOpId}
+              emptyText={term !== '' ? 'No pending operations match.' : 'No pending operations.'}
+              rowClassName={(op) => opRowTint(op)}
+              onRowClick={(op) =>
+                void navigate({ to: '/job-cards/$id', params: { id: op.jobCardId } })
+              }
+              // The fit table's ▸ is the row's one expand control: it opens the
+              // op's secondary facts. renderExpanded returns null for a closed row.
+              renderExpanded={(op) => (expandedIds.has(op.jcOpId) ? <OpsExpanded op={op} /> : null)}
+              onToggleExpanded={(op) => toggleExpand(op.jcOpId)}
+            />
+          </Panel>
 
           <CapacitySummary machines={machines} />
         </>
       )}
-    </div>
-  );
-}
-
-function MachineLoadCardView({
-  card,
-  selected,
-  onClick,
-}: {
-  card: MachineLoadCard;
-  selected: boolean;
-  onClick: () => void;
-}): React.JSX.Element {
-  const pct = Math.min(150, Math.round(card.loadPct * 100));
-  return (
-    // Legacy .mach-card (L222) + .mach-card.sel (L223) inlined — neither is in
-    // our theme. Selected state mirrors legacy's own intent: renderLoading emits
-    // `.selected`, which legacy never defines (only `.sel`), so its selected card
-    // gets no highlight; renderJobQueue (L10371) works around the same bug by
-    // inlining the border/shadow. We keep the highlight — see report.
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        textAlign: 'left',
-        background: 'var(--bg2)',
-        border: '1px solid var(--border)',
-        borderColor: selected ? 'var(--cyan)' : 'var(--border)',
-        boxShadow: selected ? '0 0 0 1px var(--cyan)' : undefined,
-        borderRadius: 'var(--radius2)',
-        padding: 14,
-        cursor: 'pointer',
-        position: 'relative',
-      }}
-    >
-      {/* Legacy .mach-id (L224) is not in our theme — inline approximation kept. */}
-      <div className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 13 }}>
-        {card.machineCode}
-      </div>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 2 }}>
-        {card.name}
-      </div>
-      <div className="text3 mono" style={{ fontSize: 11, marginBottom: 8 }}>
-        {card.machineType ?? '—'}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        <Num val={card.totalAvailQty} lbl="Available" color="var(--amber)" />
-        <Num val={card.pendingHrs} lbl="Hrs" color="var(--red)" />
-        <Num val={card.daysToClear} lbl="Days" />
-      </div>
-      <ProgBar pct={pct} />
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginTop: 4,
-          alignItems: 'center',
-        }}
-      >
-        <span className="mono text3" style={{ fontSize: 11 }}>
-          {pct}%
-        </span>
-        <span className={`badge ${loadBadgeClass(card.loadStatus)}`}>{card.loadStatus}</span>
-      </div>
-    </button>
-  );
-}
-
-function Num({ val, lbl, color }: { val: number; lbl: string; color?: string }): React.JSX.Element {
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <div className="mono fw-700" style={{ fontSize: 14, color: color ?? 'var(--text)' }}>
-        {val}
-      </div>
-      <div className="text3" style={{ fontSize: 11 }}>
-        {lbl}
-      </div>
-    </div>
-  );
-}
-
-function OpRow({ op, idx }: { op: MachineLoadOp; idx: number }): React.JSX.Element {
-  return (
-    <tr>
-      <td className="td-ctr mono text3">{idx + 1}</td>
-      <OpRowCells op={op} />
-    </tr>
-  );
-}
-
-function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
-  return (
-    <>
-      {/* The JC number opens that card. The cell keeps its mono + cyan identity
-          and the link inherits it, so a reachable code does not read as a
-          different kind of value from the one that was here before. */}
-      <td className="td-code cyan">
-        <Link
-          to="/job-cards/$id"
-          params={{ id: op.jobCardId }}
-          title="View job card status"
-          style={{ color: 'inherit', textDecoration: 'none', whiteSpace: 'nowrap' }}
-        >
-          {op.jobCardCode}
-        </Link>
-      </td>
-      {/* POL — the line number on the CUSTOMER's own purchase order; '—' when
-          no sales order sits behind this job card. */}
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-        {op.clientPoLineNo ?? '—'}
-      </td>
-      {/* Code on one line; the item NAME wraps (sheet rule). */}
-      <td style={{ fontSize: 11, textAlign: 'left' }}>
-        <span className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-          {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
-        </span>
-        {op.itemName ? ` — ${op.itemName}` : ''}
-      </td>
-      <td className="td-ctr mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-        {op.soCode ?? '—'}
-      </td>
-      <td className="td-ctr mono" style={{ whiteSpace: 'nowrap' }}>
-        {opSrNo(op.opSeq)}
-      </td>
-      <td>{op.operation}</td>
-      <td>
-        <span className={`badge ${op.priority === 'high' ? 'b-amber' : 'b-grey'}`}>
-          {op.priority === 'high' ? 'High' : 'Normal'}
-        </span>
-      </td>
-      <td className="text2 td-ctr" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-        {fmtDate(op.dueDate)}
-      </td>
-      <td className="mono td-num">{op.orderQty}</td>
-      <td className="green mono fw-700 td-num">
-        {op.completedQty}
-        {/* ADR-164 — the op is listed under its PLANNED machine (the card /
-            queue names the plan), so say which machine ACTUALLY made this
-            figure: always drawn, same name when nothing changed, amber when it
-            differs, with the per-machine breakdown for a 2+ machine split. */}
-        <ActualMachineLine planned={op.machineCode} machines={op.machines} />
-      </td>
-      <td className="td-num">
-        <span
-          className="mono fw-700"
-          style={{ fontSize: 15, color: op.available > 0 ? 'var(--amber)' : 'var(--text3)' }}
-        >
-          {op.available}
-        </span>
-      </td>
-      <td className="td-num">
-        <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
-          {op.pendingHrs}h
-        </span>
-      </td>
-      <td>
-        <OpStatusBadge status={op.computedStatus} />
-      </td>
-    </>
-  );
-}
-
-function OperationView({
-  ops,
-  selMachineCode,
-  searching,
-}: {
-  ops: MachineLoadOp[];
-  selMachineCode: string | null;
-  searching: boolean;
-}): React.JSX.Element {
-  return (
-    <div className="panel">
-      <div className="panel-hdr">
-        <span className="panel-title">
-          {selMachineCode
-            ? `${selMachineCode} — Job Queue`
-            : 'All Open Operations'}
-        </span>
-        <span className="mono" style={{ color: 'var(--amber2)', fontSize: 12 }}>
-          {ops.length} ops
-        </span>
-      </div>
-      <div className="tbl-wrap">
-        <table className="innovic-table tbl-grid">
-          <thead>
-            <tr>
-              <th>Sr No</th>
-              <th>JC No.</th>
-              {/* POL — the CUSTOMER's own PO line number, before the item. */}
-              <th style={{ color: 'var(--purple)' }}>POL</th>
-              <th>Item Code</th>
-              <th>SO No.</th>
-              <th>Op</th>
-              <th>Operation</th>
-              <th>Priority</th>
-              <th>Due Date</th>
-              <th className="th-num">JC Qty</th>
-              <th className="th-num">Completed</th>
-              <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                Available
-              </th>
-              <th className="th-num" style={{ color: 'var(--red2)' }}>
-                Pending Hrs
-              </th>
-              <th>Op Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ops.length === 0 ? (
-              <tr>
-                <td colSpan={14} className="empty-state">
-                  {searching ? 'No pending operations match.' : 'No pending operations.'}
-                </td>
-              </tr>
-            ) : (
-              ops.map((op, i) => <OpRow key={op.jcOpId} op={op} idx={i} />)
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.JSX.Element {
-  return (
-    // Legacy `<div class="panel mt-16">` (L5189); .mt-16 (L268) is not in our theme.
-    <div className="panel" style={{ marginTop: 16 }}>
-      <div className="panel-hdr">
-        <span className="panel-title">Capacity Summary</span>
-      </div>
-      <div className="tbl-wrap">
-        <table className="innovic-table tbl-grid">
-          <thead>
-            <tr>
-              <th>Machine</th>
-              <th>Name</th>
-              <th>Machine Type</th>
-              <th className="th-num">Open Ops</th>
-              <th className="th-num">Available</th>
-              <th className="th-num">Pending Hrs</th>
-              <th className="th-num">Daily Cap</th>
-              <th className="th-num">Days to Clear</th>
-              <th className="th-num">Loading %</th>
-              <th>Load Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {machines.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="empty-state">
-                  No machines yet.
-                </td>
-              </tr>
-            ) : (
-              machines.map((m) => (
-                <tr key={m.machineId}>
-                  <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
-                    {m.machineCode}
-                  </td>
-                  <td>{m.name}</td>
-                  <td className="text2">{m.machineType ?? '—'}</td>
-                  <td className="mono td-num">{m.openOps}</td>
-                  <td className="mono fw-700 amber td-num">{m.totalAvailQty}</td>
-                  <td className="td-num">
-                    <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
-                      {m.pendingHrs}h
-                    </span>
-                  </td>
-                  <td className="mono green td-num">{m.dailyCap}h</td>
-                  <td className="mono td-num">{m.daysToClear}d</td>
-                  <td className="mono fw-700 td-num">{Math.round(m.loadPct * 100)}%</td>
-                  <td>
-                    <span className={`badge ${loadBadgeClass(m.loadStatus)}`}>{m.loadStatus}</span>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

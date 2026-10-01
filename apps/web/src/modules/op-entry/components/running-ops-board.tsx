@@ -1,91 +1,28 @@
-// Live operations board — legacy chrome (.panel / .innovic-table / .btn).
+// Live operations board — the two shop-floor list tables (Running now / Recent)
+// rendered on the ADR-199 fit table. Columns live in running-ops-columns.tsx;
+// this file keeps the Stop mutation, the Stop popup and the permission gate.
+//
+// CRITICAL: only the DISPLAY of the tables moved onto <DataTable>. The Stop
+// mutation (useStopOp → commits produced qty to op_log → op_entry entry), the
+// StopOpModal flow, the op_entry entry permission gate and the realtime refresh
+// (owned by the parent route) are all unchanged.
 
 import type { RunningOp, StopOpInput } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
-import { useState } from 'react';
-import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
+import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { RowMenu } from '@/ui/data';
+import { DataTable } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { useStopOp } from '../api';
-import { RunningOpStatusBadge } from './status-badge';
+import {
+  RUNNING_OPS_DEFAULT_HIDDEN,
+  recentOpsColumns,
+  runningNowColumns,
+  type RunningOpRow,
+} from './running-ops-columns';
 import { StopOpModal } from './stop-op-modal';
 
 interface Props {
   rows: RunningOp[];
-}
-
-/** The JC number, as a way INTO that card rather than a code to copy and hunt
- *  for on another screen. Colour, mono face and weight are inherited from the
- *  cell it sits in, so the code keeps exactly the identity it has on every other
- *  board — making it reachable is not meant to make it look like a new kind of
- *  thing, hence no underline and no link colour of its own. A JC number is
- *  short, so it stays on one line on these dense boards. */
-function JcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
-  return (
-    <Link
-      to="/job-cards/$id"
-      params={{ id }}
-      title="View job card status"
-      style={{ color: 'inherit', textDecoration: 'none', whiteSpace: 'nowrap' }}
-    >
-      {code}
-    </Link>
-  );
-}
-
-/** Item Code + Item Name — what the running operation is actually making. The
- *  board used to name only a JC code, which meant looking the part up elsewhere
- *  before you could tell whether the right thing was on the machine.
- *
- *  The code carries the customer's drawing revision as `CODE/REV` through the
- *  one shared helper, so the separator cannot drift from the other boards. A
- *  JW-sourced or standalone card has no SO line behind it and therefore no
- *  revision: those rows show the bare code, with no trailing slash.
- *
- *  The name is long free text, so it WRAPS inside its column (sheet rule,
- *  2026-09-26); the code is short and never wraps. */
-function ItemCells({ r }: { r: RunningOp }): React.JSX.Element {
-  return (
-    <>
-      {/* POL — the line number printed on the CUSTOMER's own purchase order,
-          immediately before the item code. '—' when there is no sales order
-          behind the job card. */}
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-        {r.clientPoLineNo ?? '—'}
-      </td>
-      <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-        {itemCodeWithRev(r.itemCode, r.itemRevision)}
-      </td>
-      <td title={r.itemName ?? ''} style={{ fontSize: 12, textAlign: 'left' }}>
-        {r.itemName ?? '—'}
-      </td>
-    </>
-  );
-}
-
-/** GET /op-entry/running-ops rows carry `startedByName` — the logged-in user
- *  who pressed Start (ADR-197) — which the shared RunningOp type does not
- *  declare yet. `operatorName` is the operator on the floor. */
-type RunningOpRow = RunningOp & { startedByName?: string | null };
-
-/** Operator on the floor, plus "Started By" when someone else pressed Start. */
-function OperatorCell({ r }: { r: RunningOpRow }): React.JSX.Element {
-  const startedBy = r.startedByName?.trim() ?? '';
-  const differs =
-    startedBy !== '' && startedBy.toLowerCase() !== (r.operatorName ?? '').trim().toLowerCase();
-  return (
-    <td style={{ fontSize: 12 }}>
-      {r.operatorName ?? '—'}
-      {differs ? (
-        <div className="text3" style={{ fontSize: 11 }}>
-          Started By: {startedBy}
-        </div>
-      ) : null}
-    </td>
-  );
 }
 
 export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
@@ -93,11 +30,14 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
   // Stopping a session commits produced qty to op_log → op_entry entry (Production).
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
-  const running = rows.filter((r) => r.status === 'running');
-  const recent = rows.filter((r) => r.status !== 'running').slice(0, 20);
+  const running = rows.filter((r) => r.status === 'running') as RunningOpRow[];
+  const recent = rows.filter((r) => r.status !== 'running').slice(0, 20) as RunningOpRow[];
   // The row whose Stop box is open, and the server's message if it refused.
   const [stopRow, setStopRow] = useState<RunningOp | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
+
+  const runningCols = useMemo(() => runningNowColumns(), []);
+  const recentCols = useMemo(() => recentOpsColumns(), []);
 
   function submitStop(input: StopOpInput): void {
     if (!stopRow) return;
@@ -121,89 +61,32 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             {running.length} session{running.length !== 1 ? 's' : ''}
           </span>
         </div>
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            <thead>
-              <tr>
-                <th>JC No.</th>
-                {/* POL — the CUSTOMER's own PO line number, before the item. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>Item Code</th>
-                <th>Item Name</th>
-                <th>Op</th>
-                <th>Operation</th>
-                <th>Planned Machine</th>
-                <th>Actual Machine</th>
-                <th>Operator</th>
-                <th>Started</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {running.length === 0 ? (
-                <tr>
-                  {/* Eleven columns since Planned Machine and Actual Machine
-                      each get their own column — the empty row must span the
-                      whole table or it draws short. */}
-                  <td colSpan={11} className="empty-state">
-                    No operations running.
-                  </td>
-                </tr>
-              ) : (
-                running.map((r) => (
-                  <tr key={r.id}>
-                    <td className="td-code cyan" style={{ whiteSpace: 'nowrap' }}>
-                      <JcLink id={r.jobCardId} code={r.jobCardCode} />
-                    </td>
-                    <ItemCells r={r} />
-                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
-                      {opSrNo(r.opSeq)}
-                    </td>
-                    <td>{r.operation}</td>
-                    {/* ADR-164 — the session's machine is the ACTUAL; the op's
-                        jc_ops machine is the PLAN. Each gets its own column on
-                        every in-house row; an OSP session has no machine. */}
-                    <td className="mono text3" style={{ fontSize: 11 }}>
-                      {r.isOsp ? 'OSP' : <PlannedMachineCell planned={r.plannedMachineCode} />}
-                    </td>
-                    <td className="mono text3" style={{ fontSize: 11 }}>
-                      {r.isOsp ? (
-                        '—'
-                      ) : (
-                        <ActualMachineCell
-                          planned={r.plannedMachineCode}
-                          activeRunningMachineCode={r.machineCode}
-                        />
-                      )}
-                    </td>
-                    <OperatorCell r={r} />
-                    <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {fmtDateAndTime(r.startDate, r.startTime)}
-                    </td>
-                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                      <RowMenu
-                        items={[
-                          {
-                            key: 'stop',
-                            label: 'Stop Operation',
-                            icon: 'square',
-                            group: 'workflow',
-                            hidden: !canOpEntry,
-                            disabledReason: stop.isPending ? 'Stopping…' : undefined,
-                            onSelect: () => {
-                              setStopError(null);
-                              setStopRow(r);
-                            },
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          tableKey={TABLE_KEYS.runningOps}
+          columns={runningCols}
+          rows={running}
+          defaultHidden={RUNNING_OPS_DEFAULT_HIDDEN}
+          emptyText="No operations running."
+          // Stop stays the ⋯ row action it has always been — shown only to a
+          // user with op_entry entry, busy-locked while a stop is in flight.
+          rowMenu={
+            canOpEntry
+              ? (r) => [
+                  {
+                    key: 'stop',
+                    label: 'Stop Operation',
+                    icon: 'square',
+                    group: 'workflow',
+                    disabledReason: stop.isPending ? 'Stopping…' : undefined,
+                    onSelect: () => {
+                      setStopError(null);
+                      setStopRow(r);
+                    },
+                  },
+                ]
+              : undefined
+          }
+        />
       </div>
 
       {recent.length > 0 ? (
@@ -214,65 +97,10 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
               last {recent.length}
             </span>
           </div>
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>JC No.</th>
-                  {/* POL — the CUSTOMER's own PO line number, before the item. */}
-                  <th style={{ color: 'var(--purple)' }}>POL</th>
-                  <th>Item Code</th>
-                  <th>Item Name</th>
-                  <th>Op</th>
-                  <th>Operation</th>
-                  <th>Planned Machine</th>
-                  <th>Actual Machine</th>
-                  <th>Operator</th>
-                  <th>Ended</th>
-                  <th>Op Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((r) => (
-                  <tr key={r.id}>
-                    {/* Same treatment as Running now: a finished session is the
-                        one you most often want to open the card for. */}
-                    <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
-                      <JcLink id={r.jobCardId} code={r.jobCardCode} />
-                    </td>
-                    <ItemCells r={r} />
-                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
-                      {opSrNo(r.opSeq)}
-                    </td>
-                    <td>{r.operation}</td>
-                    {/* ADR-164 — the session's machine is the ACTUAL; the op's
-                        jc_ops machine is the PLAN. Each gets its own column on
-                        every in-house row; an OSP session has no machine. */}
-                    <td className="mono text3" style={{ fontSize: 11 }}>
-                      {r.isOsp ? 'OSP' : <PlannedMachineCell planned={r.plannedMachineCode} />}
-                    </td>
-                    <td className="mono text3" style={{ fontSize: 11 }}>
-                      {r.isOsp ? (
-                        '—'
-                      ) : (
-                        <ActualMachineCell
-                          planned={r.plannedMachineCode}
-                          activeRunningMachineCode={r.machineCode}
-                        />
-                      )}
-                    </td>
-                    <OperatorCell r={r} />
-                    <td className="mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {fmtDateTime(r.endedAt)}
-                    </td>
-                    <td>
-                      <RunningOpStatusBadge status={r.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Keyless on purpose: "Recent" is a different column set (Ended +
+              Op Status, no Stop) from the live board above, so it must not share
+              the runningOps saved layout. It renders as the same ruled sheet. */}
+          <DataTable columns={recentCols} rows={recent} />
         </div>
       ) : null}
 

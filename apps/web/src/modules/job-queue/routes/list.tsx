@@ -1,39 +1,39 @@
 // Job Queue — mirrors legacy renderJobQueue (HTML L10363).
-// Pending ops per machine with ↑↓ reorder buttons.
+//
+// Pending ops per machine, each machine panel its own shared fit table (ADR-199
+// table standard 2026-10-01): every panel renders a <DataTable tableKey={
+// TABLE_KEYS.jobQueue}> with the SAME columns, so all machines share one
+// remembered column layout. The eight on-sheet columns and the ▸ detail columns
+// (and the ▲/▼ reorder controls + ⋯ op-entry menu in the Action column) live in
+// ../components/job-queue-columns. The DATA and RULES stay: same query, same
+// jc_create / op_entry access, same machine picker, same client-side search,
+// same optimistic reorder.
 
-import { opSrNo } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import type { JobQueueRow } from '@innovic/shared';
+import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
-import { fmtDate } from '@/lib/date';
-import { ActualMachineLine } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
-import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
-import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu } from '@/ui/data';
+import { DataTable } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListHeader } from '@/ui/layout';
+import {
+  JOB_QUEUE_HIDDEN_IDS,
+  jobQueueColumns,
+  jobQueueRowActions,
+  jobQueueRowTint,
+} from '../components/job-queue-columns';
 import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
 
 const searchSchema = z.object({
   machine: z.string().optional(),
 });
-
-// Legacy L10406/L10407 — the ▲/▼ queue-move buttons are inline-styled in legacy.
-const queueBtnStyle: React.CSSProperties = {
-  background: 'none',
-  border: '1px solid var(--border2)',
-  borderRadius: 3,
-  padding: '0 4px',
-  cursor: 'pointer',
-  fontSize: 11,
-  color: 'var(--text2)',
-  lineHeight: 1.6,
-};
 
 export const jobQueueRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -78,7 +78,7 @@ function JobQueuePage(): React.JSX.Element {
   // view no longer shows.
   const [searchInput, setSearchInput] = useState('');
   const term = searchInput.trim().toLowerCase();
-  const matches = (r: (typeof machines)[number]['rows'][number]): boolean =>
+  const matches = (r: JobQueueRow): boolean =>
     term === '' ||
     [
       r.jcCode,
@@ -93,6 +93,8 @@ function JobQueuePage(): React.JSX.Element {
     ? displayMachines.filter((m) => m.rows.some(matches))
     : displayMachines;
   const pendingShown = displayMachines.reduce((n, m) => n + m.rows.filter(matches).length, 0);
+
+  const today = todayIst();
 
   const setMachine = (code: string | null): void => {
     void navigate({ search: () => ({ machine: code ?? undefined }) });
@@ -193,270 +195,88 @@ function JobQueuePage(): React.JSX.Element {
           </div>
         </div>
       ) : (
-        shownMachines.map((m) => (
-          <div key={m.machineId} className="panel" style={{ marginBottom: 14 }}>
-            <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
-                <span className="mono fw-700" style={{ fontSize: 15 }}>
-                  {m.machineCode}
-                </span>
-                <span className="text2" style={{ fontSize: 12 }}>
-                  {m.machineName ?? ''}
-                </span>
-                <span className="mono text3" style={{ fontSize: 11 }}>
-                  {m.pendingHrs}h pending
-                </span>
+        shownMachines.map((m) => {
+          // Position in the FULL queue (not the filtered rows), so Sr No and the
+          // ▲/▼ neighbours stay true while a search narrows what is shown.
+          const posById = new Map(m.rows.map((r, i) => [r.jcOpId, i]));
+          const machineRows = m.rows.filter(matches);
+          return (
+            <div key={m.machineId} className="panel" style={{ marginBottom: 14 }}>
+              <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                  <span className="mono fw-700" style={{ fontSize: 15 }}>
+                    {m.machineCode}
+                  </span>
+                  <span className="text2" style={{ fontSize: 12 }}>
+                    {m.machineName ?? ''}
+                  </span>
+                  <span className="mono text3" style={{ fontSize: 11 }}>
+                    {m.pendingHrs}h pending
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: 10,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background:
+                        m.pendingHrs > 80
+                          ? 'rgba(239,68,68,0.10)'
+                          : m.pendingHrs > 40
+                            ? 'rgba(245,158,11,0.10)'
+                            : 'rgba(34,197,94,0.10)',
+                      color:
+                        m.pendingHrs > 80
+                          ? 'var(--red)'
+                          : m.pendingHrs > 40
+                            ? 'var(--amber)'
+                            : 'var(--green)',
+                    }}
+                  >
+                    {m.pendingHrs > 80 ? 'Overloaded' : m.pendingHrs > 40 ? 'Busy' : 'Clear'}
+                  </span>
+                  <span className="mono amber" style={{ fontSize: 11 }}>
+                    {m.pendingCount} jobs
+                  </span>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: 10,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    background:
-                      m.pendingHrs > 80
-                        ? 'rgba(239,68,68,0.10)'
-                        : m.pendingHrs > 40
-                          ? 'rgba(245,158,11,0.10)'
-                          : 'rgba(34,197,94,0.10)',
-                    color:
-                      m.pendingHrs > 80
-                        ? 'var(--red)'
-                        : m.pendingHrs > 40
-                          ? 'var(--amber)'
-                          : 'var(--green)',
-                  }}
-                >
-                  {m.pendingHrs > 80 ? 'Overloaded' : m.pendingHrs > 40 ? 'Busy' : 'Clear'}
-                </span>
-                <span className="mono amber" style={{ fontSize: 11 }}>
-                  {m.pendingCount} jobs
-                </span>
-              </div>
+              {machineRows.length === 0 ? (
+                <div className="empty-state" style={{ padding: 18 }}>
+                  ✓ No pending jobs for this machine
+                </div>
+              ) : (
+                <DataTable<JobQueueRow>
+                  tableKey={TABLE_KEYS.jobQueue}
+                  columns={jobQueueColumns({ machine: m, posById, today })}
+                  rows={machineRows}
+                  rowKey={(r) => r.jcOpId}
+                  defaultHidden={JOB_QUEUE_HIDDEN_IDS}
+                  // Manual queue order must stay — no browser sort/filter on top
+                  // of the ▲/▼ reorder (the page's own search already narrows).
+                  sortFilter={false}
+                  rowClassName={(r) => jobQueueRowTint(r, today)}
+                  onRowClick={(r) =>
+                    void navigate({ to: '/job-cards/$id', params: { id: r.jcId } })
+                  }
+                  rowActions={(r) =>
+                    jobQueueRowActions({
+                      row: r,
+                      machine: m,
+                      posById,
+                      canReorder,
+                      canOpEntry,
+                      searching: term !== '',
+                      onMove,
+                    })
+                  }
+                />
+              )}
             </div>
-            {m.rows.length === 0 ? (
-              <div className="empty-state" style={{ padding: 18 }}>
-                ✓ No pending jobs for this machine
-              </div>
-            ) : (
-              <div className="tbl-wrap">
-                <table className="innovic-table tbl-grid">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 44 }}>Move</th>
-                      <th style={{ width: 30 }}>Sr No</th>
-                      <th>JC No.</th>
-                      {/* POL — the line number printed on the CUSTOMER's own
-                          purchase order, before the part / item code. */}
-                      <th style={{ color: 'var(--purple)' }}>POL</th>
-                      <th>Item Code / SO No.</th>
-                      <th>Op</th>
-                      <th>Operation</th>
-                      <th>Priority</th>
-                      <th>Due Date</th>
-                      <th className="th-num">JC Qty</th>
-                      <th className="th-num" style={{ color: 'var(--green2)' }}>
-                        Completed
-                      </th>
-                      <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                        Available
-                      </th>
-                      <th>Op Status</th>
-                      <th aria-label="Actions" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {m.rows.filter(matches).map((r) => {
-                      // Queue position in the FULL queue, so Sr No and the
-                      // ▲/▼ neighbours stay true while a search narrows rows.
-                      const idx = m.rows.indexOf(r);
-                      const isNext = r.available > 0 && !r.isRunning;
-                      // ADR-126 — "started" has to mean started ON THIS MACHINE.
-                      // The row is bucketed under the machine that runs the
-                      // REMAINING qty, so after a mid-flight re-route it carries a
-                      // Done figure made on a DIFFERENT machine — and testing the
-                      // op total offered "Log Op" on a machine that had produced
-                      // nothing. When the split is empty nothing is attributed to
-                      // any machine (an OSP-accepted qty belongs to no machine), so
-                      // fall back to the op total: every single-machine op behaves
-                      // exactly as before.
-                      const startedHere =
-                        r.machines.length > 0
-                          ? r.machines.some((s) => s.machineCode === m.machineCode && s.qty > 0)
-                          : r.completed > 0;
-                      return (
-                        <tr
-                          key={r.jcOpId}
-                          style={isNext ? { background: 'var(--amber3)' } : undefined}
-                        >
-                          <td style={{ width: 44 }}>
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 2,
-                                alignItems: 'center',
-                              }}
-                            >
-                              {canReorder && term === '' && idx > 0 ? (
-                                <button
-                                  type="button"
-                                  style={queueBtnStyle}
-                                  onClick={() => onMove(m.machineId, r.jcOpId, 'up')}
-                                  title="Move up"
-                                >
-                                  ▲
-                                </button>
-                              ) : (
-                                <span style={{ width: 18, display: 'inline-block' }} />
-                              )}
-                              {canReorder && term === '' && idx < m.rows.length - 1 ? (
-                                <button
-                                  type="button"
-                                  style={queueBtnStyle}
-                                  onClick={() => onMove(m.machineId, r.jcOpId, 'down')}
-                                  title="Move down"
-                                >
-                                  ▼
-                                </button>
-                              ) : (
-                                <span style={{ width: 18, display: 'inline-block' }} />
-                              )}
-                            </div>
-                          </td>
-                          <td
-                            className="mono fw-700"
-                            style={{ color: isNext ? 'var(--amber)' : 'var(--text3)', width: 28 }}
-                          >
-                            {idx + 1}
-                          </td>
-                          <td className="td-code cyan" style={{ whiteSpace: 'nowrap' }}>
-                            <Link
-                              to="/job-cards/$id"
-                              params={{ id: r.jcId }}
-                              style={{ color: 'inherit', textDecoration: 'underline dotted' }}
-                            >
-                              {r.jcCode}
-                            </Link>
-                          </td>
-                          {/* POL — the CUSTOMER's own PO line number; '—' when
-                              no sales order sits behind this job card. */}
-                          <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                            {r.clientPoLineNo ?? '—'}
-                          </td>
-                          <td>
-                            {/* Code (and SO no.) on one line; the item NAME wraps. */}
-                            <div
-                              style={{
-                                fontSize: 12,
-                                textAlign: 'left',
-                              }}
-                            >
-                              <span
-                                className="mono fw-700"
-                                style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
-                              >
-                                {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
-                              </span>{' '}
-                              {r.itemName ? `— ${r.itemName}` : ''}
-                            </div>
-                            <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'left' }}>
-                              {r.soCode ?? '—'}
-                              {r.soCustomer ? ` · ${r.soCustomer}` : ''}
-                            </div>
-                          </td>
-                          <td className="mono" style={{ whiteSpace: 'nowrap' }}>
-                            {opSrNo(r.opSeq)}
-                          </td>
-                          <td>{r.operation}</td>
-                          <td>
-                            <PriorityBadge priority={r.priority} />
-                          </td>
-                          <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                            {fmtDate(r.dueDate)}
-                          </td>
-                          <td className="mono td-num">{r.orderQty}</td>
-                          <td className="green mono fw-700 td-num">
-                            {r.completed}
-                            {/* ADR-164 — this row sits in its PLANNED machine's
-                                queue, so say which machine ACTUALLY made this
-                                figure: always drawn, same name when nothing
-                                changed, amber when it differs, with the
-                                per-machine breakdown for a 2+ machine split. */}
-                            <ActualMachineLine planned={m.machineCode} machines={r.machines} />
-                          </td>
-                          <td className="td-num">
-                            <span
-                              className="mono fw-700"
-                              style={{
-                                fontSize: 15,
-                                color: isNext ? 'var(--amber)' : 'var(--text3)',
-                              }}
-                            >
-                              {r.available}
-                            </span>
-                          </td>
-                          <td>
-                            <StatusBadge status={r.isRunning ? 'running' : r.status} />
-                          </td>
-                          <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                            {/* T33: only offer "Complete" once the op is started
-                                on this machine; otherwise "Start Operation". Not
-                                the next job (running / nothing waiting) → greyed. */}
-                            <RowMenu
-                              renderLink={renderJcOpsLink}
-                              items={[
-                                {
-                                  key: 'op-entry',
-                                  label: startedHere ? 'Complete' : 'Start Operation',
-                                  icon: startedHere ? 'check' : 'play',
-                                  group: 'workflow',
-                                  // A running job is completed from its own row, so the
-                                  // item is hidden (not greyed) while it runs.
-                                  hidden: !canOpEntry || (r.isRunning && !isNext),
-                                  disabledReason: isNext ? undefined : 'Nothing Pending',
-                                  ...(isNext
-                                    ? {
-                                        to: `/op-entry?${new URLSearchParams({
-                                          jc: r.jcCode,
-                                          op: r.jcOpId,
-                                          mode: startedHere ? 'complete' : 'start',
-                                        }).toString()}`,
-                                      }
-                                    : {}),
-                                },
-                              ]}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
-}
-
-// Op status words + colours: the ONE shared map (job-cards/lib/jc-op-labels).
-function StatusBadge({ status }: { status: string }): React.JSX.Element {
-  const hit = OP_STATUS[status.toLowerCase()];
-  // Legacy: `m[status] || 'b-grey'`.
-  const cls = hit ? hit.cls : 'b-grey';
-  return (
-    <span className={cls ? `badge ${cls}` : 'badge'}>
-      {hit ? hit.label : status.replace(/_/g, ' ')}
-    </span>
-  );
-}
-
-// Legacy badge() (L1959): 'High' → b-amber, 'Normal' → b-grey.
-function PriorityBadge({ priority }: { priority: string }): React.JSX.Element {
-  const high = priority.toLowerCase() === 'high';
-  return <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>{high ? 'High' : 'Normal'}</span>;
 }

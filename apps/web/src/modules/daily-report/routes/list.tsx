@@ -1,18 +1,18 @@
 // Daily Production Report — mirrors legacy renderDailyReport (HTML L10823).
 
-import type { DailyReportResponse } from '@innovic/shared';
-import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
+import type { DailyReportResponse, DailyReportRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
 import { fmtDate, todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
-import { ReportFilter, ReportShell, reportTotalRowStyle } from '@/ui/data/ReportShell';
+import { DataTable, StatStrip } from '@/ui/data';
+import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { useMachinesList } from '../../machines/api';
 import { useMyCompany } from '../../settings/api';
 import { useDailyReport } from '../api';
+import { DAILY_REPORT_HIDDEN, dailyReportColumns } from '../components/daily-report-columns';
 import { printDailyReport } from '../lib/print-daily-report';
 
 const searchSchema = z.object({
@@ -223,79 +223,19 @@ function DailyReportPage(): React.JSX.Element {
                 </button>
               </div>
             </div>
-            <div className="tbl-wrap">
-              <table className="innovic-table tbl-grid">
-                <thead>
-                  <tr>
-                    <th>JC No.</th>
-                    {/* POL — the line number printed on the CUSTOMER's own
-                        purchase order, immediately before the item code. */}
-                    <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item Code</th>
-                    <th>Item Name</th>
-                    <th>Op</th>
-                    <th>Operation</th>
-                    <th>Shift</th>
-                    <th className="th-num" style={{ color: 'var(--green2)' }}>
-                      Completed
-                    </th>
-                    <th>Operator</th>
-                    <th>Remarks</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {g.rows.map((r) => (
-                    <tr key={r.logId}>
-                      <td
-                        className="mono fw-700"
-                        style={{ color: 'var(--cyan)', whiteSpace: 'nowrap' }}
-                      >
-                        {r.jcCode}
-                      </td>
-                      {/* POL — '—' when no sales order sits behind the card. */}
-                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                        {r.clientPoLineNo ?? '—'}
-                      </td>
-                      <td
-                        className="mono fw-700"
-                        style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
-                      >
-                        {itemCodeWithRev(r.itemCode, r.itemRevision)}
-                      </td>
-                      <td style={{ textAlign: 'left' }}>{r.itemName ?? '—'}</td>
-                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>
-                        Op {opSrNo(r.opSeq)}
-                      </td>
-                      <td>{r.operation}</td>
-                      <td>
-                        <span className="badge b-grey">
-                          {SHIFT_LABELS[r.shift as Shift] ?? r.shift}
-                        </span>
-                      </td>
-                      <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
-                        {r.qty}
-                      </td>
-                      <td>{r.operator ?? '—'}</td>
-                      <td className="text3" style={{ textAlign: 'left' }}>
-                        {r.remarks ?? ''}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                {/* Machine total — the server's own per-machine figure. */}
-                <tfoot>
-                  <tr style={reportTotalRowStyle}>
-                    <td colSpan={7} style={{ color: 'var(--text2)' }}>
-                      Total ({g.rows.length} entries)
-                    </td>
-                    <td className="td-num mono" style={{ color: 'var(--green2)' }}>
-                      {g.totalQty}
-                    </td>
-                    <td colSpan={2} />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+            {/* One fit table per machine group, each with its own total. The
+                Completed column's engine `total` (sum) replaces the old
+                hand-written <tfoot>, so the total follows the visible columns.
+                POL, Item Name and Remarks live in each row's ▸ detail. */}
+            <DataTable<DailyReportRow>
+              tableKey={TABLE_KEYS.dailyReport}
+              columns={dailyReportColumns}
+              rows={g.rows}
+              rowKey={(r) => r.logId}
+              defaultHidden={DAILY_REPORT_HIDDEN}
+              showTotals
+              totalsLabel="Total"
+            />
           </div>
         ))
       )}
