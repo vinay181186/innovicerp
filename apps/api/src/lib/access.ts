@@ -164,4 +164,3 @@ export async function canSeeFormPrice(user: AuthContext, formKey: AccessFormKey)
   const eff = await getMyAccess(user);
   return effectiveFormPerms(eff, formKey).price;
 }
-

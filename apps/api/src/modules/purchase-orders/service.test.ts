@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
+import { and, asc, eq, isNull, like, ne, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
@@ -792,9 +792,15 @@ describe('approvePurchaseOrder — amount-limit gate (ADR-038)', () => {
   let origApprovers: unknown = [];
   let origLimit = '100000';
   let origUserLimit: string | null = null;
+  // A real user that is NOT the approver, so the PO under test is not
+  // self-created — self-approval skips the ceiling (owner decision 2026-10-01),
+  // so these ceiling tests must be approved by someone other than the raiser.
+  let otherUserId: string;
 
-  async function createDraftPo(code: string, qty: number, rate: number) {
-    return service.createPurchaseOrder(
+  // `creator` stamps createdBy on the draft. Defaults to admin; the ceiling
+  // tests pass otherUserId so the approving manager is not the raiser.
+  async function createDraftPo(code: string, qty: number, rate: number, creator?: string) {
+    const po = await service.createPurchaseOrder(
       {
         header: {
           code,
@@ -810,6 +816,13 @@ describe('approvePurchaseOrder — amount-limit gate (ADR-038)', () => {
       },
       admin,
     );
+    if (creator && creator !== admin.id) {
+      await db
+        .update(purchaseOrders)
+        .set({ createdBy: creator })
+        .where(eq(purchaseOrders.id, po.id));
+    }
+    return po;
   }
 
   beforeAll(async () => {
@@ -844,6 +857,18 @@ describe('approvePurchaseOrder — amount-limit gate (ADR-038)', () => {
       .where(eq(users.id, admin.id))
       .limit(1);
     origUserLimit = urows[0]?.approvalLimit ?? null;
+
+    // Any other real user in the same company — used as the raiser so the
+    // approving manager (admin.id) is not approving their own PO.
+    const others = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(eq(users.companyId, admin.companyId!), isNull(users.deletedAt), ne(users.id, admin.id)),
+      )
+      .limit(1);
+    if (!others[0]) throw new Error('Need a second user to test the ceiling — seed another user');
+    otherUserId = others[0].id;
   }, 180_000);
 
   afterAll(async () => {
@@ -851,7 +876,9 @@ describe('approvePurchaseOrder — amount-limit gate (ADR-038)', () => {
       await db
         .update(approvalConfig)
         .set({ poApprovers: origApprovers, poManagerLimit: origLimit })
-        .where(and(eq(approvalConfig.companyId, admin.companyId!), isNull(approvalConfig.deletedAt)));
+        .where(
+          and(eq(approvalConfig.companyId, admin.companyId!), isNull(approvalConfig.deletedAt)),
+        );
     } else {
       await db.delete(approvalConfig).where(eq(approvalConfig.companyId, admin.companyId!));
     }
@@ -868,14 +895,14 @@ describe('approvePurchaseOrder — amount-limit gate (ADR-038)', () => {
 
   it('non-admin approver can approve a PO at/below the company manager limit', async () => {
     await db.update(users).set({ approvalLimit: null }).where(eq(users.id, admin.id));
-    const po = await createDraftPo(`${APPROVE_PREFIX}OK`, 10, 4000); // 40,000 ≤ 50,000
+    const po = await createDraftPo(`${APPROVE_PREFIX}OK`, 10, 4000, otherUserId); // 40,000 ≤ 50,000
     const res = await service.approvePurchaseOrder(po.id, null, manager());
     expect(res.status).toBe('open');
   }, 180_000);
 
   it('non-admin approver is blocked when PO value exceeds the company limit', async () => {
     await db.update(users).set({ approvalLimit: null }).where(eq(users.id, admin.id));
-    const po = await createDraftPo(`${APPROVE_PREFIX}OVER`, 10, 7000); // 70,000 > 50,000
+    const po = await createDraftPo(`${APPROVE_PREFIX}OVER`, 10, 7000, otherUserId); // 70,000 > 50,000
     await expect(service.approvePurchaseOrder(po.id, null, manager())).rejects.toBeInstanceOf(
       AuthorizationError,
     );
@@ -884,10 +911,21 @@ describe('approvePurchaseOrder — amount-limit gate (ADR-038)', () => {
   it('personal approval_limit takes precedence over the company limit', async () => {
     await db.update(users).set({ approvalLimit: '20000' }).where(eq(users.id, admin.id));
     // 30,000 > personal 20,000 even though it is < company 50,000 → blocked.
-    const po = await createDraftPo(`${APPROVE_PREFIX}PERS`, 10, 3000);
+    const po = await createDraftPo(`${APPROVE_PREFIX}PERS`, 10, 3000, otherUserId);
     await expect(service.approvePurchaseOrder(po.id, null, manager())).rejects.toBeInstanceOf(
       AuthorizationError,
     );
+  }, 180_000);
+
+  it('self-approval skips the amount limit (owner decision 2026-10-01)', async () => {
+    // manager() shares admin.id, so a PO raised by admin IS self-raised. The
+    // value (80,000) is above the 50,000 company limit, yet a self-approval is
+    // accepted at any value — the ceiling only binds when approving someone
+    // else's PO.
+    await db.update(users).set({ approvalLimit: null }).where(eq(users.id, admin.id));
+    const po = await createDraftPo(`${APPROVE_PREFIX}SELF`, 10, 8000); // 80,000 > 50,000, self
+    const res = await service.approvePurchaseOrder(po.id, null, manager());
+    expect(res.status).toBe('open');
   }, 180_000);
 
   it('rejects approval of a non-draft PO', async () => {

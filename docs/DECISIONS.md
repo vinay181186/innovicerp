@@ -7022,7 +7022,7 @@ Live state at the time of the decision: 6 users — 3 admins, 1 manager, 1 opera
 
 **5. `users.role` is untouched, and stays the outer wall.** The 176 RLS policies keyed to it are unchanged. Both layers must pass, so **a tier can only ever narrow what the role already allows** — never widen it. `maxTierForRole()` exposes the ceiling (admin/manager → L5, qc → L3, operator → L2, everyone else → L1) and the UI *warns* when a chosen tier exceeds it rather than blocking, since an admin may legitimately set the tier first and fix the role after.
 
-**6. Self-approval is refused** — `assertNotSelfApproval` on both PO and PR approval. **It applies to admins too.** An approval the raiser signed themselves is not an approval, and "the admin did it" is exactly the case an auditor cares about. Rejecting your own document stays allowed: that is just cancelling your own request.
+**6. Self-approval is refused** — `assertNotSelfApproval` on both PO and PR approval. **It applies to admins too.** An approval the raiser signed themselves is not an approval, and "the admin did it" is exactly the case an auditor cares about. Rejecting your own document stays allowed: that is just cancelling your own request. *(Superseded 2026-10-01 by ADR-198: self-approval of PR and PO is now allowed for users who hold Approve rights, and a self-approved PO skips the amount ceiling. The rest of ADR-134 stands.)*
 
 **7. Money is frozen once a PO leaves draft.** Lines/rates, vendor, PO type, PO date, tax type and the three tax percentages are refused on a non-draft PO; due date, remarks and the PR reference stay open, because chasing a delivery date is not a change to what was approved. To change the money, reject back to draft.
 
@@ -10613,3 +10613,56 @@ document number on the global Activity Log could not always open the document (c
 - Risks: a service that forgets `entityId` leaves its rows findable only by code; the guide
   (docs/AUDIT-TRAIL.md) and code review are the check. `deleted_by` is NULL on rows deleted before
   0178 and on any delete path not yet moved to `softDeleteStamp`.
+
+## ADR-198: Self-approval of Purchase Requests and Purchase Orders is now allowed
+**Date:** 2026-10-01
+**Status:** Accepted — supersedes ADR-134 §6 for PR and PO only
+
+### Context
+ADR-134 §6 refused self-approval on both PR and PO (`assertNotSelfApproval`, applied to
+admins too): the raiser could never sign off their own document. In live operation the
+company often has one person who both raises and approves purchase paperwork, so that
+block stopped legitimate work — the document sat in the inbox with nobody else able to
+act on it. The owner decided (2026-10-01) that a person who holds PR/PO **Approve**
+rights MAY approve (and reject) their own PR/PO. This reverses only the self-approval
+part of ADR-134; every other control in ADR-134 stays.
+
+### Decision
+1. **Self-approval and self-rejection are allowed for PR and PO.** The
+   `assertNotSelfApproval` guard is removed from all four paths (PR approve/reject, PO
+   approve/reject) and the now-unused helper is deleted from `apps/api/src/lib/access.ts`.
+2. **A self-approved PO skips the amount ceiling — at any value** (owner: "no limit for
+   self PO approve"). When the approver IS the raiser (`po.createdBy === user.id`), the
+   rupee ceiling in `approvePurchaseOrder` is not applied. When they approve **someone
+   else's** PO the ceiling still binds exactly as before. Admins still bypass as always.
+3. **Every other gate is unchanged.** `requireWriteRole`, `requireFormAccess(…, 'approve')`
+   on the Access Control matrix, the `po_approvers` membership / `loadApprovalContext`
+   check, the draft/open status guard and the `.for('update')` row lock all still run —
+   a user without PR/PO approve rights still cannot approve anything, their own included.
+4. **The approvals inbox shows own documents.** The `ne(createdBy, user.id)` exclusion is
+   removed from both PR and PO inbox queries; a PO the caller raised is listed at any
+   value (it would be accepted), everyone else's still only within the ceiling.
+5. **Code-only, no migration and no config switch** (owner chose this over an
+   `allow_self_approval` flag on `approval_config` — the behaviour is now the fixed rule,
+   not a toggle).
+
+### Alternatives Considered
+- **`allow_self_approval` flag on `approval_config`** — rejected by the owner: the rule is
+  now always-on, a switch is dead weight and one more thing to get wrong. (ADR-134 had
+  itself rejected this flag in the other direction.)
+- **Keep the ceiling on self-approved POs** — rejected: owner explicitly wanted no limit
+  on a self-approval. The segregation-of-duty control that the ceiling+self-block
+  enforced is the thing being deliberately relaxed.
+- **Allow self-approval everywhere (all documents)** — rejected: scope is PR and PO only,
+  the two documents the owner named.
+
+### Consequences
+- Positive: a sole buyer/approver can complete the PR→PO flow without a second account.
+- Positive: self-approvals remain fully traceable — `approved_by` / `rejected_by` and the
+  ADR-197 activity log still record who signed, so an auditor can still see a raiser
+  approved their own document.
+- Negative / accepted: the PO amount ceiling is fully defeatable by anyone who can both
+  raise and approve POs — this is the owner's explicit intent, not an oversight.
+- Risk: segregation of duty on purchasing is now a matter of how approve rights are
+  handed out, not a hard block. Mitigated by keeping the matrix/tier gates: approve
+  rights are still granted per department in Access Control.

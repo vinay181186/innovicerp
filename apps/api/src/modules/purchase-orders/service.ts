@@ -3199,7 +3199,6 @@ export async function rejectPurchaseOrder(
       );
     }
 
-
     const rejectedRows = await tx
       .update(purchaseOrders)
       .set({

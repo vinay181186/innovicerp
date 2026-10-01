@@ -1387,7 +1387,6 @@ export async function rejectPurchaseRequest(
       );
     }
 
-
     // ADR-197 (0178): who / when / why are stamped on the dedicated columns.
     // The reason is ALSO still appended to remarks, because the PR screens read
     // the rejection from there (the shared PR contract does not carry the new
