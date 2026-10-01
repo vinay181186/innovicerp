@@ -15,12 +15,12 @@ import type { ApprovalConfig, UserRole } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { PageHeader } from '@/ui/layout';
 import { useUsersList } from '@/modules/users/api';
-import { useApprovalConfig, useApprovalHistory, useSaveApprovalConfig } from '../api';
+import { useApprovalConfig, useSaveApprovalConfig } from '../api';
+import { ApprovalHistoryTable } from '../components/approval-history-table';
 import { roleLabel } from '@/lib/role-label';
 
 export const approvalConfigRoute = createRoute({
@@ -29,40 +29,10 @@ export const approvalConfigRoute = createRoute({
   component: ApprovalConfigPage,
 });
 
-// Screen word for the logged action code (APPROVE / REJECT / PAYMENT).
-function actionLabel(action: string): string {
-  if (action === 'APPROVE') return 'Approved';
-  if (action === 'REJECT') return 'Rejected';
-  if (action === 'PAYMENT') return 'Payment';
-  return action;
-}
-
-// Screen word for the logged document type. The server writes 'Purchase Order'
-// and 'Invoice' already spaced, but 'PurchaseRequest' as a raw code.
-const DOC_TYPE_LABELS: Record<string, string> = {
-  PurchaseRequest: 'Purchase Request',
-  'Purchase Order': 'Purchase Order',
-  Invoice: 'Invoice',
-};
-
-function docTypeLabel(entity: string): string {
-  const known = DOC_TYPE_LABELS[entity];
-  if (known) return known;
-  // Fallback: split camelCase / snake_case and title-case each word.
-  return entity
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
-}
-
 function ApprovalConfigPage(): React.JSX.Element {
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
   const { data: cfg, isLoading, isError, error } = useApprovalConfig();
-  const { data: history } = useApprovalHistory();
   const { data: users } = useUsersList({ limit: 100, offset: 0 }, { enabled: isAdmin });
   const save = useSaveApprovalConfig();
 
@@ -351,57 +321,8 @@ function ApprovalConfigPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Approval History */}
-      <div className="panel" style={{ padding: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
-          Recent Approval Activity
-        </div>
-        {(history?.items ?? []).length === 0 ? (
-          <div className="text3" style={{ fontSize: 11, padding: 10 }}>
-            No approval activity yet.
-          </div>
-        ) : (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Action Date &amp; Time</th>
-                  <th>Action</th>
-                  <th>Document Type</th>
-                  <th>Details</th>
-                  <th>User</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(history?.items ?? []).map((h) => {
-                  const color =
-                    h.action === 'APPROVE'
-                      ? 'var(--green)'
-                      : h.action === 'REJECT'
-                        ? 'var(--red)'
-                        : 'var(--cyan)';
-                  return (
-                    <tr key={h.id}>
-                      <td style={{ fontSize: 11 }}>{fmtDateTime(h.ts)}</td>
-                      <td style={{ fontWeight: 700, color, fontSize: 11 }}>
-                        {actionLabel(h.action)}
-                      </td>
-                      <td style={{ fontSize: 11, color: 'var(--cyan)' }}>
-                        {docTypeLabel(h.entity)}
-                      </td>
-                      <td className="text2" style={{ fontSize: 11 }}>
-                        {h.detail}
-                      </td>
-                      <td style={{ fontSize: 11 }}>{h.userName ?? '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
+      {/* Approval History — the one table on this page (ADR-199). */}
+      <ApprovalHistoryTable />
     </div>
   );
 }

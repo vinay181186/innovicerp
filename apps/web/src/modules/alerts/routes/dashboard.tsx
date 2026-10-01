@@ -1,7 +1,8 @@
 // Alerts dashboard (T-041d Phase A). Mirrors legacy `renderAlerts`
 // (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html L22323):
 //   - per-dept counts + Total, as one StatStrip (R5 SH-N20)
-//   - main table: Department · Alert Name · Records (Code column dropped, R5 SH-N17)
+//   - main table: Alert Name · Department · Records · Email (Code column
+//     dropped, R5 SH-N17)
 //   - clickable row when count > 0 → drill-down route (legacy opened a modal
 //     via _alertDrillDown; the port navigates to /alerts/$code)
 //   - "show zero records" toggle (legacy default false)
@@ -9,13 +10,20 @@
 //
 // Port-only column kept: Email (Phase B digest subscription). The arrow link
 // column was dropped (R5 SH-N46) — the whole row opens the drill page.
+//
+// ADR-199 table standard (2026-10-01): the register is the shared fit
+// <DataTable tableKey={TABLE_KEYS.alertsDashboard}>. A row opens its drill ONLY
+// when its count > 0 — the engine's `isRowClickable` gate — and an urgent
+// (overdue / pending) alert with records carries the late row tint.
 
+import type { ListAlertsResponse } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Bell, BellOff, BellRing, Loader2, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT, StatStrip, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader } from '@/ui/layout';
 import { useAlerts, alertsKeys, useMySubscriptions, useToggleSubscription } from '../api';
 import { DEPT_COLOR, DEPT_LABEL } from '../lib/dept';
@@ -26,6 +34,16 @@ export const alertsDashboardRoute = createRoute({
   path: 'alerts',
   component: AlertsDashboardPage,
 });
+
+type DashAlert = ListAlertsResponse['alerts'][number];
+
+// Legacy colours `count>0` names "overdue"/"pending" red — the late tint is the
+// token equivalent for the whole row.
+function isUrgent(a: DashAlert): boolean {
+  if (a.count <= 0) return false;
+  const n = a.name.toLowerCase();
+  return n.includes('overdue') || n.includes('pending');
+}
 
 function AlertsDashboardPage() {
   const { data, isLoading, isFetching, isError, error, refetch } = useAlerts();
@@ -60,6 +78,93 @@ function AlertsDashboardPage() {
     }
     return out;
   }, [data]);
+
+  // Columns — the alert/category first (always pinned), then department, the
+  // record count (right-aligned number) and the email toggle.
+  const columns: DataTableColumn<DashAlert>[] = [
+    {
+      header: 'Alert Name',
+      id: 'name',
+      key: 'name',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      title: (a) => a.name,
+      render: (a) => (
+        <span style={{ fontWeight: 600, ...(a.count > 0 ? {} : { color: 'var(--text3)' }) }}>
+          {a.name}
+        </span>
+      ),
+    },
+    {
+      header: 'Department',
+      id: 'dept',
+      kind: 'code',
+      filterValue: (a) => DEPT_LABEL[a.dept],
+      render: (a) => (
+        <span style={{ fontWeight: 700, color: DEPT_COLOR[a.dept], fontSize: 12 }}>
+          {DEPT_LABEL[a.dept]}
+        </span>
+      ),
+    },
+    {
+      header: 'Records',
+      id: 'count',
+      kind: 'num',
+      align: 'right',
+      filterValue: (a) => a.count,
+      render: (a) => (
+        <span
+          className="mono fw-700"
+          style={{
+            fontSize: 16,
+            color: a.count > 0 ? (isUrgent(a) ? 'var(--red2)' : 'var(--amber2)') : 'var(--green2)',
+          }}
+        >
+          {a.count}
+        </span>
+      ),
+    },
+    {
+      header: 'Email',
+      id: 'email',
+      kind: 'actions',
+      stopRowClick: true,
+      filterable: false,
+      render: (a) => {
+        const subscribed = subscribedCodes.has(a.code);
+        const subBusy = toggleSub.isPending && toggleSub.variables?.code === a.code;
+        return (
+          <button
+            type="button"
+            disabled={subBusy || subscriptions.isLoading}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleSub.mutate({ code: a.code, subscribed: !subscribed });
+            }}
+            className="btn btn-ghost btn-icon"
+            aria-pressed={subscribed}
+            aria-label={
+              subscribed ? `Unsubscribe from ${a.name} email` : `Subscribe to ${a.name} email`
+            }
+            title={
+              subscribed
+                ? 'Subscribed — click to unsubscribe'
+                : 'Not subscribed — click to get this alert by email'
+            }
+          >
+            {subBusy ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : subscribed ? (
+              <BellRing size={14} style={{ color: 'var(--cyan)' }} />
+            ) : (
+              <BellOff size={14} />
+            )}
+          </button>
+        );
+      },
+    },
+  ];
 
   return (
     <div>
@@ -139,14 +244,7 @@ function AlertsDashboardPage() {
         ) : null}
       </ListHeader>
 
-      {isLoading ? (
-        <div className="panel">
-          <div className="empty-state">
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-            Loading alerts…
-          </div>
-        </div>
-      ) : isError || !data ? (
+      {isError || (!data && !isLoading) ? (
         <div className="panel">
           <div className="empty-state">
             <span style={{ color: 'var(--red2)' }}>
@@ -156,116 +254,19 @@ function AlertsDashboardPage() {
         </div>
       ) : (
         <>
-          <div className="panel">
-            <div className="tbl-wrap">
-              <table className="innovic-table tbl-grid">
-                <thead>
-                  <tr>
-                    <th>Department</th>
-                    <th>Alert Name</th>
-                    <th className="th-num">Records</th>
-                    <th>Email</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="empty-state">
-                        {term.trim() ? 'No alerts match.' : '✅ Nothing pending'}
-                      </td>
-                    </tr>
-                  ) : (
-                    visible.map((a) => {
-                      const isUrgent =
-                        a.count > 0 &&
-                        (a.name.toLowerCase().includes('overdue') ||
-                          a.name.toLowerCase().includes('pending'));
-                      const interactive = a.count > 0;
-                      const subscribed = subscribedCodes.has(a.code);
-                      const subBusy = toggleSub.isPending && toggleSub.variables?.code === a.code;
-                      return (
-                        <tr
-                          key={a.code}
-                          style={{ cursor: interactive ? 'pointer' : 'default' }}
-                          title={interactive ? 'Click to see details' : 'No records'}
-                          onClick={
-                            interactive
-                              ? () =>
-                                  void navigate({ to: '/alerts/$code', params: { code: a.code } })
-                              : undefined
-                          }
-                        >
-                          <td>
-                            <span
-                              style={{ fontWeight: 700, color: DEPT_COLOR[a.dept], fontSize: 12 }}
-                            >
-                              {DEPT_LABEL[a.dept]}
-                            </span>
-                          </td>
-                          {/* Legacy sets `color:var(--text1)` here for count>0 — a token it
-                              never defines (:root L14 has text/text2/text3 only), so the cell
-                              inherits the default td colour. Reproduced by omitting colour. */}
-                          <td
-                            style={{
-                              fontWeight: 600,
-                              ...(interactive ? {} : { color: 'var(--text3)' }),
-                            }}
-                          >
-                            {a.name}
-                          </td>
-                          <td className="td-num">
-                            <span
-                              className="mono fw-700"
-                              style={{
-                                fontSize: 16,
-                                color: interactive
-                                  ? isUrgent
-                                    ? 'var(--red2)'
-                                    : 'var(--amber2)'
-                                  : 'var(--green2)',
-                              }}
-                            >
-                              {a.count}
-                            </span>
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              disabled={subBusy || subscriptions.isLoading}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleSub.mutate({ code: a.code, subscribed: !subscribed });
-                              }}
-                              className="btn btn-ghost btn-icon"
-                              aria-pressed={subscribed}
-                              aria-label={
-                                subscribed
-                                  ? `Unsubscribe from ${a.name} email`
-                                  : `Subscribe to ${a.name} email`
-                              }
-                              title={
-                                subscribed
-                                  ? 'Subscribed — click to unsubscribe'
-                                  : 'Not subscribed — click to get this alert by email'
-                              }
-                            >
-                              {subBusy ? (
-                                <Loader2 size={14} className="animate-spin" />
-                              ) : subscribed ? (
-                                <BellRing size={14} style={{ color: 'var(--cyan)' }} />
-                              ) : (
-                                <BellOff size={14} />
-                              )}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Panel bodyPadding="none">
+            <DataTable
+              tableKey={TABLE_KEYS.alertsDashboard}
+              columns={columns}
+              rows={visible}
+              rowKey={(a) => a.code}
+              loading={isLoading}
+              empty={term.trim() ? 'No alerts match.' : '✅ Nothing pending'}
+              isRowClickable={(a) => a.count > 0}
+              onRowClick={(a) => void navigate({ to: '/alerts/$code', params: { code: a.code } })}
+              rowClassName={(a) => (isUrgent(a) ? ROW_TINT.late : undefined)}
+            />
+          </Panel>
 
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
             <Bell size={12} className="inline align-text-bottom" /> = get this alert by email.

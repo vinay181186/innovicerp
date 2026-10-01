@@ -2,15 +2,99 @@
 // running, today's output, ready-for-you table. The operator-strip My Work is
 // rendered by the shell.
 
-import type { HomeResponse } from '@innovic/shared';
+import type { HomeResponse, ReadyOpRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { DataTable, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 
 function elapsedStr(min: number): string {
   return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`;
+}
+
+// "Ready for You" columns for the ADR-199 fit sheet. JC No. is the pinned first
+// column; Item Name is hidden by default and shows in the ▸ detail row. Numbers
+// right-align; the ▶ Start action is the last column (rowActions).
+const READY_DEFAULT_HIDDEN = ['item_name'];
+
+function readyColumns(): DataTableColumn<ReadyOpRow>[] {
+  return [
+    {
+      id: 'jc_no',
+      kind: 'code',
+      header: 'JC No.',
+      className: 'td-code fw-700',
+      render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
+    },
+    {
+      id: 'op',
+      kind: 'code',
+      header: 'Op',
+      className: 'mono',
+      render: (r) => opSrNo(r.opSeq),
+    },
+    {
+      id: 'planned_machine',
+      kind: 'code',
+      header: 'Planned Machine',
+      render: (r) => <b>{r.machine ?? '—'}</b>,
+    },
+    {
+      // The item code is how an operator finds the drawing, so it carries the
+      // darkest text token and the bold weight (item-code rule). The part name
+      // beside it stays muted — a quiet name next to a strong code is what makes
+      // the code findable.
+      id: 'item_code',
+      kind: 'code',
+      header: 'Item Code',
+      className: 'td-code fw-700',
+      render: (r) => (
+        <span style={{ color: 'var(--text)' }}>
+          {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
+        </span>
+      ),
+    },
+    {
+      // Hidden by default → shows in the ▸ detail. A card with no SO line behind
+      // it has no name and the cell stays blank rather than printing a dash.
+      id: 'item_name',
+      kind: 'text',
+      header: 'Item Name',
+      align: 'left',
+      ellipsis: true,
+      className: 'text2',
+      render: (r) => r.itemName ?? '',
+      title: (r) => r.itemName ?? '',
+    },
+    {
+      id: 'available',
+      kind: 'num',
+      header: 'Available',
+      align: 'right',
+      headColor: 'var(--sig-warn)',
+      className: 'mono fw-700',
+      render: (r) => <span style={{ color: 'var(--sig-warn)' }}>{r.available}</span>,
+    },
+    {
+      id: 'due_date',
+      kind: 'date',
+      header: 'Due Date',
+      render: (r) => (
+        <span
+          style={{
+            color: r.isOverdue ? 'var(--sig-critical)' : 'var(--text2)',
+            fontWeight: r.isOverdue ? 700 : 400,
+          }}
+        >
+          {fmtDate(r.dueDate)}
+          {r.isOverdue ? ' ⚠' : ''}
+        </span>
+      ),
+    },
+  ];
 }
 
 export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Element {
@@ -136,95 +220,22 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
             Top {o.ready.length} operations sorted by due date
           </span>
         </div>
-        <div className="tbl-wrap" style={{ maxHeight: '50vh' }}>
-          <table className="innovic-table">
-            <thead>
-              {/* Item Name sits beside the code it belongs to: the code names the
-                  drawing, the name is what the operator recognises on the rack. */}
-              <tr>
-                <th>JC No.</th>
-                <th>Op</th>
-                <th>Planned Machine</th>
-                <th>Item Code</th>
-                <th>Item Name</th>
-                <th className="th-num">Available</th>
-                <th>Due Date</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {o.ready.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="empty-state">
-                    No operations ready. Check back soon or speak to your supervisor.
-                  </td>
-                </tr>
-              ) : (
-                o.ready.map((r, i) => (
-                  <tr key={i}>
-                    <td className="td-code" style={{ color: 'var(--cyan)', fontWeight: 700 }}>
-                      {r.jcCode}
-                    </td>
-                    <td className="td-ctr mono">{opSrNo(r.opSeq)}</td>
-                    <td>
-                      <b>{r.machine ?? '—'}</b>
-                    </td>
-                    {/* The item code is how an operator finds the drawing, so it
-                        gets the darkest text token and the bold weight rather
-                        than the muted grey it used to carry. The part name in
-                        the next cell stays muted on purpose — a quiet name
-                        beside a strong code is what makes the code findable. */}
-                    <td className="td-code fw-700" style={{ color: 'var(--text)', fontSize: 11 }}>
-                      {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
-                    </td>
-                    {/* A part name can run long, so it truncates on one line and
-                        keeps the whole thing in the tooltip. A card with no SO
-                        line behind it has no name to show and the cell stays
-                        blank rather than printing a dash. */}
-                    <td
-                      style={{
-                        fontSize: 11,
-                        color: 'var(--text2)',
-                        maxWidth: 160,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title={r.itemName ?? ''}
-                    >
-                      {r.itemName ?? ''}
-                    </td>
-                    <td
-                      className="mono td-num"
-                      style={{ fontSize: 15, fontWeight: 800, color: 'var(--sig-warn)' }}
-                    >
-                      {r.available}
-                    </td>
-                    <td
-                      style={{
-                        fontSize: 11,
-                        color: r.isOverdue ? 'var(--sig-critical)' : 'var(--text2)',
-                        fontWeight: r.isOverdue ? 700 : 400,
-                      }}
-                    >
-                      {fmtDate(r.dueDate)}
-                      {r.isOverdue ? ' ⚠' : ''}
-                    </td>
-                    <td>
-                      <Link
-                        to="/op-entry"
-                        className="btn btn-success btn-sm"
-                        style={{ fontSize: 11 }}
-                      >
-                        ▶ Start Operation
-                      </Link>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        {/* THE shared fit sheet (ADR-199). JC No. is pinned; Item Name drops into
+            the ▸ detail; the ▶ Start action is the last column. */}
+        <DataTable<ReadyOpRow>
+          tableKey={TABLE_KEYS.homeOperator}
+          columns={readyColumns()}
+          rows={o.ready}
+          rowKey={(_r, i) => i}
+          defaultHidden={READY_DEFAULT_HIDDEN}
+          maxHeight="50vh"
+          empty="No operations ready. Check back soon or speak to your supervisor."
+          rowActions={() => (
+            <Link to="/op-entry" className="btn btn-success btn-sm" style={{ fontSize: 11 }}>
+              ▶ Start Operation
+            </Link>
+          )}
+        />
       </div>
     </div>
   );

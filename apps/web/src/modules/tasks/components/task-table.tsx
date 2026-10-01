@@ -1,13 +1,19 @@
-// The Task Board table (ADR-176, approved board). Columns: Task# | Title |
-// <Person> | Related To | Priority | Due Date | Status | Last Update | ⋯.
-// The person column is the OTHER party of the current view — who assigned it
-// (Inbox), who it went to (Outbox / All), "Me" on My To-Do. Rows open the
-// detail (no separate View item); the ⋯ menu lists an action only when the server says the
-// caller may take that action on that row.
+// The Task Board table (ADR-176 board, ADR-199 table standard). THE Innovic fit
+// sheet: one row per task of the standard columns — Task No. (pinned first,
+// carries the fit table's ▸) · Title · <Person> · Related To · Priority · Due
+// Date · Task Status. The row's ▸ reveals Last Update, the attachment / remark
+// counts and the task's remarks; the row click opens the detail; the row's ⋯
+// lists only the actions the server says the caller may take; the whole row is
+// washed by status (ROW_TINT).
+//
+// The <Person> column is the OTHER party of the current view — who assigned it
+// (Inbox), who it went to (Outbox / All), "Me" on My To-Do.
 
 import type { TaskRow, TaskView } from '@innovic/shared';
 import { TASK_PRIORITY_LABELS } from '@innovic/shared';
-import { RowMenu } from '@/ui/data';
+import { useState } from 'react';
+import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { fmtTaskDate, fmtTaskDateTime, isOpenTask, priorityColor, statusPill } from '../lib/format';
 import { RelatedRefLink } from './related-ref-link';
 
@@ -26,63 +32,63 @@ export function personName(t: TaskRow, view: TaskView): string {
   return t.assignedToName ?? '—';
 }
 
-export function TaskTableRow({
-  t,
-  view,
-  onAction,
-}: {
-  t: TaskRow;
-  view: TaskView;
-  onAction: (action: RowAction, task: TaskRow) => void;
-}): React.JSX.Element {
-  const pill = statusPill(t);
-  const open = isOpenTask(t);
-  const p = t.permissions;
-  return (
-    <tr onClick={() => onAction('view', t)} style={{ cursor: 'pointer' }}>
-      <td className="td-code mono fw-700" style={{ color: 'var(--blue)' }}>
-        {t.isUnread ? <span className="task-unread" title="Unread — new task" /> : null}
-        {t.code}
-      </td>
-      <td>
-        <span
-          style={{
-            fontWeight: 700,
-            display: 'inline-block',
-            maxWidth: 320,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            verticalAlign: 'bottom',
-          }}
-          title={t.title}
-        >
-          {t.title}
+/**
+ * Whole-row wash by the task's real status (ADR-199 ROW_TINT), aligned with the
+ * status badge colours: Completed green, Cancelled grey, an open-but-late task
+ * red, In Progress amber. To Do waits with no wash.
+ */
+function taskRowTint(t: TaskRow): string | undefined {
+  if (t.status === 'cancelled') return ROW_TINT.cancelled;
+  if (t.status === 'completed') return ROW_TINT.done;
+  if (t.isOverdue) return ROW_TINT.late;
+  if (t.status === 'in_progress') return ROW_TINT.pending;
+  return undefined;
+}
+
+function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
+  return [
+    {
+      id: 'task_no',
+      header: 'Task No.',
+      nowrap: true,
+      render: (t) => (
+        <span className="td-code mono fw-700" style={{ color: 'var(--blue)' }}>
+          {t.isUnread ? <span className="task-unread" title="Unread — new task" /> : null}
+          {t.code}
         </span>
-        {t.attachmentCount > 0 ? (
-          <span
-            className="text3"
-            style={{ fontSize: 11, marginLeft: 6 }}
-            title={`${t.attachmentCount} attachment(s)`}
-          >
-            📎{t.attachmentCount}
-          </span>
-        ) : null}
-        {t.commentCount > 0 ? (
-          <span
-            className="text3"
-            style={{ fontSize: 11, marginLeft: 4 }}
-            title={`${t.commentCount} remark(s)`}
-          >
-            💬{t.commentCount}
-          </span>
-        ) : null}
-      </td>
-      <td style={{ fontSize: 12 }}>{personName(t, view)}</td>
-      <td>
-        <RelatedRefLink linkedRef={t.linkedRef} stopRowClick />
-      </td>
-      <td>
+      ),
+    },
+    {
+      id: 'title',
+      kind: 'text',
+      header: 'Title',
+      align: 'left',
+      className: 'fw-700',
+      ellipsis: true,
+      render: (t) => t.title,
+      title: (t) => t.title,
+    },
+    {
+      id: 'person',
+      kind: 'text',
+      header: PERSON_LABEL[view],
+      align: 'left',
+      ellipsis: true,
+      render: (t) => personName(t, view),
+      title: (t) => personName(t, view),
+    },
+    {
+      id: 'related',
+      header: 'Related To',
+      nowrap: true,
+      render: (t) => <RelatedRefLink linkedRef={t.linkedRef} stopRowClick />,
+    },
+    {
+      id: 'priority',
+      kind: 'badge',
+      header: 'Priority',
+      nowrap: true,
+      render: (t) => (
         <span
           style={{
             fontWeight: t.priority === 'urgent' || t.priority === 'high' ? 700 : 600,
@@ -91,23 +97,114 @@ export function TaskTableRow({
         >
           {TASK_PRIORITY_LABELS[t.priority]}
         </span>
-      </td>
-      <td
-        className="mono"
-        style={{ fontSize: 12, fontWeight: 700, color: t.isOverdue ? 'var(--red)' : 'var(--text)' }}
-      >
-        {fmtTaskDate(t.dueDate)}
-        {t.isOverdue ? ' ⚠' : ''}
-      </td>
-      <td>
-        <span className={pill.cls}>{pill.label}</span>
-      </td>
-      <td className="mono text3" style={{ fontSize: 11 }}>
-        {fmtTaskDateTime(t.updatedAt)}
-      </td>
-      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-        <RowMenu
-          items={[
+      ),
+    },
+    {
+      id: 'due_date',
+      kind: 'date',
+      header: 'Due Date',
+      className: 'mono',
+      nowrap: true,
+      render: (t) => {
+        if (!t.dueDate) return <span className="text2">—</span>;
+        return (
+          <span
+            style={{
+              fontWeight: 700,
+              color: t.isOverdue ? 'var(--red)' : 'var(--text)',
+            }}
+          >
+            {fmtTaskDate(t.dueDate)}
+            {t.isOverdue ? ' ⚠' : ''}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'status',
+      kind: 'badge',
+      header: 'Task Status',
+      nowrap: true,
+      render: (t) => {
+        const pill = statusPill(t);
+        return <span className={pill.cls}>{pill.label}</span>;
+      },
+    },
+  ];
+}
+
+/** The ▸ reveal: Last Update, the 📎 / 💬 counts and the task's remarks. */
+function TaskExpand({ t }: { t: TaskRow }): React.JSX.Element {
+  return (
+    <div style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text2)' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginBottom: 6 }}>
+        <span>
+          <span className="text3">Last Update: </span>
+          <span className="mono">{fmtTaskDateTime(t.updatedAt)}</span>
+        </span>
+        <span>
+          <span className="text3">Attachments: </span>
+          {t.attachmentCount > 0 ? `📎 ${t.attachmentCount}` : '—'}
+        </span>
+        <span>
+          <span className="text3">Remarks posted: </span>
+          {t.commentCount > 0 ? `💬 ${t.commentCount}` : '—'}
+        </span>
+      </div>
+      {t.description ? (
+        <div style={{ marginBottom: 4 }}>
+          <span className="text3">Description: </span>
+          {t.description}
+        </div>
+      ) : null}
+      {t.completionRemark ? (
+        <div>
+          <span className="text3">Completion Remark: </span>
+          {t.completionRemark}
+        </div>
+      ) : null}
+      {!t.description && !t.completionRemark ? <div className="text3">No remarks.</div> : null}
+    </div>
+  );
+}
+
+export function TaskTable({
+  rows,
+  view,
+  filtered,
+  onAction,
+}: {
+  rows: TaskRow[];
+  view: TaskView;
+  /** True when a search / filter is on — picks the empty-state wording. */
+  filtered: boolean;
+  onAction: (action: RowAction, task: TaskRow) => void;
+}): React.JSX.Element {
+  // The row's ▸ (fit engine) is the one expand control. A Set — many open.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string): void =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  return (
+    <Panel bodyPadding="none" style={{ marginBottom: 0 }}>
+      <DataTable<TaskRow>
+        tableKey={TABLE_KEYS.taskBoard}
+        columns={taskColumns(view)}
+        rows={rows}
+        rowClassName={(t) => taskRowTint(t)}
+        onRowClick={(t) => onAction('view', t)}
+        renderExpanded={(t) => (expandedIds.has(t.id) ? <TaskExpand t={t} /> : null)}
+        onToggleExpanded={(t) => toggleExpand(t.id)}
+        empty={filtered ? 'No Tasks match.' : 'No Tasks yet.'}
+        rowMenu={(t) => {
+          const p = t.permissions;
+          const open = isOpenTask(t);
+          return [
             {
               key: 'status',
               label: 'Update Status',
@@ -139,55 +236,9 @@ export function TaskTableRow({
               hidden: !(p.canCancel && open),
               onSelect: () => onAction('cancel', t),
             },
-          ]}
-        />
-      </td>
-    </tr>
-  );
-}
-
-export function TaskTable({
-  rows,
-  view,
-  filtered,
-  onAction,
-}: {
-  rows: TaskRow[];
-  view: TaskView;
-  /** True when a search / filter is on — picks the empty-state wording. */
-  filtered: boolean;
-  onAction: (action: RowAction, task: TaskRow) => void;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ marginBottom: 0 }}>
-      <div className="tbl-wrap tbl-frozen">
-        <table className="innovic-table tbl-grid">
-          <thead>
-            <tr>
-              <th>Task No.</th>
-              <th>Title</th>
-              <th>{PERSON_LABEL[view]}</th>
-              <th>Related To</th>
-              <th>Priority</th>
-              <th>Due Date</th>
-              <th>Task Status</th>
-              <th>Last Update</th>
-              <th aria-label="Actions" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="empty-state">
-                  {filtered ? 'No Tasks match.' : 'No Tasks yet.'}
-                </td>
-              </tr>
-            ) : (
-              rows.map((t) => <TaskTableRow key={t.id} t={t} view={view} onAction={onAction} />)
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          ];
+        }}
+      />
+    </Panel>
   );
 }

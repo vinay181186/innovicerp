@@ -1,15 +1,14 @@
-import { createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
 import { activityActionLabel as actionLabel } from '@innovic/shared';
+import { createRoute } from '@tanstack/react-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { fmtDateTime } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useActivityLog } from '../api';
-import { DocRefLink } from '../components/doc-ref-link';
-import { activityActionBadge } from '../lib/activity-entity';
+import { ActivityLogExpand, activityLogColumns } from '../components/activity-log-columns';
 
 const PAGE_SIZE = 50;
 
@@ -74,6 +73,20 @@ function ActivityLogListPage() {
     [search, offset],
   );
   const { data, isLoading, isError, error, isFetching } = useActivityLog(query);
+
+  const columns = useMemo(() => activityLogColumns(), []);
+
+  // ▸ reveal — the full Detail / remarks for a row. The caller owns the open set;
+  // the fit engine's ▸ is the one toggle (onToggleExpanded).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const setFilter = (key: 'action' | 'userId' | 'fromDate' | 'toDate', value: string) => {
     void navigate({
@@ -171,93 +184,34 @@ function ActivityLogListPage() {
         }
       />
 
-      {/* Legacy L11302: bare panel → tbl-wrap → table. No panel-hdr, no
-          tbl-frozen. Ref is a port-only column (see report). */}
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            <thead>
-              <tr>
-                <th>Log Date</th>
-                <th>Log Time</th>
-                <th>Action</th>
-                <th>Document Type</th>
-                <th>Detail</th>
-                <th>Document No.</th>
-                <th>User</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={7} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={7} className="empty-state">
-                    <span className="red">
-                      {error instanceof Error
-                        ? error.message
-                        : 'Could not load activity log. Try again.'}
-                    </span>
-                  </td>
-                </tr>
-              ) : !data || data.entries.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="empty-state" style={{ padding: 24 }}>
-                    {search.search ||
-                    search.action ||
-                    search.userId ||
-                    search.fromDate ||
-                    search.toDate
-                      ? 'No entries match.'
-                      : 'No activity yet.'}
-                  </td>
-                </tr>
-              ) : (
-                data.entries.map((e) => {
-                  // `26-Sep-2026 14:05` IST, split across the Date and Time columns.
-                  const [date = '—', time = ''] = fmtDateTime(e.ts).split(' ');
-                  const badgeClass = activityActionBadge(e.action);
-                  return (
-                    <tr key={e.id}>
-                      <td className="mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        {date}
-                      </td>
-                      <td className="mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        {time}
-                      </td>
-                      <td>
-                        <span className={`badge ${badgeClass}`}>{actionLabel(e.action)}</span>
-                      </td>
-                      <td className="fw-700" style={{ fontSize: 12 }}>
-                        {e.entity}
-                      </td>
-                      <td className="text2" style={{ fontSize: 11 }}>
-                        {e.detail}
-                      </td>
-                      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        <DocRefLink entity={e.entity} refId={e.refId} entityId={e.entityId} />
-                      </td>
-                      <td className="amber" style={{ fontSize: 11 }} title={e.userName}>
-                        {e.userFullName}
-                        {e.userId === null ? (
-                          <span className="text3" style={{ fontSize: 11, marginLeft: 4 }}>
-                            (snapshot)
-                          </span>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load activity log. Try again.'
+          }
+        />
+      ) : (
+        // THE shared FIT table (ADR-199). First column (Log Date) is pinned; no
+        // detail page for a log row, so a row is not clickable — the ▸ reveals
+        // its full Detail / remarks.
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.activityLog}
+            columns={columns}
+            rows={data?.entries ?? []}
+            rowKey={(e) => e.id}
+            loading={isLoading}
+            emptyText={
+              search.search || search.action || search.userId || search.fromDate || search.toDate
+                ? 'No entries match.'
+                : 'No activity yet.'
+            }
+            renderExpanded={(e) => (expanded.has(e.id) ? <ActivityLogExpand entry={e} /> : null)}
+            onToggleExpanded={(e) => toggleExpand(e.id)}
+          />
+        </Panel>
+      )}
 
       {/* Port-only: legacy renders every row with no pager. */}
       {data ? (

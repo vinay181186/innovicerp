@@ -2,16 +2,18 @@
 // User-submitted "what I did today" reports. Admin / manager see all + a user filter;
 // everyone else sees only their own (server-filtered) and may file/edit their own.
 
-import { SHIFT_LABELS } from '@innovic/shared';
+import { SHIFT_LABELS, type DailyTaskReportRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu } from '@/ui/data';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader } from '@/ui/layout';
 import { useDailyReportList } from '../api';
+import { ReportLinesExpand } from '../components/report-lines-expand';
 import { EditReportModal, NewReportModal, ViewReportModal } from '../components/report-modals';
 
 export const dailyTaskReportsRoute = createRoute({
@@ -32,6 +34,15 @@ function DailyTaskReportsPage(): React.JSX.Element {
   const [dateTo, setDateTo] = useState('');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   const [term, setTerm] = useState('');
+  // The row's ▸ (fit engine) reveals that report's task lines. A Set — many open.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string): void =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const { data, isLoading, isFetching, isError, error } = useDailyReportList({
     userId: userFilter || undefined,
@@ -58,6 +69,49 @@ function DailyTaskReportsPage(): React.JSX.Element {
   const rows = data.reports.filter((r) =>
     matchesSearchTerm([fmtDate(r.reportDate), r.userName, SHIFT_LABELS[r.shift]], term),
   );
+
+  const columns: DataTableColumn<DailyTaskReportRow>[] = [
+    {
+      id: 'report_date',
+      kind: 'date',
+      header: 'Report Date',
+      className: 'fw-700',
+      nowrap: true,
+      render: (r) => fmtDate(r.reportDate),
+    },
+    {
+      id: 'user',
+      kind: 'text',
+      header: 'User',
+      align: 'left',
+      className: 'fw-700',
+      ellipsis: true,
+      render: (r) => r.userName ?? '—',
+      title: (r) => r.userName ?? '',
+    },
+    {
+      id: 'shift',
+      header: 'Shift',
+      nowrap: true,
+      render: (r) => SHIFT_LABELS[r.shift],
+    },
+    {
+      id: 'tasks',
+      header: 'Tasks',
+      align: 'right',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (r) => r.taskCount,
+    },
+    {
+      id: 'hours',
+      header: 'Hours',
+      align: 'right',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.totalHours.toFixed(1)}h</span>,
+    },
+  ];
 
   return (
     <div>
@@ -124,62 +178,32 @@ function DailyTaskReportsPage(): React.JSX.Element {
         }
       />
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            <thead>
-              <tr>
-                <th>Report Date</th>
-                <th>User</th>
-                <th>Shift</th>
-                <th className="th-num">Tasks</th>
-                <th className="th-num">Hours</th>
-                <th className="td-ctr" aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="empty-state">
-                    {term.trim() || userFilter || dateFrom || dateTo
-                      ? 'No Daily Reports match.'
-                      : 'No Daily Reports yet.'}
-                  </td>
-                </tr>
-              ) : (
-                rows.map((r) => (
-                  <tr
-                    key={r.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setModal({ kind: 'view', id: r.id })}
-                  >
-                    <td style={{ fontWeight: 700 }}>{fmtDate(r.reportDate)}</td>
-                    <td style={{ fontWeight: 600 }}>{r.userName ?? '—'}</td>
-                    <td>{SHIFT_LABELS[r.shift]}</td>
-                    <td className="td-num mono fw-700">{r.taskCount}</td>
-                    <td className="td-num mono fw-700" style={{ color: 'var(--cyan)' }}>
-                      {r.totalHours.toFixed(1)}h
-                    </td>
-                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                      <RowMenu
-                        items={[
-                          {
-                            key: 'edit',
-                            label: 'Edit',
-                            icon: 'pencil',
-                            hidden: !r.canEdit,
-                            onSelect: () => setModal({ kind: 'edit', id: r.id }),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <Panel bodyPadding="none">
+        <DataTable<DailyTaskReportRow>
+          tableKey={TABLE_KEYS.dailyTaskReports}
+          columns={columns}
+          rows={rows}
+          empty={
+            term.trim() || userFilter || dateFrom || dateTo
+              ? 'No Daily Reports match.'
+              : 'No Daily Reports yet.'
+          }
+          onRowClick={(r) => setModal({ kind: 'view', id: r.id })}
+          // The fit table's ▸ is the row's one expand control: it reveals the
+          // report's task lines (fetched on open). A collapsed row fetches nothing.
+          renderExpanded={(r) => (expandedIds.has(r.id) ? <ReportLinesExpand id={r.id} /> : null)}
+          onToggleExpanded={(r) => toggleExpand(r.id)}
+          rowMenu={(r) => [
+            {
+              key: 'edit',
+              label: 'Edit',
+              icon: 'pencil',
+              hidden: !r.canEdit,
+              onSelect: () => setModal({ kind: 'edit', id: r.id }),
+            },
+          ]}
+        />
+      </Panel>
 
       {modal.kind === 'new' ? <NewReportModal onClose={() => setModal({ kind: 'none' })} /> : null}
       {modal.kind === 'edit' ? (
