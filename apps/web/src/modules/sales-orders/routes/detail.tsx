@@ -45,7 +45,7 @@ import { SoFulfilmentBadge } from '../components/so-fulfilment-badge';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
-import { MILESTONE_COLUMNS, lineColumns } from '../components/so-line-columns';
+import { MILESTONE_COLUMNS, lineColumns, lineRowMenu } from '../components/so-line-columns';
 
 /** ₹ with Indian grouping, to the paise — the SO totals strip. */
 function fmtInr(n: number): string {
@@ -295,9 +295,17 @@ function SalesOrderDetailPage(): React.JSX.Element {
             priceHidden,
             soCode: detail.code,
             onPreview: setPreview,
-            onCloseLine: canClose ? (line) => setCloseTarget({ line }) : null,
           })}
           rows={detail.lines}
+          // ADR-196 — "Close line" in the ⋯; same Close dialog as before.
+          rowMenu={(l) =>
+            lineRowMenu(l, {
+              canClose: perms.edit && perms.approve,
+              isWriteRole: me?.role === 'admin' || me?.role === 'manager',
+              soStatus: detail.status,
+              onCloseLine: (line) => setCloseTarget({ line }),
+            })
+          }
           empty="No lines on this SO yet."
         />
       </Panel>

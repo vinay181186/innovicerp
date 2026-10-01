@@ -5,11 +5,13 @@
 // PHASE 4 — migrated with the Plans list it lives inside: the hand-written
 // <table>/<thead>, the three panel-wrapped state blocks and the bare search
 // <input> are now Panel + DataTable + PageState + SearchInput. The local
-// filter, the columns, the copy and the Plan button are unchanged.
+// filter, the columns and the copy are unchanged. The Plan action sits in
+// the row's ⋯ menu and opens Planning on that very order (?soId=).
 
 import type { UnplannedOrderRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -21,6 +23,9 @@ import { useUnplannedOrders } from '../api';
 export function NeedsPlanningTable(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const { data, isLoading, isError, error } = useUnplannedOrders(true);
+  // Planning writes need plan_create entry — a view-only user gets no Plan.
+  const { data: eff } = useMyAccess();
+  const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
 
   const filtered = useMemo(() => {
     if (!data) return [] as UnplannedOrderRow[];
@@ -36,8 +41,8 @@ export function NeedsPlanningTable(): React.JSX.Element {
     );
   }, [data, search]);
 
-  // Widths are `%` and must sum to 100 WITH the Action column
-  // (rowActionsWidth below): 10+4+5+12+16+6+6+6+8+12 = 85, + 15 = 100.
+  // Widths are `%` (10+4+5+12+16+6+6+6+8+12 = 85); the fit engine sizes the
+  // ⋯ column itself.
   const columns = useMemo<DataTableColumn<UnplannedOrderRow>[]>(
     () => [
       {
@@ -173,14 +178,25 @@ export function NeedsPlanningTable(): React.JSX.Element {
               {data && data.rows.length === 0 ? 'No SO lines to plan.' : 'No SO lines match.'}
             </>
           }
-          rowActionsWidth="15%"
-          rowActions={(r) => (
-            // Not a View / Edit / Delete cluster — the one action an unplanned
-            // line offers is to go and plan it.
-            <Link to="/planning" className="btn btn-sm btn-primary">
-              📋 Plan {r.remainingQty} pcs
-            </Link>
+          // The item's `to` carries ?soId=; Planning reads it as search, so
+          // the link is built with `search` rather than a raw query string.
+          renderLink={({ to, ...p }) => (
+            <Link
+              {...p}
+              to="/planning"
+              search={{
+                soId: new URLSearchParams(to.split('?')[1] ?? '').get('soId') ?? undefined,
+              }}
+            />
           )}
+          rowMenu={(r) => [
+            {
+              key: 'plan',
+              label: 'Plan',
+              to: `/planning?soId=${r.soId}`,
+              hidden: !canPlan,
+            },
+          ]}
         />
       )}
     </Panel>

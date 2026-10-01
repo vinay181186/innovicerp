@@ -34,6 +34,7 @@ import { z } from 'zod';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -112,6 +113,12 @@ function ClientsListPage(): React.JSX.Element {
   const canAdd = perms.entry;
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
+  // The clients service also needs role admin/manager to edit or delete
+  // (requireWriteRole); a user with the tier but another role sees the two
+  // ⋯ items greyed with the reason instead of a refusal after the click.
+  const { data: me } = useSession();
+  const roleBlock =
+    !me || me.role === 'admin' || me.role === 'manager' ? undefined : 'Needs admin or manager role';
 
   // Excel import — ONE shared dialog (components/shared/master-import-dialog):
   // Import Type (Insert new / Update existing by Code) → preview (dryRun, the
@@ -289,16 +296,34 @@ function ClientsListPage(): React.JSX.Element {
             rowActionsWidth="11%"
             rowActions={(c) => (
               <RowActions
-                // Row click opens the customer (ERPNext list); Edit is a
-                // ROUTE, so it stays a real link for ctrl-click / new tab.
-                editTo={canEdit ? `/clients/${c.id}/edit` : undefined}
+                // Row click opens the customer (ERPNext list), so no View.
+                // ⋯ menu: Edit · ─ · Move to Trash, both as `items` so they
+                // can carry the role reason. Edit is a ROUTE, so it stays a
+                // real link for ctrl-click / new tab.
                 renderLink={(p) => <Link {...p} />}
-                // Delete opens the Trash dialog below, which asks for a reason
-                // (ADR-197) and owns the wait until the record is in the Trash.
-                onDelete={canDelete ? () => setDeleteTarget({ id: c.id, code: c.code }) : undefined}
-                // And every OTHER row's Delete greys out while one is in
-                // flight, exactly as `disabled={softDelete.isPending}` did.
-                deleteDisabled={softDelete.isPending}
+                items={[
+                  {
+                    key: 'edit',
+                    label: 'Edit',
+                    icon: 'pencil',
+                    to: `/clients/${c.id}/edit`,
+                    hidden: !canEdit,
+                    disabledReason: roleBlock,
+                  },
+                  {
+                    // Opens the Trash dialog below, which asks for a reason
+                    // (ADR-197) and owns the wait until it is in the Trash.
+                    key: 'delete',
+                    label: 'Move to Trash',
+                    icon: 'trash-2',
+                    group: 'danger',
+                    hidden: !canDelete,
+                    // Every OTHER row's Trash greys out while one is in flight,
+                    // exactly as `disabled={softDelete.isPending}` did.
+                    disabledReason: roleBlock ?? (softDelete.isPending ? 'Working…' : undefined),
+                    onSelect: () => setDeleteTarget({ id: c.id, code: c.code }),
+                  },
+                ]}
               />
             )}
           />

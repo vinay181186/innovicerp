@@ -52,9 +52,9 @@ import { Icon, Tag } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
-import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
-import { PrintRouteCardButton } from '../components/print-route-card-button';
+import { RouteCardRowMenu } from '../components/route-card-row-menu';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -259,17 +259,11 @@ function RouteCardsListPage(): React.JSX.Element {
             onToggleExpanded={(rc) => toggleExpand(rc.id)}
             rowActionsWidth="1%"
             rowActions={(rc) => (
-              <RowActions
-                // Row click opens the card (no separate View). Edit is a ROUTE,
-                // so it stays a real link — ctrl-click still opens a new tab.
-                editTo={perms.edit ? `/route-cards/${rc.id}/edit` : undefined}
-                renderLink={(p) => <Link {...p} />}
-                // 🖨 Print is this screen's own action, not one of the three
-                // RowActions knows about, so it comes in through `extra` —
-                // unchanged, including its lazy per-row fetch.
-                extra={<PrintRouteCardButton rc={rc} />}
-                // Caller-owned confirm (below): it asks for the reason, owns
-                // the wait, and keeps a failure on screen inside the dialog.
+              // The ⋯ menu: Edit · Print · ─ · Move to Trash (no View — the
+              // row click opens the card).
+              <RouteCardRowMenu
+                rc={rc}
+                canEdit={perms.edit}
                 onDelete={
                   canDelete
                     ? (): void => {
@@ -278,7 +272,6 @@ function RouteCardsListPage(): React.JSX.Element {
                       }
                     : undefined
                 }
-                // Every row's Delete greys out while one is in flight.
                 deleteDisabled={del.isPending}
               />
             )}

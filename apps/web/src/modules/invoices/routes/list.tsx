@@ -15,11 +15,12 @@ import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { DataTable, StatStrip, type DataTableColumn, type StatStripItem } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useInvoiceList } from '../api';
 
@@ -67,6 +68,10 @@ function InvoiceListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useInvoiceList();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
+  // The server takes a payment from role admin / manager only (on top of the
+  // invoice_create entry right), so other roles see Add Payment greyed.
+  const { data: me } = useSession();
+  const isWriteRole = me?.role === 'admin' || me?.role === 'manager';
 
   if (eff && !perms.view) return <PageState as="page" state="noaccess" />;
 
@@ -313,25 +318,24 @@ function InvoiceListPage(): React.JSX.Element {
               rowKey={(inv) => inv.id}
               onRowClick={(inv) => openInvoice(inv.id)}
               empty="No Invoices yet."
-              rowActions={(inv) => (
-                <RowActions
-                  // Row click opens the invoice (ERPNext list); the Invoice
-                  // No. stays a real link for ctrl-click / new tab.
-                  extra={
-                    perms.entry && inv.status !== 'paid' ? (
-                      <Link
-                        to="/invoices/$id"
-                        params={{ id: inv.id }}
-                        className="btn btn-ghost btn-sm"
-                        title="Add Payment"
-                        style={{ color: 'var(--green2)' }}
-                      >
-                        💳 Add Payment
-                      </Link>
-                    ) : null
-                  }
-                />
-              )}
+              // Row click opens the invoice (ERPNext list); the Invoice No.
+              // stays a real link for ctrl-click / new tab. Add Payment opens
+              // the same invoice, where the payment form lives.
+              renderLink={(p) => <Link {...p} />}
+              rowMenu={(inv) => [
+                {
+                  key: 'add-payment',
+                  label: 'Add Payment',
+                  to: `/invoices/${inv.id}`,
+                  hidden: !perms.entry,
+                  disabledReason:
+                    inv.status === 'paid'
+                      ? 'Already Paid'
+                      : !isWriteRole
+                        ? 'Needs admin or manager role'
+                        : undefined,
+                },
+              ]}
             />
           </div>
           {data ? <ListFooter total={data.invoices.length} noun="invoice" /> : null}

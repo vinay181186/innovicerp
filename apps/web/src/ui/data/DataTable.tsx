@@ -46,7 +46,7 @@
 // state without a data fetch.
 
 import { Fragment } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
 import { useTableDensity } from '@/lib/use-ui-settings';
 
@@ -62,11 +62,49 @@ import {
   selColWidth,
   useRowSelection,
 } from './FitSelection';
+import { RowMenu } from './RowMenu';
 
 export type { DataTableColumn, DataTableColumnKind, DataTableProps } from './data-table-types';
 export { stopRowClick } from './data-table-cells';
 
-export function DataTable<T>(props: DataTableProps<T>): ReactElement {
+// Header of the ⋯ column: empty on screen (keeps the column narrow), still
+// named for a screen reader. Absolutely placed, so the fit engine measures 0.
+const ROW_MENU_HEADER: ReactNode = (
+  <span
+    style={{
+      position: 'absolute',
+      width: 1,
+      height: 1,
+      overflow: 'hidden',
+      clipPath: 'inset(50%)',
+      whiteSpace: 'nowrap',
+    }}
+  >
+    Actions
+  </span>
+);
+
+export function DataTable<T>(input: DataTableProps<T>): ReactElement {
+  // `rowMenu` is drawn through the existing rowActions column, so the classic
+  // and the fit paths (and the fit engine's measuring) need no change of
+  // their own.
+  const { rowMenu, renderLink } = input;
+  // No ⋯ column when not one row has a visible item (the user lacks every
+  // right): an empty column of nothing is noise. An empty list keeps it.
+  const anyMenu =
+    rowMenu !== undefined &&
+    (input.rows.length === 0 ||
+      input.rows.some((row, i) => rowMenu(row, i).some((item) => !item.hidden)));
+  const props: DataTableProps<T> =
+    rowMenu && anyMenu
+      ? {
+          ...input,
+          rowActions: (row: T, index: number) => (
+            <RowMenu items={rowMenu(row, index)} renderLink={renderLink} />
+          ),
+          rowActionsHeader: input.rowActionsHeader ?? ROW_MENU_HEADER,
+        }
+      : input;
   const { tableKey } = props;
   if (tableKey !== undefined && props.variant !== 'list') {
     return <FitDataTable {...props} tableKey={tableKey} />;

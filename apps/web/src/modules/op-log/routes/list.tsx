@@ -14,7 +14,7 @@
 // edit AND approve on the 'op_entry' Access Control form.
 
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Undo2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -252,19 +252,20 @@ function OpLogListPage(): React.JSX.Element {
             loading={isLoading}
             emptyText="No log entries match these filters."
             defaultPinned={OP_LOG_DEFAULT_PINNED}
-            rowActions={
+            // ⋯ menu: Reverse — only on an entry that can still be reversed,
+            // and only for a user with edit + approve on Op Entry.
+            rowMenu={
               canReverse
                 ? (r) =>
-                    canReverseRow(r) ? (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        title="Reverse this entry — the original stays and an opposite entry is added"
-                        onClick={() => setReversing(r)}
-                      >
-                        <Undo2 size={12} /> Reverse
-                      </button>
-                    ) : null
+                    canReverseRow(r)
+                      ? [
+                          {
+                            key: 'reverse',
+                            label: 'Reverse',
+                            onSelect: () => setReversing(r),
+                          },
+                        ]
+                      : []
                 : undefined
             }
           />

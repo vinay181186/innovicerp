@@ -30,7 +30,17 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   { const opts = await jsel.locator('option').allInnerTexts(); const idx = opts.findIndex((t) => t.includes(jc)); if (idx >= 0) await jsel.selectOption({ index: idx }); }
   await page.waitForTimeout(1800);
   await snap(page, 'c2', '01-jcops');
-  await page.getByRole('button', { name: /🏭 Outsource Available/ }).first().click();
+  // Outsource Available now sits in each row's ⋯ menu: open menus until one offers it enabled.
+  {
+    const kebabs = page.locator('table tbody tr').getByRole('button', { name: 'Actions' });
+    const n = await kebabs.count();
+    for (let i = 0; i < n; i += 1) {
+      await kebabs.nth(i).click();
+      const item = page.getByRole('menuitem', { name: /Outsource Available/ });
+      if ((await item.count()) && !(await item.first().getAttribute('aria-disabled'))) { await item.first().click(); break; }
+      await page.keyboard.press('Escape');
+    }
+  }
   await page.waitForTimeout(1200);
   const bqty = page.locator('input[type="number"]').first();
   const bmax = await bqty.getAttribute('max').catch(() => null);
