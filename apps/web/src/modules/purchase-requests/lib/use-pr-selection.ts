@@ -67,14 +67,23 @@ export function usePrSelection(rows: PurchaseRequestListItem[], canCreatePo: boo
         const nm = new Map(m);
         const keySet = new Set(keys.map(String));
         if (next) {
-          for (const pr of rows) if (keySet.has(pr.id)) nm.set(pr.id, toSelected(pr));
+          const candidates = rows.filter((pr) => keySet.has(pr.id));
+          // One PO = one vendor: select-all ties to the already-locked vendor, or
+          // to the first real vendor among the candidates; a PR of a different
+          // vendor is skipped (vendor-TBD rows fit any and are always included).
+          let lock = lockedVendor?.key ?? null;
+          for (const pr of candidates) {
+            const key = prVendorKey(pr);
+            if (key !== null && lock === null) lock = key;
+            if (key === null || lock === null || key === lock) nm.set(pr.id, toSelected(pr));
+          }
         } else {
           for (const k of keySet) nm.delete(k);
         }
         return nm;
       });
     },
-    [rows],
+    [rows, lockedVendor],
   );
 
   const isRowSelectable = useCallback(
