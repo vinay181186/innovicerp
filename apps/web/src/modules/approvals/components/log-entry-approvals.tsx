@@ -161,6 +161,7 @@ export function LogEntryApprovals({
               tableKey={TABLE_KEYS.approvalsOpEntry}
               columns={columns}
               rows={ordered}
+              sortFilter={false}
               rowKey={(r) => r.id}
               loading={list.isLoading}
               empty={term ? 'No requests match.' : (active?.empty ?? 'Nothing here yet.')}

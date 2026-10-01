@@ -1,0 +1,218 @@
+/* Sort & Filter (ADR-200) — the button before the search box, the ▾ in the
+   column headers, and the popover. Theme tokens only; every class `sf-`. */
+
+/* ── the button ─────────────────────────────────────────────────────────── */
+.sf-btn-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.sf-btn {
+  white-space: nowrap;
+}
+.sf-btn.is-on {
+  background: var(--blue3);
+  border-color: var(--blue);
+  color: var(--blue2);
+  font-weight: 700;
+}
+.sf-btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sf-funnel {
+  font-size: var(--fs-xs);
+}
+.sf-ask {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+  background: var(--bg2);
+  border: 1px solid var(--border3);
+  border-radius: var(--radius2);
+  box-shadow: var(--shadow-modal);
+  padding: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.sf-ask-text {
+  color: var(--text2);
+}
+
+/* ── the strip above a table: "Showing 18 of 240 · Clear filters" ──────── */
+.sf-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text2);
+}
+.sf-note {
+  font-weight: 700;
+  color: var(--blue2);
+}
+
+/* ── in the header ──────────────────────────────────────────────────────── */
+.sf-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+}
+.sf-head-label {
+  min-width: 0;
+}
+.sf-mark {
+  font-size: 10px;
+  color: var(--blue);
+  font-weight: 800;
+}
+.sf-caret {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  background: var(--bg2);
+  color: var(--text2);
+  font-size: 10px;
+  line-height: 14px;
+  cursor: pointer;
+}
+.sf-caret:hover,
+.sf-caret:focus-visible {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.sf-caret.is-on {
+  background: var(--blue3);
+  border-color: var(--blue);
+  color: var(--blue2);
+}
+
+/* ── the popover ────────────────────────────────────────────────────────── */
+.sf-pop {
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border3);
+  border-radius: var(--radius2);
+  box-shadow: var(--shadow-modal);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+  text-align: left;
+}
+.sf-menu {
+  display: flex;
+  flex-direction: column;
+}
+.sf-sec {
+  padding: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.sf-sort {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sf-sort button,
+.sf-presets button {
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius);
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.sf-sort button:hover,
+.sf-presets button:hover {
+  background: var(--bg4);
+}
+.sf-sort button.is-on,
+.sf-presets button.is-on {
+  background: var(--blue3);
+  color: var(--blue2);
+  font-weight: 700;
+}
+.sf-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin-bottom: var(--sp-2);
+}
+.sf-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.sf-row select,
+.sf-row input,
+.sf-search {
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border3);
+  border-radius: var(--radius);
+  background: var(--bg2);
+  color: var(--text);
+  font: inherit;
+}
+.sf-row select {
+  flex: 0 0 auto;
+}
+.sf-row input {
+  flex: 1 1 90px;
+}
+.sf-search {
+  width: 100%;
+  margin-bottom: var(--sp-1);
+}
+.sf-ticks {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.sf-tick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px var(--sp-1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sf-tick span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sf-tick:hover {
+  background: var(--bg4);
+}
+.sf-tick-all {
+  font-weight: 700;
+}
+.sf-blank span {
+  color: var(--text3);
+  font-style: italic;
+}
+.sf-more {
+  padding: var(--sp-1);
+  color: var(--text3);
+  font-size: var(--fs-xs);
+}
+.sf-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  position: sticky;
+  bottom: 0;
+  background: var(--bg2);
+}

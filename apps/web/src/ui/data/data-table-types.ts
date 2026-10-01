@@ -82,6 +82,14 @@ export interface DataTableColumn<T> {
   ellipsis?: boolean | undefined;
   /** Tooltip text for this cell. Defaults to the raw `key` value when it is text. */
   title?: ((row: T) => string) | undefined;
+  /**
+   * Sort & Filter (ADR-200): the value this column is sorted and filtered by.
+   * Without it the menu reads what the cell SHOWS (the `key` field, else the
+   * rendered text). Give it where the shown text is not the useful value.
+   */
+  filterValue?: ((row: T) => string | number | Date | null | undefined) | undefined;
+  /** Sort & Filter: `false` = this column has no ▾ (e.g. a picture). */
+  filterable?: boolean | undefined;
   /** Cell holds controls — swallow the click so it never opens the row. */
   stopRowClick?: boolean | undefined;
   /**
@@ -236,6 +244,15 @@ export interface DataTableProps<T> {
    * per-row "⋯" menus are not drawn here.
    */
   selectionActions?: ((selectedRows: T[]) => ReactNode) | undefined;
+
+  /**
+   * Sort & Filter (ADR-200). Default: on for a regular table on a page with a
+   * scope — the rows given here are filtered and sorted in the browser. Pass
+   * `false` for a table whose rows are not the whole list (a server page) or
+   * that must keep its order (a line editor). Line editors (`editable`) and
+   * nested `compact` tables are off by default.
+   */
+  sortFilter?: boolean | undefined;
 
   className?: string | undefined;
   wrapClassName?: string | undefined;

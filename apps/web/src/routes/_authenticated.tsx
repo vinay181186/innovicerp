@@ -6,6 +6,7 @@ import { OpenTabsBar } from '@/components/shared/open-tabs-bar';
 import { TopNav } from '@/components/shared/top-nav';
 import { supabase } from '@/lib/supabase';
 import { useUiSettings } from '@/lib/use-ui-settings';
+import { SortFilterScope } from '@/ui/data/sort-filter/scope';
 import { rootRoute } from './__root';
 
 export const authenticatedRoute = createRoute({
@@ -65,7 +66,9 @@ function AuthenticatedLayout(): React.JSX.Element {
           <Breadcrumbs />
         </header>
         <div id="content">
-          <Outlet />
+          <SortFilterScope>
+            <Outlet />
+          </SortFilterScope>
         </div>
       </div>
     </div>

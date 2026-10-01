@@ -143,6 +143,7 @@ export function DocumentHistory({
     <DataTable
       columns={COLUMNS}
       rows={data?.rows ?? []}
+      sortFilter={false}
       loading={isLoading}
       emptyText={emptyText}
     />

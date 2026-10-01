@@ -25,6 +25,8 @@
 
 import type { ReactNode } from 'react';
 import { SearchInput } from '../forms/SearchInput';
+import { useSfSnapshot, useSfStore } from '../data/sort-filter/scope';
+import { SortFilterButton } from '../data/sort-filter/SortFilterButton';
 import { HeaderBand } from './header-band';
 
 export interface ListHeaderProps {
@@ -90,7 +92,10 @@ export function ListHeader({
     (onSearch ? (
       <SearchInput value={search} onChange={onSearch} placeholder={searchPlaceholder} />
     ) : null);
-  const hasBar = searchBox != null || filters != null || onClearFilters != null;
+  // Sort & Filter (ADR-200): the button sits BEFORE the search box whenever a
+  // table on the page can be sorted / filtered.
+  const sfTables = useSfSnapshot(useSfStore()).tables.length;
+  const hasBar = searchBox != null || filters != null || onClearFilters != null || sfTables > 0;
   return (
     <HeaderBand
       title={title}
@@ -127,6 +132,7 @@ export function ListHeader({
     >
       {hasBar ? (
         <div className="list-filterbar" role="search">
+          <SortFilterButton />
           {searchBox}
           {filters}
           {onClearFilters ? (
