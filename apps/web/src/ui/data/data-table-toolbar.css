@@ -1,0 +1,169 @@
+/* Fit engine (ADR-199) — the toolbar strip above the table and the Columns
+   popover. Split out of data-table-fit.css so neither file grows past the
+   review ceiling; imported by TableToolbar.tsx. Theme tokens only; every class
+   is `dt-` prefixed. The table / row / detail / selection / totals rules stay
+   in data-table-fit.css. */
+
+/* R4 — toolbar strip, right-aligned and compact. */
+.dt-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text2);
+  min-width: 0;
+}
+.dt-chip {
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  padding: var(--sp-0) var(--sp-2);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dt-chip-warn {
+  background: var(--amber3);
+  border-color: var(--amber);
+  color: var(--amber2);
+}
+.dt-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--blue);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dt-link:hover {
+  text-decoration: underline;
+}
+.dt-seg {
+  display: inline-flex;
+  border: 1px solid var(--border3);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.dt-seg button {
+  border: 0;
+  background: var(--bg2);
+  color: var(--text);
+  padding: var(--sp-0) var(--sp-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dt-seg button + button {
+  border-left: 1px solid var(--border3);
+}
+.dt-seg button.is-on {
+  background: var(--blue3);
+  color: var(--blue2);
+}
+.dt-pick-anchor {
+  position: relative;
+}
+
+/* R5 — the Columns popover. */
+/* Portalled to <body> and placed (fixed, flipped, max-height) by
+   TableToolbar's placePopover — so a panel's overflow:hidden never clips it. */
+.dt-pick {
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border3);
+  border-radius: var(--radius2);
+  box-shadow: var(--shadow-modal);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  text-align: left;
+}
+.dt-pick-head {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border2);
+  font-family: var(--hfont);
+  font-weight: 800;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--blue2);
+}
+.dt-pick-grp {
+  padding: var(--sp-1) var(--sp-3) var(--sp-0);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text3);
+}
+.dt-pick-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-0) var(--sp-2);
+  white-space: nowrap;
+}
+.dt-pick-item.is-drop {
+  color: var(--text3);
+}
+.dt-pick-item.is-flash {
+  background: var(--amber3);
+}
+.dt-pick-btn {
+  border: 0;
+  background: none;
+  padding: var(--sp-0) var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text2);
+  cursor: pointer;
+}
+.dt-pick-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.dt-pick-btn:focus-visible,
+.dt-pick-name input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.dt-pick-pin {
+  font-size: var(--fs-sm);
+}
+.dt-pick-pin.is-off {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+.dt-pick-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  cursor: pointer;
+}
+.dt-pick-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dt-pick-tag {
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+.dt-pick-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border2);
+}
+.dt-pick-note {
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+
+.dt-pick-divider {
+  border-top: 1px solid var(--border2);
+  margin-top: var(--sp-1);
+}

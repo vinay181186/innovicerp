@@ -38,6 +38,15 @@ export const TABLE_KEYS = {
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];
 
+// DYNAMIC COLUMN IDS (ADR-199 Wave A): a screen whose columns are generated from
+// data (QC Docs matrix, Alert drill, saved-report results) keeps ITS tableKey
+// fixed and registered above — only the generated column ids are dynamic. Those
+// ids are built with dynId(prefix, seed) in dynamic-columns.ts as
+// `<prefix>.<seed>` (a short code prefix + a STABLE field off the item, never
+// the array index), so a saved layout survives the data changing. Column-id
+// prefixes are a local naming choice per screen and are NOT registered here —
+// this register is for tableKeys and per-record key prefixes only.
+
 // Screens that keep one saved layout PER RECORD append a stable code id to a
 // prefix registered here. Same rules as above: never rename a shipped prefix.
 export const TABLE_KEY_PREFIXES = {

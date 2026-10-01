@@ -9,6 +9,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { cellTitle, cellValue, colLabel, cx, stopRowClick } from './data-table-cells';
 import { tdClass } from './data-table-head';
 import type { DataTableColumn, DataTableColumnKind } from './data-table-types';
+import { RowCheckbox, type RowSelectionModel } from './FitSelection';
 
 export interface FitRowsProps<T> {
   rows: T[];
@@ -23,6 +24,7 @@ export interface FitRowsProps<T> {
   detailIds: string[];
   nCols: number;
   onRowClick?: ((row: T, index: number) => void) | undefined;
+  isRowClickable?: ((row: T, index: number) => boolean) | undefined;
   rowClassName?: ((row: T, index: number) => string | undefined) | undefined;
   renderExpanded?: ((row: T, index: number) => ReactNode) | undefined;
   onToggleExpanded?: ((row: T, index: number) => void) | undefined;
@@ -31,6 +33,10 @@ export interface FitRowsProps<T> {
    *  the table showing loading / empty in between. */
   openKeys: ReadonlySet<string | number>;
   setOpenKeys: (update: (prev: Set<string | number>) => Set<string | number>) => void;
+  /** A leading selection tick-box column is present. */
+  selectable: boolean;
+  /** The derived selection state (caller-owned set). */
+  selection: RowSelectionModel<T>;
 }
 
 export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
@@ -57,22 +63,41 @@ export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
         const callerOpen = extra !== null && extra !== undefined && extra !== false;
         const engineOpen = p.openKeys.has(rk);
         const isOpen = engineOpen || callerOpen;
+        const clickable = !!p.onRowClick && (p.isRowClickable?.(row, ri) ?? true);
+        const selected = p.selectable && p.selection.isSelected(rk);
         return (
           <Fragment key={rk}>
             <tr
-              className={cx(p.rowClassName?.(row, ri))}
-              onClick={p.onRowClick ? () => p.onRowClick?.(row, ri) : undefined}
-              style={p.onRowClick ? { cursor: 'pointer' } : undefined}
+              className={cx(
+                p.rowClassName?.(row, ri),
+                selected && 'row-selected',
+                !!p.onRowClick && !clickable && 'dt-row-static',
+              )}
+              onClick={clickable ? () => p.onRowClick?.(row, ri) : undefined}
+              style={clickable ? { cursor: 'pointer' } : undefined}
             >
+              {p.selectable ? (
+                <td className="dt-sel-col" onClick={stopRowClick}>
+                  {p.selection.canSelect(row, ri) ? (
+                    <RowCheckbox
+                      checked={selected}
+                      onToggle={() => p.selection.toggleRow(rk, row, ri)}
+                    />
+                  ) : null}
+                </td>
+              ) : null}
               {p.visible.map((k) => {
                 const c = p.byId.get(k);
                 if (!c) return null;
+                // A `control` cell (an in-cell input / picker) swallows the row
+                // click on its own, so the caller need not set stopRowClick.
+                const swallow = c.stopRowClick || p.kinds[k] === 'control';
                 return (
                   <td
                     key={k}
                     className={tdClass(c, `dt-k-${p.kinds[k] ?? 'code'}`)}
                     title={cellTitle(c, row)}
-                    onClick={c.stopRowClick ? stopRowClick : undefined}
+                    onClick={swallow ? stopRowClick : undefined}
                   >
                     {k === p.firstId ? (
                       <button

@@ -828,6 +828,24 @@ table.tbl-ctr td .innovic-select {
   background: inherit;
 }
 
+/* Row-selection re-scope (ADR-199 Wave B). When the table carries a leading
+   tick-box column (`.dt-has-sel`), the first child is the tick-box — so the
+   rule above pins the tick-box, and THIS rule pins the DATA first column (the
+   doc-no / code the user reads) just to its right, at `--dt-sel-w` (the
+   tick-box column's width, set on the table). Both stay in view while the
+   table scrolls sideways, and the pin still lands on the doc-no column. */
+:is(.tbl-wrap, .tbl-frozen):not(.tbl-nofreeze)
+  > .innovic-table.dt-has-sel:not(.tbl-nofreeze)
+  > :is(thead, tbody)
+  > tr
+  > :is(th, td):nth-child(2):not([colspan]) {
+  position: sticky;
+  left: var(--dt-sel-w, 36px);
+  z-index: var(--pin-z);
+  background: var(--pin-bg);
+  border-right: 1px solid var(--border3);
+}
+
 /* ── MODIFIERS ───────────────────────────────────────────────────────────────
    One look for the whole system; these change behaviour or density only:
      .tbl-nofreeze (wrap or table)  do not pin the first column
@@ -896,6 +914,46 @@ table.tbl-ctr td .innovic-select {
 }
 .innovic-table tr[style*='border-left'] > td:first-child {
   border-left: inherit;
+}
+
+/* Semantic row tints (ADR-199 Wave A). A caller stamps one of these through the
+   existing `rowClassName` prop (see ROW_TINT in data-table-cells.ts) to wash a
+   whole row in a soft status colour: late=red, done=green, pending=amber,
+   cancelled=grey. Same mechanism as the inline-tint row above — set `--row-bg`
+   so the pinned first cell picks the wash up via its `--pin-bg` rule, and paint
+   the <tr> so the see-through body cells show it too. The soft badge tokens
+   (--red3/--green3/--amber3/--bg4) keep 13px text legible. Declared BELOW the
+   :hover (line ~669) and .row-selected rules on purpose: a td background on
+   hover paints over the <tr> wash, and hover/select also override `--pin-bg` at
+   higher specificity, so hover and selection always win over a tint. */
+.innovic-table tbody tr.row-late {
+  --row-bg: var(--red3);
+  background: var(--row-bg);
+}
+.innovic-table tbody tr.row-done {
+  --row-bg: var(--green3);
+  background: var(--row-bg);
+}
+.innovic-table tbody tr.row-pending {
+  --row-bg: var(--amber3);
+  background: var(--row-bg);
+}
+.innovic-table tbody tr.row-cancelled {
+  --row-bg: var(--bg4);
+  background: var(--row-bg);
+}
+
+/* A row the table has marked non-clickable (ADR-199 isRowClickable === false):
+   drop the clickable hover wash so it does not look openable. Only added when
+   the table HAS an onRowClick but this row opts out, so rows on a table with no
+   row click keep their normal hover as before. Higher specificity than the
+   :hover rules above, so it wins without depending on source order; the pinned
+   first cell is pinned back to its resting fill the same way. */
+.innovic-table tbody tr.dt-row-static:hover td {
+  background: var(--row-bg, transparent);
+}
+.innovic-table tbody tr.dt-row-static:hover > td {
+  --pin-bg: var(--row-bg, var(--bg2));
 }
 
 /* Ported verbatim from legacy L187-188 (main stylesheet). Task Board only.

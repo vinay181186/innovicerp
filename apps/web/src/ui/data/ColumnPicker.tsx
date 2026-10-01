@@ -14,6 +14,9 @@ import type { LayoutState } from './fit-layout';
 export interface PickerColumn {
   id: string;
   label: string;
+  /** A `control` column — force-pinned by its kind: cannot be hidden or
+   *  unpinned (treated like the always-first column). */
+  control?: boolean | undefined;
 }
 
 export interface ColumnPickerProps {
@@ -97,13 +100,18 @@ export function ColumnPicker({
 
   const line = (id: string, i: number, isHidden: boolean) => {
     const first = id === firstId;
-    const pinned = first || layout.pins.includes(id);
+    const control = columns.find((c) => c.id === id)?.control ?? false;
+    // A control column is locked like the first one: never hidden, always pinned.
+    const locked = first || control;
+    const pinned = locked || layout.pins.includes(id);
     const drop = dropped.includes(id);
     const label = labelOf(id);
     const pinTitle = pinned
       ? first
         ? 'Always first — never drops'
-        : 'Pinned — never drops. Click to unpin'
+        : control
+          ? 'Locked column — always shown, never drops'
+          : 'Pinned — never drops. Click to unpin'
       : canPin(id)
         ? 'Pin — never drop'
         : 'No room — unpin another column first';
@@ -139,12 +147,13 @@ export function ColumnPicker({
             type="checkbox"
             data-f={`cb:${id}`}
             checked={!isHidden}
-            disabled={first}
+            disabled={locked}
             onChange={(e) => setShown(id, e.target.checked)}
           />
           <span className="dt-pick-label" title={label}>
             {label}
             {first ? <span className="dt-pick-tag"> (always first)</span> : null}
+            {control ? <span className="dt-pick-tag"> (locked)</span> : null}
             {drop ? <span className="dt-pick-tag"> · in ▸ (no room)</span> : null}
           </span>
         </label>
@@ -152,7 +161,7 @@ export function ColumnPicker({
           type="button"
           className={cx('dt-pick-btn', 'dt-pick-pin', !pinned && 'is-off')}
           data-f={`pin:${id}`}
-          disabled={first || isHidden}
+          disabled={locked || isHidden}
           aria-pressed={pinned}
           aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
           title={pinTitle}

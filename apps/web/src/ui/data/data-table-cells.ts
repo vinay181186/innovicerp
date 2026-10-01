@@ -11,6 +11,20 @@ export function stopRowClick(e: MouseEvent): void {
   e.stopPropagation();
 }
 
+/**
+ * Semantic row-tint classes (ADR-199 Wave A). Return one of these from the
+ * EXISTING `rowClassName` prop to wash a whole row in a soft status colour —
+ * the CSS lives beside .row-selected in innovic-theme.css (ROW STATES). Example:
+ *   rowClassName={(r) => r.overdue ? ROW_TINT.late : undefined}
+ * Hover and selection always win over the tint.
+ */
+export const ROW_TINT = {
+  late: 'row-late',
+  done: 'row-done',
+  pending: 'row-pending',
+  cancelled: 'row-cancelled',
+} as const;
+
 export function cx(...parts: Array<string | false | undefined | null>): string | undefined {
   const out = parts.filter(Boolean).join(' ');
   return out.length > 0 ? out : undefined;
