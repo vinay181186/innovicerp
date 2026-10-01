@@ -15,6 +15,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { RowMenu } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
@@ -203,7 +204,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                 <th>{noun}</th>
                 <th>Description</th>
                 <th>Active</th>
-                <th>Actions</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -249,30 +250,29 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                         {row.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td>
-                      {/* Stop once on the wrapper so an action never also fires
-                          the row's own open-for-edit click. */}
-                      <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                        {canEdit ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => setModal({ kind: 'edit', row })}
-                          >
-                            Edit
-                          </button>
-                        ) : null}
-                        {canDelete ? (
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            disabled={deleting}
-                            onClick={() => setTrashRow(row)}
-                          >
-                            Delete
-                          </button>
-                        ) : null}
-                      </div>
+                    {/* Stopped so a menu click never also fires the row's own
+                        open-for-edit click. */}
+                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'edit',
+                            label: 'Edit',
+                            icon: 'pencil',
+                            hidden: !canEdit,
+                            onSelect: () => setModal({ kind: 'edit', row }),
+                          },
+                          {
+                            key: 'trash',
+                            label: 'Move to Trash',
+                            icon: 'trash-2',
+                            group: 'danger',
+                            hidden: !canDelete,
+                            disabledReason: deleting ? 'Working…' : undefined,
+                            onSelect: () => setTrashRow(row),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))

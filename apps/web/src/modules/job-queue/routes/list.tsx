@@ -12,7 +12,9 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
+import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { Select } from '@/ui/forms';
 import { ListHeader } from '@/ui/layout';
 import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
@@ -261,7 +263,7 @@ function JobQueuePage(): React.JSX.Element {
                         Available
                       </th>
                       <th>Op Status</th>
-                      <th>Action</th>
+                      <th aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody>
@@ -398,36 +400,36 @@ function JobQueuePage(): React.JSX.Element {
                           <td>
                             <StatusBadge status={r.isRunning ? 'running' : r.status} />
                           </td>
-                          <td>
-                            {isNext && canOpEntry ? (
-                              // T33: only offer "Complete" once the op is started
-                              // on this machine; otherwise show "Start".
-                              startedHere ? (
-                                <Link
-                                  to="/op-entry"
-                                  search={{ jc: r.jcCode, op: r.jcOpId, mode: 'complete' }}
-                                  className="btn btn-sm"
-                                  style={{
-                                    background: 'var(--green3)',
-                                    border: '1px solid var(--green2)',
-                                    color: 'var(--green2)',
-                                    fontSize: 11,
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  ✓ Complete
-                                </Link>
-                              ) : (
-                                <Link
-                                  to="/op-entry"
-                                  search={{ jc: r.jcCode, op: r.jcOpId, mode: 'start' }}
-                                  className="btn btn-sm"
-                                  style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                                >
-                                  ▶ Start Operation
-                                </Link>
-                              )
-                            ) : null}
+                          <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                            {/* T33: only offer "Complete" once the op is started
+                                on this machine; otherwise "Start Operation". Not
+                                the next job (running / nothing waiting) → greyed. */}
+                            <RowMenu
+                              renderLink={renderJcOpsLink}
+                              items={[
+                                {
+                                  key: 'op-entry',
+                                  label: startedHere ? 'Complete' : 'Start Operation',
+                                  icon: startedHere ? 'check' : 'play',
+                                  group: 'workflow',
+                                  hidden: !canOpEntry,
+                                  disabledReason: isNext
+                                    ? undefined
+                                    : r.isRunning
+                                      ? 'Already running'
+                                      : 'Nothing Pending',
+                                  ...(isNext
+                                    ? {
+                                        to: `/op-entry?${new URLSearchParams({
+                                          jc: r.jcCode,
+                                          op: r.jcOpId,
+                                          mode: startedHere ? 'complete' : 'start',
+                                        }).toString()}`,
+                                      }
+                                    : {}),
+                                },
+                              ]}
+                            />
                           </td>
                         </tr>
                       );
