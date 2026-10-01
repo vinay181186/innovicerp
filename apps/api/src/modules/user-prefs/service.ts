@@ -20,7 +20,7 @@ import {
   type TableLayoutColumn,
   type UiSettings,
 } from '@innovic/shared';
-import { and, asc, eq, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray, type SQL, sql } from 'drizzle-orm';
 import { userTableColumns, userUiSettings } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { softDeleteStamp } from '../../lib/audit-trail';
@@ -88,7 +88,6 @@ export async function saveUiSettings(
         targetWhere: sql`deleted_at is null`,
         set: {
           settingValue: sql`excluded.setting_value`,
-          updatedAt: new Date(),
           updatedBy: user.id,
         },
       });
@@ -98,29 +97,37 @@ export async function saveUiSettings(
 
 // ─── Table layouts ─────────────────────────────────────────────────────────
 
-/** Server rule: the first column (position 0) is always pinned and never hidden. */
+/** Server rules: positions are renumbered 0..n-1 in the order the screen sent
+ *  (by position, ties kept in payload order); the new first column is always
+ *  pinned and never hidden. Returned in display order. */
 export function normaliseColumns(columns: TableLayoutColumn[]): TableLayoutColumn[] {
-  return columns.map((c) =>
-    c.position === 0 ? { ...c, pinned: true, hidden: false } : { ...c },
-  );
+  return columns
+    .map((c, index) => ({ c, index }))
+    .sort((a, b) => a.c.position - b.c.position || a.index - b.index)
+    .map(({ c }, position) =>
+      position === 0 ? { ...c, position, pinned: true, hidden: false } : { ...c, position },
+    );
 }
+
+/** Row-lock order for every write: column_key ascending, so two saves of the
+ *  same table lock rows in the same order and cannot deadlock each other. */
+const byColumnKey = (a: { columnKey: string }, b: { columnKey: string }): number =>
+  a.columnKey < b.columnKey ? -1 : a.columnKey > b.columnKey ? 1 : 0;
 
 type ColumnRow = Pick<
   typeof userTableColumns.$inferSelect,
   'columnKey' | 'position' | 'pinned' | 'hidden' | 'updatedAt'
 >;
 
+/** Rows must arrive already ordered — loadLayout ORDER BYs position, column_key. */
 export function rowsToLayout(tableKey: string, rows: ColumnRow[]): TableLayout {
-  const sorted = [...rows].sort(
-    (a, b) => a.position - b.position || a.columnKey.localeCompare(b.columnKey),
-  );
-  const latest = sorted.reduce<Date | null>(
+  const latest = rows.reduce<Date | null>(
     (max, r) => (max === null || r.updatedAt > max ? r.updatedAt : max),
     null,
   );
   return {
     tableKey,
-    columns: sorted.map((r) => ({
+    columns: rows.map((r) => ({
       columnKey: r.columnKey,
       position: r.position,
       pinned: r.pinned,
@@ -158,9 +165,43 @@ async function loadLayout(
   return rowsToLayout(tableKey, rows);
 }
 
+/** Soft-delete the matching rows, locking them in column_key order first. */
+async function retireRows(
+  tx: DbTransaction,
+  where: SQL | undefined,
+  user: AuthContext,
+): Promise<void> {
+  const rows = await tx
+    .select({ id: userTableColumns.id })
+    .from(userTableColumns)
+    .where(where)
+    // collate "C" = byte order, the same order byColumnKey gives the insert.
+    .orderBy(sql`${userTableColumns.columnKey} collate "C"`)
+    .for('update');
+  if (rows.length === 0) return;
+  await tx
+    .update(userTableColumns)
+    .set({ ...softDeleteStamp(user), updatedBy: user.id })
+    .where(
+      inArray(
+        userTableColumns.id,
+        rows.map((r) => r.id),
+      ),
+    );
+}
+
 export async function getTableLayout(tableKey: string, user: AuthContext): Promise<TableLayout> {
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => loadLayout(tx, companyId, user.id, tableKey));
+}
+
+/** Saves and resets of ONE user's ONE table take turns (transaction-scoped
+ *  advisory lock), so two overlapping saves can never lock rows in opposite
+ *  orders and deadlock. Different users / tables never wait on each other. */
+async function lockTable(tx: DbTransaction, companyId: string, userId: string, tableKey: string) {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`${companyId}:${userId}:${tableKey}`}, 0))`,
+  );
 }
 
 export async function saveTableLayout(
@@ -169,12 +210,13 @@ export async function saveTableLayout(
   user: AuthContext,
 ): Promise<TableLayout> {
   const companyId = requireCompany(user);
-  const columns = normaliseColumns(input.columns);
+  const columns = normaliseColumns(input.columns).sort(byColumnKey);
   const keys = columns.map((c) => c.columnKey);
   return withUserContext(user, async (tx) => {
-    const now = new Date();
-    // 1. Upsert every column the screen sent (keys are unique — the contract
-    //    refuses duplicates, so ON CONFLICT never touches one row twice).
+    await lockTable(tx, companyId, user.id, tableKey);
+    // 1. Upsert every column the screen sent, in column_key order (lock order).
+    //    Keys are unique — the contract refuses duplicates, so ON CONFLICT never
+    //    touches one row twice. updated_at is bumped by the set_updated_at trigger.
     await tx
       .insert(userTableColumns)
       .values(
@@ -202,17 +244,16 @@ export async function saveTableLayout(
           position: sql`excluded.position`,
           pinned: sql`excluded.pinned`,
           hidden: sql`excluded.hidden`,
-          updatedAt: now,
           updatedBy: user.id,
         },
       });
-    // 2. Retire any saved column the screen no longer has (removed / renamed).
-    await tx
-      .update(userTableColumns)
-      .set({ ...softDeleteStamp(user), updatedBy: user.id })
-      .where(
-        and(liveRowsOf(companyId, user.id, tableKey), notInArray(userTableColumns.columnKey, keys)),
-      );
+    // 2. Retire any saved column the screen no longer has (removed / renamed):
+    //    lock those rows in column_key order first, then soft-delete them.
+    await retireRows(
+      tx,
+      and(liveRowsOf(companyId, user.id, tableKey), notInArray(userTableColumns.columnKey, keys)),
+      user,
+    );
     return loadLayout(tx, companyId, user.id, tableKey);
   });
 }
@@ -221,10 +262,8 @@ export async function saveTableLayout(
 export async function resetTableLayout(tableKey: string, user: AuthContext): Promise<TableLayout> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    await tx
-      .update(userTableColumns)
-      .set({ ...softDeleteStamp(user), updatedBy: user.id })
-      .where(liveRowsOf(companyId, user.id, tableKey));
+    await lockTable(tx, companyId, user.id, tableKey);
+    await retireRows(tx, liveRowsOf(companyId, user.id, tableKey), user);
     return loadLayout(tx, companyId, user.id, tableKey);
   });
 }

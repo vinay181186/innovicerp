@@ -5,11 +5,14 @@ import { db } from '../../db/client';
 import { users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
+import type { TableDensity } from '@innovic/shared';
 import { userPrefsRoutes } from './routes';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 const TABLE_KEY = 'test-user-prefs-routes';
+/** TEST Supabase project ref — DB tests are skipped against any other database. */
+const ON_TEST_DB = (process.env.DATABASE_URL ?? '').includes('uitsrhyulidubnddzcex');
 
 let admin: AuthContext;
 
@@ -23,18 +26,7 @@ async function buildApp(user: AuthContext | null): Promise<FastifyInstance> {
   return app;
 }
 
-beforeAll(async () => {
-  const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
-  const u = rows[0];
-  if (!u || !u.companyId) throw new Error('Seed admin missing — run pnpm --filter api seed');
-  admin = { id: u.id, email: u.email, companyId: u.companyId, role: u.role, isActive: u.isActive };
-});
-
-afterAll(async () => {
-  if (admin) await service.resetTableLayout(TABLE_KEY, admin);
-});
-
-describe('user-prefs routes', () => {
+describe('user-prefs routes (no DB)', () => {
   let app: FastifyInstance;
   afterEach(async () => {
     if (app) await app.close();
@@ -44,6 +36,35 @@ describe('user-prefs routes', () => {
     app = await buildApp(null);
     const res = await app.inject({ method: 'GET', url: '/me/ui-settings' });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe.skipIf(!ON_TEST_DB)('user-prefs routes (DB, TEST project only)', () => {
+  let app: FastifyInstance;
+  let savedDensity: TableDensity | undefined;
+
+  beforeAll(async () => {
+    const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
+    const u = rows[0];
+    if (!u || !u.companyId) throw new Error('Seed admin missing on the TEST database');
+    admin = {
+      id: u.id,
+      email: u.email,
+      companyId: u.companyId,
+      role: u.role,
+      isActive: u.isActive,
+    };
+    savedDensity = (await service.getUiSettings(admin)).tableDensity;
+  });
+
+  afterAll(async () => {
+    if (!admin) return;
+    await service.resetTableLayout(TABLE_KEY, admin);
+    if (savedDensity) await service.saveUiSettings({ tableDensity: savedDensity }, admin);
+  });
+
+  afterEach(async () => {
+    if (app) await app.close();
   });
 
   it('GET /me/ui-settings returns a density for any role', async () => {

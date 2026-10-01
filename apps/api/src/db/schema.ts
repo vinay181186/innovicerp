@@ -6302,7 +6302,7 @@ export const dashboardConfig = pgTable(
   ],
 ).enableRLS();
 
-// ─── Per-user table preferences (ADR-199, migration 0189) ─────────────────
+// ─── Per-user table preferences (ADR-199, migrations 0189 + 0190) ─────────
 // Private to the user: RLS self read + self write only, no manager override.
 // user_ui_settings: one row per (user, setting_key) — first key 'table_density'.
 export const userUiSettings = pgTable(
@@ -6338,11 +6338,12 @@ export const userUiSettings = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
     }),
+    // 0190: a write must also stamp the writer (updated_by / deleted_by).
     pgPolicy('user_ui_settings_self_write', {
       for: 'all',
       to: 'authenticated',
       using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
-      withCheck: sql`company_id = current_company_id() AND user_id = current_user_id()`,
+      withCheck: sql`company_id = current_company_id() AND user_id = current_user_id() AND updated_by = current_user_id() AND (deleted_by IS NULL OR deleted_by = current_user_id())`,
     }),
   ],
 ).enableRLS();
@@ -6378,9 +6379,6 @@ export const userTableColumns = pgTable(
     uniqueIndex('user_table_columns_company_user_table_column_uq')
       .on(t.companyId, t.userId, t.tableKey, t.columnKey)
       .where(sql`${t.deletedAt} is null`),
-    index('user_table_columns_user_table_idx')
-      .on(t.userId, t.tableKey)
-      .where(sql`${t.deletedAt} is null`),
     check('user_table_columns_table_key_format', sql`${t.tableKey} ~ '^[a-z0-9][a-z0-9-]{0,63}$'`),
     check(
       'user_table_columns_column_key_format',
@@ -6393,11 +6391,12 @@ export const userTableColumns = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
     }),
+    // 0190: a write must also stamp the writer (updated_by / deleted_by).
     pgPolicy('user_table_columns_self_write', {
       for: 'all',
       to: 'authenticated',
       using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
-      withCheck: sql`company_id = current_company_id() AND user_id = current_user_id()`,
+      withCheck: sql`company_id = current_company_id() AND user_id = current_user_id() AND updated_by = current_user_id() AND (deleted_by IS NULL OR deleted_by = current_user_id())`,
     }),
   ],
 ).enableRLS();
