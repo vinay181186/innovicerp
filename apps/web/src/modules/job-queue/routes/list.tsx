@@ -286,7 +286,7 @@ function JobQueuePage(): React.JSX.Element {
                       return (
                         <tr
                           key={r.jcOpId}
-                          style={isNext ? { background: 'rgba(255,176,32,0.04)' } : undefined}
+                          style={isNext ? { background: 'var(--amber3)' } : undefined}
                         >
                           <td style={{ width: 44 }}>
                             <div

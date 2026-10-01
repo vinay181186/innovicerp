@@ -237,7 +237,7 @@ function Row({
 }): React.JSX.Element {
   const isOutsource = o.opType === 'outsource';
   const outsourceStatus = o.outsourceStatus || 'pending';
-  const bg = isOutsource ? 'rgba(255,176,32,0.04)' : undefined;
+  const bg = isOutsource ? 'var(--amber3)' : undefined; // solid tint: the pinned first cell copies it (ADR-199)
   // ▶ Start / ✚ Log — the Job Queue's rule (job-queue/routes/list.tsx): an
   // in-house op with pieces waiting and no session running is the next thing
   // to do. Pieces already made → ✚ Log (the Complete half); none yet → ▶

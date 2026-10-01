@@ -15,6 +15,9 @@ function onMouseOver(e: MouseEvent): void {
   if (!(target instanceof Element)) return;
   const td = target.closest('td');
   if (!td || td.hasAttribute('colspan') || !td.closest('.innovic-table')) return;
+  // A cell holding controls is allowed to spill over, and its text would be
+  // every <option> / button label run together — never a useful tooltip.
+  if (td.querySelector('input, select, textarea, button')) return;
 
   const ours = td.hasAttribute(MARK);
   if (td.hasAttribute('title') && !ours) return;
