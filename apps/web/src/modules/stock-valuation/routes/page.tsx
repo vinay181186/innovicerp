@@ -1,7 +1,7 @@
 // Stock Valuation — mirror of legacy renderStockValuation (L20927). Stock value
 // = on-hand × rate (last GRN/PO rate). Grouped by item type. Read-only.
 
-import type { StockValuationResponse } from '@innovic/shared';
+import type { StockValuationResponse, StockValuationRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
@@ -9,8 +9,9 @@ import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
-import { ReportFilter, ReportShell, reportTotalRowStyle } from '@/ui/data/ReportShell';
+import { DataTable, StatStrip, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
 import { categoryLabel, exportStockValuation } from '../lib/export';
 
 export const stockValuationRoute = createRoute({
@@ -45,6 +46,100 @@ function StockValuationPage(): React.JSX.Element {
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
   }, [rows, filter, showZero, search]);
 
+  // Money hidden for L1 Viewers: the API nulls rate/value, so the Rate + Stock
+  // Value columns (and their totals cell) drop. Told by the server, not inferred
+  // from a null money field — a null also means "no value yet".
+  const priceHidden = !data?.priceVisible;
+  const columns = useMemo<DataTableColumn<StockValuationRow>[]>(() => {
+    const cols: DataTableColumn<StockValuationRow>[] = [
+      // Code first — it is the pinned column (owner rule, ADR-199). Item code
+      // rendered strong (mono / bold / --text), never the faint --text3.
+      {
+        header: 'Item Code',
+        id: 'code',
+        key: 'code',
+        kind: 'code',
+        className: 'mono fw-700',
+        render: (r) => <span style={{ color: 'var(--text)' }}>{r.code}</span>,
+      },
+      { header: 'Item Name', id: 'name', key: 'name', kind: 'text', ellipsis: true },
+      {
+        header: 'Item Type',
+        id: 'type',
+        kind: 'text',
+        className: 'text2',
+        render: (r) => categoryLabel(r.category),
+        filterValue: (r) => categoryLabel(r.category),
+      },
+      { header: 'UOM', id: 'uom', key: 'uom', kind: 'code' },
+      {
+        header: 'Physical',
+        id: 'qty',
+        kind: 'num',
+        align: 'right',
+        filterValue: (r) => r.stockQty,
+        render: (r) => (
+          <span
+            className="mono fw-700"
+            title={r.lowStock ? 'Low Stock' : undefined}
+            style={{
+              color:
+                r.stockQty > 0 ? (r.lowStock ? 'var(--amber2)' : 'var(--green)') : 'var(--text3)',
+            }}
+          >
+            {r.stockQty}
+            {r.lowStock ? ' ⚠' : ''}
+          </span>
+        ),
+      },
+    ];
+    if (!priceHidden) {
+      cols.push(
+        {
+          header: 'Rate',
+          id: 'rate',
+          kind: 'num',
+          align: 'right',
+          className: 'mono',
+          filterValue: (r) => r.rate ?? 0,
+          render: (r) => (
+            <span style={{ color: r.hasRate ? undefined : 'var(--text3)' }}>
+              {r.hasRate ? inr(r.rate) : 'No Rate'}
+            </span>
+          ),
+        },
+        {
+          header: 'Stock Value',
+          id: 'value',
+          kind: 'num',
+          align: 'right',
+          className: 'mono fw-700',
+          title: () => 'Physical × Last GRN Rate (or PO Rate if no GRN)',
+          filterValue: (r) => r.value ?? 0,
+          render: (r) => (
+            <span style={{ color: (r.value ?? 0) > 0 ? 'var(--green)' : 'var(--text3)' }}>
+              {inr(r.value)}
+            </span>
+          ),
+          // Engine totals row — sums the visible (filtered) rows and stays under
+          // its own column (replaces the hand-written tfoot).
+          total: (all) => (
+            <span style={{ color: 'var(--cyan)' }}>
+              {inr(all.reduce((s, r) => s + (r.value ?? 0), 0))}
+            </span>
+          ),
+        },
+      );
+    }
+    cols.push({
+      header: 'Last GRN Date',
+      id: 'grnDate',
+      kind: 'date',
+      render: (r) => fmtDate(r.lastGrnDate),
+    });
+    return cols;
+  }, [priceHidden]);
+
   const shell = (body: React.ReactNode): React.JSX.Element => (
     <ReportShell title="Stock Valuation">{body}</ReportShell>
   );
@@ -63,13 +158,7 @@ function StockValuationPage(): React.JSX.Element {
     );
   }
 
-  // Money hidden for L1 Viewers: the API nulls rate/value/grandTotal, so the
-  // Rate + Stock Value columns, the value tiles and the totals are dropped.
-  // Told by the server, not inferred from a null money field: a null also means
-  // "no value yet", so probing it hid money from users entitled to see it.
-  const priceHidden = !data.priceVisible;
-  const tblTotal = filtered.reduce((s, r) => s + (r.value ?? 0), 0);
-
+  // The value tiles also drop when money is hidden (priceHidden computed above).
   return (
     <ReportShell
       title="Stock Valuation"
@@ -142,95 +231,23 @@ function StockValuationPage(): React.JSX.Element {
       rowNoun="item"
     >
       <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Item Type</th>
-                <th>Item Code</th>
-                <th>Item Name</th>
-                <th>UOM</th>
-                <th className="th-num">Physical</th>
-                {priceHidden ? null : (
-                  <>
-                    <th className="th-num">Rate</th>
-                    <th className="th-num" title="Physical × Last GRN Rate (or PO Rate if no GRN)">
-                      Stock Value
-                    </th>
-                  </>
-                )}
-                <th>Last GRN Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={priceHidden ? 6 : 8} className="empty-state">
-                    {filter !== 'all' || search.trim() || rows.length > 0
-                      ? 'No items match.'
-                      : 'No items yet.'}
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((r) => (
-                  <tr key={r.itemId}>
-                    <td className="text2">{categoryLabel(r.category)}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--text)' }}>
-                      {r.code}
-                    </td>
-                    <td>{r.name}</td>
-                    <td>{r.uom}</td>
-                    <td
-                      className="td-num mono fw-700"
-                      title={r.lowStock ? 'Low Stock' : undefined}
-                      style={{
-                        color:
-                          r.stockQty > 0
-                            ? r.lowStock
-                              ? 'var(--amber2)'
-                              : 'var(--green)'
-                            : 'var(--text3)',
-                      }}
-                    >
-                      {r.stockQty}
-                      {r.lowStock ? ' ⚠' : ''}
-                    </td>
-                    {priceHidden ? null : (
-                      <>
-                        <td
-                          className="td-num mono"
-                          style={{ color: r.hasRate ? undefined : 'var(--text3)' }}
-                        >
-                          {r.hasRate ? inr(r.rate) : 'No Rate'}
-                        </td>
-                        <td
-                          className="td-num mono fw-700"
-                          style={{ color: (r.value ?? 0) > 0 ? 'var(--green)' : 'var(--text3)' }}
-                        >
-                          {inr(r.value)}
-                        </td>
-                      </>
-                    )}
-                    <td>{fmtDate(r.lastGrnDate)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-            <tfoot>
-              <tr style={reportTotalRowStyle}>
-                <td colSpan={priceHidden ? 5 : 6} style={{ color: 'var(--text2)' }}>
-                  Total ({filtered.length} items)
-                </td>
-                {priceHidden ? null : (
-                  <td className="td-num mono" style={{ color: 'var(--cyan)' }}>
-                    {inr(tblTotal)}
-                  </td>
-                )}
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+        {/* Shared FIT table (ADR-199). The totals row is drawn by the engine
+            (showTotals + the Stock Value column's `total`), so it follows the
+            visible columns — no hand-written tfoot. No row tint: a valuation row
+            has no "done"/status to map to. */}
+        <DataTable
+          tableKey={TABLE_KEYS.stockValuation}
+          columns={columns}
+          rows={filtered}
+          rowKey={(r) => r.itemId}
+          showTotals={!priceHidden}
+          totalsLabel="Total"
+          emptyText={
+            filter !== 'all' || search.trim() || rows.length > 0
+              ? 'No items match.'
+              : 'No items yet.'
+          }
+        />
       </div>
     </ReportShell>
   );

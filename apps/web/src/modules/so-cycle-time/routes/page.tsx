@@ -4,6 +4,12 @@
 // Active / by type) + text search are client-side; averages recompute over the
 // filtered set (legacy behaviour). Read-only. Excel export of the full matrix.
 //
+// ADR-199 table standard (2026-10-01): the one ruled fit sheet <DataTable
+// tableKey={TABLE_KEYS.soCycleTime}>. SO No. is the pinned first column; every
+// phase-duration column is a right-aligned number (kind 'num'); a dispatched
+// (completed) SO gets the green done-row tint. Column sort + filter come from
+// the table's own ▾ header menus (ADR-200). Row click opens the Sales Order.
+//
 // Every duration rendered here is SERVER-computed (so-cycle-time/service.ts ->
 // lib/so-phase-data.ts computeDurations). Nothing on this page derives a
 // duration from raw records — we only render r.durations.* and take a mean of
@@ -12,17 +18,16 @@
 // Note: the API also returns `averages` (over the FULL set). We do not use it —
 // legacy recomputes averages over the filtered set on every render (L18199) and
 // the filter is client-side, so a full-set average would not match the table.
-// Consequence: `SoCycleTimeResponse.averages` is currently fetched and rendered
-// nowhere. Resolving that needs a server-side filter param, not a UI change.
 
 import type { SoCycleTimeResponse, SoCycleTimeRow } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT, StatStrip, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
 import { ListFooter } from '@/ui/layout';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
@@ -68,6 +73,105 @@ function avg(rows: SoCycleTimeRow[], key: AvgKey): number {
   return count ? Math.round(sum / count) : 0;
 }
 
+/** A phase-duration cell: "Nd" coloured amber > 10 / red > 20, "—" when the
+ *  phase was never reached. Days footnote below the table explains the scale. */
+function durContent(v: number | null): React.JSX.Element {
+  if (v == null) return <span className="text3">—</span>;
+  const color = v > 20 ? 'var(--red)' : v > 10 ? 'var(--amber)' : 'var(--text)';
+  return (
+    <span className="mono fw-700" style={{ color }}>
+      {v}d
+    </span>
+  );
+}
+
+function soCycleTimeColumns(avgTotal: number): DataTableColumn<SoCycleTimeRow>[] {
+  const dur = (
+    id: string,
+    header: string,
+    get: (r: SoCycleTimeRow) => number | null,
+  ): DataTableColumn<SoCycleTimeRow> => ({
+    id,
+    kind: 'num',
+    header,
+    filterValue: (r) => get(r),
+    render: (r) => durContent(get(r)),
+  });
+
+  return [
+    {
+      id: 'so_no',
+      kind: 'code',
+      header: 'SO No.',
+      nowrap: true,
+      render: (r) => (
+        <Link
+          to="/sales-orders/$id"
+          params={{ id: r.soId }}
+          className="td-code"
+          style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {r.soNo}
+        </Link>
+      ),
+    },
+    {
+      id: 'customer',
+      kind: 'text',
+      header: 'Customer',
+      align: 'left',
+      ellipsis: true,
+      render: (r) => r.customer ?? '—',
+      title: (r) => r.customer ?? '',
+    },
+    {
+      id: 'so_type',
+      kind: 'code',
+      header: 'SO Type',
+      filterValue: (r) => TYPE_LABEL[r.type ?? ''] ?? r.type ?? '',
+      render: (r) => TYPE_LABEL[r.type ?? ''] ?? r.type ?? '—',
+    },
+    {
+      id: 'so_status',
+      kind: 'badge',
+      header: 'SO Status',
+      filterValue: (r) => (r.phases.dispatched ? 'Completed' : soStatusLabel(r.status)),
+      render: (r) => {
+        const done = Boolean(r.phases.dispatched);
+        return (
+          <span
+            className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-grey' : 'b-blue'}`}
+          >
+            {done ? 'Completed' : soStatusLabel(r.status)}
+          </span>
+        );
+      },
+    },
+    dur('design', 'Design', (r) => r.durations.design),
+    dur('material', 'Material', (r) => r.durations.materialProc),
+    dur('production', 'Production', (r) => r.durations.production),
+    dur('qc', 'QC', (r) => r.durations.qc),
+    dur('assembly', 'Assembly', (r) => r.durations.assembly),
+    dur('dispatch', 'Dispatch', (r) => r.durations.assemblyToDispatch),
+    {
+      id: 'total',
+      kind: 'num',
+      header: 'Total',
+      filterValue: (r) => r.durations.total,
+      render: (r) => {
+        if (r.durations.total == null) return <span className="text3">—</span>;
+        const over = r.durations.total > avgTotal;
+        return (
+          <span className="mono fw-700" style={{ color: over ? 'var(--amber)' : 'var(--green)' }}>
+            {r.durations.total}d
+          </span>
+        );
+      },
+    },
+  ];
+}
+
 function SoCycleTimePage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useQuery<SoCycleTimeResponse>({
     queryKey: ['so-cycle-time'],
@@ -75,6 +179,7 @@ function SoCycleTimePage(): React.JSX.Element {
     staleTime: 30_000,
   });
 
+  const navigate = useNavigate();
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -100,6 +205,7 @@ function SoCycleTimePage(): React.JSX.Element {
     () => Object.fromEntries(AVG_KEYS.map((k) => [k, avg(filtered, k)])) as Record<AvgKey, number>,
     [filtered],
   );
+  const columns = useMemo(() => soCycleTimeColumns(averages.total), [averages.total]);
 
   const title = 'SO Cycle Time Report';
   if (isLoading) {
@@ -199,87 +305,17 @@ function SoCycleTimePage(): React.JSX.Element {
         </>
       }
     >
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>SO No.</th>
-                <th>Customer</th>
-                <th>SO Type</th>
-                <th>SO Status</th>
-                <th className="th-num">Design</th>
-                <th className="th-num">Material</th>
-                <th className="th-num">Production</th>
-                <th className="th-num">QC</th>
-                <th className="th-num">Assembly</th>
-                <th className="th-num">Dispatch</th>
-                <th className="th-num">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="empty-state">
-                    {search.trim() || filter !== 'all' ? 'No SOs match.' : 'No SOs yet.'}
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((r) => {
-                  const done = Boolean(r.phases.dispatched);
-                  const totalOverAvg =
-                    r.durations.total != null && r.durations.total > averages.total;
-                  return (
-                    <tr key={r.soId} style={done ? { background: 'var(--green3)' } : undefined}>
-                      <td>
-                        <Link
-                          to="/sales-orders/$id"
-                          params={{ id: r.soId }}
-                          className="td-code"
-                          style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-                        >
-                          {r.soNo}
-                        </Link>
-                      </td>
-                      <td>{r.customer ?? '—'}</td>
-                      <td>{TYPE_LABEL[r.type ?? ''] ?? r.type ?? '—'}</td>
-                      <td>
-                        <span
-                          className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-grey' : 'b-blue'}`}
-                        >
-                          {done ? 'Completed' : soStatusLabel(r.status)}
-                        </span>
-                      </td>
-                      <DurCell v={r.durations.design} />
-                      <DurCell v={r.durations.materialProc} />
-                      <DurCell v={r.durations.production} />
-                      <DurCell v={r.durations.qc} />
-                      <DurCell v={r.durations.assembly} />
-                      <DurCell v={r.durations.assemblyToDispatch} />
-                      <td
-                        className="td-num mono fw-700"
-                        style={{ color: totalOverAvg ? 'var(--amber)' : 'var(--green)' }}
-                      >
-                        {r.durations.total != null ? `${r.durations.total}d` : '—'}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <Panel bodyPadding="none">
+        <DataTable<SoCycleTimeRow>
+          tableKey={TABLE_KEYS.soCycleTime}
+          columns={columns}
+          rows={filtered}
+          rowKey={(r) => r.soId}
+          empty={search.trim() || filter !== 'all' ? 'No SOs match.' : 'No SOs yet.'}
+          rowClassName={(r) => (r.phases.dispatched ? ROW_TINT.done : undefined)}
+          onRowClick={(r) => void navigate({ to: '/sales-orders/$id', params: { id: r.soId } })}
+        />
+      </Panel>
     </ReportShell>
-  );
-}
-
-function DurCell({ v }: { v: number | null }): React.JSX.Element {
-  if (v == null) return <td className="td-num text3">—</td>;
-  const color = v > 20 ? 'var(--red)' : v > 10 ? 'var(--amber)' : 'var(--text)';
-  return (
-    <td className="td-num mono fw-700" style={{ color }}>
-      {v}d
-    </td>
   );
 }

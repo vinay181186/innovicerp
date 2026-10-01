@@ -1,23 +1,28 @@
 // Pending SO Value (PL-PSV-1) — sales revenue / cashflow rollup.
 //
-// Mirrors legacy renderPendingSOValue (HTML L19272). 4 filter buttons +
-// 5-tile KPI strip + 11-col table with totals row. See
-// docs/PARITY/pendingsovalue.md for the parity spec.
+// Mirrors legacy renderPendingSOValue (HTML L19272). The ONE Innovic fit table
+// (ADR-199, table standard 2026-10-01): one ruled sheet, the first column (SO
+// No.) always pinned and carrying the row's ▸. The money totals are the
+// engine's column-following totals (showTotals + per-column `total`), so a
+// money column moved into ▸ takes its total with it — this replaced the old
+// hand-written <tfoot> row. ▸ opens SO Date, Invoiced Value and Received
+// (default-hidden columns). The columns, money formatter and row tint live in
+// components/psv-columns.tsx. See docs/PARITY/pendingsovalue.md.
 
 import type {
   PendingSoValueFilter,
   PendingSoValueResponse,
   PendingSoValueRow,
 } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
+import { createRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
-import { fmtDate, todayIst } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
-import { ReportFilter, ReportShell, reportTotalRowStyle } from '@/ui/data/ReportShell';
+import { DataTable, Panel, StatStrip } from '@/ui/data';
+import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
 import { ListFooter } from '@/ui/layout';
-import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { TEAL, inr, psvColumns, psvRowTint } from '../components/psv-columns';
 import { usePendingSoValue } from '../api';
 
 export const pendingSoValueRoute = createRoute({
@@ -33,9 +38,12 @@ const FILTERS: Array<{ key: PendingSoValueFilter; label: string }> = [
   { key: 'completed', label: 'Closed' },
 ];
 
+const pct = (a: number, b: number): string => (b > 0 ? `${Math.round((a / b) * 100)}%` : '0%');
+
 function PendingSoValuePage(): React.JSX.Element {
   const [filter, setFilter] = useState<PendingSoValueFilter>('open');
   const [search, setSearch] = useState<string>('');
+  const navigate = pendingSoValueRoute.useNavigate();
   const { data, isLoading, isError, error } = usePendingSoValue(filter);
 
   const filtered = useMemo(() => {
@@ -46,29 +54,17 @@ function PendingSoValuePage(): React.JSX.Element {
   }, [data, search]);
 
   // Money hidden for L1 Viewers: the API nulls every value on this report, so
-  // the KPI strip and the six value columns are dropped.
-  // Told by the server, not inferred from a null money field: a null also means
-  // "no value yet", so probing it hid money from users entitled to see it.
+  // the KPI strip, the money columns and the totals row are dropped. Told by
+  // the server, not inferred from a null money field.
   const priceHidden = !!data && !data.priceVisible;
+  const today = todayIst();
+  const columns = useMemo(() => psvColumns(priceHidden, today), [priceHidden, today]);
+  const defaultHidden = priceHidden ? ['so_date'] : ['so_date', 'invoiced_value', 'received_value'];
 
-  // Totals row: the server's totals cover exactly the rows it sent, so they are
-  // shown as-is. Only when the search box narrows the rows on screen is the
-  // row a display-only sum of the visible rows (the same figures, re-added).
-  const tfootTotals = useMemo(() => {
-    if (!data) return null;
-    if (!search.trim()) return data.totals;
-    const sum = (k: keyof PendingSoValueRow): string =>
-      String(filtered.reduce((acc, r) => acc + Number(r[k] ?? 0), 0));
-    return {
-      soCount: filtered.length,
-      orderValue: sum('orderValue'),
-      dispatchedValue: sum('dispatchedValue'),
-      pendingValue: sum('pendingValue'),
-      invoicedValue: sum('invoicedValue'),
-      receivedValue: sum('receivedValue'),
-      outstandingValue: sum('outstandingValue'),
-    };
-  }, [data, filtered, search]);
+  const emptyText =
+    data && data.rows.length === 0
+      ? `No SOs in ${FILTERS.find((f) => f.key === filter)?.label ?? 'this filter'}.`
+      : 'No SOs match.';
 
   return (
     <ReportShell
@@ -107,22 +103,10 @@ function PendingSoValuePage(): React.JSX.Element {
       }}
       kpis={data && !priceHidden ? <KpiStrip totals={data.totals} /> : undefined}
       footer={
-        data ? (
-          <>
-            <ListFooter total={data.rows.length} shown={filtered.length} noun="SO" />
-          </>
-        ) : null
+        data ? <ListFooter total={data.rows.length} shown={filtered.length} noun="SO" /> : null
       }
     >
-      {isLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="text3">
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        </div>
-      ) : isError ? (
+      {isError ? (
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red2)' }}>
@@ -132,91 +116,29 @@ function PendingSoValuePage(): React.JSX.Element {
             </div>
           </div>
         </div>
-      ) : data ? (
-        filtered.length === 0 ? (
-          <div className="panel">
-            <div className="panel-body">
-              <div className="empty-state">
-                <div className="empty-icon">💰</div>
-                {data.rows.length === 0
-                  ? `No SOs in ${FILTERS.find((f) => f.key === filter)?.label ?? 'this filter'}.`
-                  : 'No SOs match.'}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="panel">
-            <div className="tbl-wrap">
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th>SO No.</th>
-                    <th>Customer</th>
-                    <th>SO Date</th>
-                    <th>Due Date</th>
-                    {priceHidden ? null : (
-                      <>
-                        <th className="th-num">Order Value</th>
-                        <th className="th-num">Dispatched Value</th>
-                        <th
-                          className="th-num"
-                          style={{ color: 'var(--amber2)' }}
-                          title="Order Value − Dispatched Value"
-                        >
-                          Value to Dispatch
-                        </th>
-                        <th className="th-num">Invoiced Value</th>
-                        <th className="th-num">Received</th>
-                        <th className="th-num">Outstanding Amount</th>
-                      </>
-                    )}
-                    <th>SO Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((row) => (
-                    <PsvRow key={row.soId} row={row} priceHidden={priceHidden} />
-                  ))}
-                </tbody>
-                {priceHidden || !tfootTotals ? null : (
-                  <tfoot>
-                    <tr style={reportTotalRowStyle}>
-                      <td colSpan={4} style={{ color: 'var(--text2)' }}>
-                        Total ({tfootTotals.soCount} SOs)
-                      </td>
-                      <td className="td-num mono">{inr(tfootTotals.orderValue)}</td>
-                      <td className="td-num mono">{inr(tfootTotals.dispatchedValue)}</td>
-                      <td className="td-num mono" style={{ color: 'var(--amber2)' }}>
-                        {inr(tfootTotals.pendingValue)}
-                      </td>
-                      <td className="td-num mono">{inr(tfootTotals.invoicedValue)}</td>
-                      <td className="td-num mono">{inr(tfootTotals.receivedValue)}</td>
-                      <td className="td-num mono">{inr(tfootTotals.outstandingValue)}</td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
-          </div>
-        )
-      ) : null}
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable<PendingSoValueRow>
+            tableKey={TABLE_KEYS.pendingSoValue}
+            columns={columns}
+            rows={filtered}
+            rowKey={(r) => r.soId}
+            loading={isLoading}
+            empty={emptyText}
+            defaultHidden={defaultHidden}
+            // The engine's column-following totals replace the old hand-written
+            // <tfoot>: each money column's `total` sits under its own column and
+            // moves with it into ▸. No totals row for a Viewer (no money).
+            showTotals={!priceHidden}
+            totalsLabel="Total"
+            rowClassName={(r) => psvRowTint(r, today)}
+            onRowClick={(r) => void navigate({ to: '/sales-orders/$id', params: { id: r.soId } })}
+          />
+        </Panel>
+      )}
     </ReportShell>
   );
 }
-
-// Legacy colours the Invoiced figures `var(--teal,#0d9488)` (L19338/19359/19371).
-// `--teal` is now a real token (tokens.css), so the hex fallback is dropped.
-const TEAL = 'var(--teal)';
-
-const inr = (v: string | number | null): string => {
-  if (v == null) return '';
-  const n = Number(v);
-  if (!Number.isFinite(n)) return '—';
-  return `₹ ${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-};
-
-const pct = (a: number, b: number): string => (b > 0 ? `${Math.round((a / b) * 100)}%` : '0%');
 
 function KpiStrip({ totals }: { totals: PendingSoValueResponse['totals'] }): React.JSX.Element {
   const o = Number(totals.orderValue);
@@ -272,79 +194,4 @@ function KpiStrip({ totals }: { totals: PendingSoValueResponse['totals'] }): Rea
       ]}
     />
   );
-}
-
-function PsvRow({
-  row,
-  priceHidden,
-}: {
-  row: PendingSoValueRow;
-  priceHidden: boolean;
-}): React.JSX.Element {
-  const today = todayIst();
-  const pending = Number(row.pendingValue ?? 0);
-  const outstanding = Number(row.outstandingValue ?? 0);
-  const overdue = row.dueDate !== null && row.dueDate < today && pending > 0;
-  return (
-    <tr>
-      <td>
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: row.soId }}
-          className="mono fw-700"
-          style={{ color: 'var(--cyan)' }}
-        >
-          {row.soCode}
-        </Link>
-      </td>
-      <td>{row.customerName ?? '—'}</td>
-      <td>{fmtDate(row.soDate)}</td>
-      <td
-        style={{
-          color: overdue ? 'var(--red)' : undefined,
-          fontWeight: overdue ? 700 : undefined,
-        }}
-      >
-        {fmtDate(row.dueDate)}
-        {overdue ? ' ⚠' : ''}
-      </td>
-      {priceHidden ? null : (
-        <>
-          <td className="td-num mono">{inr(row.orderValue)}</td>
-          <td className="td-num mono" style={{ color: 'var(--green2)' }}>
-            {inr(row.dispatchedValue)}
-          </td>
-          <td
-            className="td-num mono fw-700"
-            style={{ color: pending > 0 ? 'var(--amber)' : 'var(--green)' }}
-          >
-            {inr(row.pendingValue)}
-          </td>
-          <td className="td-num mono" style={{ color: TEAL }}>
-            {inr(row.invoicedValue)}
-          </td>
-          <td className="td-num mono" style={{ color: 'var(--green2)' }}>
-            {inr(row.receivedValue)}
-          </td>
-          <td
-            className="td-num mono"
-            style={{ color: outstanding > 0 ? 'var(--red)' : 'var(--green)' }}
-          >
-            {inr(row.outstandingValue)}
-          </td>
-        </>
-      )}
-      <td>
-        <span className={`badge b-${badgeColor(row.status)}`}>{soStatusLabel(row.status)}</span>
-      </td>
-    </tr>
-  );
-}
-
-// App status colours: Open → blue, Closed / Dispatched → green, anything
-// else (Draft, Cancelled) → grey.
-function badgeColor(status: string): string {
-  if (status === 'open') return 'blue';
-  if (status === 'closed' || status === 'dispatched') return 'green';
-  return 'grey';
 }
