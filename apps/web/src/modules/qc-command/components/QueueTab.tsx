@@ -1,12 +1,19 @@
 // Assign Inspector tab (legacy _qccRenderQueue L18667). Pending QC ops with age,
 // attempt counter, due date, assignment, and Pick-Up / Assign actions.
 // Sortable by age / due date / customer.
+//
+// ADR-199 table standard: the data table is the shared fit table
+// (<DataTable tableKey={TABLE_KEYS.qcCommandQueue}>). First pinned column is
+// JC No.; Item Name, SO No., Customer and Due Date ride in the ▸ detail row
+// (defaultHidden). Overdue rows carry the shared late tint (ROW_TINT.late). The
+// Sort-by bar, the Pick Up / Assign actions and the permission gates are kept.
 
 import { type QcCommandQueueRow, opSrNo } from '@innovic/shared';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { RowMenu } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 
 type Sort = 'age' | 'due' | 'customer';
 const SORTS: { id: Sort; label: string }[] = [
@@ -24,6 +31,14 @@ function attemptColor(n: number): string {
   if (n === 2) return 'var(--amber)';
   return 'var(--red)';
 }
+function ageColor(n: number): string {
+  if (n >= 3) return 'var(--red)';
+  if (n >= 1) return 'var(--amber)';
+  return 'var(--green)';
+}
+
+/** Item Name, SO No., Customer and Due Date ride in the ▸ detail row. */
+const QUEUE_HIDDEN_COLUMNS = ['item_name', 'so_code', 'customer', 'due_date'] as const;
 
 export function QueueTab({
   rows,
@@ -44,18 +59,156 @@ export function QueueTab({
 }): React.JSX.Element {
   const [sort, setSort] = useState<Sort>('age');
 
-  const sorted = [...rows].sort((a, b) => {
-    if (sort === 'age') return b.ageDays - a.ageDays;
-    if (sort === 'due') {
-      if (!a.dueDate && !b.dueDate) return 0;
-      if (!a.dueDate) return 1;
-      if (!b.dueDate) return -1;
-      return a.dueDate.localeCompare(b.dueDate);
-    }
-    return (a.customer ?? '').localeCompare(b.customer ?? '');
-  });
+  const sorted = useMemo(
+    () =>
+      [...rows].sort((a, b) => {
+        if (sort === 'age') return b.ageDays - a.ageDays;
+        if (sort === 'due') {
+          if (!a.dueDate && !b.dueDate) return 0;
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return a.dueDate.localeCompare(b.dueDate);
+        }
+        return (a.customer ?? '').localeCompare(b.customer ?? '');
+      }),
+    [rows, sort],
+  );
 
   const showActions = canPickUp || canAssign;
+
+  const columns: DataTableColumn<QcCommandQueueRow>[] = [
+    {
+      id: 'jc_code',
+      header: 'JC No.',
+      nowrap: true,
+      render: (it) => (
+        <span className="td-code" style={{ color: 'var(--cyan)' }}>
+          {it.jcCode}
+        </span>
+      ),
+    },
+    {
+      id: 'op',
+      header: 'Op',
+      nowrap: true,
+      render: (it) => (
+        <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
+          {opSrNo(it.opSeq)}
+        </span>
+      ),
+    },
+    {
+      id: 'operation',
+      header: 'Operation',
+      align: 'left',
+      ellipsis: true,
+      render: (it) => <span style={{ fontWeight: 600, color: 'var(--red2)' }}>{it.operation}</span>,
+      title: (it) => it.operation,
+    },
+    {
+      id: 'item_code',
+      header: 'Item Code',
+      nowrap: true,
+      // An inspector reads the code to find the drawing, so it carries weight
+      // rather than sitting in the faintest token on the page (item-code rule).
+      render: (it) => (
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+          {itemCodeWithRev(it.itemCode, it.itemRevision)}
+        </span>
+      ),
+    },
+    {
+      id: 'days_waiting',
+      header: 'Days Waiting',
+      align: 'right',
+      nowrap: true,
+      render: (it) => (
+        <span className="mono fw-700" style={{ color: ageColor(it.ageDays) }}>
+          {daysText(it.ageDays)}
+        </span>
+      ),
+      filterValue: (it) => it.ageDays,
+    },
+    {
+      id: 'qc_pending',
+      header: 'QC Pending',
+      align: 'right',
+      nowrap: true,
+      render: (it) => (
+        <span className="mono fw-700" style={{ color: 'var(--amber2)' }}>
+          {it.pendingQty}
+        </span>
+      ),
+    },
+    {
+      id: 'attempts',
+      kind: 'badge',
+      header: 'Attempts',
+      nowrap: true,
+      render: (it) => (
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            padding: '2px 10px',
+            borderRadius: 10,
+            background: 'var(--bg3)',
+            color: attemptColor(it.attemptNo),
+          }}
+        >
+          {it.attemptNo}
+        </span>
+      ),
+      filterValue: (it) => it.attemptNo,
+    },
+    {
+      id: 'assigned_to',
+      header: 'Assigned To',
+      nowrap: true,
+      render: (it) =>
+        it.assignedTo ? (
+          <span style={{ color: 'var(--blue)', fontWeight: 600 }}>{it.assignedTo}</span>
+        ) : (
+          <span className="text3">—</span>
+        ),
+    },
+    // ── ▸ detail row (defaultHidden) — reachable from the Columns menu. ──
+    {
+      id: 'item_name',
+      header: 'Item Name',
+      align: 'left',
+      ellipsis: true,
+      className: 'fw-700',
+      render: (it) => it.itemName?.trim() || '—',
+      title: (it) => it.itemName ?? '',
+    },
+    {
+      id: 'so_code',
+      header: 'SO No.',
+      nowrap: true,
+      render: (it) => <span style={{ color: 'var(--cyan)' }}>{it.soCode ?? '—'}</span>,
+    },
+    {
+      id: 'customer',
+      header: 'Customer',
+      align: 'left',
+      ellipsis: true,
+      render: (it) => it.customer?.trim() || '—',
+      title: (it) => it.customer ?? '',
+    },
+    {
+      id: 'due_date',
+      kind: 'date',
+      header: 'Due Date',
+      nowrap: true,
+      render: (it) => (
+        <span style={{ color: it.isOverdue ? 'var(--red)' : 'var(--text3)' }}>
+          {fmtDate(it.dueDate)}
+        </span>
+      ),
+      filterValue: (it) => it.dueDate ?? '',
+    },
+  ];
 
   return (
     <>
@@ -103,169 +256,41 @@ export function QueueTab({
           No QC Pending items.
         </div>
       ) : (
-        <>
-          <div className="panel">
-            <div className="tbl-wrap">
-              <table className="innovic-table tbl-grid">
-                <thead>
-                  <tr>
-                    <th>Days Waiting</th>
-                    <th>JC No.</th>
-                    <th>Operation</th>
-                    <th>SO No. · Customer</th>
-                    <th className="th-num">QC Pending</th>
-                    <th className="td-ctr">Attempts</th>
-                    <th>Due Date</th>
-                    <th>Assigned To</th>
-                    {showActions ? <th aria-label="Actions" /> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((it) => {
-                    const ageColor =
-                      it.ageDays >= 3
-                        ? 'var(--red)'
-                        : it.ageDays >= 1
-                          ? 'var(--amber)'
-                          : 'var(--green)';
-                    return (
-                      <tr
-                        key={it.jcOpId}
-                        style={it.isOverdue ? { background: 'var(--red3)' } : undefined}
-                      >
-                        <td
-                          className="td-ctr mono fw-700"
-                          style={{ color: ageColor, fontSize: 14 }}
-                        >
-                          {daysText(it.ageDays)}
-                        </td>
-                        <td className="td-code" style={{ color: 'var(--cyan)' }}>
-                          {it.jcCode}
-                        </td>
-                        <td style={{ fontSize: 12 }}>
-                          <b style={{ color: 'var(--red2)' }}>
-                            Op {opSrNo(it.opSeq)} · {it.operation}
-                          </b>
-                          <br />
-                          {/* An inspector reads the code to find the drawing, so
-                              it carries weight rather than sitting in the faintest
-                              token on the page. */}
-                          <span
-                            className="mono fw-700"
-                            style={{ fontSize: 11, color: 'var(--text)' }}
-                          >
-                            {itemCodeWithRev(it.itemCode, it.itemRevision)}
-                          </span>
-                          {/* The part in words, under the code that identifies
-                              its drawing. The queue told an inspector which job
-                              and which drawing revision to fetch but never what
-                              the thing is called, so picking work off this list
-                              meant opening the job card to find out. It lives in
-                              the same cell as the code rather than in a new
-                              column so the queue keeps its column count. The
-                              cell is no-wrap, so the name is capped and
-                              truncated with the full text on hover — otherwise
-                              one long part name would stretch the whole table
-                              sideways. Missing name, no line. */}
-                          {it.itemName ? (
-                            <>
-                              <br />
-                              <span
-                                className="fw-700"
-                                style={{
-                                  fontSize: 11,
-                                  display: 'inline-block',
-                                  maxWidth: 200,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                  verticalAlign: 'bottom',
-                                }}
-                                title={it.itemName}
-                              >
-                                {it.itemName}
-                              </span>
-                            </>
-                          ) : null}
-                        </td>
-                        <td style={{ fontSize: 12 }}>
-                          <span style={{ color: 'var(--cyan)' }}>{it.soCode ?? '—'}</span>
-                          <br />
-                          <span className="text3" style={{ fontSize: 11 }}>
-                            {it.customer ?? '—'}
-                          </span>
-                        </td>
-                        <td
-                          className="td-num mono fw-700"
-                          style={{ color: 'var(--amber2)', fontSize: 14 }}
-                        >
-                          {it.pendingQty}
-                        </td>
-                        <td className="td-ctr">
-                          <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 700,
-                              padding: '2px 10px',
-                              borderRadius: 10,
-                              background: 'var(--bg3)',
-                              color: attemptColor(it.attemptNo),
-                            }}
-                          >
-                            {it.attemptNo}
-                          </span>
-                        </td>
-                        <td
-                          style={{
-                            fontSize: 11,
-                            color: it.isOverdue ? 'var(--red)' : 'var(--text3)',
-                          }}
-                        >
-                          {fmtDate(it.dueDate)}
-                        </td>
-                        <td style={{ fontSize: 11 }}>
-                          {it.assignedTo ? (
-                            <span style={{ color: 'var(--blue)', fontWeight: 600 }}>
-                              {it.assignedTo}
-                            </span>
-                          ) : (
-                            <span className="text3">—</span>
-                          )}
-                        </td>
-                        {showActions ? (
-                          <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                            <RowMenu
-                              items={[
-                                {
-                                  key: 'pick-up',
-                                  label: 'Pick Up',
-                                  icon: 'check',
-                                  group: 'workflow',
-                                  hidden: !canPickUp,
-                                  // The pick-up for this op is already on its way.
-                                  disabledReason: busyId === it.jcOpId ? 'Working…' : undefined,
-                                  onSelect: () => onPickUp(it.jcOpId),
-                                },
-                                {
-                                  key: 'assign',
-                                  label: 'Assign',
-                                  icon: 'user-round',
-                                  group: 'workflow',
-                                  hidden: !canAssign,
-                                  onSelect: () => onAssign(it),
-                                },
-                              ]}
-                            />
-                          </td>
-                        ) : null}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.qcCommandQueue}
+            columns={columns}
+            defaultHidden={[...QUEUE_HIDDEN_COLUMNS]}
+            rows={sorted}
+            rowKey={(it) => it.jcOpId}
+            rowClassName={(it) => (it.isOverdue ? ROW_TINT.late : undefined)}
+            rowActionsWidth="1%"
+            {...(showActions
+              ? {
+                  rowMenu: (it: QcCommandQueueRow) => [
+                    {
+                      key: 'pick-up',
+                      label: 'Pick Up',
+                      icon: 'check' as const,
+                      group: 'workflow' as const,
+                      hidden: !canPickUp,
+                      // The pick-up for this op is already on its way.
+                      disabledReason: busyId === it.jcOpId ? 'Working…' : undefined,
+                      onSelect: () => onPickUp(it.jcOpId),
+                    },
+                    {
+                      key: 'assign',
+                      label: 'Assign',
+                      icon: 'user-round' as const,
+                      group: 'workflow' as const,
+                      hidden: !canAssign,
+                      onSelect: () => onAssign(it),
+                    },
+                  ],
+                }
+              : {})}
+          />
+        </Panel>
       )}
     </>
   );
