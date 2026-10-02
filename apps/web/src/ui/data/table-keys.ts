@@ -44,6 +44,7 @@ export const TABLE_KEYS = {
   jwDcInward: 'jw-dc-inward',
   approvalsPrPo: 'approvals-pr-po',
   approvalsOpEntry: 'approvals-op-entry',
+  editApprovalsInbox: 'edit-approvals-inbox',
 
   // ADR-199 conversions — Store (batch S)
   grnList: 'grn-list',

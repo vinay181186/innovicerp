@@ -42,12 +42,17 @@
 // the vendor name moved out of the panel header into the SUPPLIER column, where
 // its address and GSTIN already belonged.
 
-import type { PurchaseOrderLine } from '@innovic/shared';
+import type { DocumentEditChange, PurchaseOrderLine } from '@innovic/shared';
 import { PO_SHORT_CLOSE_REASON_MIN, poLinePendingQty, poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Send, X } from 'lucide-react';
 import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  linePendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
@@ -112,6 +117,12 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
     entityId: detail?.id,
     refId: detail?.code,
   });
+  // ADR-202 — the edit(s) staged against this PO and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips on the
+  // header band and the line rows. Flattened across requests (there is usually
+  // one, but an older request can still be open alongside a new one).
+  const pendingEdit = usePendingEditForDoc('PurchaseOrder', detail?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   if (isLoading) {
     return (
@@ -396,6 +407,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           vendor={vendor}
           totalQty={totalQty}
           receivedQty={receivedQty}
+          pendingChanges={pendingChanges}
         />
       </div>
 
@@ -444,7 +456,13 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 </tr>
               ) : (
                 detail.lines.map((l) => (
-                  <LineRow key={l.id} line={l} priceHidden={priceHidden} poStatus={detail.status} />
+                  <LineRow
+                    key={l.id}
+                    line={l}
+                    priceHidden={priceHidden}
+                    poStatus={detail.status}
+                    pendingChanges={pendingChanges}
+                  />
                 ))
               )}
             </tbody>
@@ -814,8 +832,13 @@ function LineRow(props: {
   line: PurchaseOrderLine;
   priceHidden: boolean;
   poStatus: string;
+  pendingChanges: readonly DocumentEditChange[];
 }): React.JSX.Element {
-  const { line: l, priceHidden, poStatus } = props;
+  const { line: l, priceHidden, poStatus, pendingChanges } = props;
+  // ADR-202 — a pending edit to this line's Qty / Rate shows as an amber chip.
+  // The PO diff emits Qty as 'qty' and Rate as 'rate'.
+  const qtyPending = linePendingChange(pendingChanges, l.lineNo, 'qty');
+  const ratePending = linePendingChange(pendingChanges, l.lineNo, 'rate');
   // When the viewer may not see prices the Rate + Amount columns are dropped
   // from the table entirely (header + cells), not blanked.
   const amount = l.qty * Number(l.rate ?? 0);
@@ -841,11 +864,15 @@ function LineRow(props: {
       <td className="mono text2" style={{ fontSize: 11 }}>
         {l.sourceJcOpId ? 'JC Op' : '—'}
       </td>
-      <td className="td-num mono fw-700">{l.qty}</td>
+      <td className="td-num mono fw-700">
+        {l.qty}
+        {qtyPending ? <PendingChangeChip after={qtyPending.after} /> : null}
+      </td>
       {priceHidden ? null : (
         <>
           <td className="td-num mono" style={{ fontSize: 11 }}>
             {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
+            {ratePending ? <PendingChangeChip after={ratePending.after} /> : null}
           </td>
           <td className="td-num mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
         </>

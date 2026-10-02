@@ -14,8 +14,12 @@
 // the app's: 11px Title Case captions, 11px muted labels, 12–13px values, mono
 // for codes and money.
 
-import type { PurchaseOrderDetail, Vendor } from '@innovic/shared';
+import type { DocumentEditChange, PurchaseOrderDetail, Vendor } from '@innovic/shared';
 import { fmtDate, fmtDateTime } from '@/lib/date';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { PO_TYPE_LABELS, taxTypeLabel } from '../lib/po-labels';
 
 /** Accent bar — the same reading the status badge already gives: green closed,
@@ -92,12 +96,20 @@ export function PoHeaderBand({
   vendor,
   totalQty,
   receivedQty,
+  pendingChanges = [],
 }: {
   detail: PurchaseOrderDetail;
   vendor: Vendor | null | undefined;
   totalQty: number;
   receivedQty: number;
+  /** ADR-202 — staged header changes awaiting approval, for the inline chips. */
+  pendingChanges?: readonly DocumentEditChange[];
 }): React.JSX.Element {
+  // The PO edit diff emits these field keys (purchase-orders/service.ts).
+  const poTypePending = headerPendingChange(pendingChanges, 'poType');
+  const poDatePending = headerPendingChange(pendingChanges, 'poDate');
+  const vendorPending = headerPendingChange(pendingChanges, 'vendorId');
+  const remarksPending = headerPendingChange(pendingChanges, 'remarks');
   // Full address incl. pincode (A38 / A39) — street, city, state, pincode.
   const address = [vendor?.addressLine1, vendor?.city, vendor?.state, vendor?.pincode]
     .filter(Boolean)
@@ -140,6 +152,7 @@ export function PoHeaderBand({
           ) : null}
           <div className="fw-700" style={{ fontSize: 14, marginBottom: 4 }}>
             {detail.vendorName ?? detail.vendorCodeText ?? '—'}
+            {vendorPending ? <PendingChangeChip after={vendorPending.after} /> : null}
           </div>
           {address ? (
             <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
@@ -170,8 +183,24 @@ export function PoHeaderBand({
               </span>
             }
           />
-          <Row label="PO Type" value={PO_TYPE_LABELS[detail.poType]} />
-          <Row label="PO Date" value={<span className="mono">{fmtDate(detail.poDate)}</span>} />
+          <Row
+            label="PO Type"
+            value={
+              <>
+                {PO_TYPE_LABELS[detail.poType]}
+                {poTypePending ? <PendingChangeChip after={poTypePending.after} /> : null}
+              </>
+            }
+          />
+          <Row
+            label="PO Date"
+            value={
+              <>
+                <span className="mono">{fmtDate(detail.poDate)}</span>
+                {poDatePending ? <PendingChangeChip after={poDatePending.after} /> : null}
+              </>
+            }
+          />
           <Row
             label="PR No."
             value={
@@ -300,12 +329,15 @@ export function PoHeaderBand({
               ) : null}
             </>
           ) : null}
-          {detail.remarks ? (
+          {detail.remarks || remarksPending ? (
             <div style={{ fontSize: 11, marginTop: 6 }}>
               <div className="text3" style={{ marginBottom: 2 }}>
                 Remarks
               </div>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks}</div>
+              <div style={{ whiteSpace: 'pre-wrap' }}>
+                {detail.remarks ?? '—'}
+                {remarksPending ? <PendingChangeChip after={remarksPending.after} /> : null}
+              </div>
             </div>
           ) : null}
         </Col>

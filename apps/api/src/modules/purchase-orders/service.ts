@@ -54,7 +54,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
+import { diffFields, softDeleteStamp, valuesEqual, type DiffField } from '../../lib/audit-trail';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
 import { loadPrBalances } from '../purchase-requests/service';
 import {
@@ -70,6 +70,7 @@ import {
 } from '@innovic/shared';
 import type {
   ActivityChange,
+  DocumentEditStagedResult,
   DocumentTraceability,
   ShortClosePurchaseOrderInput,
 } from '@innovic/shared';
@@ -1660,28 +1661,70 @@ async function renamePoCodeEverywhere(
     .where(and(eq(jwDcOutward.companyId, companyId), eq(jwDcOutward.jwpoCodeText, oldCode)));
 }
 
+/**
+ * True when the submitted PO lines differ from what is stored (a line added,
+ * removed, or any line's item / qty / rate changed). Used by the edit-approval
+ * divert to refuse line-level edits it cannot yet stage (Phase 1b). Numeric
+ * compare via valuesEqual so "100" vs 100.00 is not a false change.
+ */
+function poLinesChanged(
+  current: { id: string; itemId: string | null; qty: number | string; rate: number | string }[],
+  proposed: UpdatePurchaseOrderInput['lines'],
+): boolean {
+  if (!proposed) return false;
+  if (proposed.length !== current.length) return true;
+  const byId = new Map(current.map((c) => [c.id, c]));
+  for (const p of proposed) {
+    if (!p.id) return true; // a line with no id is a new line
+    const c = byId.get(p.id);
+    if (!c) return true; // references a line that is not on this PO
+    if (
+      !valuesEqual(c.itemId ?? null, p.itemId ?? null) ||
+      !valuesEqual(c.qty, p.qty) ||
+      !valuesEqual(c.rate, p.rate)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function updatePurchaseOrder(
   id: string,
   input: UpdatePurchaseOrderInput,
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
   // Changing a saved PO is the `edit` action — L3 Editor and up. An L2 clerk
-  // may raise one but not alter it afterwards.
+  // may raise one but not alter it afterwards. Checked HERE, not in the tx body,
+  // so the edit-approval engine's applyEdit can replay an approved edit for an
+  // approver who holds `approve` but not `edit`.
+  await requireFormAccess(user, 'po_create', 'edit');
+  return withUserContext(user, (tx) => updatePurchaseOrderTx(tx, id, input, user));
+}
+
+/**
+ * The PO edit entry point the HTTP route calls. Edit-approval (ADR-202): when
+ * the company's gate is on, an edit to a LIVE PO is STAGED for per-change
+ * approval and a {staged:true, request} result is returned; drafts, cancelled
+ * POs and a gate-off company fall through to updatePurchaseOrder (today's
+ * behaviour). Kept separate from updatePurchaseOrder so internal callers and the
+ * engine's applyEdit always get a PurchaseOrderDetail, never a staged result.
+ */
+export async function updatePurchaseOrderOrStage(
+  id: string,
+  input: UpdatePurchaseOrderInput,
+  user: AuthContext,
+): Promise<PurchaseOrderDetail | DocumentEditStagedResult> {
   await requireFormAccess(user, 'po_create', 'edit');
   const companyId = requireCompany(user);
-  // Money in, same rule as money out. `priceOff` makes "can do the job but must
-  // not see the number" a supported setup, so an editor with prices hidden is a
-  // real user — and their form posts back money fields it never showed them.
-  // The rate/percent fields carry zod defaults, so a blinded payload does not
-  // merely omit them: it arrives holding a default that would overwrite the
-  // stored figures. Ignore them here — what is stored stands.
-  const showMoney = await canSeeFormPrice(user, 'po_create');
 
-  return withUserContext(user, async (tx) => {
-    // S5 — lock the PO: an edit that sends an approved PO back to Draft
-    // (Withdraw) and an Approve / Reject on it can no longer interleave.
-    const existingHdrRows = await tx
-      .select()
+  // Engine imported dynamically to avoid a static import cycle with
+  // po-edit-registry (which imports updatePurchaseOrderTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const rows = await tx
+      .select({ status: purchaseOrders.status })
       .from(purchaseOrders)
       .where(
         and(
@@ -1690,247 +1733,321 @@ export async function updatePurchaseOrder(
           isNull(purchaseOrders.deletedAt),
         ),
       )
-      .limit(1)
-      .for('update');
-    const existingHdr = existingHdrRows[0];
-    if (!existingHdr) throw new NotFoundError('PO not found. It may have been moved to Trash.');
-    // R5: refuse the save if someone else edited the PO after this form opened it.
-    assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
-
-    // The lines as they stand BEFORE this save. Loaded here, once, because both
-    // the goods-movement lock below and the revision check further down compare
-    // against them — asking the database twice for the same rows would be waste.
-    const storedLines = await loadStoredPoLines(tx, companyId, id);
-    // ADR-197 — the full line rows as they stand BEFORE the save, for the
-    // History tab's per-line before → after.
-    const beforeLineRows = await tx
-      .select()
-      .from(purchaseOrderLines)
-      .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)));
-
-    // ── Money lock (0100, retriggered 2026-08-31) ───────────────────
-    // The figures on a PO stop being the buyer's to change once the goods they
-    // describe have actually moved: a GRN booked against it, or a Delivery
-    // Challan / JW outward DC raised against it. Re-rating a PO that stock has
-    // already been received against rewrites history — that is what this
-    // guards. Structural check #5 of the Generic Role Audit Checklist.
-    //
-    // It used to trigger on `status !== 'draft'` instead. That worked while a
-    // PO was born draft and only left it on approval. It stopped working when
-    // new POs began opening straight at 'open': every PO was then locked from
-    // the moment it was saved, before anyone had looked at it — and the refusal
-    // told the user to "reject it back to draft first", which nothing in the
-    // system can do (approve → open, reject → cancelled; nothing → draft). A
-    // rate typed wrong could only be escaped by cancelling the PO and raising
-    // it again. Tying the freeze to goods movement restores the correction
-    // window without reopening what it was written to protect.
-    //
-    // Still not a freeze of the whole record: due date, remarks, the PR
-    // reference and the per-line due date / remarks stay open, because chasing
-    // a delivery date is not a change to what was bought.
-    //
-    // A cancelled PO stays locked too — it is a dead document, and its figures
-    // should not be edited after the fact.
-    const goodsDoc = await poGoodsMovementDoc(tx, companyId, id);
-    const lockReason = goodsDoc
-      ? `already has goods moved against it (${goodsDoc})`
-      : existingHdr.status === 'cancelled'
-        ? 'is Cancelled'
-        : null;
-    if (lockReason !== null) {
-      const h0 = input.header;
-      const lockedChanges: string[] = [];
-      if (
-        input.lines !== undefined &&
-        (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))
-      ) {
-        lockedChanges.push('Lines / Rates');
-      }
-      if (h0.vendorId !== undefined && (h0.vendorId ?? null) !== existingHdr.vendorId) {
-        lockedChanges.push('Vendor');
-      }
-      if (h0.poType !== undefined && h0.poType !== existingHdr.poType)
-        lockedChanges.push('PO Type');
-      if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate)
-        lockedChanges.push('PO Date');
-      if (h0.taxType !== undefined && (h0.taxType ?? null) !== existingHdr.taxType) {
-        lockedChanges.push('Tax Type');
-      }
-      for (const [label, next, current] of [
-        ['SGST %', h0.sgstPct, existingHdr.sgstPct],
-        ['CGST %', h0.cgstPct, existingHdr.cgstPct],
-        ['IGST %', h0.igstPct, existingHdr.igstPct],
-      ] as const) {
-        if (next !== undefined && Number(next) !== Number(current)) lockedChanges.push(label);
-      }
-      if (lockedChanges.length > 0) {
-        throw new ValidationError(
-          `Cannot change ${lockedChanges.join(', ')} on PO ${existingHdr.code}: it ${lockReason}. ` +
-            `Raise a new PO for the difference. Due Date, Remarks and PR No. can still be edited.`,
-        );
-      }
-    }
-
-    if (input.header.vendorId !== undefined && input.header.vendorId !== null) {
-      await assertVendorExists(tx, input.header.vendorId, companyId, existingHdr.vendorId);
-    }
-
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    const h = input.header;
-    if (h.poDate !== undefined) updates['poDate'] = h.poDate;
-    if (h.poType !== undefined) updates['poType'] = h.poType;
-    if (h.vendorId !== undefined) updates['vendorId'] = h.vendorId ?? null;
-    if (h.vendorCodeText !== undefined) updates['vendorCodeText'] = h.vendorCodeText ?? null;
-    // Status is IMMUTABLE on a raw edit: preserve the existing PO status
-    // regardless of what the payload sends (mirror of updateJobCard's source
-    // immutability). PO status moves ONLY through the dedicated state-machine
-    // actions — approvePurchaseOrder / rejectPurchaseOrder / cancel — never a
-    // plain update, which would otherwise let an edit flip draft→open (skipping
-    // the approver + amount ceiling) or →cancelled (skipping the rejection
-    // reason + rejectedBy/rejectedAt stamps). Silently ignore input.status.
-    updates['status'] = existingHdr.status;
-    if (h.dueDate !== undefined) updates['dueDate'] = h.dueDate ?? null;
-    if (h.taxType !== undefined) updates['taxType'] = h.taxType ?? null;
-    if (h.sgstPct !== undefined && showMoney) updates['sgstPct'] = pctToString(h.sgstPct);
-    if (h.cgstPct !== undefined && showMoney) updates['cgstPct'] = pctToString(h.cgstPct);
-    if (h.igstPct !== undefined && showMoney) updates['igstPct'] = pctToString(h.igstPct);
-    if (h.prCodeText !== undefined) updates['prCodeText'] = h.prCodeText ?? null;
-    if (h.approvalRemarks !== undefined) updates['approvalRemarks'] = h.approvalRemarks ?? null;
-    if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
-
-    // ── Revision bump (user, 2026-09-11) ───────────────────
-    // A PO carries its revision IN ITS NUMBER — IN-MPO-00005/R1 when it is
-    // raised, /R2 after the first real change. The vendor may be holding two
-    // printed copies of the same order, and the suffix is how they tell which
-    // one is current. Only a save that ACTUALLY alters the document moves it:
-    // opening a PO and pressing Save with nothing touched leaves it alone.
-    //
-    // The SERIES never moves, not even when this save changes the PO type. A PO
-    // born IN-MPO-00005 stays IN-MPO-00005 after being retyped to job work;
-    // renumbering it into IN-JWPO- would hand it a number another job-work PO
-    // may already own. Only the /R goes up — which is equally true of the legacy
-    // IN-PO- rows, which keep their old prefix for life.
-    const oldCode = existingHdr.code;
-    const bumpRevision = await poEditWouldChange(
-      tx,
-      companyId,
-      existingHdr,
-      updates,
-      input.lines,
-      storedLines,
-      showMoney,
-    );
-    const newCode = bumpRevision ? bumpDocRevision(oldCode) : oldCode;
-    if (bumpRevision) updates['code'] = newCode;
-
-    // ADR-189 review — an approved PO whose COMMERCIAL terms change (lines,
-    // vendor, tax) goes back to draft for re-approval while PO approval is on:
-    // otherwise approving 10k and then editing to 10 lakh bypasses the ceiling.
-    // The edit form always posts the lines, so a line change is judged on what
-    // was bought (items / qty / rate / lines added or dropped), never on due
-    // date or remarks. A PO with goods already moved is left alone: its
-    // commercial fields are locked above, and re-drafting it would strand
-    // receipts on a draft.
-    const commercialChange =
-      bumpRevision &&
-      !goodsDoc &&
-      ((input.lines !== undefined &&
-        (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))) ||
-        (h.vendorId !== undefined && (h.vendorId ?? null) !== (existingHdr.vendorId ?? null)) ||
-        (showMoney &&
-          ((h.sgstPct !== undefined && pctToString(h.sgstPct) !== existingHdr.sgstPct) ||
-            (h.cgstPct !== undefined && pctToString(h.cgstPct) !== existingHdr.cgstPct) ||
-            (h.igstPct !== undefined && pctToString(h.igstPct) !== existingHdr.igstPct))));
-    if (commercialChange && existingHdr.status === 'open') {
-      const switches = await readApprovalSwitches(tx, companyId);
-      if (switches.poApproval) {
-        updates['status'] = 'draft';
-        updates['approvedBy'] = null;
-        updates['approvedAt'] = null;
-        updates['approvalRemarks'] = `Re-approval needed: edited to ${newCode}`;
-        await emitActivityLog(
-          tx,
-          {
-            action: ActivityAction.Withdraw,
-            entity: 'PurchaseOrder',
-            entityId: id,
-            detail: `${oldCode} → ${newCode}: items / qty / rate / vendor / tax changed after approval; back to Draft for re-approval`,
-            refId: newCode,
-            changes: [{ field: 'status', label: 'PO Status', before: 'Open', after: 'Draft' }],
-          },
-          companyId,
-          user,
-        );
-      }
-    }
-
-    await tx.update(purchaseOrders).set(updates).where(eq(purchaseOrders.id, id));
-
-    // The snapshots move with the code, in the SAME transaction as the code
-    // itself — a GRN pointing at a PO number that no longer exists, even for an
-    // instant, is exactly what this must not create.
-    if (bumpRevision) await renamePoCodeEverywhere(tx, companyId, oldCode, newCode);
-
+      .limit(1);
+    const status = rows[0]?.status;
+    // "Live" mirrors poEditRegistryEntry.isLive: past draft and not cancelled.
+    if (status === undefined || status === 'draft' || status === 'cancelled') return false;
+    // Phase 1 stages HEADER changes only. A line item/qty/rate change cannot yet
+    // be staged and must NOT ride along unapproved in the payload — refuse it
+    // clearly rather than lose it silently (line-level approval = Phase 1b).
     if (input.lines !== undefined) {
-      // Same quantity cap as the create paths (ADR-152 phase 2). Runs BEFORE
-      // the merge writes anything, so a refusal leaves the PO exactly as it was.
-      await assertLinesWithinPrBalances(tx, companyId, existingHdr, input.lines);
-      await mergeLines(tx, id, companyId, input.lines, user, showMoney);
+      const current = await tx
+        .select({
+          id: purchaseOrderLines.id,
+          itemId: purchaseOrderLines.itemId,
+          qty: purchaseOrderLines.qty,
+          rate: purchaseOrderLines.rate,
+        })
+        .from(purchaseOrderLines)
+        .where(
+          and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)),
+        );
+      if (poLinesChanged(current, input.lines)) {
+        throw new ConflictError(
+          'Editing PO lines (item, quantity or rate) is not yet available while Document Edit Approval is on. For now only header fields — vendor, PO date, due date, tax, PR no. and remarks — can be changed on a live PO. Line-level approval is coming next.',
+        );
+      }
     }
-
-    let updatedHdr = (
-      await tx.select().from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1)
-    )[0]!;
-    const lineRows = await tx
-      .select({ row: purchaseOrderLines, sourcePrCode: purchaseRequests.code })
-      .from(purchaseOrderLines)
-      .leftJoin(
-        purchaseRequests,
-        and(
-          eq(purchaseRequests.id, purchaseOrderLines.sourcePrId),
-          isNull(purchaseRequests.deletedAt),
-        ),
-      )
-      .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
-      .orderBy(asc(purchaseOrderLines.lineNo));
-
-    // Recompute stored totals from the FINAL state (post header-pct update +
-    // line merge), regardless of whether pcts or lines changed. Persist and
-    // reflect the same figures on the returned header.
-    const totals = computePoTotals(
-      lineRows.map((r) => r.row),
-      Number(updatedHdr.sgstPct),
-      Number(updatedHdr.cgstPct),
-      Number(updatedHdr.igstPct),
+    return true;
+  });
+  if (shouldStage) {
+    const request = await requestDocumentEdit(
+      'PurchaseOrder',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
     );
-    await tx
-      .update(purchaseOrders)
-      .set({
-        subtotal: totals.subtotal,
-        taxAmount: totals.taxAmount,
-        totalAmount: totals.totalAmount,
-      })
-      .where(eq(purchaseOrders.id, id));
-    updatedHdr = {
-      ...updatedHdr,
+    return { staged: true, request };
+  }
+
+  return updatePurchaseOrder(id, input, user);
+}
+
+/**
+ * The body of a PO edit, inside a caller-supplied transaction. Called by
+ * updatePurchaseOrder (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds one — nesting withUserContext would deadlock on
+ * the PO row locked FOR UPDATE below). Every §20 guard lives here: the
+ * money-lock, the revision bump, the line merge, assertUnchangedSinceOpened. The
+ * caller performs the `edit` / `approve` access check before calling.
+ */
+export async function updatePurchaseOrderTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdatePurchaseOrderInput,
+  user: AuthContext,
+): Promise<PurchaseOrderDetail> {
+  const companyId = requireCompany(user);
+  // Money in, same rule as money out. `priceOff` makes "can do the job but must
+  // not see the number" a supported setup, so an editor with prices hidden is a
+  // real user — and their form posts back money fields it never showed them.
+  // The rate/percent fields carry zod defaults, so a blinded payload does not
+  // merely omit them: it arrives holding a default that would overwrite the
+  // stored figures. Ignore them here — what is stored stands.
+  const showMoney = await canSeeFormPrice(user, 'po_create');
+  // S5 — lock the PO: an edit that sends an approved PO back to Draft
+  // (Withdraw) and an Approve / Reject on it can no longer interleave.
+  const existingHdrRows = await tx
+    .select()
+    .from(purchaseOrders)
+    .where(
+      and(
+        eq(purchaseOrders.id, id),
+        eq(purchaseOrders.companyId, companyId),
+        isNull(purchaseOrders.deletedAt),
+      ),
+    )
+    .limit(1)
+    .for('update');
+  const existingHdr = existingHdrRows[0];
+  if (!existingHdr) throw new NotFoundError('PO not found. It may have been moved to Trash.');
+  // R5: refuse the save if someone else edited the PO after this form opened it.
+  assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
+
+  // The lines as they stand BEFORE this save. Loaded here, once, because both
+  // the goods-movement lock below and the revision check further down compare
+  // against them — asking the database twice for the same rows would be waste.
+  const storedLines = await loadStoredPoLines(tx, companyId, id);
+  // ADR-197 — the full line rows as they stand BEFORE the save, for the
+  // History tab's per-line before → after.
+  const beforeLineRows = await tx
+    .select()
+    .from(purchaseOrderLines)
+    .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)));
+
+  // ── Money lock (0100, retriggered 2026-08-31) ───────────────────
+  // The figures on a PO stop being the buyer's to change once the goods they
+  // describe have actually moved: a GRN booked against it, or a Delivery
+  // Challan / JW outward DC raised against it. Re-rating a PO that stock has
+  // already been received against rewrites history — that is what this
+  // guards. Structural check #5 of the Generic Role Audit Checklist.
+  //
+  // It used to trigger on `status !== 'draft'` instead. That worked while a
+  // PO was born draft and only left it on approval. It stopped working when
+  // new POs began opening straight at 'open': every PO was then locked from
+  // the moment it was saved, before anyone had looked at it — and the refusal
+  // told the user to "reject it back to draft first", which nothing in the
+  // system can do (approve → open, reject → cancelled; nothing → draft). A
+  // rate typed wrong could only be escaped by cancelling the PO and raising
+  // it again. Tying the freeze to goods movement restores the correction
+  // window without reopening what it was written to protect.
+  //
+  // Still not a freeze of the whole record: due date, remarks, the PR
+  // reference and the per-line due date / remarks stay open, because chasing
+  // a delivery date is not a change to what was bought.
+  //
+  // A cancelled PO stays locked too — it is a dead document, and its figures
+  // should not be edited after the fact.
+  const goodsDoc = await poGoodsMovementDoc(tx, companyId, id);
+  const lockReason = goodsDoc
+    ? `already has goods moved against it (${goodsDoc})`
+    : existingHdr.status === 'cancelled'
+      ? 'is Cancelled'
+      : null;
+  if (lockReason !== null) {
+    const h0 = input.header;
+    const lockedChanges: string[] = [];
+    if (
+      input.lines !== undefined &&
+      (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))
+    ) {
+      lockedChanges.push('Lines / Rates');
+    }
+    if (h0.vendorId !== undefined && (h0.vendorId ?? null) !== existingHdr.vendorId) {
+      lockedChanges.push('Vendor');
+    }
+    if (h0.poType !== undefined && h0.poType !== existingHdr.poType)
+      lockedChanges.push('PO Type');
+    if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate)
+      lockedChanges.push('PO Date');
+    if (h0.taxType !== undefined && (h0.taxType ?? null) !== existingHdr.taxType) {
+      lockedChanges.push('Tax Type');
+    }
+    for (const [label, next, current] of [
+      ['SGST %', h0.sgstPct, existingHdr.sgstPct],
+      ['CGST %', h0.cgstPct, existingHdr.cgstPct],
+      ['IGST %', h0.igstPct, existingHdr.igstPct],
+    ] as const) {
+      if (next !== undefined && Number(next) !== Number(current)) lockedChanges.push(label);
+    }
+    if (lockedChanges.length > 0) {
+      throw new ValidationError(
+        `Cannot change ${lockedChanges.join(', ')} on PO ${existingHdr.code}: it ${lockReason}. ` +
+          `Raise a new PO for the difference. Due Date, Remarks and PR No. can still be edited.`,
+      );
+    }
+  }
+
+  if (input.header.vendorId !== undefined && input.header.vendorId !== null) {
+    await assertVendorExists(tx, input.header.vendorId, companyId, existingHdr.vendorId);
+  }
+
+  const updates: Record<string, unknown> = { updatedBy: user.id };
+  const h = input.header;
+  if (h.poDate !== undefined) updates['poDate'] = h.poDate;
+  if (h.poType !== undefined) updates['poType'] = h.poType;
+  if (h.vendorId !== undefined) updates['vendorId'] = h.vendorId ?? null;
+  if (h.vendorCodeText !== undefined) updates['vendorCodeText'] = h.vendorCodeText ?? null;
+  // Status is IMMUTABLE on a raw edit: preserve the existing PO status
+  // regardless of what the payload sends (mirror of updateJobCard's source
+  // immutability). PO status moves ONLY through the dedicated state-machine
+  // actions — approvePurchaseOrder / rejectPurchaseOrder / cancel — never a
+  // plain update, which would otherwise let an edit flip draft→open (skipping
+  // the approver + amount ceiling) or →cancelled (skipping the rejection
+  // reason + rejectedBy/rejectedAt stamps). Silently ignore input.status.
+  updates['status'] = existingHdr.status;
+  if (h.dueDate !== undefined) updates['dueDate'] = h.dueDate ?? null;
+  if (h.taxType !== undefined) updates['taxType'] = h.taxType ?? null;
+  if (h.sgstPct !== undefined && showMoney) updates['sgstPct'] = pctToString(h.sgstPct);
+  if (h.cgstPct !== undefined && showMoney) updates['cgstPct'] = pctToString(h.cgstPct);
+  if (h.igstPct !== undefined && showMoney) updates['igstPct'] = pctToString(h.igstPct);
+  if (h.prCodeText !== undefined) updates['prCodeText'] = h.prCodeText ?? null;
+  if (h.approvalRemarks !== undefined) updates['approvalRemarks'] = h.approvalRemarks ?? null;
+  if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
+
+  // ── Revision bump (user, 2026-09-11) ───────────────────
+  // A PO carries its revision IN ITS NUMBER — IN-MPO-00005/R1 when it is
+  // raised, /R2 after the first real change. The vendor may be holding two
+  // printed copies of the same order, and the suffix is how they tell which
+  // one is current. Only a save that ACTUALLY alters the document moves it:
+  // opening a PO and pressing Save with nothing touched leaves it alone.
+  //
+  // The SERIES never moves, not even when this save changes the PO type. A PO
+  // born IN-MPO-00005 stays IN-MPO-00005 after being retyped to job work;
+  // renumbering it into IN-JWPO- would hand it a number another job-work PO
+  // may already own. Only the /R goes up — which is equally true of the legacy
+  // IN-PO- rows, which keep their old prefix for life.
+  const oldCode = existingHdr.code;
+  const bumpRevision = await poEditWouldChange(
+    tx,
+    companyId,
+    existingHdr,
+    updates,
+    input.lines,
+    storedLines,
+    showMoney,
+  );
+  const newCode = bumpRevision ? bumpDocRevision(oldCode) : oldCode;
+  if (bumpRevision) updates['code'] = newCode;
+
+  // ADR-189 review — an approved PO whose COMMERCIAL terms change (lines,
+  // vendor, tax) goes back to draft for re-approval while PO approval is on:
+  // otherwise approving 10k and then editing to 10 lakh bypasses the ceiling.
+  // The edit form always posts the lines, so a line change is judged on what
+  // was bought (items / qty / rate / lines added or dropped), never on due
+  // date or remarks. A PO with goods already moved is left alone: its
+  // commercial fields are locked above, and re-drafting it would strand
+  // receipts on a draft.
+  const commercialChange =
+    bumpRevision &&
+    !goodsDoc &&
+    ((input.lines !== undefined &&
+      (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))) ||
+      (h.vendorId !== undefined && (h.vendorId ?? null) !== (existingHdr.vendorId ?? null)) ||
+      (showMoney &&
+        ((h.sgstPct !== undefined && pctToString(h.sgstPct) !== existingHdr.sgstPct) ||
+          (h.cgstPct !== undefined && pctToString(h.cgstPct) !== existingHdr.cgstPct) ||
+          (h.igstPct !== undefined && pctToString(h.igstPct) !== existingHdr.igstPct))));
+  if (commercialChange && existingHdr.status === 'open') {
+    const switches = await readApprovalSwitches(tx, companyId);
+    if (switches.poApproval) {
+      updates['status'] = 'draft';
+      updates['approvedBy'] = null;
+      updates['approvedAt'] = null;
+      updates['approvalRemarks'] = `Re-approval needed: edited to ${newCode}`;
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Withdraw,
+          entity: 'PurchaseOrder',
+          entityId: id,
+          detail: `${oldCode} → ${newCode}: items / qty / rate / vendor / tax changed after approval; back to Draft for re-approval`,
+          refId: newCode,
+          changes: [{ field: 'status', label: 'PO Status', before: 'Open', after: 'Draft' }],
+        },
+        companyId,
+        user,
+      );
+    }
+  }
+
+  await tx.update(purchaseOrders).set(updates).where(eq(purchaseOrders.id, id));
+
+  // The snapshots move with the code, in the SAME transaction as the code
+  // itself — a GRN pointing at a PO number that no longer exists, even for an
+  // instant, is exactly what this must not create.
+  if (bumpRevision) await renamePoCodeEverywhere(tx, companyId, oldCode, newCode);
+
+  if (input.lines !== undefined) {
+    // Same quantity cap as the create paths (ADR-152 phase 2). Runs BEFORE
+    // the merge writes anything, so a refusal leaves the PO exactly as it was.
+    await assertLinesWithinPrBalances(tx, companyId, existingHdr, input.lines);
+    await mergeLines(tx, id, companyId, input.lines, user, showMoney);
+  }
+
+  let updatedHdr = (
+    await tx.select().from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1)
+  )[0]!;
+  const lineRows = await tx
+    .select({ row: purchaseOrderLines, sourcePrCode: purchaseRequests.code })
+    .from(purchaseOrderLines)
+    .leftJoin(
+      purchaseRequests,
+      and(
+        eq(purchaseRequests.id, purchaseOrderLines.sourcePrId),
+        isNull(purchaseRequests.deletedAt),
+      ),
+    )
+    .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
+    .orderBy(asc(purchaseOrderLines.lineNo));
+
+  // Recompute stored totals from the FINAL state (post header-pct update +
+  // line merge), regardless of whether pcts or lines changed. Persist and
+  // reflect the same figures on the returned header.
+  const totals = computePoTotals(
+    lineRows.map((r) => r.row),
+    Number(updatedHdr.sgstPct),
+    Number(updatedHdr.cgstPct),
+    Number(updatedHdr.igstPct),
+  );
+  await tx
+    .update(purchaseOrders)
+    .set({
       subtotal: totals.subtotal,
       taxAmount: totals.taxAmount,
       totalAmount: totals.totalAmount,
-    };
-    await logPoEdit(tx, companyId, user, {
-      before: existingHdr,
-      after: updatedHdr,
-      beforeLines: beforeLineRows,
-      afterLines: lineRows.map((r) => r.row),
-      showMoney,
-    });
-
-    return {
-      ...toPurchaseOrder(updatedHdr),
-      vendorName: null,
-      lines: lineRows.map((r) => toPurchaseOrderLine(r.row, null, r.sourcePrCode)),
-    };
+    })
+    .where(eq(purchaseOrders.id, id));
+  updatedHdr = {
+    ...updatedHdr,
+    subtotal: totals.subtotal,
+    taxAmount: totals.taxAmount,
+    totalAmount: totals.totalAmount,
+  };
+  await logPoEdit(tx, companyId, user, {
+    before: existingHdr,
+    after: updatedHdr,
+    beforeLines: beforeLineRows,
+    afterLines: lineRows.map((r) => r.row),
+    showMoney,
   });
+
+  return {
+    ...toPurchaseOrder(updatedHdr),
+    vendorName: null,
+    lines: lineRows.map((r) => toPurchaseOrderLine(r.row, null, r.sourcePrCode)),
+  };
 }
 
 // ── ADR-197: the PO's EDIT rows ───────────────────────────────────────────

@@ -725,6 +725,46 @@ a pending value on the row would widen the one table every production number
 derives from. Keeping the request outside means a pending change provably
 cannot move a number.
 
+### `document_edit_requests`
+
+A staged edit to a LIVE document, waiting for per-change approval
+(0191 / ADR-202, edit-approval Phase 1). Modeled on `op_log_time_change_requests`:
+while a row is `pending` the live document is **untouched**. Approving replays
+only the approved + still-fresh changes through the document's own edit writer;
+rejecting applies nothing. Phase 1 enrols **PurchaseOrder only** (`entity` = the
+ActivityLog entity name); Phase 2+ add more entities with no schema change.
+
+| Column                                         | Type                   | Notes                                                                                             |
+| ---------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------ |
+| `id`                                           | `uuid`                 | PK                                                                                               |
+| `company_id`                                   | `uuid`                 | not null, FK                                                                                     |
+| `entity`                                       | `text`                 | not null. ActivityLog entity name, e.g. `PurchaseOrder`                                           |
+| `entity_id`                                    | `uuid`                 | not null. The document's header-row id                                                            |
+| `doc_code`                                     | `text`                 | not null. Snapshot of the document code (e.g. IN-MPO-00042) for the inbox                         |
+| `expected_updated_at`                          | `timestamptz`          | not null. The optimistic-lock token the edit form carried (§20.4)                                 |
+| `proposed_payload`                             | `jsonb`                | not null. The full proposed edit input (e.g. UpdatePurchaseOrderInput), replayed at approval       |
+| `changes`                                      | `jsonb`                | not null. The before→after list the approver ticks (ADR-197 change shape + stable `id` = field key) |
+| `decisions`                                    | `jsonb`                | not null, default `'[]'`. Per-change outcome once decided (`approved \| rejected \| superseded`)    |
+| `status`                                       | `document_edit_status` | not null, default `'pending'`. `pending \| approved \| rejected \| withdrawn \| superseded`         |
+| `requested_by`                                 | `uuid`                 | not null, FK → `users(id)`                                                                        |
+| `requested_at`                                 | `timestamptz`          | not null, default `now()`                                                                         |
+| `decided_by`                                   | `uuid`                 | nullable, FK → `users(id)`                                                                        |
+| `decided_at`                                   | `timestamptz`          | nullable                                                                                          |
+| `decision_reason`                              | `text`                 | nullable. Overall note; per-change reasons live in `decisions`                                    |
+| `created_at/by`, `updated_at/by`, `deleted_at/by` | | standard columns per CLAUDE.md rule 3                                                          |
+
+Indexes:
+
+- `(entity, entity_id) where status = 'pending' and deleted_at is null` — **unique**. One open edit per document; two staged payloads would let the last approval silently win
+- `(company_id, status, requested_at) where deleted_at is null` — the Edit Approvals inbox read
+- `(entity, entity_id) where deleted_at is null` — the per-document pending lookup (inline chip)
+
+RLS (copied from `op_log_time_change_requests`):
+
+- `document_edit_company_read` (any role, same company)
+- `document_edit_request_insert` — admin/manager/operator/qc/procurement/dispatch/design, same company. The real per-form gate is the service's `requireFormAccess(formKey, 'edit')`; this is the coarse backstop
+- `document_edit_decide` (UPDATE) — **admin/manager only**
+
 RLS:
 
 - `op_log_company_read` (any role)
@@ -1859,3 +1899,4 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-09-30 | `0185_master_tidy.sql` (hand-written, idempotent, data only) | **Fix wave 3 area E (plan v3 Phase E).** No column changes. Clears the placeholder `purchase_requests.vendor_code_text = 'TBD'` where `vendor_id` is set; trims outer blanks from `clients`/`vendors` `name`, `code`, `gst_number` and `items` `name`, `code` (all-blank GSTIN → NULL; all-blank name left; a code is trimmed only when no other live record of the company would share it — clashes listed in a NOTICE). Before-copy in new table `_fix0185_backup` (tbl, row_id, col, old_value; RLS on, no policies). Rollback in the file header. |
 | 2026-10-01 | `0189_user_table_prefs.sql` (hand-written, idempotent, additive) | **Per-user table preferences (ADR-199, table standard phase 2).** Two new tables, no change to existing ones. `user_ui_settings` (one live row per company+user+`setting_key` [CHECK `^[a-z_]{1,64}$`]; `setting_value text`; first key `table_density` = comfortable/compact for every table). `user_table_columns` (one live row per company+user+`table_key`+`column_key`; `position int` 0..200, `pinned`/`hidden` boolean, CHECK not both; key format CHECKs match the shared Zod; index (user_id, table_key)). Both: audit cols + `deleted_at`/`deleted_by`, partial unique WHERE deleted_at IS NULL, `set_updated_at` trigger, RLS **self read + self write only** (`company_id = current_company_id() AND user_id = current_user_id()`, no manager override). Backs `GET/PUT /me/ui-settings` and `GET/PUT/DELETE /me/table-layouts/:tableKey`. Rollback (DOWN) commented at the foot of the file. **Must run on TEST and PROD before the API deploy.** |
 | 2026-10-01 | `0190_user_table_prefs_policies.sql` (hand-written, idempotent, no data change) | **Code-review follow-up to 0189 (ADR-199).** Drops `user_table_columns_user_table_idx` (redundant — the partial unique (company_id, user_id, table_key, column_key) index serves every API lookup). Re-creates `user_ui_settings_self_write` and `user_table_columns_self_write` (DROP IF EXISTS + CREATE, one transaction): USING unchanged; WITH CHECK now also requires `updated_by = current_user_id()` AND `(deleted_by IS NULL OR deleted_by = current_user_id())` (created_by not checkable on UPDATE). Rollback commented at the foot of the file. Run on TEST and PROD after 0189. |
+| 2026-10-02 | `0191_document_edit_requests.sql` (hand-written, idempotent, additive) | **Edit-approval Phase 1 (ADR-202).** New enum `document_edit_status ('pending','approved','rejected','withdrawn','superseded')`. New table `document_edit_requests` (entity, entity_id, doc_code, expected_updated_at, proposed_payload jsonb, changes jsonb, decisions jsonb default `'[]'`, status, requested_by/at, decided_by/at, decision_reason + standard columns); partial unique `document_edit_pending_uq (entity, entity_id) WHERE status='pending' AND deleted_at IS NULL` (one open edit per document), inbox index `(company_id, status, requested_at)`, lookup index `(entity, entity_id)`, both `WHERE deleted_at IS NULL`; 3 RLS policies copied from `op_log_time_change_requests` — read by company, insert by admin/manager/operator/qc/procurement/dispatch/design, **UPDATE by admin/manager only**. Plus `approval_config.doc_edit_approval boolean NOT NULL DEFAULT false` — the on/off gate (default OFF). A LIVE PurchaseOrder edit is staged here instead of applied; approving replays the approved + still-fresh changes through `updatePurchaseOrderTx`. New routes `GET /document-edits`, `POST /document-edits/:id/decide`, `POST /document-edits/:id/withdraw`. **Must run on TEST and PROD before the API deploy** — the service reads `approval_config.doc_edit_approval` and writes the new table. **NOT YET APPLIED.** |

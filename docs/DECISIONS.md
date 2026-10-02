@@ -10805,3 +10805,31 @@ Tables inside a modal or a dashboard card keep their own capped `maxHeight` and 
   the table relies on the fallback scroll; `available`-style banners should be kept short.
 - Risks: a future screen that adds a second panel below a filling one will squeeze it. The
   pattern is two lines, so the fix is to drop `fill` from that page.
+
+## ADR-202: Edit-approval — every edit to a live document is staged for per-change approval
+**Date:** 2026-10-02
+**Status:** Accepted (Phase 1 — Purchase Order, header-level)
+
+### Decision
+A generic edit-approval engine (`apps/api/src/modules/document-edits`): when a company's
+`approval_config.doc_edit_approval` gate is on, an edit to a LIVE document is STAGED in
+`document_edit_requests` (one open edit per doc via a partial-unique index) instead of applied.
+Approvers decide per change (✓/✗ + reason) from Settings → Approvals → Edit Approvals. On
+approve the engine locks the target row, re-checks each approved change is still fresh
+(current value == captured `before`, else `superseded`), then replays only the approved+fresh
+fields through the document's real writer (`updatePurchaseOrderTx`) so every §20 guard runs.
+REQUEST/APPROVE/REJECT log to the document's History tab (ADR-197). Gate ships OFF.
+
+### Phase 1 scope / decisions
+- Owner decisions: per-change approve/reject (1A); on everywhere via a central engine guard (2);
+  Op Log left as-is (3A); always stage, no self-approval switch, no banner — inline cell chip only,
+  Approved-By in History (4); the four no-edit docs get edit screens later (5A).
+- PO Phase 1 stages HEADER + tax + vendor changes. Line item/qty/rate edits are refused with a
+  clear message while the gate is on (no silent data loss) — line-level approval is Phase 1b.
+- Route-level divert via `updatePurchaseOrderOrStage`; `updatePurchaseOrder` keeps returning a
+  PurchaseOrderDetail for internal callers and the engine's applyEdit.
+
+### Consequences
+- Migration 0191 (document_edit_requests + enum + approval_config.doc_edit_approval). Applied to TEST.
+- Full line-level PO editing under approval still to come (1b); other documents + masters are Phase 2;
+  the four no-edit docs (Invoice, Delivery Challan, Production Order, Party GRN) are Phase 3.

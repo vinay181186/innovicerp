@@ -76,7 +76,7 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updatePurchaseOrderInputSchema.parse(req.body);
-    return service.updatePurchaseOrder(id, body, req.user);
+    return service.updatePurchaseOrderOrStage(id, body, req.user);
   });
 
   app.delete('/purchase-orders/:id', async (req, reply) => {

@@ -31,6 +31,7 @@ function toConfig(row: {
   prApproval: boolean;
   invoiceApproval: boolean;
   opEntryEditApproval: boolean;
+  docEditApproval: boolean;
   poApprovers: unknown;
 }): ApprovalConfig {
   const approvers = Array.isArray(row.poApprovers) ? (row.poApprovers as string[]) : [];
@@ -40,6 +41,7 @@ function toConfig(row: {
     prApproval: row.prApproval,
     invoiceApproval: row.invoiceApproval,
     opEntryEditApproval: row.opEntryEditApproval,
+    docEditApproval: row.docEditApproval,
     poApprovers: approvers.filter((s) => typeof s === 'string'),
   };
 }
@@ -102,6 +104,7 @@ export async function saveApprovalConfig(
           prApproval: input.prApproval,
           invoiceApproval: input.invoiceApproval,
           opEntryEditApproval: input.opEntryEditApproval,
+          docEditApproval: input.docEditApproval,
           poApprovers: validApproverIds,
           updatedBy: user.id,
           updatedAt: new Date(),
@@ -119,6 +122,7 @@ export async function saveApprovalConfig(
           prApproval: input.prApproval,
           invoiceApproval: input.invoiceApproval,
           opEntryEditApproval: input.opEntryEditApproval,
+          docEditApproval: input.docEditApproval,
           poApprovers: validApproverIds,
           createdBy: user.id,
           updatedBy: user.id,
@@ -132,7 +136,7 @@ export async function saveApprovalConfig(
       {
         action: 'CONFIG',
         entity: 'Approval Configuration',
-        detail: `PO Approval: ${input.poApproval ? 'On' : 'Off'} · Limit ₹${input.poManagerLimit} · Invoice Approval: ${input.invoiceApproval ? 'On' : 'Off'} · Op Entry Edit Approval: ${input.opEntryEditApproval ? 'On' : 'Off'} · Approvers: ${validApproverIds.length}`,
+        detail: `PO Approval: ${input.poApproval ? 'On' : 'Off'} · Limit ₹${input.poManagerLimit} · Invoice Approval: ${input.invoiceApproval ? 'On' : 'Off'} · Op Entry Edit Approval: ${input.opEntryEditApproval ? 'On' : 'Off'} · Document Edit Approval: ${input.docEditApproval ? 'On' : 'Off'} · Approvers: ${validApproverIds.length}`,
         refId: null,
       },
       companyId,
