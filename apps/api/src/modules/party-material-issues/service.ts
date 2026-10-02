@@ -784,22 +784,72 @@ export async function listPartyMaterialIssues(
 export async function getIssuableForJobCard(
   jobCardId: string,
   user: AuthContext,
-): Promise<{ jwLineId: string | null; lineBalance: number; jcRemaining: number; issuable: number }> {
+): Promise<{
+  jwLineId: string | null;
+  lineBalance: number;
+  jcRemaining: number;
+  issuable: number;
+  /** Why nothing can be issued, when the create path would refuse outright. */
+  blockedReason: string | null;
+}> {
   await requireFormAccess(user, 'party_create', 'view');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = (await tx.execute(sql`
-      SELECT source_jw_line_id AS "jwLineId", order_qty::int AS "orderQty"
-        FROM public.job_cards
-       WHERE id = ${jobCardId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-    `)) as unknown as Array<{ jwLineId: string | null; orderQty: number }>;
+      SELECT jc.code, jc.source_jw_line_id AS "jwLineId", jc.order_qty::int AS "orderQty",
+             jc.recovery_kind AS "recoveryKind",
+             l.line_no AS "lineNo", l.status::text AS "lineStatus",
+             l.short_closed_at AS "shortClosedAt", l.party_material_id AS "partyMaterialId",
+             jw.code AS "jwCode", jw.status::text AS "jwStatus"
+        FROM public.job_cards jc
+        LEFT JOIN public.job_work_order_lines l ON l.id = jc.source_jw_line_id AND l.deleted_at IS NULL
+        LEFT JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id AND jw.deleted_at IS NULL
+       WHERE jc.id = ${jobCardId}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
+    `)) as unknown as Array<{
+      code: string;
+      jwLineId: string | null;
+      orderQty: number;
+      recoveryKind: string | null;
+      lineNo: number | null;
+      lineStatus: string | null;
+      shortClosedAt: unknown;
+      partyMaterialId: string | null;
+      jwCode: string | null;
+      jwStatus: string | null;
+    }>;
     const jc = rows[0];
     if (!jc) throw new NotFoundError('Job Card not found.');
-    if (!jc.jwLineId) return { jwLineId: null, lineBalance: 0, jcRemaining: 0, issuable: 0 };
+    const blocked = (reason: string) => ({
+      jwLineId: jc.jwLineId,
+      lineBalance: 0,
+      jcRemaining: 0,
+      issuable: 0,
+      blockedReason: reason,
+    });
+    // Same refusals as createPartyMaterialIssue, so the form never shows a
+    // figure the save would reject.
+    if (!jc.jwLineId || jc.lineNo == null)
+      return blocked(`${jc.code} is not raised on a JWSO line.`);
+    if (jc.recoveryKind)
+      return blocked(
+        `${jc.code} is a rework / replacement Job Card — issue to the original Job Card.`,
+      );
+    const where = `${jc.jwCode} Ln ${jc.lineNo}`;
+    if (jc.jwStatus === 'cancelled') return blocked(`${jc.jwCode} is cancelled.`);
+    if (jc.shortClosedAt) return blocked(`${where} is short-closed.`);
+    if (jc.lineStatus !== 'open') return blocked(`${where} is ${jc.lineStatus}.`);
+    if (!jc.partyMaterialId)
+      return blocked(`${where} has no customer RM — open and save the JWSO first.`);
     const reg = await jwLineRegister(tx, companyId, jc.jwLineId);
     const jcm = await jcMaterial(tx, companyId, jobCardId);
     const lineBalance = Math.max(0, reg.balance);
     const jcRemaining = Math.max(0, Number(jc.orderQty) - jcm.netIssued);
-    return { jwLineId: jc.jwLineId, lineBalance, jcRemaining, issuable: Math.min(lineBalance, jcRemaining) };
+    return {
+      jwLineId: jc.jwLineId,
+      lineBalance,
+      jcRemaining,
+      issuable: Math.min(lineBalance, jcRemaining),
+      blockedReason: null,
+    };
   });
 }

@@ -177,18 +177,22 @@ export function NewPartyMaterialIssueModal({
       return;
     }
     if (!issuable) {
-      setErr('Still checking how much can be issued — try again in a moment.');
+      setErr('Still checking the To Issue qty — try again in a moment.');
+      return;
+    }
+    if (issuable.blockedReason) {
+      setErr(`Nothing can be issued: ${issuable.blockedReason}`);
       return;
     }
     if (issuable.issuable <= 0) {
       setErr(
-        `Nothing can be issued to this Job Card — line balance ${issuable.lineBalance}, JC still needs ${issuable.jcRemaining}.`,
+        `Nothing can be issued to this Job Card — accepted and not yet issued on its JWSO line ${issuable.lineBalance}, JC still needs ${issuable.jcRemaining}.`,
       );
       return;
     }
     if (q > issuable.issuable) {
       setErr(
-        `Issue Qty ${q} is more than Issuable ${issuable.issuable} (line balance ${issuable.lineBalance} · JC still needs ${issuable.jcRemaining}).`,
+        `Issue Qty ${q} is more than To Issue ${issuable.issuable} (line has ${issuable.lineBalance} · JC needs ${issuable.jcRemaining}).`,
       );
       return;
     }
@@ -371,14 +375,14 @@ export function NewPartyMaterialIssueModal({
             {jobCardId ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
                 {issuableQ.isError ? (
-                  <span style={{ color: 'var(--red2)' }}>Could not load the issuable qty.</span>
+                  <span style={{ color: 'var(--red2)' }}>Could not load the To Issue qty.</span>
                 ) : !issuable ? (
                   <span>
-                    <Loader2 size={12} className="inline animate-spin" /> Checking issuable qty…
+                    <Loader2 size={12} className="inline animate-spin" /> Checking To Issue qty…
                   </span>
                 ) : (
                   <>
-                    Issuable:{' '}
+                    To Issue:{' '}
                     <span
                       style={{
                         color: issuable.issuable > 0 ? 'var(--green2)' : 'var(--red2)',
@@ -389,7 +393,9 @@ export function NewPartyMaterialIssueModal({
                     </span>{' '}
                     NOS{' '}
                     <span style={{ fontSize: 10 }}>
-                      (line balance {issuable.lineBalance} · JC still needs {issuable.jcRemaining})
+                      {issuable.blockedReason
+                        ? `— ${issuable.blockedReason}`
+                        : `(line has ${issuable.lineBalance} · JC needs ${issuable.jcRemaining})`}
                     </span>
                   </>
                 )}

@@ -278,6 +278,27 @@ async function rmAcceptedByLine(
   return out;
 }
 
+/** ADR-203: customer material received on each JWSO line and still WAITING
+ *  for Incoming QC (same rule as party-grn isPendingQc). Part of the Party GRN
+ *  receive cap, so the New Party GRN form shows it. */
+async function rmWaitingQcByLine(
+  tx: DbTransaction,
+  lineIds: readonly string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (lineIds.length === 0) return out;
+  const rows = (await tx.execute(sql`
+    SELECT gl.jw_line_id AS "lineId", COALESCE(SUM(gl.received_qty), 0)::int AS qty
+      FROM public.party_grn_lines gl
+      JOIN public.party_grn g ON g.id = gl.party_grn_id AND g.deleted_at IS NULL
+     WHERE gl.jw_line_id IN (${uuidList(lineIds)}) AND gl.deleted_at IS NULL
+       AND gl.qc_at IS NULL AND gl.accepted_qty = 0 AND gl.rejected_qty = 0
+     GROUP BY gl.jw_line_id
+  `)) as unknown as Array<{ lineId: string; qty: number }>;
+  for (const r of rows) out.set(r.lineId, Number(r.qty));
+  return out;
+}
+
 /** party_materials id → its PM-#### code (the customer-material register). */
 async function partyMaterialCodes(
   tx: DbTransaction,
@@ -527,6 +548,7 @@ async function loadJobWorkOrderDetail(
     companyId,
   );
   const accepted = await rmAcceptedByLine(tx, lineIds);
+  const waitingQc = await rmWaitingQcByLine(tx, lineIds);
   const usage = await jwLineUsage(tx, lineIds);
   // ADR-203 rule 9: Σ accepted by jw_line_id over THIS JWSO's live lines.
   const partyReceivedQty = lineIds.reduce((a, lid) => a + (accepted.get(lid) ?? 0), 0);
@@ -539,6 +561,7 @@ async function loadJobWorkOrderDetail(
       const line = toJobWorkOrderLine(l, codeMap, {
         partyMaterialCode: l.partyMaterialId ? (pmCodes.get(l.partyMaterialId) ?? null) : null,
         rmAcceptedQty: accepted.get(l.id) ?? 0,
+        rmWaitingQcQty: waitingQc.get(l.id) ?? 0,
         inUse: usage.has(l.id),
       });
       return showMoney ? line : hideJwLineMoney(line);
@@ -902,6 +925,7 @@ function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
 interface JwLineExtras {
   partyMaterialCode: string | null;
   rmAcceptedQty: number;
+  rmWaitingQcQty: number;
   inUse: boolean;
 }
 
@@ -955,6 +979,7 @@ function toJobWorkOrderLine(
     partyMaterialId: row.partyMaterialId,
     partyMaterialCode: extras.partyMaterialCode,
     rmAcceptedQty: extras.rmAcceptedQty,
+    rmWaitingQcQty: extras.rmWaitingQcQty,
     inUse: extras.inUse,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,

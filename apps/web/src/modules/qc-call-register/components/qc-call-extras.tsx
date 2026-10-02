@@ -53,7 +53,7 @@ function pgrnAsCompleted(r: PartyGrnQcRow): IncomingQcCompletedRow {
     grnNo: r.partyGrnNo,
     grnDate: r.grnDate,
     qcDate: r.qcDate,
-    respDays: null,
+    respDays: r.qcDate ? r.waitDays : null,
     vendorName: r.customerName,
     itemCode: r.partCode,
     itemRevision: r.partRevision,

@@ -41,7 +41,9 @@ export function PartyGrnQcModal({
   const pending = useMemo(
     () =>
       (detailQ.data?.lines ?? [])
-        .filter((l) => l.qcAt == null && !l.deletedAt)
+        // Same rule as the server (isPendingQc): no QC date AND nothing booked —
+        // pre-QC (0173-grandfathered) lines carry accepted = received.
+        .filter((l) => l.qcAt == null && l.acceptedQty === 0 && l.rejectedQty === 0 && !l.deletedAt)
         .filter((l) => !onlyLineId || l.id === onlyLineId)
         .sort((a, b) => a.lineNo - b.lineNo),
     [detailQ.data, onlyLineId],

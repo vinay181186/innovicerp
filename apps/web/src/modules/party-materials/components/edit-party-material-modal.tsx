@@ -126,9 +126,9 @@ export function EditPartyMaterialModal({
           <input
             type="text"
             className="innovic-input"
-            value="NOS"
+            value={row.uom}
             readOnly
-            title="Customer material is always counted in NOS — 1 per finished part"
+            title="Customer material is counted in NOS — 1 per finished part (older records keep their stored unit)"
             style={{ background: 'var(--bg4)', color: 'var(--text3)', maxWidth: '12ch' }}
           />
         </Field>

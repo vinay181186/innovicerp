@@ -133,7 +133,10 @@ function QcCallRegisterPage(): React.JSX.Element {
     effectiveFormPerms(eff, 'qc_submit').entry;
   const canIncoming =
     (role === 'admin' || role === 'manager') && effectiveFormPerms(eff, 'qc_incoming').entry;
-  const showAction = canEntry || canIncoming;
+  // ADR-203: a Party GRN line is booked by POST /party-grn/:id/qc, which needs
+  // only qc_incoming · entry (no role) — the same gate as the Party GRN list.
+  const canPartyQc = effectiveFormPerms(eff, 'qc_incoming').entry;
+  const showAction = canEntry || canIncoming || canPartyQc;
 
   const gotoPage = useCallback(
     (p: number): void => {
@@ -235,7 +238,7 @@ function QcCallRegisterPage(): React.JSX.Element {
           label: 'Inspect',
           icon: 'search',
           group: 'workflow',
-          hidden: !(vm.kind === 'op' ? canEntry : canIncoming),
+          hidden: !(vm.kind === 'op' ? canEntry : vm.kind === 'pgrn' ? canPartyQc : canIncoming),
           onSelect: () => openInspect(vm),
         },
       ]
@@ -391,7 +394,7 @@ function QcCallRegisterPage(): React.JSX.Element {
           onNcRaised={setRaisedNc}
         />
       ) : null}
-      {inspectPgrn && canIncoming ? (
+      {inspectPgrn && canPartyQc ? (
         <PgrnQcPopup key={inspectPgrn.partyGrnLineId} row={inspectPgrn} onClose={closeInspect} />
       ) : null}
     </>,

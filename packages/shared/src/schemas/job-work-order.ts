@@ -83,6 +83,9 @@ export const jobWorkOrderLineSchema = z.object({
   partyMaterialCode: z.string().nullable().default(null),
   /** ADR-203: QC-accepted customer material on THIS line (Σ party GRN accepted). */
   rmAcceptedQty: z.number().int().nonnegative().default(0),
+  /** ADR-203: received on this line and still waiting for Incoming QC. The
+   *  Party GRN receive cap is Order Qty − Accepted − this. */
+  rmWaitingQcQty: z.number().int().nonnegative().default(0),
   /** ADR-203: true once any downstream document (Job Card, plan, Party GRN,
    *  issue, return, invoice) uses this line — item / UOM / BOM are then locked
    *  and the line cannot be removed. Drives the edit form's locks. */

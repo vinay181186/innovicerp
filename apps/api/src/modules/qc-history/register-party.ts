@@ -20,8 +20,10 @@ function pgrnJoins(): SQL {
     LEFT JOIN public.job_work_orders jw ON jw.id = COALESCE(jwl.job_work_order_id, pg.job_work_order_id)
     LEFT JOIN public.clients c ON c.id = COALESCE(pg.client_id, jw.client_id) AND c.deleted_at IS NULL
     LEFT JOIN public.items part ON part.id = jwl.item_id
-    LEFT JOIN public.items rm ON rm.id = jwl.rm_item_id
     LEFT JOIN public.party_materials pm ON pm.id = pgl.party_material_id
+    -- The RM actually received on this GRN line (its party material's item),
+    -- not whatever the JWSO line points at today.
+    LEFT JOIN public.items rm ON rm.id = pm.item_id
     LEFT JOIN public.users u ON u.id = pgl.qc_by`;
 }
 

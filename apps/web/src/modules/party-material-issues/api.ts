@@ -25,6 +25,8 @@ export interface PartyMaterialIssuable {
   lineBalance: number;
   jcRemaining: number;
   issuable: number;
+  /** Set when the save would refuse outright (rework JC, closed line, no RM). */
+  blockedReason: string | null;
 }
 
 export function usePartyMaterialIssuable(jobCardId: string | null) {

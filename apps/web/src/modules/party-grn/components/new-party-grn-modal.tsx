@@ -18,7 +18,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
-import { useCreatePartyGrn, useNextPartyGrnCode, usePartyGrnWaitingQcByJwLine } from '../api';
+import { useCreatePartyGrn, useNextPartyGrnCode } from '../api';
 
 /** What the user typed per JWSO line, keyed by the line id. */
 type LineEntry = { receivedQty: string; remarks: string };
@@ -67,10 +67,11 @@ export function NewPartyGrnModal({
   );
 
   // ADR-203 — the server's receipt cap per line: Pending = Order Qty −
-  // (Accepted + received still Waiting QC). Rejected pieces do not count.
-  const waitingQ = usePartyGrnWaitingQcByJwLine(jwId);
-  const waitingReady = Boolean(waitingQ.data) && !waitingQ.isFetching;
-  const waitingOf = (lineId: string): number => waitingQ.data?.get(lineId) ?? 0;
+  // (Accepted + received still Waiting QC). Rejected pieces do not count. The
+  // server sends each line's Waiting QC qty (rmWaitingQcQty).
+  const waitingReady = true;
+  const waitingOf = (lineId: string): number =>
+    jwLines.find((x) => x.id === lineId)?.rmWaitingQcQty ?? 0;
   const pendingOf = (l: { id: string; orderQty: number; rmAcceptedQty: number }): number =>
     Math.max(0, l.orderQty - l.rmAcceptedQty - waitingOf(l.id));
 
@@ -115,14 +116,6 @@ export function NewPartyGrnModal({
       const q = Number(raw);
       if (!Number.isInteger(q) || q <= 0) {
         setErr(`JWSO line ${l.lineNo}: Received Qty must be a whole number, 1 or more.`);
-        return;
-      }
-      if (!waitingReady) {
-        setErr(
-          waitingQ.isError
-            ? 'Could not load the Waiting QC figures, so Pending cannot be checked. Close and reopen the form.'
-            : 'Still loading the Waiting QC figures — try again in a moment.',
-        );
         return;
       }
       const pending = pendingOf(l);
