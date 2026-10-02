@@ -124,7 +124,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
       // ADR-203: unused pieces put back from the Job Card into the register.
       // No sortFilterField: the API's sf-columns has no such field yet.
       id: 'returned_to_store_qty',
-      header: 'Returned to Store Qty',
+      header: 'Returned to Store',
       kind: 'num',
       align: 'right',
       nowrap: true,

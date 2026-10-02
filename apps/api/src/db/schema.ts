@@ -2039,6 +2039,7 @@ export const jobWorkOrderLines = pgTable(
       .on(t.sourceBomMasterId)
       .where(sql`${t.sourceBomMasterId} is not null`),
     check('job_work_order_lines_order_qty_positive', sql`${t.orderQty} > 0`),
+    check('job_work_order_lines_returned_cap', sql`${t.returnedQty} <= ${t.orderQty}`),
     check(
       'job_work_order_lines_counters_check',
       sql`${t.returnedQty} >= 0 AND ${t.invoicedQty} >= 0 AND ${t.invoicedQty} <= ${t.returnedQty}`,

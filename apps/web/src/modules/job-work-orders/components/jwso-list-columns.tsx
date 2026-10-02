@@ -31,16 +31,16 @@ function MaterialCell({
   expected: number;
 }): React.JSX.Element {
   if (expected > 0 && received >= expected) {
-    return <span style={{ color: 'var(--green2)', fontWeight: 700 }}>✓ Full</span>;
+    return <span style={{ color: 'var(--green2)', fontWeight: 700 }}>✓ Accepted</span>;
   }
   if (received > 0) {
     return (
       <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
-        ◑ Partly Received ({received})
+        ◑ Accepted {received} of {expected}
       </span>
     );
   }
-  return <span style={{ color: 'var(--red2)', fontWeight: 700 }}>✕ Not Received</span>;
+  return <span style={{ color: 'var(--red2)', fontWeight: 700 }}>✕ None accepted</span>;
 }
 
 /** `today` (IST) drives the overdue colour on the Due column — a JWSO still open

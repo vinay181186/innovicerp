@@ -18,6 +18,13 @@ export async function partyMaterialIssuesRoutes(app: FastifyInstance): Promise<v
     return service.listPartyMaterialIssues(query, req.user);
   });
 
+  // ADR-203: issuable qty for one Job Card (static path before any :id route).
+  app.get('/party-material-issues/issuable', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { jobCardId } = z.object({ jobCardId: z.string().uuid() }).parse(req.query);
+    return service.getIssuableForJobCard(jobCardId, req.user);
+  });
+
   app.post('/party-material-issues', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const input = createPartyMaterialIssueInputSchema.parse(req.body);

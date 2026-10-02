@@ -10,6 +10,10 @@
 //   pending:   incoming first (oldest GRN first), then process calls (latest
 //              QC call first) — the order the register has always shown.
 //   completed: both kinds interleaved, newest inspection first.
+//
+// ADR-203: Party GRN lines (customer material against a JWSO line) are a third
+// kind, 'pgrn'. They belong to the Incoming stage: they ride with the GRN half
+// everywhere (on / off, sort keys, stage counts).
 
 import { type SQL, sql } from 'drizzle-orm';
 import {
@@ -38,6 +42,16 @@ import {
   toIncCompletedRow,
   toIncPendingRow,
 } from './register-incoming';
+import {
+  PGRN_COMPLETED_SELECT,
+  PGRN_DONE_AT,
+  PGRN_PENDING_QTY,
+  PGRN_PENDING_SELECT,
+  pgrnCompletedFrom,
+  pgrnPendingFrom,
+  pgrnSearchWhere,
+  toPgrnRow,
+} from './register-party';
 import { requireCompany } from './service';
 import {
   LOGS_SELECT,
@@ -89,9 +103,12 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
     const mine = input.view === 'pending' && input.mine;
     let incOn = (input.stage === undefined || input.stage === 'incoming') && !mine;
     let opOn = input.stage !== 'incoming';
+    // Party GRN calls: same stage + "Mine" rule as the GRN half; no deep link.
+    let pgrnOn = incOn;
     if (one) {
       incOn = input.grnLineId !== undefined;
       opOn = input.jcOpId !== undefined;
+      pgrnOn = false;
     }
     let mineWhere = sql``;
     if (mine) {
@@ -121,7 +138,11 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
         ${pendingFrom(companyId)} ${opSearchWhere(input.search)}
         ${opStageWhere(input.stage, PEND_IS_LAST)} ${mineWhere}
         ${input.jcOpId ? sql`AND vos.jc_op_id = ${input.jcOpId}::uuid` : sql``}`;
-      keys = unionOf(incOn ? incPart : null, opOn ? opPart : null);
+      const pgrnPart = sql`
+        SELECT 'pgrn'::text AS kind, pgl.id AS id, 0 AS k0, pg.grn_date AS d_inc, pg.code AS c_inc,
+          NULL::date AS d_op, NULL::text AS c_op, NULL::int AS s_op
+        ${pgrnPendingFrom(companyId)} ${pgrnSearchWhere(input.search)}`;
+      keys = unionOf([incOn ? incPart : null, pgrnOn ? pgrnPart : null, opOn ? opPart : null]);
       order = sql`k0, d_inc ASC, c_inc ASC, d_op DESC NULLS LAST, c_op, s_op, id`;
     } else {
       const incPart = sql`
@@ -131,7 +152,10 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
         SELECT 'op'::text AS kind, ol.id AS id, ol.created_at AS at
         ${logsFrom(companyId)} ${opSearchWhere(input.search)}
         ${opStageWhere(input.stage, LOG_IS_LAST)}`;
-      keys = unionOf(incOn ? incPart : null, opOn ? opPart : null);
+      const pgrnPart = sql`
+        SELECT 'pgrn'::text AS kind, pgl.id AS id, ${PGRN_DONE_AT} AS at
+        ${pgrnCompletedFrom(companyId)} ${pgrnSearchWhere(input.search)}`;
+      keys = unionOf([incOn ? incPart : null, pgrnOn ? pgrnPart : null, opOn ? opPart : null]);
       order = sql`at DESC, kind, id`;
     }
 
@@ -147,11 +171,10 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
   });
 }
 
-/** UNION ALL of the halves taking part (an empty set when neither does). */
-function unionOf(a: SQL | null, b: SQL | null): SQL {
-  if (a && b) return sql`SELECT * FROM (${a} UNION ALL ${b}) u`;
-  if (a) return sql`SELECT * FROM (${a}) u`;
-  if (b) return sql`SELECT * FROM (${b}) u`;
+/** UNION ALL of the parts taking part (an empty set when none does). */
+function unionOf(parts: Array<SQL | null>): SQL {
+  const on = parts.filter((p): p is SQL => p !== null);
+  if (on.length > 0) return sql`SELECT * FROM (${sql.join(on, sql` UNION ALL `)}) u`;
   return sql`SELECT NULL::text AS kind, NULL::uuid AS id, 0 AS k0, NULL::date AS d_inc,
     NULL::text AS c_inc, NULL::date AS d_op, NULL::text AS c_op, NULL::int AS s_op,
     NULL::timestamptz AS at WHERE FALSE`;
@@ -166,6 +189,7 @@ async function hydrate(
 ): Promise<Array<QcRegisterPendingItem | QcRegisterCompletedItem>> {
   const incIds = page.filter((k) => k['kind'] === 'inc').map((k) => String(k['id']));
   const opIds = page.filter((k) => k['kind'] === 'op').map((k) => String(k['id']));
+  const pgrnIds = page.filter((k) => k['kind'] === 'pgrn').map((k) => String(k['id']));
   const byId = new Map<string, QcRegisterPendingItem | QcRegisterCompletedItem>();
   if (view === 'pending') {
     if (incIds.length > 0) {
@@ -174,6 +198,13 @@ async function hydrate(
       );
       for (const x of rows(r))
         byId.set(`inc:${String(x['grnLineId'])}`, { kind: 'inc', row: toIncPendingRow(x) });
+    }
+    if (pgrnIds.length > 0) {
+      const r = await tx.execute(
+        sql`SELECT ${PGRN_PENDING_SELECT} ${pgrnPendingFrom(companyId)} AND pgl.id IN (${idList(pgrnIds)})`,
+      );
+      for (const x of rows(r))
+        byId.set(`pgrn:${String(x['partyGrnLineId'])}`, { kind: 'pgrn', row: toPgrnRow(x) });
     }
     if (opIds.length > 0) {
       const today = overdueToday();
@@ -190,6 +221,13 @@ async function hydrate(
       );
       for (const x of rows(r))
         byId.set(`inc:${String(x['grnLineId'])}`, { kind: 'inc', row: toIncCompletedRow(x) });
+    }
+    if (pgrnIds.length > 0) {
+      const r = await tx.execute(
+        sql`SELECT ${PGRN_COMPLETED_SELECT} ${pgrnCompletedFrom(companyId)} AND pgl.id IN (${idList(pgrnIds)})`,
+      );
+      for (const x of rows(r))
+        byId.set(`pgrn:${String(x['partyGrnLineId'])}`, { kind: 'pgrn', row: toPgrnRow(x) });
     }
     if (opIds.length > 0) {
       const r = await tx.execute(
@@ -232,13 +270,22 @@ async function registerSummary(tx: Tx, companyId: string): Promise<QcRegisterSum
   const incDone = rows(
     await tx.execute(sql`SELECT COUNT(*)::int AS n ${incCompletedFrom(companyId)}`),
   )[0];
+  // ADR-203: Party GRN calls count under the Incoming stage.
+  const pgrn = rows(
+    await tx.execute(sql`
+      SELECT COUNT(*)::int AS n, COALESCE(SUM(${PGRN_PENDING_QTY}), 0)::numeric AS pcs
+      ${pgrnPendingFrom(companyId)}`),
+  )[0];
+  const pgrnDone = rows(
+    await tx.execute(sql`SELECT COUNT(*)::int AS n ${pgrnCompletedFrom(companyId)}`),
+  )[0];
   const n = (r: Raw | undefined, k: string): number => Number(r?.[k] ?? 0);
   const pcs = (v: number): number => Math.round(v * 1000) / 1000;
   const stages: QcRegisterSummary['stages'] = {
     incoming: {
-      pendingCount: n(inc, 'n'),
-      pcsPending: pcs(n(inc, 'pcs')),
-      doneCount: n(incDone, 'n'),
+      pendingCount: n(inc, 'n') + n(pgrn, 'n'),
+      pcsPending: pcs(n(inc, 'pcs') + n(pgrn, 'pcs')),
+      doneCount: n(incDone, 'n') + n(pgrnDone, 'n'),
     },
     inprocess: {
       pendingCount: n(op, 'ipN'),

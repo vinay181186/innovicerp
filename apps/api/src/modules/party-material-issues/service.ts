@@ -438,7 +438,7 @@ export async function cancelPartyMaterialIssue(
     }
 
     if (iss.jobCardId) {
-      const jcm = await jcMaterial(tx, companyId, iss.jobCardId);
+      const jcm = await jcMaterial(tx, companyId, iss.jobCardId, { lockFirstOp: true });
       const netAfter = jcm.netIssued - (iss.qty - iss.returnedToStoreQty);
       if (netAfter < jcm.used) {
         throw new ValidationError(
@@ -540,7 +540,7 @@ export async function returnPartyMaterialIssueToStore(
       );
     }
     if (iss.jobCardId) {
-      const jcm = await jcMaterial(tx, companyId, iss.jobCardId);
+      const jcm = await jcMaterial(tx, companyId, iss.jobCardId, { lockFirstOp: true });
       const onJc = jcm.netIssued - jcm.used;
       if (input.qty > onJc) {
         throw new ValidationError(
@@ -773,5 +773,33 @@ export async function listPartyMaterialIssues(
       })),
       total: totals[0]?.value ?? 0,
     };
+  });
+}
+
+/** ADR-203: what can be issued to a Job Card right now — the smaller of its
+ *  JWSO line's register balance and what the JC still needs (1 RM piece per
+ *  part). The Issue form shows this instead of the material's whole stock,
+ *  which can belong to other lines of the same RM. Read-only; the create path
+ *  re-checks both caps under lock. */
+export async function getIssuableForJobCard(
+  jobCardId: string,
+  user: AuthContext,
+): Promise<{ jwLineId: string | null; lineBalance: number; jcRemaining: number; issuable: number }> {
+  await requireFormAccess(user, 'party_create', 'view');
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = (await tx.execute(sql`
+      SELECT source_jw_line_id AS "jwLineId", order_qty::int AS "orderQty"
+        FROM public.job_cards
+       WHERE id = ${jobCardId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+    `)) as unknown as Array<{ jwLineId: string | null; orderQty: number }>;
+    const jc = rows[0];
+    if (!jc) throw new NotFoundError('Job Card not found.');
+    if (!jc.jwLineId) return { jwLineId: null, lineBalance: 0, jcRemaining: 0, issuable: 0 };
+    const reg = await jwLineRegister(tx, companyId, jc.jwLineId);
+    const jcm = await jcMaterial(tx, companyId, jobCardId);
+    const lineBalance = Math.max(0, reg.balance);
+    const jcRemaining = Math.max(0, Number(jc.orderQty) - jcm.netIssued);
+    return { jwLineId: jc.jwLineId, lineBalance, jcRemaining, issuable: Math.min(lineBalance, jcRemaining) };
   });
 }

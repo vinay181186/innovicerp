@@ -13,8 +13,14 @@
 //
 // Row click opens the document (the page owns it); the Inspect action opens the
 // accept/reject popup (the page owns that too). Columns are presentational.
+//
+// ADR-203: a third kind, 'pgrn' — a Party GRN line (customer material received
+// against a JWSO line) waiting for Incoming QC. Item Code is the finished part
+// (CODE/REV); Item Name shows the customer RM received; SO / Vendor is the
+// customer; Operation reads "Party GRN · <JWSO> Ln <n>". It files under the
+// Incoming stage. Whole pieces only.
 
-import type { IncomingQcPendingRow, QcHistoryPendingRow } from '@innovic/shared';
+import type { IncomingQcPendingRow, PartyGrnQcRow, QcHistoryPendingRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
@@ -26,11 +32,28 @@ import { QC_STAGES, dayDiff, processStage, type QcStage } from './qc-sheet';
  *  the right document and the right inspect popup off it. */
 export type PendingVM =
   | { kind: 'op'; row: QcHistoryPendingRow }
-  | { kind: 'inc'; row: IncomingQcPendingRow };
+  | { kind: 'inc'; row: IncomingQcPendingRow }
+  | { kind: 'pgrn'; row: PartyGrnQcRow };
 
-/** Stable row key — the same `op:` / `inc:` prefixes the old sheet used. */
+/** Stable row key — the same `op:` / `inc:` prefixes the old sheet used, plus
+ *  `pgrn:` for a Party GRN line. */
 export function pendingVmKey(vm: PendingVM): string {
-  return vm.kind === 'op' ? `op:${vm.row.jcOpId}` : `inc:${vm.row.grnLineId}`;
+  if (vm.kind === 'op') return `op:${vm.row.jcOpId}`;
+  if (vm.kind === 'pgrn') return `pgrn:${vm.row.partyGrnLineId}`;
+  return `inc:${vm.row.grnLineId}`;
+}
+
+/** "JW-… Ln n" — the JWSO line a Party GRN line was received against. */
+export function pgrnOrderOf(row: PartyGrnQcRow): string {
+  if (!row.jwCode) return '—';
+  return row.jwLineNo != null ? `${row.jwCode} Ln ${row.jwLineNo}` : row.jwCode;
+}
+
+/** The customer RM a Party GRN line brought in — code, then name. */
+export function pgrnMaterialOf(row: PartyGrnQcRow): string {
+  const code = row.rmItemCode ?? row.partyMaterialCode;
+  if (!code) return row.rmItemName ?? '—';
+  return row.rmItemName ? `${code} · ${row.rmItemName}` : code;
 }
 
 const STAGE_LABEL = Object.fromEntries(QC_STAGES.map((s) => [s.key, s.label])) as Record<
@@ -41,14 +64,25 @@ const STAGE_LABEL = Object.fromEntries(QC_STAGES.map((s) => [s.key, s.label])) a
 function qcPending(vm: PendingVM): number {
   return vm.kind === 'op' ? vm.row.qcPending : vm.row.pendingQty;
 }
+function receivedOf(vm: PendingVM): number | null {
+  return vm.kind === 'op' ? null : vm.row.receivedQty;
+}
 function itemCodeOf(vm: PendingVM): string {
+  if (vm.kind === 'pgrn') return itemCodeWithRev(vm.row.partCode, vm.row.partRevision);
   return itemCodeWithRev(vm.row.itemCode, vm.row.itemRevision);
+}
+function itemNameOf(vm: PendingVM): string {
+  if (vm.kind === 'pgrn') return `Customer RM ${pgrnMaterialOf(vm.row)}`;
+  return vm.row.itemName ?? '—';
+}
+function polOf(vm: PendingVM): string | null {
+  return vm.kind === 'pgrn' ? null : vm.row.clientPoLineNo;
 }
 function calledDateOf(vm: PendingVM): string | null {
   return vm.kind === 'op' ? (vm.row.qcCallDate ?? vm.row.pendSince) : vm.row.grnDate;
 }
 function waitDaysOf(vm: PendingVM): number | null {
-  if (vm.kind === 'inc') return vm.row.waitDays;
+  if (vm.kind !== 'op') return vm.row.waitDays;
   // Measured from the SAME date the Called cell shows, so the two never
   // contradict each other.
   const from = vm.row.qcCallDate ?? vm.row.pendSince;
@@ -61,10 +95,12 @@ export function pendingOverdue(vm: PendingVM): boolean {
   return vm.kind === 'op' ? vm.row.overdue : false;
 }
 function soVendorOf(vm: PendingVM): string {
+  if (vm.kind === 'pgrn') return vm.row.customerName ?? '—';
   return vm.kind === 'op' ? (vm.row.soCode ?? '—') : (vm.row.vendorName ?? '—');
 }
 function operationOf(vm: PendingVM): string {
   if (vm.kind === 'op') return `Op ${opSrNo(vm.row.opSeq)} ${vm.row.operation}`;
+  if (vm.kind === 'pgrn') return `Party GRN · ${pgrnOrderOf(vm.row)}`;
   if (!vm.row.jcCode) return 'No job card';
   const seq = vm.row.opSeq != null ? ` Op ${opSrNo(vm.row.opSeq)}` : '';
   return `${vm.row.jcCode}${seq}${vm.row.opName ? ` · ${vm.row.opName}` : ''}`;
@@ -86,7 +122,7 @@ function waitDisplay(vm: PendingVM): React.JSX.Element {
 }
 
 /** Columns that start hidden — the fit engine shows them in the ▸ detail row. */
-export const PENDING_HIDDEN = ['pol', 'so_vendor', 'operation', 'assigned_to'];
+export const PENDING_HIDDEN = ['pol', 'so_vendor', 'operation', 'assigned_to', 'received_qty'];
 
 export function pendingColumns(): DataTableColumn<PendingVM>[] {
   return [
@@ -96,7 +132,18 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
       header: 'Doc No.',
       nowrap: true,
       render: (vm) =>
-        vm.kind === 'op' ? (
+        vm.kind === 'pgrn' ? (
+          <Link
+            to="/party-grn"
+            search={{ search: vm.row.partyGrnNo, page: 1 }}
+            className="td-code"
+            style={{ color: 'var(--blue)', fontWeight: 800 }}
+            title="Open this Party GRN"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {vm.row.partyGrnNo}
+          </Link>
+        ) : vm.kind === 'op' ? (
           <Link
             to="/job-cards/$id"
             params={{ id: vm.row.jobCardId }}
@@ -134,8 +181,8 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
       align: 'left',
       ellipsis: true,
       className: 'fw-700',
-      render: (vm) => vm.row.itemName ?? '—',
-      title: (vm) => vm.row.itemName ?? '',
+      render: (vm) => itemNameOf(vm),
+      title: (vm) => itemNameOf(vm),
     },
     {
       id: 'qc_pending',
@@ -180,7 +227,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
       nowrap: true,
       render: (vm) => (
         <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {vm.row.clientPoLineNo ?? '—'}
+          {polOf(vm) ?? '—'}
         </span>
       ),
     },
@@ -199,6 +246,14 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
       ellipsis: true,
       render: (vm) => operationOf(vm),
       title: (vm) => operationOf(vm),
+    },
+    {
+      id: 'received_qty',
+      header: 'Received Qty',
+      align: 'right',
+      nowrap: true,
+      className: 'mono',
+      render: (vm) => receivedOf(vm) ?? '—',
     },
     {
       id: 'assigned_to',

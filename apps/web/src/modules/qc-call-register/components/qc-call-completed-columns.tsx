@@ -8,29 +8,40 @@
 // POL, SO / Vendor, Operation, Called Date, Response days, Log No., Remarks and
 // the QC report — starts hidden (COMPLETED_HIDDEN) so the fit engine shows it in
 // the ▸ detail row. Row click opens the document (the page owns navigation).
+//
+// ADR-203: a third kind, 'pgrn' — a Party GRN line (customer material) whose
+// Incoming QC is booked. Same reading as on the Pending view: Item Code = the
+// finished part (CODE/REV), Item Name = the customer RM, SO / Vendor = the
+// customer, Remarks = the reject reason.
 
-import type { IncomingQcCompletedRow, QcHistoryLogRow } from '@innovic/shared';
+import type { IncomingQcCompletedRow, PartyGrnQcRow, QcHistoryLogRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
+import { pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
 import { dayDiff } from './qc-sheet';
 
 /** One completed inspection, from either feed. The raw row is kept so the page
  *  can open the right document and the feed can be time-ordered. */
 export type CompletedVM =
   | { kind: 'op'; row: QcHistoryLogRow }
-  | { kind: 'inc'; row: IncomingQcCompletedRow };
+  | { kind: 'inc'; row: IncomingQcCompletedRow }
+  | { kind: 'pgrn'; row: PartyGrnQcRow };
 
-/** Stable row key — the same `proc:` / `inc:` prefixes the old sheet used. */
+/** Stable row key — the same `proc:` / `inc:` prefixes the old sheet used, plus
+ *  `pgrn:` for a Party GRN line. */
 export function completedVmKey(vm: CompletedVM): string {
-  return vm.kind === 'op' ? `proc:${vm.row.logId}` : `inc:${vm.row.grnLineId}`;
+  if (vm.kind === 'op') return `proc:${vm.row.logId}`;
+  if (vm.kind === 'pgrn') return `pgrn:${vm.row.partyGrnLineId}`;
+  return `inc:${vm.row.grnLineId}`;
 }
 
 /** ISO timestamp the inspection happened, for newest-first ordering. */
 export function completedVmAt(vm: CompletedVM): string {
+  if (vm.kind === 'pgrn') return vm.row.qcDate ?? vm.row.grnDate;
   return vm.kind === 'op'
     ? (vm.row.loggedAt ?? vm.row.logDate ?? '')
     : (vm.row.qcAt ?? vm.row.qcDate ?? vm.row.grnDate ?? '');
@@ -44,7 +55,15 @@ const VERDICT_LABEL: Record<Verdict, string> = {
 };
 
 function itemCodeOf(vm: CompletedVM): string {
+  if (vm.kind === 'pgrn') return itemCodeWithRev(vm.row.partCode, vm.row.partRevision);
   return itemCodeWithRev(vm.row.itemCode, vm.row.itemRevision);
+}
+function itemNameOf(vm: CompletedVM): string {
+  if (vm.kind === 'pgrn') return `Customer RM ${pgrnMaterialOf(vm.row)}`;
+  return vm.row.itemName ?? '—';
+}
+function polOf(vm: CompletedVM): string | null {
+  return vm.kind === 'pgrn' ? null : vm.row.clientPoLineNo;
 }
 function acceptedOf(vm: CompletedVM): number {
   return vm.kind === 'op' ? vm.row.accepted : vm.row.acceptedQty;
@@ -53,8 +72,10 @@ function rejectedOf(vm: CompletedVM): number {
   return vm.kind === 'op' ? vm.row.rejected : vm.row.rejectedQty;
 }
 function verdictOf(vm: CompletedVM): Verdict {
-  if (vm.kind === 'op') {
-    return vm.row.rejected > 0 ? (vm.row.accepted > 0 ? 'PARTIAL' : 'REJECTED') : 'ACCEPTED';
+  if (vm.kind !== 'inc') {
+    const acc = acceptedOf(vm);
+    const rej = rejectedOf(vm);
+    return rej > 0 ? (acc > 0 ? 'PARTIAL' : 'REJECTED') : 'ACCEPTED';
   }
   return vm.row.disposition === 'Rejected'
     ? 'REJECTED'
@@ -66,6 +87,7 @@ function attendedOf(vm: CompletedVM): string | null {
   return vm.kind === 'op' ? vm.row.logDate : vm.row.qcDate;
 }
 function inspectedByOf(vm: CompletedVM): string | null {
+  if (vm.kind === 'pgrn') return vm.row.qcByName;
   return vm.kind === 'op' ? vm.row.inspector : vm.row.qcInspectedBy;
 }
 function calledOf(vm: CompletedVM): string | null {
@@ -73,17 +95,21 @@ function calledOf(vm: CompletedVM): string | null {
 }
 function respDaysOf(vm: CompletedVM): number | null {
   if (vm.kind === 'inc') return vm.row.respDays;
+  if (vm.kind === 'pgrn') return vm.row.qcDate ? dayDiff(vm.row.grnDate, vm.row.qcDate) : null;
   return vm.row.qcCallDate ? dayDiff(vm.row.qcCallDate, vm.row.logDate) : null;
 }
 function soVendorOf(vm: CompletedVM): string {
+  if (vm.kind === 'pgrn') return vm.row.customerName ?? '—';
   return vm.kind === 'op' ? (vm.row.soCode ?? '—') : (vm.row.vendorName ?? '—');
 }
 function operationOf(vm: CompletedVM): string {
+  if (vm.kind === 'pgrn') return `Party GRN · ${pgrnOrderOf(vm.row)}`;
   return vm.kind === 'op'
     ? `Op ${opSrNo(vm.row.opSeq)} ${vm.row.operation}`
     : `GRN ${vm.row.grnNo}`;
 }
 function remarksOf(vm: CompletedVM): string | null {
+  if (vm.kind === 'pgrn') return vm.row.rejectReason;
   return vm.kind === 'op' ? vm.row.remarks : vm.row.qcRemarks;
 }
 
@@ -146,7 +172,18 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
       header: 'Doc No.',
       nowrap: true,
       render: (vm) =>
-        vm.kind === 'inc' ? (
+        vm.kind === 'pgrn' ? (
+          <Link
+            to="/party-grn"
+            search={{ search: vm.row.partyGrnNo, page: 1 }}
+            className="td-code"
+            style={{ color: 'var(--blue)', fontWeight: 800 }}
+            title="Open this Party GRN"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {vm.row.partyGrnNo}
+          </Link>
+        ) : vm.kind === 'inc' ? (
           <Link
             to="/goods-receipt-notes/$id"
             params={{ id: vm.row.grnId }}
@@ -235,8 +272,8 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
       header: 'Item Name',
       align: 'left',
       ellipsis: true,
-      render: (vm) => vm.row.itemName ?? '—',
-      title: (vm) => vm.row.itemName ?? '',
+      render: (vm) => itemNameOf(vm),
+      title: (vm) => itemNameOf(vm),
     },
     {
       id: 'pol',
@@ -244,7 +281,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
       nowrap: true,
       render: (vm) => (
         <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {vm.row.clientPoLineNo ?? '—'}
+          {polOf(vm) ?? '—'}
         </span>
       ),
     },
@@ -301,7 +338,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
       nowrap: true,
       stopRowClick: true,
       render: (vm) =>
-        vm.row.qcReportPath ? (
+        vm.kind !== 'pgrn' && vm.row.qcReportPath ? (
           <QcReportLink path={vm.row.qcReportPath} name={vm.row.qcReportName} label="Report" />
         ) : (
           <span className="text3">—</span>

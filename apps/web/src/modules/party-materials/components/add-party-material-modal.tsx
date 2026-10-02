@@ -2,8 +2,9 @@
 //
 // ADR-203: a customer material is booked against a Customer RM item — an
 // Item Master row of type Party Supplied Material (`<item code>-RM`). The user
-// picks the Customer and that item; Material Name / Grade / Description / UOM
-// fill from the item. The PM code is assigned by the server on save ("auto"),
+// picks the Customer and that item; Material Name / Grade / Description fill
+// from the item. UOM is always NOS (ADR-203 D1: 1 Nos per finished part — the
+// server refuses any other), so it is shown read-only, not picked. The PM code is assigned by the server on save ("auto"),
 // so it is no longer prefilled or sent.
 //
 // The old Customer → SO/JWSO → order-line cascade picked the PART being made,
@@ -11,7 +12,6 @@
 // RM automatically when the JWSO is saved, so most materials never need this
 // screen; it is for adding one by hand.
 
-import { PARTY_MATERIAL_UOMS, type PartyMaterialUom } from '@innovic/shared';
 import { useEffect, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useClientsList } from '../../clients/api';
@@ -20,15 +20,7 @@ import { useDiscardGuard } from '../../store-inventory/components/discard-guard'
 import { type NewPartyMaterialInput, useCreatePartyMaterial } from '../api';
 import { ErrorBox, Field, ModalActions, ModalShell } from './party-material-modal-shell';
 
-/** Item Master UOM → customer-material UOM (the two lists spell KG differently). */
-function toPmUom(itemUom: string | null | undefined): PartyMaterialUom | null {
-  if (!itemUom) return null;
-  const u = itemUom === 'KGS' ? 'KG' : itemUom;
-  return (PARTY_MATERIAL_UOMS as readonly string[]).includes(u) ? (u as PartyMaterialUom) : null;
-}
-
 export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [uom, setUom] = useState<PartyMaterialUom>('NOS');
   const [err, setErr] = useState<string | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
   const [clientSearch, setClientSearch] = useState('');
@@ -63,7 +55,7 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
     name: i.name,
   }));
 
-  // The picked item's own row → Material Name / Grade / Description / UOM.
+  // The picked item's own row → Material Name / Grade / Description.
   const itemQ = useItem(itemId ?? undefined);
   const item = itemQ.data && itemQ.data.id === itemId ? itemQ.data : null;
   const autoName = item?.name ?? '';
@@ -74,12 +66,10 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
   useEffect(() => {
     if (!itemId) {
       setDescription('');
-      setUom('NOS');
       return;
     }
     if (!item) return;
     setDescription(item.description ?? '');
-    setUom(toPmUom(item.uom) ?? 'NOS');
   }, [itemId, item]);
 
   const guard = useDiscardGuard(Boolean(clientId || itemId || description.trim()), onClose);
@@ -99,7 +89,7 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
       setErr('The picked item has no name. Fix it in the Item Master first.');
       return;
     }
-    const input: NewPartyMaterialInput = { name: nm, uom, clientId, itemId };
+    const input: NewPartyMaterialInput = { name: nm, uom: 'NOS', clientId, itemId };
     if (description.trim()) input.description = description.trim();
     if (autoMaterial.trim()) input.material = autoMaterial.trim();
     createMut.mutate(input, {
@@ -126,18 +116,15 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
           />
         </Field>
         <Field label="UOM">
-          <select
-            className="innovic-select"
-            value={uom}
-            onChange={(e) => setUom(e.target.value as PartyMaterialUom)}
+          <input
+            type="text"
+            className="innovic-input"
+            value="NOS"
+            readOnly
+            disabled
+            title="Customer material is always counted in NOS — 1 per finished part"
             style={{ maxWidth: '12ch' }}
-          >
-            {PARTY_MATERIAL_UOMS.map((u) => (
-              <option key={u} value={u}>
-                {u}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
 
         {/* Customer — who supplies the material */}

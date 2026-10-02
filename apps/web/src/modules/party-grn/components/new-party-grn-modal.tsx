@@ -18,7 +18,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
-import { useCreatePartyGrn, useNextPartyGrnCode } from '../api';
+import { useCreatePartyGrn, useNextPartyGrnCode, usePartyGrnWaitingQcByJwLine } from '../api';
 
 /** What the user typed per JWSO line, keyed by the line id. */
 type LineEntry = { receivedQty: string; remarks: string };
@@ -66,6 +66,14 @@ export function NewPartyGrnModal({
     [jwDetail],
   );
 
+  // ADR-203 — the server's receipt cap per line: Pending = Order Qty −
+  // (Accepted + received still Waiting QC). Rejected pieces do not count.
+  const waitingQ = usePartyGrnWaitingQcByJwLine(jwId);
+  const waitingReady = Boolean(waitingQ.data) && !waitingQ.isFetching;
+  const waitingOf = (lineId: string): number => waitingQ.data?.get(lineId) ?? 0;
+  const pendingOf = (l: { id: string; orderQty: number; rmAcceptedQty: number }): number =>
+    Math.max(0, l.orderQty - l.rmAcceptedQty - waitingOf(l.id));
+
   // R2 — one idempotency key per open modal, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
   const createMut = useCreatePartyGrn(saveKey);
@@ -107,6 +115,22 @@ export function NewPartyGrnModal({
       const q = Number(raw);
       if (!Number.isInteger(q) || q <= 0) {
         setErr(`JWSO line ${l.lineNo}: Received Qty must be a whole number, 1 or more.`);
+        return;
+      }
+      if (!waitingReady) {
+        setErr(
+          waitingQ.isError
+            ? 'Could not load the Waiting QC figures, so Pending cannot be checked. Close and reopen the form.'
+            : 'Still loading the Waiting QC figures — try again in a moment.',
+        );
+        return;
+      }
+      const pending = pendingOf(l);
+      if (q > pending) {
+        setErr(
+          `JWSO line ${l.lineNo}: Received Qty ${q} is more than Pending ${pending} ` +
+            `(Order Qty ${l.orderQty} − Accepted ${l.rmAcceptedQty} − Waiting QC ${waitingOf(l.id)}).`,
+        );
         return;
       }
       const ln: CreatePartyGrnLineInput = { jwLineId: l.id, receivedQty: q };
@@ -293,7 +317,9 @@ export function NewPartyGrnModal({
                 <th>Item Code</th>
                 <th>Customer RM</th>
                 <th className="th-num">Order Qty</th>
-                <th className="th-num">Accepted So Far</th>
+                <th className="th-num">Accepted</th>
+                <th className="th-num">Waiting QC</th>
+                <th className="th-num">Pending</th>
                 <th className="th-num">Received Qty</th>
                 <th>Remarks</th>
               </tr>
@@ -301,19 +327,19 @@ export function NewPartyGrnModal({
             <tbody>
               {!jwId ? (
                 <tr>
-                  <td colSpan={7} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={9} className="empty-state" style={{ padding: 14 }}>
                     Pick the JWSO first.
                   </td>
                 </tr>
               ) : jwDetailQ.isLoading ? (
                 <tr>
-                  <td colSpan={7} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={9} className="empty-state" style={{ padding: 14 }}>
                     <Loader2 size={13} className="inline animate-spin" /> Loading lines…
                   </td>
                 </tr>
               ) : jwLines.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={9} className="empty-state" style={{ padding: 14 }}>
                     No open lines on this JWSO.
                   </td>
                 </tr>
@@ -348,14 +374,17 @@ export function NewPartyGrnModal({
                         {l.orderQty} {l.uom}
                       </td>
                       <td className="td-num mono">{l.rmAcceptedQty}</td>
+                      <td className="td-num mono">{waitingReady ? waitingOf(l.id) : '…'}</td>
+                      <td className="td-num mono fw-700">{waitingReady ? pendingOf(l) : '…'}</td>
                       <td className="td-num">
                         <input
                           type="number"
                           min={1}
                           step={1}
+                          {...(waitingReady ? { max: pendingOf(l) } : {})}
                           className="innovic-input"
                           aria-label={`Received Qty, line ${l.lineNo}`}
-                          disabled={noRm}
+                          disabled={noRm || (waitingReady && pendingOf(l) === 0)}
                           value={e?.receivedQty ?? ''}
                           onChange={(ev) => setEntry(l.id, { receivedQty: ev.target.value })}
                           placeholder="—"

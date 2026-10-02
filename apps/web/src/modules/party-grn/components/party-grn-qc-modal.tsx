@@ -7,7 +7,9 @@
 // pieces are HELD until a Customer Material Return sends them back.
 //
 // Opened from the list's row ⋯ "Incoming QC", which is shown only to a user
-// holding qc_incoming · entry. The server checks the same permission.
+// holding qc_incoming · entry. The server checks the same permission. The QC
+// Call Register opens it too, for one Party GRN line (`onlyLineId`): the popup
+// then lists and posts that line alone.
 
 import type { PartyGrnListItem, PartyGrnQcInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
@@ -17,11 +19,22 @@ import { usePartyGrnDetail, useQcPartyGrn } from '../api';
 
 type QcEntry = { accepted: string; rejected: string; reason: string };
 
+/** The GRN header facts the popup shows — a list row carries them, and the
+ *  QC Call Register builds the same shape off its Party GRN row. */
+export type PartyGrnQcHeader = Pick<
+  PartyGrnListItem,
+  'id' | 'code' | 'jwCodeText' | 'clientName' | 'clientCodeText'
+>;
+
 export function PartyGrnQcModal({
   row,
+  onlyLineId,
   onClose,
 }: {
-  row: PartyGrnListItem;
+  row: PartyGrnQcHeader;
+  /** Focus one line: only it is listed and posted. Omitted = every line
+   *  still waiting for QC. */
+  onlyLineId?: string | undefined;
   onClose: () => void;
 }): React.JSX.Element {
   const detailQ = usePartyGrnDetail(row.id);
@@ -29,8 +42,9 @@ export function PartyGrnQcModal({
     () =>
       (detailQ.data?.lines ?? [])
         .filter((l) => l.qcAt == null && !l.deletedAt)
+        .filter((l) => !onlyLineId || l.id === onlyLineId)
         .sort((a, b) => a.lineNo - b.lineNo),
-    [detailQ.data],
+    [detailQ.data, onlyLineId],
   );
   const [entries, setEntries] = useState<Record<string, QcEntry>>({});
   const [err, setErr] = useState<string | null>(null);
@@ -70,8 +84,19 @@ export function PartyGrnQcModal({
     const lines: PartyGrnQcInput['lines'] = [];
     for (const l of pending) {
       const e = entries[l.id];
-      const accepted = Number(e?.accepted ?? '');
-      const rejected = Number(e?.rejected.trim() === '' ? '0' : (e?.rejected ?? '0'));
+      const accRaw = e?.accepted.trim() ?? '';
+      const rejRaw = e?.rejected.trim() ?? '';
+      // A blank box is not a 0 — Number('') would quietly read it as one.
+      if (accRaw === '' || rejRaw === '') {
+        setErr(`Line ${l.lineNo}: Enter Accepted and Rejected (0 if none).`);
+        return;
+      }
+      const accepted = Number(accRaw);
+      const rejected = Number(rejRaw);
+      if (!Number.isInteger(accepted) || !Number.isInteger(rejected)) {
+        setErr(`Line ${l.lineNo}: Accepted and Rejected — whole numbers only.`);
+        return;
+      }
       if (
         !Number.isInteger(accepted) ||
         !Number.isInteger(rejected) ||

@@ -28,6 +28,8 @@ export const partyGrnKeys = {
     ] as const,
   detail: (id: string) => [...partyGrnKeys.all, 'detail', id] as const,
   nextCode: () => [...partyGrnKeys.all, 'next-code'] as const,
+  waitingQc: (jobWorkOrderId: string) =>
+    [...partyGrnKeys.all, 'waiting-qc', jobWorkOrderId] as const,
 };
 
 function buildSearch(q: ListPartyGrnQuery): string {
@@ -58,6 +60,47 @@ export function usePartyGrnDetail(id: string | undefined) {
     queryKey: partyGrnKeys.detail(id ?? '__missing__'),
     queryFn: () => apiFetch<PartyGrnDetail>(`/party-grn/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+/** ADR-203 — per JWSO line, the pieces received on Party GRNs that are still
+ *  waiting for Incoming QC (same rule as the server's PENDING_QC_SQL: qcAt null
+ *  and nothing accepted or rejected yet). The receipt cap is
+ *  Pending = order qty − (accepted + waiting QC), and the JWSO line only
+ *  carries the accepted figure, so this supplies the other half.
+ *  Only the GRNs of that JWSO with a line still waiting are opened. */
+export function usePartyGrnWaitingQcByJwLine(jobWorkOrderId: string | null) {
+  return useQuery<Map<string, number>>({
+    queryKey: partyGrnKeys.waitingQc(jobWorkOrderId ?? ''),
+    enabled: Boolean(jobWorkOrderId),
+    staleTime: 0,
+    queryFn: async () => {
+      const waiting = new Map<string, number>();
+      if (!jobWorkOrderId) return waiting;
+      const grnIds: string[] = [];
+      const limit = 200;
+      for (let offset = 0; ; offset += limit) {
+        const page: ListPartyGrnResponse = await apiFetch<ListPartyGrnResponse>(
+          `/party-grn?${buildSearch({ jobWorkOrderId, limit, offset })}`,
+        );
+        for (const g of page.items) {
+          if (g.jobWorkOrderId === jobWorkOrderId && g.qcPendingLines > 0) grnIds.push(g.id);
+        }
+        if (page.items.length < limit || offset + limit >= page.total) break;
+      }
+      const details = await Promise.all(
+        grnIds.map((id) => apiFetch<PartyGrnDetail>(`/party-grn/${id}`)),
+      );
+      for (const d of details) {
+        for (const l of d.lines) {
+          if (!l.jwLineId || l.deletedAt) continue;
+          if (l.qcAt == null && l.acceptedQty === 0 && l.rejectedQty === 0) {
+            waiting.set(l.jwLineId, (waiting.get(l.jwLineId) ?? 0) + l.receivedQty);
+          }
+        }
+      }
+      return waiting;
+    },
   });
 }
 

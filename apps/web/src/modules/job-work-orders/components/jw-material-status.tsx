@@ -1,7 +1,8 @@
-// "Material received" badge rendering (legacy renderJWMaster L12648-12650):
-//   ✓ Full        — receivedQty >= expectedQty (green)
-//   ◑ Partial     — 0 < receivedQty < expectedQty (amber)
-//   ✕ Not received — receivedQty == 0 (red)
+// Customer-material badge (legacy renderJWMaster L12648-12650), worded by
+// what it counts — QC-ACCEPTED pieces (ADR-203):
+//   ✓ Accepted          — receivedQty >= expectedQty (green)
+//   ◑ Accepted n of m   — 0 < receivedQty < expectedQty (amber)
+//   ✕ None accepted     — receivedQty == 0 (red)
 //
 // receivedQty is the customer material QC-ACCEPTED across the JWSO's lines
 // (partyReceivedQty from the API — Σ Party GRN accepted, rejects never count).
@@ -23,7 +24,7 @@ export function JwMaterialStatusBadge({ receivedQty, expectedQty }: Props) {
         <span aria-hidden style={{ marginRight: 4 }}>
           ✓
         </span>
-        Full
+        Accepted
       </span>
     );
   }
@@ -33,7 +34,7 @@ export function JwMaterialStatusBadge({ receivedQty, expectedQty }: Props) {
         <span aria-hidden style={{ marginRight: 4 }}>
           ◑
         </span>
-        Partly Received ({safeReceived})
+        Accepted {safeReceived} of {safeExpected}
       </span>
     );
   }
@@ -42,7 +43,7 @@ export function JwMaterialStatusBadge({ receivedQty, expectedQty }: Props) {
       <span aria-hidden style={{ marginRight: 4 }}>
         ✕
       </span>
-      Not received
+      None accepted
     </span>
   );
 }
