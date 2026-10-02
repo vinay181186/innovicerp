@@ -4,29 +4,35 @@
 // (TABLE_KEYS.qcCallCompleted). A row's ▸ opens its secondary facts; the Inspect
 // action (pending only) opens the accept/reject entry form as a popup over the
 // register (QcCallInspectModal for a job-card op, IncomingQcInspectModal for a
-// GRN line); row click opens the document the call sits on. Frontend-only — data
-// from the qc-history + incoming-qc endpoints. TPI is folded in as a tab, which
-// renders the external TpiView untouched.
+// GRN line); row click opens the document the call sits on. TPI is folded in
+// as a tab, which renders TpiView.
+//
+// ADR-201: 25 calls per page (`page` in the URL). Incoming and process calls are
+// paged TOGETHER on the server (GET /qc-history/register); search, the stage and
+// "Mine" run there over every call, any change goes back to page 1, the stage
+// counts / totals are the server's whole-register figures, and the Excel export
+// fetches EVERY matching call. The tables' browser Sort & Filter is off: one
+// register mixes two kinds of row whose columns come from different documents.
 
-import { shortName } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useSession } from '@/lib/session';
-import { Banner } from '@/ui/feedback/Banner';
+import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { useQcHistory } from '@/modules/qc-history/api';
-import { exportCompletedQc, exportPendingQc } from '@/modules/qc-history/lib/export';
-import { useIncomingQc } from '@/modules/incoming-qc/api';
+import { ListFooter } from '@/ui/layout';
+import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { TpiView } from '@/modules/tpi/components/tpi-view';
 import { IncomingQcInspectModal } from '@/modules/incoming-qc/components/incoming-qc-inspect-modal';
 import { QcCallInspectModal } from '../components/qc-call-inspect-modal';
 import type { RaisedNc } from '../components/qc-call-inspect-form';
 import { QC_STAGES, type QcStage, type QcView } from '../components/qc-sheet';
 import { useQcCallData } from '../components/qc-call-data';
+import { RaisedNcBanner, exportRegister } from '../components/qc-call-extras';
 import { useQcInspect } from '../components/use-qc-inspect';
 import { QcCallTabs } from '../components/qc-call-tabs';
 import { QcCallRegisterHeader } from '../components/qc-call-register-header';
@@ -41,11 +47,10 @@ import {
   COMPLETED_HIDDEN,
   type CompletedVM,
   completedColumns,
-  completedVmAt,
   completedVmKey,
 } from '../components/qc-call-completed-columns';
 
-// `| undefined` on line / op is deliberate: the deep-link effect strips a
+// `| undefined` on line / op / page is deliberate: the deep-link effect strips a
 // consumed param by writing `undefined` back, and exactOptionalPropertyTypes
 // rejects that on a plain `line?: string`.
 type QcCallRegisterSearch = {
@@ -53,6 +58,8 @@ type QcCallRegisterSearch = {
   op?: string | undefined;
   tab?: 'qc' | 'tpi';
   search?: string;
+  /** 1-based register page (ADR-201); absent = page 1. */
+  page?: number | undefined;
 };
 
 export const qcCallRegisterRoute = createRoute({
@@ -60,37 +67,37 @@ export const qcCallRegisterRoute = createRoute({
   path: 'qc-call-register',
   // ?line=<grnLineId> deep-opens the Inspect popup for that incoming-QC row;
   // ?op=<jcOpId> does the same for an in-process / final call. Both are
-  // consumed — acted on once, then stripped from the URL (see the deep-link
-  // effect below), so a refresh does not throw the box up again.
+  // consumed — acted on once, then stripped from the URL (see useQcInspect), so
+  // a refresh does not throw the box up again.
   // ?tab=tpi opens straight on the TPI tab (the JC op card's 📋 TPI link). It
   // SEEDS the tab only — see the tab state below, which stays local.
   // ?search=<text> seeds the search box the same way (the JC op card's
   // 🔬 QC Call button passes its job-card code, so the inspector lands on that
-  // card's calls instead of the whole register). Seed only — typing in the box
-  // afterwards does not write back to the URL.
+  // card's calls instead of the whole register). Seed only.
   validateSearch: (search: Record<string, unknown>): QcCallRegisterSearch => {
     const out: QcCallRegisterSearch = {};
     if (typeof search.line === 'string') out.line = search.line;
     if (typeof search.op === 'string') out.op = search.op;
     if (search.tab === 'qc' || search.tab === 'tpi') out.tab = search.tab;
     if (typeof search.search === 'string' && search.search.trim()) out.search = search.search;
+    const page = Number(search.page);
+    if (Number.isInteger(page) && page > 1) out.page = page;
     return out;
   },
   component: QcCallRegisterPage,
 });
 
 function QcCallRegisterPage(): React.JSX.Element {
-  const { data, isLoading, isError, error } = useQcHistory();
-  // Incoming-material QC (GRN lines) on the same approval screen. Optional — if
-  // it fails to load we still render process QC rather than blocking.
-  const incomingQuery = useIncomingQc();
   const {
     line: lineParam,
     op: opParam,
     tab: tabParam,
     search: searchParam,
+    page: pageParam,
   } = qcCallRegisterRoute.useSearch();
+  const page = pageParam ?? 1;
   const navigate = qcCallRegisterRoute.useNavigate();
+  const queryClient = useQueryClient();
   // Row click opens the document — a plain navigate (not bound to this route) so
   // it reaches other routes cleanly.
   const nav = useNavigate();
@@ -98,56 +105,54 @@ function QcCallRegisterPage(): React.JSX.Element {
   const [view, setView] = useState<QcView>('pending');
   // Stage filter: null = every stage.
   const [stage, setStage] = useState<QcStage | null>(null);
-  // One search box for whichever view is showing. ?search= only seeds it (see
-  // the route's validateSearch).
+  // One search box for whichever view is showing. ?search= only seeds it.
   const [search, setSearch] = useState(searchParam ?? '');
   // TPI tab choice stays LOCAL — clicking a tab does not write to the URL.
-  // ?tab= only SEEDS the initial value, so an outside link (the JC op card's
-  // 📋 TPI button) can land on the TPI tab.
   const [tab, setTab] = useState<'qc' | 'tpi'>(tabParam ?? 'qc');
   // The NC the last QC submit raised (ADR-190) — named above the list with a
-  // link to its disposition until dismissed. Held here, not in the popup: a
-  // fully inspected call leaves the pending feed on the refetch the submit
-  // triggers, closing the popup.
+  // link to its disposition until dismissed.
   const [raisedNc, setRaisedNc] = useState<RaisedNc | null>(null);
-  // "Mine": only the pending calls QC Command assigned to the signed-in user,
-  // matched on the session's full name and short form, case-insensitively.
+  // "Mine": only the pending calls QC Command assigned to the signed-in user —
+  // the server matches the caller's full name and short form.
   const [mineOnly, setMineOnly] = useState(false);
-  const session = useSession().data;
-  const myNames = useMemo(() => {
-    const full = (session?.fullName ?? '').trim().toLowerCase();
-    return new Set([full, shortName(session?.fullName ?? '').toLowerCase()].filter(Boolean));
-  }, [session?.fullName]);
-  // Caller's effective access — drives the "Hide page" VIEW guard below and
-  // whether a row opens its popup. Incoming-material QC is its own form key
-  // (qc_incoming); a viewer who can inspect neither kind gets no Action column.
   const { data: eff } = useMyAccess();
   const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
   const canIncoming = effectiveFormPerms(eff, 'qc_incoming').entry;
   const showAction = canEntry || canIncoming;
 
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({
+        search: (prev) => ({ ...prev, page: p > 1 ? p : undefined }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+  // The search box reaches the server 300 ms after typing stops.
+  const [q, setQ] = useState(normalizeSearchTerm(searchParam ?? ''));
+  useEffect(() => {
+    const next = normalizeSearchTerm(search);
+    if (next === q) return;
+    const id = window.setTimeout(() => {
+      setQ(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, q, gotoPage]);
+
   // Fit-table columns — static, so built once.
   const pendCols = useMemo(() => pendingColumns(), []);
   const compCols = useMemo(() => completedColumns(), []);
 
-  // Search / stage / Mine filtering, the stage counts and the register totals.
-  const qc = useQcCallData({
-    data,
-    incoming: incomingQuery.data,
-    view,
-    stage,
-    search,
-    mineOnly,
-    myNames,
-  });
+  // One page of the register + the server's stage counts and totals.
+  const qc = useQcCallData({ view, stage, search: q, mineOnly, page });
+  useClampPage(page, qc.loaded ? qc.total : undefined, gotoPage);
 
   // The Inspect popup target: deep-link open (?line= / ?op=), the fresh row, and
   // auto-close when the row leaves the queue.
   const { setInspect, inspectOp, inspectInc } = useQcInspect({
-    allPending: qc.allPending,
-    incPending: qc.incPending,
-    data,
-    incomingData: incomingQuery.data,
+    pageRows: qc.pendingRows,
     lineParam,
     opParam,
     stripParam: (key) => {
@@ -159,27 +164,17 @@ function QcCallRegisterPage(): React.JSX.Element {
     },
   });
 
-  // Pending rows — incoming (GRN) calls first, then process-QC (job-card op)
-  // calls, the order the sheet showed them in.
-  const pendingRows: PendingVM[] = [
-    ...qc.incPendingF.map((row): PendingVM => ({ kind: 'inc', row })),
-    ...qc.pending.map((row): PendingVM => ({ kind: 'op', row })),
-  ];
-  // Completed rows — incoming + process QC interleaved newest-first by QC time.
-  const completedRows: CompletedVM[] = [
-    ...qc.incCompletedF.map((row): CompletedVM => ({ kind: 'inc', row })),
-    ...qc.logs.map((row): CompletedVM => ({ kind: 'op', row })),
-  ].sort((a, b) => {
-    const at = completedVmAt(a);
-    const bt = completedVmAt(b);
-    return at < bt ? 1 : at > bt ? -1 : 0;
-  });
+  // The page, in the server's order: pending = incoming (GRN) calls first, then
+  // process-QC calls; completed = both kinds interleaved newest-first.
+  const pendingRows: PendingVM[] = qc.pendingRows;
+  const completedRows: CompletedVM[] = qc.completedRows;
 
-  // Export the rows on screen (after search + stage), for the view showing.
-  function onExport(): void {
-    if (view === 'pending') exportPendingQc(qc.pending, qc.incPendingF);
-    else exportCompletedQc(qc.logs, qc.incCompletedF);
-  }
+  // A GRN-line inspection is saved by the incoming-qc module, which refreshes
+  // its own feed; the register reads /qc-history/register, so refresh it too.
+  const closeInspect = (): void => {
+    setInspect(null);
+    void queryClient.invalidateQueries({ queryKey: qcHistoryKeys.all });
+  };
 
   // Open the accept/reject popup for a pending call (the existing inspect flow).
   const openInspect = (vm: PendingVM): void =>
@@ -247,12 +242,11 @@ function QcCallRegisterPage(): React.JSX.Element {
   }
 
   // TPI first, ahead of the QC loading/error gates: TPI runs off its own query,
-  // so a failing qc-history fetch must not black out the TPI tab. (TpiView is
-  // external and left untouched.)
+  // so a failing register fetch must not black out the TPI tab.
   if (tab === 'tpi') {
     return shell(<TpiView />);
   }
-  if (isLoading) {
+  if (qc.isLoading) {
     return shell(
       <div className="panel">
         <div className="empty-state">
@@ -261,71 +255,61 @@ function QcCallRegisterPage(): React.JSX.Element {
       </div>,
     );
   }
-  if (isError || !data) {
+  if (qc.error || !qc.loaded) {
     return shell(
       <div className="panel">
         <div className="empty-state" style={{ color: 'var(--red2)' }}>
-          {error instanceof Error ? error.message : 'Could not load QC Call Register. Try again.'}
+          {qc.error instanceof Error
+            ? qc.error.message
+            : 'Could not load QC Call Register. Try again.'}
         </div>
       </div>,
     );
   }
 
   const stageName = stage ? (QC_STAGES.find((s) => s.key === stage)?.label ?? null) : null;
-  const isEmpty = view === 'pending' ? pendingRows.length === 0 : completedRows.length === 0;
-  const shownCount = view === 'pending' ? pendingRows.length : completedRows.length;
   const pendingEmptyText =
-    stageName || search.trim() || mineOnly ? 'No QC calls match.' : 'No pending QC calls yet.';
-  const completedEmptyText =
-    stageName || search.trim() ? 'No QC entries match.' : 'No QC entries yet.';
+    stageName || q || mineOnly ? 'No QC calls match.' : 'No pending QC calls yet.';
+  const completedEmptyText = stageName || q ? 'No QC entries match.' : 'No QC entries yet.';
 
   return shell(
     <>
       <QcCallRegisterHeader
         view={view}
-        setView={setView}
+        setView={(v) => {
+          setView(v);
+          gotoPage(1);
+        }}
         stage={stage}
-        setStage={setStage}
+        setStage={(s) => {
+          setStage(s);
+          gotoPage(1);
+        }}
         stageName={stageName}
         mineOnly={mineOnly}
-        onToggleMine={() => setMineOnly((v) => !v)}
+        onToggleMine={() => {
+          setMineOnly((v) => !v);
+          gotoPage(1);
+        }}
         search={search}
         setSearch={setSearch}
         onClearFilters={() => {
           setStage(null);
           setMineOnly(false);
           setSearch('');
+          setQ('');
+          gotoPage(1);
         }}
         stageStats={qc.stageStats}
-        shownCount={shownCount}
+        shownCount={qc.total}
         pendingCount={qc.pendingCount}
         completeCount={qc.completeCount}
         pcsPending={qc.pcsPending}
-        isEmpty={isEmpty}
-        onExport={onExport}
+        isEmpty={qc.total === 0}
+        onExport={() => void exportRegister(qc.query, view)}
       />
 
-      {raisedNc ? (
-        <Banner
-          tone="warn"
-          accent
-          onDismiss={() => setRaisedNc(null)}
-          title={
-            <>
-              NC{' '}
-              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                {raisedNc.code}
-              </span>{' '}
-              raised —{' '}
-              <Link to="/nc-register/$id" params={{ id: raisedNc.id }}>
-                Dispose now →
-              </Link>
-            </>
-          }
-        >
-          The rejected qty from the QC Inspection just saved is on this NC until it is disposed.
-        </Banner>
-      ) : null}
+      {raisedNc ? <RaisedNcBanner nc={raisedNc} onDismiss={() => setRaisedNc(null)} /> : null}
 
       {/* Two saved layouts (ADR-199): the Pending queue and the Completed log
           are separate fit tables, each with its own tableKey. */}
@@ -337,6 +321,7 @@ function QcCallRegisterPage(): React.JSX.Element {
             rows={pendingRows}
             rowKey={pendingVmKey}
             defaultHidden={PENDING_HIDDEN}
+            sortFilter={false}
             emptyText={pendingEmptyText}
             onRowClick={onPendingRowClick}
             rowClassName={(vm) =>
@@ -353,11 +338,21 @@ function QcCallRegisterPage(): React.JSX.Element {
             rows={completedRows}
             rowKey={completedVmKey}
             defaultHidden={COMPLETED_HIDDEN}
+            sortFilter={false}
             emptyText={completedEmptyText}
             onRowClick={onCompletedRowClick}
           />
         </Panel>
       )}
+
+      <ListFooter
+        total={qc.total}
+        noun={view === 'pending' ? 'pending call' : 'completed entry'}
+        nounPlural={view === 'pending' ? 'pending calls' : 'completed entries'}
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
 
       {/* The entry popups. Keyed by the call so moving from one row to another
           starts a fresh form, never one carrying the last row's qty. */}
@@ -365,7 +360,7 @@ function QcCallRegisterPage(): React.JSX.Element {
         <QcCallInspectModal
           key={inspectOp.jcOpId}
           o={inspectOp}
-          onClose={() => setInspect(null)}
+          onClose={closeInspect}
           onNcRaised={setRaisedNc}
         />
       ) : null}
@@ -373,7 +368,7 @@ function QcCallRegisterPage(): React.JSX.Element {
         <IncomingQcInspectModal
           key={inspectInc.grnLineId}
           o={inspectInc}
-          onClose={() => setInspect(null)}
+          onClose={closeInspect}
           onNcRaised={setRaisedNc}
         />
       ) : null}

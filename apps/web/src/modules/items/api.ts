@@ -25,6 +25,10 @@ function toQueryString(q: ListItemsQuery): string {
   if (q.search) params.set('search', q.search);
   if (q.itemType) params.set('itemType', q.itemType);
   if (q.excludePartyOwned) params.set('excludePartyOwned', 'true');
+  if (q.procurementType) params.set('procurementType', q.procurementType);
+  if (q.sortBy) params.set('sortBy', q.sortBy);
+  if (q.sortDir) params.set('sortDir', q.sortDir);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

@@ -183,7 +183,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
   const today = todayIst();
-  const columns = useMemo(() => prListColumns(), []);
+  const columns = useMemo(() => prListColumns((currentPage - 1) * PAGE_SIZE + 1), [currentPage]);
 
   // Selection: one vendor per PO (sel.isRowSelectable locks to the first vendor).
   const sel = usePrSelection(rows, canCreatePo);

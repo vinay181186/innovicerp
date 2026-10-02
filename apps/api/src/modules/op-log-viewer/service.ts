@@ -63,20 +63,41 @@ export async function listOpLog(
     if (input.machineId) conditions.push(sql`${logMachine} = ${input.machineId}::uuid`);
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to list AND count —
-    // the count carries every join a field reads (LEFT joins on keys, so they
-    // never change the count). sfWhere answers `AND (…)`; TRUE makes it one
-    // condition.
+    // the count adds every join a field reads when there is a filter (LEFT
+    // joins on keys, so they never change the count). sfWhere answers
+    // `AND (…)`; TRUE makes it one condition.
     const sf = readSf(input.sf);
-    if (sf && sf.filters.length > 0) {
+    const hasSfFilters = !!sf && sf.filters.length > 0;
+    if (hasSfFilters) {
       conditions.push(sql`TRUE ${sfWhere(OP_LOG_SF_COLUMNS, sf)}`);
     }
     const orderBy = sfOrderBy(
       OP_LOG_SF_COLUMNS,
       sf,
-      sql`${opLog.logDate} DESC, ${opLog.createdAt} DESC, ${opLog.logNo} ASC`,
+      sql`${opLog.logDate} DESC, ${opLog.createdAt} DESC, ${opLog.logNo} ASC, ${opLog.id} ASC`,
     );
 
     const where = and(...conditions);
+
+    // The count carries exactly the page's row-shaping joins (the INNER ones —
+    // a card whose item is gone is in neither). The LEFT joins on unique keys
+    // never change the count, so they are added only when a column filter
+    // reads one of them.
+    let countQuery = tx
+      .select({ value: count() })
+      .from(opLog)
+      .innerJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
+      .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+      .innerJoin(items, eq(items.id, jobCards.itemId))
+      .$dynamic();
+    if (hasSfFilters) {
+      countQuery = countQuery
+        .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
+        .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jobCards.sourceJwLineId))
+        .leftJoin(machines, sql`${machines.id} = ${logMachine}`)
+        .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
+        .leftJoin(users, eq(users.id, opLog.createdBy));
+    }
 
     const [rows, totals] = await Promise.all([
       tx
@@ -157,17 +178,7 @@ export async function listOpLog(
         .orderBy(orderBy)
         .limit(input.limit)
         .offset(input.offset),
-      tx
-        .select({ value: count() })
-        .from(opLog)
-        .innerJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
-        .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
-        .leftJoin(items, eq(items.id, jobCards.itemId))
-        .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
-        .leftJoin(machines, sql`${machines.id} = ${logMachine}`)
-        .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
-        .leftJoin(users, eq(users.id, opLog.createdBy))
-        .where(where),
+      countQuery.where(where),
     ]);
 
     const items_: OpLogListItem[] = rows.map((r) => ({

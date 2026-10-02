@@ -24,6 +24,9 @@ function toQueryString(q: ListClientsQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (typeof q.isActive === 'boolean') params.set('isActive', String(q.isActive));
+  if (q.sortBy) params.set('sortBy', q.sortBy);
+  if (q.sortDir) params.set('sortDir', q.sortDir);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

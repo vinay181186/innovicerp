@@ -1,8 +1,8 @@
 // TPI Master list — the third-party inspectors the TPI screen's Inspector field
 // now picks from. Mirrors the QC Process Master list (its sibling in the Quality
-// → Master menu), with one deliberate difference: this is a master, so it
-// scrolls in ONE fetch instead of paging (styling skill, rule 4). 200 is the
-// cap listTpiMastersQuerySchema allows, and an inspector list is tens of rows.
+// → Master menu). Paged at 25 rows (ADR-201): search, the Active filter and
+// Sort & Filter (▾, ADR-200) run on the SERVER over every inspector; any
+// change of them goes back to page 1.
 //
 // `code` holds the inspector's NAME, so the column reads "Inspector Name" — see
 // packages/shared/src/schemas/tpi-master.ts.
@@ -24,8 +24,7 @@
 // RULES: the query, the permission gates and the delete.
 //
 // What did NOT change: the route and its search params (search, isActive), the
-// 300ms debounce on the URL write, normalizeSearchTerm, the single un-paged
-// fetch capped at 200, perms -> entry/edit/canDelete, the softDelete.reset()
+// 300ms debounce on the URL write, normalizeSearchTerm, perms -> entry/edit/canDelete, the softDelete.reset()
 // before each attempt so a second try clears the previous banner, row click ->
 // detail, the name cell -> detail.
 //
@@ -37,24 +36,25 @@
 
 import type { ListTpiMastersQuery, TpiMaster } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useSoftDeleteTpiMaster, useTpiMastersList } from '../api';
 
-const LIST_LIMIT = 200;
-
 const listSearchSchema = z.object({
   search: z.string().optional(),
   isActive: z.coerce.boolean().optional(),
+  page: pageSearchParam,
 });
 
 export const tpiMastersListRoute = createRoute({
@@ -95,22 +95,34 @@ function TpiMastersListPage(): React.JSX.Element {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
-      void navigate({ search: (prev) => ({ ...prev, search: next }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
+
+  // Sort & Filter on the SERVER (ADR-200) — every change goes to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.tpiMastersList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+  const offset = pageOffset(search.page);
 
   const query: ListTpiMastersQuery = useMemo(
     () => ({
       search: search.search,
       isActive: search.isActive,
-      limit: LIST_LIMIT,
-      offset: 0,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset,
     }),
-    [search.search, search.isActive],
+    [search.search, search.isActive, sf.param, offset],
   );
 
   const { data, isLoading, isFetching, isError, error } = useTpiMastersList(query);
+  const gotoPage = useCallback(
+    (p: number): void => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  useClampPage(search.page, data?.total, gotoPage);
   const softDelete = useSoftDeleteTpiMaster();
 
   const rows = data?.items ?? [];
@@ -124,11 +136,18 @@ function TpiMastersListPage(): React.JSX.Element {
   // the whole value on hover.
   const columns = useMemo<DataTableColumn<TpiMaster>[]>(
     () => [
-      { id: 'sr_no', header: 'Sr No', width: '5%', className: 'text3', render: (_t, i) => i + 1 },
+      {
+        id: 'sr_no',
+        header: 'Sr No',
+        width: '5%',
+        className: 'text3',
+        render: (_t, i) => offset + i + 1,
+      },
       {
         id: 'name',
         header: 'Inspector Name',
         width: '22%',
+        sortFilterField: 'name',
         align: 'left',
         ellipsis: true,
         title: (t) => t.code,
@@ -152,6 +171,7 @@ function TpiMastersListPage(): React.JSX.Element {
       {
         id: 'organization',
         header: 'Organisation',
+        sortFilterField: 'organization',
         width: '24%',
         className: 'text2',
         ellipsis: true,
@@ -161,6 +181,7 @@ function TpiMastersListPage(): React.JSX.Element {
       {
         id: 'contact_no',
         header: 'Contact No.',
+        sortFilterField: 'contactNo',
         width: '12%',
         className: 'mono',
         nowrap: true,
@@ -169,6 +190,7 @@ function TpiMastersListPage(): React.JSX.Element {
       {
         id: 'email',
         header: 'Email',
+        sortFilterField: 'email',
         width: '19%',
         className: 'text2',
         ellipsis: true,
@@ -189,7 +211,7 @@ function TpiMastersListPage(): React.JSX.Element {
         render: (t) => <StatusBadge kind="masteractive" status={String(t.isActive)} />,
       },
     ],
-    [],
+    [offset],
   );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -231,20 +253,25 @@ function TpiMastersListPage(): React.JSX.Element {
             onChange={(e) => {
               const v = e.target.value;
               void navigate({
-                search: (prev) => ({ ...prev, isActive: v === '' ? undefined : v === 'true' }),
+                search: (prev) => ({
+                  ...prev,
+                  isActive: v === '' ? undefined : v === 'true',
+                  page: 1,
+                }),
                 replace: true,
               });
             }}
           />
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
-            search: (prev) => ({ ...prev, isActive: undefined, search: undefined }),
+            search: (prev) => ({ ...prev, isActive: undefined, search: undefined, page: 1 }),
             replace: true,
           });
         }}
-        filtersActive={search.isActive !== undefined || searchInput.trim() !== ''}
+        filtersActive={sf.filtering || search.isActive !== undefined || searchInput.trim() !== ''}
         primary={
           perms.entry ? (
             <Link to="/tpi-masters/new" className="btn btn-primary">
@@ -277,8 +304,9 @@ function TpiMastersListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
+            sortFilterServer={sf}
             emptyText={
-              search.search || search.isActive !== undefined
+              sf.filtering || search.search || search.isActive !== undefined
                 ? 'No Inspectors match.'
                 : 'No Inspectors yet.'
             }
@@ -317,12 +345,13 @@ function TpiMastersListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      {/* One fetch, no pager: `limit` makes the count line say "Showing first
-          200 of N — refine with search" once the master outgrows the cap. */}
+      {/* Pager (ADR-201): 25 rows a page, Prev / Next. */}
       <ListFooter
         total={total}
         noun="inspector"
-        limit={LIST_LIMIT}
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
         hint="Click a row to open it."
       />
     </div>

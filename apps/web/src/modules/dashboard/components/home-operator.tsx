@@ -5,11 +5,15 @@
 import type { HomeResponse, ReadyOpRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter } from '@/ui/layout';
+import { useOperatorReady } from '../api';
 
 function elapsedStr(min: number): string {
   return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`;
@@ -99,6 +103,14 @@ function readyColumns(): DataTableColumn<ReadyOpRow>[] {
 
 export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Element {
   const o = home.operator!;
+  // ADR-201: Ready for You pages at 25 on the server. Page 1 comes with the
+  // home read; later pages from /dashboard/operator-ready. The count is the
+  // server's figure over EVERY ready op (o.readyCount), never this page's rows.
+  const [page, setPage] = useState(1);
+  const more = useOperatorReady(pageOffset(page), page > 1);
+  const readyRows = page > 1 ? (more.data?.items ?? []) : o.ready;
+  const readyTotal = page > 1 ? (more.data?.total ?? o.readyCount) : o.readyCount;
+  useClampPage(page, readyTotal, setPage);
   return (
     <div>
       {o.running.length > 0 ? (
@@ -217,7 +229,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
         <div className="panel-hdr">
           <span className="panel-title">Ready for You</span>
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-            Top {o.ready.length} operations sorted by due date
+            {o.readyCount} {o.readyCount === 1 ? 'operation' : 'operations'}, soonest due first
           </span>
         </div>
         {/* THE shared fit sheet (ADR-199). JC No. is pinned; Item Name drops into
@@ -225,8 +237,9 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
         <DataTable<ReadyOpRow>
           tableKey={TABLE_KEYS.homeOperator}
           columns={readyColumns()}
-          rows={o.ready}
-          rowKey={(_r, i) => i}
+          rows={readyRows}
+          rowKey={(r, i) => `${r.jcCode}:${r.opSeq}:${i}`}
+          loading={page > 1 && !more.data}
           defaultHidden={READY_DEFAULT_HIDDEN}
           maxHeight="50vh"
           empty="No operations ready. Check back soon or speak to your supervisor."
@@ -236,6 +249,15 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
             </Link>
           )}
         />
+        <div style={{ padding: '0 14px 10px' }}>
+          <ListFooter
+            total={readyTotal}
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={setPage}
+            noun="operation"
+          />
+        </div>
       </div>
     </div>
   );

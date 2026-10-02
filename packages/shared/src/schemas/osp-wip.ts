@@ -10,6 +10,7 @@
 // ledger (that conflation is what drove on-hand negative; see SO-517 trace).
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const ospWipRowSchema = z.object({
   jcOpId: z.string().uuid(),
@@ -84,6 +85,11 @@ export const listOspWipQuerySchema = z.object({
   /** all | at_vendor (still out) | not_sent (unstarted order balance)
    *  | ready_to_send (cleared upstream and waiting to go out today) */
   filter: z.enum(['all', 'at_vendor', 'not_sent', 'ready_to_send']).default('at_vendor'),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  /** Paging (ADR-201). No limit = every matching row (as before). */
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
 });
 export type ListOspWipQuery = z.infer<typeof listOspWipQuerySchema>;
 
@@ -92,6 +98,9 @@ export const listOspWipResponseSchema = z.object({
   // Echoes the query's filter back, so it must carry the same four values.
   filter: z.enum(['all', 'at_vendor', 'not_sent', 'ready_to_send']),
   rows: z.array(ospWipRowSchema),
+  /** Every op matching search + bucket + Sort & Filter (all pages). */
+  total: z.number().int().nonnegative(),
+  /** Bucket figures over every op matching search + Sort & Filter (not the bucket). */
   summary: ospWipSummarySchema,
 });
 export type ListOspWipResponse = z.infer<typeof listOspWipResponseSchema>;

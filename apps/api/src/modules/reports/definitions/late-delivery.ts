@@ -10,8 +10,9 @@ import {
   isoDateFilter,
   likeFilter,
   numCell,
-  type SqlRow,
+  REPORT_ROW_CAP,
   textCell,
+  type SqlRow,
 } from './report-helpers';
 
 export const lateDeliveryReport: RegisteredReport = {
@@ -88,7 +89,7 @@ export const lateDeliveryReport: RegisteredReport = {
         ${toFrag}
         ${customerFrag}
       ORDER BY cd.dispatch_date DESC, cd.code DESC, cdl.line_no
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

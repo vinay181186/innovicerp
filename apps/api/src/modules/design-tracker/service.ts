@@ -10,7 +10,7 @@
 //   Revision    → In Progress (via update setting status back)
 //   Approved is terminal except via _dsnRevise which counts up
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreateDesignTrackerInput,
   DesignTimeLogEntry,
@@ -31,6 +31,8 @@ import {
   salesOrderLines,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { DESIGN_TRACKER_SF_COLUMNS, TRACKER_HOURS_SQL } from './sf-columns';
 import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
@@ -148,18 +150,23 @@ export async function listDesignTracker(
   user: AuthContext,
 ): Promise<ListDesignTrackerResponse> {
   const companyId = requireCompany(user);
+  // ADR-201: the screen asks for one 25-row page. Search + Sort & Filter
+  // (ADR-200) narrow the list, its `total` AND the status counts in the
+  // dropdown; the dropdown's own filter narrows the list + total but not the
+  // counts (each option counts its own rows).
+  const sf = readSf(input.sf);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const today = new Date().toISOString().slice(0, 10);
     const searchFrag = term
       ? sql`AND (
-          dt.code ILIKE ${term}
-          OR dt.so_code_text ILIKE ${term}
-          OR dt.item_code_text ILIKE ${term}
-          OR dt.designer ILIKE ${term}
+          dt.code ILIKE ${term} ESCAPE '\\'
+          OR dt.so_code_text ILIKE ${term} ESCAPE '\\'
+          OR dt.item_code_text ILIKE ${term} ESCAPE '\\'
+          OR dt.designer ILIKE ${term} ESCAPE '\\'
           -- POL, the customer's own PO line number, now a column on this list.
-          -- soline is the LATERAL the SELECT below joins for exactly this fact.
-          OR soline."clientPoLineNo" ILIKE ${term}
+          -- soline is the LATERAL the FROM below joins for exactly this fact.
+          OR soline."clientPoLineNo" ILIKE ${term} ESCAPE '\\'
         )`
       : sql``;
 
@@ -171,6 +178,33 @@ export async function listDesignTracker(
     else if (input.filter === 'overdue')
       filterFrag = sql`AND dt.target_date < ${today}::date AND dt.status <> 'Approved'`;
     else if (input.status) filterFrag = sql`AND dt.status = ${input.status}`;
+
+    // One FROM + WHERE for the page, its count and the dropdown counts.
+    const fromWhere = sql`
+      FROM public.design_tracker dt
+      LEFT JOIN LATERAL (
+        ${SO_LINE_FACTS_SQL}
+          AND sol.sales_order_id = dt.sales_order_id
+          AND sol.item_id = dt.item_id
+        ORDER BY sol.line_no, sol.id
+        LIMIT 1
+      ) soline ON true
+      LEFT JOIN LATERAL (
+        -- ADR-188: the one engineer time log is design_work_log; tracker
+        -- time is the rows logged against this tracker.
+        SELECT SUM(hours)::numeric AS total_hours
+        FROM public.design_work_log
+        WHERE design_tracker_id = dt.id AND deleted_at IS NULL
+      ) tl ON true
+      WHERE dt.company_id = ${companyId}::uuid
+        AND dt.deleted_at IS NULL
+        ${searchFrag}
+        ${sfWhere(DESIGN_TRACKER_SF_COLUMNS, sf)}`;
+    const orderBy = sfOrderBy(
+      DESIGN_TRACKER_SF_COLUMNS,
+      sf,
+      sql`dt.created_at DESC, dt.code DESC, dt.id DESC`,
+    );
 
     const result = await tx.execute(sql`
       SELECT
@@ -199,51 +233,30 @@ export async function listDesignTracker(
         -- (sales_order_id, item_id), lowest line_no wins.
         soline."itemRevision",
         soline."clientPoLineNo",
-        COALESCE(tl.total_hours, 0)::float AS "totalHours"
-      FROM public.design_tracker dt
-      LEFT JOIN LATERAL (
-        ${SO_LINE_FACTS_SQL}
-          AND sol.sales_order_id = dt.sales_order_id
-          AND sol.item_id = dt.item_id
-        ORDER BY sol.line_no, sol.id
-        LIMIT 1
-      ) soline ON true
-      LEFT JOIN LATERAL (
-        -- ADR-188: the one engineer time log is design_work_log; tracker
-        -- time is the rows logged against this tracker.
-        SELECT SUM(hours)::numeric AS total_hours
-        FROM public.design_work_log
-        WHERE design_tracker_id = dt.id AND deleted_at IS NULL
-      ) tl ON true
-      WHERE dt.company_id = ${companyId}::uuid
-        AND dt.deleted_at IS NULL
-        ${searchFrag}
+        ${TRACKER_HOURS_SQL} AS "totalHours"
+      ${fromWhere}
         ${filterFrag}
-      ORDER BY dt.created_at DESC, dt.code DESC
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(designTracker.companyId, companyId), isNull(designTracker.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(designTracker)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    const totalRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS n ${fromWhere} ${filterFrag}
+    `)) as unknown as Array<{ n: number }>;
+    const total = Number(totalRows[0]?.n ?? 0);
 
-    // Summary across all non-deleted designs for this company
+    // Dropdown counts over every design matching search + Sort & Filter.
     const sumRows = (await tx.execute(sql`
       SELECT
         COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE status = 'Pending')::int AS pending,
-        COUNT(*) FILTER (WHERE status = 'In Progress')::int AS in_progress,
-        COUNT(*) FILTER (WHERE status = 'Review')::int AS review,
-        COUNT(*) FILTER (WHERE status = 'Approved')::int AS approved,
+        COUNT(*) FILTER (WHERE dt.status = 'Pending')::int AS pending,
+        COUNT(*) FILTER (WHERE dt.status = 'In Progress')::int AS in_progress,
+        COUNT(*) FILTER (WHERE dt.status = 'Review')::int AS review,
+        COUNT(*) FILTER (WHERE dt.status = 'Approved')::int AS approved,
         COUNT(*) FILTER (
-          WHERE target_date < ${today}::date AND status <> 'Approved'
+          WHERE dt.target_date < ${today}::date AND dt.status <> 'Approved'
         )::int AS overdue
-      FROM public.design_tracker
-      WHERE company_id = ${companyId}::uuid
-        AND deleted_at IS NULL
+      ${fromWhere}
     `)) as unknown as Array<Record<string, unknown>>;
     const sum = sumRows[0] ?? {};
 

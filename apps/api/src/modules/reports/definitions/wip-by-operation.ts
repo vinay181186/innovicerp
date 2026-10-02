@@ -6,7 +6,14 @@
 import { OP_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { enumFilter, likeFilter, numCell, type SqlRow, textCell } from './report-helpers';
+import {
+  enumFilter,
+  likeFilter,
+  numCell,
+  REPORT_ROW_CAP,
+  textCell,
+  type SqlRow,
+} from './report-helpers';
 
 export const wipByOperationReport: RegisteredReport = {
   definition: {
@@ -108,7 +115,7 @@ export const wipByOperationReport: RegisteredReport = {
         ${itemFrag}
         ${opTypeFrag}
       ORDER BY COALESCE(m.code, o.machine_code_text) ASC NULLS LAST, jc.code, o.op_seq
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

@@ -1,22 +1,15 @@
 import type { FastifyInstance } from 'fastify';
-import { upsertDailyTaskReportInputSchema } from '@innovic/shared';
+import { listDailyTaskReportsQuerySchema, upsertDailyTaskReportInputSchema } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
-const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-
-const listQuerySchema = z.object({
-  userId: z.string().uuid().optional(),
-  dateFrom: dateStr.optional(),
-  dateTo: dateStr.optional(),
-});
 
 export async function dailyTaskReportsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/daily-task-reports', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    const q = listQuerySchema.parse(req.query);
+    const q = listDailyTaskReportsQuerySchema.parse(req.query);
     return service.listDailyReports(q, req.user);
   });
 

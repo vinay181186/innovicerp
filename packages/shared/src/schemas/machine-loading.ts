@@ -15,14 +15,10 @@
 
 import { z } from 'zod';
 import { JC_PRIORITIES } from '../enums/jc-priority';
+import { sfRawParamSchema } from './list-query';
 import { machineSplitSchema } from './machine-split';
 
-export const MACHINE_LOAD_STATUSES = [
-  'Clear',
-  'Manageable',
-  'High Load',
-  'Overloaded',
-] as const;
+export const MACHINE_LOAD_STATUSES = ['Clear', 'Manageable', 'High Load', 'Overloaded'] as const;
 export const machineLoadStatusSchema = z.enum(MACHINE_LOAD_STATUSES);
 export type MachineLoadStatus = (typeof MACHINE_LOAD_STATUSES)[number];
 
@@ -85,5 +81,26 @@ export type MachineLoadCard = z.infer<typeof machineLoadCardSchema>;
 export const machineLoadingResponseSchema = z.object({
   machines: z.array(machineLoadCardSchema),
   ops: z.array(machineLoadOpSchema),
+  /** Paged mode (ADR-201): every op matching machine + search + scope + sf. */
+  total: z.number().int().nonnegative().optional(),
 });
+
+/**
+ * GET /machine-loading. No `limit` = the whole board, exactly as before (the
+ * production dashboard reads it). With `limit` (ADR-201): `ops` is one page,
+ * filtered on the server; `machines` (the load cards + Capacity Summary) are
+ * always every machine's whole-queue totals.
+ */
+export const machineLoadingQuerySchema = z.object({
+  machineId: z.string().uuid().optional(),
+  /** JC no., POL, CODE/REV, item name, SO no., operation. */
+  search: z.string().trim().max(200).optional(),
+  /** 'ops' (default) = the Operation View: available > 0 or partly done.
+   *  'queue' = every non-complete op (the printed machine queue). */
+  scope: z.enum(['ops', 'queue']).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+export type MachineLoadingQuery = z.infer<typeof machineLoadingQuerySchema>;
 export type MachineLoadingResponse = z.infer<typeof machineLoadingResponseSchema>;

@@ -4,6 +4,7 @@
 // Single row per company; admin-only writes.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const approvalConfigSchema = z.object({
   poApproval: z.boolean(),
@@ -47,8 +48,20 @@ export type ApprovalHistoryItem = z.infer<typeof approvalHistoryItemSchema>;
 
 export const approvalHistoryResponseSchema = z.object({
   items: z.array(approvalHistoryItemSchema),
+  /** Every entry matching search + sf (before limit/offset) — ADR-201 paging. */
+  total: z.number().int().nonnegative(),
 });
 export type ApprovalHistoryResponse = z.infer<typeof approvalHistoryResponseSchema>;
+
+// GET /approval-config/history (ADR-201): paged, searched and Sort & Filtered
+// on the server. No params → the latest 20, as before.
+export const approvalHistoryQuerySchema = z.object({
+  search: z.string().max(100).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(200).default(20),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ApprovalHistoryQuery = z.infer<typeof approvalHistoryQuerySchema>;
 
 // ─── Approvals inbox (ADR-190) ──────────────────────────────────────────────
 // GET /approvals/inbox — what is waiting for the CALLER to sign off, one list
@@ -92,3 +105,21 @@ export const approvalInboxResponseSchema = z.object({
   logEntry: z.array(approvalInboxRowSchema),
 });
 export type ApprovalInboxResponse = z.infer<typeof approvalInboxResponseSchema>;
+
+// ADR-201 — one PR / PO section of the inbox, a page at a time. Search and
+// Sort & Filter run on the server over every waiting document; `total` is the
+// whole matching set. The screen asks for 25; the max stays 200.
+export const approvalInboxListQuerySchema = z.object({
+  section: z.enum(['pr', 'po']),
+  search: z.string().trim().max(200).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(200),
+  offset: z.coerce.number().int().nonnegative().default(0),
+  sf: sfRawParamSchema,
+});
+export type ApprovalInboxListQuery = z.input<typeof approvalInboxListQuerySchema>;
+
+export const approvalInboxListResponseSchema = z.object({
+  items: z.array(approvalInboxRowSchema),
+  total: z.number().int().nonnegative(),
+});
+export type ApprovalInboxListResponse = z.infer<typeof approvalInboxListResponseSchema>;

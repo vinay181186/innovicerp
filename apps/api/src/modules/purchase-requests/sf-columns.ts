@@ -17,8 +17,13 @@ export function prSfColumns(orderedQty: SQL): SfColumnMap {
   return {
     prCode: { sql: sql`pr.code`, type: 'text' },
     prDate: { sql: sql`pr.pr_date`, type: 'date' },
-    // The cell renders itemCode ?? itemCodeText (live master, then the snapshot).
-    itemCode: { sql: sql`COALESCE(i.code, pr.item_code_text)`, type: 'text' },
+    // CODE/REV as the cell prints it: itemCodeWithRev(itemCode ?? itemCodeText,
+    // itemRevision) — the live master code, then the snapshot, then the
+    // customer's drawing revision (SO line, else the JW line) after a slash.
+    itemCode: {
+      sql: sql`(btrim(COALESCE(i.code, pr.item_code_text)) || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
+      type: 'text',
+    },
     itemName: { sql: sql`pr.item_name`, type: 'text' },
     // The cell renders vendorName ?? vendorCodeText; vendorName = COALESCE(v.name, vt.name).
     vendorName: { sql: sql`COALESCE(v.name, vt.name, pr.vendor_code_text)`, type: 'text' },

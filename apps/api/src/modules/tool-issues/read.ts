@@ -3,6 +3,8 @@
 
 import type {
   InstrumentReturnCondition,
+  ListToolHoldersQuery,
+  ListToolHoldersResponse,
   ListToolIssuesQuery,
   ListToolIssuesResponse,
   ToolHolderRow,
@@ -17,7 +19,7 @@ import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { roundQty } from '../../lib/stock-ledger';
 import { dateOut, tsOut } from '../instruments/common';
 import { ISSUE_SELECT, readIssue, requireCompany, todayIst, toListItem } from './common';
-import { TOOL_ISSUE_SF_COLUMNS } from './sf-columns';
+import { TOOL_HOLDER_SF_COLUMNS, TOOL_ISSUE_SF_COLUMNS } from './sf-columns';
 
 const OUT = sql`x.return_status IN ('issued', 'partial')`;
 
@@ -144,21 +146,39 @@ export async function getToolIssue(id: string, user: AuthContext): Promise<ToolI
   return withUserContext(user, (tx) => readToolIssueDetail(tx, companyId, id));
 }
 
-/** Who holds what: every open issue with something still out. */
-export async function listToolHolders(user: AuthContext): Promise<ToolHolderRow[]> {
+/** Who holds what: every open issue with something still out. Paged (ADR-201)
+ *  in holder order, so a page keeps its holder groups together; `total` uses
+ *  the same where; x.id ends the order so paging never repeats a row. */
+export async function listToolHolders(
+  input: ListToolHoldersQuery,
+  user: AuthContext,
+): Promise<ListToolHoldersResponse> {
   await requireAnyFormAccess(user, STORE_VIEW_FORMS);
   const companyId = requireCompany(user);
   const today = todayIst();
+  const sf = readSf(input.sf);
+  const sfFrag = sfWhere(TOOL_HOLDER_SF_COLUMNS, sf);
+  const orderBy = sfOrderBy(
+    TOOL_HOLDER_SF_COLUMNS,
+    sf,
+    sql`x.issued_to, x.expected_return_date NULLS LAST, x.code, x.id`,
+  );
   return withUserContext(user, async (tx) => {
+    const base = sql`(
+      ${ISSUE_SELECT}
+      WHERE ti.company_id = ${companyId}::uuid AND ti.deleted_at IS NULL
+    ) x`;
     const rows = (await tx.execute(sql`
-      SELECT x.* FROM (
-        ${ISSUE_SELECT}
-        WHERE ti.company_id = ${companyId}::uuid AND ti.deleted_at IS NULL
-      ) x
-      WHERE ${OUT} AND x.still_out_qty > 0
-      ORDER BY x.issued_to, x.expected_return_date NULLS LAST, x.code
+      SELECT x.* FROM ${base}
+      WHERE ${OUT} AND x.still_out_qty > 0 ${sfFrag}
+      ORDER BY ${orderBy}
+      LIMIT ${input.limit} OFFSET ${input.offset}
     `)) as unknown as Array<Record<string, unknown>>;
-    return rows.map((r) => {
+    const totals = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS total FROM ${base}
+      WHERE ${OUT} AND x.still_out_qty > 0 ${sfFrag}
+    `)) as unknown as Array<{ total: number }>;
+    const items = rows.map((r): ToolHolderRow => {
       const t = toListItem(r, today);
       return {
         holder: t.issuedTo,
@@ -174,5 +194,6 @@ export async function listToolHolders(user: AuthContext): Promise<ToolHolderRow[
         isOverdue: t.isOverdue,
       };
     });
+    return { items, total: Number(totals[0]?.total ?? 0) };
   });
 }

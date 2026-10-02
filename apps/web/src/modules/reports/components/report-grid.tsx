@@ -3,27 +3,28 @@
 // strip, then <DataTable tableKey="report-<slug>"> — one line per row, always
 // fits the width (text shrinks, then the rightmost unpinned columns move into
 // ▸), Columns ▾ saved per user per report, Comfortable / Compact, '#' first
-// and pinned, a pinned Total row — and the shared ListFooter pager under it
-// when the result runs past one page. Sorting and column filters run on the
-// loaded rows, BEFORE paging; the row count, the totals and the CSV export
-// follow the filtered + sorted set.
-import type { ReportColumn, ReportRow, ReportRowLink } from '@innovic/shared';
+// and pinned, a pinned Total row — and the shared ListFooter pager under it.
+//
+// ADR-201 (2026-10-02): 25 rows a page, and only that page is loaded. Sort,
+// column filters, the row count and the Total row are all worked out on the
+// SERVER over every row of the report (apps/api reports/grid.ts); this
+// component only shows the page it is handed and reports clicks back up.
+import type { ReportColumn, ReportRow, ReportRowLink, RunReportResponse } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { useMemo, useRef } from 'react';
 import { fmtDateTime } from '@/lib/date';
+import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
 import { DataTable } from '@/ui/data';
 import { TABLE_KEY_PREFIXES } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
-import { filterRows, nextSort, sortRows, type SortState } from '../lib/grid-model';
 import { plural } from '../lib/plural';
 import { ROW_NO_ID, buildReportColumns, formatTotals } from '../lib/report-columns';
-import { isNumericColumn, isSummable } from '../lib/report-format';
+import { isNumericColumn } from '../lib/report-format';
+import type { ReportGridState } from '../lib/use-report-grid';
 import { useVisibleColumnKeys } from '../lib/use-visible-columns';
 import { ReportColFilters } from './report-col-filters';
 import '../report-grid.css';
 
-/** Client-side page size (ERPNext pages its report view too). */
-export const PAGE_SIZE = 200;
 const NO_ROWS: ReportRow[] = [];
 /** Leaves the app header, the report header, the filter bar and the status
  *  line on screen, so the pinned Total row shows without a page scroll. */
@@ -32,89 +33,60 @@ const GRID_MAX_H = 'max(240px, calc(100vh - 360px))';
 export interface ReportGridProps {
   slug: string;
   columns: ReportColumn[];
-  rows: ReportRow[] | undefined;
+  /** The current page of the report (rows + server count / totals). */
+  data: RunReportResponse | undefined;
   rowLink: ReportRowLink | undefined;
   /** No result yet — first load for these filters. */
   loading: boolean;
   /** A (re)fetch is in flight; previous rows stay on screen. */
   fetching: boolean;
   errorText: string | null;
-  generatedAt: string | undefined;
-  /** Kept pointed at the current view (column-filtered + sorted, every page)
-   *  so the page's CSV export writes exactly what the grid shows. */
-  viewRowsRef: MutableRefObject<ReportRow[]>;
+  /** Page / sort / column filters — owned by the run page, sent to the server. */
+  grid: ReportGridState;
 }
 
 export function ReportGrid(props: ReportGridProps): React.JSX.Element {
-  const { slug, columns, rowLink, loading, fetching, errorText, generatedAt, viewRowsRef } = props;
-  const rows = props.rows ?? NO_ROWS;
+  const { slug, columns, data, rowLink, loading, fetching, errorText, grid } = props;
+  const rows = data?.rows ?? NO_ROWS;
   const navigate = useNavigate();
 
-  const [sort, setSort] = useState<SortState | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-  const [terms, setTerms] = useState<Record<string, string>>({});
-  const [page, setPage] = useState(1);
-
-  // A new result (filters changed / refresh) starts at page 1.
-  useEffect(() => setPage(1), [rows]);
-
+  // The server judges number columns over EVERY row; an older API without
+  // the field falls back to the page's rows.
+  const serverNumeric = data?.numericKeys;
   const numericKeys = useMemo(
-    () => new Set(columns.filter((c) => isNumericColumn(c, rows)).map((c) => c.key)),
-    [columns, rows],
+    () =>
+      new Set(serverNumeric ?? columns.filter((c) => isNumericColumn(c, rows)).map((c) => c.key)),
+    [serverNumeric, columns, rows],
   );
-  const filtered = useMemo(
-    () => (showFilters ? filterRows(rows, columns, terms, numericKeys) : rows),
-    [rows, columns, terms, numericKeys, showFilters],
-  );
-  const sorted = useMemo(
-    () => sortRows(filtered, sort, numericKeys),
-    [filtered, sort, numericKeys],
-  );
-  useEffect(() => {
-    viewRowsRef.current = sorted;
-  }, [sorted, viewRowsRef]);
 
-  const totals = useMemo(() => {
-    const sums = new Map<string, number>();
-    for (const c of columns) {
-      if (!numericKeys.has(c.key) || !isSummable(c, filtered)) continue;
-      sums.set(
-        c.key,
-        filtered.reduce((s, r) => s + (r[c.key] == null ? 0 : Number(r[c.key])), 0),
-      );
-    }
-    return formatTotals(columns, sums);
-  }, [columns, filtered, numericKeys]);
+  // Total row: the server's sums over ALL matching rows, never the page.
+  const serverTotals = data?.totals;
+  const totals = useMemo(
+    () => formatTotals(columns, new Map(Object.entries(serverTotals ?? {}))),
+    [columns, serverTotals],
+  );
 
-  // A stable key per record, so an open ▸ stays on the same record after a
-  // sort / filter / page change: the row's document id when the report links
-  // rows and that id is unique in this result, else an id given to each row
-  // object as the rows arrive (the objects survive sort and filter).
+  const total = data?.rowCount ?? 0;
+  const offset = data?.offset ?? 0;
+  useClampPage(grid.page, data ? total : undefined, grid.setPage);
+
+  // A stable key per record, so an open ▸ stays on the same record across a
+  // refetch: the row's document id when the report links rows and that id is
+  // unique on this page, else its position in the whole result.
   const rowKeyOf = useMemo(() => {
-    const ids = new WeakMap<ReportRow, number>();
-    rows.forEach((r, i) => ids.set(r, i));
     const idKey = rowLink?.idKey;
     const docIds = idKey ? rows.map((r) => r[idKey]) : [];
     const useDocId =
       idKey !== undefined &&
       docIds.every((v) => v != null && v !== '') &&
       new Set(docIds.map(String)).size === rows.length;
-    return (row: ReportRow, i: number): string | number => {
-      if (useDocId && idKey) return `d:${String(row[idKey])}`;
-      const id = ids.get(row);
-      return id === undefined ? `p:${i}` : id;
-    };
-  }, [rows, rowLink]);
-
-  const total = sorted.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const safePage = Math.min(page, pages);
-  const start = (safePage - 1) * PAGE_SIZE;
-  const pageRows = useMemo(() => sorted.slice(start, start + PAGE_SIZE), [sorted, start]);
+    return (row: ReportRow, i: number): string | number =>
+      useDocId && idKey ? `d:${String(row[idKey])}` : offset + i;
+  }, [rows, rowLink, offset]);
 
   const tableColumns = useMemo(
-    () => buildReportColumns({ columns, numericKeys, rowLink, firstRowNo: start + 1, totals }),
-    [columns, numericKeys, rowLink, start, totals],
+    () => buildReportColumns({ columns, numericKeys, rowLink, firstRowNo: offset + 1, totals }),
+    [columns, numericKeys, rowLink, offset, totals],
   );
 
   // The engine's on-screen column order, read back off its header — lines the
@@ -122,9 +94,10 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null);
   const visibleKeys = useVisibleColumnKeys(rootRef);
 
-  const filtersOn = showFilters && Object.values(terms).some((t) => t.trim() !== '');
+  const filtersOn = grid.showFilters && Object.values(grid.terms).some((t) => t.trim() !== '');
   const emptyText = filtersOn ? 'No rows match the column filters' : 'No data for these filters';
-  const updated = generatedAt ? fmtDateTime(generatedAt).split(' ')[1] : undefined;
+  const updated = data?.generatedAt ? fmtDateTime(data.generatedAt).split(' ')[1] : undefined;
+  const unfiltered = data?.unfilteredCount;
 
   const footer =
     totals.size > 0 && visibleKeys.length > 0 ? (
@@ -160,35 +133,29 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
       <div className="rpt-status">
         <span>
           {loading ? '… rows' : plural(total, 'row')}
-          {filtersOn && !loading ? (
-            <span className="rpt-muted"> (of {rows.length.toLocaleString('en-IN')})</span>
+          {filtersOn && !loading && unfiltered !== undefined && unfiltered !== total ? (
+            <span className="rpt-muted"> (of {unfiltered.toLocaleString('en-IN')})</span>
           ) : null}
         </span>
         {updated ? <span className="rpt-muted">Updated {updated}</span> : null}
         <div className="rpt-status-right">
           <button
             type="button"
-            className={`btn btn-ghost btn-sm rpt-toggle${showFilters ? ' is-on' : ''}`}
-            aria-pressed={showFilters}
-            onClick={() => {
-              setShowFilters((v) => !v);
-              setPage(1);
-            }}
+            className={`btn btn-ghost btn-sm rpt-toggle${grid.showFilters ? ' is-on' : ''}`}
+            aria-pressed={grid.showFilters}
+            onClick={grid.toggleFilters}
           >
             Column filters
           </button>
         </div>
       </div>
-      {showFilters ? (
+      {grid.showFilters ? (
         <ReportColFilters
           columns={columns}
           visibleKeys={visibleKeys}
           numericKeys={numericKeys}
-          terms={terms}
-          onFilter={(key, value) => {
-            setTerms((cur) => ({ ...cur, [key]: value }));
-            setPage(1);
-          }}
+          terms={grid.terms}
+          onFilter={grid.setTerm}
         />
       ) : null}
       <div className="rpt-grid-wrap" ref={rootRef}>
@@ -196,32 +163,30 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
         <DataTable
           tableKey={reportTableKey(slug)}
           columns={tableColumns}
-          rows={errorText ? NO_ROWS : pageRows}
-          // Reports keep their own filter strip, totals and count for now (ADR-200 S4).
+          rows={errorText ? NO_ROWS : rows}
+          // Reports keep their own filter strip, totals and count (ADR-200 S4);
+          // all three run on the server (ADR-201).
           sortFilter={false}
           rowKey={rowKeyOf}
           defaultPinned={defaultPinned}
           loading={loading && !errorText}
           emptyText={emptyText}
           empty={errorText ? <span className="rpt-error">{errorText}</span> : undefined}
-          sortBy={sort?.key}
-          sortDir={sort?.dir}
-          onSort={(key) => {
-            setSort((cur) => nextSort(cur, key));
-            setPage(1);
-          }}
+          sortBy={grid.sort?.key}
+          sortDir={grid.sort?.dir}
+          onSort={grid.toggleSort}
           onRowClick={rowLink ? openRow : undefined}
           footer={footer}
           maxHeight={GRID_MAX_H}
           wrapClassName="rpt-table"
         />
       </div>
-      {pages > 1 ? (
+      {total > 0 ? (
         <ListFooter
           total={total}
-          page={safePage}
-          pageSize={PAGE_SIZE}
-          onPage={setPage}
+          page={grid.page}
+          pageSize={LIST_PAGE_SIZE}
+          onPage={grid.setPage}
           noun="row"
         />
       ) : null}

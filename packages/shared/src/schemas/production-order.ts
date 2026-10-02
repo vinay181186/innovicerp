@@ -19,6 +19,7 @@ import {
   type ProductionOrderStatus,
 } from '../enums/production-order-status';
 import { JC_COMPUTED_STATUSES, type JcComputedStatus } from '../enums/jc-computed-status';
+import { sfRawParamSchema } from './list-query';
 
 export const productionOrderStatusSchema: z.ZodType<ProductionOrderStatus> =
   z.enum(PRODUCTION_ORDER_STATUSES);
@@ -169,6 +170,8 @@ export const listProductionOrdersQuerySchema = z.object({
   status: productionOrderStatusSchema.optional(),
   planId: z.string().uuid().optional(),
   jobCardId: z.string().uuid().optional(),
+  /** Sort & Filter (ADR-200) — the screen's column sort + filters. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().min(1).max(500).optional().default(100),
   offset: z.coerce.number().int().min(0).optional().default(0),
 });

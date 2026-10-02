@@ -15,12 +15,20 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 import { daysText, dispColor, dispLabel, respColor } from '../lib/qc-format';
 
+// Server Sort & Filter tick list for QC Result: the stored result code + the
+// word the cell shows (dispLabel).
+const QC_RESULT_OPTIONS = (['Accepted', 'Partial Accept', 'Rejected'] as const).map((d) => ({
+  value: d,
+  label: dispLabel(d),
+}));
+
 export function incomingQcCompletedColumns(): DataTableColumn<IncomingQcCompletedRow>[] {
   return [
     {
       // First column — pinned by the table standard (ADR-199).
       id: 'grn_code',
       header: 'GRN No.',
+      sortFilterField: 'grnNo',
       nowrap: true,
       className: 'td-code cyan',
       render: (r) => r.grnNo,
@@ -28,6 +36,7 @@ export function incomingQcCompletedColumns(): DataTableColumn<IncomingQcComplete
     {
       id: 'item_code',
       header: 'Item Code',
+      sortFilterField: 'itemCode',
       nowrap: true,
       className: 'td-code',
       render: (r) => (
@@ -37,6 +46,8 @@ export function incomingQcCompletedColumns(): DataTableColumn<IncomingQcComplete
     {
       id: 'accepted',
       header: 'Accepted',
+      sortFilterField: 'acceptedQty',
+      filterType: 'num',
       align: 'right',
       nowrap: true,
       headColor: 'var(--green)',
@@ -49,6 +60,8 @@ export function incomingQcCompletedColumns(): DataTableColumn<IncomingQcComplete
     {
       id: 'rejected',
       header: 'Rejected',
+      sortFilterField: 'rejectedQty',
+      filterType: 'num',
       align: 'right',
       nowrap: true,
       headColor: 'var(--red)',
@@ -62,6 +75,8 @@ export function incomingQcCompletedColumns(): DataTableColumn<IncomingQcComplete
       id: 'qc_result',
       kind: 'badge',
       header: 'QC Result',
+      sortFilterField: 'disposition',
+      filterOptions: QC_RESULT_OPTIONS,
       nowrap: true,
       filterValue: (r) => dispLabel(r.disposition),
       render: (r) => (
@@ -74,6 +89,7 @@ export function incomingQcCompletedColumns(): DataTableColumn<IncomingQcComplete
       id: 'qc_date',
       kind: 'date',
       header: 'QC Date',
+      sortFilterField: 'qcDate',
       className: 'mono',
       nowrap: true,
       headColor: 'var(--green2)',

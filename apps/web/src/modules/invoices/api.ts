@@ -4,6 +4,7 @@ import type {
   FinanceSoOption,
   InvoiceDetail,
   InvoiceableSoResponse,
+  ListInvoicesQuery,
   ListInvoicesResponse,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,7 +14,8 @@ import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const invoiceKeys = {
   all: ['invoices'] as const,
-  list: () => [...invoiceKeys.all, 'list'] as const,
+  list: (q?: ListInvoicesQuery) =>
+    q ? ([...invoiceKeys.all, 'list', q] as const) : ([...invoiceKeys.all, 'list'] as const),
   detail: (id: string) => [...invoiceKeys.all, 'detail', id] as const,
   soOptions: () => [...invoiceKeys.all, 'so-options'] as const,
   invoiceable: (soId: string) => [...invoiceKeys.all, 'invoiceable', soId] as const,
@@ -28,11 +30,26 @@ export function useNextInvoiceCode() {
   });
 }
 
-export function useInvoiceList() {
+function invoiceListQs(q: ListInvoicesQuery): string {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  if (q.offset) params.set('offset', String(q.offset));
+  if (q.sf) params.set('sf', q.sf);
+  return params.toString();
+}
+
+/** One page of SO invoices (ADR-201) — search / sf / summary run on the server. */
+export function fetchInvoiceList(q: ListInvoicesQuery): Promise<ListInvoicesResponse> {
+  return apiFetch<ListInvoicesResponse>(`/invoices?${invoiceListQs(q)}`);
+}
+
+export function useInvoiceList(q: ListInvoicesQuery) {
   return useQuery<ListInvoicesResponse>({
-    queryKey: invoiceKeys.list(),
-    queryFn: () => apiFetch<ListInvoicesResponse>('/invoices'),
+    queryKey: invoiceKeys.list(q),
+    queryFn: () => fetchInvoiceList(q),
     staleTime: 15_000,
+    placeholderData: (prev) => prev,
   });
 }
 

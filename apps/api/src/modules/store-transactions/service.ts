@@ -9,7 +9,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
-import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type {
   ItemBalance,
   ListStoreTransactionsQuery,
@@ -27,14 +27,6 @@ const requireCompany = (user: AuthContext): string => {
 function dateLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v);
-}
-
-/** Escape the ILIKE metacharacters in a user's search term; pair with
- *  ESCAPE '\\'. Without it a "%" or "_" typed in the search box is a
- *  wildcard, so "%" matches every row. A local copy of the job-cards helper:
- *  each list owns its own search. */
-function escapeLikeTerm(raw: string): string {
-  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 function tsLike(v: unknown): string {
@@ -57,7 +49,7 @@ export function buildStoreTxnWhere(companyId: string, query: ListStoreTransactio
     // Search matches the item too: i.code/i.name cover id-resolved rows
     // (grn_qc, dispatch, … which leave item_code_text null), st.item_code_text
     // covers free-text rows.
-    const term = `%${escapeLikeTerm(query.search)}%`;
+    const term = `%${likeEscape(query.search)}%`;
     conditions.push(
       sql`(st.source_ref ILIKE ${term} ESCAPE '\\' OR st.remarks ILIKE ${term} ESCAPE '\\'
            OR i.code ILIKE ${term} ESCAPE '\\' OR i.name ILIKE ${term} ESCAPE '\\'
@@ -95,7 +87,7 @@ export async function listStoreTransactions(
     const orderBy = sfOrderBy(
       STOCK_LEDGER_SF_COLUMNS,
       sf,
-      sql`st.txn_date DESC, st.created_at DESC`,
+      sql`st.txn_date DESC, st.created_at DESC, st.id DESC`,
     );
 
     const result = await tx.execute(sql`

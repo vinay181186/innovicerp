@@ -1,29 +1,38 @@
 // Daily Production Report — mirrors legacy renderDailyReport (HTML L10823).
+//
+// 25 rows per page (ADR-201): the server sends one page of the day's log
+// entries, grouped by machine inside the page; the KPI strip and every machine
+// group's Completed total are whole-day figures from the server. Both prints
+// fetch the WHOLE day (fetchFullDailyReport), never just the page.
 
 import type { DailyReportResponse, DailyReportRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate, todayIst } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter } from '@/ui/layout';
 import { DataTable, StatStrip } from '@/ui/data';
 import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { useMachinesList } from '../../machines/api';
 import { useMyCompany } from '../../settings/api';
-import { useDailyReport } from '../api';
-import { DAILY_REPORT_HIDDEN, dailyReportColumns } from '../components/daily-report-columns';
+import { dailyGroupKey, fetchFullDailyReport, useDailyReport } from '../api';
+import { DAILY_REPORT_HIDDEN, dailyReportColumnsFor } from '../components/daily-report-columns';
 import { printDailyReport } from '../lib/print-daily-report';
 
 const searchSchema = z.object({
   date: z.string().optional(),
   machineId: z.string().optional(),
+  page: pageSearchParam,
 });
 
 export const dailyReportRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'daily-report',
-  validateSearch: (search) => searchSchema.parse(search),
+  validateSearch: searchSchema,
   component: DailyReportPage,
 });
 
@@ -43,7 +52,32 @@ function DailyReportPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useDailyReport({
     date,
     machineId: machineId || undefined,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(search.page),
   });
+  const total = data?.total;
+
+  const setPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  useClampPage(search.page, total, setPage);
+
+  // Prints read the WHOLE day, fetched page by page.
+  const [printing, setPrinting] = useState(false);
+  const loadFullDay = async (): Promise<DailyReportResponse | null> => {
+    setPrinting(true);
+    try {
+      return await fetchFullDailyReport({ date, machineId: machineId || undefined });
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not load the report to print.');
+      return null;
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   const machineLabel = machineId
     ? (() => {
@@ -52,9 +86,10 @@ function DailyReportPage(): React.JSX.Element {
       })()
     : 'All Machines';
 
-  const onPrint = (): void => {
-    if (!data) return;
-    if (!printDailyReport({ report: data, machineLabel, company })) {
+  const onPrint = async (): Promise<void> => {
+    const full = await loadFullDay();
+    if (!full) return;
+    if (!printDailyReport({ report: full, machineLabel, company })) {
       window.alert('Allow popups to print.');
     }
   };
@@ -62,10 +97,15 @@ function DailyReportPage(): React.JSX.Element {
   // Per-machine 🖨 (legacy L10882). Legacy re-derives the report from the
   // machine's logs alone, so the summary tiles count that machine only — not
   // the page-level totals.
-  const onPrintMachine = (g: DailyReportResponse['groups'][number]): void => {
-    if (!data) return;
+  const onPrintMachine = async (
+    pageGroup: DailyReportResponse['groups'][number],
+  ): Promise<void> => {
+    const full = await loadFullDay();
+    if (!full) return;
+    const g = full.groups.find((x) => dailyGroupKey(x) === dailyGroupKey(pageGroup));
+    if (!g) return;
     const scoped: DailyReportResponse = {
-      ...data,
+      ...full,
       groups: [g],
       summary: {
         totalPieces: g.totalQty,
@@ -80,10 +120,10 @@ function DailyReportPage(): React.JSX.Element {
   };
 
   const setDate = (next: string): void => {
-    void navigate({ search: (prev) => ({ ...prev, date: next || undefined }) });
+    void navigate({ search: (prev) => ({ ...prev, date: next || undefined, page: 1 }) });
   };
   const setMachine = (next: string): void => {
-    void navigate({ search: (prev) => ({ ...prev, machineId: next || undefined }) });
+    void navigate({ search: (prev) => ({ ...prev, machineId: next || undefined, page: 1 }) });
   };
 
   const summary = data?.summary ?? {
@@ -100,8 +140,8 @@ function DailyReportPage(): React.JSX.Element {
         <button
           type="button"
           className="btn btn-ghost"
-          onClick={onPrint}
-          disabled={!data || data.groups.length === 0}
+          onClick={() => void onPrint()}
+          disabled={!data || data.groups.length === 0 || printing}
           title="Print daily production report"
         >
           🖨 Print Full Report
@@ -216,20 +256,21 @@ function DailyReportPage(): React.JSX.Element {
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => onPrintMachine(g)}
+                  onClick={() => void onPrintMachine(g)}
+                  disabled={printing}
                   title={`Print report for ${g.machineCode}`}
                 >
                   🖨
                 </button>
               </div>
             </div>
-            {/* One fit table per machine group, each with its own total. The
-                Completed column's engine `total` (sum) replaces the old
-                hand-written <tfoot>, so the total follows the visible columns.
-                POL, Item Name and Remarks live in each row's ▸ detail. */}
+            {/* One fit table per machine group on this page. The Completed
+                total is the group's WHOLE-day total from the server (a page may
+                hold only part of a machine's rows). POL, Item Name and Remarks
+                live in each row's ▸ detail. */}
             <DataTable<DailyReportRow>
               tableKey={TABLE_KEYS.dailyReport}
-              columns={dailyReportColumns}
+              columns={dailyReportColumnsFor(g.totalQty)}
               rows={g.rows}
               rowKey={(r) => r.logId}
               defaultHidden={DAILY_REPORT_HIDDEN}
@@ -239,6 +280,14 @@ function DailyReportPage(): React.JSX.Element {
           </div>
         ))
       )}
+      <ListFooter
+        total={total ?? 0}
+        noun="log entry"
+        nounPlural="log entries"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={setPage}
+      />
     </ReportShell>
   );
 }

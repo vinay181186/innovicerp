@@ -49,6 +49,22 @@ const TYPE_ICON: Record<PlanType, string> = {
   assembly: '🔧',
 };
 
+// Sort & Filter (server mode) tick lists — stored code + the label shown.
+const TYPE_OPTIONS = (Object.keys(TYPE_LABEL) as PlanType[]).map((value) => ({
+  value,
+  label: TYPE_LABEL[value],
+}));
+// The effective status the row shows (ADR-185): stored labels for old plans,
+// plus the two route-card states that have no stored twin.
+const STATUS_OPTIONS = [
+  ...(Object.keys(STATUS_BADGE) as PlanStatus[]).map((value) => ({
+    value,
+    label: STATUS_BADGE[value].label,
+  })),
+  { value: 'route_card_pending', label: DERIVED_LABEL.route_card_pending },
+  { value: 'gen_production_order', label: DERIVED_LABEL.gen_production_order },
+];
+
 /** The status badge the row shows: derived for route-card plans, the stored
  *  label for old (ops_source 'plan') plans. */
 function planBadge(row: PlanRow): { cls: string; label: string } {
@@ -80,6 +96,7 @@ export function plansListColumns(): DataTableColumn<PlanRow>[] {
   return [
     {
       id: 'plan_no',
+      sortFilterField: 'code',
       header: 'Plan No.',
       nowrap: true,
       // The row's ▸ (fit engine) opens the detail reveal; the Plan No. link
@@ -99,6 +116,7 @@ export function plansListColumns(): DataTableColumn<PlanRow>[] {
     },
     {
       id: 'plan_date',
+      sortFilterField: 'planDate',
       kind: 'date',
       header: 'Plan Date',
       className: 'mono text2',
@@ -107,6 +125,8 @@ export function plansListColumns(): DataTableColumn<PlanRow>[] {
     },
     {
       id: 'plan_type',
+      sortFilterField: 'planType',
+      filterOptions: TYPE_OPTIONS,
       kind: 'badge',
       header: 'Plan Type',
       nowrap: true,
@@ -118,6 +138,7 @@ export function plansListColumns(): DataTableColumn<PlanRow>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       header: 'Item Code',
       className: 'mono fw-700',
       nowrap: true,
@@ -128,6 +149,7 @@ export function plansListColumns(): DataTableColumn<PlanRow>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -137,6 +159,8 @@ export function plansListColumns(): DataTableColumn<PlanRow>[] {
     },
     {
       id: 'plan_qty',
+      sortFilterField: 'planQty',
+      filterType: 'num',
       header: 'Plan Qty',
       align: 'right',
       className: 'mono fw-700',
@@ -145,6 +169,8 @@ export function plansListColumns(): DataTableColumn<PlanRow>[] {
     },
     {
       id: 'pending_qty',
+      sortFilterField: 'pendingQty',
+      filterType: 'num',
       header: 'Pending',
       align: 'right',
       className: 'mono fw-700',
@@ -163,6 +189,8 @@ export function plansListColumns(): DataTableColumn<PlanRow>[] {
     },
     {
       id: 'plan_status',
+      sortFilterField: 'status',
+      filterOptions: STATUS_OPTIONS,
       kind: 'badge',
       header: 'Plan Status',
       nowrap: true,

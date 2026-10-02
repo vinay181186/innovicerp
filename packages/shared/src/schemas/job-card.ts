@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import { jcOpPoLinkViewSchema } from './jc-op-po-line';
 import { sfRawParamSchema } from './list-query';
+import { queryBoolean } from '../lib/query-boolean';
 import { JC_COMPUTED_STATUSES } from '../enums/jc-computed-status';
 import { JC_PRIORITIES } from '../enums/jc-priority';
 import { machineSplitSchema } from './machine-split';
@@ -207,6 +208,10 @@ export const listJobCardsQuerySchema = z.object({
    *  source SO/JW code, and source customerName. */
   search: z.string().min(1).max(100).optional(),
   status: jcComputedStatusSchema.optional(),
+  /** "Overdue" in the JC Status dropdown (ADR-201) — not a stored status: the
+   *  due date (the one the list shows) is before today (IST) and the card is
+   *  not complete / closed. */
+  overdue: queryBoolean().optional(),
   /** Match any jc_op on this JC that uses this machine. */
   machineId: z.string().uuid().optional(),
   /** Match any op_log on this JC's ops that was logged by this operator. */
@@ -231,6 +236,23 @@ export interface ListJobCardsResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+/** GET /job-cards/status-counts (ADR-201): the JC Status dropdown counts over
+ *  EVERY card matching the list's other filters (search, machine, operator,
+ *  dates, Sort & Filter without its status field) — never the loaded page. */
+export const jcStatusCountsQuerySchema = listJobCardsQuerySchema.omit({
+  status: true,
+  overdue: true,
+  limit: true,
+  offset: true,
+});
+export type JcStatusCountsQuery = z.infer<typeof jcStatusCountsQuerySchema>;
+
+export interface JcStatusCountsResponse {
+  all: number;
+  byStatus: Record<z.infer<typeof jcComputedStatusSchema>, number>;
+  overdue: number;
 }
 
 // ─── Write shapes (parity: addJC L6020 / editJC L6076 / jcModalBody L5943) ──

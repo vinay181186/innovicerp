@@ -2,6 +2,12 @@
 // reports (so-line-analysis, receivable-ageing, …). Nothing here touches the
 // database; each report still writes its own SQL.
 
+/** Most rows one report run reads (ADR-201). The grid pages these 25 at a
+ *  time on the server and totals them all, so the old per-report caps
+ *  (500 / 1,000 / 2,000 — sized for sending every row to the browser) are
+ *  lifted to the export cap; the runner says so when a result hits it. */
+export const REPORT_ROW_CAP = 10_000;
+
 /** A filter value that is a real 'YYYY-MM-DD' date, else null — so a mangled
  *  URL value is ignored instead of failing the `::date` cast with a 500. */
 export function isoDateFilter(v: string | undefined): string | null {

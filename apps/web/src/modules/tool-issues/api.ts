@@ -3,13 +3,14 @@ import type {
   CancelToolIssueInput,
   CreateToolIssueInput,
   DecideToolWriteoffInput,
+  ListToolHoldersQuery,
+  ListToolHoldersResponse,
   ListToolIssuesQuery,
   ListToolIssuesResponse,
   ListToolWriteoffsQuery,
   ListToolWriteoffsResponse,
   RecordToolReturnInput,
   ReturnInstrumentsInput,
-  ToolHolderRow,
   ToolIssueDetail,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -29,9 +30,17 @@ export const toolIssuesKeys = {
       q.offset,
     ] as const,
   detail: (id: string) => [...toolIssuesKeys.all, 'detail', id] as const,
-  holders: () => [...toolIssuesKeys.all, 'holders'] as const,
+  holders: (q: ListToolHoldersQuery) =>
+    [...toolIssuesKeys.all, 'holders', q.sf ?? null, q.limit, q.offset] as const,
   writeoffs: (q: ListToolWriteoffsQuery) =>
-    [...toolIssuesKeys.all, 'writeoffs', q.status ?? null, q.limit, q.offset] as const,
+    [
+      ...toolIssuesKeys.all,
+      'writeoffs',
+      q.status ?? null,
+      q.sf ?? null,
+      q.limit,
+      q.offset,
+    ] as const,
 };
 
 function buildSearch(q: ListToolIssuesQuery): string {
@@ -61,11 +70,19 @@ export function useToolIssue(id: string | null) {
   });
 }
 
-export function useToolHolders(enabled: boolean) {
-  return useQuery<ToolHolderRow[]>({
-    queryKey: toolIssuesKeys.holders(),
-    queryFn: () => apiFetch<ToolHolderRow[]>('/tool-issues/holders'),
+/** Who holds what — one page (ADR-201) + the total still out. */
+export function useToolHolders(query: ListToolHoldersQuery, enabled: boolean) {
+  return useQuery<ListToolHoldersResponse>({
+    queryKey: toolIssuesKeys.holders(query),
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (query.sf) p.set('sf', query.sf);
+      p.set('limit', String(query.limit));
+      p.set('offset', String(query.offset));
+      return apiFetch<ListToolHoldersResponse>(`/tool-issues/holders?${p.toString()}`);
+    },
     enabled,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -75,11 +92,13 @@ export function useToolWriteoffs(query: ListToolWriteoffsQuery, enabled: boolean
     queryFn: () => {
       const p = new URLSearchParams();
       if (query.status) p.set('status', query.status);
+      if (query.sf) p.set('sf', query.sf);
       p.set('limit', String(query.limit));
       p.set('offset', String(query.offset));
       return apiFetch<ListToolWriteoffsResponse>(`/tool-writeoffs?${p.toString()}`);
     },
     enabled,
+    placeholderData: (prev) => prev,
   });
 }
 

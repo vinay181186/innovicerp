@@ -230,43 +230,9 @@ export async function listDeliveryChallans(
         COALESCE(line_agg.total_qty, 0)::text AS "totalQty"
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
-      LEFT JOIN public.purchase_orders po
-        ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
-      LEFT JOIN public.nc_register nc ON nc.id = dc.nc_id AND nc.deleted_at IS NULL
-      LEFT JOIN public.job_cards njc ON njc.id = dc.job_card_id AND njc.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines njc_jwl
-        ON njc_jwl.id = njc.source_jw_line_id AND njc_jwl.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = dc.sales_order_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so
-        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      -- OSP/vendor DCs carry only purchase_order_id (no sales_order_line_id),
-      -- so resolve the SO through the PO's lines' source_so_line_id as a fallback.
-      LEFT JOIN LATERAL (
-        SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code,
-          -- One drawing revision, or none at all. The SO code beside it is an
-          -- aggregate over every line of the PO, so pairing "IN-SO-11, IN-SO-12"
-          -- with "A, B" would leave the reader to guess which belongs to which.
-          -- A revision is emitted only when all of the PO's SO lines agree on
-          -- one; otherwise NULL, which prints as no revision rather than as a
-          -- guess. ::text for the same pre-0119 reason as everywhere else.
-          CASE WHEN COUNT(DISTINCT sol2.revision) = 1
-               THEN MIN(sol2.revision)::text END AS so_revision
-        FROM public.purchase_order_lines pol
-        JOIN public.sales_order_lines sol2
-          ON sol2.id = pol.source_so_line_id AND sol2.deleted_at IS NULL
-        JOIN public.sales_orders so2
-          ON so2.id = sol2.sales_order_id AND so2.deleted_at IS NULL
-        WHERE pol.purchase_order_id = dc.purchase_order_id
-          AND pol.deleted_at IS NULL
-      ) po_so ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT
-          COUNT(*) AS line_count,
-          COALESCE(SUM(qty), 0) AS total_qty
-        FROM public.delivery_challan_lines dcl
-        WHERE dcl.delivery_challan_id = dc.id AND dcl.deleted_at IS NULL
-      ) line_agg ON TRUE
+      -- PO / NC / job card / SO (direct, else through the PO's lines) and the
+      -- line totals: one copy, shared with the count and summary (sf-columns.ts).
+      ${DC_SF_JOINS}
       WHERE dc.company_id = ${companyId}::uuid
         AND dc.deleted_at IS NULL
         ${searchFrag}

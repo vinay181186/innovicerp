@@ -6,7 +6,9 @@
 // Extracted from capa/routes/list.tsx so the same screen can render both as its
 // own route AND as the "🛡 CAPA" tab on NC Register (screen-merge audit). All
 // state here is local — CAPA has no URL-driven search params — so the view is
-// safe to mount inside another route. Pass `title` when it IS the page.
+// safe to mount inside another route (the page number is component state).
+// ADR-201: 25 rows a page; search, Sort & Filter, the counter strip and the
+// overdue count all come from the server over EVERY CAPA. Pass `title` when it IS the page.
 // `initialSearch` is a one-time seed for the search box (Global Search deep
 // link via the host's ?search); typing afterwards stays local.
 //
@@ -17,11 +19,13 @@ import { type CapaRecord } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fmtDate } from '@/lib/date';
-import { matchesSearchTerm } from '@/components/shared/search-match';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { useCapaList } from '../api';
@@ -41,7 +45,27 @@ export function CapaView(props: {
    *  used right after "Create CAPA" on an NC so the user lands on the work. */
   openForEdit?: boolean | undefined;
 }): React.JSX.Element {
-  const { data, isLoading, isFetching, isError, error } = useCapaList();
+  const [term, setTerm] = useState(() => props.initialSearch ?? '');
+  const [page, setPage] = useState(1);
+  // The search box goes to the server 300 ms after typing stops → page 1.
+  const [search, setSearch] = useState(() => normalizeSearchTerm(props.initialSearch ?? ''));
+  useEffect(() => {
+    const next = normalizeSearchTerm(term);
+    if (next === search) return;
+    const id = window.setTimeout(() => {
+      setSearch(next);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [term, search]);
+  const sf = useServerSortFilter(TABLE_KEYS.capaList, () => setPage(1));
+  const { data, isLoading, isFetching, isError, error } = useCapaList({
+    search: search || undefined,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
+  });
+  useClampPage(page, data?.total, setPage);
   const { data: eff } = useMyAccess();
   // Tier-driven, per department (QC), on the CAPA form key — `capa_create` was
   // a registered key nothing consulted, so this screen ran on the global role
@@ -51,7 +75,6 @@ export function CapaView(props: {
   // (root cause → verification → closure) rewrites a saved record → edit.
   const canCreate = perms.entry;
   const canEdit = perms.edit;
-  const [term, setTerm] = useState(() => props.initialSearch ?? '');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   const [assignCapa, setAssignCapa] = useState<CapaRecord | null>(null);
   // The fit table's ▸ is the row's one expand control (CAPA Date + Root Cause).
@@ -74,33 +97,10 @@ export function CapaView(props: {
     autoOpened.current = true;
     if (hit) setModal({ kind: 'edit', capa: hit, readOnly: !props.openForEdit });
   }, [items, isFetching, props.initialSearch, props.openForEdit]);
-  const overdue = items.filter((c) => c.overdue);
-
-  // Search across every column the user can see — CAPA No., Type, NC No.,
-  // Problem, Responsible, Target and CAPA Status — plus the two facts in the ▸
-  // expand (CAPA Date, Root Cause). Whole list held in the browser (masters
-  // scroll, they do not paginate), so matching is client-side.
-  const filtered = useMemo(
-    () =>
-      items.filter((c) =>
-        matchesSearchTerm(
-          [
-            c.code,
-            c.type,
-            c.ncRefs.join(' '),
-            c.problem,
-            c.responsible,
-            fmtDate(c.targetDate),
-            c.status,
-            fmtDate(c.capaDate),
-            c.rootCause,
-            c.jcNo,
-          ],
-          term,
-        ),
-      ),
-    [items, term],
-  );
+  // Overdue = Open / In Progress past target, counted by the server over ALL
+  // CAPAs (not the 25 on this page).
+  const overdueCount = counters?.overdue ?? 0;
+  const total = data?.total ?? 0;
 
   const toggleExpand = (id: string): void =>
     setExpandedIds((prev) => {
@@ -115,12 +115,17 @@ export function CapaView(props: {
       <ListHeader
         title={props.title ?? 'CAPA'}
         icon="🛡"
-        count={data ? filtered.length : undefined}
+        count={data ? total : undefined}
         noun="CAPA"
         search={term}
         onSearch={setTerm}
         searchPlaceholder="Search CAPA no., type, NC no., problem, responsible, status…"
         updating={isFetching && !isLoading}
+        onClearFilters={() => {
+          sf.clearFilters();
+          setTerm('');
+        }}
+        filtersActive={sf.filtering || term !== ''}
         primary={
           canCreate ? (
             <button
@@ -177,7 +182,7 @@ export function CapaView(props: {
         </div>
       ) : (
         <>
-          {overdue.length > 0 ? (
+          {overdueCount > 0 ? (
             <div
               style={{
                 padding: '10px 14px',
@@ -192,7 +197,7 @@ export function CapaView(props: {
               }}
             >
               <span style={{ fontSize: 16 }}>⚠️</span>
-              <b style={{ color: 'var(--amber2)' }}>{overdue.length} CAPAs overdue</b>
+              <b style={{ color: 'var(--amber2)' }}>{overdueCount} CAPAs overdue</b>
             </div>
           ) : null}
 
@@ -200,10 +205,10 @@ export function CapaView(props: {
             <DataTable<CapaRecord>
               tableKey={TABLE_KEYS.capaList}
               columns={columns}
-              rows={filtered}
-              sortFilter={false}
+              rows={items}
+              sortFilterServer={sf}
               rowKey={(c) => c.id}
-              empty={term.trim() ? 'No CAPAs match.' : 'No CAPAs yet.'}
+              empty={search || sf.filtering ? 'No CAPAs match.' : 'No CAPAs yet.'}
               rowClassName={(c) => capaRowTint(c)}
               onRowClick={(c) => setModal({ kind: 'edit', capa: c, readOnly: true })}
               // The fit table's ▸ is the row's one expand control: it reveals
@@ -241,12 +246,18 @@ export function CapaView(props: {
               }
             />
           </Panel>
+          <ListFooter
+            total={total}
+            noun="CAPA"
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={setPage}
+          />
         </>
       )}
 
       {modal.kind === 'new' ? (
         <NewCapaModal
-          capas={items}
           onClose={() => setModal({ kind: 'none' })}
           // The CAPA's real work (root cause, actions…) is in the 5-step edit —
           // open it straight after save instead of dropping the user on the list.

@@ -12,6 +12,12 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 import { ROW_TINT } from '@/ui/data';
+
+// Op Status tick list for the server Sort & Filter (non-complete states only:
+// the table never holds a complete op).
+const OP_STATUS_OPTIONS = Object.entries(OP_STATUS)
+  .filter(([value]) => value !== 'complete')
+  .map(([value, s]) => ({ value, label: s.label }));
 import type { DataTableColumn } from '@/ui/data';
 
 // Op status words + colours: the ONE shared map (job-cards/lib/jc-op-labels).
@@ -45,6 +51,7 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       id: 'jc_code',
       header: 'JC No.',
       nowrap: true,
+      sortFilterField: 'jcCode',
       // The row's ▸ (fit engine) opens the detail reveal; the JC No. link opens
       // the job card. stopPropagation on the link, not the cell, so clicking
       // the rest of the cell still opens the row.
@@ -65,6 +72,8 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       id: 'op_seq',
       header: 'Op',
       kind: 'code',
+      sortFilterField: 'opSeq',
+      filterType: 'num',
       className: 'mono',
       nowrap: true,
       render: (op) => opSrNo(op.opSeq),
@@ -73,6 +82,7 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       id: 'operation',
       kind: 'text',
       header: 'Operation',
+      sortFilterField: 'operation',
       align: 'left',
       ellipsis: true,
       render: (op) => op.operation,
@@ -81,6 +91,7 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
     {
       id: 'item_code',
       header: 'Item Code',
+      sortFilterField: 'itemCode',
       className: 'mono fw-700',
       nowrap: true,
       // `CODE/REV` — the customer's drawing revision from the SO line this card
@@ -90,6 +101,8 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
     {
       id: 'available',
       header: 'Available',
+      sortFilterField: 'available',
+      filterType: 'num',
       align: 'right',
       headColor: 'var(--amber)',
       nowrap: true,
@@ -105,6 +118,8 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
     {
       id: 'pending_hrs',
       header: 'Pending Hrs',
+      sortFilterField: 'pendingHrs',
+      filterType: 'num',
       align: 'right',
       headColor: 'var(--red)',
       nowrap: true,
@@ -118,6 +133,8 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       id: 'op_status',
       kind: 'badge',
       header: 'Op Status',
+      sortFilterField: 'opStatus',
+      filterOptions: OP_STATUS_OPTIONS,
       nowrap: true,
       render: (op) => <OpStatusBadge status={op.computedStatus} />,
     },
@@ -125,6 +142,7 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       id: 'due_date',
       kind: 'date',
       header: 'Due',
+      sortFilterField: 'dueDate',
       className: 'mono text2',
       nowrap: true,
       render: (op) => fmtDate(op.dueDate),

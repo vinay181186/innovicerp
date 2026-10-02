@@ -7,7 +7,7 @@ import type {
   CreateCustomerDispatchInput,
   CustomerDispatchDetail,
   CustomerDispatchLineRow,
-  CustomerDispatchRegisterResponse,
+  ListCustomerDispatchesQuery,
   CustomerDispatchRow,
   DispatchableLine,
   DispatchableSoResponse,
@@ -577,14 +577,32 @@ function rowToHeader(
   };
 }
 
-export async function listDispatches(user: AuthContext): Promise<ListCustomerDispatchesResponse> {
+export async function listDispatches(
+  input: ListCustomerDispatchesQuery,
+  user: AuthContext,
+): Promise<ListCustomerDispatchesResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const headers = await tx
+    const live = and(
+      eq(customerDispatches.companyId, companyId),
+      isNull(customerDispatches.deletedAt),
+    );
+    // ADR-201: optional page; ends on id so a page never skips / repeats a row.
+    const base = tx
       .select()
       .from(customerDispatches)
-      .where(and(eq(customerDispatches.companyId, companyId), isNull(customerDispatches.deletedAt)))
-      .orderBy(desc(customerDispatches.dispatchDate), desc(customerDispatches.createdAt));
+      .where(live)
+      .orderBy(
+        desc(customerDispatches.dispatchDate),
+        desc(customerDispatches.createdAt),
+        desc(customerDispatches.id),
+      )
+      .offset(input.offset ?? 0);
+    const headers = input.limit !== undefined ? await base.limit(input.limit) : await base;
+    const [cnt] = await tx
+      .select({ total: sql<number>`count(*)::int` })
+      .from(customerDispatches)
+      .where(live);
 
     const aggRows = await tx
       .select({
@@ -616,6 +634,7 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
     const liveCustomer = new Map(liveCustomerRows.map((r) => [r.soId, r.name]));
 
     return {
+      total: Number(cnt?.total ?? 0),
       dispatches: headers.map((h) => {
         const a = agg.get(h.id) ?? { cnt: 0, qty: 0 };
         const billedQty = billed.get(h.id) ?? 0;
@@ -626,126 +645,6 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
           billedStatus: billedStatusOf(billedQty, a.qty),
         };
       }),
-    };
-  });
-}
-
-type RegisterRow = {
-  dispatch_id: string;
-  dispatch_code: string;
-  status: 'dispatched' | 'cancelled';
-  dispatch_date: string;
-  jc_no: string | null;
-  so_no: string | null;
-  client_po_line_no: string | null;
-  item_code: string | null;
-  item_revision: string | null;
-  item_code_text: string | null;
-  item_name: string;
-  qty: number;
-  uom: string | null;
-  customer: string | null;
-  dispatched_by: string | null;
-  remarks: string | null;
-  stock_before: number | null;
-  stock_after: number | null;
-  current_stock: number | null;
-};
-
-// Line-grain register (legacy renderDispatchRegister grain). One row per
-// dispatched line: CPO Ln + UOM from the SO line, Dispatched By = the dispatch
-// creator, Stock B→A from the store_transactions row createDispatch wrote,
-// JC No. derived from the JCs feeding the SO line, current stock for the
-// item-wise summary panel.
-export async function listDispatchRegister(
-  user: AuthContext,
-): Promise<CustomerDispatchRegisterResponse> {
-  const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const res = await tx.execute(sql`
-      SELECT h.id AS dispatch_id, h.code AS dispatch_code, h.status,
-        h.dispatch_date::text AS dispatch_date, h.so_code_text AS so_no,
-        -- Live customer name off the client master via the SO (plan v3 Step 4);
-        -- the dispatch's saved customer_text only when the SO has no client_id.
-        COALESCE(cli.name, h.customer_text) AS customer, h.remarks,
-        i.code AS item_code, l.item_code_text AS item_code_text,
-        l.item_name, l.qty,
-        -- The customer's drawing revision, off the SO line this dispatch line
-        -- shipped against — the same LEFT JOIN that already supplies the CPO
-        -- line no. and UOM below, so a line with no SO behind it still comes
-        -- back, with a null revision. Cast to text: the contract types it as a
-        -- string, and the column is only text on a database that has had
-        -- migration 0119. Never items.revision (i.revision above) — a different
-        -- column, about the item master rather than this order's drawing.
-        sol.revision::text AS item_revision,
-        sol.client_po_line_no, sol.uom::text AS uom,
-        u.full_name AS dispatched_by,
-        st.stock_before, st.stock_after,
-        vis.on_hand_qty::float8 AS current_stock,
-        jcs.jc_codes AS jc_no
-      FROM customer_dispatch_lines l
-      JOIN customer_dispatches h ON h.id = l.customer_dispatch_id
-      LEFT JOIN public.sales_orders cso ON cso.id = h.sales_order_id
-      LEFT JOIN public.clients cli ON cli.id = cso.client_id AND cli.deleted_at IS NULL
-      LEFT JOIN public.items i ON i.id = l.item_id AND i.deleted_at IS NULL
-      LEFT JOIN sales_order_lines sol ON sol.id = l.sales_order_line_id
-      LEFT JOIN public.users u ON u.id = h.created_by
-      -- Stock before/after for this dispatch line. A plain equality on
-      -- "<code> / ln <n>" stopped matching once a BOM line began writing one
-      -- ledger row PER COMPONENT, suffixed with the component code
-      -- ("DSP-0009 / ln 1 / 554117144000") — so both columns went blank on
-      -- every assembly dispatch. Match the suffixed form too.
-      --
-      -- When a line moved SEVERAL components there is no single before/after to
-      -- report, so those stay NULL deliberately rather than showing one
-      -- component's numbers as if they were the line's. The " / " in the LIKE
-      -- keeps "ln 1" from swallowing "ln 10".
-      LEFT JOIN LATERAL (
-        SELECT
-          CASE WHEN COUNT(*) = 1 THEN MIN(m.stock_before) END AS stock_before,
-          CASE WHEN COUNT(*) = 1 THEN MIN(m.stock_after) END AS stock_after
-        FROM store_transactions m
-        WHERE m.company_id = h.company_id
-          AND m.source_type = 'dispatch'
-          AND m.txn_type = 'out'
-          AND (
-            m.source_ref = h.code || ' / ln ' || l.line_no
-            OR m.source_ref LIKE h.code || ' / ln ' || l.line_no || ' / %'
-          )
-      ) st ON TRUE
-      LEFT JOIN v_item_stock vis
-        ON vis.company_id = h.company_id AND vis.item_id = l.item_id
-      LEFT JOIN LATERAL (
-        SELECT string_agg(jc.code, ', ' ORDER BY jc.code) AS jc_codes
-        FROM job_cards jc
-        WHERE jc.source_so_line_id = l.sales_order_line_id AND jc.deleted_at IS NULL
-      ) jcs ON TRUE
-      WHERE h.company_id = ${companyId}::uuid
-        AND h.deleted_at IS NULL AND l.deleted_at IS NULL
-      ORDER BY h.dispatch_date DESC, h.created_at DESC, l.line_no
-    `);
-    return {
-      rows: (res as unknown as RegisterRow[]).map((r) => ({
-        dispatchId: r.dispatch_id,
-        dispatchCode: r.dispatch_code,
-        status: r.status,
-        date: r.dispatch_date,
-        jcNo: r.jc_no,
-        soNo: r.so_no,
-        clientPoLineNo: r.client_po_line_no,
-        itemCode: r.item_code,
-        itemRevision: r.item_revision ?? null,
-        itemCodeText: r.item_code_text,
-        itemName: r.item_name,
-        qty: Math.round(n(r.qty)),
-        uom: r.uom,
-        customer: r.customer,
-        dispatchedBy: r.dispatched_by,
-        remarks: r.remarks,
-        stockBefore: r.stock_before === null ? null : n(r.stock_before),
-        stockAfter: r.stock_after === null ? null : n(r.stock_after),
-        currentStock: r.current_stock === null ? null : Math.round(n(r.current_stock)),
-      })),
     };
   });
 }

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { saveDashboardConfigInputSchema } from '@innovic/shared';
+import { operatorReadyQuerySchema, saveDashboardConfigInputSchema } from '@innovic/shared';
 import { AuthenticationError } from '../../lib/errors';
 import * as configService from './config-service';
 import * as homeService from './home-service';
@@ -16,6 +16,12 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
   app.get('/dashboard/home', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return homeService.getHome(req.user);
+  });
+
+  // Operator home "Ready for You", pages 2+ (page 1 rides on /dashboard/home).
+  app.get('/dashboard/operator-ready', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return homeService.getOperatorReady(req.user, operatorReadyQuerySchema.parse(req.query));
   });
 
   app.get('/dashboard/work-list', async (req) => {

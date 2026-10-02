@@ -1,15 +1,14 @@
 // Production Dashboard service (Production Wave 4) — read-only.
 //
 // GET /production-dashboard — mirrors legacy renderDashboard (HTML L3658):
-// production counters + open job cards + ready-to-process ops. Computed via
+// production counters + the Supply Chain Snapshot. The two lists (open job
+// cards, ready-to-process ops) page at 25 in ./lists (ADR-201). Computed via
 // raw SQL over v_jc_status + v_jc_op_status (no migration). RLS via base tables.
 
 import { sql } from 'drizzle-orm';
 import type {
   ProductionDashboardCounters,
-  ProductionDashboardJc,
   ProductionDashboardLowStockItem,
-  ProductionDashboardReadyOp,
   ProductionDashboardResponse,
   ProductionDashboardSupplyChain,
 } from '@innovic/shared';
@@ -71,128 +70,6 @@ export async function getProductionDashboard(
       atVendor: Number(oc['atVendor'] ?? 0),
     };
 
-    // ── Open job cards (compact cards) ─────────────────────────────────────
-    const jcRows = await tx.execute(sql`
-      SELECT
-        jc.id AS "jobCardId", jc.code, i.code AS "itemCode", i.name AS "itemName",
-        -- The customer's drawing revision for this card, read live off the SO
-        -- line it was raised against rather than items.revision, which is a
-        -- different column about the item master. The sol join is LEFT, so a
-        -- JW-sourced or standalone card keeps its place on the board and simply
-        -- reports null. Cast to text because the contract types it as a string
-        -- and a database without migration 0119 still holds an integer there;
-        -- the cast is a no-op once 0119 is applied.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        jc.priority, jc.order_qty AS "orderQty", jc.due_date AS "dueDate",
-        s.total_ops AS "totalOps", s.done_ops AS "doneOps"
-      FROM public.v_jc_status s
-      JOIN public.job_cards jc ON jc.id = s.job_card_id AND jc.deleted_at IS NULL
-      LEFT JOIN public.items i ON i.id = jc.item_id
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      WHERE s.company_id = ${companyId}::uuid AND s.computed_status = 'open'
-      ORDER BY (jc.priority = 'high') DESC, jc.due_date ASC NULLS LAST, jc.code
-      LIMIT 60
-    `);
-    const openJobCards: ProductionDashboardJc[] = (
-      jcRows as unknown as Array<Record<string, unknown>>
-    ).map((r) => ({
-      jobCardId: r['jobCardId'] as string,
-      code: r['code'] as string,
-      itemCode: (r['itemCode'] as string | null) ?? null,
-      itemRevision: (r['itemRevision'] as string | null) ?? null,
-      itemName: (r['itemName'] as string | null) ?? null,
-      priority: r['priority'] as ProductionDashboardJc['priority'],
-      orderQty: Number(r['orderQty'] ?? 0),
-      doneOps: Number(r['doneOps'] ?? 0),
-      totalOps: Number(r['totalOps'] ?? 0),
-      dueDate: r['dueDate'] != null ? String(r['dueDate']).slice(0, 10) : null,
-    }));
-
-    // ── Ready to process now (available > 0 or in progress, non-outsource) ──
-    const readyRows = await tx.execute(sql`
-      SELECT
-        jo.id AS "jcOpId",
-        -- The card's id as well as its code, so the dashboard's JC column can
-        -- link straight at /job-cards/$id. It came back with the code alone,
-        -- which named a job card the screen had no way to open. Never null: the
-        -- join to job_cards below is an inner join on jc_ops.job_card_id, which
-        -- is NOT NULL.
-        jc.id AS "jobCardId",
-        jc.code AS "jobCardCode", jo.op_seq AS "opSeq",
-        jo.operation, m.code AS "machineCode",
-        -- WHAT is being made. A job-card number says WHICH JOB, not which part,
-        -- so the board names the item beside the code. Identical clauses to the
-        -- open-job-cards query above -- same columns, same joins, copied rather
-        -- than re-derived so the two panels on one screen cannot drift into
-        -- naming the same card's item differently.
-        i.code AS "itemCode", i.name AS "itemName",
-        -- The customer's drawing revision for this card, read live off the SO
-        -- line it was raised against rather than items.revision, which is a
-        -- different column about the item master. Cast to text for the same
-        -- reason as above: the contract types it as a string and a database
-        -- without migration 0119 still holds an integer there.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        jc.order_qty AS "orderQty", vos.completed_qty AS "completedQty",
-        vos.available, vos.computed_status AS "computedStatus",
-        ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs",
-        -- Who actually made the completed qty, per machine (0095 / ADR-126). The
-        -- machine column above is the op's CURRENT machine — where the REMAINING
-        -- qty runs — so on a re-routed op it names a machine that may have
-        -- produced nothing. This is the honest breakdown.
-        COALESCE(mo.machines, '[]'::json) AS "machines"
-      FROM public.jc_ops jo
-      JOIN public.v_jc_op_status vos ON vos.jc_op_id = jo.id
-      JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
-      -- LEFT, both of them, exactly as in the query above: a JW-sourced or
-      -- standalone card has no SO line, and an op must never fall off the
-      -- "ready to process" list because its item could not be resolved -- that
-      -- would hide work the floor still owes.
-      LEFT JOIN public.items i ON i.id = jc.item_id
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.machines m ON m.id = jo.machine_id
-      LEFT JOIN LATERAL (
-        SELECT json_agg(
-                 json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
-                 ORDER BY v.completed_qty DESC, v.machine_code
-               ) AS machines
-        FROM public.v_op_machine_output v
-        WHERE v.jc_op_id = jo.id
-      ) mo ON true
-      WHERE jo.company_id = ${companyId}::uuid
-        AND jo.deleted_at IS NULL
-        AND jo.op_type <> 'outsource'
-        AND (vos.available > 0 OR vos.computed_status = 'in_progress')
-      ORDER BY jc.code, jo.op_seq
-      LIMIT 100
-    `);
-    const readyToProcess: ProductionDashboardReadyOp[] = (
-      readyRows as unknown as Array<Record<string, unknown>>
-    ).map((r) => ({
-      jcOpId: r['jcOpId'] as string,
-      jobCardId: r['jobCardId'] as string,
-      jobCardCode: r['jobCardCode'] as string,
-      opSeq: Number(r['opSeq']),
-      operation: (r['operation'] as string | null) ?? '',
-      itemCode: (r['itemCode'] as string | null) ?? null,
-      itemRevision: (r['itemRevision'] as string | null) ?? null,
-      itemName: (r['itemName'] as string | null) ?? null,
-      machineCode: (r['machineCode'] as string | null) ?? null,
-      machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
-        (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
-      ),
-      orderQty: Number(r['orderQty'] ?? 0),
-      completedQty: Number(r['completedQty'] ?? 0),
-      available: Number(r['available'] ?? 0),
-      pendingHrs: Number(r['pendingHrs'] ?? 0),
-      computedStatus: (r['computedStatus'] as string | null) ?? '',
-    }));
-
     // ── Supply Chain Snapshot (legacy L3804-3838) ─────────────────────────
     // Additive DTO exposure of figures already computed elsewhere — nothing is
     // recomputed in a new way:
@@ -241,6 +118,6 @@ export async function getProductionDashboard(
       lowStockItems,
     };
 
-    return { counters, openJobCards, readyToProcess, supplyChain };
+    return { counters, supplyChain };
   });
 }

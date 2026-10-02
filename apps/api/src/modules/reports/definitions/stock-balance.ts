@@ -6,7 +6,7 @@
 import { ITEM_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { enumFilter, isoDateFilter, likeFilter } from './report-helpers';
+import { enumFilter, isoDateFilter, likeFilter, REPORT_ROW_CAP } from './report-helpers';
 
 export const stockBalanceReport: RegisteredReport = {
   definition: {
@@ -82,7 +82,7 @@ export const stockBalanceReport: RegisteredReport = {
         ${itemFrag}
         ${typeFrag}
       ORDER BY i.code
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

@@ -16,22 +16,27 @@
 // has no separate `name`, by its schema) — and there is no bulk-import endpoint,
 // so there is no Name column and no Import action here.
 //
-// Masters scroll, they do not paginate: one fetch of the whole master, no
-// Prev/Next. MACHINE_GROUP_LIST_LIMIT is the cap the query schema allows.
+// ADR-201: 25 groups a page (Prev / Next; the page lives in this tab's state —
+// the tab has no route of its own). Search, the Active / Inactive filter and
+// the column ▾ Sort & Filter run on the server over every group; the dropdown
+// counts are server totals (limit:1 calls) under the same search + ▾ filters.
+// Any change of those goes back to page 1. useMachineGroupLookup keeps its own
+// whole-master query (limit 1000) and never shares this one.
 
 import type { ListMachineGroupsQuery, MachineGroup } from '@innovic/shared';
 import { Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSaveKey } from '@/lib/use-save-key';
 import { StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import {
-  MACHINE_GROUP_LIST_LIMIT,
   useCreateMachineGroup,
   useMachineGroupsList,
   useSoftDeleteMachineGroup,
@@ -41,6 +46,11 @@ import { MachineGroupModal } from './machine-group-modal';
 
 type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: MachineGroup };
 type StatusFilter = 'all' | 'active' | 'inactive';
+
+const ACTIVE_OPTIONS = [
+  { value: 'true', label: 'Active' },
+  { value: 'false', label: 'Inactive' },
+];
 
 export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   // Same department form as the machines themselves (machine_create sits in
@@ -55,21 +65,44 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
   // The tab owns its own search box (the machines tab's box filters machines,
   // and a machine search means nothing on the group list). Debounced into the
   // query so a keystroke is not a request.
+  const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [term, setTerm] = useState('');
   useEffect(() => {
-    const id = window.setTimeout(() => setTerm(searchInput.trim()), 300);
+    const next = searchInput.trim();
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      setPage(1);
+    }, 300);
     return () => window.clearTimeout(id);
-  }, [searchInput]);
+  }, [searchInput, term]);
+  const sf = useServerSortFilter(TABLE_KEYS.machineGroups, () => setPage(1));
+  const [status, setStatus] = useState<StatusFilter>('all');
 
-  // No isActive filter on the query — the whole master comes down once and the
-  // Active/Inactive split happens here, so the strip shows all three numbers at
-  // the same time.
+  // The page on screen: search + Active filter + ▾ on the server.
+  const base = useMemo(
+    () => ({ ...(term ? { search: term } : {}), ...(sf.param ? { sf: sf.param } : {}) }),
+    [term, sf.param],
+  );
   const query: ListMachineGroupsQuery = useMemo(
-    () => ({ ...(term ? { search: term } : {}), limit: MACHINE_GROUP_LIST_LIMIT, offset: 0 }),
-    [term],
+    () => ({
+      ...base,
+      ...(status === 'all' ? {} : { isActive: status === 'active' }),
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
+    }),
+    [base, status, page],
   );
   const list = useMachineGroupsList(query);
+  // Dropdown counts — server totals under the same search + ▾ filters.
+  const allCount = useMachineGroupsList({ ...base, limit: 1, offset: 0 }).data?.total;
+  const activeCount = useMachineGroupsList({ ...base, isActive: true, limit: 1, offset: 0 }).data
+    ?.total;
+  const inactiveCount = useMachineGroupsList({ ...base, isActive: false, limit: 1, offset: 0 }).data
+    ?.total;
+  const onPage = useCallback((p: number) => setPage(p), []);
+  useClampPage(page, list.data?.total, onPage);
   // R2: one save key per Add-modal open — rotated when the modal opens, since
   // the create hook lives here rather than in the modal.
   const saveKey = useSaveKey();
@@ -77,22 +110,13 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
   const update = useUpdateMachineGroup();
   const softDelete = useSoftDeleteMachineGroup();
 
-  const [status, setStatus] = useState<StatusFilter>('all');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
   const [trashRow, setTrashRow] = useState<MachineGroup | null>(null);
 
   const rows = useMemo(() => list.data?.groups ?? [], [list.data]);
   const total = list.data?.total ?? 0;
-  const activeCount = rows.filter((r) => r.isActive).length;
-  const inactiveCount = rows.length - activeCount;
-  const visible = useMemo(
-    () =>
-      status === 'all'
-        ? rows
-        : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
-    [rows, status],
-  );
+  const fmtCount = (n: number | undefined): string => (n === undefined ? '…' : String(n));
 
   // The sheet's columns (first = Group Code, always pinned). No Name column:
   // the master has no `name` — the code IS the group. Description shares the
@@ -106,6 +130,7 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
         nowrap: true,
         className: 'td-code',
         render: (row) => <span style={{ color: 'var(--cyan)' }}>{row.code}</span>,
+        sortFilterField: 'code',
       },
       {
         id: 'description',
@@ -115,6 +140,7 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
         className: 'text2',
         render: (row) => row.description || '—',
         title: (row) => row.description ?? '',
+        sortFilterField: 'description',
       },
       {
         id: 'is_active',
@@ -124,6 +150,9 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
         // kind="active" — the same green / grey chip the operator and client
         // masters use for an Active flag, so the three cannot disagree.
         render: (row) => <StatusBadge kind="active" status={String(row.isActive)} />,
+        sortFilterField: 'isActive',
+        filterType: 'list',
+        filterOptions: ACTIVE_OPTIONS,
       },
     ],
     [],
@@ -146,18 +175,23 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
             title="Machine Group Status"
             value={status}
             options={[
-              { value: 'all', label: `All (${rows.length})` },
-              { value: 'active', label: `Active (${activeCount})` },
-              { value: 'inactive', label: `Inactive (${inactiveCount})` },
+              { value: 'all', label: `All (${fmtCount(allCount)})` },
+              { value: 'active', label: `Active (${fmtCount(activeCount)})` },
+              { value: 'inactive', label: `Inactive (${fmtCount(inactiveCount)})` },
             ]}
-            onChange={(e) => setStatus(e.target.value as StatusFilter)}
+            onChange={(e) => {
+              setStatus(e.target.value as StatusFilter);
+              setPage(1);
+            }}
           />
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           setStatus('all');
+          setPage(1);
         }}
-        filtersActive={searchInput.trim() !== '' || status !== 'all'}
+        filtersActive={searchInput.trim() !== '' || status !== 'all' || sf.filtering}
         primary={
           canAdd ? (
             <button
@@ -203,10 +237,13 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
           <DataTable
             tableKey={TABLE_KEYS.machineGroups}
             columns={columns}
-            rows={visible}
+            rows={rows}
             loading={list.isLoading}
+            sortFilterServer={sf}
             emptyText={
-              rows.length === 0 && !term ? 'No Machine Groups yet.' : 'No Machine Groups match.'
+              !term && status === 'all' && !sf.filtering
+                ? 'No Machine Groups yet.'
+                : 'No Machine Groups match.'
             }
             onRowClick={canEdit ? (row) => setModal({ kind: 'edit', row }) : undefined}
             rowActionsWidth="1%"
@@ -236,14 +273,12 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
         </Panel>
       )}
 
-      {/* Masters scroll, they do not paginate — one fetch, no Prev/Next. The
-          count line says which of the two happened so a capped list can never
-          look complete. */}
       <ListFooter
         total={total}
-        shown={visible.length}
         noun="machine group"
-        limit={total > rows.length ? rows.length : undefined}
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={onPage}
       />
 
       {trashRow ? (

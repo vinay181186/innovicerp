@@ -13,12 +13,13 @@ import { ActivityAction } from '@innovic/shared';
 //     rather than cascading, so no machine is left holding a dangling FK or
 //     silently un-grouped behind the user's back.
 
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { machineGroups, machines } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type {
   CreateMachineGroupInput,
   ListMachineGroupsQuery,
@@ -28,6 +29,7 @@ import type {
 } from './schema';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
+import { MACHINE_GROUP_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -52,15 +54,19 @@ export async function listMachineGroups(
       isNull(machineGroups.deletedAt),
     ];
     if (input.search) {
+      const pat = `%${likeEscape(input.search)}%`;
       const s = or(
-        ilike(machineGroups.code, `%${input.search}%`),
-        ilike(machineGroups.description, `%${input.search}%`),
+        sql`${machineGroups.code} ILIKE ${pat} ESCAPE '\\'`,
+        sql`${machineGroups.description} ILIKE ${pat} ESCAPE '\\'`,
       );
       if (s) conditions.push(s);
     }
     if (typeof input.isActive === 'boolean') {
       conditions.push(eq(machineGroups.isActive, input.isActive));
     }
+    // Sort & Filter (ADR-200), list AND count; code then id keeps paging stable.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(MACHINE_GROUP_SF_COLUMNS, sf)}`);
 
     const where = and(...conditions);
 
@@ -69,7 +75,13 @@ export async function listMachineGroups(
         .select()
         .from(machineGroups)
         .where(where)
-        .orderBy(asc(machineGroups.code))
+        .orderBy(
+          sfOrderBy(
+            MACHINE_GROUP_SF_COLUMNS,
+            sf,
+            sql`${asc(machineGroups.code)}, ${asc(machineGroups.id)}`,
+          ),
+        )
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(machineGroups).where(where),

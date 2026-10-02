@@ -28,11 +28,13 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { todayIst } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useJobWorkOrdersList } from '../api';
@@ -40,9 +42,8 @@ import { DeleteJwsoModal } from '../components/delete-jwso-modal';
 import { JwsoExpandedLines } from '../components/jwso-expanded-lines';
 import { jwsoListColumns } from '../components/jwso-list-columns';
 
-// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
-// JW list-query cap is 200; the count line flags a rare larger set.
-const LIST_LIMIT = 200;
+// 25 rows a page (ADR-201): only the page on screen is loaded; search, the
+// status filter and Sort & Filter (▾) run on the server over every JWSO.
 
 // JWSO status / overdue → row tint (ADR-199 ROW_TINT). Overdue (still open past
 // its earliest due) reads as late and wins; closed and dispatched are done;
@@ -59,7 +60,7 @@ function rowTint(jw: JobWorkOrderListItem, today: string): string | undefined {
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(SO_STATUSES).optional(),
-  page: z.coerce.number().int().positive().default(1),
+  page: pageSearchParam,
 });
 
 export const jobWorkOrdersListRoute = createRoute({
@@ -94,14 +95,22 @@ function JobWorkOrdersListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter on the SERVER (ADR-200): the list is paged, so filtering only
+  // the loaded page would miss JWSOs. Every change goes back to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.jwsoList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
+  const offset = pageOffset(search.page);
   const query: ListJobWorkOrdersQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
-      limit: LIST_LIMIT,
-      offset: 0,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset,
     }),
-    [search.search, search.status],
+    [search.search, search.status, sf.param, offset],
   );
 
   const { data, isLoading, isFetching, isError, error } = useJobWorkOrdersList(query);
@@ -134,6 +143,13 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  useClampPage(search.page, data?.total, gotoPage);
 
   // Row actions — Edit · Delete, with the gates the retired card used, unchanged.
   // No View button: the row click opens the JWSO. Delete reuses the
@@ -153,7 +169,8 @@ function JobWorkOrdersListPage(): React.JSX.Element {
     return <PageState as="page" state="noaccess" />;
   }
 
-  const emptyText = search.search || search.status ? 'No JWSOs match.' : 'No JWSOs yet.';
+  const emptyText =
+    sf.filtering || search.search || search.status ? 'No JWSOs match.' : 'No JWSOs yet.';
 
   return (
     <div>
@@ -192,13 +209,16 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           </select>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
             search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
             replace: true,
           });
         }}
-        filtersActive={search.search != null || search.status != null || searchInput !== ''}
+        filtersActive={
+          sf.filtering || search.search != null || search.status != null || searchInput !== ''
+        }
         primary={
           canCreate ? (
             <Link to="/job-work-orders/new" className="btn btn-primary">
@@ -220,6 +240,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
+            sortFilterServer={sf}
             emptyText={emptyText}
             rowKey={(jw) => jw.jwId}
             onRowClick={(jw) =>
@@ -242,7 +263,13 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter total={total} shown={rows.length} noun="JWSO" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="JWSO"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
 
       {trashTarget ? (
         <DeleteJwsoModal

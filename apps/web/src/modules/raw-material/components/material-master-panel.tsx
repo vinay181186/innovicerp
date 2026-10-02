@@ -11,16 +11,26 @@
 // carries Edit / Move to Trash. Styling still follows the `styling` skill:
 // <ListHeader> band, an All / Active / Inactive dropdown in the filter bar whose
 // labels carry the counts (owner's filter-bar decision 2026-09-26), clickable
-// rows, and a scrolling list — masters do not paginate.
+// rows. ADR-201: 25 rows a page (Prev / Next); search, the Active filter and
+// the column ▾ Sort & Filter run on the server, and the dropdown counts are
+// server totals — the tab wrappers fetch; this panel only draws.
 
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { ConfirmDialog } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { MaterialRowModal } from './material-row-modal';
+import type { MaterialStatusFilter } from './use-material-master-paging';
+
+const ACTIVE_OPTIONS = [
+  { value: 'true', label: 'Active' },
+  { value: 'false', label: 'Inactive' },
+];
 
 /** The subset of MaterialGrade / MaterialSize this table renders. Both shared
  *  types are structurally assignable to it. */
@@ -43,10 +53,17 @@ export interface MaterialMasterPanelProps {
   noun: string;
   /** The shared FIT table's saved-layout key (TABLE_KEYS.rawMaterialGrade / …Size). */
   tableKey: string;
-  /** The WHOLE master in one fetch (search-filtered server-side, Active filtered
-   *  here so the strip can show all three counts at once). */
+  /** The 25 rows of this page (search / Active / ▾ applied on the server). */
   rows: MaterialMasterRow[];
-  total: number;
+  /** Rows matching the filters, all pages (undefined while loading). */
+  total: number | undefined;
+  /** Server totals for the All / Active / Inactive dropdown labels. */
+  counts: { all: number | undefined; active: number | undefined; inactive: number | undefined };
+  status: MaterialStatusFilter;
+  onStatus: (s: MaterialStatusFilter) => void;
+  sf: ServerSortFilter;
+  page: number;
+  onPage: (p: number) => void;
   isLoading: boolean;
   isFetching: boolean;
   isError: boolean;
@@ -69,14 +86,19 @@ export interface MaterialMasterPanelProps {
 }
 
 type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: MaterialMasterRow };
-type StatusFilter = 'all' | 'active' | 'inactive';
 
 export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.Element {
   const {
     noun,
     tableKey,
     rows,
-    total,
+    total: totalOrUndef,
+    counts,
+    status,
+    onStatus,
+    sf,
+    page,
+    onPage,
     isLoading,
     isFetching,
     isError,
@@ -102,20 +124,12 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
 
-  const [status, setStatus] = useState<StatusFilter>('all');
+  const total = totalOrUndef ?? 0;
+  useClampPage(page, totalOrUndef, onPage);
+  const fmtCount = (n: number | undefined): string => (n === undefined ? '…' : String(n));
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
   const [trashRow, setTrashRow] = useState<MaterialMasterRow | null>(null);
-
-  const activeCount = rows.filter((r) => r.isActive).length;
-  const inactiveCount = rows.length - activeCount;
-  const visible = useMemo(
-    () =>
-      status === 'all'
-        ? rows
-        : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
-    [rows, status],
-  );
 
   // The four master columns (first pinned = Code). Headers stay noun-qualified
   // (Grade Code / Grade, Size Code / Size) so a joined label never reads as a
@@ -134,6 +148,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
             {row.code}
           </span>
         ),
+        sortFilterField: 'code',
       },
       {
         id: 'name',
@@ -143,6 +158,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         ellipsis: true,
         key: 'name',
         title: (row) => row.name,
+        sortFilterField: 'name',
       },
       {
         id: 'description',
@@ -152,6 +168,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         ellipsis: true,
         render: (row) => <span className="text2">{row.description || '—'}</span>,
         title: (row) => row.description ?? '',
+        sortFilterField: 'description',
       },
       {
         id: 'active',
@@ -164,6 +181,9 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
             {row.isActive ? 'Active' : 'Inactive'}
           </span>
         ),
+        sortFilterField: 'isActive',
+        filterType: 'list',
+        filterOptions: ACTIVE_OPTIONS,
       },
     ],
     [noun],
@@ -209,18 +229,19 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
             title={`${noun} Status`}
             value={status}
             options={[
-              { value: 'all', label: `All ${noun}s (${rows.length})` },
-              { value: 'active', label: `Active (${activeCount})` },
-              { value: 'inactive', label: `Inactive (${inactiveCount})` },
+              { value: 'all', label: `All ${noun}s (${fmtCount(counts.all)})` },
+              { value: 'active', label: `Active (${fmtCount(counts.active)})` },
+              { value: 'inactive', label: `Inactive (${fmtCount(counts.inactive)})` },
             ]}
-            onChange={(e) => setStatus(e.target.value as StatusFilter)}
+            onChange={(e) => onStatus(e.target.value as MaterialStatusFilter)}
           />
         }
         onClearFilters={() => {
+          sf.clearFilters();
           onSearchInput('');
-          setStatus('all');
+          onStatus('all');
         }}
-        filtersActive={searchInput.trim() !== '' || status !== 'all'}
+        filtersActive={searchInput.trim() !== '' || status !== 'all' || sf.filtering}
         primary={
           canAdd ? (
             <button
@@ -266,10 +287,13 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
           <DataTable
             tableKey={tableKey}
             columns={columns}
-            rows={visible}
+            rows={rows}
             loading={isLoading}
+            sortFilterServer={sf}
             emptyText={
-              rows.length === 0 && !searchInput.trim() ? `No ${noun}s yet.` : `No ${noun}s match.`
+              !searchInput.trim() && status === 'all' && !sf.filtering
+                ? `No ${noun}s yet.`
+                : `No ${noun}s match.`
             }
             onRowClick={canEdit ? (row) => setModal({ kind: 'edit', row }) : undefined}
             // ⋯ menu: Edit · ─ · Move to Trash (danger) — same gates as before.
@@ -295,15 +319,14 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         </Panel>
       )}
 
-      {/* Masters scroll, they do not paginate — one fetch, no Prev/Next. The
-          count line says which of the two happened so a capped list can never
-          look complete. Excel template + import sit under it; import creates
-          rows, so it follows the create (entry) right. */}
+      {/* 25 a page with Prev / Next (ADR-201). Excel template + import sit
+          under it; import creates rows, so it follows the create (entry) right. */}
       <ListFooter
         total={total}
-        shown={visible.length}
         noun={noun.toLowerCase()}
-        limit={total > rows.length ? rows.length : undefined}
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={onPage}
         actions={
           canAdd ? (
             <>

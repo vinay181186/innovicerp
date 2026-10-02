@@ -426,6 +426,15 @@ export async function listNcRegister(
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(NC_SF_COLUMNS, sf);
+    // The Item Code filter reads the drawing revision (CODE/REV), so the count
+    // needs the revision hops then — one row per NC, so they never change it.
+    const countRevJoins =
+      sf && sf.filters.length > 0
+        ? sql`LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL`
+        : sql``;
     const orderBy = sfOrderBy(NC_SF_COLUMNS, sf, sql`nc.nc_date DESC, nc.code DESC`);
 
     const result = await tx.execute(sql`
@@ -601,6 +610,7 @@ export async function listNcRegister(
         ON jo.id = nc.jc_op_id AND jo.deleted_at IS NULL
       LEFT JOIN public.items i
         ON i.id = nc.item_id AND i.deleted_at IS NULL
+      ${countRevJoins}
       LEFT JOIN LATERAL (
         SELECT c.code
         FROM public.capa_records c

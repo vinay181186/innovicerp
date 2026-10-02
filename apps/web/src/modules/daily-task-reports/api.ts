@@ -1,16 +1,13 @@
 import type {
   DailyTaskReportDetail,
+  ListDailyTaskReportsQuery,
   ListDailyTaskReportsResponse,
   UpsertDailyTaskReportInput,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
-export interface DailyReportFilters {
-  userId?: string | undefined;
-  dateFrom?: string | undefined;
-  dateTo?: string | undefined;
-}
+export type DailyReportFilters = ListDailyTaskReportsQuery;
 
 export const dailyTaskReportKeys = {
   all: ['daily-task-reports'] as const,
@@ -23,6 +20,10 @@ function toQuery(f: DailyReportFilters): string {
   if (f.userId) p.set('userId', f.userId);
   if (f.dateFrom) p.set('dateFrom', f.dateFrom);
   if (f.dateTo) p.set('dateTo', f.dateTo);
+  if (f.search) p.set('search', f.search);
+  if (f.sf) p.set('sf', f.sf);
+  if (f.limit !== undefined) p.set('limit', String(f.limit));
+  if (f.offset) p.set('offset', String(f.offset));
   const s = p.toString();
   return s ? `?${s}` : '';
 }
@@ -32,6 +33,8 @@ export function useDailyReportList(filters: DailyReportFilters) {
     queryKey: dailyTaskReportKeys.list(filters),
     queryFn: () => apiFetch<ListDailyTaskReportsResponse>(`/daily-task-reports${toQuery(filters)}`),
     staleTime: 15_000,
+    // The old page stays on screen while the next one loads.
+    placeholderData: (prev) => prev,
   });
 }
 

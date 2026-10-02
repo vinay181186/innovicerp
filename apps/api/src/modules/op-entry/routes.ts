@@ -1,3 +1,4 @@
+import { listOpLogTimeChangePageQuerySchema, listRunningOpsPageQuerySchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
@@ -16,7 +17,9 @@ import {
   updateOpLogTimingInputSchema,
 } from './schema';
 import { reverseOpLog, reverseOpLogInputSchema } from './reverse-op-log';
+import { listRunningOpsPage } from './running-ops-read';
 import * as service from './service';
+import { listOpLogTimeChangePage } from './time-change-page';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -44,6 +47,12 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listRunningOpsQuerySchema.parse(req.query);
     return service.listRunningOps(query, req.user);
+  });
+
+  // The Live Operations board's two paged tables (ADR-201).
+  app.get('/op-entry/running-ops/page', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return listRunningOpsPage(listRunningOpsPageQuerySchema.parse(req.query), req.user);
   });
 
   app.post('/op-entry/op-log', async (req, reply) => {
@@ -91,6 +100,13 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listOpLogTimeChangeRequestsQuerySchema.parse(req.query);
     return service.listOpLogTimeChangeRequests(query, req.user);
+  });
+
+  // The approvals screen's 25-row pages (ADR-201): search + Sort & Filter + total.
+  app.get('/op-entry/time-changes/page', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listOpLogTimeChangePageQuerySchema.parse(req.query);
+    return listOpLogTimeChangePage(query, req.user);
   });
 
   // Approve / reject. Manager+admin only (enforced in the service and by RLS).

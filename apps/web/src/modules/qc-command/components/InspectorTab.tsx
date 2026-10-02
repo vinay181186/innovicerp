@@ -9,6 +9,7 @@
 import type { QcInspectorPerfRow } from '@innovic/shared';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { type QcPager, TablePager } from './TablePager';
 
 function rejColor(pct: number): string {
   if (pct <= 5) return 'var(--green)';
@@ -80,7 +81,14 @@ const columns: DataTableColumn<QcInspectorPerfRow>[] = [
   },
 ];
 
-export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JSX.Element {
+export function InspectorTab({
+  perf,
+  pager,
+}: {
+  /** This page of inspectors (server-paged, ADR-201). */
+  perf: QcInspectorPerfRow[];
+  pager: QcPager;
+}): React.JSX.Element {
   return (
     <div>
       <div className="panel">
@@ -103,6 +111,7 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
           rowKey={(p) => p.name}
           emptyText="No inspections recorded yet."
         />
+        <TablePager pager={pager} noun="inspector" />
       </div>
     </div>
   );

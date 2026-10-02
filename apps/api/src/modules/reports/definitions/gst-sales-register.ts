@@ -11,8 +11,9 @@ import {
   isoDateFilter,
   likeFilter,
   numCell,
-  type SqlRow,
+  REPORT_ROW_CAP,
   textCell,
+  type SqlRow,
 } from './report-helpers';
 
 // Customer name, GSTIN and State come from the invoice's OWN legal copy
@@ -173,7 +174,7 @@ export const gstSalesRegisterReport: RegisteredReport = {
         total::float                                               AS total
       FROM reg
       ORDER BY reg.invoice_date DESC, reg.invoice_code DESC
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

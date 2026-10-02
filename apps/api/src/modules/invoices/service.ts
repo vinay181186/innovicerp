@@ -12,10 +12,11 @@ import type {
   InvoiceRow,
   InvoiceableLine,
   InvoiceableSoResponse,
+  ListInvoicesQuery,
   ListInvoicesResponse,
 } from '@innovic/shared';
 import { ActivityAction } from '@innovic/shared';
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import {
   clients,
   invoiceLines,
@@ -37,6 +38,8 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { INVOICE_SF_COLUMNS } from './sf-columns';
 import { emitActivityLog } from '../activity-log/service';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { DEFAULT_PAYMENT_TERMS_DAYS } from './constants';
@@ -128,48 +131,82 @@ function hideInvoiceDetailMoney(d: InvoiceDetail): InvoiceDetail {
   };
 }
 
-export async function listInvoices(user: AuthContext): Promise<ListInvoicesResponse> {
+export async function listInvoices(
+  input: ListInvoicesQuery,
+  user: AuthContext,
+): Promise<ListInvoicesResponse> {
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'invoice_create');
+  // ADR-201: search + Sort & Filter run here over EVERY invoice; the screen
+  // asks for one 25-row page. No `limit` → every invoice (as before).
+  const sfq = readSf(input.sf);
+  const sfOpts = { canSeePrice: showMoney };
+  const term = input.search?.trim();
+  const pat = term ? `%${likeEscape(term)}%` : null;
+  const where = and(
+    eq(invoices.companyId, companyId),
+    isNull(invoices.deletedAt),
+    pat
+      ? sql`(${invoices.code} ILIKE ${pat} ESCAPE '\\'
+          OR COALESCE(${invoices.soCodeText}, '') ILIKE ${pat} ESCAPE '\\'
+          OR COALESCE(${invoices.clientNameText}, '') ILIKE ${pat} ESCAPE '\\')`
+      : undefined,
+    sql`TRUE ${sfWhere(INVOICE_SF_COLUMNS, sfq, sfOpts)}`,
+  );
+  // Ends on id so a page never skips / repeats an invoice.
+  const order = sfOrderBy(
+    INVOICE_SF_COLUMNS,
+    sfq,
+    sql`${invoices.invoiceDate} DESC, ${invoices.createdAt} DESC, ${invoices.id} DESC`,
+    sfOpts,
+  );
+  const today = todayStr();
   return withUserContext(user, async (tx) => {
-    const rows = await tx
+    const base = tx
       .select()
       .from(invoices)
-      .where(and(eq(invoices.companyId, companyId), isNull(invoices.deletedAt)))
-      .orderBy(desc(invoices.invoiceDate), desc(invoices.createdAt));
+      .where(where)
+      .orderBy(order)
+      .offset(input.offset ?? 0);
+    const rows = input.limit !== undefined ? await base.limit(input.limit) : await base;
     const list = rows.map(rowToInvoice);
 
-    const summary = {
-      totalInvoiced: 0,
-      totalReceived: 0,
-      outstanding: 0,
-      overdueAmount: 0,
-      overdueCount: 0,
-      unpaidCount: 0,
-      partialCount: 0,
-      paidCount: 0,
-    };
+    // The strip and the total — one query over every matching invoice, with
+    // the same rules as rowToInvoice (overdue = not paid and past due).
     // TDS / short amounts settle invoices without being money received, so
     // they come off Outstanding Amount but are not added to Total Received.
-    let settledTds = 0;
-    for (const inv of list) {
-      summary.totalInvoiced += inv.grandTotal ?? 0;
-      summary.totalReceived += inv.totalPaid ?? 0;
-      settledTds += inv.totalTds ?? 0;
-      if (inv.overdue) {
-        summary.overdueAmount += inv.balance ?? 0;
-        summary.overdueCount += 1;
-      }
-      if (inv.status === 'unpaid') summary.unpaidCount += 1;
-      else if (inv.status === 'partial') summary.partialCount += 1;
-      else if (inv.status === 'paid') summary.paidCount += 1;
-    }
-    summary.outstanding = summary.totalInvoiced - summary.totalReceived - settledTds;
+    const overdue = sql`(${invoices.status} <> 'paid' AND ${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < ${today})`;
+    const [agg] = await tx
+      .select({
+        total: sql<number>`count(*)::int`,
+        totalInvoiced: sql<string>`COALESCE(sum(${invoices.grandTotal}), 0)`,
+        totalReceived: sql<string>`COALESCE(sum(${invoices.totalPaid}), 0)`,
+        totalTds: sql<string>`COALESCE(sum(${invoices.totalTds}), 0)`,
+        overdueAmount: sql<string>`COALESCE(sum(CASE WHEN ${overdue} THEN ${invoices.grandTotal} - ${invoices.totalPaid} - ${invoices.totalTds} ELSE 0 END), 0)`,
+        overdueCount: sql<number>`count(*) FILTER (WHERE ${overdue})::int`,
+        unpaidCount: sql<number>`count(*) FILTER (WHERE ${invoices.status} = 'unpaid')::int`,
+        partialCount: sql<number>`count(*) FILTER (WHERE ${invoices.status} = 'partial')::int`,
+        paidCount: sql<number>`count(*) FILTER (WHERE ${invoices.status} = 'paid')::int`,
+      })
+      .from(invoices)
+      .where(where);
+    const summary = {
+      totalInvoiced: n(agg?.totalInvoiced ?? 0),
+      totalReceived: n(agg?.totalReceived ?? 0),
+      outstanding: n(agg?.totalInvoiced ?? 0) - n(agg?.totalReceived ?? 0) - n(agg?.totalTds ?? 0),
+      overdueAmount: n(agg?.overdueAmount ?? 0),
+      overdueCount: Number(agg?.overdueCount ?? 0),
+      unpaidCount: Number(agg?.unpaidCount ?? 0),
+      partialCount: Number(agg?.partialCount ?? 0),
+      paidCount: Number(agg?.paidCount ?? 0),
+    };
+    const total = Number(agg?.total ?? 0);
 
     if (!showMoney) {
       return {
         priceVisible: false,
         invoices: list.map(hideInvoiceRowMoney),
+        total,
         summary: {
           ...summary,
           totalInvoiced: null,
@@ -179,7 +216,7 @@ export async function listInvoices(user: AuthContext): Promise<ListInvoicesRespo
         },
       };
     }
-    return { invoices: list, summary, priceVisible: true };
+    return { invoices: list, total, summary, priceVisible: true };
   });
 }
 

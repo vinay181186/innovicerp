@@ -54,7 +54,7 @@ import {
   type JcRouteCardWriteBack,
   opSrNo,
 } from '@innovic/shared';
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   items,
   machineGroups,
@@ -69,9 +69,11 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActivePartiesBatch } from '../../lib/active-party';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { requireWriteRole } from '../../lib/auth';
+import { RC_SF_COLUMNS } from './sf-columns';
 import { resolveRmItem } from '../../lib/rm-item';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
@@ -340,11 +342,32 @@ export async function listRouteCards(
 ): Promise<ListRouteCardsResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
-      ? sql`AND (rc.code ILIKE ${term} OR i.code ILIKE ${term} OR i.name ILIKE ${term})`
+      ? sql`AND (rc.code ILIKE ${term} ESCAPE '\\' OR i.code ILIKE ${term} ESCAPE '\\'
+          OR i.name ILIKE ${term} ESCAPE '\\')`
       : sql``;
     const itemFrag = input.itemId ? sql`AND rc.item_id = ${input.itemId}::uuid` : sql``;
+    // Sort & Filter (ADR-200) — applied to the page AND the count, so `total`
+    // is the number of cards the search + filters really match (ADR-201).
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(RC_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(RC_SF_COLUMNS, sf, sql`rc.code DESC, rc.id DESC`);
+
+    const fromWhere = sql`
+      FROM public.route_cards rc
+      LEFT JOIN public.items i ON i.id = rc.item_id AND i.deleted_at IS NULL
+      LEFT JOIN public.items rmi ON rmi.id = rc.raw_material_item_id AND rmi.company_id = rc.company_id
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS op_count
+        FROM public.route_card_ops o
+        WHERE o.route_card_id = rc.id AND o.deleted_at IS NULL
+      ) op_agg ON TRUE
+      WHERE rc.company_id = ${companyId}::uuid
+        AND rc.deleted_at IS NULL
+        ${searchFrag}
+        ${itemFrag}
+        ${sfFrag}`;
 
     const result = await tx.execute(sql`
       SELECT
@@ -364,29 +387,15 @@ export async function listRouteCards(
         rc.deleted_at AS "deletedAt",
         i.code AS "itemCode", i.name AS "itemName",
         COALESCE(op_agg.op_count, 0)::int AS "opCount"
-      FROM public.route_cards rc
-      LEFT JOIN public.items i ON i.id = rc.item_id AND i.deleted_at IS NULL
-      LEFT JOIN public.items rmi ON rmi.id = rc.raw_material_item_id AND rmi.company_id = rc.company_id
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*) AS op_count
-        FROM public.route_card_ops o
-        WHERE o.route_card_id = rc.id AND o.deleted_at IS NULL
-      ) op_agg ON TRUE
-      WHERE rc.company_id = ${companyId}::uuid
-        AND rc.deleted_at IS NULL
-        ${searchFrag}
-        ${itemFrag}
-      ORDER BY rc.code DESC
+      ${fromWhere}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(routeCards.companyId, companyId), isNull(routeCards.deletedAt)];
-    if (input.itemId) conditions.push(eq(routeCards.itemId, input.itemId));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(routeCards)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    const totalRows = (await tx.execute(
+      sql`SELECT COUNT(*)::int AS n ${fromWhere}`,
+    )) as unknown as Array<{ n: number }>;
+    const total = Number(totalRows[0]?.n ?? 0);
 
     const itemsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     return { items: itemsList, total, limit: input.limit, offset: input.offset };

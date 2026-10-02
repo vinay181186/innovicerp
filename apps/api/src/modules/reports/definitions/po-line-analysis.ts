@@ -5,7 +5,13 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { dateCell as dateOrNull, enumFilter, isoDateFilter, likeFilter } from './report-helpers';
+import {
+  dateCell as dateOrNull,
+  enumFilter,
+  isoDateFilter,
+  likeFilter,
+  REPORT_ROW_CAP,
+} from './report-helpers';
 
 const PO_TYPES = ['standard', 'job_work', 'outsource', 'service'];
 const PO_STATUSES = ['draft', 'open', 'partial', 'qc_pending', 'closed', 'cancelled'];
@@ -126,7 +132,7 @@ export const poLineAnalysisReport: RegisteredReport = {
       ) x
       ${pendingFrag}
       ORDER BY x.po_date DESC, x.po_code, x.line_no
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

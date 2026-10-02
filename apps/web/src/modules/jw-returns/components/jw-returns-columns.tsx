@@ -11,10 +11,16 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { statusText } from '@/lib/status-text';
 import type { DataTableColumn } from '@/ui/data';
 
+const STATUS_OPTIONS = [
+  { value: 'issued', label: statusText('issued') },
+  { value: 'cancelled', label: statusText('cancelled') },
+];
+
 export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
   return [
     {
       id: 'return_no',
+      sortFilterField: 'returnCode',
       kind: 'code',
       header: 'Return No.',
       className: 'td-code',
@@ -23,6 +29,7 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
     },
     {
       id: 'return_date',
+      sortFilterField: 'returnDate',
       kind: 'date',
       header: 'Return Date',
       className: 'mono text2',
@@ -31,6 +38,7 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
     },
     {
       id: 'jwso',
+      sortFilterField: 'jwsoCode',
       kind: 'code',
       header: 'JWSO',
       className: 'mono fw-700',
@@ -39,6 +47,7 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
     },
     {
       id: 'customer',
+      sortFilterField: 'customer',
       kind: 'text',
       header: 'Customer',
       align: 'left',
@@ -49,6 +58,7 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'td-code',
@@ -57,6 +67,7 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -67,6 +78,7 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
     },
     {
       id: 'return_qty',
+      sortFilterField: 'qty',
       kind: 'num',
       header: 'Return Qty',
       align: 'right',
@@ -76,6 +88,9 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
     },
     {
       id: 'status',
+      sortFilterField: 'status',
+      filterType: 'list',
+      filterOptions: STATUS_OPTIONS,
       kind: 'badge',
       header: 'Return Status',
       render: (r) => (

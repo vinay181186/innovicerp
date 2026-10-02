@@ -9,7 +9,11 @@
 // control — so no chevron is drawn here. Labels: Due Date per docs/NAMING.md
 // row 54 (the brief's "Due" is listed there as a variant to avoid).
 
-import type { DesignProjectListItem, DesignProjectStatus } from '@innovic/shared';
+import {
+  DESIGN_PROJECT_STATUSES,
+  type DesignProjectListItem,
+  type DesignProjectStatus,
+} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { ProgressBar, ROW_TINT } from '@/ui/data';
@@ -51,6 +55,9 @@ export function DesignProjectStatusBadge({
   return <span className={`badge ${cls[status] ?? 'b-grey'}`}>{status}</span>;
 }
 
+/** Project Status tick list for the server Sort & Filter (ADR-200). */
+const STATUS_OPTIONS = DESIGN_PROJECT_STATUSES.map((v) => ({ value: v, label: v }));
+
 /** Task-progress bar colour: green once every task is done, blue while under way. */
 function progressColor(pct: number): string {
   return pct >= 100 ? 'var(--green)' : 'var(--blue)';
@@ -80,6 +87,7 @@ export function designProjectColumns(opts: {
           {p.code}
         </Link>
       ),
+      sortFilterField: 'code',
     },
     {
       id: 'name',
@@ -90,6 +98,7 @@ export function designProjectColumns(opts: {
       ellipsis: true,
       render: (p) => p.projectName,
       title: (p) => p.projectName,
+      sortFilterField: 'projectName',
     },
     {
       id: 'so_no',
@@ -98,6 +107,7 @@ export function designProjectColumns(opts: {
       className: 'mono text2',
       nowrap: true,
       render: (p) => p.soCodeText ?? '—',
+      sortFilterField: 'soCode',
     },
     {
       id: 'customer',
@@ -107,6 +117,7 @@ export function designProjectColumns(opts: {
       ellipsis: true,
       render: (p) => p.clientText ?? '—',
       title: (p) => p.clientText ?? '',
+      sortFilterField: 'customer',
     },
     {
       id: 'lead',
@@ -116,6 +127,7 @@ export function designProjectColumns(opts: {
       ellipsis: true,
       render: (p) => p.leadText ?? '—',
       title: (p) => p.leadText ?? '',
+      sortFilterField: 'lead',
     },
     {
       id: 'due_date',
@@ -124,6 +136,7 @@ export function designProjectColumns(opts: {
       className: 'mono',
       nowrap: true,
       filterValue: (p) => p.targetDate,
+      sortFilterField: 'dueDate',
       render: (p) => {
         const overdue = isOverdue(p, today);
         return (
@@ -145,6 +158,8 @@ export function designProjectColumns(opts: {
       header: 'Project Status',
       nowrap: true,
       render: (p) => <DesignProjectStatusBadge status={p.status} />,
+      sortFilterField: 'status',
+      filterOptions: STATUS_OPTIONS,
     },
     {
       id: 'tasks',
@@ -153,6 +168,8 @@ export function designProjectColumns(opts: {
       className: 'mono',
       nowrap: true,
       filterValue: (p) => p.taskDone,
+      sortFilterField: 'taskDone',
+      filterType: 'num',
       render: (p) => `${p.taskDone}/${p.taskTotal}`,
     },
     {
@@ -160,6 +177,8 @@ export function designProjectColumns(opts: {
       minWidth: 150,
       header: 'Progress %',
       filterValue: (p) => p.taskProgressPct,
+      sortFilterField: 'progress',
+      filterType: 'num',
       // Bar and figure side by side on ONE line (ADR-199), mirroring Job Cards.
       render: (p) => (
         <span
@@ -190,6 +209,8 @@ export function designProjectColumns(opts: {
       headColor: 'var(--red)',
       nowrap: true,
       filterValue: (p) => p.openIssuesCount,
+      sortFilterField: 'openIssues',
+      filterType: 'num',
       render: (p) => (
         <span style={{ color: p.openIssuesCount > 0 ? 'var(--red2)' : 'var(--text3)' }}>
           {p.openIssuesCount}

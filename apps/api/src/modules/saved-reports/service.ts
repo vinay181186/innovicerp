@@ -5,11 +5,14 @@
 //   - Update / delete: only owner OR admin/manager
 //   - Spec validation against the source catalog before any DB write/run
 
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import { and, count, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import type { listSavedReportsQuerySchema } from '@innovic/shared';
+import type { z } from 'zod';
 import { savedReports, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { runAdHoc } from './runner';
 import type {
   AdHocSpec,
@@ -21,6 +24,7 @@ import type {
   UpdateSavedReportInput,
 } from './schema';
 import { adHocSpecSchema } from './schema';
+import { SAVED_REPORT_SF_COLUMNS } from './sf-columns';
 import { getSource, listSourceDescriptors } from './sources';
 import { softDeleteStamp } from '../../lib/audit-trail';
 
@@ -64,10 +68,41 @@ function rowToSavedReport(
   };
 }
 
-export async function listSavedReports(user: AuthContext): Promise<ListSavedReportsResponse> {
+// ADR-201: one 25-row page; search (name, description, source label / key,
+// owner e-mail) + Sort & Filter on the server. No `limit` → every visible
+// report. Newest-updated first, id breaks ties.
+type ListSavedReportsInput = z.infer<typeof listSavedReportsQuerySchema>;
+
+export async function listSavedReports(
+  user: AuthContext,
+  input: ListSavedReportsInput = { offset: 0 },
+): Promise<ListSavedReportsResponse> {
   const companyId = requireCompany(user);
+  const sf = readSf(input.sf);
+  const term = (input.search ?? '').trim().replace(/\s+/g, ' ');
+  const pat = `%${likeEscape(term)}%`;
+  const needle = term.toLowerCase();
+  const sourceHits = listSourceDescriptors()
+    .filter((d) => d.label.toLowerCase().includes(needle))
+    .map((d) => sql`${d.sourceKey}`);
+  const searchFrag =
+    term === ''
+      ? sql`TRUE`
+      : sql`(${savedReports.name} ILIKE ${pat} ESCAPE '\\'
+          OR ${savedReports.description} ILIKE ${pat} ESCAPE '\\'
+          OR ${savedReports.sourceKey} ILIKE ${pat} ESCAPE '\\'
+          OR ${users.email} ILIKE ${pat} ESCAPE '\\'
+          ${sourceHits.length > 0 ? sql`OR ${savedReports.sourceKey} IN (${sql.join(sourceHits, sql`, `)})` : sql``})`;
+  const where = and(
+    eq(savedReports.companyId, companyId),
+    isNull(savedReports.deletedAt),
+    // Service-layer visibility filter — RLS already gates company.
+    or(eq(savedReports.ownerId, user.id), eq(savedReports.isShared, true)),
+    searchFrag,
+    sql`TRUE ${sfWhere(SAVED_REPORT_SF_COLUMNS, sf)}`,
+  );
   return withUserContext(user, async (tx) => {
-    const rows = await tx
+    const base = tx
       .select({
         id: savedReports.id,
         companyId: savedReports.companyId,
@@ -86,20 +121,31 @@ export async function listSavedReports(user: AuthContext): Promise<ListSavedRepo
       })
       .from(savedReports)
       .leftJoin(users, eq(users.id, savedReports.ownerId))
-      .where(
-        and(
-          eq(savedReports.companyId, companyId),
-          isNull(savedReports.deletedAt),
-          // Service-layer visibility filter — RLS already gates company.
-          or(eq(savedReports.ownerId, user.id), eq(savedReports.isShared, true)),
+      .where(where)
+      .orderBy(
+        sfOrderBy(
+          SAVED_REPORT_SF_COLUMNS,
+          sf,
+          sql`${desc(savedReports.updatedAt)}, ${desc(savedReports.id)}`,
         ),
       )
-      .orderBy(desc(savedReports.updatedAt));
+      .$dynamic();
+    const [rows, totals] = await Promise.all([
+      input.limit === undefined
+        ? base.offset(input.offset)
+        : base.limit(input.limit).offset(input.offset),
+      tx
+        .select({ value: count() })
+        .from(savedReports)
+        .leftJoin(users, eq(users.id, savedReports.ownerId))
+        .where(where),
+    ]);
 
     return {
       reports: rows.map((r) =>
         rowToSavedReport(r as typeof savedReports.$inferSelect & { ownerEmail: string | null }),
       ),
+      total: totals[0]?.value ?? 0,
     };
   });
 }

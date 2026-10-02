@@ -25,26 +25,23 @@
 import type { UserAccessListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Lock } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { matchesSearchTerm } from '@/components/shared/search-match';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader } from '@/ui/layout';
-import { useUserAccessList } from '../api';
+import { ListFooter, ListHeader } from '@/ui/layout';
+import { useUserAccessList, useUserAccessPage } from '../api';
 import { ConfigureAccessModal } from '../components/configure-modal';
-import {
-  accessListColumns,
-  accessRowMenu,
-  accessRowTint,
-  deptLabel,
-} from '../components/access-list-columns';
-import { roleLabel } from '@/lib/role-label';
+import { accessListColumns, accessRowMenu, accessRowTint } from '../components/access-list-columns';
 
 const accessControlSearchSchema = z.object({
   configure: z.string().uuid().optional(),
+  page: pageSearchParam,
 });
 
 export const accessControlListRoute = createRoute({
@@ -57,18 +54,51 @@ export const accessControlListRoute = createRoute({
 function AccessControlListPage(): React.JSX.Element {
   const { data: me } = useSession();
   const navigate = accessControlListRoute.useNavigate();
-  const { configure } = accessControlListRoute.useSearch();
+  const { configure, page } = accessControlListRoute.useSearch();
   const isAdmin = me?.role === 'admin';
-  const { data, isLoading, isError, error } = useUserAccessList();
   const [editing, setEditing] = useState<UserAccessListItem | null>(null);
   const [term, setTerm] = useState('');
+  const [search, setSearch] = useState<string | undefined>(undefined);
+
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+
+  // ADR-201: 25 users a page; the search box, Sort & Filter and paging run on
+  // the server over every user. Any change of search / ▾ → page 1.
+  useEffect(() => {
+    const trimmed = normalizeSearchTerm(term);
+    const next = trimmed === '' ? undefined : trimmed;
+    if (next === search) return;
+    const id = window.setTimeout(() => {
+      setSearch(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [term, search, gotoPage]);
+  const sf = useServerSortFilter(TABLE_KEYS.accessControlList, () => gotoPage(1));
+
+  const offset = pageOffset(page);
+  const { data, isLoading, isFetching, isError, error } = useUserAccessPage({
+    search,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset,
+  });
+  useClampPage(page, data?.total, gotoPage);
 
   const columns = useMemo(() => accessListColumns(), []);
 
   // Arriving from "create user" with ?configure=<id>: open that row's box as
   // soon as the list resolves, so the two screens read as one action. The
-  // param is cleared on close so a back-navigation doesn't reopen it.
-  const items = data?.items;
+  // user may not be on the page on screen, so this looks in the WHOLE list
+  // (fetched only while ?configure is set). The param is cleared on close so
+  // a back-navigation doesn't reopen it.
+  const { data: everyone } = useUserAccessList({ enabled: Boolean(configure) });
+  const items = everyone?.items;
   useEffect(() => {
     if (!configure || !items) return;
     const hit = items.find((u) => u.userId === configure);
@@ -78,7 +108,7 @@ function AccessControlListPage(): React.JSX.Element {
   const closeModal = (): void => {
     setEditing(null);
     if (configure) {
-      void navigate({ search: () => ({}), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, configure: undefined }), replace: true });
     }
   };
 
@@ -93,25 +123,27 @@ function AccessControlListPage(): React.JSX.Element {
     );
   }
 
-  // Client-side search over the whole list (it loads in one fetch): the
-  // columns on screen — user name / email, department, tier summary, role.
-  const rows = (data?.items ?? []).filter((u) =>
-    matchesSearchTerm(
-      [u.userName, u.userEmail, deptLabel(u.mainDept)?.label, u.tierSummary, roleLabel(u.role)],
-      term,
-    ),
-  );
+  // The server matches the search over name / email, department, tier
+  // summary and role — the columns on screen — before cutting the page.
+  const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
 
   return (
     <div>
       <ListHeader
         title="Access Control"
         icon="🔒"
-        count={data ? rows.length : undefined}
+        count={data ? total : undefined}
         noun="user"
         search={term}
         onSearch={setTerm}
         searchPlaceholder="Search user, email, department, tiers…"
+        updating={isFetching && !isLoading}
+        onClearFilters={() => {
+          sf.clearFilters();
+          setTerm('');
+        }}
+        filtersActive={sf.filtering || term !== ''}
       />
 
       <div className="panel">
@@ -121,6 +153,7 @@ function AccessControlListPage(): React.JSX.Element {
           rows={rows}
           loading={isLoading}
           rowKey={(u) => u.userId}
+          sortFilterServer={sf}
           defaultHidden={['enforcement_warning']}
           rowClassName={(u) => accessRowTint(u)}
           rowMenu={(u) => accessRowMenu(() => setEditing(u))}
@@ -131,7 +164,7 @@ function AccessControlListPage(): React.JSX.Element {
                   ? error.message
                   : 'Could not load access settings. Try again.'}
               </span>
-            ) : term.trim() ? (
+            ) : term.trim() || sf.filtering ? (
               'No users match.'
             ) : (
               'No users yet. Create users in User Management first.'
@@ -139,6 +172,14 @@ function AccessControlListPage(): React.JSX.Element {
           }
         />
       </div>
+
+      <ListFooter
+        total={total}
+        noun="user"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
         Admins always have full access.

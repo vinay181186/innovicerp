@@ -1,9 +1,10 @@
 // Report / Document Master service (QC Wave 5). Mirrors legacy
 // renderReportMaster L23677. CRUD over report_types (migration 0038).
 
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreateReportTypeInput,
+  ListReportTypesQuery,
   ListReportTypesResponse,
   ReportType,
   UpdateReportTypeInput,
@@ -12,6 +13,18 @@ import { reportTypes } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+
+/** Sort & Filter (ADR-200) — the Report Types sheet's columns, as SELECTed. */
+const REPORT_TYPE_SF_COLUMNS: SfColumnMap = {
+  name: { sql: sql`${reportTypes.name}`, type: 'text' },
+  description: { sql: sql`${reportTypes.description}`, type: 'text' },
+  defaultMandatory: {
+    sql: sql`CASE WHEN ${reportTypes.defaultMandatory} THEN 'mandatory' ELSE 'optional' END`,
+    type: 'list',
+  },
+  status: { sql: sql`${reportTypes.status}`, type: 'list' },
+};
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -33,15 +46,37 @@ function toItem(r: Row): ReportType {
   };
 }
 
-export async function listReportTypes(user: AuthContext): Promise<ListReportTypesResponse> {
+/** Paged (ADR-201): `total` uses the SAME where as the page; newest first,
+ *  id as the tie-breaker so a page never repeats or skips a row. */
+export async function listReportTypes(
+  input: ListReportTypesQuery,
+  user: AuthContext,
+): Promise<ListReportTypesResponse> {
   const companyId = requireCompany(user);
+  const sf = readSf(input.sf);
+  const where = and(
+    eq(reportTypes.companyId, companyId),
+    isNull(reportTypes.deletedAt),
+    sql`TRUE ${sfWhere(REPORT_TYPE_SF_COLUMNS, sf)}`,
+  );
+  const orderBy = sfOrderBy(
+    REPORT_TYPE_SF_COLUMNS,
+    sf,
+    sql`${reportTypes.createdAt} DESC, ${reportTypes.id} DESC`,
+  );
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select()
       .from(reportTypes)
-      .where(and(eq(reportTypes.companyId, companyId), isNull(reportTypes.deletedAt)))
-      .orderBy(desc(reportTypes.createdAt));
-    return { items: rows.map(toItem) };
+      .where(where)
+      .orderBy(orderBy)
+      .limit(input.limit)
+      .offset(input.offset);
+    const [cnt] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(reportTypes)
+      .where(where);
+    return { items: rows.map(toItem), total: Number(cnt?.n ?? 0) };
   });
 }
 

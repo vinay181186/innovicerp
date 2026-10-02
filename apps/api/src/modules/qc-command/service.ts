@@ -21,6 +21,7 @@ import type {
   QcAssignInput,
   QcAssignmentResult,
   QcCommandPareto,
+  QcCommandQuery,
   QcCommandResponse,
   QcCommandQueueRow,
   QcFpyGroupRow,
@@ -36,6 +37,7 @@ import { qcAssignments } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { QC_COMMAND_ALL, pageOf, sortQueue } from './paging';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -105,7 +107,10 @@ function pct(passed: number, total: number): number {
   return total > 0 ? Math.round((passed / total) * 100) : 0;
 }
 
-export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse> {
+export async function getQcCommand(
+  user: AuthContext,
+  query: QcCommandQuery = QC_COMMAND_ALL,
+): Promise<QcCommandResponse> {
   const companyId = requireCompany(user);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -157,7 +162,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
         WHERE vos.company_id = ${companyId}::uuid
           AND (vos.qc_required OR vos.op_type = 'qc')
           AND vos.qc_pending > 0
-        ORDER BY jc.code, vos.op_seq
+        ORDER BY jc.code, vos.op_seq, vos.jc_op_id
       `),
 
       // 2. Every QC op_log row (for attempt counts, FPY, rework). Ordered so
@@ -214,6 +219,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
                item_code_text AS "itemCode"
         FROM public.nc_register
         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+        ORDER BY id
       `),
     ]);
 
@@ -307,7 +313,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           passed: v.passed,
           pct: pct(v.passed, v.total),
         }))
-        .sort((a, b) => a.pct - b.pct);
+        .sort((a, b) => a.pct - b.pct || a.name.localeCompare(b.name));
     const byItem: QcFpyItemRow[] = [...byItemAcc.entries()]
       .map(([code, v]) => ({
         code,
@@ -316,7 +322,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
         passed: v.passed,
         pct: pct(v.passed, v.total),
       }))
-      .sort((a, b) => a.pct - b.pct)
+      .sort((a, b) => a.pct - b.pct || a.code.localeCompare(b.code))
       .slice(0, 10);
 
     // ── Rework ──
@@ -344,7 +350,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           daysElapsed: daysBetween(first, last ?? today),
         };
       })
-      .sort((a, b) => b.attempts - a.attempts);
+      .sort((a, b) => b.attempts - a.attempts || a.jcOpId.localeCompare(b.jcOpId));
 
     const inspectors = inspectorRes as unknown as QcInspectorOption[];
 
@@ -364,7 +370,9 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
       if (nc.itemCode) acc.items.set(nc.itemCode, (acc.items.get(nc.itemCode) ?? 0) + 1);
       reasonAcc.set(reason, acc);
     }
-    const paretoSorted = [...reasonAcc.entries()].sort((a, b) => b[1].qty - a[1].qty);
+    const paretoSorted = [...reasonAcc.entries()].sort(
+      (a, b) => b[1].qty - a[1].qty || a[0].localeCompare(b[0]),
+    );
     const paretoTotalQty = paretoSorted.reduce((s, [, v]) => s + v.qty, 0);
     const paretoRows: QcParetoRow[] = paretoSorted.map(([reason, v]) => ({
       reason,
@@ -426,8 +434,21 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           currentLoad: loadByInspector.get(name) ?? 0,
         };
       })
-      .sort((a, b) => b.inspections - a.inspections);
+      .sort((a, b) => b.inspections - a.inspections || a.name.localeCompare(b.name));
 
+    const byOperation = toGroupRows(byOpAcc);
+    const byInspector = [...byInspAcc.entries()]
+      .map(([name, v]) => ({
+        name,
+        total: v.total,
+        passed: v.passed,
+        pct: pct(v.passed, v.total),
+      }))
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    const sortedQueue = sortQueue(queue, query.queueSort);
+    const { limit } = query;
+
+    // Stats + totals are over EVERY row; only the table bodies are paged.
     return {
       stats: {
         pendingOps: queue.length,
@@ -436,25 +457,28 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
         reworkItems: queue.filter((q) => q.attemptNo > 1).length,
         fpyPct: pct(fpyPassed, fpyTotal),
       },
-      queue,
+      totals: {
+        queue: queue.length,
+        fpyByOperation: byOperation.length,
+        fpyByInspector: byInspector.length,
+        fpyByItem: byItem.length,
+        pareto: paretoRows.length,
+        inspectorPerf: inspectorPerf.length,
+        rework: rework.length,
+      },
+      queue: pageOf(sortedQueue, limit, query.queueOffset),
       fpy: {
         overallPct: pct(fpyPassed, fpyTotal),
         total: fpyTotal,
         passed: fpyPassed,
-        byOperation: toGroupRows(byOpAcc),
-        byInspector: [...byInspAcc.entries()]
-          .map(([name, v]) => ({
-            name,
-            total: v.total,
-            passed: v.passed,
-            pct: pct(v.passed, v.total),
-          }))
-          .sort((a, b) => b.total - a.total),
+        byOperation: pageOf(byOperation, limit, query.fpyOpOffset),
+        byInspector: pageOf(byInspector, limit, query.fpyInspOffset),
+        // Top 10 by design — always one page.
         byItem,
       },
-      rework,
-      pareto,
-      inspectorPerf,
+      rework: pageOf(rework, limit, query.reworkOffset),
+      pareto: { ...pareto, rows: pageOf(pareto.rows, limit, query.paretoOffset) },
+      inspectorPerf: pageOf(inspectorPerf, limit, query.inspectorOffset),
       inspectors,
     };
   });

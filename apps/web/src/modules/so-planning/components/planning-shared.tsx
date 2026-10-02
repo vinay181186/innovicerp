@@ -19,11 +19,6 @@ export type ModalState =
   | { kind: 'equip-bom'; soLineId: string }
   | { kind: 'assembly-bom'; soLineId: string };
 
-// The search-results view fetches one detail per matching SO. Cap it so a
-// one-letter term does not fan out into a request per SO on the board; the
-// header tells the user to refine when the cap is hit.
-export const MAX_SEARCH_SOS = 20;
-
 export const ORDER_STATUS_LABEL: Record<PlanningSoListItem['planningStatus'], string> = {
   fully_planned: 'Fully Planned',
   partial: 'Partly Planned',

@@ -608,6 +608,9 @@ export async function listGoodsReceiptNotes(
     // summary, so the pager total and the QC counts follow the filters too.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(GRN_SF_COLUMNS, sf);
+    // The summary needs the line totals only when a ▾ filter reads them — an
+    // unfiltered summary must not aggregate every GRN line a second time.
+    const summaryLineAgg = sf && sf.filters.length > 0 ? lineAggJoin : sql``;
     const orderBy = sfOrderBy(GRN_SF_COLUMNS, sf, sql`grn.grn_date DESC, grn.code DESC`);
 
     const result = await tx.execute(sql`
@@ -681,11 +684,11 @@ export async function listGoodsReceiptNotes(
         WHERE gnl.goods_receipt_note_id = grn.id
           AND gnl.deleted_at IS NULL
       ) per_grn ON TRUE
-      -- For the Sort & Filter fields only (PO/NC No. and the line totals); both
-      -- are one row per GRN, so no count changes.
+      -- For the Sort & Filter fields only (PO/NC No. and, when filtered, the
+      -- line totals); both are one row per GRN, so no count changes.
       LEFT JOIN public.purchase_orders po
         ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
-      ${lineAggJoin}
+      ${summaryLineAgg}
       WHERE grn.company_id = ${companyId}::uuid
         AND grn.deleted_at IS NULL
         ${searchFrag}

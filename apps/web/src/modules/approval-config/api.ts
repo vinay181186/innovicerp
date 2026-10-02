@@ -1,5 +1,6 @@
 import type {
   ApprovalConfig,
+  ApprovalHistoryQuery,
   ApprovalHistoryResponse,
   SaveApprovalConfigInput,
 } from '@innovic/shared';
@@ -10,6 +11,7 @@ export const approvalConfigKeys = {
   all: ['approval-config'] as const,
   config: () => [...approvalConfigKeys.all, 'config'] as const,
   history: () => [...approvalConfigKeys.all, 'history'] as const,
+  historyPage: (q: ApprovalHistoryQuery) => [...approvalConfigKeys.history(), q] as const,
 };
 
 export function useApprovalConfig() {
@@ -19,10 +21,19 @@ export function useApprovalConfig() {
   });
 }
 
-export function useApprovalHistory() {
+/** One page of approval activity (ADR-201): search + Sort & Filter on the server. */
+export function useApprovalHistory(q: ApprovalHistoryQuery) {
   return useQuery<ApprovalHistoryResponse>({
-    queryKey: approvalConfigKeys.history(),
-    queryFn: () => apiFetch<ApprovalHistoryResponse>('/approval-config/history'),
+    queryKey: approvalConfigKeys.historyPage(q),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (q.search) params.set('search', q.search);
+      if (q.sf) params.set('sf', q.sf);
+      params.set('limit', String(q.limit));
+      params.set('offset', String(q.offset));
+      return apiFetch<ApprovalHistoryResponse>(`/approval-config/history?${params.toString()}`);
+    },
+    placeholderData: (prev) => prev,
   });
 }
 

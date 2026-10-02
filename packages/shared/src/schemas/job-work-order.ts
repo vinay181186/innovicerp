@@ -31,6 +31,7 @@ import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { SO_STATUSES } from '../enums/so-status';
 import { uomSchema } from './item';
+import { sfRawParamSchema } from './list-query';
 
 export const jwStatusSchema = z.enum(SO_STATUSES);
 
@@ -262,9 +263,7 @@ export type UpdateJobWorkOrderInput = z.infer<typeof updateJobWorkOrderInputSche
 export const shortCloseJobWorkOrderLineInputSchema = z.object({
   reason: z.string().trim().min(1).max(500),
 });
-export type ShortCloseJobWorkOrderLineInput = z.infer<
-  typeof shortCloseJobWorkOrderLineInputSchema
->;
+export type ShortCloseJobWorkOrderLineInput = z.infer<typeof shortCloseJobWorkOrderLineInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 
@@ -280,6 +279,8 @@ export const listJobWorkOrdersQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200) — the screen's column sort + filters. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

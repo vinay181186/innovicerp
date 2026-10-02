@@ -6,6 +6,7 @@
 // v1 (legacy stored them in db.stuckThresholds; no config store yet).
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const stuckThresholdsSchema = z.object({
   design: z.number().int().positive(),
@@ -44,8 +45,21 @@ export const stuckItemSchema = z.object({
 });
 export type StuckItem = z.infer<typeof stuckItemSchema>;
 
+/** ADR-201: the list pages at 25; search + Sort & Filter run on the server. */
+export const stuckDashboardQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(1000).default(1000),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type StuckDashboardQuery = z.input<typeof stuckDashboardQuerySchema>;
+
 export const stuckDashboardResponseSchema = z.object({
+  /** One page (search + sf applied). */
   items: z.array(stuckItemSchema),
+  /** Rows matching search + sf — the pager's total. */
+  total: z.number().int().nonnegative(),
+  /** KPI strip — over EVERY stuck activity (search / sf do not change it). */
   summary: z.object({
     totalStuck: z.number().int().nonnegative(),
     criticalStuck: z.number().int().nonnegative(),

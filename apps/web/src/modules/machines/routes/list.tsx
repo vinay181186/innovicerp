@@ -198,6 +198,10 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
+  // The ₹/hr ▾ only once the server has SAID this user may see prices — before
+  // the first page arrives the column shows, but a no-price user must never
+  // get a sort / filter on it.
+  const priceSortable = data?.priceVisible === true;
 
   const rows = data?.machines ?? [];
   const total = data?.total ?? 0;
@@ -284,7 +288,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         : [
             {
               id: 'hour_rate',
-              sortFilterField: 'hourRate',
+              ...(priceSortable ? { sortFilterField: 'hourRate' } : {}),
               header: 'Hour Rate (₹/hr)',
               align: 'right' as const,
               headColor: 'var(--green)',
@@ -307,7 +311,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         render: (m) => <StatusBadge kind="machine" status={m.status} />,
       },
     ],
-    [currentPage, priceHidden, groupLookup],
+    [currentPage, priceHidden, priceSortable, groupLookup],
   );
 
   // The page title, the tab strip and the "Hide page" access gate all come from

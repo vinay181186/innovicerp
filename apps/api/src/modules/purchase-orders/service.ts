@@ -637,6 +637,9 @@ export async function listPurchaseOrders(
     // Value is sortable / filterable only by a user who may see PO prices.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(PO_SF_COLUMNS, sf, { canSeePrice: showMoney });
+    // The count needs the line totals only when a ▾ filter reads them — an
+    // unfiltered count must not aggregate every PO line a second time.
+    const countLineAgg = sf && sf.filters.length > 0 ? lineAggJoin : sql``;
     const orderBy = sfOrderBy(PO_SF_COLUMNS, sf, sql`po.po_date DESC, po.code DESC`, {
       canSeePrice: showMoney,
     });
@@ -719,7 +722,7 @@ export async function listPurchaseOrders(
       SELECT COUNT(*)::int AS total
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
-      ${lineAggJoin}
+      ${countLineAgg}
       WHERE po.company_id = ${companyId}::uuid
         AND po.deleted_at IS NULL
         ${searchFrag}

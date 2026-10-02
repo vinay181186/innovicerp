@@ -43,6 +43,10 @@ export const jobQueueRowSchema = z.object({
   /** True when this op has an active running_ops record. */
   isRunning: z.boolean(),
   queuePosition: z.number().int().nullable(),
+  /** 0-based place of this op in its machine's FULL queue (paged mode only,
+   *  ADR-201) — Sr No and the ▲/▼ limits read it, since a 25-row page no
+   *  longer holds the whole queue. */
+  queueIndex: z.number().int().nonnegative().optional(),
 });
 export type JobQueueRow = z.infer<typeof jobQueueRowSchema>;
 
@@ -62,13 +66,34 @@ export const jobQueueMachineSchema = z.object({
 export type JobQueueMachine = z.infer<typeof jobQueueMachineSchema>;
 
 export const jobQueueQuerySchema = z.object({
+  /** Without `limit`: only this machine is returned (unchanged). With `limit`
+   *  (paged mode): only this machine's ROWS are paged, while every machine's
+   *  summary (pendingCount / pendingHrs / runningCount) is still returned for
+   *  the machine picker. */
   machineId: z.string().uuid().optional(),
+  /** Paged mode only: JC no., POL, CODE/REV, item name, SO no., customer,
+   *  operation — over the WHOLE queue on the server. */
+  search: z.string().trim().max(200).optional(),
+  /** Set → paged mode (ADR-201): `rows` hold just this page, `total` = every
+   *  matching row. Unset → the whole queue, as before. */
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
 export type JobQueueQuery = z.infer<typeof jobQueueQuerySchema>;
 
 export interface JobQueueResponse {
   machines: JobQueueMachine[];
+  /** Paged mode: queue rows matching machine + search, over all pages. */
+  total?: number;
 }
+
+/** ▲/▼ on one queue row (ADR-201): the SERVER swaps it with its neighbour in
+ *  the machine's FULL queue, so a move on page 2 never disturbs other pages. */
+export const moveJobQueueOpInputSchema = z.object({
+  jcOpId: z.string().uuid(),
+  dir: z.enum(['up', 'down']),
+});
+export type MoveJobQueueOpInput = z.infer<typeof moveJobQueueOpInputSchema>;
 
 export const reorderJobQueueInputSchema = z.object({
   /** Ordered list of jc_op IDs in the new queue order for this machine. */

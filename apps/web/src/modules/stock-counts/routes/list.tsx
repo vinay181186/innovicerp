@@ -13,9 +13,12 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -23,8 +26,6 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useStockCounts } from '../api';
-
-const PAGE_SIZE = 25;
 
 // Sort & Filter tick lists (ADR-200): the stored code + the label shown.
 const PURPOSE_OPTIONS = Object.entries(STOCK_COUNT_PURPOSE_LABELS).map(([value, label]) => ({
@@ -46,6 +47,13 @@ export const STATUS_BADGE: Record<StockCountStatus, string> = {
 export const stockCountsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'stock-counts',
+  // Search, status and the page live in the URL (ADR-201) so Refresh / Back
+  // keep the page the user was on.
+  validateSearch: z.object({
+    search: z.string().optional(),
+    status: z.enum(STOCK_COUNT_STATUSES).optional(),
+    page: pageSearchParam,
+  }),
   component: StockCountsListPage,
 });
 
@@ -53,23 +61,45 @@ function StockCountsListPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'stockcount_create');
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<StockCountStatus | ''>('');
-  const [page, setPage] = useState(1);
+  const urlSearch = stockCountsListRoute.useSearch();
+  const listNavigate = stockCountsListRoute.useNavigate();
+  const status: StockCountStatus | '' = urlSearch.status ?? '';
+  const page = urlSearch.page;
+  const setPage = useCallback(
+    (p: number) => void listNavigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [listNavigate],
+  );
+  // The box mirrors ?search=; a 300ms debounce writes it back on page 1.
+  const [search, setSearch] = useState(urlSearch.search ?? '');
+  useEffect(() => {
+    setSearch((prev) =>
+      normalizeSearchTerm(prev) === (urlSearch.search ?? '') ? prev : (urlSearch.search ?? ''),
+    );
+  }, [urlSearch.search]);
+  useEffect(() => {
+    const trimmed = normalizeSearchTerm(search);
+    const next = trimmed === '' ? undefined : trimmed;
+    if (next === urlSearch.search) return;
+    const id = window.setTimeout(() => {
+      void listNavigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, urlSearch.search, listNavigate]);
   // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
   // filtering only the loaded page would miss counts. Every change goes back to
   // page 1.
   const sf = useServerSortFilter(TABLE_KEYS.stockCounts, () => setPage(1));
   const { data, isLoading, isError, error } = useStockCounts({
-    search: search.trim() || undefined,
+    search: urlSearch.search,
     status: status || undefined,
     sf: sf.param,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
+  useClampPage(page, data?.total, setPage);
 
   const rows = data?.items ?? [];
-  const filtered = Boolean(search.trim() || status || sf.param);
+  const filtered = Boolean(search.trim() || status || sf.filtering);
 
   // The ruled sheet's columns. Count No. is the pinned first column; Items is a
   // right-aligned number; Count Status is a badge; Remarks is long free text
@@ -179,18 +209,18 @@ function StockCountsListPage(): React.JSX.Element {
         count={data?.total}
         noun="count"
         search={search}
-        onSearch={(v) => {
-          setSearch(v);
-          setPage(1);
-        }}
+        onSearch={setSearch}
         searchPlaceholder="Search count no., remarks…"
         filters={
           <Select
             value={status}
             aria-label="Count Status"
             onChange={(e) => {
-              setStatus(e.target.value as StockCountStatus | '');
-              setPage(1);
+              const v = e.target.value as StockCountStatus | '';
+              void listNavigate({
+                search: (prev) => ({ ...prev, status: v || undefined, page: 1 }),
+                replace: true,
+              });
             }}
             options={[
               { value: '', label: 'All statuses' },
@@ -235,10 +265,9 @@ function StockCountsListPage(): React.JSX.Element {
       {data ? (
         <ListFooter
           total={data.total}
-          shown={data.items.length}
           noun="count"
           page={page}
-          pageSize={PAGE_SIZE}
+          pageSize={LIST_PAGE_SIZE}
           onPage={setPage}
         />
       ) : null}

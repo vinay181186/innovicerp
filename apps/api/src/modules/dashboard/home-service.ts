@@ -3,12 +3,7 @@
 // caller, the My Work list, and the layout-specific data (admin KPIs / today /
 // needs-attention, or operator, or specialist).
 
-import type {
-  AdminKpis,
-  AttnItem,
-  HomeResponse,
-  HomeToday,
-} from '@innovic/shared';
+import type { AdminKpis, AttnItem, HomeResponse, HomeToday } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -16,8 +11,13 @@ import { AuthorizationError } from '../../lib/errors';
 import { type DashAccess, detectPrimaryDept, hasDept, loadAccess } from './access';
 import { getConfig } from './config-service';
 import { buildOperator, buildSpecialist } from './home-views';
+import { readyOpsPage } from './ready-ops';
 import { buildWorkListWith, istToday } from './work-list-service';
-import { DASHBOARD_QUICK_LINKS } from '@innovic/shared';
+import {
+  DASHBOARD_QUICK_LINKS,
+  type OperatorReadyQuery,
+  type OperatorReadyResponse,
+} from '@innovic/shared';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -35,7 +35,11 @@ async function scalar(tx: DbTransaction, text: string): Promise<number> {
 
 function greetingPart(): string {
   const istHour = Number(
-    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false }),
+    new Date().toLocaleString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      hour12: false,
+    }),
   );
   if (istHour < 12) return 'morning';
   if (istHour < 17) return 'afternoon';
@@ -51,7 +55,10 @@ function dateLabel(): string {
   });
 }
 
-function resolveLayout(a: DashAccess): { layout: HomeResponse['layout']; primaryDept: string | null } {
+function resolveLayout(a: DashAccess): {
+  layout: HomeResponse['layout'];
+  primaryDept: string | null;
+} {
   if (a.role === 'operator') return { layout: 'operator', primaryDept: null };
   if (!a.isAdmin && !a.isManager && !a.eff.fullAccess) {
     const dept = detectPrimaryDept(a);
@@ -127,26 +134,92 @@ async function buildAdmin(
     todayOutputQty,
   };
 
-  const grnReceived = await scalar(tx, `SELECT COUNT(*)::int AS c FROM goods_receipt_notes WHERE company_id='${cid}'::uuid AND grn_date='${today}' AND deleted_at IS NULL`);
-  const dispatches = await scalar(tx, `SELECT COUNT(*)::int AS c FROM customer_dispatches WHERE company_id='${cid}'::uuid AND dispatch_date='${today}' AND status='dispatched' AND deleted_at IS NULL`);
-  const opsRunning = await scalar(tx, `SELECT COUNT(*)::int AS c FROM running_ops WHERE company_id='${cid}'::uuid AND status='running'`);
-  const opsCompleted = await scalar(tx, `SELECT COUNT(*)::int AS c FROM op_log WHERE company_id='${cid}'::uuid AND log_date='${today}' AND log_type <> 'start'`);
+  const grnReceived = await scalar(
+    tx,
+    `SELECT COUNT(*)::int AS c FROM goods_receipt_notes WHERE company_id='${cid}'::uuid AND grn_date='${today}' AND deleted_at IS NULL`,
+  );
+  const dispatches = await scalar(
+    tx,
+    `SELECT COUNT(*)::int AS c FROM customer_dispatches WHERE company_id='${cid}'::uuid AND dispatch_date='${today}' AND status='dispatched' AND deleted_at IS NULL`,
+  );
+  const opsRunning = await scalar(
+    tx,
+    `SELECT COUNT(*)::int AS c FROM running_ops WHERE company_id='${cid}'::uuid AND status='running'`,
+  );
+  const opsCompleted = await scalar(
+    tx,
+    `SELECT COUNT(*)::int AS c FROM op_log WHERE company_id='${cid}'::uuid AND log_date='${today}' AND log_type <> 'start'`,
+  );
   const todayPanel: HomeToday = { grnReceived, dispatches, opsRunning, opsCompleted };
 
-  const draftPOs = await scalar(tx, `SELECT COUNT(*)::int AS c FROM purchase_orders WHERE company_id='${cid}'::uuid AND status='draft' AND deleted_at IS NULL`);
-  const overduePOs = await scalar(tx, `SELECT COUNT(*)::int AS c FROM purchase_orders WHERE company_id='${cid}'::uuid AND status IN ('open','partial') AND due_date < '${today}' AND deleted_at IS NULL`);
-  const pendingPRs = await scalar(tx, `SELECT COUNT(*)::int AS c FROM purchase_requests WHERE company_id='${cid}'::uuid AND status='open' AND deleted_at IS NULL`);
-  const pendingNCs = await scalar(tx, `SELECT COUNT(*)::int AS c FROM nc_register WHERE company_id='${cid}'::uuid AND status='pending' AND deleted_at IS NULL`);
+  const draftPOs = await scalar(
+    tx,
+    `SELECT COUNT(*)::int AS c FROM purchase_orders WHERE company_id='${cid}'::uuid AND status='draft' AND deleted_at IS NULL`,
+  );
+  const overduePOs = await scalar(
+    tx,
+    `SELECT COUNT(*)::int AS c FROM purchase_orders WHERE company_id='${cid}'::uuid AND status IN ('open','partial') AND due_date < '${today}' AND deleted_at IS NULL`,
+  );
+  const pendingPRs = await scalar(
+    tx,
+    `SELECT COUNT(*)::int AS c FROM purchase_requests WHERE company_id='${cid}'::uuid AND status='open' AND deleted_at IS NULL`,
+  );
+  const pendingNCs = await scalar(
+    tx,
+    `SELECT COUNT(*)::int AS c FROM nc_register WHERE company_id='${cid}'::uuid AND status='pending' AND deleted_at IS NULL`,
+  );
 
   const attn: AttnItem[] = [];
   const plural = (n: number) => (n > 1 ? 's' : '');
-  if (kpis.overdueSOs > 0) attn.push({ icon: '🔴', label: `${kpis.overdueSOs} SO${plural(kpis.overdueSOs)} past due`, navPage: '/so-overview', severity: 'critical' });
-  if (overduePOs > 0) attn.push({ icon: '🔴', label: `${overduePOs} PO${plural(overduePOs)} overdue delivery`, navPage: '/purchase-orders', severity: 'critical' });
-  if (kpis.overdueJCs > 0) attn.push({ icon: '🔴', label: `${kpis.overdueJCs} Job Card${plural(kpis.overdueJCs)} overdue`, navPage: '/job-cards', severity: 'critical' });
-  if (draftPOs > 0) attn.push({ icon: '🟡', label: `${draftPOs} PO${plural(draftPOs)} pending approval`, navPage: '/purchase-orders', severity: 'warn' });
-  if (pendingPRs > 0) attn.push({ icon: '🟡', label: `${pendingPRs} Purchase Request${plural(pendingPRs)} pending`, navPage: '/purchase-requests', severity: 'warn' });
-  if (pendingNCs > 0) attn.push({ icon: '🟡', label: `${pendingNCs} NC${plural(pendingNCs)} pending disposition`, navPage: '/nc-register', severity: 'warn' });
-  if (kpis.dueThisWeekSOs > 0) attn.push({ icon: '🔵', label: `${kpis.dueThisWeekSOs} SO${plural(kpis.dueThisWeekSOs)} due this week`, navPage: '/so-overview', severity: 'info' });
+  if (kpis.overdueSOs > 0)
+    attn.push({
+      icon: '🔴',
+      label: `${kpis.overdueSOs} SO${plural(kpis.overdueSOs)} past due`,
+      navPage: '/so-overview',
+      severity: 'critical',
+    });
+  if (overduePOs > 0)
+    attn.push({
+      icon: '🔴',
+      label: `${overduePOs} PO${plural(overduePOs)} overdue delivery`,
+      navPage: '/purchase-orders',
+      severity: 'critical',
+    });
+  if (kpis.overdueJCs > 0)
+    attn.push({
+      icon: '🔴',
+      label: `${kpis.overdueJCs} Job Card${plural(kpis.overdueJCs)} overdue`,
+      navPage: '/job-cards',
+      severity: 'critical',
+    });
+  if (draftPOs > 0)
+    attn.push({
+      icon: '🟡',
+      label: `${draftPOs} PO${plural(draftPOs)} pending approval`,
+      navPage: '/purchase-orders',
+      severity: 'warn',
+    });
+  if (pendingPRs > 0)
+    attn.push({
+      icon: '🟡',
+      label: `${pendingPRs} Purchase Request${plural(pendingPRs)} pending`,
+      navPage: '/purchase-requests',
+      severity: 'warn',
+    });
+  if (pendingNCs > 0)
+    attn.push({
+      icon: '🟡',
+      label: `${pendingNCs} NC${plural(pendingNCs)} pending disposition`,
+      navPage: '/nc-register',
+      severity: 'warn',
+    });
+  if (kpis.dueThisWeekSOs > 0)
+    attn.push({
+      icon: '🔵',
+      label: `${kpis.dueThisWeekSOs} SO${plural(kpis.dueThisWeekSOs)} due this week`,
+      navPage: '/so-overview',
+      severity: 'info',
+    });
 
   return { kpis, today: todayPanel, needsAttention: attn.slice(0, 6) };
 }
@@ -165,7 +238,11 @@ export async function getHome(user: AuthContext): Promise<HomeResponse> {
   const cfg = await getConfig(user);
 
   return withUserContext(user, async (tx) => {
-    const meRows = await tx.select({ name: users.fullName }).from(users).where(sql`id = ${user.id}::uuid`).limit(1);
+    const meRows = await tx
+      .select({ name: users.fullName })
+      .from(users)
+      .where(sql`id = ${user.id}::uuid`)
+      .limit(1);
     const myName = meRows[0]?.name ?? '';
 
     const workList = await buildWorkListWith(tx, user, a, myName);
@@ -200,4 +277,16 @@ export async function getHome(user: AuthContext): Promise<HomeResponse> {
 
     return base;
   });
+}
+
+/** Operator home "Ready for You" — one page + the count over every ready op. */
+export async function getOperatorReady(
+  user: AuthContext,
+  query: OperatorReadyQuery,
+): Promise<OperatorReadyResponse> {
+  const companyId = requireCompany(user);
+  const today = istToday();
+  return withUserContext(user, (tx) =>
+    readyOpsPage(tx, companyId, today, query.limit, query.offset),
+  );
 }

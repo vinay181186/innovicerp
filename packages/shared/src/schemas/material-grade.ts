@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { queryBoolean } from '../lib/query-boolean';
+import { sfRawParamSchema } from './list-query';
 
 // Raw-material GRADE master (e.g. EN24, EN8, SS304). One of the two masters
 // behind the single "Raw Material Master" menu entry; the other is
@@ -79,8 +80,10 @@ export interface BulkCreateMaterialGradesResponse {
 export const listMaterialGradesQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   isActive: queryBoolean().optional(),
-  // 1000 so the master list loads in one scrolling fetch (no Prev/Next),
-  // matching the Vendor Master.
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  // 1000 for the pickers (raw-material-pickers PICK_LIMIT); the master tab
+  // asks for one 25-row page (ADR-201).
   limit: z.coerce.number().int().positive().max(1000).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

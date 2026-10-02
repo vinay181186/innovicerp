@@ -34,10 +34,20 @@ export const DC_SF_COLUMNS: SfColumnMap = {
 };
 
 /**
- * The page query's joins beyond `dc` + `v` — word for word — for the count and
- * the KPI-summary queries, so every DC_SF_COLUMNS expression is valid there
- * too. Each is one row per DC (FK lookups and single-row LATERAL aggregates),
- * so none can change which DCs, or how many DC lines, are counted.
+ * The page query's joins beyond `dc` + `v` — the ONE copy: listDeliveryChallans
+ * interpolates it in its page query, and in its count and KPI-summary queries
+ * while a filter is on, so every DC_SF_COLUMNS expression is valid there too.
+ * Each is one row per DC (FK lookups and single-row LATERAL aggregates), so
+ * none can change which DCs, or how many DC lines, are counted.
+ *
+ * po_so: OSP/vendor DCs carry only purchase_order_id (no sales_order_line_id),
+ * so the SO is resolved through the PO's lines' source_so_line_id as a
+ * fallback. One drawing revision, or none at all: the SO code beside it is an
+ * aggregate over every line of the PO, so pairing "IN-SO-11, IN-SO-12" with
+ * "A, B" would leave the reader to guess which belongs to which. A revision is
+ * emitted only when all of the PO's SO lines agree on one; otherwise NULL,
+ * which prints as no revision rather than as a guess. ::text for the pre-0119
+ * integer column.
  */
 export const DC_SF_JOINS = sql`
       LEFT JOIN public.purchase_orders po

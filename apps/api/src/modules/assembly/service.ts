@@ -37,6 +37,7 @@ import type {
   AssemblyUnitRow,
   AssemblyUnitStatus,
   DocumentTraceability,
+  ListAssembliesQuery,
   MarkUnitAssembledInput,
   MarkUnitDispatchedInput,
   RelatedDoc,
@@ -70,6 +71,7 @@ import { lockSoRow, readPartsOutMany } from '../../lib/assembly-parts';
 import { restoreStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import { fitParts, fitSummary, lockSoOfUnit, unfitUnit } from './fitting';
+import { loadAssemblySoRows } from './list-rows';
 import { postAssemblyOutput, reverseAssemblyStockCascade } from './stock-cascade';
 
 function requireCompany(user: AuthContext): string {
@@ -347,37 +349,17 @@ export async function getAssemblyTracker(
 
 // ─── List Equipment SOs ───────────────────────────────────────────────────
 
-export async function listAssemblies(user: AuthContext): Promise<AssemblyListResponse> {
+export async function listAssemblies(
+  user: AuthContext,
+  input: ListAssembliesQuery = { offset: 0 },
+): Promise<AssemblyListResponse> {
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    // Pull all Equipment SOs (open + dispatched) + their assembled counts.
-    // One round-trip via raw SQL for the counts aggregation.
-    // Two queries — one for SO headers (with optional BOM code), one for the
-    // assembled-counts aggregate. Joined in memory. Simpler than wrestling
-    // with LATERAL / scalar subquery binding edge cases.
-    const soRows = await tx
-      .select({
-        soId: salesOrders.id,
-        soCode: salesOrders.code,
-        customerName: salesOrders.customerName,
-        bomMasterId: salesOrders.bomMasterId,
-      })
-      .from(salesOrders)
-      .where(
-        and(
-          eq(salesOrders.companyId, companyId),
-          isNull(salesOrders.deletedAt),
-          eq(salesOrders.type, 'equipment'),
-          // Closed orders have nothing left to assemble, and legacy drops them
-          // (_atBuildAssemblies, HTML L28675: `so.status!=='Closed'`). Ours
-          // listed them, so the tracker was mostly finished work — 7 of the 11
-          // equipment SOs on the live DB. Only 'closed' is excluded, matching
-          // legacy exactly; a cancelled SO still shows.
-          ne(salesOrders.status, 'closed'),
-        ),
-      )
-      .orderBy(asc(salesOrders.code));
+    // Equipment SOs that are not closed, narrowed by search + Sort & Filter and
+    // in the screen's order (ADR-201) — see ./list-rows.ts. Their figures are
+    // then aggregated in a few batched queries and joined in memory.
+    const soRows = await loadAssemblySoRows(tx, companyId, input);
 
     const soIds = soRows.map((r) => r.soId);
     // Defensive: a legacy SO can carry a non-UUID string in `bom_master_id`
@@ -534,7 +516,16 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
       };
     });
 
-    return { generatedAt: new Date().toISOString(), items };
+    // Status is derived per SO above, so its filter, its dropdown counts and
+    // the paging run here — still on the server, over every matching SO.
+    const counts = { all: items.length, waiting: 0, ready: 0, assembling: 0, done: 0 };
+    for (const it of items) counts[it.status]++;
+    const matching = input.status ? items.filter((it) => it.status === input.status) : items;
+    const page =
+      input.limit === undefined
+        ? matching.slice(input.offset)
+        : matching.slice(input.offset, input.offset + input.limit);
+    return { generatedAt: new Date().toISOString(), items: page, total: matching.length, counts };
   });
 }
 

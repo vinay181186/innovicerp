@@ -27,6 +27,15 @@ import { ospCanOrder } from '../lib/osp-band';
 
 const dash = <span className="text3">—</span>;
 
+// Sort & Filter (server mode, ADR-201): the tab is paged, so a ▾ runs on the
+// server over every OSP request. Fields are the Purchase Request list's own
+// (purchase-requests/sf-columns.ts); JC No. / Op / Process / Est. Rate have
+// no field there, so they carry no ▾ (JC No. has its own filter box).
+const PR_STATUS_OPTIONS = Object.entries(PR_STATUS_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+
 /** Token colour for the PR status label — same meanings the status badge carries
  *  elsewhere on these screens. */
 function statusColor(s: string): string {
@@ -48,6 +57,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     {
       // First column — the fit engine pins it. The OSP PR number (IN-JWPR-…).
       id: 'pr_no',
+      sortFilterField: 'prCode',
       kind: 'code',
       header: 'PR No.',
       className: 'mono fw-700',
@@ -70,6 +80,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'mono fw-700',
@@ -83,6 +94,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -105,6 +117,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'qty',
+      sortFilterField: 'qty',
       kind: 'num',
       header: 'PR Qty',
       align: 'right',
@@ -113,6 +126,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'pending',
+      sortFilterField: 'balanceQty',
       kind: 'num',
       header: 'Pending',
       align: 'right',
@@ -125,6 +139,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendorName',
       kind: 'text',
       header: 'Vendor',
       align: 'left',
@@ -148,12 +163,15 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'due',
+      sortFilterField: 'requiredDate',
       kind: 'date',
       header: 'Due Date',
       render: (pr) => fmtDate(pr.requiredDate),
     },
     {
       id: 'status',
+      sortFilterField: 'status',
+      filterOptions: PR_STATUS_OPTIONS,
       kind: 'badge',
       header: 'PR Status',
       render: (pr) => {

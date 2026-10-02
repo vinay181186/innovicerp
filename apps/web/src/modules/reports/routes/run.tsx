@@ -3,14 +3,13 @@
 // a status line, then the grid. The URL search params ARE the filters.
 import { Link, createRoute } from '@tanstack/react-router';
 import { RefreshCw } from 'lucide-react';
-import type { ReportRow } from '@innovic/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ApiError, apiDownload } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import '@/routes/static-data';
 import { ActionMenu, PageState } from '@/ui/layout';
-import { useReportList, useReportRun } from '../api';
+import { fetchReportRun, reportRunParams, useReportList, useReportRun } from '../api';
 import { ReportFilterBar } from '../components/report-filter-bar';
 import { ReportGrid } from '../components/report-grid';
 import { ReportPageHeader } from '../components/report-page-header';
@@ -18,6 +17,7 @@ import { downloadCsv, rowsToCsv } from '../lib/csv';
 import { useReportAccess } from '../lib/report-access';
 import { stripBlanks } from '../lib/report-format';
 import { useReportPrefs } from '../lib/report-prefs';
+import { useReportGrid } from '../lib/use-report-grid';
 
 const runSearchSchema = z.record(z.string()).default({});
 
@@ -48,7 +48,10 @@ function ReportRunPage() {
 
   const appliedFilters: Record<string, string> = useMemo(() => stripBlanks(search), [search]);
 
-  const run = useReportRun(allowed ? slug : undefined, appliedFilters);
+  // ADR-201: the grid's page, sort and column filters go to the server with
+  // the report filters; only the 25 rows on screen come back.
+  const grid = useReportGrid(slug, JSON.stringify(appliedFilters));
+  const run = useReportRun(allowed ? slug : undefined, appliedFilters, grid.pageQuery);
   const { isLoading, isFetching, isError, error, refetch } = run;
   // placeholderData keeps the previous result on screen while the next one
   // loads — but never another report's rows under this report's columns.
@@ -61,6 +64,7 @@ function ReportRunPage() {
       search: (prev) => stripBlanks({ ...prev, [key]: value }),
       replace: true,
     });
+    grid.setPage(1);
   };
   // Bumped by Clear filters so a text box drops a still-pending debounce and a
   // date box drops a half-typed date (see SearchInput's RESET SEMANTICS).
@@ -68,17 +72,15 @@ function ReportRunPage() {
   const clearFilters = (): void => {
     setResetKey((k) => k + 1);
     void navigate({ search: () => ({}), replace: true });
+    grid.setPage(1);
   };
-
-  // CSV = exactly what the grid shows: its column filters and sort, all pages.
-  // The grid keeps this ref pointed at its current view.
-  const viewRows = useRef<ReportRow[]>([]);
 
   const [excelLoading, setExcelLoading] = useState(false);
   const onExcel = async () => {
     if (!slug) return;
-    const params = new URLSearchParams(appliedFilters);
-    const qs = params.toString();
+    // Every row (the server ignores a page on export), with the grid's sort
+    // and column filters — the file matches the screen.
+    const qs = reportRunParams(appliedFilters, grid.viewQuery).toString();
     setExcelLoading(true);
     try {
       await apiDownload(`/reports/${slug}/export.xlsx${qs ? `?${qs}` : ''}`, {}, `${slug}.xlsx`);
@@ -130,11 +132,20 @@ function ReportRunPage() {
     : definition.columns;
   const noRows = (data?.rowCount ?? 0) === 0;
 
-  const onCsv = () => {
+  // CSV = what the grid shows — its column filters and sort — over ALL
+  // pages: one unpaged call (no `_limit`), so the report runs once rather
+  // than once per 200-row chunk; the server caps a run at 10,000 rows.
+  const onCsv = async () => {
     if (!data) return;
-    const csv = rowsToCsv(columns, viewRows.current);
-    const stamp = new Date().toISOString().slice(0, 19).replaceAll(':', '-');
-    downloadCsv(`${data.slug}-${stamp}.csv`, csv);
+    setExcelLoading(true);
+    try {
+      const all = await fetchReportRun(slug, appliedFilters, grid.viewQuery);
+      const csv = rowsToCsv(columns, all.rows);
+      const stamp = new Date().toISOString().slice(0, 19).replaceAll(':', '-');
+      downloadCsv(`${data.slug}-${stamp}.csv`, csv);
+    } finally {
+      setExcelLoading(false);
+    }
   };
   // Neither file may come from a stale result: Export is off while fetching.
   const exportOff = noRows || isFetching;
@@ -176,14 +187,14 @@ function ReportRunPage() {
                     onClick: () => void onExcel(),
                     disabled: excelLoading,
                     title: excelLoading
-                      ? 'Preparing the Excel file…'
-                      : 'Excel uses the report filters; column filters/sort apply to CSV only',
+                      ? 'Preparing the file…'
+                      : 'Every row, with the column filters and sort on screen',
                   },
                   {
                     label: 'CSV',
-                    onClick: onCsv,
+                    onClick: () => void onCsv(),
                     disabled: excelLoading,
-                    title: 'CSV follows the grid: column filters and sort, all pages',
+                    title: 'Every row, with the column filters and sort on screen',
                   },
                 ]}
               />
@@ -204,13 +215,13 @@ function ReportRunPage() {
           {data.note}
         </div>
       ) : null}
-      {/* Keyed by report: sort, column filters and page start fresh per report. */}
+      {/* Keyed by report for the engine's saved layout. */}
       <ReportGrid
         key={`g-${slug}`}
         slug={slug}
-        viewRowsRef={viewRows}
         columns={columns}
-        rows={data?.rows}
+        data={data}
+        grid={grid}
         rowLink={rowLink}
         loading={isLoading || (!data && !isError)}
         fetching={isFetching && Boolean(data)}
@@ -221,7 +232,6 @@ function ReportRunPage() {
               : 'Could not run report. Try again.'
             : null
         }
-        generatedAt={data?.generatedAt}
       />
     </div>
   );

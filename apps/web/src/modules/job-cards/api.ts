@@ -1,4 +1,6 @@
 import type {
+  JcStatusCountsQuery,
+  JcStatusCountsResponse,
   JobCardEditModel,
   JobCardListItem,
   JobCardSaveResult,
@@ -19,15 +21,21 @@ export const jobCardsKeys = {
   detail: (id: string) => [...jobCardsKeys.details(), id] as const,
 };
 
-function toQueryString(q: ListJobCardsQuery): string {
+function filterParams(q: JcStatusCountsQuery): URLSearchParams {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
-  if (q.status) params.set('status', q.status);
   if (q.machineId) params.set('machineId', q.machineId);
   if (q.operatorId) params.set('operatorId', q.operatorId);
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
   if (q.sf) params.set('sf', q.sf);
+  return params;
+}
+
+function toQueryString(q: ListJobCardsQuery): string {
+  const params = filterParams(q);
+  if (q.status) params.set('status', q.status);
+  if (q.overdue) params.set('overdue', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -42,6 +50,20 @@ export function useJobCardsList(
     queryFn: () => apiFetch<ListJobCardsResponse>(`/job-cards?${toQueryString(query)}`),
     placeholderData: (prev) => prev,
     ...options,
+  });
+}
+
+/** JC Status dropdown counts (ADR-201): every card the list's other filters
+ *  match, counted on the server. Keyed under lists() so every list
+ *  invalidation refreshes them too. */
+export function useJcStatusCounts(query: JcStatusCountsQuery) {
+  return useQuery<JcStatusCountsResponse>({
+    queryKey: [...jobCardsKeys.lists(), 'status-counts', query] as const,
+    queryFn: () =>
+      apiFetch<JcStatusCountsResponse>(
+        `/job-cards/status-counts?${filterParams(query).toString()}`,
+      ),
+    placeholderData: (prev) => prev,
   });
 }
 

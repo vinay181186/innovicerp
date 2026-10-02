@@ -6,24 +6,37 @@
 // 2026-10-01 (ADR-199): the per-dispatch cards are replaced by the ONE shared
 // FIT table (<DataTable tableKey=…>). One line per dispatch, the fit engine
 // sizing columns to the screen and dropping the rightmost unpinned ones into a
-// ▸ detail row (the item lines + Remarks). Nothing about the data, the filters,
-// the search coverage or the mutations changed. The item-wise summary strip and
-// the StatStrip counts stay.
+// ▸ detail row (the item lines + Remarks). The item-wise summary strip and the
+// StatStrip counts stay.
+//
+// 2026-10-02 (ADR-201): 25 DISPATCHES a page, loaded from the server. Search,
+// the SO filter and Sort & Filter run there over every row; the KPI strip, the
+// item-wise summary and the SO options come from the server too. Lines are
+// still grouped by dispatch here, inside the page. Excel + Print fetch every
+// filtered row (fetchAllPages).
 
+import type { CustomerDispatchRegisterQuery, CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { itemCodeWithRev } from '@/lib/item-code';
+import {
+  LIST_PAGE_SIZE,
+  fetchAllPages,
+  pageOffset,
+  pageSearchParam,
+  useClampPage,
+} from '@/lib/list-paging';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
-import { useDispatchList, useDispatchRegister } from '../api';
+import { fetchDispatchRegister, useDispatchRegister } from '../api';
 import { CancelDispatchModal } from '../components/cancel-dispatch-modal';
 import { type DispatchGroup, groupByDispatch } from '../components/dispatch-group';
 import { DispatchExpanded } from '../components/dispatch-expanded';
@@ -36,18 +49,30 @@ import { printCustomerDispatchRegister } from '../lib/print-register';
 // Deep-link seed for Global Search (this register has no detail page):
 // `?tab=so&search=DSP-0004` opens the right tab with the box pre-filled. The
 // params are read ONCE into the local state below — typing and tab clicks stay
-// local and never navigate.
+// local and never navigate. `page` is the Dispatch Log page (ADR-201).
 const searchSchema = z.object({
   tab: z.enum(['so', 'jw']).optional(),
   search: z.string().optional(),
+  page: pageSearchParam,
 });
 
 export const customerDispatchListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'customer-dispatches',
-  validateSearch: (search) => searchSchema.parse(search),
+  validateSearch: searchSchema,
   component: CustomerDispatchListPage,
 });
+
+/** Every register line matching the filters — Excel / Print (ADR-201). */
+async function fetchAllRegisterRows(
+  q: Omit<CustomerDispatchRegisterQuery, 'limit' | 'offset'>,
+): Promise<CustomerDispatchRegisterRow[]> {
+  const groups = await fetchAllPages(async (limit, offset) => {
+    const res = await fetchDispatchRegister({ ...q, limit, offset });
+    return { items: groupByDispatch(res.rows), total: res.total };
+  });
+  return groups.flatMap((g) => g.lines);
+}
 
 function CustomerDispatchListPage(): React.JSX.Element {
   // JW Dispatch (jw-returns) folded in here as a tab — same job, two document
@@ -56,15 +81,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const routeSearch = customerDispatchListRoute.useSearch();
   const navigate = customerDispatchListRoute.useNavigate();
   const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
-  const { data, isLoading, isFetching, isError, error } = useDispatchRegister();
   const { data: company } = useMyCompany();
-  // ADR-190 — how far each dispatch is invoiced lives on the dispatch-grain
-  // list, not the line-grain register this page is built from.
-  const { data: dispatchList } = useDispatchList();
-  const billedById = useMemo(
-    () => new Map((dispatchList?.dispatches ?? []).map((d) => [d.id, d.billedStatus])),
-    [dispatchList],
-  );
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   const canAdd = perms.entry;
@@ -75,59 +92,81 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const [search, setSearch] = useState(() =>
     (routeSearch.tab ?? 'so') === 'so' ? (routeSearch.search ?? '') : '',
   );
+  const [term, setTerm] = useState(() => normalizeSearchTerm(search));
   const [soFilter, setSoFilter] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [cancelling, setCancelling] = useState<DispatchGroup | null>(null);
+  const [exporting, setExporting] = useState(false);
 
-  const allRows = useMemo(() => data?.rows ?? [], [data]);
-  const soOptions = useMemo(
-    () => [...new Set(allRows.map((r) => r.soNo).filter((s): s is string => Boolean(s)))],
-    [allRows],
+  // Page in the URL; every search / SO / ▾ change goes back to page 1.
+  const page = routeSearch.page;
+  const gotoPage = useCallback(
+    (p: number) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
   );
+  useEffect(() => {
+    const next = normalizeSearchTerm(search);
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term, gotoPage]);
+  const sf = useServerSortFilter(TABLE_KEYS.customerDispatches, () => gotoPage(1));
 
-  // SO filter applies to screen AND export; text search is screen-only.
-  const soRows = useMemo(
-    () => (soFilter ? allRows.filter((r) => r.soNo === soFilter) : allRows),
-    [allRows, soFilter],
-  );
   // Search covers every column the register puts on screen — the table row
   // (dispatch no, date, SO, customer, dispatched by) AND the ▸ expanded line
-  // columns (JC no, POL, item code, item name, UOM) plus Remarks. Not the
-  // qty / stock numbers: a bare "5" would match nearly every row.
-  const rows = useMemo(() => {
-    const q = normalizeSearchTerm(search);
-    if (!q) return soRows;
-    return soRows.filter((r) =>
-      matchesSearchTerm(
-        [
-          r.dispatchCode,
-          r.status,
-          r.date,
-          r.jcNo,
-          r.soNo,
-          r.clientPoLineNo,
-          r.itemCode,
-          r.itemCodeText,
-          // The line shows "IN-IT-0007/B", so pasting that back into the search
-          // box has to find it. The bare code stays searchable above.
-          itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision, ''),
-          r.itemName,
-          r.uom,
-          r.customer,
-          r.dispatchedBy,
-          r.remarks,
-        ],
-        q,
-      ),
-    );
-  }, [soRows, search]);
+  // columns (JC no, POL, item code, item name, UOM) plus Remarks — matched on
+  // the server (register.ts). Not the qty / stock numbers.
+  const filters = useMemo(
+    () => ({ search: term || undefined, soNo: soFilter || undefined, sf: sf.param }),
+    [term, soFilter, sf.param],
+  );
+  const { data, isLoading, isFetching, isError, error } = useDispatchRegister({
+    ...filters,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
+  });
+  useClampPage(page, data?.total, gotoPage);
+  const total = data?.total ?? 0;
+  const rows = useMemo(() => data?.rows ?? [], [data]);
+  const soOptions = data?.soOptions ?? [];
+  // ADR-190 — how far each dispatch is invoiced, sent on its register rows.
+  const billedById = useMemo(
+    () => new Map(rows.map((r) => [r.dispatchId, r.billedStatus])),
+    [rows],
+  );
 
   const groups = useMemo(() => groupByDispatch(rows), [rows]);
   const columns = useMemo(() => dispatchListColumns((id) => billedById.get(id)), [billedById]);
 
-  // KPIs + item-wise summary over ACTIVE rows only (cancelled were reversed).
-  const active = useMemo(() => rows.filter((r) => r.status !== 'cancelled'), [rows]);
-  const totalPcs = active.reduce((s, r) => s + r.qty, 0);
+  // KPIs over ACTIVE rows only (cancelled were reversed) — from the server,
+  // over every matching row, never just this page.
+  const totalPcs = data?.summary.totalQty ?? 0;
+
+  // Excel: the SO filter + ▾ filters (text search stays screen-only, as
+  // before). Print: every filter on screen, active rows only. Both fetch
+  // EVERY matching row, not just this page.
+  async function runExport(kind: 'excel' | 'print'): Promise<void> {
+    setExporting(true);
+    try {
+      if (kind === 'excel') {
+        const all = await fetchAllRegisterRows({ ...filters, search: undefined });
+        exportDispatchRegister(all, soFilter || undefined);
+      } else {
+        const all = await fetchAllRegisterRows(filters);
+        const active = all.filter((r) => r.status !== 'cancelled');
+        if (!printCustomerDispatchRegister({ rows: active, company })) {
+          window.alert('Allow popups to print.');
+        }
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not load the register. Try again.');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function toggle(id: string): void {
     setExpanded((prev) => {
@@ -185,12 +224,12 @@ function CustomerDispatchListPage(): React.JSX.Element {
   return (
     <div>
       {tabBar}
-      {/* The ONE list header (ui/layout ListHeader). Same filters, same
-          client-side search, same Export / Print as before. */}
+      {/* The ONE list header (ui/layout ListHeader). Search / SO / ▾ run on
+          the server; Export / Print fetch every filtered row. */}
       <ListHeader
         title="Customer Dispatch"
         icon="🚚"
-        count={groups.length}
+        count={total}
         noun="dispatch"
         nounPlural="dispatches"
         filterNote={soFilter || undefined}
@@ -204,7 +243,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
             aria-label="SO No."
             title="SO No."
             value={soFilter}
-            onChange={(e) => setSoFilter(e.target.value)}
+            onChange={(e) => {
+              setSoFilter(e.target.value);
+              gotoPage(1);
+            }}
           >
             <option value="">All SOs</option>
             {soOptions.map((s) => (
@@ -215,10 +257,12 @@ function CustomerDispatchListPage(): React.JSX.Element {
           </select>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearch('');
           setSoFilter('');
+          gotoPage(1);
         }}
-        filtersActive={search !== '' || soFilter !== ''}
+        filtersActive={sf.filtering || search !== '' || soFilter !== ''}
         tools={
           <>
             <button
@@ -238,17 +282,14 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 {
                   label: '📊 Export Excel',
                   title: 'Export the current (SO-filtered) register to Excel',
-                  onClick: () => exportDispatchRegister(soRows, soFilter || undefined),
+                  disabled: exporting,
+                  onClick: () => void runExport('excel'),
                 },
                 {
                   label: '🖨 Print',
                   title: 'Print the dispatch register',
-                  disabled: isLoading,
-                  onClick: () => {
-                    if (!printCustomerDispatchRegister({ rows: active, company })) {
-                      window.alert('Allow popups to print.');
-                    }
-                  },
+                  disabled: isLoading || exporting,
+                  onClick: () => void runExport('print'),
                 },
               ]}
             />
@@ -263,8 +304,8 @@ function CustomerDispatchListPage(): React.JSX.Element {
         }
       >
         {/* Read-only metrics, not filters. Counts are over ACTIVE rows
-            (cancelled dispatches were reversed) and follow the SO filter +
-            search, exactly as before. */}
+            (cancelled dispatches were reversed) and follow the SO filter,
+            search and ▾ filters — worked out on the server over every page. */}
         <StatStrip
           items={[
             {
@@ -277,7 +318,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
             {
               key: 'entries',
               label: 'Dispatch Entries',
-              count: groups.filter((g) => g.status !== 'cancelled').length,
+              count: data?.summary.dispatchCount ?? 0,
             },
           ]}
         />
@@ -290,7 +331,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
         />
       ) : (
         <>
-          <DispatchItemSummary active={active} />
+          <DispatchItemSummary items={data?.itemSummary ?? []} />
 
           <div
             style={{
@@ -314,7 +355,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
               rows={groups}
               rowKey={(g) => g.dispatchId}
               loading={isLoading}
-              emptyText={search || soFilter ? 'No Dispatches match.' : 'No Dispatches yet.'}
+              sortFilterServer={sf}
+              emptyText={
+                term || soFilter || sf.filtering ? 'No Dispatches match.' : 'No Dispatches yet.'
+              }
               onRowClick={(g) =>
                 void navigate({ to: '/customer-dispatches/$id', params: { id: g.dispatchId } })
               }
@@ -337,7 +381,14 @@ function CustomerDispatchListPage(): React.JSX.Element {
               )}
             />
           </Panel>
-          <ListFooter total={groups.length} noun="dispatch" nounPlural="dispatches" />
+          <ListFooter
+            total={total}
+            noun="dispatch"
+            nounPlural="dispatches"
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPage}
+          />
         </>
       )}
       {cancelling ? (

@@ -15,8 +15,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -27,10 +29,10 @@ import { JwInvoiceExpand } from './jw-invoice-expand';
 import { NewJwInvoiceModal } from './new-jw-invoice-modal';
 import { usePrintJwInvoice } from './use-print-jw-invoice';
 
-// The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
-// exactly the cap this list already ran under, so nothing that was visible
-// before disappears — the SEARCH runs on the server, over the whole book.
-const LIST_LIMIT = 500;
+// ADR-201: 25 invoices a page with Prev / Next (the page lives in this tab's
+// state — the tab has no route of its own). The search box and the column ▾
+// Sort & Filter run on the server over the whole book; any change of them
+// goes back to page 1.
 
 // `initialSearch` — one-time seed from the host route's ?search param (Global
 // Search deep link). It fills the box AND the debounced term, so the first fetch
@@ -59,25 +61,37 @@ export function JwInvoiceView({
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(() => Boolean(initialJwId));
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  IN-JI  26 " and "IN-JI 26" are one query, one cache entry, one fetch.
     const next = normalizeSearchTerm(searchInput);
     if (next === term) return;
-    const id = window.setTimeout(() => setTerm(next), 300);
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      setPage(1);
+    }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, term]);
+  const sf = useServerSortFilter(TABLE_KEYS.jwInvoices, () => setPage(1));
 
-  // The term goes to the SERVER: a new term is a new query key, so it refetches,
-  // and the read always starts at the first page (offset 0).
+  // Search + ▾ go to the SERVER; only the page on screen is loaded.
   const query: ListJwInvoicesQuery = useMemo(
-    () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
-    [term],
+    () => ({
+      ...(term ? { search: term } : {}),
+      ...(sf.param ? { sf: sf.param } : {}),
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
+    }),
+    [term, sf.param, page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useJwInvoicesList(query);
   const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const onPage = useCallback((p: number) => setPage(p), []);
+  useClampPage(page, data?.total, onPage);
 
   // The invoice the Cancel dialog is asking about, or null when closed.
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
@@ -112,12 +126,17 @@ export function JwInvoiceView({
       <ListHeader
         title="JW Invoices (Labour)"
         icon="🔧"
-        count={data?.total ?? items.length}
+        count={total}
         noun="JW invoice"
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search invoice no., date, JWSO, customer, part…"
         updating={isFetching && !isLoading}
+        onClearFilters={() => {
+          sf.clearFilters();
+          setSearchInput('');
+        }}
+        filtersActive={sf.filtering || searchInput !== ''}
         primary={
           canWrite ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
@@ -147,7 +166,8 @@ export function JwInvoiceView({
             rows={items}
             rowKey={(r) => r.id}
             loading={isLoading}
-            emptyText={term ? 'No JW Invoices match.' : 'No JW Invoices yet.'}
+            sortFilterServer={sf}
+            emptyText={term || sf.filtering ? 'No JW Invoices match.' : 'No JW Invoices yet.'}
             rowClassName={(r) => (r.status === 'cancelled' ? ROW_TINT.cancelled : undefined)}
             renderExpanded={(r) =>
               expanded.has(r.id) ? <JwInvoiceExpand r={r} priceHidden={priceHidden} /> : null
@@ -180,7 +200,13 @@ export function JwInvoiceView({
           />
         </Panel>
       )}
-      <ListFooter total={data?.total ?? items.length} noun="JW invoice" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="JW invoice"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={onPage}
+      />
 
       {showModal && canWrite ? (
         <NewJwInvoiceModal initialJwId={initialJwId} onClose={() => setShowModal(false)} />

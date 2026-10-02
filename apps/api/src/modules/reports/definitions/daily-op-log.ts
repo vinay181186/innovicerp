@@ -5,6 +5,7 @@
 import { opSrNo } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 export const dailyOpLogReport: RegisteredReport = {
   definition: {
@@ -70,7 +71,7 @@ export const dailyOpLogReport: RegisteredReport = {
         ${fromFrag}
         ${toFrag}
       ORDER BY ol.log_date DESC, ol.log_no DESC
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

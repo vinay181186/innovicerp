@@ -3,6 +3,7 @@
 // this registers the metadata. Backed by qc_documents (migration 0039).
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const QC_DOC_CATEGORIES = [
   'qc-docs',
@@ -66,11 +67,18 @@ export const listQcDocumentsQuerySchema = z.object({
   category: qcDocCategorySchema.optional(),
   jobCardId: z.string().uuid().optional(),
   search: z.string().min(1).max(100).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  /** Paging (ADR-201). No limit = every matching row (as before). */
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
 });
 export type ListQcDocumentsQuery = z.infer<typeof listQcDocumentsQuerySchema>;
 
 export interface ListQcDocumentsResponse {
   items: QcDocument[];
+  /** Every document matching the search + filters (all pages). */
+  total: number;
 }
 
 export const createQcDocumentInputSchema = z.object({

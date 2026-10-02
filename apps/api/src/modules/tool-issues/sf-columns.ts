@@ -34,3 +34,14 @@ export const TOOL_ISSUE_SF_COLUMNS: SfColumnMap = {
   },
   createdOn: { sql: sql`(x.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
 };
+
+/** Who-holds-what (listToolHolders, also over `x`): Serial No. shows only the
+ *  instruments not yet back, so it filters on out_serial_nos. */
+export const TOOL_HOLDER_SF_COLUMNS: SfColumnMap = {
+  issuedTo: { sql: sql`x.issued_to`, type: 'text' },
+  itemCode: { sql: sql`x.item_code`, type: 'text' },
+  serialNos: { sql: sql`x.out_serial_nos`, type: 'text' },
+  stillOutQty: { sql: sql`x.still_out_qty`, type: 'num' },
+  code: { sql: sql`x.code`, type: 'text' },
+  expectedReturnDate: { sql: sql`x.expected_return_date`, type: 'date' },
+};

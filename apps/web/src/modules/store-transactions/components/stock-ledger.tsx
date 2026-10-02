@@ -5,7 +5,7 @@
 //
 // ADR-199 (table standard 2026-10-01): renders on the shared FIT table
 // (<DataTable tableKey={TABLE_KEYS.stockLedger}>). Sorting and column filters
-// run on the SERVER (ADR-200, the ▾ on each header): the ledger is paged 50 at
+// run on the SERVER (ADR-200, the ▾ on each header): the ledger is paged 25 at
 // a time, so the old in-memory sort only reordered the visible page. The
 // public signature is unchanged — this component still takes NO props.
 
@@ -18,6 +18,8 @@ import {
 } from '@innovic/shared';
 import { useEffect, useMemo, useState } from 'react';
 
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+
 import { StatStrip, DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -26,8 +28,6 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useStoreTransactionsList } from '../api';
 import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 import { STOCK_LEDGER_HIDDEN_COLUMNS, stockLedgerColumns } from './stock-ledger-columns';
-
-const PAGE_SIZE = 50;
 
 export function StockLedger(): React.JSX.Element {
   const [searchInput, setSearchInput] = useState('');
@@ -57,8 +57,8 @@ export function StockLedger(): React.JSX.Element {
       txnType,
       sourceType,
       sf: sf.param,
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
     }),
     [search, txnType, sourceType, sf.param, page],
   );
@@ -69,7 +69,8 @@ export function StockLedger(): React.JSX.Element {
   const rows = data?.items ?? [];
 
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+  useClampPage(page, data?.total, setPage);
 
   return (
     <div>
@@ -212,7 +213,7 @@ export function StockLedger(): React.JSX.Element {
         total={total}
         noun="stock movement"
         page={page}
-        pageSize={PAGE_SIZE}
+        pageSize={LIST_PAGE_SIZE}
         onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
       />
     </div>

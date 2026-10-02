@@ -18,7 +18,9 @@ import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyMaterialIssuesList } from '../api';
@@ -27,11 +29,10 @@ import { NewPartyMaterialIssueModal } from './new-party-material-issue-modal';
 import { partyMaterialIssueColumns } from './party-material-issue-columns';
 import { PartyMaterialIssueExpand } from './party-material-issue-expand';
 
-// The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
-// exactly the cap this list already ran under, so nothing that was visible
-// before disappears — what changed is that the SEARCH now runs on the server,
-// over the whole book, instead of over the rows that happened to be downloaded.
-const LIST_LIMIT = 500;
+// ADR-201: 25 issues a page with Prev / Next (the page lives in this tab's
+// state — the tab has no route of its own). The search box and the column ▾
+// Sort & Filter run on the server over the whole book; any change of them
+// goes back to page 1.
 
 // `initialSearch` — one-time seed from the host route's ?search param (Global
 // Search deep link). It fills the box AND the debounced term, so the first fetch
@@ -54,28 +55,39 @@ export function PartyMaterialIssueView({
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
   const [cancelRow, setCancelRow] = useState<PartyMaterialIssueListItem | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  IN-PMI  26 " and "IN-PMI 26" are one query, one cache entry, one fetch.
     const next = normalizeSearchTerm(searchInput);
     if (next === term) return;
-    const id = window.setTimeout(() => setTerm(next), 300);
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      setPage(1);
+    }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, term]);
+  const sf = useServerSortFilter(TABLE_KEYS.partyMaterialIssues, () => setPage(1));
 
   // The term goes to the SERVER now. It used to filter the downloaded rows in
   // the browser, which only ever searched the capped page the endpoint had
   // sent — past the cap the box quietly hid matching issues. A new term is a
-  // new query key, so it refetches, and the read always starts at the first
-  // page (offset 0) rather than stranding the user mid-list.
+  // new query key, so it refetches from page 1. Only the page on screen loads.
   const query: ListPartyMaterialIssuesQuery = useMemo(
-    () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
-    [term],
+    () => ({
+      ...(term ? { search: term } : {}),
+      ...(sf.param ? { sf: sf.param } : {}),
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
+    }),
+    [term, sf.param, page],
   );
 
-  const { data, isLoading, isError, error } = usePartyMaterialIssuesList(query);
+  const { data, isLoading, isFetching, isError, error } = usePartyMaterialIssuesList(query);
   const rows = data?.items ?? [];
+  const onPage = useCallback((p: number) => setPage(p), []);
+  useClampPage(page, data?.total, onPage);
   const columns = useMemo(() => partyMaterialIssueColumns(), []);
 
   // ▸ expand — Remarks are already on the row, so no extra fetch.
@@ -113,6 +125,12 @@ export function PartyMaterialIssueView({
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search Issue No., date, JWSO, Job Card, material, remarks…"
+        updating={isFetching && !isLoading}
+        onClearFilters={() => {
+          sf.clearFilters();
+          setSearchInput('');
+        }}
+        filtersActive={sf.filtering || searchInput !== ''}
         primary={
           canIssue ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
@@ -145,8 +163,11 @@ export function PartyMaterialIssueView({
             rows={rows}
             rowKey={(it) => it.id}
             loading={isLoading}
+            sortFilterServer={sf}
             emptyText={
-              term ? 'No Customer Material Issues match.' : 'No Customer Material Issues yet.'
+              term || sf.filtering
+                ? 'No Customer Material Issues match.'
+                : 'No Customer Material Issues yet.'
             }
             rowClassName={(it) => (it.deletedAt ? ROW_TINT.cancelled : undefined)}
             renderExpanded={(it) =>
@@ -168,7 +189,13 @@ export function PartyMaterialIssueView({
       )}
 
       {data ? (
-        <ListFooter total={data.total} shown={rows.length} noun="issue" limit={LIST_LIMIT} />
+        <ListFooter
+          total={data.total}
+          noun="issue"
+          page={page}
+          pageSize={LIST_PAGE_SIZE}
+          onPage={onPage}
+        />
       ) : null}
 
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}

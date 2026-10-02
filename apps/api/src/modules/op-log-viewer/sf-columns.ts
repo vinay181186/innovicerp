@@ -1,13 +1,22 @@
 // Sort & Filter (ADR-200) — the Operation Log list's sortable / filterable
 // fields. Each expression is the SAME one listOpLog SELECTs for that column,
-// over the joins that BOTH its list and its count query carry. Not here: the
+// over the joins the list carries (its count adds them when a filter is set). Not here: the
 // Reversal column (a label built per row from two look-ups — "Reversal of …"
 // / "Reversed by …").
 
 import { sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
-import { items, jcOps, jobCards, machines, opLog, salesOrderLines, users } from '../../db/schema';
+import {
+  items,
+  jcOps,
+  jobCards,
+  jobWorkOrderLines,
+  machines,
+  opLog,
+  salesOrderLines,
+  users,
+} from '../../db/schema';
 import type { SfColumnMap } from '../../lib/list-query';
 
 // Second handle on machines for the PLANNED machine (jc_ops.machine_id); the
@@ -18,7 +27,12 @@ export const OP_LOG_SF_COLUMNS: SfColumnMap = {
   logNo: { sql: sql`${opLog.logNo}`, type: 'text' },
   jcNo: { sql: sql`${jobCards.code}`, type: 'text' },
   clientPoLineNo: { sql: sql`${salesOrderLines.clientPoLineNo}`, type: 'text' },
-  itemCode: { sql: sql`${items.code}`, type: 'text' },
+  // CODE/REV as the cell prints it (itemCodeWithRev): the customer's drawing
+  // revision off the SO line, else the JW line, after a slash.
+  itemCode: {
+    sql: sql`(btrim(${items.code}) || COALESCE('/' || NULLIF(btrim(COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)), ''), ''))`,
+    type: 'text',
+  },
   itemName: { sql: sql`${items.name}`, type: 'text' },
   logDate: { sql: sql`${opLog.logDate}`, type: 'date' },
   opSeq: { sql: sql`${jcOps.opSeq}`, type: 'num' },

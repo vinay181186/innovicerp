@@ -5,6 +5,7 @@
 // and lists pending PO lines for drill-down filtering.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const scVendorRowSchema = z.object({
   vendorId: z.string().uuid().nullable(),
@@ -86,6 +87,10 @@ export const scRecentGrnSchema = z.object({
 });
 export type ScRecentGrn = z.infer<typeof scRecentGrnSchema>;
 
+// ADR-201 (2026-10-02): the five tables page at 25 rows. GET /sc-dashboard
+// carries only the KPI strip + the Pending PO Tracker filter picklists; each
+// table has its own paged endpoint (limit / offset / sf) whose `total` and
+// totals are worked out on the server over EVERY matching row.
 export const scDashboardResponseSchema = z.object({
   summary: z.object({
     openPos: z.number().int().nonnegative(),
@@ -98,11 +103,12 @@ export const scDashboardResponseSchema = z.object({
     grnCount: z.number().int().nonnegative(),
     todayGrn: z.number().int().nonnegative(),
   }),
-  byVendor: z.array(scVendorRowSchema),
-  bySo: z.array(scSoRowSchema),
-  poSummary: z.array(scPoSummaryRowSchema),
-  pendingLines: z.array(scPendingLineSchema),
-  recentGrn: z.array(scRecentGrnSchema),
+  /** Pending PO Tracker picklists, over ALL pending lines (not one page). */
+  filterOptions: z.object({
+    vendors: z.array(z.string()),
+    items: z.array(z.string()),
+    sos: z.array(z.string()),
+  }),
   /** Told, not inferred. The server strips money it may not send and states it
    *  here, so a client never has to guess from a null value. A null money field
    *  also means "no value yet", and probing it made one unpriced row hide the
@@ -110,3 +116,58 @@ export const scDashboardResponseSchema = z.object({
   priceVisible: z.boolean(),
 });
 export type ScDashboardResponse = z.infer<typeof scDashboardResponseSchema>;
+
+/** One page of a Supply Chain Dashboard table. */
+export const scTableQuerySchema = z.object({
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(200).default(25),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ScTableQuery = z.input<typeof scTableQuerySchema>;
+
+/** Pending PO Tracker: the Vendor / Item Code / SO-JWSO boxes (contains, any case). */
+export const scPendingQuerySchema = scTableQuerySchema.extend({
+  vendor: z.string().trim().max(200).optional(),
+  item: z.string().trim().max(200).optional(),
+  so: z.string().trim().max(200).optional(),
+});
+export type ScPendingQuery = z.input<typeof scPendingQuerySchema>;
+
+export const scPendingPageSchema = z.object({
+  items: z.array(scPendingLineSchema),
+  total: z.number().int().nonnegative(),
+  /** Over every filtered line, not the page. */
+  totalPendingQty: z.number(),
+  totalPendingVal: z.number().nullable(),
+  priceVisible: z.boolean(),
+});
+export type ScPendingPage = z.infer<typeof scPendingPageSchema>;
+
+export const scVendorPageSchema = z.object({
+  items: z.array(scVendorRowSchema),
+  total: z.number().int().nonnegative(),
+  priceVisible: z.boolean(),
+});
+export type ScVendorPage = z.infer<typeof scVendorPageSchema>;
+
+export const scSoPageSchema = z.object({
+  items: z.array(scSoRowSchema),
+  total: z.number().int().nonnegative(),
+  priceVisible: z.boolean(),
+});
+export type ScSoPage = z.infer<typeof scSoPageSchema>;
+
+export const scPoSummaryPageSchema = z.object({
+  items: z.array(scPoSummaryRowSchema),
+  total: z.number().int().nonnegative(),
+  /** Sum of Grand Total over every matching PO (null when prices are hidden). */
+  grandTotal: z.number().nullable(),
+  priceVisible: z.boolean(),
+});
+export type ScPoSummaryPage = z.infer<typeof scPoSummaryPageSchema>;
+
+export const scRecentGrnPageSchema = z.object({
+  items: z.array(scRecentGrnSchema),
+  total: z.number().int().nonnegative(),
+});
+export type ScRecentGrnPage = z.infer<typeof scRecentGrnPageSchema>;

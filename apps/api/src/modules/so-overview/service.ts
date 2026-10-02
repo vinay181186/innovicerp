@@ -43,7 +43,10 @@ import {
 } from '../../lib/calc-engine';
 import { AuthorizationError } from '../../lib/errors';
 import { loadOpenReworkByOp } from '../../lib/open-rework';
+import { readSf } from '../../lib/list-query';
 import { loadOspAcceptedByOp } from '../../lib/osp-accepted';
+import { pageRows, sfFilterRows, sfSortRows } from './sf-memory';
+import { SO_OVERVIEW_SF_FIELDS } from './sf-fields';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -73,6 +76,8 @@ export async function getSoOverview(
   const statusFilter = query.status ?? 'open';
   const search = query.search?.trim() ?? null;
   const today = todayIso();
+  // Read (and 400 on a bad value) before any DB work.
+  const sf = readSf(query.sf);
 
   return withUserContext(user, async (tx) => {
     // 1. SO headers matching filter.
@@ -98,6 +103,7 @@ export async function getSoOverview(
         generatedAt: new Date().toISOString(),
         filter: { status: statusFilter, search },
         summary: emptySummary(),
+        total: 0,
         rows: [],
       };
     }
@@ -349,21 +355,31 @@ export async function getSoOverview(
       };
     });
 
+    // ADR-201 — every list filter runs HERE over all rows, then one page goes
+    // back. Sort & Filter first; the overall-status counts are taken over that
+    // set (before the overall filter, so its dropdown can offer every status).
+    const sfRows = sfFilterRows(rows, SO_OVERVIEW_SF_FIELDS, sf);
     const summary = {
-      soCount: rows.length,
-      notStartedCount: rows.filter((r) => r.overallStatus === 'not_started').length,
-      inProgressCount: rows.filter((r) => r.overallStatus === 'in_progress').length,
-      onTrackCount: rows.filter((r) => r.overallStatus === 'on_track').length,
-      delayedCount: rows.filter((r) => r.overallStatus === 'delayed').length,
-      completedCount: rows.filter((r) => r.overallStatus === 'completed').length,
-      blockedCount: rows.filter((r) => r.overallStatus === 'blocked').length,
+      soCount: sfRows.length,
+      notStartedCount: sfRows.filter((r) => r.overallStatus === 'not_started').length,
+      inProgressCount: sfRows.filter((r) => r.overallStatus === 'in_progress').length,
+      onTrackCount: sfRows.filter((r) => r.overallStatus === 'on_track').length,
+      delayedCount: sfRows.filter((r) => r.overallStatus === 'delayed').length,
+      completedCount: sfRows.filter((r) => r.overallStatus === 'completed').length,
+      blockedCount: sfRows.filter((r) => r.overallStatus === 'blocked').length,
     };
+    const matching = query.overall
+      ? sfRows.filter((r) => r.overallStatus === query.overall)
+      : sfRows;
+    // Default order is SO No. ascending (unique), the tie-break of any sort.
+    const sorted = sfSortRows(matching, SO_OVERVIEW_SF_FIELDS, sf);
 
     return {
       generatedAt: new Date().toISOString(),
       filter: { status: statusFilter, search },
       summary,
-      rows,
+      total: sorted.length,
+      rows: pageRows(sorted, query.limit, query.offset),
     };
   });
 }

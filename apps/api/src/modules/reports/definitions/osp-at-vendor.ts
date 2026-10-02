@@ -6,7 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { dateCell as dateOrNull, likeFilter } from './report-helpers';
+import { dateCell as dateOrNull, likeFilter, REPORT_ROW_CAP } from './report-helpers';
 
 export const ospAtVendorReport: RegisteredReport = {
   definition: {
@@ -94,7 +94,7 @@ export const ospAtVendorReport: RegisteredReport = {
           ${vendorFrag}
       ) x
       ORDER BY x.days_at_vendor DESC, x.vendor_name, x.jc_code, x.op_seq
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

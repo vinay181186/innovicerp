@@ -12,6 +12,8 @@ export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
   return [
     {
       id: 'inward_no',
+      sortFilterField: 'code',
+      filterType: 'text',
       kind: 'code',
       header: 'Inward No.',
       className: 'mono fw-700',
@@ -20,6 +22,7 @@ export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
     },
     {
       id: 'inward_date',
+      sortFilterField: 'inwardDate',
       kind: 'date',
       header: 'Inward Date',
       className: 'mono text2',
@@ -28,6 +31,8 @@ export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
     },
     {
       id: 'dc_no',
+      sortFilterField: 'dcNo',
+      filterType: 'text',
       kind: 'code',
       header: 'DC No.',
       className: 'mono',
@@ -36,6 +41,8 @@ export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendor',
+      filterType: 'text',
       kind: 'text',
       header: 'Vendor',
       align: 'left',
@@ -46,6 +53,7 @@ export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
     },
     {
       id: 'received',
+      sortFilterField: 'receivedQty',
       kind: 'num',
       header: 'Received',
       align: 'right',
@@ -54,6 +62,7 @@ export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
     },
     {
       id: 'accepted',
+      sortFilterField: 'acceptedQty',
       kind: 'num',
       header: 'Accepted',
       align: 'right',
@@ -63,6 +72,7 @@ export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
     },
     {
       id: 'rejected',
+      sortFilterField: 'rejectedQty',
       kind: 'num',
       header: 'Rejected',
       align: 'right',

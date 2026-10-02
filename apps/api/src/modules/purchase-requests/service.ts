@@ -615,6 +615,20 @@ export async function listPurchaseRequests(
         AND pr.balance_closed_at IS NULL
         AND pr.qty > ${orderedQtySql({ id: sql`pr.id`, poId: sql`pr.po_id`, qty: sql`pr.qty` })}`
       : sql``;
+    // Outsource Jobs tab (ADR-201): prType (accepted by the schema but never
+    // applied before — the tab filtered in the browser), its open / ordered
+    // band and its JC filter. Applied to list AND count.
+    const canOrder = sql`(pr.balance_closed_at IS NULL
+        AND pr.qty > ${orderedQtySql({ id: sql`pr.id`, poId: sql`pr.po_id`, qty: sql`pr.qty` })})`;
+    const ospFrag = sql`${input.prType ? sql`AND pr.pr_type = ${input.prType}::pr_type` : sql``}
+        ${
+          input.orderBand === 'open'
+            ? sql`AND pr.status <> 'cancelled' AND ${canOrder}`
+            : input.orderBand === 'ordered'
+              ? sql`AND pr.status <> 'cancelled' AND NOT ${canOrder}`
+              : sql``
+        }
+        ${input.sourceJcCode ? sql`AND jc.code = ${input.sourceJcCode}` : sql``}`;
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
     const sfColumns = prSfColumns(
@@ -704,6 +718,7 @@ export async function listPurchaseRequests(
         ${fromFrag}
         ${toFrag}
         ${convertibleFrag}
+        ${ospFrag}
         ${sfFrag}
       -- Newest first, matching the SO list (sales-orders/service.ts). This was
       -- pr.code ASC, which sank every new PR to the last page. (The fallback
@@ -722,9 +737,8 @@ export async function listPurchaseRequests(
     // so the count is raw SQL too and the predicate stays defined once.
     // NOTE: the old count also applied `input.prType`, which the page query
     // above has never applied. Counting a filter the rows ignore is what made
-    // the two disagree, so the count now mirrors the rows exactly. That the
-    // page query ignores prType at all is a separate, pre-existing bug (it
-    // also never SELECTs pr_type) — reported, not fixed here.
+    // the two disagree, so the count now mirrors the rows exactly. prType is
+    // now applied to BOTH, through ospFrag (ADR-201, Outsource Jobs tab).
     const totalRows = await tx.execute(sql`
       SELECT COUNT(*)::int AS total
       FROM public.purchase_requests pr
@@ -738,6 +752,9 @@ export async function listPurchaseRequests(
         ON jo.id = pr.source_jc_op_id AND jo.deleted_at IS NULL
       LEFT JOIN public.job_cards jc
         ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
+      -- rev_jwl: the Item Code column filter reads CODE/REV (sf-columns.ts).
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
         ON po.id = pr.po_id AND po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
@@ -753,6 +770,7 @@ export async function listPurchaseRequests(
         ${fromFrag}
         ${toFrag}
         ${convertibleFrag}
+        ${ospFrag}
         ${sfFrag}
     `);
     const total = Number(

@@ -19,19 +19,31 @@
 import type { ListAlertsResponse } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Bell, BellOff, BellRing, Loader2, RefreshCw } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { matchesSearchTerm } from '@/components/shared/search-match';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT, StatStrip, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader } from '@/ui/layout';
-import { useAlerts, alertsKeys, useMySubscriptions, useToggleSubscription } from '../api';
+import { ListFooter, ListHeader } from '@/ui/layout';
+import { alertsKeys, useAlertsPage, useMySubscriptions, useToggleSubscription } from '../api';
 import { DEPT_COLOR, DEPT_LABEL } from '../lib/dept';
 import { useQueryClient } from '@tanstack/react-query';
+
+// ADR-201: 25 alerts a page. The search, the "show zero records" switch and
+// the page live in the URL and run on the SERVER; the department strip and the
+// Total are the server's sums over every active alert (not the page shown).
+const alertsSearchSchema = z.object({
+  q: z.string().optional(),
+  showZero: z.boolean().optional(),
+  page: pageSearchParam,
+});
 
 export const alertsDashboardRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'alerts',
+  validateSearch: alertsSearchSchema,
   component: AlertsDashboardPage,
 });
 
@@ -46,13 +58,44 @@ function isUrgent(a: DashAlert): boolean {
 }
 
 function AlertsDashboardPage() {
-  const { data, isLoading, isFetching, isError, error, refetch } = useAlerts();
+  const search = alertsDashboardRoute.useSearch();
+  const routeNavigate = alertsDashboardRoute.useNavigate();
+  const showZero = search.showZero ?? false;
+  const offset = pageOffset(search.page);
+  const { data, isLoading, isFetching, isError, error, refetch } = useAlertsPage({
+    search: search.q,
+    showZero,
+    limit: LIST_PAGE_SIZE,
+    offset,
+  });
   const subscriptions = useMySubscriptions();
   const toggleSub = useToggleSubscription();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [showZero, setShowZero] = useState(false);
-  const [term, setTerm] = useState('');
+
+  // Typed search → URL after a short pause; every change goes back to page 1.
+  const [term, setTerm] = useState(search.q ?? '');
+  useEffect(() => {
+    setTerm((prev) => (normalizeSearchTerm(prev) === (search.q ?? '') ? prev : (search.q ?? '')));
+  }, [search.q]);
+  useEffect(() => {
+    const t = normalizeSearchTerm(term);
+    const next = t === '' ? undefined : t;
+    if (next === search.q) return;
+    const id = window.setTimeout(() => {
+      void routeNavigate({ search: (p) => ({ ...p, q: next, page: 1 }), replace: true });
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [term, search.q, routeNavigate]);
+
+  const setShowZero = (v: boolean): void => {
+    void routeNavigate({ search: (p) => ({ ...p, showZero: v || undefined, page: 1 }) });
+  };
+  const gotoPage = useCallback(
+    (p: number) => void routeNavigate({ search: (s) => ({ ...s, page: p }) }),
+    [routeNavigate],
+  );
+  useClampPage(search.page, data?.total, gotoPage);
 
   const subscribedCodes = useMemo(() => {
     const set = new Set<string>();
@@ -60,24 +103,10 @@ function AlertsDashboardPage() {
     return set;
   }, [subscriptions.data]);
 
-  const visible = useMemo(() => {
-    if (!data) return [];
-    const sorted = [...data.alerts].sort((a, b) => a.code.localeCompare(b.code));
-    const shown = showZero ? sorted : sorted.filter((a) => a.count > 0);
-    // Client-side search over the three text columns (department, code, name).
-    return shown.filter((a) => matchesSearchTerm([DEPT_LABEL[a.dept], a.code, a.name], term));
-  }, [data, showZero, term]);
-
-  const total = useMemo(() => (data ? data.alerts.reduce((s, a) => s + a.count, 0) : 0), [data]);
-
-  const byDept = useMemo(() => {
-    const out: Record<string, number> = {};
-    if (!data) return out;
-    for (const a of data.alerts) {
-      out[a.dept] = (out[a.dept] ?? 0) + a.count;
-    }
-    return out;
-  }, [data]);
+  // The page of alerts as the server sent it (code order, filtered, sliced).
+  const visible = data?.alerts ?? [];
+  const total = data?.totalRecords ?? 0;
+  const byDept = data?.byDept ?? {};
 
   // Columns — the alert/category first (always pinned), then department, the
   // record count (right-aligned number) and the email toggle.
@@ -171,7 +200,7 @@ function AlertsDashboardPage() {
       <ListHeader
         title="Alerts"
         icon="🔔"
-        count={data ? visible.length : undefined}
+        count={data ? data.total : undefined}
         noun="alert"
         filterNote={showZero ? undefined : 'with records'}
         search={term}
@@ -199,8 +228,8 @@ function AlertsDashboardPage() {
           </label>
         }
         onClearFilters={() => {
-          setShowZero(false);
           setTerm('');
+          void routeNavigate({ search: { page: 1 } });
         }}
         filtersActive={showZero || term.trim() !== ''}
         tools={
@@ -261,12 +290,20 @@ function AlertsDashboardPage() {
               rows={visible}
               rowKey={(a) => a.code}
               loading={isLoading}
+              sortFilter={false}
               empty={term.trim() ? 'No alerts match.' : '✅ Nothing pending'}
               isRowClickable={(a) => a.count > 0}
               onRowClick={(a) => void navigate({ to: '/alerts/$code', params: { code: a.code } })}
               rowClassName={(a) => (isUrgent(a) ? ROW_TINT.late : undefined)}
             />
           </Panel>
+          <ListFooter
+            total={data?.total ?? 0}
+            noun="alert"
+            page={search.page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPage}
+          />
 
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
             <Bell size={12} className="inline align-text-bottom" /> = get this alert by email.

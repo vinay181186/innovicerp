@@ -42,7 +42,9 @@ export function SortFilterButton({ inTable = false }: { inTable?: boolean }): Re
     };
   }, [asking]);
 
-  if (!store || snap.tables.length === 0) return null;
+  // Shown while a table can use it — or while a page still holds filters for
+  // a table that is not drawn (an error replaced it), so they can be cleared.
+  if (!store || (snap.tables.length === 0 && snap.heldFilters === 0)) return null;
   const n = snap.activeTotal;
   const off = snap.partial && snap.serverTables === 0;
 

@@ -27,6 +27,7 @@ export const jwReturnsKeys = {
 function toQueryString(q: ListJwReturnChallansQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

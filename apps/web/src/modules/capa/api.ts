@@ -1,6 +1,7 @@
 import type {
   CapaRecord,
   CreateCapaInput,
+  ListCapaQuery,
   ListCapaResponse,
   UpdateCapaInput,
 } from '@innovic/shared';
@@ -9,7 +10,7 @@ import { apiFetch } from '@/lib/api';
 
 export const capaKeys = {
   all: ['capa'] as const,
-  list: () => [...capaKeys.all, 'list'] as const,
+  list: (q: ListCapaQuery = {}) => [...capaKeys.all, 'list', q] as const,
   nextCode: () => [...capaKeys.all, 'next-code'] as const,
 };
 
@@ -21,10 +22,19 @@ export function useNextCapaCode() {
   });
 }
 
-export function useCapaList() {
+/** No args → every CAPA (New CAPA modal); the list screen passes a 25-row page. */
+export function useCapaList(q: ListCapaQuery = {}) {
   return useQuery<ListCapaResponse>({
-    queryKey: capaKeys.list(),
-    queryFn: () => apiFetch<ListCapaResponse>('/capa'),
+    queryKey: capaKeys.list(q),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (q.search) params.set('search', q.search);
+      if (q.sf) params.set('sf', q.sf);
+      if (q.limit !== undefined) params.set('limit', String(q.limit));
+      if (q.offset) params.set('offset', String(q.offset));
+      const qs = params.toString();
+      return apiFetch<ListCapaResponse>(qs ? `/capa?${qs}` : '/capa');
+    },
     placeholderData: (prev) => prev,
   });
 }

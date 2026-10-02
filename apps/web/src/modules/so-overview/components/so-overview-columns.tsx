@@ -140,6 +140,15 @@ function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
   return <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{flags}</div>;
 }
 
+// Sort & Filter tick lists (server mode): stored code + the label shown.
+const OVERALL_OPTIONS = Object.entries(STATUS_BADGE).map(([value, b]) => ({
+  value,
+  label: b.label,
+}));
+const SO_TYPE_OPTIONS = (['component_manufacturing', 'equipment', 'with_material'] as const).map(
+  (value) => ({ value, label: soTypeLabel(value) }),
+);
+
 function soTypeLabel(type: SoOverviewRow['type']): string {
   return type === 'equipment'
     ? 'Equipment'
@@ -152,6 +161,7 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
   return [
     {
       id: 'so_code',
+      sortFilterField: 'code',
       header: 'SO No.',
       nowrap: true,
       render: (row) => (
@@ -168,6 +178,7 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     },
     {
       id: 'customer',
+      sortFilterField: 'customerName',
       header: 'Customer',
       align: 'left',
       ellipsis: true,
@@ -177,12 +188,17 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     },
     {
       id: 'so_type',
+      sortFilterField: 'type',
+      filterType: 'list',
+      filterOptions: SO_TYPE_OPTIONS,
       header: 'SO Type',
       nowrap: true,
       render: (row) => <span style={{ fontSize: 11 }}>{soTypeLabel(row.type)}</span>,
     },
     {
       id: 'progress_status',
+      sortFilterField: 'overallStatus',
+      filterOptions: OVERALL_OPTIONS,
       kind: 'badge',
       header: 'Progress Status',
       nowrap: true,
@@ -193,12 +209,15 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     },
     {
       id: 'progress',
+      sortFilterField: 'overallPct',
+      filterType: 'num',
       header: 'Progress',
       minWidth: 150,
       render: (row) => <ProgressCell row={row} />,
     },
     {
       id: 'order_qty',
+      sortFilterField: 'totalRequiredQty',
       kind: 'num',
       header: 'Order Qty',
       nowrap: true,
@@ -206,6 +225,7 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     },
     {
       id: 'completed',
+      sortFilterField: 'totalDoneQty',
       kind: 'num',
       header: 'Completed',
       headColor: 'var(--green)',
@@ -218,6 +238,7 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     },
     {
       id: 'pending',
+      sortFilterField: 'totalBalanceQty',
       kind: 'num',
       header: 'Pending',
       headColor: 'var(--red)',
@@ -233,6 +254,7 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     },
     {
       id: 'due_date',
+      sortFilterField: 'earliestDueDate',
       kind: 'date',
       header: 'Due Date',
       nowrap: true,
@@ -256,6 +278,8 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     // ── ▸ detail row (SO_OVERVIEW_DEFAULT_HIDDEN) ─────────────────────────────
     {
       id: 'client_po',
+      sortFilterField: 'clientPoNo',
+      filterType: 'text',
       kind: 'code',
       header: 'Client PO No.',
       nowrap: true,
@@ -268,6 +292,7 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     },
     {
       id: 'equipment',
+      sortFilterField: 'equipmentItemName',
       header: 'Equipment',
       align: 'left',
       ellipsis: true,
@@ -281,6 +306,7 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     },
     {
       id: 'lines',
+      sortFilterField: 'lineCount',
       kind: 'num',
       header: 'Lines',
       nowrap: true,
@@ -292,6 +318,7 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
     },
     {
       id: 'so_date',
+      sortFilterField: 'soDate',
       kind: 'date',
       header: 'SO Date',
       nowrap: true,

@@ -1,6 +1,7 @@
 import type {
   CreateCustomerDispatchInput,
   CustomerDispatchDetail,
+  CustomerDispatchRegisterQuery,
   CustomerDispatchRegisterResponse,
   DispatchableSoResponse,
   FinanceSoOption,
@@ -14,7 +15,10 @@ import { activityLogKeys } from '@/modules/activity-log/api';
 export const dispatchKeys = {
   all: ['customer-dispatches'] as const,
   list: () => [...dispatchKeys.all, 'list'] as const,
-  register: () => [...dispatchKeys.all, 'register'] as const,
+  register: (q?: CustomerDispatchRegisterQuery) =>
+    q
+      ? ([...dispatchKeys.all, 'register', q] as const)
+      : ([...dispatchKeys.all, 'register'] as const),
   detail: (id: string) => [...dispatchKeys.all, 'detail', id] as const,
   soOptions: () => [...dispatchKeys.all, 'so-options'] as const,
   dispatchable: (soId: string) => [...dispatchKeys.all, 'dispatchable', soId] as const,
@@ -47,12 +51,32 @@ export function useDispatchDetail(id: string | undefined) {
   });
 }
 
+function registerQs(q: CustomerDispatchRegisterQuery): string {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  if (q.soNo) params.set('soNo', q.soNo);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  if (q.offset) params.set('offset', String(q.offset));
+  if (q.sf) params.set('sf', q.sf);
+  return params.toString();
+}
+
+/** One page of the line-grain register, paged by DISPATCH (ADR-201). */
+export function fetchDispatchRegister(
+  q: CustomerDispatchRegisterQuery,
+): Promise<CustomerDispatchRegisterResponse> {
+  return apiFetch<CustomerDispatchRegisterResponse>(
+    `/customer-dispatches/register?${registerQs(q)}`,
+  );
+}
+
 // Line-grain register (legacy renderDispatchRegister grain).
-export function useDispatchRegister() {
+export function useDispatchRegister(q: CustomerDispatchRegisterQuery) {
   return useQuery<CustomerDispatchRegisterResponse>({
-    queryKey: dispatchKeys.register(),
-    queryFn: () => apiFetch<CustomerDispatchRegisterResponse>('/customer-dispatches/register'),
+    queryKey: dispatchKeys.register(q),
+    queryFn: () => fetchDispatchRegister(q),
     staleTime: 15_000,
+    placeholderData: (prev) => prev,
   });
 }
 

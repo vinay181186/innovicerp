@@ -17,13 +17,16 @@
 
 import { type OpLogChangeStatus, type OpLogTimeChangeRequest } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
-import { matchesSearchTerm } from '@/components/shared/search-match';
-import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests } from '@/modules/op-entry/api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { useDebounce } from '@/lib/use-debounce';
+import { useDecideOpLogTimeChange } from '@/modules/op-entry/api';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader, PageState } from '@/ui/layout';
-import { approvalsKeys } from '../api';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { approvalsKeys, useOpLogTimeChangePage } from '../api';
 import {
   OP_ENTRY_DEFAULT_HIDDEN,
   OpEntryRowActions,
@@ -49,7 +52,31 @@ export function LogEntryApprovals({
   tabs?: React.ReactNode;
 }): React.JSX.Element {
   const [sub, setSub] = useState<OpLogChangeStatus>('pending');
-  const list = useOpLogTimeChangeRequests({ status: sub, limit: 200 });
+  // 25 requests a page (ADR-201). A tab without its own route, so the page is
+  // component state. Search and Sort & Filter run on the server over every
+  // request; any change of them, or of Status, goes back to page 1.
+  const [page, setPage] = useState(1);
+  const [term, setTerm] = useState('');
+  const search = useDebounce(normalizeSearchTerm(term), 300);
+  const sf = useServerSortFilter(TABLE_KEYS.approvalsOpEntry, () => setPage(1));
+  const lastFilters = useRef(`${sub}|${search}`);
+  useEffect(() => {
+    const key = `${sub}|${search}`;
+    if (lastFilters.current === key) return;
+    lastFilters.current = key;
+    setPage(1);
+  }, [sub, search]);
+  // Waiting is a FIFO queue (oldest first); the decided tabs come newest first
+  // — the server orders them.
+  const list = useOpLogTimeChangePage({
+    status: sub,
+    ...(search ? { search } : {}),
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
+  });
+  const total = list.data?.total ?? 0;
+  useClampPage(page, list.data?.total, setPage);
   const decide = useDecideOpLogTimeChange();
   // A decision also shrinks the Approvals inbox (its Op Entry count and the nav
   // badge), which is a separate query.
@@ -61,28 +88,7 @@ export function LogEntryApprovals({
   const [rejecting, setRejecting] = useState<OpLogTimeChangeRequest | null>(null);
 
   const active = SUB_TABS.find((t) => t.key === sub);
-  const rows = list.data ?? [];
-  // Waiting is a FIFO queue (oldest first). The history tabs read better with
-  // the most recent decision on top. Client-side search over the cards loaded
-  // (up to 200) — JC, item, operation, machine, reason and the people on each.
-  const [term, setTerm] = useState('');
-  const ordered = (sub === 'pending' ? rows : [...rows].reverse()).filter((r) =>
-    matchesSearchTerm(
-      [
-        r.jobCardCode,
-        r.itemCode,
-        r.itemRevision,
-        r.itemName,
-        r.clientPoLineNo,
-        r.operation,
-        r.machineCode,
-        r.reason,
-        r.requestedByName,
-        r.decidedByName,
-      ],
-      term,
-    ),
-  );
+  const ordered = list.data?.items ?? [];
 
   const columns = useMemo(() => opEntryColumns(), []);
   const actionProps: OpEntryActionProps = {
@@ -96,7 +102,7 @@ export function LogEntryApprovals({
       <ListHeader
         title="Op Entry Approvals"
         icon="✅"
-        count={list.data ? ordered.length : undefined}
+        count={list.data ? total : undefined}
         noun="request"
         filterNote={active?.label}
         search={term}
@@ -129,8 +135,9 @@ export function LogEntryApprovals({
           setSub('pending');
           setRejecting(null);
           setTerm('');
+          sf.clearFilters();
         }}
-        filtersActive={sub !== 'pending' || term.trim() !== ''}
+        filtersActive={sub !== 'pending' || term.trim() !== '' || sf.filtering}
         tools={
           pendingCount ? (
             <span className="badge b-amber" title="Waiting for a decision">
@@ -161,15 +168,26 @@ export function LogEntryApprovals({
               tableKey={TABLE_KEYS.approvalsOpEntry}
               columns={columns}
               rows={ordered}
-              sortFilter={false}
+              sortFilterServer={sf}
               rowKey={(r) => r.id}
               loading={list.isLoading}
-              empty={term ? 'No requests match.' : (active?.empty ?? 'Nothing here yet.')}
+              empty={
+                search || sf.filtering
+                  ? 'No requests match.'
+                  : (active?.empty ?? 'Nothing here yet.')
+              }
               defaultHidden={OP_ENTRY_DEFAULT_HIDDEN}
               rowClassName={opEntryRowTint}
               rowActions={(r) => <OpEntryRowActions r={r} p={actionProps} />}
             />
           </Panel>
+          <ListFooter
+            total={total}
+            noun="request"
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={setPage}
+          />
         </>
       )}
 

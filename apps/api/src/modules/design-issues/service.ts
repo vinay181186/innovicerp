@@ -2,15 +2,16 @@
 // renderDesignIssuesPage (HTML L7890). Writes happen via the
 // design-projects routes (issues are nested under projects).
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type {
   DesignIssueListItem,
   ListDesignIssuesQuery,
   ListDesignIssuesResponse,
 } from '@innovic/shared';
-import { designIssues } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { DESIGN_ISSUE_SF_COLUMNS, ISSUE_AGE_DAYS_SQL } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -32,14 +33,19 @@ export async function listDesignIssuesAll(
   user: AuthContext,
 ): Promise<ListDesignIssuesResponse> {
   const companyId = requireCompany(user);
+  // ADR-201: the screen asks for one 25-row page. Search + Sort & Filter
+  // (ADR-200) narrow the list, its `total` AND the filter counts in the
+  // dropdown; the dropdown's own filter (open / resolved / critical) narrows
+  // the list + total but not the counts (each option counts its own rows).
+  const sf = readSf(input.sf);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
       ? sql`AND (
-          di.title ILIKE ${term}
-          OR di.part_text ILIKE ${term}
-          OR di.assigned_to_text ILIKE ${term}
-          OR dp.project_name ILIKE ${term}
+          di.title ILIKE ${term} ESCAPE '\\'
+          OR di.part_text ILIKE ${term} ESCAPE '\\'
+          OR di.assigned_to_text ILIKE ${term} ESCAPE '\\'
+          OR dp.project_name ILIKE ${term} ESCAPE '\\'
         )`
       : sql``;
     let filterFrag = sql``;
@@ -47,6 +53,16 @@ export async function listDesignIssuesAll(
     else if (input.filter === 'resolved') filterFrag = sql`AND di.status IN ('Resolved','Closed')`;
     else if (input.filter === 'critical')
       filterFrag = sql`AND di.severity = 'Critical' AND di.status NOT IN ('Resolved','Closed')`;
+
+    const fromWhere = sql`
+      FROM public.design_issues di
+      LEFT JOIN public.design_projects dp ON dp.id = di.design_project_id AND dp.deleted_at IS NULL
+      WHERE di.company_id = ${companyId}::uuid
+        AND di.deleted_at IS NULL
+        ${searchFrag}
+        ${sfWhere(DESIGN_ISSUE_SF_COLUMNS, sf)}`;
+    // Newest first; id breaks a created_at tie so paging never skips a row.
+    const orderBy = sfOrderBy(DESIGN_ISSUE_SF_COLUMNS, sf, sql`di.created_at DESC, di.id DESC`);
 
     const result = await tx.execute(sql`
       SELECT
@@ -66,33 +82,25 @@ export async function listDesignIssuesAll(
         di.created_at AS "createdAt",
         di.updated_at AS "updatedAt",
         dp.project_name AS "projectName",
-        GREATEST(0, (CURRENT_DATE - di.raised_date))::int AS "ageDays"
-      FROM public.design_issues di
-      LEFT JOIN public.design_projects dp ON dp.id = di.design_project_id AND dp.deleted_at IS NULL
-      WHERE di.company_id = ${companyId}::uuid
-        AND di.deleted_at IS NULL
-        ${searchFrag}
+        ${ISSUE_AGE_DAYS_SQL} AS "ageDays"
+      ${fromWhere}
         ${filterFrag}
-      ORDER BY di.created_at DESC
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(designIssues.companyId, companyId), isNull(designIssues.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(designIssues)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    const totalRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS n ${fromWhere} ${filterFrag}
+    `)) as unknown as Array<{ n: number }>;
+    const total = Number(totalRows[0]?.n ?? 0);
 
     const sumRows = (await tx.execute(sql`
       SELECT
         COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE status IN ('Open','In Progress'))::int AS open,
-        COUNT(*) FILTER (WHERE status IN ('Resolved','Closed'))::int AS resolved,
-        COUNT(*) FILTER (WHERE severity = 'Critical' AND status NOT IN ('Resolved','Closed'))::int AS critical
-      FROM public.design_issues
-      WHERE company_id = ${companyId}::uuid
-        AND deleted_at IS NULL
+        COUNT(*) FILTER (WHERE di.status IN ('Open','In Progress'))::int AS open,
+        COUNT(*) FILTER (WHERE di.status IN ('Resolved','Closed'))::int AS resolved,
+        COUNT(*) FILTER (WHERE di.severity = 'Critical' AND di.status NOT IN ('Resolved','Closed'))::int AS critical
+      ${fromWhere}
     `)) as unknown as Array<Record<string, unknown>>;
     const sum = sumRows[0] ?? {};
 

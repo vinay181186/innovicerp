@@ -294,7 +294,8 @@ export function jobQueueRowActions(opts: {
       ? r.machines.some((s) => s.machineCode === m.machineCode && s.qty > 0)
       : r.completed > 0;
   const showUp = canReorder && !searching && idx > 0;
-  const showDown = canReorder && !searching && idx < m.rows.length - 1;
+  // pendingCount = the machine's WHOLE queue (the page holds 25 rows at most).
+  const showDown = canReorder && !searching && idx < m.pendingCount - 1;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>

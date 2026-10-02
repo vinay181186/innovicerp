@@ -2,6 +2,7 @@ import {
   adjustStockInputSchema,
   listReservationsQuerySchema,
   listStoreInventoryQuerySchema,
+  reorderListQuerySchema,
   reorderPrInputSchema,
   setReorderInputSchema,
 } from '@innovic/shared';
@@ -34,7 +35,7 @@ export async function storeInventoryRoutes(app: FastifyInstance): Promise<void> 
 
   app.get('/store-inventory/reorder-list', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return reorder.getReorderList(req.user);
+    return reorder.getReorderList(reorderListQuerySchema.parse(req.query), req.user);
   });
 
   app.post('/store-inventory/reorder-pr', async (req) => {

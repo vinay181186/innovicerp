@@ -79,3 +79,26 @@ export const tpiResponseSchema = z.object({
   completed: z.array(tpiCompletedRowSchema),
 });
 export type TpiResponse = z.infer<typeof tpiResponseSchema>;
+
+// ── Paged lists (ADR-201) ──────────────────────────────────────────────────
+// The TPI screen shows 25 pending calls and 25 completed records per page;
+// search runs on the SERVER over every row. GET /tpi (the whole feed above,
+// completed capped at 200) stays for older callers.
+
+export const listTpiQuerySchema = z.object({
+  /** JC, SO, POL, item code / revision / name, operation (+ inspector,
+   *  organisation, certificate on the completed list). */
+  search: z.string().trim().max(100).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListTpiQuery = z.infer<typeof listTpiQuerySchema>;
+
+export interface TpiPendingListResponse {
+  items: TpiPendingRow[];
+  total: number;
+}
+export interface TpiCompletedListResponse {
+  items: TpiCompletedRow[];
+  total: number;
+}

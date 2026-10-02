@@ -5,6 +5,7 @@
 // (open JC pending qty), + belowReorder (ADR-193 phase 5: Available + On PO < Reorder Level).
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const storeInventoryRowSchema = z.object({
   itemId: z.string().uuid(),
@@ -58,6 +59,11 @@ export const listStoreInventoryQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   /** all | below (Below Reorder) | zero */
   filter: z.enum(['all', 'below', 'zero']).default('all'),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  /** Paging (ADR-201). No limit = every matching row (as before). */
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
 });
 export type ListStoreInventoryQuery = z.infer<typeof listStoreInventoryQuerySchema>;
 
@@ -65,6 +71,9 @@ export const listStoreInventoryResponseSchema = z.object({
   generatedAt: z.string(),
   filter: z.enum(['all', 'below', 'zero']),
   rows: z.array(storeInventoryRowSchema),
+  /** Every item matching search + filter + Sort & Filter (all pages). */
+  total: z.number().int().nonnegative(),
+  /** Tile figures over every item matching search + Sort & Filter (not the filter). */
   summary: storeInventorySummarySchema,
 });
 export type ListStoreInventoryResponse = z.infer<typeof listStoreInventoryResponseSchema>;
@@ -123,6 +132,21 @@ export interface ReorderListRow {
   openPrs: Array<{ id: string; code: string; qty: number }>;
   /** Vendor of the item's latest purchase order; null = pick one. */
   suggestedVendor: { id: string; code: string; name: string } | null;
+}
+
+/** GET /store-inventory/reorder-list — paged (ADR-201). */
+export const reorderListQuerySchema = z.object({
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(1000).default(1000),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ReorderListQuery = z.infer<typeof reorderListQuerySchema>;
+
+export interface ReorderListResponse {
+  items: ReorderListRow[];
+  /** Every item Below Reorder (same filters), not just this page. */
+  total: number;
 }
 
 export const reorderPrInputSchema = z.object({

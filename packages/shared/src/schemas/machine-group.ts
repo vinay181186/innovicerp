@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { queryBoolean } from '../lib/query-boolean';
 
 // Machine GROUP master (e.g. VMC, CNC, Lathe, Grinding) — migration 0116.
@@ -56,8 +57,10 @@ export type UpdateMachineGroupInput = z.infer<typeof updateMachineGroupInputSche
 export const listMachineGroupsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   isActive: queryBoolean().optional(),
-  // 1000 so the master loads in one scrolling fetch (no Prev/Next), matching
-  // the Raw Material masters.
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  // 1000 for the lookups that need the whole master (useMachineGroupLookup,
+  // pickers); the Machine Groups tab asks for one 25-row page (ADR-201).
   limit: z.coerce.number().int().positive().max(1000).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

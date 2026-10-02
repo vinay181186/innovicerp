@@ -1,11 +1,12 @@
 // CAPA service (QC Wave 3). Mirrors legacy renderCAPA L22779 + _capaNew /
 // _capaEdit (5-step). CRUD over capa_records (migration 0034).
 
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CapaCounters,
   CapaRecord,
   CreateCapaInput,
+  ListCapaQuery,
   ListCapaResponse,
   UpdateCapaInput,
 } from '@innovic/shared';
@@ -13,6 +14,8 @@ import { capaRecords } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { CAPA_NC_REFS_TEXT, CAPA_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -132,30 +135,89 @@ function toRecord(r: Row, facts: LineFacts = NO_LINE_FACTS): CapaRecord {
   };
 }
 
-export async function listCapa(user: AuthContext): Promise<ListCapaResponse> {
+/** Every column the CAPA row shows (+ the ▸ facts), for the server search. */
+function capaSearchSql(term: string | undefined) {
+  const q = (term ?? '').trim().replace(/\s+/g, ' ');
+  if (q === '') return sql``;
+  const pat = `%${likeEscape(q)}%`;
+  const fields = [
+    sql`${capaRecords.code}`,
+    sql`${capaRecords.type}`,
+    CAPA_NC_REFS_TEXT,
+    sql`${capaRecords.problem}`,
+    sql`${capaRecords.responsible}`,
+    sql`to_char(${capaRecords.targetDate}, 'DD-Mon-YYYY')`,
+    sql`${capaRecords.status}`,
+    sql`to_char(${capaRecords.capaDate}, 'DD-Mon-YYYY')`,
+    sql`${capaRecords.rootCause}`,
+    sql`${capaRecords.jcNo}`,
+  ];
+  return sql`AND (${sql.join(
+    fields.map((f) => sql`${f} ILIKE ${pat} ESCAPE '\\'`),
+    sql` OR `,
+  )})`;
+}
+
+/**
+ * CAPA list (ADR-201): search + Sort & Filter on the server, 25-row pages when
+ * the screen passes `limit` (no `limit` → every CAPA, as before). `total` uses
+ * the page's WHERE; the counter strip + overdue are over ALL CAPAs.
+ */
+export async function listCapa(
+  user: AuthContext,
+  input: ListCapaQuery = {},
+): Promise<ListCapaResponse> {
   const companyId = requireCompany(user);
+  const sf = readSf(input.sf);
+  const today = todayIso();
   return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select()
+    const where = sql`${capaRecords.companyId} = ${companyId} AND ${capaRecords.deletedAt} IS NULL
+      ${capaSearchSql(input.search)} ${sfWhere(CAPA_SF_COLUMNS, sf)}`;
+    const order = sfOrderBy(
+      CAPA_SF_COLUMNS,
+      sf,
+      sql`${capaRecords.capaDate} DESC, ${capaRecords.code} DESC, ${capaRecords.id} DESC`,
+    );
+    const base = tx.select().from(capaRecords).where(where).orderBy(order);
+    const offset = input.offset ?? 0;
+    const rows =
+      input.limit !== undefined
+        ? await base.limit(input.limit).offset(offset)
+        : offset > 0
+          ? await base.offset(offset)
+          : await base;
+    const [cnt] = await tx
+      .select({ n: sql<number>`count(*)::int` })
       .from(capaRecords)
-      .where(and(eq(capaRecords.companyId, companyId), isNull(capaRecords.deletedAt)))
-      .orderBy(desc(capaRecords.capaDate), desc(capaRecords.code));
+      .where(where);
+    const [sum] = await tx
+      .select({
+        total: sql<number>`count(*)::int`,
+        open: sql<number>`count(*) FILTER (WHERE ${capaRecords.status} = 'Open')::int`,
+        inProgress: sql<number>`count(*) FILTER (WHERE ${capaRecords.status} = 'In Progress')::int`,
+        verified: sql<number>`count(*) FILTER (WHERE ${capaRecords.status} = 'Verified')::int`,
+        closed: sql<number>`count(*) FILTER (WHERE ${capaRecords.status} = 'Closed')::int`,
+        closedEffective: sql<number>`count(*) FILTER (WHERE ${capaRecords.status} = 'Closed' AND ${capaRecords.effectiveness} = 'Effective')::int`,
+        overdue: sql<number>`count(*) FILTER (WHERE ${capaRecords.status} NOT IN ('Closed', 'Verified') AND ${capaRecords.targetDate} < ${today}::date)::int`,
+      })
+      .from(capaRecords)
+      .where(and(eq(capaRecords.companyId, companyId), isNull(capaRecords.deletedAt)));
     const facts = await lineFactsByJcNo(tx, companyId, [
       ...new Set(rows.map((r) => r.jcNo).filter((c): c is string => !!c)),
     ]);
     const items = rows.map((r) => toRecord(r, (r.jcNo && facts.get(r.jcNo)) || NO_LINE_FACTS));
-    const closed = items.filter((c) => c.status === 'Closed');
-    const closedEffective = closed.filter((c) => c.effectiveness === 'Effective');
+    const closed = Number(sum?.closed ?? 0);
     const counters: CapaCounters = {
-      total: items.length,
-      open: items.filter((c) => c.status === 'Open').length,
-      inProgress: items.filter((c) => c.status === 'In Progress').length,
-      verified: items.filter((c) => c.status === 'Verified').length,
-      closed: closed.length,
+      total: Number(sum?.total ?? 0),
+      open: Number(sum?.open ?? 0),
+      inProgress: Number(sum?.inProgress ?? 0),
+      verified: Number(sum?.verified ?? 0),
+      closed,
       effectivenessPct:
-        closed.length > 0 ? Math.round((closedEffective.length / closed.length) * 100) : 0,
+        closed > 0 ? Math.round((Number(sum?.closedEffective ?? 0) / closed) * 100) : 0,
+      overdue: Number(sum?.overdue ?? 0),
     };
-    return { items, counters };
+    return { items, total: Number(cnt?.n ?? 0), counters };
   });
 }
 

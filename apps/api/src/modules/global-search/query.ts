@@ -167,6 +167,7 @@ export function buildSearchSql(
   companyId: string,
   q: string,
   limit: number,
+  offset = 0,
 ): SQL {
   const p = patterns(q);
   const branches = pick(kinds).map((m) => rowBranchSql(m, companyId, p));
@@ -174,8 +175,8 @@ export function buildSearchSql(
   return sql`
     SELECT u.kind, u.id, u.doc_no, u.doc_date, u.party, u.lines, u.qty, u.status, u.hit
     FROM (${sql.join(branches, sql` UNION ALL `)}) u
-    ORDER BY u.match_rank ASC, u.doc_date DESC NULLS LAST, u.doc_no DESC
-    LIMIT ${limitPlusOne}
+    ORDER BY u.match_rank ASC, u.doc_date DESC NULLS LAST, u.doc_no DESC, u.kind, u.id
+    LIMIT ${limitPlusOne} OFFSET ${offset}
   `;
 }
 

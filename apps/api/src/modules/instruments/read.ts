@@ -104,7 +104,7 @@ export async function listInstruments(
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
     const sf = readSf(q.sf);
     const where = sql`${sql.join(parts, sql` AND `)} ${sfWhere(INSTRUMENT_SF_COLUMNS, sf)}`;
-    const orderBy = sfOrderBy(INSTRUMENT_SF_COLUMNS, sf, sql`i.code, lower(ins.serial_no)`);
+    const orderBy = sfOrderBy(INSTRUMENT_SF_COLUMNS, sf, sql`i.code, lower(ins.serial_no), ins.id`);
     const rows = (await tx.execute(sql`
       ${SELECT}
       WHERE ${where}

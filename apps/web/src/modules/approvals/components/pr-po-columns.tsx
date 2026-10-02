@@ -28,6 +28,7 @@ export function prPoColumns(
   return [
     {
       id: 'doc_code',
+      sortFilterField: 'docCode',
       kind: 'code',
       header: section === 'pr' ? 'PR No.' : 'PO No.',
       className: 'mono fw-700',
@@ -36,6 +37,7 @@ export function prPoColumns(
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendorName',
       kind: 'text',
       header: 'Vendor',
       align: 'left',
@@ -45,6 +47,7 @@ export function prPoColumns(
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'mono fw-700',
@@ -53,6 +56,7 @@ export function prPoColumns(
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -63,6 +67,7 @@ export function prPoColumns(
     },
     {
       id: 'qty',
+      sortFilterField: 'docQty',
       kind: 'num',
       header: section === 'pr' ? 'PR Qty' : 'PO Qty',
       align: 'right',
@@ -72,6 +77,7 @@ export function prPoColumns(
       ? [
           {
             id: 'amount',
+            sortFilterField: 'docAmount',
             kind: 'num' as const,
             header: section === 'pr' ? 'Est. Amount' : 'Subtotal',
             align: 'right' as const,
@@ -81,6 +87,7 @@ export function prPoColumns(
       : []),
     {
       id: 'raised_by',
+      sortFilterField: 'createdByName',
       kind: 'text',
       header: 'Raised By',
       align: 'left',
@@ -90,6 +97,7 @@ export function prPoColumns(
     },
     {
       id: 'raised_on',
+      sortFilterField: 'createdAt',
       kind: 'date',
       header: 'Raised On',
       render: (r) => fmtDate(r.createdAt),

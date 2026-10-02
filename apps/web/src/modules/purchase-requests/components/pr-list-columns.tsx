@@ -23,7 +23,9 @@ const PR_STATUS_OPTIONS = Object.entries(PR_STATUS_LABELS).map(([value, label]) 
   label,
 }));
 
-export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
+/** @param firstRowNo the Sr No of the page's first row (offset + 1), so Sr No
+ *  runs on across pages (page 2 starts at 26). */
+export function prListColumns(firstRowNo = 1): DataTableColumn<PurchaseRequestListItem>[] {
   return [
     {
       id: 'pr_no',
@@ -51,7 +53,7 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
       header: 'Sr No',
       kind: 'num',
       className: 'text3',
-      render: (_pr, i) => i + 1,
+      render: (_pr, i) => firstRowNo + i,
     },
     {
       id: 'pr_date',

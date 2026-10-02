@@ -4,12 +4,13 @@
 // Production-Op / QC-Pending rules use the v_jc_op_status view (the SQL mirror
 // of the legacy calcEngine enrichedOps). Pure rule helpers live in ./rules.
 
-import type { StuckDashboardResponse } from '@innovic/shared';
-import { DEFAULT_STUCK_THRESHOLDS } from '@innovic/shared';
+import type { StuckDashboardQuery, StuckDashboardResponse } from '@innovic/shared';
+import { DEFAULT_STUCK_THRESHOLDS, stuckDashboardQuerySchema } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { loadSoPhaseData } from '../../lib/so-phase-data';
+import { pageStuckItems } from './paging';
 import { type OpStuckCandidate, classifyOpStuck, derivePhaseStuckItems } from './rules';
 
 const requireCompany = (user: AuthContext): string => {
@@ -72,7 +73,11 @@ async function loadOpCandidates(tx: DbTransaction, companyId: string): Promise<O
     }));
 }
 
-export async function getStuckDashboard(user: AuthContext): Promise<StuckDashboardResponse> {
+export async function getStuckDashboard(
+  user: AuthContext,
+  raw: StuckDashboardQuery = {},
+): Promise<StuckDashboardResponse> {
+  const input = stuckDashboardQuerySchema.parse(raw);
   const companyId = requireCompany(user);
   const thr = DEFAULT_STUCK_THRESHOLDS;
   const today = new Date().toISOString().substring(0, 10);
@@ -84,9 +89,7 @@ export async function getStuckDashboard(user: AuthContext): Promise<StuckDashboa
     // Op-level rules: only for SOs where production started but QC not all done
     // (legacy gate L18067 `first_op_start && !last_qc_end`).
     const opGateSoIds = new Set(
-      phaseData
-        .filter((d) => d.phases.firstOpStart && !d.phases.lastQcEnd)
-        .map((d) => d.soId),
+      phaseData.filter((d) => d.phases.firstOpStart && !d.phases.lastQcEnd).map((d) => d.soId),
     );
     const candidates = await loadOpCandidates(tx, companyId);
     for (const c of candidates) {
@@ -98,9 +101,13 @@ export async function getStuckDashboard(user: AuthContext): Promise<StuckDashboa
     // Sort by most-over-threshold (legacy L18107).
     items.sort((a, b) => b.days - b.threshold - (a.days - a.threshold));
 
+    // One page (search + Sort & Filter on the server, ADR-201); the KPI strip
+    // below stays over every stuck activity.
+    const { page, total } = await pageStuckItems(tx, items, input);
     const stages = new Set(items.map((i) => i.stage));
     return {
-      items,
+      items: page,
+      total,
       summary: {
         totalStuck: items.length,
         criticalStuck: items.filter((i) => i.days - i.threshold > 5).length,

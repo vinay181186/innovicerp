@@ -1,6 +1,7 @@
 // Assign Inspector tab (legacy _qccRenderQueue L18667). Pending QC ops with age,
 // attempt counter, due date, assignment, and Pick-Up / Assign actions.
-// Sortable by age / due date / customer.
+// Sortable by age / due date / customer — the sort runs on the SERVER over the
+// whole queue and the table shows one 25-row page (ADR-201).
 //
 // ADR-199 table standard: the data table is the shared fit table
 // (<DataTable tableKey={TABLE_KEYS.qcCommandQueue}>). First pinned column is
@@ -8,15 +9,14 @@
 // (defaultHidden). Overdue rows carry the shared late tint (ROW_TINT.late). The
 // Sort-by bar, the Pick Up / Assign actions and the permission gates are kept.
 
-import { type QcCommandQueueRow, opSrNo } from '@innovic/shared';
-import { useMemo, useState } from 'react';
+import { type QcCommandQueueRow, type QcQueueSort, opSrNo } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { type QcPager, TablePager } from './TablePager';
 
-type Sort = 'age' | 'due' | 'customer';
-const SORTS: { id: Sort; label: string }[] = [
+const SORTS: { id: QcQueueSort; label: string }[] = [
   { id: 'age', label: 'Oldest First' },
   { id: 'due', label: 'Due Date' },
   { id: 'customer', label: 'Customer' },
@@ -42,13 +42,20 @@ const QUEUE_HIDDEN_COLUMNS = ['item_name', 'so_code', 'customer', 'due_date'] as
 
 export function QueueTab({
   rows,
+  sort,
+  onSort,
+  pager,
   canPickUp,
   canAssign,
   busyId,
   onPickUp,
   onAssign,
 }: {
+  /** This page of the queue, already in `sort` order (server-side). */
   rows: QcCommandQueueRow[];
+  sort: QcQueueSort;
+  onSort: (s: QcQueueSort) => void;
+  pager: QcPager;
   // Both come from the caller's qc_submit tier now, not their global role:
   // pick-up is `entry`, assign-to-another is `edit`.
   canPickUp: boolean;
@@ -57,23 +64,6 @@ export function QueueTab({
   onPickUp: (jcOpId: string) => void;
   onAssign: (row: QcCommandQueueRow) => void;
 }): React.JSX.Element {
-  const [sort, setSort] = useState<Sort>('age');
-
-  const sorted = useMemo(
-    () =>
-      [...rows].sort((a, b) => {
-        if (sort === 'age') return b.ageDays - a.ageDays;
-        if (sort === 'due') {
-          if (!a.dueDate && !b.dueDate) return 0;
-          if (!a.dueDate) return 1;
-          if (!b.dueDate) return -1;
-          return a.dueDate.localeCompare(b.dueDate);
-        }
-        return (a.customer ?? '').localeCompare(b.customer ?? '');
-      }),
-    [rows, sort],
-  );
-
   const showActions = canPickUp || canAssign;
 
   const columns: DataTableColumn<QcCommandQueueRow>[] = [
@@ -241,7 +231,7 @@ export function QueueTab({
                     }
                   : { fontSize: 11 }
               }
-              onClick={() => setSort(s.id)}
+              onClick={() => onSort(s.id)}
             >
               {s.label}
             </button>
@@ -251,7 +241,7 @@ export function QueueTab({
 
       {/* Legacy L18691 returns early on an empty queue: no panel, no table, no
           tip — just the sort bar and this line. */}
-      {sorted.length === 0 ? (
+      {pager.total === 0 ? (
         <div className="empty-state" style={{ color: 'var(--green2)' }}>
           No QC Pending items.
         </div>
@@ -261,7 +251,7 @@ export function QueueTab({
             tableKey={TABLE_KEYS.qcCommandQueue}
             columns={columns}
             defaultHidden={[...QUEUE_HIDDEN_COLUMNS]}
-            rows={sorted}
+            rows={rows}
             rowKey={(it) => it.jcOpId}
             rowClassName={(it) => (it.isOverdue ? ROW_TINT.late : undefined)}
             rowActionsWidth="1%"
@@ -290,6 +280,7 @@ export function QueueTab({
                 }
               : {})}
           />
+          <TablePager pager={pager} noun="call" />
         </Panel>
       )}
     </>

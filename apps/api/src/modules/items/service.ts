@@ -28,6 +28,8 @@ import { requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { ITEM_SF_COLUMNS } from './sf-columns';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import {
   applyMasterRules,
@@ -162,18 +164,27 @@ export async function listItems(
       conditions.push(eq(items.procurementType, input.procurementType));
     }
 
+    // Sort & Filter (ADR-200): the Item Master screen's column filters + sort,
+    // through the list's own field whitelist (sf-columns.ts). List AND count.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(ITEM_SF_COLUMNS, sf)}`);
+
     const where = and(...conditions);
+
+    // ADR-201: the order always ends on a unique key (code, then id) so a
+    // 25-row page never skips or repeats an item — names are not unique.
+    const dir = input.sortDir === 'desc' ? desc : asc;
+    const baseOrder =
+      input.sortBy === 'name'
+        ? sql`${dir(items.name)}, ${dir(items.code)}, ${asc(items.id)}`
+        : sql`${dir(items.code)}, ${asc(items.id)}`;
 
     const [rows, totals] = await Promise.all([
       tx
         .select()
         .from(items)
         .where(where)
-        .orderBy(
-          (input.sortDir === 'desc' ? desc : asc)(
-            input.sortBy === 'name' ? items.name : items.code,
-          ),
-        )
+        .orderBy(sfOrderBy(ITEM_SF_COLUMNS, sf, baseOrder))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(items).where(where),

@@ -34,6 +34,9 @@ export function accessRowTint(u: UserAccessListItem): string | undefined {
   return accessRowStale(u) ? ROW_TINT.pending : undefined;
 }
 
+// Home Dept tick list for server Sort & Filter (ADR-200) — stored dept key + label.
+const HOME_DEPT_OPTIONS = ACCESS_DEPTS.map((d) => ({ value: d.key, label: d.label }));
+
 export function accessListColumns(): DataTableColumn<UserAccessListItem>[] {
   return [
     {
@@ -46,6 +49,7 @@ export function accessListColumns(): DataTableColumn<UserAccessListItem>[] {
       render: (u) => u.userName ?? u.userEmail,
       title: (u) => u.userName ?? u.userEmail,
       filterValue: (u) => u.userName ?? u.userEmail,
+      sortFilterField: 'user',
     },
     {
       id: 'home_dept',
@@ -62,6 +66,9 @@ export function accessListColumns(): DataTableColumn<UserAccessListItem>[] {
         );
       },
       filterValue: (u) => deptLabel(u.mainDept)?.label ?? '',
+      sortFilterField: 'homeDept',
+      filterType: 'list',
+      filterOptions: HOME_DEPT_OPTIONS,
     },
     {
       id: 'tiers',

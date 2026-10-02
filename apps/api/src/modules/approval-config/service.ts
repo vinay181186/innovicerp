@@ -7,15 +7,18 @@
 import {
   APPROVAL_CONFIG_DEFAULTS,
   type ApprovalConfig,
+  type ApprovalHistoryQuery,
   type ApprovalHistoryResponse,
   type SaveApprovalConfigInput,
 } from '@innovic/shared';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { activityLog, approvalConfig, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError } from '../../lib/errors';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
+import { HISTORY_ACTION_LABEL, HISTORY_ENTITY_LABEL, HISTORY_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -141,32 +144,58 @@ export async function saveApprovalConfig(
 }
 
 const APPROVAL_HISTORY_ACTIONS = ['APPROVE', 'REJECT', 'PAYMENT'] as const;
-const APPROVAL_HISTORY_LIMIT = 20;
 
-export async function getApprovalHistory(user: AuthContext): Promise<ApprovalHistoryResponse> {
+// ADR-201: the Approval Activity table pages by 25 with search + Sort &
+// Filter on the server; called with no params it is still the latest 20.
+// Ordered newest first, id as the tie-breaker so paging never skips a row.
+export async function getApprovalHistory(
+  user: AuthContext,
+  input: ApprovalHistoryQuery = { limit: 20, offset: 0 },
+): Promise<ApprovalHistoryResponse> {
   const companyId = requireCompany(user);
+  const sf = readSf(input.sf);
+  const term = (input.search ?? '').trim().replace(/\s+/g, ' ');
+  const pat = `%${likeEscape(term)}%`;
+  const searchFrag =
+    term === ''
+      ? sql`TRUE`
+      : sql`(${activityLog.detail} ILIKE ${pat} ESCAPE '\\'
+          OR ${HISTORY_ENTITY_LABEL} ILIKE ${pat} ESCAPE '\\'
+          OR ${HISTORY_ACTION_LABEL} ILIKE ${pat} ESCAPE '\\'
+          OR ${users.fullName} ILIKE ${pat} ESCAPE '\\')`;
+  const where = and(
+    eq(activityLog.companyId, companyId),
+    or(...APPROVAL_HISTORY_ACTIONS.map((a) => eq(activityLog.action, a))),
+    searchFrag,
+    sql`TRUE ${sfWhere(HISTORY_SF_COLUMNS, sf)}`,
+  );
   return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({
-        id: activityLog.id,
-        ts: activityLog.ts,
-        action: activityLog.action,
-        entity: activityLog.entity,
-        detail: activityLog.detail,
-        refId: activityLog.refId,
-        userId: activityLog.userId,
-        userName: users.fullName,
-      })
-      .from(activityLog)
-      .leftJoin(users, eq(users.id, activityLog.userId))
-      .where(
-        and(
-          eq(activityLog.companyId, companyId),
-          or(...APPROVAL_HISTORY_ACTIONS.map((a) => eq(activityLog.action, a))),
-        ),
-      )
-      .orderBy(desc(activityLog.ts))
-      .limit(APPROVAL_HISTORY_LIMIT);
+    const [rows, totals] = await Promise.all([
+      tx
+        .select({
+          id: activityLog.id,
+          ts: activityLog.ts,
+          action: activityLog.action,
+          entity: activityLog.entity,
+          detail: activityLog.detail,
+          refId: activityLog.refId,
+          userId: activityLog.userId,
+          userName: users.fullName,
+        })
+        .from(activityLog)
+        .leftJoin(users, eq(users.id, activityLog.userId))
+        .where(where)
+        .orderBy(
+          sfOrderBy(HISTORY_SF_COLUMNS, sf, sql`${desc(activityLog.ts)}, ${desc(activityLog.id)}`),
+        )
+        .limit(input.limit)
+        .offset(input.offset),
+      tx
+        .select({ value: count() })
+        .from(activityLog)
+        .leftJoin(users, eq(users.id, activityLog.userId))
+        .where(where),
+    ]);
 
     return {
       items: rows.map((r) => ({
@@ -179,6 +208,7 @@ export async function getApprovalHistory(user: AuthContext): Promise<ApprovalHis
         userId: r.userId,
         userName: r.userName,
       })),
+      total: totals[0]?.value ?? 0,
     };
   });
 }

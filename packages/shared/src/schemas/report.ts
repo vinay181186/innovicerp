@@ -93,9 +93,22 @@ export const runReportResponseSchema = z.object({
   slug: z.string(),
   title: z.string(),
   columns: z.array(reportColumnSchema),
+  /** The rows of the requested page (ADR-201) — every row when no `_limit`
+   *  was asked (Excel / CSV export, older callers). */
   rows: z.array(reportRowSchema),
-  /** Counts the rows in the result set; same as rows.length but explicit. */
+  /** Rows matching the report filters AND the column filters — ALL pages. */
   rowCount: z.number().int().nonnegative(),
+  /** Rows the report filters returned, before the column filters (the
+   *  "(of N)" next to a column-filtered count). */
+  unfilteredCount: z.number().int().nonnegative().optional(),
+  /** 0-based index of `rows[0]` in the whole sorted + filtered result. */
+  offset: z.number().int().nonnegative().optional(),
+  /** Totals row, worked out on the server over ALL matching rows (not just the
+   *  page): column key → sum, only for additive measure columns. */
+  totals: z.record(z.number()).optional(),
+  /** Column keys that hold numbers (right-aligned, numeric column filter),
+   *  judged over ALL rows of the result. */
+  numericKeys: z.array(z.string()).optional(),
   generatedAt: z.string(),
   /** Echoes the filter values that produced this result, for header display. */
   filters: z.record(z.string()),
@@ -110,4 +123,13 @@ export type RunReportResponse = z.infer<typeof runReportResponseSchema>;
 /** Generic filter input for /reports/:slug?... — values are coerced strings.
  *  Per-report validation happens server-side before query execution. */
 export const runReportQuerySchema = z.record(z.string()).default({});
+
+/** Reserved query keys of the report grid (ADR-201) — never report filters
+ *  (report filter keys never start with `_`):
+ *    _limit / _offset   the page (no `_limit` = every row)
+ *    _sort / _dir       sort column key + 'asc' | 'desc' (none = report order)
+ *    _cf.<columnKey>    a column filter term ('contains', or >5 / <=10 / =3
+ *                       on a number column) */
+export const REPORT_GRID_PARAM_PREFIX = '_';
+export const REPORT_COLUMN_FILTER_PREFIX = '_cf.';
 export type RunReportQuery = z.infer<typeof runReportQuerySchema>;

@@ -29,7 +29,12 @@ export async function reportsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/reports/:slug/export.xlsx', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { slug } = slugParamSchema.parse(req.params);
-    const result = await service.runReport(slug, coerceFilters(req.query), req.user);
+    // Every row (ADR-201): a page asked of the export is ignored; the grid's
+    // sort + column filters still apply, so the file matches the screen.
+    const query = coerceFilters(req.query);
+    delete query['_limit'];
+    delete query['_offset'];
+    const result = await service.runReport(slug, query, req.user);
     const buf = await buildWorkbookBuffer({
       id: result.slug,
       title: result.title,

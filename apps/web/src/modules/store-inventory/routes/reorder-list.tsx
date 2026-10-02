@@ -9,35 +9,60 @@
 // the engine's selection props; "PR Qty" and "Vendor" are `control` columns
 // (sibling file reorder-list-columns.tsx). Data, mutations and the raise-PR flow
 // are unchanged.
+//
+// ADR-201 (2026-10-02): 25-row server pages with Prev / Next (page in the URL);
+// Sort & Filter (▾) runs on the server; the header count is the server total.
+// Ticks are kept by item id ACROSS pages together with the ticked row itself
+// (its suggested qty / vendor / code), so "Raise PRs (n)" raises every ticked
+// item, not just the ones on screen. Select-all = this page.
 import type { ReorderListRow, ReorderPrResult } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
+import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader, PageState } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useRaiseReorderPrs, useReorderList } from '../api';
 import { reorderListColumns, type Draft } from '../components/reorder-list-columns';
 
 export const reorderListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'reorder-list',
+  validateSearch: z.object({ page: pageSearchParam }),
   component: ReorderListPage,
 });
 
 function ReorderListPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const canRaise = effectiveFormPerms(eff, 'pr_create').entry;
-  const { data, isLoading, isError, error } = useReorderList();
+  const search = reorderListRoute.useSearch();
+  const navigate = reorderListRoute.useNavigate();
+  const gotoPage = useCallback(
+    (p: number): void => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  const sf = useServerSortFilter(TABLE_KEYS.reorderList, () => gotoPage(1));
+  const { data, isLoading, isFetching, isError, error } = useReorderList({
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(search.page),
+  });
+  const total = data?.total ?? 0;
+  useClampPage(search.page, data?.total, gotoPage);
   const raise = useRaiseReorderPrs();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  // The ticked rows (caller-owned selection set — the engine renders it).
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  // The ticked rows by item id, across pages — the row is kept with its id so
+  // a tick on page 1 still raises its PR while page 3 is on screen.
+  const [ticked, setTicked] = useState<Map<string, ReorderListRow>>(() => new Map());
+  const selectedKeys = useMemo(() => new Set(ticked.keys()), [ticked]);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<ReorderPrResult | null>(null);
 
-  const rows = useMemo(() => data ?? [], [data]);
+  const rows = useMemo(() => data?.items ?? [], [data]);
 
   const draftOf = useCallback(
     (r: ReorderListRow): Draft =>
@@ -76,10 +101,10 @@ function ReorderListPage(): React.JSX.Element {
   );
 
   const onToggleRow = useCallback(
-    (key: string | number, _r: ReorderListRow, next: boolean): void => {
-      setSelectedKeys((s) => {
-        const ns = new Set(s);
-        if (next) ns.add(String(key));
+    (key: string | number, r: ReorderListRow, next: boolean): void => {
+      setTicked((s) => {
+        const ns = new Map(s);
+        if (next) ns.set(String(key), r);
         else ns.delete(String(key));
         return ns;
       });
@@ -87,25 +112,30 @@ function ReorderListPage(): React.JSX.Element {
     [],
   );
 
-  const onToggleAll = useCallback((next: boolean, keys: (string | number)[]): void => {
-    setSelectedKeys((s) => {
-      const ns = new Set(s);
-      for (const k of keys) {
-        if (next) ns.add(String(k));
-        else ns.delete(String(k));
-      }
-      return ns;
-    });
-  }, []);
+  // Select-all = this page's rows (the engine passes their keys).
+  const onToggleAll = useCallback(
+    (next: boolean, keys: (string | number)[]): void => {
+      const byId = new Map(rows.map((r) => [r.itemId, r]));
+      setTicked((s) => {
+        const ns = new Map(s);
+        for (const k of keys) {
+          const row = byId.get(String(k));
+          if (next && row) ns.set(String(k), row);
+          else if (!next) ns.delete(String(k));
+        }
+        return ns;
+      });
+    },
+    [rows],
+  );
 
-  const tickedCount = selectedKeys.size;
+  const tickedCount = ticked.size;
 
   const onRaise = useCallback((): void => {
     setErr(null);
     setResult(null);
-    const ticked = rows.filter((r) => selectedKeys.has(r.itemId));
     const lines: Array<{ itemId: string; qty: number; vendorId: string }> = [];
-    for (const r of ticked) {
+    for (const r of ticked.values()) {
       const d = draftOf(r);
       const q = Number(d.qty);
       if (!Number.isFinite(q) || q <= 0) return setErr(`${r.itemCode}: enter the PR Qty.`);
@@ -119,16 +149,24 @@ function ReorderListPage(): React.JSX.Element {
         onSuccess: (res) => {
           setResult(res);
           setDrafts({});
-          setSelectedKeys(new Set());
+          setTicked(new Map());
         },
         onError: (e) => setErr(e.message || 'Could not raise the PRs.'),
       },
     );
-  }, [rows, selectedKeys, draftOf, raise]);
+  }, [ticked, draftOf, raise]);
 
   return (
     <div>
-      <ListHeader title="Reorder List" icon="🔁" count={rows.length} noun="item below reorder" />
+      <ListHeader
+        title="Reorder List"
+        icon="🔁"
+        count={isLoading ? undefined : total}
+        noun="item below reorder"
+        updating={isFetching && !isLoading}
+        onClearFilters={sf.clearFilters}
+        filtersActive={sf.filtering}
+      />
       {result ? (
         <div className="panel" style={{ marginBottom: 10 }}>
           <div className="panel-body" style={{ fontSize: 12 }}>
@@ -171,7 +209,8 @@ function ReorderListPage(): React.JSX.Element {
             loading={isLoading}
             rowKey={(r) => r.itemId}
             editable
-            emptyText="Nothing is below its Reorder Level."
+            sortFilterServer={sf}
+            emptyText={sf.filtering ? 'No items match.' : 'Nothing is below its Reorder Level.'}
             // A blocked row (has an open PR) is washed, as it was greyed before.
             rowClassName={(r) => (r.openPrs.length > 0 ? ROW_TINT.cancelled : undefined)}
             selectable
@@ -184,7 +223,7 @@ function ReorderListPage(): React.JSX.Element {
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => setSelectedKeys(new Set())}
+                  onClick={() => setTicked(new Map())}
                 >
                   Clear
                 </button>
@@ -201,6 +240,13 @@ function ReorderListPage(): React.JSX.Element {
           />
         </div>
       )}
+      <ListFooter
+        total={total}
+        noun="item"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
     </div>
   );
 }

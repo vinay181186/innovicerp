@@ -51,6 +51,7 @@ import {
 import { codeLabel, labelOf, OP_LOG_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { jcOpRef, logWhen } from './audit';
+import { RUNNING_OPS_SELECT, toRunningOp } from './running-ops-read';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onRecoveryJobCardQc } from '../nc-register/recovery';
 import { autoCloseLinkedTasks } from '../tasks/service';
@@ -607,96 +608,13 @@ export async function listRunningOps(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const result = await tx.execute(sql`
-      SELECT
-        r.id,
-        r.jc_op_id          AS "jcOpId",
-        -- The card's id alongside its code, so the Live Operations board's JC
-        -- column can link straight at /job-cards/$id. The row used to carry the
-        -- code only, which named a job card the board had no way to open. Never
-        -- null: job_cards is joined INNER on jc_ops.job_card_id, a NOT NULL column.
-        jc.id               AS "jobCardId",
-        jc.code             AS "jobCardCode",
-        -- What is actually being made. A board that shows only a JC code forces
-        -- the reader to look the part up on another screen before they can act.
-        i.code              AS "itemCode",
-        i.name              AS "itemName",
-        -- The CUSTOMER's drawing revision, off the SO line this card was raised
-        -- against -- not items.revision, which is a different column describing
-        -- the item master and would misname the drawing on the machine. The sol
-        -- join below is a LEFT JOIN, so a JW-sourced or standalone card comes
-        -- back null and renders as the bare code; that is common here and is the
-        -- correct answer, not a gap to fill.
-        --
-        -- ::text on purpose: the contract types this as a string, but a database
-        -- without migration 0119 still holds an integer here and would hand the
-        -- board a number. The cast is a no-op once 0119 is applied.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the same SO line as the revision above. SO side only: a job-work
-        -- line has no customer PO, so JW-sourced cards are correctly null.
-        sol.client_po_line_no AS "clientPoLineNo",
-        o.op_seq            AS "opSeq",
-        o.operation,
-        r.machine_id        AS "machineId",
-        m.code              AS "machineCode",
-        -- The PLAN beside the ACTUAL above (ADR-164): the op's own machine, or
-        -- its text snapshot when no FK resolved -- never the 'QC' type label.
-        COALESCE(pm.code, NULLIF(o.machine_code_text, 'QC')) AS "plannedMachineCode",
-        r.is_osp            AS "isOsp",
-        r.operator_id       AS "operatorId",
-        r.operator_name     AS "operatorName",
-        -- ADR-197 — the logged-in user who pressed Start, beside the operator
-        -- on the floor (untyped extra; the web types it locally).
-        COALESCE(su.full_name, su.email) AS "startedByName",
-        r.start_date        AS "startDate",
-        r.start_time::text  AS "startTime",
-        r.shift,
-        r.status,
-        r.ended_at          AS "endedAt",
-        -- The live cap the Stop box shows ("you can log up to N"). Joined, not
-        -- fetched per row: one query for the whole board.
-        COALESCE(s.available, 0)::int AS "availableQty"
-      FROM public.running_ops r
-      JOIN public.jc_ops o    ON o.id = r.jc_op_id
-      JOIN public.job_cards jc ON jc.id = o.job_card_id
-      -- LEFT, although job_cards.item_id is NOT NULL: this is a live board and
-      -- an unresolvable item must never silently drop a running session off it.
-      LEFT JOIN public.items i ON i.id = jc.item_id
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.machines m ON m.id = r.machine_id
-      LEFT JOIN public.machines pm ON pm.id = o.machine_id
-      LEFT JOIN public.users su ON su.id = r.created_by
-      LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = r.jc_op_id
+      ${RUNNING_OPS_SELECT}
       WHERE r.company_id = ${companyId}::uuid
         ${input.status ? sql`AND r.status = ${input.status}::running_op_status` : sql``}
       ORDER BY r.start_date DESC, r.start_time DESC
       LIMIT 200
     `);
-    return (result as unknown as Array<Record<string, unknown>>).map((r) => ({
-      ...r,
-      opSeq: Number(r['opSeq']),
-      availableQty: Number(r['availableQty'] ?? 0),
-      // Pinned to null rather than left to the spread: the contract types these
-      // three as `string | null`, and a row that resolved no item or no SO line
-      // must arrive as an explicit null, never as an absent key.
-      itemCode: (r['itemCode'] as string | null) ?? null,
-      itemRevision: (r['itemRevision'] as string | null) ?? null,
-      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
-      itemName: (r['itemName'] as string | null) ?? null,
-      plannedMachineCode: (r['plannedMachineCode'] as string | null) ?? null,
-      startedByName: (r['startedByName'] as string | null) ?? null,
-      startDate:
-        r['startDate'] instanceof Date
-          ? (r['startDate'] as Date).toISOString().slice(0, 10)
-          : String(r['startDate']),
-      endedAt:
-        r['endedAt'] instanceof Date
-          ? (r['endedAt'] as Date).toISOString()
-          : (r['endedAt'] as string | null),
-    })) as unknown as RunningOp[];
+    return (result as unknown as Array<Record<string, unknown>>).map(toRunningOp);
   });
 }
 
@@ -2029,15 +1947,47 @@ export async function updateOpLogTiming(
 
 // ─── Timing-change approvals (ADR-130) ─────────────────────────────────────
 
+// The request's joins — shared by the list and the paged screen's COUNT, so
+// `total` is counted over exactly the rows the page can show.
+export const TIME_CHANGE_FROM: SQL = sql`
+    FROM public.op_log_time_change_requests r
+    JOIN public.op_log l ON l.id = r.op_log_id
+    JOIN public.jc_ops o ON o.id = r.jc_op_id AND o.deleted_at IS NULL
+    JOIN public.job_cards jc ON jc.id = o.job_card_id
+    -- The m alias is still read by the machineCode column above. It was briefly
+    -- lost when the item joins were added on this line, which made every call
+    -- raise "missing FROM-clause entry for table m" -- invisible to typecheck
+    -- and lint, because this query is a template string. Do not remove it
+    -- without also removing COALESCE(m.code, ...) from the SELECT.
+    -- (No backticks in comments inside a template literal: one ends the string.)
+    LEFT JOIN public.machines m ON m.id = l.machine_id AND m.deleted_at IS NULL
+    -- No deleted_at filter on items on purpose: a retired item master row still
+    -- named the part this entry was logged against, and blanking it would leave
+    -- the approver with a bare job number.
+    LEFT JOIN public.items i ON i.id = jc.item_id
+    LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
+    LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id
+    LEFT JOIN public.users ru ON ru.id = r.requested_by
+    LEFT JOIN public.users du ON du.id = r.decided_by`;
+
 // One projection for both the inbox and the ⏳ marker in the log history, so
 // the two can never describe the same request differently. Everything except
 // the request's own columns is joined live — nothing about the entry is
 // duplicated onto the request beyond the prev_* snapshot, which exists to make
 // a stale request visible.
-async function selectTimeChangeRequests(
+export async function selectTimeChangeRequests(
   tx: DbTransaction,
   companyId: string,
-  filter: { id?: string; status?: OpLogChangeStatus; jcOpId?: string; limit: number },
+  filter: {
+    id?: string;
+    status?: OpLogChangeStatus;
+    jcOpId?: string;
+    limit: number;
+    /** Paged screen (ADR-201): extra `AND …` filters, order and offset. */
+    where?: SQL;
+    orderBy?: SQL;
+    offset?: number;
+  },
 ): Promise<OpLogTimeChangeRequest[]> {
   const result = await tx.execute(sql`
     SELECT
@@ -2081,32 +2031,15 @@ async function selectTimeChangeRequests(
       r.decision_reason                 AS "decisionReason",
       (l.log_date IS DISTINCT FROM r.prev_log_date
         OR l.start_time IS DISTINCT FROM r.prev_start_time) AS "isStale"
-    FROM public.op_log_time_change_requests r
-    JOIN public.op_log l ON l.id = r.op_log_id
-    JOIN public.jc_ops o ON o.id = r.jc_op_id AND o.deleted_at IS NULL
-    JOIN public.job_cards jc ON jc.id = o.job_card_id
-    -- The m alias is still read by the machineCode column above. It was briefly
-    -- lost when the item joins were added on this line, which made every call
-    -- raise "missing FROM-clause entry for table m" -- invisible to typecheck
-    -- and lint, because this query is a template string. Do not remove it
-    -- without also removing COALESCE(m.code, ...) from the SELECT.
-    -- (No backticks in comments inside a template literal: one ends the string.)
-    LEFT JOIN public.machines m ON m.id = l.machine_id AND m.deleted_at IS NULL
-    -- No deleted_at filter on items on purpose: a retired item master row still
-    -- named the part this entry was logged against, and blanking it would leave
-    -- the approver with a bare job number.
-    LEFT JOIN public.items i ON i.id = jc.item_id
-    LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
-    LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id
-    LEFT JOIN public.users ru ON ru.id = r.requested_by
-    LEFT JOIN public.users du ON du.id = r.decided_by
+    ${TIME_CHANGE_FROM}
     WHERE r.company_id = ${companyId}::uuid
       AND r.deleted_at IS NULL
       ${filter.id ? sql`AND r.id = ${filter.id}::uuid` : sql``}
       ${filter.status ? sql`AND r.status = ${filter.status}::public.op_log_change_status` : sql``}
       ${filter.jcOpId ? sql`AND r.jc_op_id = ${filter.jcOpId}::uuid` : sql``}
-    ORDER BY r.requested_at ASC
-    LIMIT ${filter.limit}
+      ${filter.where ?? sql``}
+    ORDER BY ${filter.orderBy ?? sql`r.requested_at ASC`}
+    LIMIT ${filter.limit}${filter.offset ? sql` OFFSET ${filter.offset}` : sql``}
   `);
   return (result as unknown as Array<Record<string, unknown>>).map((r) => ({
     ...r,

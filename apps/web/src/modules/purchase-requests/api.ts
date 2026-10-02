@@ -30,6 +30,9 @@ function toQueryString(q: ListPurchaseRequestsQuery): string {
   // an absent param means "no balance filter", which is what every other list
   // on this screen wants.
   if (q.convertibleOnly) params.set('convertibleOnly', 'true');
+  // Outsource Jobs tab (ADR-201): its band + JC filter, on the server.
+  if (q.orderBand) params.set('orderBand', q.orderBand);
+  if (q.sourceJcCode) params.set('sourceJcCode', q.sourceJcCode);
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
   if (q.sf) params.set('sf', q.sf);

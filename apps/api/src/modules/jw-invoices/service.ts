@@ -28,6 +28,8 @@ import {
 import { changedByOtherError } from '../../lib/row-lock';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { emitActivityLog } from '../activity-log/service';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { JW_INVOICE_SF_COLUMNS } from './sf-columns';
 import { ActivityAction } from '@innovic/shared';
 import {
   assertTaxTypeMatches,
@@ -452,6 +454,11 @@ export async function listJwInvoices(
       );
       if (s) conditions.push(s);
     }
+    // Sort & Filter (ADR-200) — list AND count; money columns only for users
+    // who may see JW prices.
+    const sf = readSf(input.sf);
+    const sfOpts = { canSeePrice: showMoney };
+    conditions.push(sql`TRUE ${sfWhere(JW_INVOICE_SF_COLUMNS, sf, sfOpts)}`);
     const where = and(...conditions);
 
     // ONE predicate, used by both the page query and the count — a total that
@@ -481,7 +488,15 @@ export async function listJwInvoices(
         // must never drop out of its own register over a missing master row.
         .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
         .where(where)
-        .orderBy(desc(jwInvoices.invoiceDate), desc(jwInvoices.code))
+        // id last: a unique tie-breaker so paging never skips or repeats a row.
+        .orderBy(
+          sfOrderBy(
+            JW_INVOICE_SF_COLUMNS,
+            sf,
+            sql`${desc(jwInvoices.invoiceDate)}, ${desc(jwInvoices.code)}, ${desc(jwInvoices.id)}`,
+            sfOpts,
+          ),
+        )
         .limit(input.limit)
         .offset(input.offset),
       tx
@@ -489,6 +504,8 @@ export async function listJwInvoices(
         .from(jwInvoices)
         .leftJoin(clients, eq(clients.id, jwInvoices.clientId))
         .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwInvoices.jobWorkOrderLineId))
+        // Same item join as the page: the Item Code ▾ filter reads items.code.
+        .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
         .where(where),
     ]);
 

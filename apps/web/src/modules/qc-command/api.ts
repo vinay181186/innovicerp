@@ -1,6 +1,7 @@
 import type {
   QcAssignInput,
   QcAssignmentResult,
+  QcCommandQueryInput,
   QcCommandResponse,
   QcPickUpInput,
 } from '@innovic/shared';
@@ -11,10 +12,15 @@ export const qcCommandKeys = {
   all: ['qc-command'] as const,
 };
 
-export function useQcCommand() {
+/** The board, each table cut to its page on the server (ADR-201). */
+export function useQcCommand(params: QcCommandQueryInput) {
   return useQuery<QcCommandResponse>({
-    queryKey: qcCommandKeys.all,
-    queryFn: () => apiFetch<QcCommandResponse>('/qc-command'),
+    queryKey: [...qcCommandKeys.all, params],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(params)) if (v !== undefined) qs.set(k, String(v));
+      return apiFetch<QcCommandResponse>(`/qc-command?${qs.toString()}`);
+    },
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });

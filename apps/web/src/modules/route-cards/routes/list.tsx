@@ -11,6 +11,7 @@
 // request per row. See ISSUE-019.
 //
 //   <ListHeader>            title · count · SearchInput · ⟳ Updating… · + Add Route Card
+//                           (25 rows a page, ADR-201; search + ▾ on the server)
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //     renderExpanded        the op sequence, as Tag chips
 //   <ListFooter>            count line · 💡 hint
@@ -39,25 +40,27 @@
 //     ever greyed out the row you clicked. It is mounted once here, so every
 //     row's Delete greys out while one is in flight — the reference behaviour.
 
-import type { RouteCardListItem } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, Tag } from '@/ui/core';
-import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
+import { routeCardListColumns } from '../components/route-card-list-columns';
 import { RouteCardRowMenu } from '../components/route-card-row-menu';
 
 const searchSchema = z.object({
   search: z.string().optional(),
+  page: pageSearchParam,
 });
 
 export const routeCardsListRoute = createRoute({
@@ -67,12 +70,9 @@ export const routeCardsListRoute = createRoute({
   component: RouteCardsListPage,
 });
 
-/** One fetch, scroll — masters do not paginate. The API caps `limit` at 200. */
-const LIST_LIMIT = 100;
-
 function RouteCardsListPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const { search } = routeCardsListRoute.useSearch();
+  const { search, page } = routeCardsListRoute.useSearch();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Search lives in the URL (`search` param) so it survives refresh and Back;
@@ -88,15 +88,34 @@ function RouteCardsListPage(): React.JSX.Element {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search) return;
     const id = window.setTimeout(() => {
-      void navigate({ to: '/route-cards', search: { search: next }, replace: true });
+      void navigate({
+        to: '/route-cards',
+        search: (prev) => ({ ...prev, search: next, page: 1 }),
+        replace: true,
+      });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search, navigate]);
 
+  // 25 rows a page (ADR-201); search and Sort & Filter run on the server over
+  // every card, and any change of them goes back to page 1.
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({
+        to: '/route-cards',
+        search: (prev) => ({ ...prev, page: p }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+  const sf = useServerSortFilter(TABLE_KEYS.routeCardsList, () => gotoPage(1));
+  const offset = pageOffset(page);
   const { data, isLoading, isFetching, isError, error } = useRouteCardsList({
     search,
-    limit: LIST_LIMIT,
-    offset: 0,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset,
   });
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
@@ -111,6 +130,7 @@ function RouteCardsListPage(): React.JSX.Element {
   const [deleteReason, setDeleteReason] = useState('');
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
+  useClampPage(page, data?.total, gotoPage);
 
   const toggleExpand = useCallback((id: string): void => {
     setExpanded((prev) => {
@@ -121,92 +141,7 @@ function RouteCardsListPage(): React.JSX.Element {
     });
   }, []);
 
-  // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
-  // only Sr No keeps a width; codes, revs, counts and dates sit on one line
-  // and Item Name wraps into what is left. Centred by the standard; only Item
-  // Name is left-aligned, the op count sits right.
-  const columns = useMemo<DataTableColumn<RouteCardListItem>[]>(
-    () => [
-      { id: 'sr_no', header: 'Sr No', width: '4%', className: 'text3', render: (_rc, i) => i + 1 },
-      {
-        id: 'code',
-        header: 'RC No.',
-        nowrap: true,
-        // The op sequence opens from the fit table's ▸ (the row's ONE expand
-        // control, ADR-199) — no chevron of its own, so hiding or dropping
-        // this column can never take the op sequence away.
-        render: (rc) => (
-          <Link
-            to="/route-cards/$id"
-            params={{ id: rc.id }}
-            className="td-code"
-            title="Open this route card"
-            // stopPropagation on the link, not the cell, so clicking the rest
-            // of the cell still opens the row.
-            onClick={(e) => e.stopPropagation()}
-          >
-            {rc.code}
-          </Link>
-        ),
-      },
-      {
-        id: 'item_code',
-        header: 'Item Code',
-        // The item code is the main thing on this row: mono, bold, full --text.
-        className: 'mono fw-700',
-        nowrap: true,
-        render: (rc) => rc.itemCode ?? '—',
-      },
-      {
-        id: 'item_name',
-        kind: 'text',
-        header: 'Item Name',
-        align: 'left',
-        className: 'fw-700',
-        render: (rc) => rc.itemName ?? '— unknown item —',
-        title: (rc) => rc.itemName ?? '',
-      },
-      {
-        // Grade then size on one line — the stock this card is cut from, so the
-        // master answers "what is it made of" without opening a card.
-        id: 'raw_material',
-        kind: 'text',
-        header: 'RM Grade / RM Size',
-        className: 'mono',
-        title: (rc) => `${rc.rawMaterialGradeText ?? '—'} / ${rc.rawMaterialSizeText ?? '—'}`,
-        render: (rc) => (
-          <>
-            <span className="fw-700">{rc.rawMaterialGradeText ?? '—'}</span>
-            <span className="text3"> / {rc.rawMaterialSizeText ?? '—'}</span>
-          </>
-        ),
-      },
-      {
-        id: 'op_count',
-        header: 'Ops',
-        align: 'right',
-        className: 'mono',
-        nowrap: true,
-        key: 'opCount',
-      },
-      {
-        id: 'current_revision',
-        header: 'Route Card Rev',
-        className: 'mono fw-700',
-        nowrap: true,
-        render: (rc) => <span style={{ color: 'var(--cyan)' }}>R{rc.currentRevision}</span>,
-      },
-      {
-        id: 'updated_at',
-        kind: 'date',
-        header: 'Last Updated',
-        className: 'mono text2',
-        nowrap: true,
-        render: (rc) => fmtDate(rc.updatedAt),
-      },
-    ],
-    [],
-  );
+  const columns = useMemo(() => routeCardListColumns(offset), [offset]);
 
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
@@ -225,6 +160,12 @@ function RouteCardsListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search RC no., item code, item name…"
         updating={isFetching && !isLoading}
+        onClearFilters={() => {
+          setSearchInput('');
+          sf.clearFilters();
+          void navigate({ to: '/route-cards', search: { page: 1 }, replace: true });
+        }}
+        filtersActive={searchInput.trim() !== '' || sf.filtering}
         primary={
           perms.entry ? (
             <Link to="/route-cards/new" className="btn btn-primary">
@@ -248,7 +189,8 @@ function RouteCardsListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            empty={search ? 'No Route Cards match.' : 'No Route Cards yet.'}
+            sortFilterServer={sf}
+            empty={search || sf.filtering ? 'No Route Cards match.' : 'No Route Cards yet.'}
             onRowClick={(rc) => void navigate({ to: '/route-cards/$id', params: { id: rc.id } })}
             // The op sequence is fetched only for a row that is actually open —
             // returning null for a collapsed row means ExpandedOps (and its
@@ -309,7 +251,13 @@ function RouteCardsListPage(): React.JSX.Element {
         }}
       />
 
-      <ListFooter total={total} noun="route card" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="route card"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
     </div>
   );
 }

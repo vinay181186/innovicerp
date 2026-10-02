@@ -5,13 +5,10 @@
 // per-unit assembly tracking + dispatch flags.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { SO_STATUSES } from '../enums/so-status';
 
-export const assemblyComponentStatusEnum = z.enum([
-  'ready',
-  'enough_for_some',
-  'shortage',
-]);
+export const assemblyComponentStatusEnum = z.enum(['ready', 'enough_for_some', 'shortage']);
 export type AssemblyComponentStatus = z.infer<typeof assemblyComponentStatusEnum>;
 
 export const assemblyComponentRowSchema = z.object({
@@ -135,9 +132,33 @@ export const assemblyListItemSchema = z.object({
 });
 export type AssemblyListItem = z.infer<typeof assemblyListItemSchema>;
 
+export const ASSEMBLY_LIST_STATUSES = ['waiting', 'ready', 'assembling', 'done'] as const;
+
+/** The list's query (ADR-201): search, status and Sort & Filter run on the
+ *  server; no `limit` = every matching row (as before). */
+export const listAssembliesQuerySchema = z.object({
+  search: z.string().min(1).max(100).optional(),
+  status: z.enum(ASSEMBLY_LIST_STATUSES).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListAssembliesQuery = z.infer<typeof listAssembliesQuerySchema>;
+
 export const assemblyListResponseSchema = z.object({
   generatedAt: z.string(),
   items: z.array(assemblyListItemSchema),
+  /** Rows matching search + status + Sort & Filter (all pages). */
+  total: z.number().int().nonnegative(),
+  /** Per-status counts over search + Sort & Filter (ignoring the status
+   *  filter) — the status dropdown's "(n)" labels. */
+  counts: z.object({
+    all: z.number().int().nonnegative(),
+    waiting: z.number().int().nonnegative(),
+    ready: z.number().int().nonnegative(),
+    assembling: z.number().int().nonnegative(),
+    done: z.number().int().nonnegative(),
+  }),
 });
 export type AssemblyListResponse = z.infer<typeof assemblyListResponseSchema>;
 
@@ -150,7 +171,10 @@ export const markUnitAssembledInputSchema = z.object({
   /** Optional explicit serial. When omitted the server auto-generates one
    *  serial for the whole batch (`<SO code>-U<n>`). */
   serialNo: z.string().trim().max(80).optional(),
-  assemblyDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  assemblyDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   assembledBy: z.string().trim().max(80).optional(),
   remarks: z.string().trim().max(500).optional(),
   /** ADR-193 3c — last units only: why Still Out ≠ BOM need (409 needsConfirmation). */
@@ -165,7 +189,10 @@ export type MarkUnitAssembledInput = z.infer<typeof markUnitAssembledInputSchema
  *  + qty never exceeds the order. */
 export const startAssemblyInputSchema = z.object({
   qty: z.number().int().positive().max(9999),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   startedBy: z.string().trim().max(80).optional(),
   remarks: z.string().trim().max(500).optional(),
 });
@@ -177,7 +204,10 @@ export type StartAssemblyInput = z.infer<typeof startAssemblyInputSchema>;
 export const stopAssemblyInputSchema = z.object({
   completedQty: z.number().int().positive().max(9999),
   serialNo: z.string().trim().max(80).optional(),
-  assemblyDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  assemblyDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   assembledBy: z.string().trim().max(80).optional(),
   remarks: z.string().trim().max(500).optional(),
   /** ADR-193 3c — last units only: why Still Out ≠ BOM need (409 needsConfirmation). */
@@ -186,7 +216,10 @@ export const stopAssemblyInputSchema = z.object({
 export type StopAssemblyInput = z.infer<typeof stopAssemblyInputSchema>;
 
 export const markUnitDispatchedInputSchema = z.object({
-  dispatchDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dispatchDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   dispatchedBy: z.string().trim().max(80).optional(),
   dispatchRemarks: z.string().trim().max(500).optional(),
 });

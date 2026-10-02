@@ -72,9 +72,9 @@ export function useServerSortFilter(tableKey: string, onChanged?: () => void): S
   const active = Object.values(value.filters).filter(isUsable).length;
   useEffect(() => {
     if (!store) return;
-    store.setTable(regId, active, true);
+    store.setHolder(regId, active);
   }, [store, regId, active]);
-  useEffect(() => (store ? () => store.removeTable(regId) : undefined), [store, regId]);
+  useEffect(() => (store ? () => store.setHolder(regId, 0) : undefined), [store, regId]);
   const clearToken = useSfSnapshot(store).clearToken;
   const clearSeen = useRef(clearToken);
   useEffect(() => {

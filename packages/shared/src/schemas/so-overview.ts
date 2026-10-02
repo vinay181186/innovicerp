@@ -9,12 +9,22 @@
 
 import { z } from 'zod';
 import { SO_STATUSES } from '../enums/so-status';
+import { sfRawParamSchema } from './list-query';
 
 export const soOverviewQuerySchema = z.object({
   /** Status filter: open / closed / dispatched / cancelled / all (default open). */
   status: z.enum(['open', 'closed', 'dispatched', 'cancelled', 'all']).optional(),
   /** Free-text search across SO code, customer name, client PO number. */
   search: z.string().trim().min(1).max(100).optional(),
+  /** Derived progress status (overallStatus) — filtered on the server (ADR-201). */
+  overall: z
+    .enum(['not_started', 'in_progress', 'on_track', 'delayed', 'completed', 'blocked'])
+    .optional(),
+  /** Sort & Filter (ADR-200) — applied over every row before paging. */
+  sf: sfRawParamSchema,
+  /** Paging (ADR-201). No limit → every row (SO Status pane, older callers). */
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
 export type SoOverviewQuery = z.infer<typeof soOverviewQuerySchema>;
 
@@ -90,7 +100,11 @@ export const soOverviewResponseSchema = z.object({
     status: z.string(),
     search: z.string().nullable(),
   }),
+  /** Overall-status counts over every SO matching status + search + sf
+   *  (the overall filter itself excluded, so its dropdown shows them all). */
   summary: soOverviewSummarySchema,
+  /** Rows matching every filter (the pager's total; rows holds one page). */
+  total: z.number().int().nonnegative(),
   rows: z.array(soOverviewRowSchema),
 });
 export type SoOverviewResponse = z.infer<typeof soOverviewResponseSchema>;
