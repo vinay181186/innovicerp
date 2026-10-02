@@ -525,6 +525,7 @@ export async function createCustomerMaterialReturn(
            WHERE pgl.id = ${ln.partyGrnLineId!}::uuid
              AND pgl.company_id = ${companyId}::uuid
              AND pgl.deleted_at IS NULL
+           FOR UPDATE OF pgl
         `)) as unknown as Array<{
           id: string;
           jwLineId: string | null;
@@ -555,6 +556,7 @@ export async function createCustomerMaterialReturn(
              SET rejected_returned_qty = rejected_returned_qty + ${ln.qty},
                  updated_at = now(), updated_by = ${userId}::uuid
            WHERE id = ${g.id}::uuid
+             AND deleted_at IS NULL
              AND rejected_returned_qty + ${ln.qty} <= rejected_qty
           RETURNING id
         `)) as unknown as Array<{ id: string }>;

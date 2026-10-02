@@ -101,6 +101,12 @@ export async function jcMaterial(
         SELECT SUM(l.qty + l.reject_qty)
           FROM public.op_log l
          WHERE l.jc_op_id = (SELECT id FROM first_op)
+           -- Same rule as the JC Customer Material panel (job-cards
+           -- JC_CUSTOMER_MATERIAL_SELECT): 'complete' rows (reversals carry the
+           -- same type, negated, so they net), NC re-injections excluded — the
+           -- caps and the "On JC" figure the user sees must agree.
+           AND l.log_type = 'complete'
+           AND l.log_no NOT LIKE '%LOG-NC-%'
       ), 0)::int AS used
   `)) as unknown as Array<{ netIssued: number; used: number }>;
   return {

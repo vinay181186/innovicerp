@@ -196,16 +196,25 @@ function makeRmResolver(
   };
 }
 
-/** ADR-203 rule 1: bring EVERY live line of a JWSO in step with its customer
- *  RM (also the lines a header-only edit did not send — a customer change
- *  re-points their party material, and a legacy line gets its RM backfilled).
- *  Writes only where something differs. Lines with no master item (legacy
- *  free-text rows) have nothing to derive from and are left alone. */
+/** ADR-203 rule 1 (code review fix): bring the lines of a JWSO in step with
+ *  their customer RM WITHOUT ever moving a line that is already in use — its
+ *  receipts and issues are booked on its current party material, so re-pointing
+ *  it would strand that stock. Two cases:
+ *   · the customer changed (only allowed when no line is in use) → every line
+ *     is re-pointed to the new customer's party material; errors stop the save;
+ *   · otherwise only lines with NO RM yet (legacy rows) are backfilled, best
+ *     effort in a savepoint, so a header-only edit of an old JWSO never fails
+ *     because of master data it did not touch. */
 async function wireLineRm(
   tx: DbTransaction,
-  jobWorkOrderId: string,
-  resolve: RmResolver,
-  userId: string,
+  p: {
+    jobWorkOrderId: string;
+    companyId: string;
+    clientId: string | null;
+    clientChanged: boolean;
+    usage: Map<string, string[]>;
+    userId: string;
+  },
 ): Promise<void> {
   const rows = await tx
     .select({
@@ -217,17 +226,26 @@ async function wireLineRm(
     .from(jobWorkOrderLines)
     .where(
       and(
-        eq(jobWorkOrderLines.jobWorkOrderId, jobWorkOrderId),
+        eq(jobWorkOrderLines.jobWorkOrderId, p.jobWorkOrderId),
         isNull(jobWorkOrderLines.deletedAt),
       ),
     );
+  const strict = makeRmResolver(tx, p.companyId, p.clientId, p.userId);
   for (const r of rows) {
-    if (!r.itemId) continue;
-    const rm = await resolve(r.itemId);
-    if (r.rmItemId === rm.rmItemId && r.partyMaterialId === rm.partyMaterialId) continue;
+    if (!r.itemId || p.usage.has(r.id)) continue;
+    let rm: { rmItemId: string; partyMaterialId: string } | null = null;
+    if (p.clientChanged) {
+      rm = await strict(r.itemId);
+    } else if (!r.rmItemId || !r.partyMaterialId) {
+      const itemId = r.itemId;
+      rm = await tx
+        .transaction(async (sp) => makeRmResolver(sp, p.companyId, p.clientId, p.userId)(itemId))
+        .catch(() => null);
+    }
+    if (!rm || (r.rmItemId === rm.rmItemId && r.partyMaterialId === rm.partyMaterialId)) continue;
     await tx
       .update(jobWorkOrderLines)
-      .set({ rmItemId: rm.rmItemId, partyMaterialId: rm.partyMaterialId, updatedBy: userId })
+      .set({ rmItemId: rm.rmItemId, partyMaterialId: rm.partyMaterialId, updatedBy: p.userId })
       .where(eq(jobWorkOrderLines.id, r.id));
   }
 }
@@ -1230,7 +1248,14 @@ export async function updateJobWorkOrder(
 
     // ADR-203 rule 1: every live line — sent or not — ends the save with its RM
     // and the (possibly new) customer's party material.
-    await wireLineRm(tx, id, resolveRm, user.id);
+    await wireLineRm(tx, {
+      jobWorkOrderId: id,
+      companyId,
+      clientId: nextClientId,
+      clientChanged: nextClientId !== existingHdr.clientId,
+      usage,
+      userId: user.id,
+    });
     // ADR-203 rule 7: header status follows the lines.
     await recomputeJwHeaderStatus(tx, id, user.id);
 
@@ -1341,7 +1366,17 @@ async function orderQtyFloor(
        AND deleted_at IS NULL AND recovery_kind IS NULL
   `)) as unknown as Array<{ qty: number }>;
   const jcQty = Number(rows[0]?.qty ?? 0);
-  return { floor: Math.max(line.returnedQty, line.invoicedQty, jcQty), jcQty };
+  // Code review fix: customer material already accepted, or received and
+  // waiting for QC, on this line also holds the qty up (1 RM piece per part).
+  const mat = (await tx.execute(sql`
+    SELECT COALESCE(SUM(CASE WHEN pgl.qc_at IS NULL AND pgl.accepted_qty = 0 AND pgl.rejected_qty = 0
+                             THEN pgl.received_qty ELSE pgl.accepted_qty END), 0)::int AS qty
+      FROM public.party_grn_lines pgl
+      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+     WHERE pgl.jw_line_id = ${line.id}::uuid AND pgl.deleted_at IS NULL
+  `)) as unknown as Array<{ qty: number }>;
+  const matQty = Number(mat[0]?.qty ?? 0);
+  return { floor: Math.max(line.returnedQty, line.invoicedQty, jcQty, matQty), jcQty };
 }
 
 async function mergeLines(
@@ -1402,9 +1437,15 @@ async function mergeLines(
 
   // Customer RM per sent line (rule 1) — resolved up front so the History diff
   // can name the RM codes.
+  // Code review fix: only NEW lines and lines whose item CHANGES need an RM
+  // here (errors stop the save). An unchanged line keeps the RM it has — an
+  // in-use line's receipts are booked on it; a legacy line without one is
+  // backfilled best-effort by wireLineRm after the merge.
   const rmByItem = new Map<string, { rmItemId: string; partyMaterialId: string }>();
   for (const l of inputLines) {
-    if (!rmByItem.has(l.itemId)) rmByItem.set(l.itemId, await resolveRm(l.itemId));
+    const before = l.id ? existingById.get(l.id) : undefined;
+    const needs = !before || before.itemId !== l.itemId;
+    if (needs && !rmByItem.has(l.itemId)) rmByItem.set(l.itemId, await resolveRm(l.itemId));
   }
 
   if (absentIds.length > 0) {
@@ -1466,12 +1507,11 @@ async function mergeLines(
       );
     }
 
-    const rm = rmByItem.get(u.data.itemId)!;
+    const rm = itemChanged ? rmByItem.get(u.data.itemId) : undefined;
     const lineUpdate: Record<string, unknown> = {
       updatedBy: user.id,
       itemId: u.data.itemId,
-      rmItemId: rm.rmItemId,
-      partyMaterialId: rm.partyMaterialId,
+      ...(rm ? { rmItemId: rm.rmItemId, partyMaterialId: rm.partyMaterialId } : {}),
     };
     // The code snapshot follows the item; an unchanged item keeps the code it
     // was raised with (older rows that stored null get it filled).
@@ -1502,7 +1542,7 @@ async function mergeLines(
         const { floor, jcQty } = await orderQtyFloor(tx, companyId, before);
         if (u.data.orderQty < floor) {
           throw new ValidationError(
-            `${ln}: Order Qty cannot go below ${floor} — returned ${before.returnedQty}, invoiced ${before.invoicedQty}, on Job Cards ${jcQty}.`,
+            `${ln}: Order Qty cannot go below ${floor} — returned ${before.returnedQty}, invoiced ${before.invoicedQty}, on Job Cards ${jcQty}, or customer material already received for it.`,
           );
         }
       }

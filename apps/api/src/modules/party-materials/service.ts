@@ -287,11 +287,22 @@ async function assertOnePerItemClient(
   }
 }
 
-/** Has this material ever moved in the customer-material register? */
+/** Is this material in use — moved in the register, OR named by a live JWSO
+ *  line or a live Party GRN line (incl. one still waiting for QC, which has no
+ *  register row yet)? Customer / item / UOM are then fixed and it cannot be
+ *  deleted (code review fix). */
 async function hasRegisterRows(tx: DbTransaction, partyMaterialId: string): Promise<boolean> {
   const rows = (await tx.execute(sql`
     SELECT 1 AS x FROM public.party_stock_ledger
-     WHERE party_material_id = ${partyMaterialId}::uuid LIMIT 1
+     WHERE party_material_id = ${partyMaterialId}::uuid
+    UNION ALL
+    SELECT 1 FROM public.job_work_order_lines
+     WHERE party_material_id = ${partyMaterialId}::uuid AND deleted_at IS NULL
+    UNION ALL
+    SELECT 1 FROM public.party_grn_lines pgl
+      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+     WHERE pgl.party_material_id = ${partyMaterialId}::uuid AND pgl.deleted_at IS NULL
+    LIMIT 1
   `)) as unknown as Array<{ x: number }>;
   return rows.length > 0;
 }
@@ -388,7 +399,7 @@ export async function updatePartyMaterial(
         .filter(Boolean)
         .join(', ');
       throw new ConflictError(
-        `${existing.code} has movements in the customer material register — its ${what} cannot be changed.`,
+        `${existing.code} is already used (JWSO lines, Party GRNs or register movements) — its ${what} cannot be changed.`,
       );
     }
 
@@ -495,7 +506,7 @@ export async function softDeletePartyMaterial(
     }
     if (await hasRegisterRows(tx, existing.id)) {
       throw new ConflictError(
-        `Cannot delete ${existing.code}: it has movements in the customer material register, ` +
+        `Cannot delete ${existing.code}: it is used by JWSO lines, Party GRNs or register movements, ` +
           `and that history must keep its material.`,
       );
     }

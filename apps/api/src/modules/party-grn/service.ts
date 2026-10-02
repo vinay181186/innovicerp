@@ -634,7 +634,10 @@ export async function cancelPartyGrn(
       })
       .from(partyGrnLines)
       .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)))
-      .orderBy(partyGrnLines.lineNo);
+      .orderBy(partyGrnLines.lineNo)
+      // Code review fix: lock the lines — a Customer Material Return taking
+      // their rejected pieces locks the same rows, so the two serialise.
+      .for('update');
 
     // Rejected pieces already handed back on a Customer Material Return cannot
     // be un-received — cancel that return first.
