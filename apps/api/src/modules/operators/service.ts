@@ -1,4 +1,4 @@
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, type MasterImportRowResult } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { operators } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -6,6 +6,8 @@ import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { dropBlankCells, rawRowText, zodRowReason } from '../../lib/master-rules';
+import { createOperatorInputSchema, updateOperatorImportRowSchema } from './schema';
 import type {
   BulkCreateOperatorsInput,
   BulkCreateOperatorsResponse,
@@ -16,13 +18,38 @@ import type {
   Operator,
   UpdateOperatorInput,
 } from './schema';
-import { softDeleteStamp } from '../../lib/audit-trail';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { OPERATOR_SF_COLUMNS } from './sf-columns';
 import { emitActivityLog } from '../activity-log/service';
+
+type OperatorRow = typeof operators.$inferSelect;
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
+};
+
+const activeLabel = (v: unknown): string | null =>
+  v === true ? 'Active' : v === false ? 'Inactive' : null;
+
+/** Every user-editable Operator Master field, with the label the screen uses,
+ *  for the Edit row's Before → After (ADR-197). Mirrors VENDOR_FIELDS. */
+const OPERATOR_FIELDS: readonly DiffField[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'department', label: 'Department' },
+  { key: 'skills', label: 'Skills / Machines' },
+  { key: 'isActive', label: 'Active', format: activeLabel },
+  { key: 'userId', label: 'Linked User' },
+];
+
+/** Excel column names for a refused row's reason (import template headers). */
+const OPERATOR_IMPORT_LABELS: Record<string, string> = {
+  code: 'Code',
+  name: 'Operator Name',
+  department: 'Department',
+  skills: 'Skills',
+  isActive: 'Status',
+  userId: 'Linked User',
 };
 
 function emptyToNull(s: string | undefined): string | null {
@@ -193,31 +220,38 @@ export async function createOperator(
 }
 
 /**
- * Create many operators in ONE transaction — the Excel importer's whole sheet.
+ * The Excel importer's whole sheet in ONE transaction — ERPNext Data Import
+ * behaviour, the same contract Item / Vendor / Customer already answer
+ * (shared/schemas/master-import.ts):
+ *   - mode 'insert' creates new operators (name must be free; the OP-###
+ *     series is continued in memory); mode 'update' finds each row's operator
+ *     by Code and writes only the FILLED cells, one History (EDIT) row each;
+ *   - EVERY row is parsed on its own — a bad row is skipped with its reason and
+ *     the rest go in, so one bad cell no longer rejects the sheet;
+ *   - dryRun = the preview: the same per-row answer, nothing written at all.
  *
- * Why this exists: the importer used to call createOperator once per row and
- * wait for each round trip, and every success invalidated the on-screen operator
- * list, so the browser re-downloaded the whole master after every row. Measured
- * on the live vendors import (identical code shape), that ran at ~1 row/second
- * and got slower as the list grew — nine minutes for a 500-row sheet.
+ * Operator was the last master still writing immediately, insert-only, with no
+ * preview — so a retry after a timeout could create the whole sheet a second
+ * time. The preview + the code/name duplicate checks below are what close that.
  *
- * What makes this fast is not batching the HTTP call alone — it is doing the
- * per-row work ONCE:
- *   - one access check, one transaction, one RLS context set;
- *   - existing codes and names read in a single query instead of two per row;
- *   - the OP-### series continued in memory instead of re-scanning the table
- *     for every row;
- *   - one multi-row INSERT instead of N.
- *
- * Tolerant, not all-or-nothing: a bad row is reported and left out, the rest go
- * in. A sheet with one duplicate should not cost the operator the other 499.
+ * Speed (why one request exists at all): the importer used to POST once per row
+ * and every answer invalidated the on-screen list, so the browser re-downloaded
+ * the whole master after every row — measured on the live vendors import (same
+ * code shape) at about one row per second, nine minutes for 500 rows. The
+ * per-row work is done ONCE here: one access check, one transaction, one read of
+ * the whole master, the series continued in memory, one multi-row INSERT.
  */
 export async function createOperatorsBulk(
   input: BulkCreateOperatorsInput,
   user: AuthContext,
 ): Promise<BulkCreateOperatorsResponse> {
-  // Same gate as a single create — this raises operators, so it is `entry`.
-  await requireFormAccess(user, 'operator_create', 'entry');
+  const mode = input.mode ?? 'insert';
+  const dryRun = input.dryRun ?? false;
+  // Insert raises operators (`entry`); Update Existing changes ones already
+  // saved, which is `edit` — so an L2 Data-Entry user can still import new
+  // operators but cannot overwrite the saved master. This used to be hard-coded
+  // to 'entry' for the whole route.
+  await requireFormAccess(user, 'operator_create', mode === 'update' ? 'edit' : 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -225,21 +259,28 @@ export async function createOperatorsBulk(
     // Deleted rows are included on purpose: their CODE is still taken (the
     // single create refuses to reuse it), so the series must skip past them.
     const existingRows = await tx
-      .select({ code: operators.code, name: operators.name, deletedAt: operators.deletedAt })
+      .select()
       .from(operators)
       .where(eq(operators.companyId, companyId));
 
     const takenCodes = new Set(existingRows.map((r) => r.code.trim().toLowerCase()));
-    // DE-DUP KEY: the operator NAME, case-insensitive. That is exactly what the
-    // import screen already guarded on, and it is the only key it can use — the
-    // operator template carries no Code column, so a re-run of the same file has
-    // nothing else to recognise itself by. Moving the check here compares each
-    // row against every operator in the company; the screen could only compare
-    // against the page of operators loaded on screen, so anything past that page
-    // read as "new" and got created a second time.
-    // Live rows only — a deleted operator's name is free to use again.
-    const takenNames = new Set(
-      existingRows.filter((r) => !r.deletedAt).map((r) => r.name.trim().toLowerCase()),
+    const liveByCode = new Map(
+      existingRows.filter((r) => !r.deletedAt).map((r) => [r.code.trim().toLowerCase(), r]),
+    );
+    const trashCodes = new Set(
+      existingRows.filter((r) => r.deletedAt).map((r) => r.code.trim().toLowerCase()),
+    );
+    // SECOND DE-DUP KEY: the operator NAME, case-insensitive → the code that
+    // owns it. The import screen already guarded on the name, and it is the only
+    // key an operator sheet without a Code column has to recognise a re-run of
+    // the same file by. Checking it here compares each row against every
+    // operator in the company; the screen could only compare against the page it
+    // had loaded, so anything past that page read as "new" and got created a
+    // second time. Live rows only — a deleted operator's name is free again.
+    const nameOwner = new Map(
+      existingRows
+        .filter((r) => !r.deletedAt)
+        .map((r) => [r.name.trim().toLowerCase(), r.code.trim().toLowerCase()]),
     );
 
     // Continue the OP-### series in memory. nextOperatorCode() scans the table
@@ -250,68 +291,201 @@ export async function createOperatorsBulk(
       if (m) nextSeq = Math.max(nextSeq, Number(m[1]));
     }
 
-    const skipped: BulkOperatorSkip[] = [];
-    const values: Array<typeof operators.$inferInsert> = [];
+    const rows: MasterImportRowResult[] = [];
+    const inserts: Array<typeof operators.$inferInsert> = [];
     const codes: string[] = [];
+    const updates: Array<{
+      before: OperatorRow;
+      set: Record<string, unknown>;
+      changes: ReturnType<typeof diffFields>;
+    }> = [];
+    const seenCodes = new Set<string>();
 
-    for (const [i, o] of input.operators.entries()) {
+    for (const [i, raw] of input.operators.entries()) {
       const index = i + 1;
-      const name = o.name.trim();
-      const nameKey = name.toLowerCase();
-      if (takenNames.has(nameKey)) {
-        skipped.push({ index, name, reason: 'an operator with this name already exists' });
+      const rawName = rawRowText(raw, 'name');
+      const rawCode = rawRowText(raw, 'code') || null;
+      const skip = (reason: string, code: string | null = rawCode, name = rawName): void => {
+        rows.push({ index, code, name, action: 'skip', reason });
+      };
+      // Blank cells are dropped in BOTH modes, not just Update Existing (where
+      // blank means "keep the current value"). Operator's Code column is
+      // optional — a blank Code must mean "auto-generate the next OP-###", and
+      // an empty string would otherwise fail the schema and lose the row.
+      const cells = dropBlankCells(raw);
+
+      if (mode === 'insert') {
+        const parsed = createOperatorInputSchema.safeParse(cells);
+        if (!parsed.success) {
+          skip(zodRowReason(parsed.error, OPERATOR_IMPORT_LABELS));
+          continue;
+        }
+        const c = parsed.data;
+        const name = c.name.trim();
+        const nameKey = name.toLowerCase();
+        if (nameOwner.has(nameKey)) {
+          skip('an operator with this name already exists', c.code ?? null, name);
+          continue;
+        }
+        let code = c.code?.trim();
+        if (code) {
+          if (takenCodes.has(code.toLowerCase())) {
+            skip(
+              trashCodes.has(code.toLowerCase())
+                ? `Code "${code}" belongs to a deleted operator — restore it instead of re-creating`
+                : `Code "${code}" is already used`,
+              code,
+              name,
+            );
+            continue;
+          }
+        } else {
+          // Defensive loop: a company holding a hand-typed OP-007 beside the
+          // series could collide, so walk forward until the code is free.
+          do {
+            nextSeq += 1;
+            code = `OP-${String(nextSeq).padStart(3, '0')}`;
+          } while (takenCodes.has(code.toLowerCase()));
+        }
+        // Claim both keys so a duplicate INSIDE the sheet is caught too, not
+        // just one against what was already stored.
+        takenCodes.add(code.toLowerCase());
+        nameOwner.set(nameKey, code.toLowerCase());
+        inserts.push({
+          companyId,
+          code,
+          name,
+          department: emptyToNull(c.department),
+          skills: emptyToNull(c.skills),
+          isActive: c.isActive,
+          // Same rule as the single create: an empty string is "no login
+          // linked", not a bad UUID. The import template has no Linked User
+          // column, so this is null for every imported row — carried anyway so
+          // an API caller that does send it behaves like POST /operators.
+          userId: c.userId && c.userId.length > 0 ? c.userId : null,
+          createdBy: user.id,
+          updatedBy: user.id,
+        });
+        codes.push(code);
+        rows.push({ index, code, name, action: 'insert' });
         continue;
       }
 
-      let code = o.code?.trim();
-      if (code) {
-        if (takenCodes.has(code.toLowerCase())) {
-          skipped.push({ index, name, reason: `code "${code}" is already used` });
+      // ── Update Existing (matched by Code) ──
+      const parsed = updateOperatorImportRowSchema.safeParse(cells);
+      if (!parsed.success) {
+        skip(zodRowReason(parsed.error, OPERATOR_IMPORT_LABELS));
+        continue;
+      }
+      const { code: codeIn, ...patch } = parsed.data;
+      const key = codeIn.toLowerCase();
+      if (seenCodes.has(key)) {
+        skip(`Code "${codeIn}" is repeated in the sheet`);
+        continue;
+      }
+      seenCodes.add(key);
+      const before = liveByCode.get(key);
+      if (!before) {
+        // Never create in update mode — a code that matches nothing is skipped.
+        skip(
+          trashCodes.has(key)
+            ? `Operator ${codeIn} is deleted — restore it first`
+            : `No operator with Code "${codeIn}"`,
+        );
+        continue;
+      }
+      if (patch.name !== undefined) {
+        const owner = nameOwner.get(patch.name.trim().toLowerCase());
+        if (owner && owner !== key) {
+          skip(
+            `another operator is already named "${patch.name.trim()}"`,
+            before.code,
+            before.name,
+          );
           continue;
         }
-      } else {
-        nextSeq += 1;
-        code = `OP-${String(nextSeq).padStart(3, '0')}`;
-        // Defensive: a company holding a hand-typed OP-007 alongside the series
-        // could collide. Walk forward until the code is free.
-        while (takenCodes.has(code.toLowerCase())) {
-          nextSeq += 1;
-          code = `OP-${String(nextSeq).padStart(3, '0')}`;
-        }
       }
-      // Claim both keys so a duplicate INSIDE the sheet is caught too, not just
-      // one against what was already stored.
-      takenCodes.add(code.toLowerCase());
-      takenNames.add(nameKey);
-
-      values.push({
-        companyId,
-        code,
-        name,
-        department: emptyToNull(o.department),
-        skills: emptyToNull(o.skills),
-        isActive: o.isActive,
-        // Same rule as the single create: an empty string is "no login linked",
-        // not a bad UUID. The import template has no userId column, so this is
-        // null for every imported row — carried anyway so an API caller that
-        // does send it gets the same behaviour as POST /operators.
-        userId: o.userId && o.userId.length > 0 ? o.userId : null,
-        createdBy: user.id,
-        updatedBy: user.id,
+      // Only the keys the row actually filled reach `set`, so a blank cell
+      // keeps the stored value.
+      const set: Record<string, unknown> = {};
+      if (patch.name !== undefined) set.name = patch.name.trim();
+      if (patch.department !== undefined) set.department = emptyToNull(patch.department);
+      if (patch.skills !== undefined) set.skills = emptyToNull(patch.skills);
+      if (patch.isActive !== undefined) set.isActive = patch.isActive;
+      if (patch.userId !== undefined) {
+        set.userId = patch.userId && patch.userId.length > 0 ? patch.userId : null;
+      }
+      const changes = diffFields(before, set, OPERATOR_FIELDS);
+      if (patch.name !== undefined) {
+        nameOwner.delete(before.name.trim().toLowerCase());
+        nameOwner.set(patch.name.trim().toLowerCase(), key);
+      }
+      // A row whose filled cells all match what is stored changes nothing — it
+      // is reported as an update of 0 fields and not written.
+      if (changes.length > 0) updates.push({ before, set, changes });
+      rows.push({
+        index,
+        code: before.code,
+        name: patch.name?.trim() ?? before.name,
+        action: 'update',
+        changedFields: changes.length,
       });
-      codes.push(code);
     }
 
-    if (values.length > 0) {
-      // One statement for the lot. Chunked because a single INSERT carries one
-      // parameter per column per row and Postgres caps a statement at 65535.
+    if (!dryRun) {
+      // Chunked: one INSERT carries one parameter per column per row and
+      // Postgres caps a statement at 65535.
       const CHUNK = 500;
-      for (let i = 0; i < values.length; i += CHUNK) {
-        await tx.insert(operators).values(values.slice(i, i + CHUNK));
+      for (let i = 0; i < inserts.length; i += CHUNK) {
+        await tx.insert(operators).values(inserts.slice(i, i + CHUNK));
+      }
+      if (inserts.length > 0) {
+        // One line for the whole insert, as the Item / Vendor imports do.
+        await emitActivityLog(
+          tx,
+          {
+            action: ActivityAction.Create,
+            entity: 'Operator',
+            detail: `Excel import — ${inserts.length} operator(s): ${codes[0]}…${codes[codes.length - 1]}`,
+          },
+          companyId,
+          user,
+        );
+      }
+      // Update Existing: one History row per operator, Before → After (ADR-197).
+      for (const u of updates) {
+        await tx
+          .update(operators)
+          .set({ ...u.set, updatedBy: user.id })
+          .where(eq(operators.id, u.before.id));
+        await emitActivityLog(
+          tx,
+          {
+            action: ActivityAction.Edit,
+            entity: 'Operator',
+            entityId: u.before.id,
+            refId: u.before.code,
+            changes: u.changes,
+            detail: `Excel import (update) — ${u.before.code} — ${u.before.name}`,
+          },
+          companyId,
+          user,
+        );
       }
     }
 
-    return { created: values.length, skipped, codes };
+    const skipped: BulkOperatorSkip[] = rows
+      .filter((r) => r.action === 'skip')
+      .map((r) => ({ index: r.index, name: r.name, reason: r.reason ?? '' }));
+    return {
+      dryRun,
+      mode,
+      created: inserts.length,
+      updated: rows.filter((r) => r.action === 'update').length,
+      rows,
+      skipped,
+      codes,
+    };
   });
 }
 
