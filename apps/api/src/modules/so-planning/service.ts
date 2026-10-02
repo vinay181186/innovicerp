@@ -1411,6 +1411,18 @@ export async function raisePlanningPr(
         );
       }
 
+      // 3a. Lock the SO line before measuring what is left — the same row lock
+      //     + Plan (plans/service.ts) and the SO edit take. Two planners (or two
+      //     tabs) raising on one line now queue here; the second one measures
+      //     after the first PR has committed and is refused if it would over-raise.
+      //     A separate statement on purpose: under READ COMMITTED the next
+      //     SELECT takes a fresh snapshot, so it sees the PR the winner inserted.
+      await tx.execute(sql`
+        SELECT 1 FROM public.sales_order_lines sol
+        WHERE sol.id = ${soLineId}::uuid
+        FOR UPDATE OF sol
+      `);
+
       // 3. What the line still has left to plan — ADR-185: read off the ONE
       //    shared rule (lib/so-line-coverage.ts), the same figure the Planning
       //    line and the Needs Planning table state, never rebuilt by hand here.

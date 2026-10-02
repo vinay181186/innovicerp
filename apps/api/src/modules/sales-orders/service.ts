@@ -1758,7 +1758,9 @@ export async function updateSalesOrder(
             .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
     const linesBefore = input.lines !== undefined ? before : null;
     if (input.lines !== undefined) {
-      await mergeLines(tx, id, companyId, input.lines, user, showMoney);
+      await mergeLines(tx, id, companyId, input.lines, user, showMoney, {
+        versionChecked: Boolean(input.expectedUpdatedAt),
+      });
 
       await reconcileAmendedLineReservations(tx, companyId, id, existingHdr.code, before, user);
     }
@@ -1981,6 +1983,11 @@ async function mergeLines(
    *  `rate` is then ignored on an EXISTING line so the stored figure survives.
    *  A NEW line still takes the input (there is no stored value to protect). */
   showMoney: boolean,
+  /** True when the save carried `expectedUpdatedAt` (already compared against
+   *  the locked header by the caller). A save that REMOVES a line must carry
+   *  it: the payload is "every line that should survive", so a payload built
+   *  from an old snapshot would silently delete a line someone added since. */
+  opts: { versionChecked: boolean },
 ): Promise<void> {
   const existing = await tx
     .select({
@@ -2029,6 +2036,11 @@ async function mergeLines(
   }
 
   const absentIds = existing.map((e) => e.id).filter((eid) => !seenInputIds.has(eid));
+  if (absentIds.length > 0 && !opts.versionChecked) {
+    throw new ValidationError(
+      'Reload the Sales Order and try again — a line can only be removed from the version you opened.',
+    );
+  }
 
   // S8 — a line's status moves only as SO_STATUS_MOVES allows (a closed-short
   // line is refused further down with its own sentence); a new line starts as
