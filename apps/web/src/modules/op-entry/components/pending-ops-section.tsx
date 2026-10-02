@@ -106,6 +106,8 @@ export function PendingOpsSection({
             tableKey={TABLE_KEYS.opEntryShopFloor}
             columns={pendingCols}
             rows={pendRows}
+            // Rows are a 25-row slice cut here; a ▾ would sort only that slice.
+            sortFilter={false}
             defaultHidden={PENDING_OPS_DEFAULT_HIDDEN}
             // Start Operation is the ⋯ row item, shown only on the server's
             // rule above. It opens the one shared OpEntryModal (which owns the
@@ -156,7 +158,12 @@ export function PendingOpsSection({
             Made on this Machine ({producedOps.length})
           </div>
           {/* Keyless: history, a different column set from the pending list. */}
-          <DataTable columns={madeCols} rows={madeRows} rowKey={(row) => row.op.id} />
+          <DataTable
+            columns={madeCols}
+            rows={madeRows}
+            sortFilter={false}
+            rowKey={(row) => row.op.id}
+          />
           <ListFooter
             total={producedOps.length}
             noun="operation"

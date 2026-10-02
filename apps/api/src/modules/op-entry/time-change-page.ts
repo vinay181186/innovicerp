@@ -45,16 +45,16 @@ export async function listOpLogTimeChangePage(
   const pat = input.search ? `%${likeEscape(input.search)}%` : null;
   const searchFrag = pat
     ? sql`AND (
-        jc.code ILIKE ${pat} ESCAPE '\'
-        OR i.code ILIKE ${pat} ESCAPE '\'
-        OR COALESCE(sol.revision::text, rev_jwl.revision::text) ILIKE ${pat} ESCAPE '\'
-        OR i.name ILIKE ${pat} ESCAPE '\'
-        OR sol.client_po_line_no ILIKE ${pat} ESCAPE '\'
-        OR o.operation ILIKE ${pat} ESCAPE '\'
-        OR COALESCE(m.code, l.machine_code_text) ILIKE ${pat} ESCAPE '\'
-        OR r.reason ILIKE ${pat} ESCAPE '\'
-        OR COALESCE(ru.full_name, ru.email) ILIKE ${pat} ESCAPE '\'
-        OR COALESCE(du.full_name, du.email) ILIKE ${pat} ESCAPE '\'
+        jc.code ILIKE ${pat} ESCAPE '\\'
+        OR i.code ILIKE ${pat} ESCAPE '\\'
+        OR COALESCE(sol.revision::text, rev_jwl.revision::text) ILIKE ${pat} ESCAPE '\\'
+        OR i.name ILIKE ${pat} ESCAPE '\\'
+        OR sol.client_po_line_no ILIKE ${pat} ESCAPE '\\'
+        OR o.operation ILIKE ${pat} ESCAPE '\\'
+        OR COALESCE(m.code, l.machine_code_text) ILIKE ${pat} ESCAPE '\\'
+        OR r.reason ILIKE ${pat} ESCAPE '\\'
+        OR COALESCE(ru.full_name, ru.email) ILIKE ${pat} ESCAPE '\\'
+        OR COALESCE(du.full_name, du.email) ILIKE ${pat} ESCAPE '\\'
       )`
     : sql``;
   const where = sql`${searchFrag} ${sfWhere(TIME_CHANGE_SF_COLUMNS, sf)}`;
