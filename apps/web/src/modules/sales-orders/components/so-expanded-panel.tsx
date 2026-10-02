@@ -13,11 +13,9 @@ import { EquipmentSoExpand } from './so-equipment-expand';
 export function SoExpandedPanel({
   so,
   canEdit,
-  canDelete,
 }: {
   so: SalesOrderListItem;
   canEdit: boolean;
-  canDelete: boolean;
 }): React.JSX.Element {
   const { data, isLoading, isError, error } = useSalesOrder(so.id);
   return (
@@ -53,7 +51,7 @@ export function SoExpandedPanel({
           {error instanceof Error ? error.message : 'Could not load SO detail. Try again.'}
         </div>
       ) : so.type === 'equipment' ? (
-        <EquipmentSoExpand so={data} canEdit={canEdit} canDelete={canDelete} />
+        <EquipmentSoExpand so={data} />
       ) : (
         <ComponentSoExpand so={data} canEdit={canEdit} />
       )}

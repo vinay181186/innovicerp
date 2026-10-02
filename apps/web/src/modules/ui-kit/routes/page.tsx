@@ -2199,9 +2199,7 @@ function LayoutSection() {
                 message: 'The line is removed from the order.',
                 confirmLabel: 'Delete line',
               }}
-              extra={
-                <IconButton icon={<Icon name="printer" size={12} />} title="Print" size="sm" />
-              }
+              items={[{ key: 'print', label: 'Print', icon: 'printer', onSelect: () => undefined }]}
             />
             <RowActions
               viewTo="#view"

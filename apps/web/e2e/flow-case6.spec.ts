@@ -84,7 +84,7 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await page.waitForTimeout(2800);
   await page.getByPlaceholder(/Search/i).first().fill(po).catch(() => {});
   await page.waitForTimeout(1500);
-  await page.locator('table tbody tr', { hasText: po }).first().getByRole('link', { name: /Create DC/i }).click();
+  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: po }).first(), /^Create DC/);
   await page.waitForTimeout(2200);
   const dcNo = await page.locator('input[value^="IN-DC-"]').first().inputValue().catch(() => '');
   await page.locator('input[type="number"]').first().fill(String(BAL));
@@ -95,7 +95,7 @@ test('CASE 6 — all-op mid-switch in-house→OSP', async ({ page }) => {
   await page.waitForTimeout(2500);
   await page.getByPlaceholder(/Search/i).first().fill(dcNo).catch(() => {});
   await page.waitForTimeout(1500);
-  await page.locator('table tbody tr', { hasText: dcNo }).first().getByRole('link', { name: /Receive/i }).click();
+  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: dcNo }).first(), /^Receive/);
   await page.waitForTimeout(2200);
   await page.locator('input[type="number"]').first().fill(String(BAL));
   await page.getByRole('button', { name: /Save Receipt/i }).click();

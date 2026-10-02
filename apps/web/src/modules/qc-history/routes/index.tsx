@@ -207,11 +207,16 @@ function QcHistoryPage(): React.JSX.Element {
                 rowClassName={(o) => (o.overdue ? 'qc-alert-blink' : undefined)}
                 emptyText={t ? 'Nothing QC Pending matches.' : 'Nothing QC Pending.'}
                 defaultPinned={QC_HISTORY_DEFAULT_PINNED}
-                rowActions={() => (
-                  <Link to="/qc-call-register" className="btn btn-primary btn-sm">
-                    🔬 QC
-                  </Link>
-                )}
+                rowMenu={() => [
+                  {
+                    key: 'open-qc',
+                    label: 'Open QC',
+                    icon: 'search',
+                    group: 'workflow',
+                    to: '/qc-call-register',
+                  },
+                ]}
+                renderLink={(p) => <Link {...p} />}
               />
             </div>
           ) : null}

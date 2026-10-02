@@ -23,7 +23,9 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useSession } from '@/lib/session';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -106,33 +108,35 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const rejectMut = useRejectPr();
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Both return the mutation's Promise (undefined when the confirm / prompt is
+  // cancelled) so the row's ⋯ shows busy; a failure still lands in the red
+  // banner, because the ⋯ menu only logs a rejected Promise.
   const handleApprove = useCallback(
-    (pr: PurchaseRequestListItem): void => {
+    (pr: PurchaseRequestListItem): Promise<void> | undefined => {
       setActionError(null);
-      if (!window.confirm(`Approve PR ${pr.code}?`)) return;
-      approveMut.mutate(pr.id, {
-        onError: (e) =>
+      if (!window.confirm(`Approve PR ${pr.code}?`)) return undefined;
+      return approveMut.mutateAsync(pr.id).then(
+        () => undefined,
+        (e: unknown) =>
           setActionError(e instanceof Error ? e.message : 'Could not approve PR. Try again.'),
-      });
+      );
     },
     [approveMut],
   );
 
   const handleReject = useCallback(
-    (pr: PurchaseRequestListItem): void => {
+    (pr: PurchaseRequestListItem): Promise<void> | undefined => {
       setActionError(null);
       const reason = window.prompt(`Reject ${pr.code} — reason:`);
-      if (reason === null) return;
+      if (reason === null) return undefined;
       if (!reason.trim()) {
         setActionError('Rejection reason is required.');
-        return;
+        return undefined;
       }
-      rejectMut.mutate(
-        { id: pr.id, reason: reason.trim() },
-        {
-          onError: (e) =>
-            setActionError(e instanceof Error ? e.message : 'Could not reject PR. Try again.'),
-        },
+      return rejectMut.mutateAsync({ id: pr.id, reason: reason.trim() }).then(
+        () => undefined,
+        (e: unknown) =>
+          setActionError(e instanceof Error ? e.message : 'Could not reject PR. Try again.'),
       );
     },
     [rejectMut],
@@ -211,23 +215,32 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     [today],
   );
 
-  // Per-row action cluster — reuses the module's existing handlers / targets.
+  // Assign Task: page-level modal (the ⋯ menu cannot host one). Hidden for the
+  // read-only viewer role, which POST /tasks refuses.
+  const { data: me } = useSession();
+  const canAssign = Boolean(me) && me?.role !== 'viewer';
+  const [assignPr, setAssignPr] = useState<PurchaseRequestListItem | null>(null);
+
+  // Per-row ⋯ menu — reuses the module's existing handlers / targets.
   const rowActionsFor = useCallback(
     (pr: PurchaseRequestListItem): React.ReactNode => (
       <PrListRowActions
         pr={pr}
         canApprove={perms.approve}
         canCreatePo={canCreatePo}
+        canAssign={canAssign}
         prApprovalOn={prApprovalOn}
         approving={approveMut.isPending}
         rejecting={rejectMut.isPending}
         onApprove={handleApprove}
         onReject={handleReject}
+        onAssign={setAssignPr}
       />
     ),
     [
       perms.approve,
       canCreatePo,
+      canAssign,
       prApprovalOn,
       approveMut.isPending,
       rejectMut.isPending,
@@ -376,6 +389,23 @@ function PurchaseRequestsListPage(): React.JSX.Element {
           />
         </>
       )}
+
+      {assignPr ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'purchase_request',
+            id: assignPr.id,
+            display: `PR ${assignPr.code}`,
+            navPage: `/purchase-requests/${assignPr.id}`,
+          }}
+          suggestedTitle={
+            assignPr.status === 'open'
+              ? `Review & approve ${assignPr.code}`
+              : `Convert ${assignPr.code} to PO`
+          }
+          onClose={() => setAssignPr(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -108,14 +108,19 @@ export const soStatusChipSchema = z.object({
 });
 export type SoStatusChip = z.infer<typeof soStatusChipSchema>;
 
-/** Per-op handle for the inline "📋 PR Op<N>" button on the JC ops chip strip
- *  (PL-1b §2.3). Caller posts to the existing /purchase-requests endpoint
- *  using these fields to identify which JC op needs the PR. */
+/** Per-op handle for the "Raise PR for Op <N>" action on the SO Status
+ *  detail (PL-1b §2.3). The web raises the PR through the JC Ops flow:
+ *  POST /op-entry/osp-pr { jcOpId } (op-entry generateOspPr). */
 export const soStatusPendingOsPrOpSchema = z.object({
   jcId: z.string().uuid(),
   jcCode: z.string(),
   opSeq: z.number().int().positive(),
   operation: z.string(),
+  /** The jc_ops row id — the `jcOpId` POST /op-entry/osp-pr takes. */
+  jcOpId: z.string().uuid().optional(),
+  /** The op's stored outsource_status — one of 'pending' | 'pr_raised' |
+   *  'po_created' | 'sent' | 'received'; null when unset. */
+  outsourceStatus: z.string().nullable().optional(),
 });
 export type SoStatusPendingOsPrOp = z.infer<typeof soStatusPendingOsPrOpSchema>;
 

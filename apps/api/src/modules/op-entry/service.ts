@@ -49,6 +49,7 @@ import {
   assertProductionOrderNotShortClosedForOp,
 } from '../../lib/production-order-stop';
 import { codeLabel, labelOf, OP_LOG_TYPE_LABEL } from '../../lib/status-labels';
+import { changedByOtherError } from '../../lib/row-lock';
 import { emitActivityLog } from '../activity-log/service';
 import { jcOpRef, logWhen } from './audit';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
@@ -2155,6 +2156,11 @@ export async function decideOpLogTimeChange(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // Lock-then-check (lib/row-lock.ts): two managers deciding the same
+    // request at once used to both read 'pending' — one approve could apply
+    // the time change while a reject landed on top. The request row is read
+    // FOR UPDATE, so the second decision waits, re-reads the decided row and
+    // is refused by the status check below.
     const rows = await tx
       .select()
       .from(opLogTimeChangeRequests)
@@ -2165,11 +2171,15 @@ export async function decideOpLogTimeChange(
           isNull(opLogTimeChangeRequests.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const req = rows[0];
     if (!req) throw new NotFoundError('Change request not found');
     if (req.status !== 'pending') {
-      throw new ValidationError(`This request was already ${codeLabel(req.status)}.`);
+      // 409 like the guarded-write backstop below: another decision got there first.
+      throw new ConflictError(
+        `This time change request was already ${codeLabel(req.status)} by someone else — reload the page.`,
+      );
     }
     // ADR-197 — REJECT is a reason-required action. The shared input keeps
     // decisionReason optional (frozen contract); both screens already ask for it.
@@ -2190,7 +2200,10 @@ export async function decideOpLogTimeChange(
       );
     }
 
-    await tx
+    // Guarded write: only a still-pending request moves. 0 rows = someone
+    // else decided it first; throwing rolls back the time change applied above
+    // (same transaction), so a lost race never leaves the log edited.
+    const decidedRows = await tx
       .update(opLogTimeChangeRequests)
       .set({
         status: input.decision === 'approve' ? 'approved' : 'rejected',
@@ -2199,7 +2212,11 @@ export async function decideOpLogTimeChange(
         decisionReason: input.decisionReason?.trim() || null,
         updatedBy: user.id,
       })
-      .where(eq(opLogTimeChangeRequests.id, req.id));
+      .where(
+        and(eq(opLogTimeChangeRequests.id, req.id), eq(opLogTimeChangeRequests.status, 'pending')),
+      )
+      .returning({ id: opLogTimeChangeRequests.id });
+    if (decidedRows.length === 0) throw changedByOtherError('This time change request');
 
     // ADR-197 — APPROVE / REJECT on the Job Card: the approver is the user on
     // the row, the requester is named in the detail, old → new in `changes`.
@@ -2538,15 +2555,34 @@ export async function stopOp(
   const rejectQty = input.rejectQty;
 
   return withUserContext(user, async (tx) => {
+    // Two Stops on the same session (two tabs, a double-click, two operators)
+    // used to both read 'running' and both write a production entry — the
+    // pieces counted twice. Lock-then-check (lib/row-lock.ts): the session row
+    // is read FOR UPDATE, so the second Stop waits, re-reads the committed
+    // 'stopped' row and is refused below.
+    //
+    // Lock order matches writeProductionLog / the Op Entry log path, which take
+    // jc_ops FIRST and then touch running_ops: read the session unlocked only
+    // to learn its op, lock that jc_ops row, then lock the session row.
+    const peek = await tx
+      .select({ jcOpId: runningOps.jcOpId })
+      .from(runningOps)
+      .where(and(eq(runningOps.id, runningOpId), eq(runningOps.companyId, companyId)))
+      .limit(1);
+    if (!peek[0]) throw new NotFoundError('Running operation not found. Refresh the page.');
+    await tx.execute(
+      sql`SELECT 1 FROM public.jc_ops WHERE id = ${peek[0].jcOpId}::uuid FOR UPDATE`,
+    );
     const existing = await tx
       .select()
       .from(runningOps)
       .where(and(eq(runningOps.id, runningOpId), eq(runningOps.companyId, companyId)))
-      .limit(1);
+      .limit(1)
+      .for('update');
     const row = existing[0];
     if (!row) throw new NotFoundError('Running operation not found. Refresh the page.');
     if (row.status !== 'running') {
-      throw new ValidationError('This operation is already stopped. Refresh the page.');
+      throw new ConflictError('This operation is already stopped. Refresh the page.');
     }
     // ADR-183 — a whole batch can fail. The machine ran, QC looked at what came
     // off it, and none of it passed; that entry is qty 0 with rejects, and it
@@ -2578,11 +2614,13 @@ export async function stopOp(
     }
 
     // End the session. `writeProductionLog` may ALREADY have ended it — it
-    // flips every running session on the op to 'done' when availability hits 0.
-    // This update is deliberately unconditional and re-uses the existing
-    // ended_at via COALESCE, so that path is never double-timestamped and the
-    // row can never be left saying 'done' while an identical stop elsewhere
-    // says 'stopped'.
+    // flips every running session on the op to 'done' when availability hits 0
+    // (inside THIS transaction, under the lock taken above). So the guard
+    // accepts 'running', or 'done' only when this Stop itself logged
+    // production; ended_at is re-used via COALESCE, so that path is never
+    // double-timestamped and the row can never be left saying 'done' while an
+    // identical stop elsewhere says 'stopped'. 0 rows = another user moved the
+    // session first (the lock makes that a backstop, not the main guard).
     const updated = await tx
       .update(runningOps)
       .set({
@@ -2590,9 +2628,17 @@ export async function stopOp(
         endedAt: sql`COALESCE(${runningOps.endedAt}, now())`,
         updatedBy: user.id,
       })
-      .where(eq(runningOps.id, runningOpId))
+      .where(
+        and(
+          eq(runningOps.id, runningOpId),
+          logsProduction
+            ? inArray(runningOps.status, ['running', 'done'])
+            : eq(runningOps.status, 'running'),
+        ),
+      )
       .returning();
-    const r = updated[0]!;
+    const r = updated[0];
+    if (!r) throw new ConflictError('This operation is already stopped. Refresh the page.');
 
     const meta = await tx
       .select({

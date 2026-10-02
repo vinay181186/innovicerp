@@ -71,12 +71,6 @@ export interface RowActionsProps {
    * View / Edit and before Delete; each item's `group` places it.
    */
   items?: RowMenuItem[] | undefined;
-  /**
-   * @deprecated Move these buttons into `items`. A ReactNode cannot go inside
-   * the ⋯ menu, so it is drawn beside the ⋯ — and dropped when `items` is
-   * given. Still rendered as before in `labelled` mode.
-   */
-  extra?: ReactNode | undefined;
   /** Text buttons (View / Edit / Del) for nested line tables and cards. */
   labelled?: boolean | undefined;
 }
@@ -95,7 +89,6 @@ export function RowActions({
   deleteConfirm,
   deleteDisabled = false,
   items,
-  extra,
   labelled = false,
 }: RowActionsProps): React.JSX.Element {
   const [confirming, setConfirming] = useState(false);
@@ -202,12 +195,10 @@ export function RowActions({
         <>
           {link('view', viewTo) ?? button('view', onView)}
           {link('edit', editTo) ?? button('edit', onEdit)}
-          {extra}
           {button('delete', deleteClick, deleteDisabled)}
         </>
       ) : (
         <>
-          {items ? null : extra}
           <RowMenu items={menuItems} renderLink={renderLink} />
         </>
       )}

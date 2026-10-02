@@ -1,32 +1,33 @@
 // The close ledger (ADR-179): every partial close and every reversal, newest
 // first. Each real close can be REVERSED — that writes a compensating stock-out
-// and a reversal row (never deletes). The server refuses a reversal when the
-// pieces have already been dispatched; that message flows back to the toast/
-// error line here. A reversal row is shown as "Reversal of …" and cannot itself
-// be reversed; a close already undone by a reversal offers no Reverse button.
-// The reason is REQUIRED (the server refuses a blank one, ADR-197): Confirm
-// stays disabled until one is typed, and it is always sent as `remarks`.
+// and a reversal row (never deletes). A reversal row is shown as "Reversal of …"
+// and cannot itself be reversed; a close already undone by a reversal offers no
+// Reverse close item. Reverse close is the red ⋯ item; it opens
+// ReverseReasonDialog, where the reason is REQUIRED (the server refuses a blank
+// one, ADR-197) and is sent as `remarks`. A server refusal (pieces already
+// dispatched, plan over-cover) shows inside that dialog.
 
 import type { ProductionOrderClose, ProductionOrderDetail } from '@innovic/shared';
-import { Loader2, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { RowMenu } from '@/ui/data';
 import { useReverseProductionOrderClose } from '../api';
+import { ReverseReasonDialog } from './reverse-reason-dialog';
 
 interface PoCloseLedgerProps {
   po: ProductionOrderDetail;
-  /** True when the user may reverse a close (same edit gate as close). */
+  /** True when the user may reverse a close: edit right AND the order is not
+   *  short closed (the server's rule). False → no ⋯ column at all. */
   canReverse: boolean;
 }
 
 export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX.Element {
   const reverseMut = useReverseProductionOrderClose();
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // The close whose "Reverse close?" dialog is open.
+  const [askClose, setAskClose] = useState<ProductionOrderClose | null>(null);
 
-  // Which original closes have already been undone → no Reverse button for them.
+  // Which original closes have already been undone → no Reverse close item for them.
   const reversedIds = useMemo(() => {
     const s = new Set<string>();
     for (const c of po.closes) if (c.isReversal && c.reversesCloseId) s.add(c.reversesCloseId);
@@ -40,26 +41,6 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
     return m;
   }, [po.closes]);
 
-  const onReverse = (closeId: string): void => {
-    const remarks = reason.trim();
-    if (!remarks) {
-      setError('Type the reason for reversing this close.');
-      return;
-    }
-    setError(null);
-    reverseMut.mutate(
-      { id: po.id, input: { closeId, remarks } },
-      {
-        onSuccess: () => {
-          setOpenId(null);
-          setReason('');
-        },
-        onError: (e) =>
-          setError(e instanceof Error ? e.message : 'Could not reverse this close. Try again.'),
-      },
-    );
-  };
-
   if (po.closes.length === 0) {
     return (
       <div className="empty-state" style={{ fontSize: 12 }}>
@@ -70,23 +51,6 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
 
   return (
     <div>
-      {error ? (
-        <div
-          role="alert"
-          style={{
-            color: 'var(--red2)',
-            background: 'var(--red3)',
-            border: '1px solid var(--red)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
-
       {/* Meta band — whose pieces these closes belong to. POL is the line
           number printed on the CUSTOMER's own purchase order, shown before the
           item code; '—' when no sales order sits behind this order. */}
@@ -123,7 +87,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
               <th>Closed By</th>
               <th>Remarks</th>
               <th>Reversed</th>
-              {canReverse ? <th></th> : null}
+              {canReverse ? <th style={{ width: 48 }} aria-label="Actions" /> : null}
             </tr>
           </thead>
           <tbody>
@@ -161,67 +125,20 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
                     )}
                   </td>
                   {canReverse ? (
-                    <td>
-                      {showReverse ? (
-                        openId === c.id ? (
-                          <div
-                            style={{
-                              display: 'flex',
-                              gap: 6,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <input
-                              className="innovic-input"
-                              value={reason}
-                              onChange={(e) => setReason(e.target.value)}
-                              placeholder="Reason (required)"
-                              aria-label="Reason (required)"
-                              maxLength={500}
-                              required
-                              style={{ width: 160, fontSize: 12 }}
-                            />
-                            <button
-                              type="button"
-                              className="btn btn-danger btn-sm"
-                              disabled={reverseMut.isPending || !reason.trim()}
-                              title={reason.trim() ? undefined : 'Type a reason first'}
-                              onClick={() => onReverse(c.id)}
-                            >
-                              {reverseMut.isPending ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : (
-                                'Confirm'
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              disabled={reverseMut.isPending}
-                              onClick={() => {
-                                setOpenId(null);
-                                setReason('');
-                              }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => {
-                              setOpenId(c.id);
-                              setReason('');
-                              setError(null);
-                            }}
-                            title="Undo this close (blocked if the pieces are already dispatched)"
-                          >
-                            <Undo2 size={12} /> Reverse
-                          </button>
-                        )
-                      ) : null}
+                    <td className="td-ctr">
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'reverse',
+                            label: 'Reverse close',
+                            icon: 'refresh-cw',
+                            group: 'danger',
+                            hidden: !showReverse,
+                            disabledReason: reverseMut.isPending ? 'Reversing…' : undefined,
+                            onSelect: () => setAskClose(c),
+                          },
+                        ]}
+                      />
                     </td>
                   ) : null}
                 </tr>
@@ -230,6 +147,17 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
           </tbody>
         </table>
       </div>
+
+      {askClose ? (
+        <ReverseReasonDialog
+          title={`Reverse close of ${askClose.qty} on ${fmtDate(askClose.closedAt)}?`}
+          onCancel={() => setAskClose(null)}
+          onConfirm={async (remarks) => {
+            await reverseMut.mutateAsync({ id: po.id, input: { closeId: askClose.id, remarks } });
+            setAskClose(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

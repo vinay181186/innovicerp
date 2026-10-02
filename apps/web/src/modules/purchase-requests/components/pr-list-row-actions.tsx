@@ -1,11 +1,17 @@
-// Per-row action cluster for the Purchase Request FIT table (ADR-199). Uses the
-// shared RowActions `extra` slot — Approve / Reject (L4 Approver, open PRs),
-// Create PO (while quantity is left and the PR is convertible), Assign Task.
-// Reuses the module's existing handlers / targets; no hand-rolled icon buttons.
+// Per-row ⋯ menu for the Purchase Request FIT table (ADR-199). Shared RowActions
+// `items`, in the menu's fixed order:
+//   Workflow: Approve (L4 Approver, open PRs) · Create PO (while quantity is
+//             left and the PR is convertible)
+//   Assign Task (not for the read-only viewer role — POST /tasks refuses it)
+//   ─ Reject (red, last)
+// Reject follows the server (rejectPurchaseRequest): any PR that is not
+// cancelled (incl. 'PO created' whose PO was cancelled — nothing ordered),
+// greyed with the reason once any of it is on a live PO. Reuses the module's
+// existing handlers / targets; Approve / Reject return the mutation's Promise
+// so the row's ⋯ shows busy, and grey out on every row while one is in flight.
 
 import type { PurchaseRequestListItem } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { renderRowMenuLink } from '@/ui/data';
 import { RowActions } from '@/ui/layout';
 import { prOrderBalance } from '../lib/pr-balance';
 import { prConvertible } from '../lib/pr-convertible';
@@ -14,71 +20,66 @@ export function PrListRowActions({
   pr,
   canApprove,
   canCreatePo,
+  canAssign,
   prApprovalOn,
   approving,
   rejecting,
   onApprove,
   onReject,
+  onAssign,
 }: {
   pr: PurchaseRequestListItem;
   canApprove: boolean;
   canCreatePo: boolean;
+  canAssign: boolean;
   prApprovalOn: boolean;
   approving: boolean;
   rejecting: boolean;
-  onApprove: (pr: PurchaseRequestListItem) => void;
-  onReject: (pr: PurchaseRequestListItem) => void;
+  onApprove: (pr: PurchaseRequestListItem) => void | Promise<void>;
+  onReject: (pr: PurchaseRequestListItem) => void | Promise<void>;
+  onAssign: (pr: PurchaseRequestListItem) => void;
 }): React.JSX.Element {
   const bal = prOrderBalance(pr);
   return (
     <RowActions
-      extra={
-        <>
-          {canApprove && pr.status === 'open' ? (
-            <>
-              <button
-                type="button"
-                className="btn btn-sm btn-primary"
-                disabled={approving}
-                onClick={() => onApprove(pr)}
-              >
-                ✓ Approve
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-danger"
-                disabled={rejecting}
-                onClick={() => onReject(pr)}
-              >
-                ✕ Reject
-              </button>
-            </>
-          ) : null}
-          {canCreatePo && prConvertible(pr, prApprovalOn) && bal.balance > 0 ? (
-            <Link
-              to="/purchase-orders/from-pr"
-              search={{ prId: pr.id }}
-              className="btn btn-sm btn-primary"
-            >
-              Create PO
-            </Link>
-          ) : null}
-          {pr.status !== 'cancelled' && pr.status !== 'po_created' ? (
-            <AssignTaskButton
-              linkedRef={{
-                type: 'purchase_request',
-                id: pr.id,
-                display: `PR ${pr.code}`,
-                navPage: `/purchase-requests/${pr.id}`,
-              }}
-              suggestedTitle={
-                pr.status === 'open' ? `Review & approve ${pr.code}` : `Convert ${pr.code} to PO`
-              }
-              label=""
-            />
-          ) : null}
-        </>
-      }
+      renderLink={renderRowMenuLink}
+      items={[
+        {
+          key: 'approve',
+          label: 'Approve',
+          icon: 'check',
+          group: 'workflow',
+          hidden: !canApprove || pr.status !== 'open',
+          disabledReason: approving ? 'Working…' : undefined,
+          onSelect: () => onApprove(pr),
+        },
+        {
+          key: 'create-po',
+          label: 'Create PO',
+          icon: 'plus',
+          group: 'workflow',
+          to: `/purchase-orders/from-pr?prId=${encodeURIComponent(pr.id)}`,
+          hidden: !(canCreatePo && prConvertible(pr, prApprovalOn) && bal.balance > 0),
+        },
+        {
+          key: 'assign',
+          label: 'Assign Task',
+          icon: 'user-round',
+          group: 'assign',
+          hidden: !canAssign || pr.status === 'cancelled' || pr.status === 'po_created',
+          onSelect: () => onAssign(pr),
+        },
+        {
+          key: 'reject',
+          label: 'Reject',
+          icon: 'x',
+          group: 'danger',
+          hidden: !canApprove || pr.status === 'cancelled',
+          disabledReason:
+            bal.ordered > 0 ? 'Already on a PO' : rejecting ? 'Working…' : undefined,
+          onSelect: () => onReject(pr),
+        },
+      ]}
     />
   );
 }
