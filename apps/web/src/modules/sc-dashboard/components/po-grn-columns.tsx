@@ -7,12 +7,13 @@ import type { ScPoSummaryRow, ScRecentGrn } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
-import { inr, statusBadge } from './sc-format';
+import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
 export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSummaryRow>[] {
   const cols: DataTableColumn<ScPoSummaryRow>[] = [
     {
       id: 'po_no',
+      sortFilterField: 'poNo',
       kind: 'code',
       header: 'PO No.',
       className: 'td-code',
@@ -28,9 +29,16 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
         </Link>
       ),
     },
-    { id: 'po_date', kind: 'date', header: 'PO Date', render: (g) => fmtDate(g.poDate) },
+    {
+      id: 'po_date',
+      sortFilterField: 'poDate',
+      kind: 'date',
+      header: 'PO Date',
+      render: (g) => fmtDate(g.poDate),
+    },
     {
       id: 'vendor',
+      sortFilterField: 'vendor',
       kind: 'text',
       header: 'Vendor',
       align: 'left',
@@ -41,6 +49,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
     },
     {
       id: 'so_no',
+      sortFilterField: 'soCode',
       kind: 'code',
       header: 'SO / JWSO No.',
       className: 'text2',
@@ -48,6 +57,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
     },
     {
       id: 'lines',
+      sortFilterField: 'lines',
       kind: 'num',
       header: 'Lines',
       align: 'right',
@@ -56,6 +66,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
     },
     {
       id: 'order_qty',
+      sortFilterField: 'totalQty',
       kind: 'num',
       header: 'Order Qty',
       align: 'right',
@@ -64,6 +75,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
     },
     {
       id: 'received',
+      sortFilterField: 'receivedQty',
       kind: 'num',
       header: 'Received',
       align: 'right',
@@ -73,6 +85,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
     },
     {
       id: 'pending',
+      sortFilterField: 'pendingQty',
       kind: 'num',
       header: 'Pending',
       align: 'right',
@@ -88,6 +101,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
     cols.push(
       {
         id: 'subtotal',
+        sortFilterField: 'totalVal',
         kind: 'num',
         header: 'Subtotal',
         align: 'right',
@@ -96,6 +110,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
       },
       {
         id: 'tax',
+        sortFilterField: 'taxAmount',
         kind: 'num',
         header: 'Tax',
         align: 'right',
@@ -105,6 +120,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
       },
       {
         id: 'grand_total',
+        sortFilterField: 'grandTotal',
         kind: 'num',
         header: 'Grand Total',
         align: 'right',
@@ -115,9 +131,18 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
     );
   }
   cols.push(
-    { id: 'grns', kind: 'num', header: 'GRNs', align: 'right', render: (g) => g.grnCount },
+    {
+      id: 'grns',
+      sortFilterField: 'grnCount',
+      kind: 'num',
+      header: 'GRNs',
+      align: 'right',
+      render: (g) => g.grnCount,
+    },
     {
       id: 'po_status',
+      sortFilterField: 'status',
+      filterOptions: PO_STATUS_OPTIONS,
       kind: 'badge',
       header: 'PO Status',
       filterValue: (g) => statusBadge(g.status).label,
@@ -134,14 +159,22 @@ export function recentGrnColumns(): DataTableColumn<ScRecentGrn>[] {
   return [
     {
       id: 'grn_no',
+      sortFilterField: 'grnNo',
       kind: 'code',
       header: 'GRN No.',
       className: 'td-code cyan',
       render: (g) => g.grnNo,
     },
-    { id: 'grn_date', kind: 'date', header: 'GRN Date', render: (g) => fmtDate(g.grnDate) },
+    {
+      id: 'grn_date',
+      sortFilterField: 'grnDate',
+      kind: 'date',
+      header: 'GRN Date',
+      render: (g) => fmtDate(g.grnDate),
+    },
     {
       id: 'po_no',
+      sortFilterField: 'poNo',
       kind: 'code',
       header: 'PO No.',
       className: 'mono',
@@ -149,6 +182,7 @@ export function recentGrnColumns(): DataTableColumn<ScRecentGrn>[] {
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendor',
       kind: 'text',
       header: 'Vendor',
       align: 'left',

@@ -52,7 +52,8 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { Select } from '@/ui/forms';
-import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, renderRowMenuLink, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useApprovalConfig } from '@/modules/approval-config/api';
@@ -61,6 +62,12 @@ import { useUsersList } from '../api';
 import { ROLE_LABEL } from '@/lib/role-label';
 
 const PAGE_SIZE = 25;
+
+// Sort & Filter tick list (ADR-200): the stored is_active boolean as text.
+const STATUS_OPTIONS = [
+  { value: 'true', label: 'Active' },
+  { value: 'false', label: 'Inactive' },
+];
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -137,15 +144,23 @@ function UsersListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss rows. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.usersList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListUsersQuery = useMemo(
     () => ({
       search: search.search,
       role: search.role,
       isActive: search.isActive,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.role, search.isActive, search.page],
+    [search.search, search.role, search.isActive, sf.param, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useUsersList(query, {
@@ -192,6 +207,7 @@ function UsersListPage(): React.JSX.Element {
       },
       {
         id: 'full_name',
+        sortFilterField: 'fullName',
         header: 'Name',
         width: '17%',
         align: 'left',
@@ -242,6 +258,7 @@ function UsersListPage(): React.JSX.Element {
       },
       {
         id: 'email',
+        sortFilterField: 'email',
         header: 'Email',
         width: '20%',
         className: 'mono',
@@ -250,6 +267,8 @@ function UsersListPage(): React.JSX.Element {
       },
       {
         id: 'phone',
+        sortFilterField: 'phone',
+        filterType: 'text',
         header: 'Phone',
         width: '10%',
         className: 'text2',
@@ -258,6 +277,8 @@ function UsersListPage(): React.JSX.Element {
       },
       {
         id: 'status',
+        sortFilterField: 'isActive',
+        filterOptions: STATUS_OPTIONS,
         kind: 'badge',
         header: 'Status',
         width: '8%',
@@ -386,11 +407,12 @@ function UsersListPage(): React.JSX.Element {
         <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.usersList}
+            sortFilterServer={sf}
             columns={columns}
             rows={rows}
             loading={isLoading}
             emptyText={
-              search.search || search.role || search.isActive !== undefined
+              search.search || search.role || search.isActive !== undefined || sf.param
                 ? 'No users match.'
                 : 'No users yet.'
             }
@@ -406,14 +428,7 @@ function UsersListPage(): React.JSX.Element {
                 editTo={`/users/${u.id}/edit`}
                 // `/access-control?configure=<id>` is split back into path +
                 // search so the router gets a real search param.
-                renderLink={(p) => {
-                  const [path = p.to, qs] = p.to.split('?');
-                  return qs ? (
-                    <Link {...p} to={path} search={Object.fromEntries(new URLSearchParams(qs))} />
-                  ) : (
-                    <Link {...p} />
-                  );
-                }}
+                renderLink={renderRowMenuLink}
                 // ⋯ menu: Edit · Access. Access is still a real link, carrying
                 // `configure=<id>` so Access Control opens straight onto this
                 // person (padlock = the app's access glyph).

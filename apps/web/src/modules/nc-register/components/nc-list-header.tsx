@@ -27,6 +27,8 @@ export interface NcListHeaderProps {
   onStatusChange: (v: NcStatus | undefined) => void;
   onReasonChange: (v: NcReasonCategory | undefined) => void;
   onClearFilters: () => void;
+  /** A column ▾ filter is applied (Sort & Filter, ADR-200) — lights Clear. */
+  columnFiltering: boolean;
   canReportNc: boolean;
   summary: NcRegisterSummary | undefined;
 }
@@ -41,6 +43,7 @@ export function NcListHeader({
   onStatusChange,
   onReasonChange,
   onClearFilters,
+  columnFiltering,
   canReportNc,
   summary,
 }: NcListHeaderProps): React.JSX.Element {
@@ -106,7 +109,7 @@ export function NcListHeader({
         </>
       }
       onClearFilters={onClearFilters}
-      filtersActive={!!status || !!reasonCategory || searchInput.trim() !== ''}
+      filtersActive={columnFiltering || !!status || !!reasonCategory || searchInput.trim() !== ''}
       primary={
         canReportNc ? (
           <Link to="/nc-register/new" className="btn btn-primary">

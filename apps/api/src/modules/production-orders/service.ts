@@ -72,6 +72,8 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { requireFormAccess } from '../../lib/access';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { productionOrderSfColumns } from './sf-columns';
 import {
   AuthorizationError,
   ConflictError,
@@ -624,12 +626,19 @@ async function readDetailInTx(
 
 // ─── Reads ─────────────────────────────────────────────────────────────────
 
+// Sort & Filter (ADR-200) column whitelist — sf-columns.ts.
+const PO_SF_COLUMNS = productionOrderSfColumns({
+  itemRevision: ITEM_REVISION_SQL,
+  jcFinishedQty: JC_FINISHED_QTY_SQL,
+});
+
 export async function listProductionOrders(
   query: ListProductionOrdersQuery,
   user: AuthContext,
 ): Promise<ListProductionOrdersResponse> {
   await requireFormAccess(user, 'prodorder_create', 'view');
   const companyId = requireCompany(user);
+  const sf = readSf(query.sf);
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [
       eq(productionOrders.companyId, companyId),
@@ -666,13 +675,21 @@ export async function listProductionOrders(
       );
       if (s) conditions.push(s);
     }
+    // Sort & Filter (ADR-200): the screen's column filters, on list AND count.
+    if (sf && sf.filters.length > 0) conditions.push(sql`TRUE ${sfWhere(PO_SF_COLUMNS, sf)}`);
     const where = and(...conditions);
 
     const [rows, totals] = await Promise.all([
       baseQuery(tx)
         .where(where)
-        // Newest first; code as the tie-break keeps paging stable.
-        .orderBy(desc(productionOrders.createdAt), desc(productionOrders.code))
+        // Newest first; code (unique) as the tie-break keeps paging stable.
+        .orderBy(
+          sfOrderBy(
+            PO_SF_COLUMNS,
+            sf,
+            sql`${productionOrders.createdAt} DESC, ${productionOrders.code} DESC`,
+          ),
+        )
         .limit(query.limit)
         .offset(query.offset),
       tx.select({ value: count() }).from(productionOrders).where(where),

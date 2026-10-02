@@ -2,8 +2,6 @@
 // free-text box by decision (never split into shape / dia / length) and it is
 // NOT scoped to a grade — the two masters are independent.
 
-import type { ListMaterialSizesQuery } from '@innovic/shared';
-import { useMemo } from 'react';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import {
   useBulkCreateMaterialSizes,
@@ -15,28 +13,34 @@ import {
 import { downloadMaterialSizeTemplate, parseMaterialSizeImportFile } from '../lib/import-export';
 import { fmtImportList } from '../lib/import-message';
 import { MaterialMasterPanel } from './material-master-panel';
+import { useMaterialMasterPaging } from './use-material-master-paging';
 
-// Masters scroll, they do not paginate — see the note in grade-tab.tsx.
-const LIST_LIMIT = 1000;
+// ADR-201: 25 rows a page; search / Active / ▾ on the server — the query
+// objects come from useMaterialMasterPaging (shared with the other tab).
 
 export function SizeTab({
   term,
   searchInput,
   onSearchInput,
+  page,
+  onPage,
   tabs,
 }: {
   /** The debounced search term from the URL (the route owns the debounce). */
   term: string | undefined;
   searchInput: string;
   onSearchInput: (v: string) => void;
+  /** 1-based page (in the URL, owned by the route) + its setter. */
+  page: number;
+  onPage: (p: number) => void;
   /** The page's Grade | Size strip — drawn inside the panel's header band. */
   tabs?: React.ReactNode;
 }): React.JSX.Element {
-  const query: ListMaterialSizesQuery = useMemo(
-    () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
-    [term],
-  );
-  const list = useMaterialSizesList(query);
+  const paging = useMaterialMasterPaging(TABLE_KEYS.rawMaterialSize, term, page, onPage);
+  const list = useMaterialSizesList(paging.pageQuery);
+  const allCount = useMaterialSizesList(paging.countQueries.all).data?.total;
+  const activeCount = useMaterialSizesList(paging.countQueries.active).data?.total;
+  const inactiveCount = useMaterialSizesList(paging.countQueries.inactive).data?.total;
   const create = useCreateMaterialSize();
   const update = useUpdateMaterialSize();
   const bulkCreate = useBulkCreateMaterialSizes();
@@ -47,7 +51,13 @@ export function SizeTab({
       noun="Size"
       tableKey={TABLE_KEYS.rawMaterialSize}
       rows={list.data?.sizes ?? []}
-      total={list.data?.total ?? 0}
+      total={list.data?.total}
+      counts={{ all: allCount, active: activeCount, inactive: inactiveCount }}
+      status={paging.status}
+      onStatus={paging.setStatus}
+      sf={paging.sf}
+      page={page}
+      onPage={onPage}
       isLoading={list.isLoading}
       isFetching={list.isFetching}
       isError={list.isError}

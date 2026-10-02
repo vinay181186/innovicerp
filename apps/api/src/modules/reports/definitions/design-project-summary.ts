@@ -4,6 +4,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 const CHECKLIST_TOTAL = 12;
 
@@ -86,7 +87,7 @@ export const designProjectSummaryReport: RegisteredReport = {
         AND dp.deleted_at IS NULL
         ${statusFrag}
       ORDER BY dp.created_at DESC
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { queryBoolean } from '../lib/query-boolean';
+import { sfRawParamSchema } from './list-query';
 import { ITEM_TYPES } from '../enums/item-type';
 import { ITEM_PROCUREMENT_TYPES } from '../enums/item-procurement-type';
 import { UOMS } from '../enums/uom';
@@ -128,6 +129,8 @@ export const listItemsQuerySchema = z.object({
   procurementType: itemProcurementTypeSchema.optional(),
   sortBy: itemSortFieldSchema.optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
+  /** Sort & Filter (ADR-200) — the Item Master screen's column sort / filters. */
+  sf: sfRawParamSchema,
   // Max 1000: line-editor autocompletes (BOM, Route Card, Job Card) pull the
   // whole item master into a <datalist>. Capped at 200 the API 400'd those
   // requests and the dropdown silently showed nothing. 1000 covers our scale.

@@ -3,6 +3,7 @@
 // Register that gates invoicing. Legacy dispatchLog / renderDispatchRegister.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { clientCopySchema } from './party-copy';
 import { CUSTOMER_DISPATCH_STATUSES } from '../enums/customer-dispatch-status';
 
@@ -141,8 +142,17 @@ export const customerDispatchDetailSchema = customerDispatchRowSchema.extend({
 });
 export type CustomerDispatchDetail = z.infer<typeof customerDispatchDetailSchema>;
 
+/** GET /customer-dispatches query (ADR-201). No `limit` → every dispatch (as before). */
+export const listCustomerDispatchesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type ListCustomerDispatchesQuery = z.input<typeof listCustomerDispatchesQuerySchema>;
+
 export const listCustomerDispatchesResponseSchema = z.object({
   dispatches: z.array(customerDispatchRowSchema),
+  /** Every dispatch (not just this page). */
+  total: z.number().int().nonnegative(),
 });
 export type ListCustomerDispatchesResponse = z.infer<typeof listCustomerDispatchesResponseSchema>;
 
@@ -174,11 +184,49 @@ export const customerDispatchRegisterRowSchema = z.object({
   stockBefore: z.number().int().nullable(),
   stockAfter: z.number().int().nullable(),
   currentStock: z.number().int().nullable(), // item on-hand now (summary panel)
+  /** ADR-190 — how far this row's DISPATCH is invoiced (same on every line of
+   *  it; see customerDispatchRowSchema.billedStatus). */
+  billedStatus: z.enum(['none', 'partial', 'full']).optional(),
 });
 export type CustomerDispatchRegisterRow = z.infer<typeof customerDispatchRegisterRowSchema>;
 
+/** GET /customer-dispatches/register query (ADR-201). Paged by DISPATCH: a
+ *  page is `limit` dispatches with their lines. A line is kept when it matches
+ *  `search`; a dispatch is listed when at least one of its lines is kept.
+ *  No `limit` → every dispatch (as before). */
+export const customerDispatchRegisterQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  /** SO No. (the dispatch's SO code) — exact. */
+  soNo: z.string().trim().max(60).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).default(0),
+  sf: sfRawParamSchema,
+});
+export type CustomerDispatchRegisterQuery = z.input<typeof customerDispatchRegisterQuerySchema>;
+
+/** Item-wise summary row — over every kept line of active dispatches. */
+export const customerDispatchItemSummarySchema = z.object({
+  itemCode: z.string(),
+  itemName: z.string(),
+  totalQty: z.number().int(),
+  /** Dispatch lines of this item. */
+  lineCount: z.number().int().nonnegative(),
+  currentStock: z.number().int().nullable(),
+});
+export type CustomerDispatchItemSummary = z.infer<typeof customerDispatchItemSummarySchema>;
+
 export const customerDispatchRegisterResponseSchema = z.object({
   rows: z.array(customerDispatchRegisterRowSchema),
+  /** Dispatches matching search + SO + sf (the pager's total). */
+  total: z.number().int().nonnegative(),
+  /** Over every matching ACTIVE (not cancelled) dispatch — never just the page. */
+  summary: z.object({
+    totalQty: z.number().int(),
+    dispatchCount: z.number().int().nonnegative(),
+  }),
+  itemSummary: z.array(customerDispatchItemSummarySchema),
+  /** Every SO No. that has a dispatch — the SO filter's options. */
+  soOptions: z.array(z.string()),
 });
 export type CustomerDispatchRegisterResponse = z.infer<
   typeof customerDispatchRegisterResponseSchema

@@ -12,6 +12,13 @@ import type { DataTableColumn } from '@/ui/data';
 // nothing spills over a gridline and the Action column (1% = shrink to its
 // buttons) is never pushed off the screen. Centred by the standard; names
 // read from their left edge, numbers sit right.
+// Sort & Filter runs on the SERVER (ADR-200): `sortFilterField` names the
+// field in api operators/sf-columns.ts. Active is the stored boolean as text.
+const ACTIVE_OPTIONS = [
+  { value: 'true', label: 'Active' },
+  { value: 'false', label: 'Inactive' },
+];
+
 export function operatorListColumns(firstRowNo: number): DataTableColumn<Operator>[] {
   return [
     {
@@ -24,6 +31,8 @@ export function operatorListColumns(firstRowNo: number): DataTableColumn<Operato
     },
     {
       id: 'code',
+      sortFilterField: 'code',
+      filterType: 'text',
       header: 'Code',
       nowrap: true,
       // A real link, so the code can be ctrl/middle-clicked into a new tab.
@@ -44,6 +53,7 @@ export function operatorListColumns(firstRowNo: number): DataTableColumn<Operato
     },
     {
       id: 'name',
+      sortFilterField: 'name',
       kind: 'text',
       header: 'Name',
       align: 'left',
@@ -52,12 +62,15 @@ export function operatorListColumns(firstRowNo: number): DataTableColumn<Operato
     },
     {
       id: 'department',
+      sortFilterField: 'department',
+      filterType: 'text',
       header: 'Department',
       className: 'text2',
       render: (op) => op.department ?? '—',
     },
     {
       id: 'skills',
+      sortFilterField: 'skills',
       kind: 'text',
       header: 'Skills / Machines',
       align: 'left',
@@ -67,6 +80,8 @@ export function operatorListColumns(firstRowNo: number): DataTableColumn<Operato
     },
     {
       id: 'is_active',
+      sortFilterField: 'isActive',
+      filterOptions: ACTIVE_OPTIONS,
       kind: 'badge',
       header: 'Active',
       nowrap: true,

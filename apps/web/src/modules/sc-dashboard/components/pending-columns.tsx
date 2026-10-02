@@ -8,12 +8,13 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
-import { inr, statusBadge } from './sc-format';
+import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
 export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingLine>[] {
   const cols: DataTableColumn<ScPendingLine>[] = [
     {
       id: 'po_no',
+      sortFilterField: 'poNo',
       kind: 'code',
       header: 'PO No.',
       className: 'td-code',
@@ -29,10 +30,25 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
         </Link>
       ),
     },
-    { id: 'ln', kind: 'code', header: 'Ln', className: 'mono', render: (p) => p.lineNo },
-    { id: 'po_date', kind: 'date', header: 'PO Date', render: (p) => fmtDate(p.poDate) },
+    {
+      id: 'ln',
+      sortFilterField: 'lineNo',
+      filterType: 'num',
+      kind: 'code',
+      header: 'Ln',
+      className: 'mono',
+      render: (p) => p.lineNo,
+    },
+    {
+      id: 'po_date',
+      sortFilterField: 'poDate',
+      kind: 'date',
+      header: 'PO Date',
+      render: (p) => fmtDate(p.poDate),
+    },
     {
       id: 'vendor',
+      sortFilterField: 'vendor',
       kind: 'text',
       header: 'Vendor',
       align: 'left',
@@ -43,6 +59,7 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
     },
     {
       id: 'so_no',
+      sortFilterField: 'soCode',
       kind: 'code',
       header: 'SO / JWSO No.',
       className: 'text2',
@@ -50,6 +67,7 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'td-code fw-700',
@@ -59,6 +77,7 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -68,6 +87,7 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
     },
     {
       id: 'order_qty',
+      sortFilterField: 'qty',
       kind: 'num',
       header: 'Order Qty',
       align: 'right',
@@ -76,6 +96,7 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
     },
     {
       id: 'received',
+      sortFilterField: 'receivedQty',
       kind: 'num',
       header: 'Received',
       align: 'right',
@@ -85,6 +106,7 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
     },
     {
       id: 'pending',
+      sortFilterField: 'pendingQty',
       kind: 'num',
       header: 'Pending',
       align: 'right',
@@ -97,6 +119,7 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
     cols.push(
       {
         id: 'rate',
+        sortFilterField: 'rate',
         kind: 'num',
         header: 'Rate',
         align: 'right',
@@ -105,6 +128,7 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
       },
       {
         id: 'pending_value',
+        sortFilterField: 'pendingVal',
         kind: 'num',
         header: 'Pending Value',
         align: 'right',
@@ -120,6 +144,8 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
   }
   cols.push({
     id: 'po_status',
+    sortFilterField: 'status',
+    filterOptions: PO_STATUS_OPTIONS,
     kind: 'badge',
     header: 'PO Status',
     filterValue: (p) => statusBadge(p.status).label,

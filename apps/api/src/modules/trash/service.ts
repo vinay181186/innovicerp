@@ -43,6 +43,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
 import type {
   ListTrashQuery,
@@ -51,6 +52,7 @@ import type {
   TrashEntityType,
   TrashListItem,
 } from './schema';
+import { TRASH_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -183,7 +185,7 @@ function escapeLikeTerm(raw: string): string {
   return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
-/** WHERE clause for the Trash search box, or empty when there is no term. */
+/** `AND (…)` for the Trash search box, or empty when there is no term. */
 function searchWhere(term: string | undefined): SQL {
   if (!term) return sql``;
   const pattern = `%${escapeLikeTerm(term)}%`;
@@ -198,7 +200,7 @@ function searchWhere(term: string | undefined): SQL {
           sql`, `,
         )})`
       : sql``;
-  return sql`WHERE (t.label ILIKE ${pattern}
+  return sql`AND (t.label ILIKE ${pattern}
       OR t.type ILIKE ${pattern}
       OR t.deleted_by_name ILIKE ${pattern}${typeWordFrag})`;
 }
@@ -229,12 +231,17 @@ export async function listTrash(
 
   return withUserContext(user, async (tx) => {
     const baseSql = sql.raw(unionSql(companyId, input.type));
-    const where = searchWhere(input.search);
+    // Search + Sort & Filter (ADR-200) — one WHERE for the page and its count.
+    const sf = readSf(input.sf);
+    const where = sql`WHERE TRUE ${searchWhere(input.search)} ${sfWhere(TRASH_SF_COLUMNS, sf)}`;
+    // Ends on (type, id): ids are unique per table, so paging never skips or
+    // repeats a row deleted in the same instant as another.
+    const orderBy = sfOrderBy(TRASH_SF_COLUMNS, sf, sql`t.deleted_at DESC, t.type, t.id`);
 
     const rowsResult = await tx.execute(
       sql`SELECT * FROM (${baseSql}) t
          ${where}
-         ORDER BY t.deleted_at DESC
+         ORDER BY ${orderBy}
          LIMIT ${input.limit} OFFSET ${input.offset}`,
     );
 
@@ -242,8 +249,12 @@ export async function listTrash(
       sql`SELECT COUNT(*)::int AS c FROM (${baseSql}) t ${where}`,
     );
 
+    // The Document Type dropdown's counts: every type (not just the chosen
+    // one), under the same search + column filters as the list.
     const byTypeResult = await tx.execute(
-      sql.raw(`SELECT t.type, COUNT(*)::int AS c FROM (${unionSql(companyId)}) t GROUP BY t.type`),
+      sql`SELECT t.type, COUNT(*)::int AS c FROM (${sql.raw(unionSql(companyId))}) t
+         ${where}
+         GROUP BY t.type`,
     );
 
     type Row = {

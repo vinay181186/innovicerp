@@ -4,6 +4,7 @@ import type {
   DashboardKpisResponse,
   HomeResponse,
   ListWidgetsResponse,
+  OperatorReadyResponse,
   SaveDashboardConfigInput,
   WorkListItem,
 } from '@innovic/shared';
@@ -17,6 +18,7 @@ export const dashboardKeys = {
   workList: () => [...dashboardKeys.all, 'work-list'] as const,
   widgets: () => [...dashboardKeys.all, 'widgets'] as const,
   config: () => [...dashboardKeys.all, 'config'] as const,
+  operatorReady: (offset: number) => [...dashboardKeys.all, 'operator-ready', offset] as const,
 };
 
 export function useHome() {
@@ -25,6 +27,18 @@ export function useHome() {
     queryFn: () => apiFetch<HomeResponse>('/dashboard/home'),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+  });
+}
+
+/** Operator home "Ready for You" page at `offset` (pages 2+; page 1 rides on /home). */
+export function useOperatorReady(offset: number, enabled: boolean) {
+  return useQuery<OperatorReadyResponse>({
+    queryKey: dashboardKeys.operatorReady(offset),
+    queryFn: () =>
+      apiFetch<OperatorReadyResponse>(`/dashboard/operator-ready?limit=25&offset=${offset}`),
+    enabled,
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -54,7 +68,8 @@ export function useDashboardConfigScreen() {
 export function useSaveDashboardConfig() {
   const qc = useQueryClient();
   return useMutation<DashboardConfig, Error, SaveDashboardConfigInput>({
-    mutationFn: (input) => apiFetch<DashboardConfig>('/dashboard/config', { method: 'PUT', json: input }),
+    mutationFn: (input) =>
+      apiFetch<DashboardConfig>('/dashboard/config', { method: 'PUT', json: input }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: dashboardKeys.all }),
   });
 }

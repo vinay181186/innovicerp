@@ -16,10 +16,11 @@ function qty(
   header: string,
   pick: (r: OspWipRow) => number,
   color: string,
-  opts: { headColor?: string; title?: string; bold?: boolean } = {},
+  opts: { headColor?: string; title?: string; bold?: boolean; sf?: string } = {},
 ): DataTableColumn<OspWipRow> {
   return {
     id,
+    sortFilterField: opts.sf,
     kind: 'num',
     header: opts.title ? <span title={opts.title}>{header}</span> : header,
     label: header,
@@ -37,6 +38,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
   return [
     {
       id: 'jc_no',
+      sortFilterField: 'jcCode',
       kind: 'code',
       header: 'JC No.',
       className: 'td-code',
@@ -46,6 +48,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
       // POL — the line number printed on the CUSTOMER's own purchase order,
       // immediately before the item code. '—' when no sales order is behind it.
       id: 'client_po_line_no',
+      sortFilterField: 'clientPoLineNo',
       kind: 'code',
       header: 'POL',
       headColor: 'var(--purple)',
@@ -54,6 +57,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'mono fw-700',
@@ -63,6 +67,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -73,6 +78,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
     },
     {
       id: 'so_no',
+      sortFilterField: 'soCode',
       kind: 'code',
       header: 'SO No.',
       className: 'mono text2',
@@ -80,6 +86,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendorName',
       kind: 'text',
       header: 'Vendor',
       ellipsis: true,
@@ -89,6 +96,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
     },
     {
       id: 'operation',
+      sortFilterField: 'operation',
       kind: 'text',
       header: 'Operation',
       ellipsis: true,
@@ -98,35 +106,41 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
     },
     {
       id: 'order_qty',
+      sortFilterField: 'orderQty',
       kind: 'num',
       header: 'Order Qty',
       align: 'right',
       className: 'mono',
       render: (r) => r.orderQty,
     },
-    qty('sent', 'Sent', (r) => r.sentQty, 'var(--text3)'),
+    qty('sent', 'Sent', (r) => r.sentQty, 'var(--text3)', { sf: 'sentQty' }),
     qty('at_vendor', 'At Vendor', (r) => r.atVendorQty, 'var(--amber)', {
+      sf: 'atVendorQty',
       headColor: 'var(--amber2)',
       title: 'Physically out at the vendor (sent − returned)',
       bold: true,
     }),
     qty('in_qc', 'In QC', (r) => r.inQcQty, 'var(--cyan)', {
+      sf: 'inQcQty',
       headColor: 'var(--cyan)',
       title: 'Returned, incoming QC still pending',
       bold: true,
     }),
     qty('accepted', 'Accepted', (r) => r.acceptedQty, 'var(--green)', {
+      sf: 'acceptedQty',
       headColor: 'var(--green2)',
       title: 'Accepted at incoming QC',
     }),
-    qty('rejected', 'Rejected', (r) => r.rejectedQty, 'var(--red)'),
+    qty('rejected', 'Rejected', (r) => r.rejectedQty, 'var(--red)', { sf: 'rejectedQty' }),
     qty('not_sent', 'Not Sent', (r) => r.notSentQty, 'var(--blue)', {
+      sf: 'notSentQty',
       headColor: 'var(--blue)',
       title: 'Not yet sent to the vendor',
     }),
     // Not Sent is order − sent, an ORDER-level figure that over-states what may
     // physically leave; this is the shop-floor number the challan will accept.
     qty('ready_to_send', 'Ready to Send', (r) => r.readyToSendQty, 'var(--purple)', {
+      sf: 'readyToSendQty',
       headColor: 'var(--purple)',
       title: 'Cleared by the previous operation — what a challan accepts today',
       bold: true,

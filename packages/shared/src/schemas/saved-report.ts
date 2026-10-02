@@ -22,6 +22,7 @@
 //                                    (powers the builder live preview)
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { reportColumnTypeSchema } from './report';
 
 // ─── Filter / aggregation primitives ──────────────────────────────────────
@@ -138,8 +139,20 @@ export type UpdateSavedReportInput = z.infer<typeof updateSavedReportInputSchema
 
 export const listSavedReportsResponseSchema = z.object({
   reports: z.array(savedReportSchema),
+  /** Every report matching search + sf (before limit/offset) — ADR-201 paging. */
+  total: z.number().int().nonnegative(),
 });
 export type ListSavedReportsResponse = z.infer<typeof listSavedReportsResponseSchema>;
+
+// GET /saved-reports (ADR-201): one page, searched and Sort & Filtered on the
+// server. No `limit` → every visible report, as before.
+export const listSavedReportsQuerySchema = z.object({
+  search: z.string().max(100).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListSavedReportsQuery = z.input<typeof listSavedReportsQuerySchema>;
 
 // ─── Run-time response (mirrors RunReportResponse but with extra hooks) ──
 

@@ -5,7 +5,12 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { dateCell as dateOrNull, enumFilter, isoDateFilter } from './report-helpers';
+import {
+  dateCell as dateOrNull,
+  enumFilter,
+  isoDateFilter,
+  REPORT_ROW_CAP,
+} from './report-helpers';
 
 const PR_TYPES = ['standard', 'jw_osp', 'service'];
 const PR_STATUSES = ['open', 'approved', 'po_created', 'cancelled'];
@@ -141,7 +146,7 @@ export const procurementTrackerReport: RegisteredReport = {
         ${typeFrag}
         ${statusFrag}
       ORDER BY pr.pr_date DESC, pr.code
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

@@ -6,7 +6,14 @@
 import { DESIGN_TRACKER_STATUSES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { enumFilter, likeFilter, numCell, type SqlRow, textCell } from './report-helpers';
+import {
+  enumFilter,
+  likeFilter,
+  numCell,
+  REPORT_ROW_CAP,
+  textCell,
+  type SqlRow,
+} from './report-helpers';
 
 export const designHoursVsEstimateReport: RegisteredReport = {
   definition: {
@@ -74,7 +81,7 @@ export const designHoursVsEstimateReport: RegisteredReport = {
         ${designerFrag}
         ${statusFrag}
       ORDER BY (bk.booked - dt.estimated_hours) DESC, dt.code DESC
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

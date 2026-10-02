@@ -15,19 +15,24 @@
 
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useOpLog, type ListOpLogQuery, type OpLogListItem } from '../api';
-import { isReversalRow, OP_LOG_DEFAULT_PINNED, opLogColumns } from '../components/op-log-columns';
+import {
+  isReversalRow,
+  OP_LOG_DEFAULT_PINNED,
+  OP_LOG_HIDDEN_COLUMNS,
+  opLogColumns,
+} from '../components/op-log-columns';
 import { ReverseOpLogModal } from '../components/reverse-op-log-modal';
 import { exportOpLog } from '../lib/export';
-
-const PAGE_SIZE = 50;
 
 const listSearchSchema = z.object({
   jcNo: z.string().optional(),
@@ -35,7 +40,7 @@ const listSearchSchema = z.object({
   shift: z.enum(['day', 'night', 'general']).optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-  page: z.coerce.number().int().positive().default(1),
+  page: pageSearchParam,
 });
 
 export const opLogListRoute = createRoute({
@@ -81,6 +86,13 @@ function OpLogListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [jcInput, search.jcNo, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the log is paged 25 at a
+  // time, so sorting / filtering only the loaded page would miss entries.
+  // Every change goes back to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.opLogList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListOpLogQuery = useMemo(
     () => ({
       jcNo: search.jcNo,
@@ -88,16 +100,30 @@ function OpLogListPage(): React.JSX.Element {
       shift: search.shift,
       fromDate: search.fromDate,
       toDate: search.toDate,
-      limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(search.page),
     }),
-    [search.jcNo, search.logType, search.shift, search.fromDate, search.toDate, search.page],
+    [
+      sf.param,
+      search.jcNo,
+      search.logType,
+      search.shift,
+      search.fromDate,
+      search.toDate,
+      search.page,
+    ],
   );
 
   const { data, isLoading, isFetching, isError, error } = useOpLog(query);
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
   const items = data?.items ?? [];
+  const gotoPage = useCallback(
+    (p: number) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  useClampPage(search.page, data?.total, gotoPage);
   const [exporting, setExporting] = useState(false);
 
   async function onExport(): Promise<void> {
@@ -109,6 +135,7 @@ function OpLogListPage(): React.JSX.Element {
         shift: search.shift,
         fromDate: search.fromDate,
         toDate: search.toDate,
+        sf: sf.param,
       });
       if (written < all) {
         window.alert(
@@ -205,6 +232,7 @@ function OpLogListPage(): React.JSX.Element {
           </>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setJcInput('');
           void navigate({
             search: (prev) => ({
@@ -220,6 +248,7 @@ function OpLogListPage(): React.JSX.Element {
           });
         }}
         filtersActive={
+          sf.filtering ||
           !!search.logType ||
           !!search.shift ||
           !!search.fromDate ||
@@ -250,7 +279,9 @@ function OpLogListPage(): React.JSX.Element {
         <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.opLogList}
+            sortFilterServer={sf}
             columns={columns}
+            defaultHidden={[...OP_LOG_HIDDEN_COLUMNS]}
             rows={items}
             loading={isLoading}
             emptyText="No log entries match these filters."
@@ -282,13 +313,8 @@ function OpLogListPage(): React.JSX.Element {
         noun="entry"
         nounPlural="entries"
         page={search.page}
-        pageSize={PAGE_SIZE}
-        onPage={(p) =>
-          void navigate({
-            search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
-            replace: true,
-          })
-        }
+        pageSize={LIST_PAGE_SIZE}
+        onPage={(p) => gotoPage(Math.min(totalPages, Math.max(1, p)))}
       />
     </div>
   );

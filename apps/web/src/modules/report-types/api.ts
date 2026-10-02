@@ -1,5 +1,6 @@
 import type {
   CreateReportTypeInput,
+  ListReportTypesQuery,
   ListReportTypesResponse,
   ReportType,
   UpdateReportTypeInput,
@@ -11,10 +12,17 @@ export const reportTypesKeys = {
   all: ['report-types'] as const,
 };
 
-export function useReportTypes() {
+/** One page of report types (ADR-201) + the total under the same filters. */
+export function useReportTypes(query: ListReportTypesQuery) {
   return useQuery<ListReportTypesResponse>({
-    queryKey: reportTypesKeys.all,
-    queryFn: () => apiFetch<ListReportTypesResponse>('/report-types'),
+    queryKey: [...reportTypesKeys.all, 'list', query],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (query.sf) p.set('sf', query.sf);
+      p.set('limit', String(query.limit));
+      p.set('offset', String(query.offset));
+      return apiFetch<ListReportTypesResponse>(`/report-types?${p.toString()}`);
+    },
     placeholderData: (prev) => prev,
   });
 }

@@ -7,7 +7,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { isoDateFilter, likeFilter } from './report-helpers';
+import { isoDateFilter, likeFilter, REPORT_ROW_CAP } from './report-helpers';
 
 export const firstPassYieldReport: RegisteredReport = {
   definition: {
@@ -118,7 +118,7 @@ export const firstPassYieldReport: RegisteredReport = {
       WHERE TRUE
         ${machineFrag}
       ORDER BY x.item_code, x.op_seq, x.operation
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

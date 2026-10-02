@@ -1,6 +1,7 @@
 // Parts of one assembly (Equipment) SO from its BOM: Required = Qty per Set ×
 // Units; Reserved, Issued, Returned, Fitted, To Issue, Still Out.
 import type { SoMaterial, SoMaterialLine } from '@innovic/shared';
+import { RowMenu } from '@/ui/data';
 
 const n = (v: number): string => String(Math.round(v * 1000) / 1000);
 
@@ -9,9 +10,12 @@ export function SoMaterialTable({
   onRelease,
 }: {
   data: SoMaterial;
-  /** Planning only: a Release button on rows with Reserved > 0. */
+  /** Planning only: a ⋯ with "Release reservation" on rows with Reserved > 0.
+   *  Left out (Store's issue modal) → no ⋯ column at all. */
   onRelease?: ((line: SoMaterialLine) => void) | undefined;
 }): React.JSX.Element {
+  // The ⋯ column exists only when a row has something to release.
+  const showMenu = Boolean(onRelease) && data.lines.some((l) => l.reservedQty > 0);
   if (!data.hasBom && data.lines.length === 0) {
     return (
       <div className="empty-state">
@@ -40,6 +44,7 @@ export function SoMaterialTable({
             <th className="th-num">To Issue</th>
             <th className="th-num">Still Out</th>
             <th className="th-num">Available</th>
+            {showMenu ? <th aria-label="Actions" /> : null}
           </tr>
         </thead>
         <tbody>
@@ -58,21 +63,7 @@ export function SoMaterialTable({
               <td>{l.itemName || '—'}</td>
               <td className="mono td-num">{n(l.qtyPerSet)}</td>
               <td className="mono td-num">{n(l.requiredQty)}</td>
-              <td className="mono td-num">
-                {n(l.reservedQty)}
-                {onRelease && l.reservedQty > 0 ? (
-                  <div>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{ padding: '0 4px', fontSize: 10 }}
-                      onClick={() => onRelease(l)}
-                    >
-                      Release
-                    </button>
-                  </div>
-                ) : null}
-              </td>
+              <td className="mono td-num">{n(l.reservedQty)}</td>
               <td className="mono td-num">{n(l.issuedQty)}</td>
               <td className="mono td-num">{n(l.returnedQty)}</td>
               <td className="mono td-num">{n(l.fittedQty)}</td>
@@ -94,6 +85,23 @@ export function SoMaterialTable({
                   </div>
                 ) : null}
               </td>
+              {showMenu ? (
+                <td className="td-ctr">
+                  <RowMenu
+                    label={`Actions for ${l.itemCode}`}
+                    items={[
+                      {
+                        key: 'release',
+                        label: 'Release reservation',
+                        icon: 'x',
+                        group: 'workflow',
+                        hidden: l.reservedQty <= 0,
+                        onSelect: () => onRelease?.(l),
+                      },
+                    ]}
+                  />
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

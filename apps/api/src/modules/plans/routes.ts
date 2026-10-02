@@ -6,6 +6,7 @@ import {
   listPlansQuerySchema,
   releaseReservationInputSchema,
   reserveStockInputSchema,
+  unplannedOrdersQuerySchema,
   updatePlanInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
@@ -101,7 +102,8 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
   // Mirrors legacy renderPlanDashboard L10024–10041 when flt='unplanned'.
   app.get('/planning-dashboard/unplanned', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.getUnplannedOrders(req.user);
+    // ADR-201 — search / Sort & Filter / paging on the server.
+    return service.getUnplannedOrders(req.user, unplannedOrdersQuerySchema.parse(req.query));
   });
 
   // Stage 1 SO stock reservation — book in-stock qty to an SO line, or release

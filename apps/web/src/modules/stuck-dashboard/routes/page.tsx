@@ -13,14 +13,14 @@
 // Assign Task, and the row opens the Sales Order. Column sort / filter come from
 // the table's own ▾ header menus (ADR-200), alongside the page search.
 
-import type { StuckDashboardResponse, StuckItem } from '@innovic/shared';
+import type { StuckItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { matchesSearchTerm } from '@/components/shared/search-match';
-import { apiFetch } from '@/lib/api';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -31,12 +31,20 @@ import {
   type DataTableColumn,
   type RowMenuItem,
 } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader } from '@/ui/layout';
+import { useStuckDashboard } from '../api';
+
+const searchSchema = z.object({
+  search: z.string().optional(),
+  page: pageSearchParam,
+});
 
 export const stuckDashboardRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'stuck-dashboard',
+  validateSearch: searchSchema,
   component: StuckDashboardPage,
 });
 
@@ -54,6 +62,7 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
   return [
     {
       id: 'so_no',
+      sortFilterField: 'soNo',
       kind: 'code',
       header: 'SO No.',
       className: 'td-code',
@@ -70,6 +79,7 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
     },
     {
       id: 'stage',
+      sortFilterField: 'stage',
       kind: 'code',
       header: 'Stage',
       filterValue: (it) => it.stage,
@@ -77,6 +87,7 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
     },
     {
       id: 'customer',
+      sortFilterField: 'customer',
       kind: 'text',
       header: 'Customer',
       align: 'left',
@@ -86,6 +97,7 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
     },
     {
       id: 'stuck_for',
+      sortFilterField: 'days',
       kind: 'num',
       header: 'Stuck For',
       align: 'right',
@@ -95,6 +107,7 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
     },
     {
       id: 'threshold',
+      sortFilterField: 'threshold',
       kind: 'num',
       header: 'Threshold',
       align: 'right',
@@ -104,6 +117,7 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
     },
     {
       id: 'over_by',
+      sortFilterField: 'overBy',
       kind: 'num',
       header: 'Over By',
       align: 'right',
@@ -113,6 +127,7 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
     },
     {
       id: 'stuck_since',
+      sortFilterField: 'since',
       kind: 'date',
       header: 'Stuck Since',
       className: 'text3',
@@ -121,6 +136,7 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
     },
     {
       id: 'detail',
+      sortFilterField: 'detail',
       kind: 'text',
       header: 'Detail',
       align: 'left',
@@ -132,34 +148,41 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
 }
 
 function StuckDashboardPage(): React.JSX.Element {
-  const { data, isLoading, isFetching, isError, error } = useQuery<StuckDashboardResponse>({
-    queryKey: ['stuck-dashboard'],
-    queryFn: () => apiFetch<StuckDashboardResponse>('/stuck-dashboard'),
-    staleTime: 30_000,
-  });
+  const search = stuckDashboardRoute.useSearch();
+  const nav = stuckDashboardRoute.useNavigate();
   const navigate = useNavigate();
-  // Client-side search over the rows loaded — SO No., customer, stage, detail.
-  const [term, setTerm] = useState('');
+  // ADR-201: 25 rows a page; search + Sort & Filter run on the SERVER over
+  // every stuck activity (SO No., customer, stage, detail); any change → page 1.
+  const [term, setTerm] = useState(search.search ?? '');
+  useEffect(() => {
+    const t = normalizeSearchTerm(term);
+    const next = t === '' ? undefined : t;
+    if (next === search.search) return;
+    const id = window.setTimeout(() => {
+      void nav({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [term, search.search, nav]);
+  const sf = useServerSortFilter(TABLE_KEYS.stuckDashboard, () => {
+    void nav({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+  const onPage = useCallback(
+    (p: number) => void nav({ search: (prev) => ({ ...prev, page: p }) }),
+    [nav],
+  );
+  // Default order (server): grouped by stage, largest group first, most over
+  // threshold first inside a group — so same-stage rows stay adjacent.
+  const { data, isLoading, isFetching, isError, error } = useStuckDashboard({
+    search: search.search,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(search.page),
+  });
+  useClampPage(search.page, data?.total, onPage);
   // The row whose ⋯ → Assign Task popup is open; null = closed.
   const [assignFor, setAssignFor] = useState<StuckItem | null>(null);
-
-  // Keep the legacy ordering: group by stage, largest group first, rows inside a
-  // group in the server's most-over order — then flatten to one list so same-
-  // stage rows stay adjacent in the single table.
-  const rows = useMemo(() => {
-    const items = (data?.items ?? []).filter((it) =>
-      matchesSearchTerm([it.soNo, it.customer, it.stage, it.detail], term),
-    );
-    const grouped = new Map<string, StuckItem[]>();
-    for (const it of items) {
-      const arr = grouped.get(it.stage);
-      if (arr) arr.push(it);
-      else grouped.set(it.stage, [it]);
-    }
-    return [...grouped.entries()]
-      .sort((a, b) => b[1].length - a[1].length)
-      .flatMap(([, arr]) => arr);
-  }, [data, term]);
+  const rows = data?.items ?? [];
+  const filtered = Boolean(search.search) || sf.filtering;
 
   const columns = useMemo(() => stuckColumns(), []);
 
@@ -187,7 +210,7 @@ function StuckDashboardPage(): React.JSX.Element {
       <ListHeader
         title="Stuck Dashboard"
         icon="⚠"
-        count={rows.length}
+        count={data.total}
         noun="stuck activity"
         nounPlural="stuck activities"
         search={term}
@@ -239,8 +262,9 @@ function StuckDashboardPage(): React.JSX.Element {
               tableKey={TABLE_KEYS.stuckDashboard}
               columns={columns}
               rows={rows}
-              rowKey={(it, i) => `${it.soId}:${it.stage}:${i}`}
-              empty={term ? 'No stuck activities match.' : 'No stuck jobs.'}
+              sortFilterServer={sf}
+              rowKey={(it, i) => `${it.soId}:${it.stage}:${pageOffset(search.page) + i}`}
+              empty={filtered ? 'No stuck activities match.' : 'No stuck jobs.'}
               rowClassName={(it) => (over(it) > 5 ? ROW_TINT.late : ROW_TINT.pending)}
               onRowClick={(it) =>
                 void navigate({ to: '/sales-orders/$id', params: { id: it.soId } })
@@ -256,6 +280,14 @@ function StuckDashboardPage(): React.JSX.Element {
               ]}
             />
           </Panel>
+          <ListFooter
+            total={data.total}
+            noun="stuck activity"
+            nounPlural="stuck activities"
+            page={search.page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={onPage}
+          />
           {/* Thresholds on demand — a "?" with the day limits in its tooltip. */}
           <div
             className="text3"

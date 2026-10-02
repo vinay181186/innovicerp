@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 import { INVOICE_STATUSES } from '../enums/invoice-status';
+import { sfRawParamSchema } from './list-query';
 import { servicePoTaxTypeSchema } from './service-po';
 
 /** How an invoice's GST splits: 'sgst_cgst' (same state — half SGST, half
@@ -215,12 +216,25 @@ export const invoiceDetailSchema = invoiceRowSchema.extend({
 });
 export type InvoiceDetail = z.infer<typeof invoiceDetailSchema>;
 
+/** GET /invoices query (ADR-201). No `limit` → every invoice (as before). */
+export const listInvoicesQuerySchema = z.object({
+  /** Invoice No. / SO No. / customer name, contains. */
+  search: z.string().trim().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  offset: z.coerce.number().int().min(0).default(0),
+  sf: sfRawParamSchema,
+});
+export type ListInvoicesQuery = z.input<typeof listInvoicesQuerySchema>;
+
 export const listInvoicesResponseSchema = z.object({
   invoices: z.array(invoiceRowSchema),
+  /** Every invoice matching search + sf (not just this page). */
+  total: z.number().int().nonnegative(),
   /** Told, not inferred. `false` means the server stripped money it may not
    *  send; absent means money is present. See the note on the detail shape. */
   priceVisible: z.boolean(),
 
+  /** Over every invoice matching search + sf (ADR-201), never just the page. */
   summary: z.object({
     // Money — NULL when the viewer's access hides prices (counts stay).
     totalInvoiced: z.number().nullable(),

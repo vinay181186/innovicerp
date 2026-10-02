@@ -66,6 +66,8 @@ import {
   readSoLineCommitments,
 } from './line-commitments';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { SO_SF_COLUMNS } from './sf-columns';
 import { logSoEdit } from './edit-log';
 import {
   assertBomLinkable,
@@ -506,6 +508,11 @@ export async function listSalesOrders(
     const clientFrag = input.clientId ? sql`AND so.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND so.so_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND so.so_date <= ${input.toDate}::date` : sql``;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(SO_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(SO_SF_COLUMNS, sf, sql`so.so_date DESC, so.code DESC`);
 
     // Single query: headers LEFT JOIN line totals LEFT JOIN JC totals,
     // pagination + ordering inlined. jc_qty is the sum of order_qty across
@@ -599,13 +606,15 @@ export async function listSalesOrders(
         ${clientFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
       -- Newest first: today's order is the one being worked, and ordering by
       -- code ASC buried it at the bottom under every order ever raised. Sorted
       -- on so_date (not code) so a back-dated or imported order still lands by
       -- when it was placed; code DESC breaks same-day ties into a stable,
       -- newest-first order — a total ordering, which pagination needs to avoid
       -- rows shifting between pages. Covered by the (company_id, so_date) index.
-      ORDER BY so.so_date DESC, so.code DESC
+      -- A Sort & Filter sort goes first, with this order as its tie-breaker.
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -631,6 +640,7 @@ export async function listSalesOrders(
         ${clientFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
@@ -1687,14 +1697,17 @@ export async function updateSalesOrder(
     assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
     // When the client changes, snapshot the customer name from the master.
+    // The SAME clientId (e.g. a line delete that sends it only to satisfy the
+    // schema) is still validated but keeps the stored customer name.
     let snapshotClientName: string | null = null;
     if (input.header.clientId !== undefined && input.header.clientId !== null) {
-      snapshotClientName = await assertClientExists(
+      const masterName = await assertClientExists(
         tx,
         input.header.clientId,
         companyId,
         existingHdr.clientId,
       );
+      if (input.header.clientId !== existingHdr.clientId) snapshotClientName = masterName;
     }
 
     // Header update — only set the fields the caller provided.
@@ -1758,7 +1771,9 @@ export async function updateSalesOrder(
             .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
     const linesBefore = input.lines !== undefined ? before : null;
     if (input.lines !== undefined) {
-      await mergeLines(tx, id, companyId, input.lines, user, showMoney);
+      await mergeLines(tx, id, companyId, input.lines, user, showMoney, {
+        versionChecked: Boolean(input.expectedUpdatedAt),
+      });
 
       await reconcileAmendedLineReservations(tx, companyId, id, existingHdr.code, before, user);
     }
@@ -1981,6 +1996,11 @@ async function mergeLines(
    *  `rate` is then ignored on an EXISTING line so the stored figure survives.
    *  A NEW line still takes the input (there is no stored value to protect). */
   showMoney: boolean,
+  /** True when the save carried `expectedUpdatedAt` (already compared against
+   *  the locked header by the caller). A save that REMOVES a line must carry
+   *  it: the payload is "every line that should survive", so a payload built
+   *  from an old snapshot would silently delete a line someone added since. */
+  opts: { versionChecked: boolean },
 ): Promise<void> {
   const existing = await tx
     .select({
@@ -2029,6 +2049,11 @@ async function mergeLines(
   }
 
   const absentIds = existing.map((e) => e.id).filter((eid) => !seenInputIds.has(eid));
+  if (absentIds.length > 0 && !opts.versionChecked) {
+    throw new ValidationError(
+      'Reload the Sales Order and try again — a line can only be removed from the version you opened.',
+    );
+  }
 
   // S8 — a line's status moves only as SO_STATUS_MOVES allows (a closed-short
   // line is refused further down with its own sentence); a new line starts as

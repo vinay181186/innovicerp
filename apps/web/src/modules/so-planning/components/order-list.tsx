@@ -1,16 +1,17 @@
 // Level 1 of SO/JWSO Planning (PL-4b): the list of open orders, on the shared
-// FIT table (ADR-199, TABLE_KEYS.planningList). The rows are fetched whole (a
-// master that scrolls, not a server page), so they sort in memory via
-// useClientSort — the Plan Status column sorts by its label, not the raw enum.
+// FIT table (ADR-199, TABLE_KEYS.planningList). ADR-201: the server sends one
+// 25-row page already filtered and sorted, so the table draws the rows as
+// given and its Sort & Filter (▾) runs on the server (`sf`).
 // Split out of routes/workflow.tsx so that file stays under the 400-line rule.
 
 import type { PlanningSoListItem } from '@innovic/shared';
 import { useMemo } from 'react';
-import { DataTable, Panel, useClientSort } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
+import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { PageState } from '@/ui/layout';
 import { orderListColumns, orderRowTint } from './order-list-columns';
-import { ORDER_STATUS_LABEL, type Source } from './planning-shared';
+import type { Source } from './planning-shared';
 
 export function OrderList({
   src,
@@ -18,18 +19,16 @@ export function OrderList({
   loading,
   error,
   onOpen,
+  sf,
 }: {
   src: Source;
   items: PlanningSoListItem[];
   loading: boolean;
   error: string | null;
   onOpen: (soId: string) => void;
+  sf: ServerSortFilter;
 }): JSX.Element {
   const columns = useMemo(() => orderListColumns(src), [src]);
-  // Plan Status sorts by the shown label; everything else sorts off the field.
-  const { rows, sortBy, sortDir, onSort } = useClientSort(items, {
-    accessors: { planningStatus: (r) => ORDER_STATUS_LABEL[r.planningStatus] },
-  });
 
   if (error) {
     return <PageState state="error" message={error} />;
@@ -40,12 +39,12 @@ export function OrderList({
       <DataTable
         tableKey={TABLE_KEYS.planningList}
         columns={columns}
-        rows={rows}
+        rows={items}
         loading={loading}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
-        emptyText={`No open ${src === 'jw' ? 'JWSOs' : 'SOs'} to plan`}
+        sortFilterServer={sf}
+        emptyText={
+          sf.filtering ? 'No orders match.' : `No open ${src === 'jw' ? 'JWSOs' : 'SOs'} to plan`
+        }
         onRowClick={(so) => onOpen(so.soId)}
         rowClassName={(so) => orderRowTint(so.planningStatus)}
       />

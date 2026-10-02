@@ -8,6 +8,7 @@
 // NOT duplicate that write here.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const incomingQcPendingRowSchema = z.object({
   grnLineId: z.string().uuid(),
@@ -110,7 +111,30 @@ export const incomingQcResponseSchema = z.object({
   metrics: incomingQcMetricsSchema,
   pending: z.array(incomingQcPendingRowSchema),
   completed: z.array(incomingQcCompletedRowSchema),
+  /** Every pending / completed line matching the search + filters (ADR-201) —
+   *  the arrays above are one page of these. */
+  pendingTotal: z.number().int().nonnegative(),
+  completedTotal: z.number().int().nonnegative(),
 });
+
+// ADR-201 — GET /incoming-qc params. With none, the endpoint answers as it
+// always has (every pending line, the 20 most recent completed) — the QC Call
+// Register reads it that way. The Incoming QC screen pages both tables at 25:
+// search and each table's Sort & Filter run on the server over ALL rows. The
+// pipeline metrics never follow the search — they are the whole queue.
+export const incomingQcQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  /** One GRN line only — the Inspect popup / ?line= deep link reads its row
+   *  through this whatever page it is on. */
+  grnLineId: z.string().uuid().optional(),
+  pendingLimit: z.coerce.number().int().positive().max(1000).optional(),
+  pendingOffset: z.coerce.number().int().nonnegative().default(0),
+  completedLimit: z.coerce.number().int().positive().max(1000).default(20),
+  completedOffset: z.coerce.number().int().nonnegative().default(0),
+  pendingSf: sfRawParamSchema,
+  completedSf: sfRawParamSchema,
+});
+export type IncomingQcQuery = z.input<typeof incomingQcQuerySchema>;
 export type IncomingQcResponse = z.infer<typeof incomingQcResponseSchema>;
 
 // ─── Inspect action (Incoming QC Call Register — inline accept/reject) ───────

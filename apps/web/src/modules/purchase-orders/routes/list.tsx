@@ -11,9 +11,11 @@
 // Received · Pending · Value · PO Status — see components/po-list-columns.tsx.
 // Value keeps its price gate (API nulls totalAmount for viewers without price).
 //
-// Row actions (RowActions prop): Edit (edit tier, not closed), Create DC (edit
-// tier, Job Work / Service, not draft), Assign (open-ish POs) — the same gates
-// the retired card / sheet used, carried over verbatim.
+// Row ⋯ menu (RowActions items): Edit (edit tier, not closed) · Create DC
+// (Job Work / Service; DC entry rights, the server's rule; greyed with the
+// reason on a draft / closed / cancelled PO, which the server refuses) ·
+// Assign Task (open-ish POs; hidden for the read-only viewer role, which
+// POST /tasks refuses).
 //
 // Row tint by PO status (rowClassName + ROW_TINT): draft / qc_pending = pending,
 // closed = done, cancelled = cancelled; open and partial carry no tint (active).
@@ -37,9 +39,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { useSession } from '@/lib/session';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT, renderRowMenuLink } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { usePurchaseOrdersList } from '../api';
@@ -47,9 +52,9 @@ import { PoExpandedLines } from '../components/po-expanded-lines';
 import { purchaseOrderListColumns } from '../components/po-list-columns';
 import { PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 
-// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
-// PO list-query cap is 200; the count line flags a rare larger set.
-const LIST_LIMIT = 200;
+// ADR-201 (2026-10-02): 25 POs per page, loaded from the SERVER (was one
+// 200-row fetch); search / filters / Sort & Filter run on the server over ALL
+// POs and send the list back to page 1.
 
 // PO status → row tint (ADR-199 ROW_TINT). Real status enum only: draft and
 // qc_pending read as pending work, closed is done, cancelled is cancelled; the
@@ -67,7 +72,7 @@ const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(PO_STATUSES).optional(),
   poType: z.enum(PO_TYPES).optional(),
-  page: z.coerce.number().int().positive().default(1),
+  page: pageSearchParam,
 });
 
 export const purchaseOrdersListRoute = createRoute({
@@ -102,27 +107,49 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss POs. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.poList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
+  const offset = pageOffset(search.page);
   const query: ListPurchaseOrdersQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
       poType: search.poType,
-      limit: LIST_LIMIT,
-      offset: 0,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset,
     }),
-    [search.search, search.status, search.poType],
+    [sf.param, search.search, search.status, search.poType, offset],
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseOrdersList(query);
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  useClampPage(search.page, data?.total, gotoPage);
   // Tier-driven, per department (po_create sits in Purchase). Replaces the old
   // admin-or-manager flag, which collapsed all seven tiers into two and gave a
   // manager the same rights everywhere.
-  //   + New PO          -> entry (L2 Data Entry and up)
-  //   Edit / Create DC  -> edit  (L3 Editor and up; L2 creates but cannot alter)
+  //   + New PO     -> entry (L2 Data Entry and up)
+  //   Edit         -> edit  (L3 Editor and up; L2 creates but cannot alter)
+  //   Create DC    -> ospdc_create entry — the right the DC form and
+  //                   createDeliveryChallan check, not a PO right
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'po_create');
   const canAdd = perms.entry;
   const canEdit = perms.edit;
+  const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
+  const { data: me } = useSession();
+  const canAssign = Boolean(me) && me?.role !== 'viewer';
+  const [assignPo, setAssignPo] = useState<PurchaseOrderListItem | null>(null);
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
@@ -140,42 +167,46 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     });
   }, []);
 
-  const columns = useMemo(() => purchaseOrderListColumns(), []);
+  const columns = useMemo(
+    () => purchaseOrderListColumns({ canSeePrice: perms.price }),
+    [perms.price],
+  );
 
-  // Row actions — Edit · Create DC · Assign, with the gates the retired card and
-  // sheet used, unchanged. No View button: the row click opens the PO.
+  // Row ⋯ menu — Edit · Create DC · Assign Task. No View: the row click opens
+  // the PO.
   const rowActions = (po: PurchaseOrderListItem): React.JSX.Element => (
     <RowActions
       editTo={canEdit && po.status !== 'closed' ? `/purchase-orders/${po.id}/edit` : undefined}
-      renderLink={(p) => <Link {...p} />}
-      extra={
-        <>
-          {/* Job Work AND Service both send material out — same DC lane. */}
-          {canEdit && poSendsMaterialOut(po.poType) && po.status !== 'draft' ? (
-            <Link
-              to="/delivery-challans/new"
-              search={{ poId: po.id }}
-              className="btn btn-ghost btn-sm"
-              title="Create DC"
-            >
-              Create DC
-            </Link>
-          ) : null}
-          {po.status !== 'closed' && po.status !== 'cancelled' ? (
-            <AssignTaskButton
-              linkedRef={{
-                type: 'purchase_order',
-                id: po.id,
-                display: `PO ${po.code}`,
-                navPage: `/purchase-orders/${po.id}`,
-              }}
-              suggestedTitle={`Follow up ${po.code}`}
-              className="btn btn-ghost btn-sm btn-icon"
-              label=""
-            />
-          ) : null}
-        </>
-      }
+      renderLink={renderRowMenuLink}
+      items={[
+        {
+          // Job Work AND Service both send material out — same DC lane. The
+          // server (createDeliveryChallan) refuses a draft, closed or
+          // cancelled PO, so those grey out with the reason.
+          key: 'create-dc',
+          label: 'Create DC',
+          icon: 'truck',
+          group: 'workflow',
+          to: `/delivery-challans/new?poId=${encodeURIComponent(po.id)}`,
+          hidden: !canCreateDc || !poSendsMaterialOut(po.poType),
+          disabledReason:
+            po.status === 'draft'
+              ? 'Not approved yet'
+              : po.status === 'closed'
+                ? 'PO closed'
+                : po.status === 'cancelled'
+                  ? 'PO cancelled'
+                  : undefined,
+        },
+        {
+          key: 'assign',
+          label: 'Assign Task',
+          icon: 'user-round',
+          group: 'assign',
+          hidden: !canAssign || po.status === 'closed' || po.status === 'cancelled',
+          onSelect: () => setAssignPo(po),
+        },
+      ]}
     />
   );
 
@@ -192,7 +223,9 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   }
 
   const emptyText =
-    search.search || search.status || search.poType ? 'No POs match.' : 'No POs yet.';
+    sf.filtering || search.search || search.status || search.poType
+      ? 'No POs match.'
+      : 'No POs yet.';
 
   return (
     // `page-fill` (ADR-201): the page fills the content area and the TABLE is the
@@ -262,6 +295,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           </>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
             search: (prev) => ({
@@ -275,7 +309,10 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           });
         }}
         filtersActive={
-          search.status !== undefined || search.poType !== undefined || searchInput !== ''
+          sf.filtering ||
+          search.status !== undefined ||
+          search.poType !== undefined ||
+          searchInput !== ''
         }
         primary={
           canAdd ? (
@@ -301,6 +338,8 @@ function PurchaseOrdersListPage(): React.JSX.Element {
             rows={rows}
             loading={isLoading}
             emptyText={emptyText}
+            defaultHidden={['created_on']}
+            sortFilterServer={sf}
             onRowClick={(po) =>
               void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })
             }
@@ -319,7 +358,25 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter total={total} noun="purchase order" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="purchase order"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
+      {assignPo ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'purchase_order',
+            id: assignPo.id,
+            display: `PO ${assignPo.code}`,
+            navPage: `/purchase-orders/${assignPo.id}`,
+          }}
+          suggestedTitle={`Follow up ${assignPo.code}`}
+          onClose={() => setAssignPo(null)}
+        />
+      ) : null}
     </div>
   );
 }

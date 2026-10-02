@@ -4,6 +4,7 @@
 
 import { format } from 'date-fns';
 import { Loader2, X } from 'lucide-react';
+import { RowMenu } from '@/ui/data';
 import { usePrintTemplateRevisions } from '../api';
 
 interface Props {
@@ -74,7 +75,7 @@ export function RevisionsModal({ templateKey, blockName, onClose, onRestore }: P
                   <th style={{ width: 150 }}>Revision Date</th>
                   <th style={{ width: 130 }}>Revised By</th>
                   <th>Preview</th>
-                  <th style={{ width: 90 }} />
+                  <th style={{ width: 48 }} aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -92,14 +93,17 @@ export function RevisionsModal({ templateKey, blockName, onClose, onRestore }: P
                       {r.content.slice(0, 150)}
                       {r.content.length > 150 ? '…' : ''}
                     </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => onRestore(r.content)}
-                      >
-                        ↺ Restore
-                      </button>
+                    <td className="td-ctr">
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'restore',
+                            label: 'Restore',
+                            icon: 'refresh-cw',
+                            onSelect: () => onRestore(r.content),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

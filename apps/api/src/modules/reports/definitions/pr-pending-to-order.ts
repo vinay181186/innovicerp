@@ -5,7 +5,13 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { dateCell as dateOrNull, enumFilter, isoDateFilter, likeFilter } from './report-helpers';
+import {
+  dateCell as dateOrNull,
+  enumFilter,
+  isoDateFilter,
+  likeFilter,
+  REPORT_ROW_CAP,
+} from './report-helpers';
 
 const PR_TYPES = ['standard', 'jw_osp', 'service'];
 
@@ -112,7 +118,7 @@ export const prPendingToOrderReport: RegisteredReport = {
       ) x
       WHERE x.pr_qty - x.ordered_qty > 0
       ORDER BY x.days_pending DESC, x.pr_code
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

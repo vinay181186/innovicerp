@@ -121,6 +121,8 @@ export const globalSearchQuerySchema = z.object({
     .positive()
     .max(GLOBAL_SEARCH_MAX_LIMIT)
     .default(GLOBAL_SEARCH_DEFAULT_LIMIT),
+  /** Rows to skip — the full Search page pages at 25 (ADR-201). */
+  offset: z.coerce.number().int().nonnegative().default(0),
 });
 export type GlobalSearchQuery = z.infer<typeof globalSearchQuerySchema>;
 
@@ -152,6 +154,9 @@ export const globalSearchResponseSchema = z.object({
   items: z.array(globalSearchResultSchema),
   /** True when more rows matched than `limit` allowed — the page says "narrow it down". */
   truncated: z.boolean(),
+  /** Rows matching across the page's kind(s) — `kind` alone, or every viewable kind
+   *  — over the WHOLE result, for the page's Prev / Next pager. */
+  total: z.number().int().nonnegative(),
   /** Matches per kind across the WHOLE result (not just the page), for the count strip.
    *  Only kinds the caller may view appear; a hidden kind is absent, never 0. */
   counts: z.record(globalSearchKindSchema, z.number().int().nonnegative()),

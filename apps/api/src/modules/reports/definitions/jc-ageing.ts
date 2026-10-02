@@ -4,6 +4,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 export const jcAgeingReport: RegisteredReport = {
   definition: {
@@ -75,7 +76,7 @@ export const jcAgeingReport: RegisteredReport = {
         AND jc.deleted_at IS NULL
         ${statusFrag}
       ORDER BY jc.jc_date ASC, jc.code
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

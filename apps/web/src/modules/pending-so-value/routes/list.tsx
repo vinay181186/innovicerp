@@ -8,6 +8,10 @@
 // hand-written <tfoot> row. ▸ opens SO Date, Invoiced Value and Received
 // (default-hidden columns). The columns, money formatter and row tint live in
 // components/psv-columns.tsx. See docs/PARITY/pendingsovalue.md.
+//
+// ADR-201 (2026-10-02): 25 SOs a page with Prev / Next (page in the URL). The
+// SO Filter, the search and Sort & Filter run on the server over every SO; the
+// KPI strip and the totals row are the server's totals over every matching SO.
 
 import type {
   PendingSoValueFilter,
@@ -15,12 +19,16 @@ import type {
   PendingSoValueRow,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, StatStrip } from '@/ui/data';
 import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
 import { ListFooter } from '@/ui/layout';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { TEAL, inr, psvColumns, psvRowTint } from '../components/psv-columns';
 import { usePendingSoValue } from '../api';
@@ -28,6 +36,7 @@ import { usePendingSoValue } from '../api';
 export const pendingSoValueRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'pending-so-value',
+  validateSearch: z.object({ page: pageSearchParam }),
   component: PendingSoValuePage,
 });
 
@@ -43,28 +52,51 @@ const pct = (a: number, b: number): string => (b > 0 ? `${Math.round((a / b) * 1
 function PendingSoValuePage(): React.JSX.Element {
   const [filter, setFilter] = useState<PendingSoValueFilter>('open');
   const [search, setSearch] = useState<string>('');
+  const [term, setTerm] = useState<string>('');
   const navigate = pendingSoValueRoute.useNavigate();
-  const { data, isLoading, isError, error } = usePendingSoValue(filter);
-
-  const filtered = useMemo(() => {
-    if (!data) return [];
-    const q = search.trim().toLowerCase();
-    if (!q) return data.rows;
-    return data.rows.filter((r) => `${r.soCode} ${r.customerName ?? ''}`.toLowerCase().includes(q));
-  }, [data, search]);
+  const { page } = pendingSoValueRoute.useSearch();
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: { page: p }, replace: true });
+    },
+    [navigate],
+  );
+  // The search goes to the server 300 ms after typing stops → page 1.
+  useEffect(() => {
+    const next = normalizeSearchTerm(search);
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term, gotoPage]);
+  const sf = useServerSortFilter(TABLE_KEYS.pendingSoValue, () => gotoPage(1));
+  const { data, isLoading, isError, error } = usePendingSoValue({
+    filter,
+    search: term || undefined,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
+  });
+  useClampPage(page, data?.total, gotoPage);
+  const rows = data?.rows ?? [];
 
   // Money hidden for L1 Viewers: the API nulls every value on this report, so
   // the KPI strip, the money columns and the totals row are dropped. Told by
   // the server, not inferred from a null money field.
   const priceHidden = !!data && !data.priceVisible;
   const today = todayIst();
-  const columns = useMemo(() => psvColumns(priceHidden, today), [priceHidden, today]);
+  const columns = useMemo(
+    () => psvColumns(priceHidden, today, data?.totals),
+    [priceHidden, today, data?.totals],
+  );
   const defaultHidden = priceHidden ? ['so_date'] : ['so_date', 'invoiced_value', 'received_value'];
 
   const emptyText =
-    data && data.rows.length === 0
-      ? `No SOs in ${FILTERS.find((f) => f.key === filter)?.label ?? 'this filter'}.`
-      : 'No SOs match.';
+    term || sf.filtering
+      ? 'No SOs match.'
+      : `No SOs in ${FILTERS.find((f) => f.key === filter)?.label ?? 'this filter'}.`;
 
   return (
     <ReportShell
@@ -76,7 +108,10 @@ function PendingSoValuePage(): React.JSX.Element {
               id="psv-filter"
               className="innovic-select"
               value={filter}
-              onChange={(e) => setFilter(e.target.value as PendingSoValueFilter)}
+              onChange={(e) => {
+                setFilter(e.target.value as PendingSoValueFilter);
+                gotoPage(1);
+              }}
             >
               {FILTERS.map((f) => (
                 <option key={f.key} value={f.key}>
@@ -100,10 +135,21 @@ function PendingSoValuePage(): React.JSX.Element {
       onClear={() => {
         setFilter('open');
         setSearch('');
+        setTerm('');
+        sf.clearFilters();
+        gotoPage(1);
       }}
       kpis={data && !priceHidden ? <KpiStrip totals={data.totals} /> : undefined}
       footer={
-        data ? <ListFooter total={data.rows.length} shown={filtered.length} noun="SO" /> : null
+        data ? (
+          <ListFooter
+            total={data.total}
+            noun="SO"
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPage}
+          />
+        ) : null
       }
     >
       {isError ? (
@@ -121,14 +167,16 @@ function PendingSoValuePage(): React.JSX.Element {
           <DataTable<PendingSoValueRow>
             tableKey={TABLE_KEYS.pendingSoValue}
             columns={columns}
-            rows={filtered}
+            rows={rows}
             rowKey={(r) => r.soId}
             loading={isLoading}
+            sortFilterServer={sf}
             empty={emptyText}
             defaultHidden={defaultHidden}
             // The engine's column-following totals replace the old hand-written
-            // <tfoot>: each money column's `total` sits under its own column and
-            // moves with it into ▸. No totals row for a Viewer (no money).
+            // <tfoot>: each money column's `total` (the SERVER's sum over every
+            // matching SO) sits under its own column and moves with it into ▸.
+            // No totals row for a Viewer (no money).
             showTotals={!priceHidden}
             totalsLabel="Total"
             rowClassName={(r) => psvRowTint(r, today)}

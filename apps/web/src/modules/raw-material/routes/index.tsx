@@ -10,9 +10,10 @@
 // the two lists have nothing in common.
 
 import { createRoute } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { pageSearchParam } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { GradeTab } from '../components/grade-tab';
 import { SizeTab } from '../components/size-tab';
@@ -20,6 +21,8 @@ import { SizeTab } from '../components/size-tab';
 const searchSchema = z.object({
   tab: z.enum(['size']).optional(),
   search: z.string().optional(),
+  // ADR-201: the open tab's page (25 rows); a tab switch / new search → 1.
+  page: pageSearchParam,
 });
 
 export const rawMaterialRoute = createRoute({
@@ -57,10 +60,17 @@ function RawMaterialPage(): React.JSX.Element {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
-      void navigate({ search: (prev) => ({ ...prev, search: next }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
+
+  const onPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -122,6 +132,8 @@ function RawMaterialPage(): React.JSX.Element {
           term={search.search}
           searchInput={searchInput}
           onSearchInput={setSearchInput}
+          page={search.page}
+          onPage={onPage}
           tabs={tabStrip}
         />
       ) : (
@@ -129,6 +141,8 @@ function RawMaterialPage(): React.JSX.Element {
           term={search.search}
           searchInput={searchInput}
           onSearchInput={setSearchInput}
+          page={search.page}
+          onPage={onPage}
           tabs={tabStrip}
         />
       )}

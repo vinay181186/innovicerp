@@ -4,6 +4,7 @@
 // counted − snapshot, so movements made after the count stay real.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const STOCK_COUNT_PURPOSES = ['opening', 'periodic'] as const;
 export type StockCountPurpose = (typeof STOCK_COUNT_PURPOSES)[number];
@@ -72,6 +73,8 @@ export type CancelStockCountInput = z.infer<typeof cancelStockCountInputSchema>;
 export const listStockCountsQuerySchema = z.object({
   status: z.enum(STOCK_COUNT_STATUSES).optional(),
   search: z.string().trim().max(100).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

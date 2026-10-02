@@ -11,6 +11,10 @@
 // their own files under ../components. This route was split (was 774 lines) to
 // stay under the file-size rule.
 //
+// ADR-201 (2026-10-02): Open Job Cards and Available Now page at 25 from the
+// server (own endpoints, page in component state, Prev / Next); Available Now
+// sorts / filters on the server (▾). Counts are the server's full-scope ones.
+//
 // Data reuse (no figure is recomputed in React — CLAUDE.md rule 1):
 //  - "Machine-wise Pending Work" reads GET /machine-loading via
 //    useMachineLoading(); ops are grouped by machine for display only.
@@ -18,12 +22,15 @@
 
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { useMachineLoading } from '@/modules/machine-loading/api';
 import { JcCard } from '../components/jc-card';
@@ -36,7 +43,7 @@ import {
   prodReadyRowTint,
 } from '../components/ready-columns';
 import { SupplyChainPanel } from '../components/supply-chain-panel';
-import { useProductionDashboard } from '../api';
+import { useOpenJobCards, useProductionDashboard, useReadyOps } from '../api';
 
 export const productionDashboardRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -48,9 +55,25 @@ function ProductionDashboardPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useProductionDashboard();
   const machine = useMachineLoading();
   const c = data?.counters;
-  const openJobCards = data?.openJobCards ?? [];
-  const readyToProcess = data?.readyToProcess ?? [];
   const supplyChain = data?.supplyChain;
+  // Open Job Cards — 25 cards a page.
+  const [jcPage, setJcPage] = useState(1);
+  const onJcPage = useCallback((p: number) => setJcPage(p), []);
+  const jcs = useOpenJobCards({ limit: LIST_PAGE_SIZE, offset: pageOffset(jcPage) });
+  useClampPage(jcPage, jcs.data?.total, onJcPage);
+  const openJobCards = jcs.data?.items ?? [];
+  // Available Now — 25 ops a page, server Sort & Filter (any change → page 1).
+  const [readyPage, setReadyPage] = useState(1);
+  const onReadyPage = useCallback((p: number) => setReadyPage(p), []);
+  const readySf = useServerSortFilter(TABLE_KEYS.prodDashboardReady, () => setReadyPage(1));
+  const ready = useReadyOps({
+    sf: readySf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(readyPage),
+  });
+  useClampPage(readyPage, ready.data?.total, onReadyPage);
+  const readyToProcess = ready.data?.items ?? [];
+  const readyTotal = ready.data?.total ?? 0;
   // ▶ Start / ✚ Log on the Ready rows open Op Entry — the same gate the Job
   // Queue uses for the same two links.
   const { data: eff } = useMyAccess();
@@ -138,17 +161,26 @@ function ProductionDashboardPage(): React.JSX.Element {
                 openJobCards.map((jc) => <JcCard key={jc.jobCardId} jc={jc} />)
               )}
             </div>
+            <div style={{ padding: '0 12px 10px' }}>
+              <ListFooter
+                total={jcs.data?.total ?? 0}
+                noun="open job card"
+                page={jcPage}
+                pageSize={LIST_PAGE_SIZE}
+                onPage={onJcPage}
+              />
+            </div>
           </div>
 
           {/* Available Now — the MAIN list, ADR-199 fit table. Legacy renders
-              this panel only when readyOps is non-empty (no empty state). */}
-          {readyToProcess.length > 0 ? (
+              this panel only when readyOps is non-empty (no empty state); it
+              stays up while a ▾ filter is on so the filter can be cleared. */}
+          {readyTotal > 0 || readySf.filtering ? (
             <div className="panel" style={{ marginBottom: 16 }}>
               <div className="panel-hdr">
                 <span className="panel-title">Available Now</span>
                 <span className="text3" style={{ fontSize: 11 }}>
-                  {/* Server's full-scope count. `readyToProcess` is LIMIT 100,
-                      so binding .length here froze the figure at 100. */}
+                  {/* Server's full-scope count (every ready op, not the page). */}
                   {c?.readyOps ?? 0} operations
                 </span>
               </div>
@@ -157,13 +189,23 @@ function ProductionDashboardPage(): React.JSX.Element {
                 columns={prodReadyColumns()}
                 rows={readyToProcess}
                 rowKey={(op) => op.jcOpId}
-                sortFilter={false}
+                sortFilterServer={readySf}
+                emptyText="No operations match."
                 defaultPinned={PROD_READY_DEFAULT_PINNED}
                 defaultHidden={PROD_READY_DEFAULT_HIDDEN}
                 rowClassName={prodReadyRowTint}
                 rowMenu={(op) => prodReadyRowMenu(op, canOpEntry)}
                 renderLink={renderJcOpsLink}
               />
+              <div style={{ padding: '0 12px 10px' }}>
+                <ListFooter
+                  total={readyTotal}
+                  noun="operation"
+                  page={readyPage}
+                  pageSize={LIST_PAGE_SIZE}
+                  onPage={onReadyPage}
+                />
+              </div>
             </div>
           ) : null}
 

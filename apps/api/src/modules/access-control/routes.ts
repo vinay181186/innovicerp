@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { listUserAccessQuerySchema } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import { saveUserAccessInputSchema } from './schema';
@@ -17,7 +18,7 @@ export async function accessControlRoutes(app: FastifyInstance): Promise<void> {
   // Admin matrix list — one row per user with counts.
   app.get('/access-control/users', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listUserAccess(req.user);
+    return service.listUserAccess(req.user, listUserAccessQuerySchema.parse(req.query));
   });
 
   // Admin: one user's full matrix (for Configure modal).

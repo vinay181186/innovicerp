@@ -6,6 +6,7 @@
 // IN-PMI-#####.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const partyMaterialIssueSchema = z.object({
   id: z.string().uuid(),
@@ -85,9 +86,7 @@ export const listPartyMaterialIssuesResponseSchema = z.object({
   items: z.array(partyMaterialIssueListItemSchema),
   total: z.number().int().nonnegative(),
 });
-export type ListPartyMaterialIssuesResponse = z.infer<
-  typeof listPartyMaterialIssuesResponseSchema
->;
+export type ListPartyMaterialIssuesResponse = z.infer<typeof listPartyMaterialIssuesResponseSchema>;
 
 /** List filters for the Party Material Issue register.
  *
@@ -104,6 +103,8 @@ export type ListPartyMaterialIssuesResponse = z.infer<
  *  in a query. */
 export const listPartyMaterialIssuesQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(500).default(200),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

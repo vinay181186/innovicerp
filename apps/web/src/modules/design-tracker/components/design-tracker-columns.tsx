@@ -8,7 +8,7 @@
 // Hours, Booked Hours (design_work_log roll-up, the list's totalHours).
 // Numbers (Design Rev, Booked Hours, Estimated Hours) are right-aligned.
 
-import { type DesignTrackerListItem } from '@innovic/shared';
+import { DESIGN_TRACKER_STATUSES, type DesignTrackerListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
@@ -40,6 +40,9 @@ export function designTrackerRowTint(
   return undefined;
 }
 
+/** Design Status tick list for the server Sort & Filter (ADR-200). */
+const STATUS_OPTIONS = DESIGN_TRACKER_STATUSES.map((v) => ({ value: v, label: v }));
+
 export function designTrackerColumns(opts: {
   /** IST yyyy-mm-dd for the overdue check — computed once by the route. */
   today: string;
@@ -55,6 +58,7 @@ export function designTrackerColumns(opts: {
           {d.code}
         </span>
       ),
+      sortFilterField: 'code',
     },
     {
       id: 'so_no',
@@ -65,6 +69,7 @@ export function designTrackerColumns(opts: {
           {d.soCodeText ?? '—'}
         </span>
       ),
+      sortFilterField: 'soCode',
     },
     {
       // POL — the CUSTOMER's own purchase-order line number off the SO line
@@ -79,6 +84,7 @@ export function designTrackerColumns(opts: {
           {d.clientPoLineNo ?? '—'}
         </span>
       ),
+      sortFilterField: 'clientPoLineNo',
     },
     {
       id: 'item_code',
@@ -89,6 +95,7 @@ export function designTrackerColumns(opts: {
           {itemCodeWithRev(d.itemCodeText, d.itemRevision, '') || '—'}
         </span>
       ),
+      sortFilterField: 'itemCode',
     },
     {
       id: 'item_name',
@@ -98,6 +105,7 @@ export function designTrackerColumns(opts: {
       ellipsis: true,
       render: (d) => d.itemNameText ?? '—',
       title: (d) => d.itemNameText ?? '',
+      sortFilterField: 'itemName',
     },
     {
       id: 'designer',
@@ -106,12 +114,14 @@ export function designTrackerColumns(opts: {
       align: 'left',
       ellipsis: true,
       render: (d) => d.designer || '—',
+      sortFilterField: 'designer',
       title: (d) => d.designer,
     },
     {
       id: 'due_date',
       header: 'Due Date',
       kind: 'date',
+      sortFilterField: 'dueDate',
       className: 'mono',
       nowrap: true,
       render: (d) => {
@@ -129,6 +139,9 @@ export function designTrackerColumns(opts: {
       kind: 'badge',
       nowrap: true,
       render: (d) => <span className={`badge ${statusClass(d.status)}`}>{d.status}</span>,
+      sortFilterField: 'status',
+      filterType: 'list',
+      filterOptions: STATUS_OPTIONS,
     },
     {
       id: 'revision',
@@ -138,6 +151,8 @@ export function designTrackerColumns(opts: {
       className: 'mono fw-700',
       nowrap: true,
       filterValue: (d) => d.revision,
+      sortFilterField: 'revision',
+      filterType: 'num',
       render: (d) => d.revision,
     },
     {
@@ -148,6 +163,8 @@ export function designTrackerColumns(opts: {
       className: 'mono fw-700',
       nowrap: true,
       filterValue: (d) => d.totalHours,
+      sortFilterField: 'bookedHours',
+      filterType: 'num',
       render: (d) => (
         <span style={{ color: d.totalHours > d.estimatedHours ? 'var(--red)' : 'var(--green)' }}>
           {d.totalHours}
@@ -162,6 +179,8 @@ export function designTrackerColumns(opts: {
       className: 'mono',
       nowrap: true,
       filterValue: (d) => d.estimatedHours,
+      sortFilterField: 'estimatedHours',
+      filterType: 'num',
       render: (d) => <span style={{ color: 'var(--text3)' }}>{d.estimatedHours}h</span>,
     },
   ];

@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
 
 // Shared, PROVEN step helpers extracted from the green Case 1 run. Reused by the
 // case specs so each flow doesn't re-debug the same forms. All write to prod
@@ -56,7 +57,7 @@ export async function planExecuteInhouse(
   await expect(page.getByText(soNo).first()).toBeVisible({ timeout: 15_000 });
   await page.getByText(soNo).first().click();
   await page.waitForTimeout(2000);
-  await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
+  await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
   await page.waitForTimeout(1500);
   await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);

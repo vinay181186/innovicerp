@@ -5,7 +5,7 @@
 // (HTML L7570) + _dpRenderDetail (L7623) + all helper modals.
 // Numbering: DP-NNNN / DCR-NNNN / DCN-NNNN.
 
-import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type {
   AddDesignCommentInput,
   CreateDesignDcnInput,
@@ -43,6 +43,15 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import {
+  DESIGN_PROJECT_FROM,
+  DESIGN_PROJECT_SF_COLUMNS,
+  OPEN_ISSUES_SQL,
+  TASK_DONE_SQL,
+  TASK_PROGRESS_SQL,
+  TASK_TOTAL_SQL,
+} from './sf-columns';
 import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
@@ -101,20 +110,39 @@ export async function listDesignProjects(
   user: AuthContext,
 ): Promise<ListDesignProjectsResponse> {
   const companyId = requireCompany(user);
+  // ADR-201: the screen asks for one 25-row page. Search + Sort & Filter
+  // (ADR-200) narrow the list, its `total` and every summary figure; the
+  // Project filter (active / released / hold) narrows the list, `total` and
+  // the Tasks / Open Issues strip, but not the dropdown's own status counts
+  // (each option counts its own rows). Tasks / Open Issues are summed over
+  // the listed projects' own tasks and issues.
+  const sf = readSf(input.sf);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
       ? sql`AND (
-          dp.code ILIKE ${term}
-          OR dp.project_name ILIKE ${term}
-          OR dp.so_code_text ILIKE ${term}
-          OR dp.client_text ILIKE ${term}
+          dp.code ILIKE ${term} ESCAPE '\\'
+          OR dp.project_name ILIKE ${term} ESCAPE '\\'
+          OR dp.so_code_text ILIKE ${term} ESCAPE '\\'
+          OR dp.client_text ILIKE ${term} ESCAPE '\\'
         )`
       : sql``;
     let filterFrag = sql``;
     if (input.filter === 'active') filterFrag = sql`AND dp.status = 'Design Active'`;
     else if (input.filter === 'released') filterFrag = sql`AND dp.status = 'Released'`;
     else if (input.filter === 'hold') filterFrag = sql`AND dp.status = 'On Hold'`;
+
+    const fromWhere = sql`
+      ${DESIGN_PROJECT_FROM}
+      WHERE dp.company_id = ${companyId}::uuid
+        AND dp.deleted_at IS NULL
+        ${searchFrag}
+        ${sfWhere(DESIGN_PROJECT_SF_COLUMNS, sf)}`;
+    const orderBy = sfOrderBy(
+      DESIGN_PROJECT_SF_COLUMNS,
+      sf,
+      sql`dp.created_at DESC, dp.code DESC, dp.id DESC`,
+    );
 
     const result = await tx.execute(sql`
       SELECT
@@ -136,66 +164,35 @@ export async function listDesignProjects(
         dp.created_at AS "createdAt", dp.created_by AS "createdBy",
         dp.updated_at AS "updatedAt", dp.updated_by AS "updatedBy",
         dp.deleted_at AS "deletedAt",
-        COALESCE(t.task_total, 0)::int AS "taskTotal",
-        COALESCE(t.task_done, 0)::int AS "taskDone",
-        CASE WHEN COALESCE(t.task_total, 0) > 0
-          THEN ROUND(COALESCE(t.task_done, 0)::numeric * 100 / t.task_total)::int
-          ELSE 0
-        END AS "taskProgressPct",
-        COALESCE(i.open_count, 0)::int AS "openIssuesCount"
-      FROM public.design_projects dp
-      LEFT JOIN LATERAL (
-        SELECT
-          COUNT(*)::int AS task_total,
-          COUNT(*) FILTER (WHERE status = 'Completed')::int AS task_done
-        FROM public.design_tasks
-        WHERE design_project_id = dp.id AND deleted_at IS NULL
-      ) t ON true
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS open_count
-        FROM public.design_issues
-        WHERE design_project_id = dp.id
-          AND deleted_at IS NULL
-          AND status IN ('Open', 'In Progress')
-      ) i ON true
-      WHERE dp.company_id = ${companyId}::uuid
-        AND dp.deleted_at IS NULL
-        ${searchFrag}
+        ${TASK_TOTAL_SQL} AS "taskTotal",
+        ${TASK_DONE_SQL} AS "taskDone",
+        ${TASK_PROGRESS_SQL} AS "taskProgressPct",
+        ${OPEN_ISSUES_SQL} AS "openIssuesCount"
+      ${fromWhere}
         ${filterFrag}
-      ORDER BY dp.created_at DESC, dp.code DESC
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(designProjects.companyId, companyId), isNull(designProjects.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(designProjects)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
-
     const sumRows = (await tx.execute(sql`
       SELECT
-        (SELECT COUNT(*)::int FROM public.design_projects
-          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL) AS total,
-        (SELECT COUNT(*)::int FROM public.design_projects
-          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
-          AND status = 'Design Active') AS active,
-        (SELECT COUNT(*)::int FROM public.design_projects
-          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
-          AND status = 'Released') AS released,
-        (SELECT COUNT(*)::int FROM public.design_projects
-          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
-          AND status = 'On Hold') AS on_hold,
-        (SELECT COUNT(*)::int FROM public.design_tasks
-          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL) AS total_tasks,
-        (SELECT COUNT(*)::int FROM public.design_tasks
-          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
-          AND status = 'Completed') AS done_tasks,
-        (SELECT COUNT(*)::int FROM public.design_issues
-          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
-          AND status IN ('Open','In Progress')) AS open_issues
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE dp.status = 'Design Active')::int AS active,
+        COUNT(*) FILTER (WHERE dp.status = 'Released')::int AS released,
+        COUNT(*) FILTER (WHERE dp.status = 'On Hold')::int AS on_hold
+      ${fromWhere}
     `)) as unknown as Array<Record<string, unknown>>;
-    const sum = sumRows[0] ?? {};
+    const listRows = (await tx.execute(sql`
+      SELECT
+        COUNT(*)::int AS listed,
+        COALESCE(SUM(${TASK_TOTAL_SQL}), 0)::int AS total_tasks,
+        COALESCE(SUM(${TASK_DONE_SQL}), 0)::int AS done_tasks,
+        COALESCE(SUM(${OPEN_ISSUES_SQL}), 0)::int AS open_issues
+      ${fromWhere}
+        ${filterFrag}
+    `)) as unknown as Array<Record<string, unknown>>;
+    const sum = { ...(sumRows[0] ?? {}), ...(listRows[0] ?? {}) };
+    const total = Number(sum['listed'] ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toProjectListItem);
     return {

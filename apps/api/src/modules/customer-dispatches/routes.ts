@@ -1,7 +1,13 @@
 import type { FastifyInstance } from 'fastify';
-import { activityReasonSchema, createCustomerDispatchInputSchema } from '@innovic/shared';
+import {
+  activityReasonSchema,
+  createCustomerDispatchInputSchema,
+  customerDispatchRegisterQuerySchema,
+  listCustomerDispatchesQuerySchema,
+} from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { listDispatchRegister } from './register';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -11,12 +17,12 @@ const cancelDispatchBodySchema = z.object({ reason: activityReasonSchema });
 export async function customerDispatchesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/customer-dispatches', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listDispatches(req.user);
+    return service.listDispatches(listCustomerDispatchesQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/customer-dispatches/register', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listDispatchRegister(req.user);
+    return listDispatchRegister(customerDispatchRegisterQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/customer-dispatches/so-options', async (req) => {

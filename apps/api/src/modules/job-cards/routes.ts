@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { activityReasonSchema } from '@innovic/shared';
 import { AuthenticationError } from '../../lib/errors';
 import {
+  jcStatusCountsQuerySchema,
   jobCardCreateInputSchema,
   jobCardUpdateInputSchema,
   listJobCardsQuerySchema,
@@ -18,6 +19,14 @@ export async function jobCardsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listJobCardsQuerySchema.parse(req.query);
     return service.listJobCards(query, req.user);
+  });
+
+  // JC Status dropdown counts (ADR-201) — every card the list's other filters
+  // match, never just the loaded page.
+  app.get('/job-cards/status-counts', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = jcStatusCountsQuerySchema.parse(req.query);
+    return service.jobCardStatusCounts(query, req.user);
   });
 
   app.post('/job-cards', async (req, reply) => {

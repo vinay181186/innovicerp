@@ -1,12 +1,14 @@
 // One row of the per-order Planning line table (PL-4b level 2). Split out of
 // routes/workflow.tsx (ADR-199 table standard) so the detail view stays under
-// the 400-line rule. This is the interactive planning cascade — the "+ Plan" /
-// "+ PR" / Allocate / Release actions and the plan/PR chips — NOT one of the two
-// list surfaces, so it keeps its hand-built fixed-layout table unchanged.
+// the 400-line rule. This is the interactive planning cascade — the plan/PR
+// chips and the line's ⋯ Workflow (Plan · Raise PR · BOM Planning · Equipment
+// BOM · Allocate · Release) — NOT one of the two list surfaces, so it keeps its
+// hand-built fixed-layout table.
 
 import type { PlanningDetailResponse, PlanningLine } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { RowMenu, type RowMenuItem } from '@/ui/data';
 import type { useExecutePlan } from '@/modules/plans/api';
 import { allocateCap, lineFacts } from './reservation-modals';
 import { PlanChip, PrChip } from './plan-chip';
@@ -46,8 +48,8 @@ export const LINE_COLS: { key: string; label: string; width: number; title?: str
   },
   { key: 'due', label: 'Due Date', width: 6 },
   { key: 'status', label: 'Plan Status', width: 7 },
-  { key: 'plans', label: 'Plans', width: 19 },
-  { key: 'action', label: 'Action', width: 10 },
+  { key: 'plans', label: 'Plans', width: 25 },
+  { key: 'action', label: '', width: 4, title: 'Actions' },
 ];
 
 /** A cell that may hold long text: wraps inside its fixed column instead of
@@ -70,6 +72,74 @@ export function OrderLineRow({
   onViewJc: (jcId: string) => void;
 }): JSX.Element {
   const status = lineStatusOf(line);
+  const cap = line.itemId ? allocateCap(lineFacts(so.soCode, line)) : 0;
+  // The line's ⋯ — every item opens its modal (each modal guards its own save).
+  // Gates follow the server: Plan / BOM / Allocate / Raise PR need plan_create
+  // entry; Release needs edit ("an L2 data-entry planner may book, not
+  // un-book", plans/service.ts releaseReservation).
+  const items: RowMenuItem[] = [
+    {
+      key: 'create',
+      label: `Plan ${line.remaining}`,
+      icon: 'plus',
+      group: 'workflow',
+      hidden:
+        !perms.entry ||
+        line.itemProcurementType === 'buy' ||
+        line.hasEquipmentBom ||
+        line.remaining <= 0,
+      onSelect: () => setModal({ kind: 'create', soLineId: line.soLineId }),
+    },
+    {
+      // ADR-171: a BUY line is purchased, not planned. A JWSO line is the
+      // customer's own material and is never bought in.
+      key: 'raise-pr',
+      label: `Raise PR (${line.remaining})`,
+      icon: 'plus',
+      group: 'workflow',
+      hidden:
+        !perms.entry ||
+        line.itemProcurementType !== 'buy' ||
+        so.source === 'jw' ||
+        line.remaining <= 0,
+      onSelect: () => setModal({ kind: 'raise-pr', soLineId: line.soLineId }),
+    },
+    {
+      key: 'assembly-bom',
+      label: `BOM Planning (${line.bomPartsCount})`,
+      icon: 'package',
+      group: 'workflow',
+      hidden: !perms.entry || !line.hasAssemblyBom,
+      onSelect: () => setModal({ kind: 'assembly-bom', soLineId: line.soLineId }),
+    },
+    {
+      key: 'equip-bom',
+      label: `Equipment BOM (${line.bomPartsCount})`,
+      icon: 'package',
+      group: 'workflow',
+      hidden: !perms.entry || !line.hasEquipmentBom,
+      onSelect: () => setModal({ kind: 'equip-bom', soLineId: line.soLineId }),
+    },
+    {
+      // ADR-180: book free stock to this line. Does not move Physical stock.
+      key: 'allocate',
+      label: 'Allocate',
+      icon: 'package',
+      group: 'workflow',
+      hidden: !perms.entry || !line.itemId,
+      disabledReason: cap <= 0 ? 'Nothing to allocate' : undefined,
+      onSelect: () => setModal({ kind: 'allocate', soLineId: line.soLineId }),
+    },
+    {
+      // ADR-180: give a booking back. Does not move Physical stock.
+      key: 'release',
+      label: `Release (${line.reservedQty} reserved)`,
+      icon: 'refresh-cw',
+      group: 'workflow',
+      hidden: !perms.edit || line.reservedQty <= 0,
+      onSelect: () => setModal({ kind: 'release', soLineId: line.soLineId }),
+    },
+  ];
   return (
     <tr>
       <td className="mono fw-700 text3">{line.lineNo}</td>
@@ -99,6 +169,11 @@ export function OrderLineRow({
           >
             {line.itemProcurementType === 'buy' ? 'Buy' : 'Make'}
           </span>
+          {line.itemProcurementType === 'buy' && so.source === 'jw' ? (
+            <span className="text3" style={{ fontSize: 11, marginLeft: 4 }}>
+              Customer material
+            </span>
+          ) : null}
         </div>
       </td>
       <td style={wrapCell} title={line.itemName ?? undefined}>
@@ -204,102 +279,8 @@ export function OrderLineRow({
           </div>
         ) : null}
       </td>
-      <td style={wrapCell}>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 4,
-          }}
-        >
-          {line.hasEquipmentBom && perms.entry ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{
-                color: 'var(--cyan)',
-                fontWeight: 700,
-                whiteSpace: 'normal',
-              }}
-              onClick={() => setModal({ kind: 'equip-bom', soLineId: line.soLineId })}
-            >
-              📦 Equipment BOM ({line.bomPartsCount})
-            </button>
-          ) : null}
-          {line.hasAssemblyBom && perms.entry ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{
-                color: 'var(--cyan)',
-                fontWeight: 700,
-                whiteSpace: 'normal',
-              }}
-              onClick={() => setModal({ kind: 'assembly-bom', soLineId: line.soLineId })}
-            >
-              📦 BOM Planning ({line.bomPartsCount})
-            </button>
-          ) : null}
-          {/* ADR-171: a BUY line is purchased, not planned. SO
-            lines get + PR; a JWSO line is the customer's own
-            material and is never bought in. */}
-          {line.itemProcurementType === 'buy' ? (
-            so.source === 'jw' ? (
-              <span className="text3" style={{ fontSize: 11 }}>
-                Buy item — Customer material
-              </span>
-            ) : line.remaining > 0 && perms.entry ? (
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                style={{ fontWeight: 700 }}
-                onClick={() => setModal({ kind: 'raise-pr', soLineId: line.soLineId })}
-              >
-                + PR {line.remaining}
-              </button>
-            ) : null
-          ) : !line.hasEquipmentBom && line.remaining > 0 && perms.entry ? (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              style={{ fontWeight: 700 }}
-              onClick={() => setModal({ kind: 'create', soLineId: line.soLineId })}
-            >
-              + Plan {line.remaining}
-            </button>
-          ) : null}
-          {/* ADR-180: book free stock to this line (Allocate) or
-            give a booking back (Release). Neither moves
-            Physical stock. */}
-          {perms.entry && line.itemId ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ color: 'var(--amber2)', fontWeight: 700 }}
-              disabled={allocateCap(lineFacts(so.soCode, line)) <= 0}
-              title={
-                allocateCap(lineFacts(so.soCode, line)) > 0
-                  ? `Allocate up to ${allocateCap(lineFacts(so.soCode, line))} pcs of free stock to this line`
-                  : 'Nothing can be allocated to this line right now'
-              }
-              onClick={() => setModal({ kind: 'allocate', soLineId: line.soLineId })}
-            >
-              Allocate
-            </button>
-          ) : null}
-          {perms.entry && line.reservedQty > 0 ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ color: 'var(--purple)', fontWeight: 700 }}
-              title={`Give back some or all of the ${line.reservedQty} pcs reserved to this line`}
-              onClick={() => setModal({ kind: 'release', soLineId: line.soLineId })}
-            >
-              Release
-            </button>
-          ) : null}
-        </div>
+      <td className="td-ctr">
+        <RowMenu label={`Actions for line ${line.lineNo}`} items={items} />
       </td>
     </tr>
   );

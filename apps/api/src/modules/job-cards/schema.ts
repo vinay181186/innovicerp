@@ -13,11 +13,14 @@ export {
   jobCardSourceJwLinkSchema,
   jobCardUpdateInputSchema,
   jobCardWriteInputSchema,
+  jcStatusCountsQuerySchema,
   listJobCardsQuerySchema,
 } from '@innovic/shared';
 export type {
   JcDocInput,
   JcOpInput,
+  JcStatusCountsQuery,
+  JcStatusCountsResponse,
   JcOpPoLinkView,
   JobCardCompletionEvent,
   JobCardCreateInput,

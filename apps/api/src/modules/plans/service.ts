@@ -35,7 +35,6 @@ import type {
   ReleaseReservationInput,
   ReservationActionResult,
   ReserveStockInput,
-  UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
 import { ActivityAction, opSrNo, type ActivityChange } from '@innovic/shared';
@@ -58,6 +57,8 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { planSfColumns } from './sf-columns';
 import { requireWriteRole } from '../../lib/auth';
 import { resolveRmItem } from '../../lib/rm-item';
 import {
@@ -365,11 +366,16 @@ const EFFECTIVE_STATUS_SQL = sql<string>`COALESCE(
   ${plans.planStatus}::text
 )`;
 
+// Sort & Filter (ADR-200) column whitelist — sf-columns.ts.
+const PLAN_SF_COLUMNS = planSfColumns(EFFECTIVE_STATUS_SQL);
+
 export async function listPlans(
   query: ListPlansQuery,
   user: AuthContext,
 ): Promise<ListPlansResponse> {
   const companyId = requireCompany(user);
+  // Read before the transaction so a malformed `sf` is a 400 straight away.
+  const sf = readSf(query.sf);
 
   return withUserContext(user, async (tx) => {
     const conditions = [eq(plans.companyId, companyId), isNull(plans.deletedAt)];
@@ -399,6 +405,9 @@ export async function listPlans(
           OR EXISTS (SELECT 1 FROM ${salesOrderLines} sol WHERE sol.id = ${plans.soLineId} AND sol.deleted_at IS NULL AND sol.client_po_line_no ILIKE ${term}))`,
       );
     }
+    // Sort & Filter (ADR-200): the screen's column filters, on list AND count.
+    const sfFrag = sfWhere(PLAN_SF_COLUMNS, sf);
+    if (sf && sf.filters.length > 0) conditions.push(sql`TRUE ${sfFrag}`);
 
     const rows = await tx
       .select({
@@ -442,16 +451,33 @@ export async function listPlans(
       .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
       .leftJoin(sql`public.v_jc_status jcs`, sql`jcs.job_card_id = ${jobCards.id}`)
       .where(and(...conditions))
-      .orderBy(desc(plans.planDate), asc(plans.code))
+      // Ends on plans.id so equal (date, code) rows never swap between pages.
+      .orderBy(
+        sfOrderBy(
+          PLAN_SF_COLUMNS,
+          sf,
+          sql`${plans.planDate} DESC, ${plans.code} ASC, ${plans.id} ASC`,
+        ),
+      )
       .limit(query.limit)
       .offset(query.offset);
 
-    // No join needed any more: since ADR-182 every Production Order fact in
-    // the conditions above is a correlated sub-select on plans, so the count
-    // sees exactly the same rows the page query does — and one per plan.
+    // Since ADR-182 every Production Order fact in the conditions above is a
+    // correlated sub-select on plans. The count joins the same one-row-per-plan
+    // tables as the page (item, SO line, JWSO line) because the Sort & Filter
+    // columns read them — so it sees exactly the rows the pages do.
     const totalRows = await tx
       .select({ value: count() })
       .from(plans)
+      .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
+      .leftJoin(
+        salesOrderLines,
+        and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
+      )
+      .leftJoin(
+        jobWorkOrderLines,
+        and(eq(jobWorkOrderLines.id, plans.jwLineId), isNull(jobWorkOrderLines.deletedAt)),
+      )
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
@@ -696,6 +722,16 @@ async function assertPlanQtyWithinRemaining(
     // and a new plan cannot both pass), refuse a draft / cancelled order, and
     // measure against the ONE "to plan" rule (lib/so-line-coverage.ts: plans +
     // a Buy line's PRs + direct cards) — the figure Needs Planning shows.
+    // The lock is its OWN statement on purpose: under READ COMMITTED a
+    // statement that waits on a row lock re-checks only that row, not its
+    // sub-queries, so a covered sum taken in the same statement could miss
+    // the plan / PR the lock holder just committed. The next SELECT takes a
+    // fresh snapshot and sees it (same as raisePlanningPr in so-planning).
+    await tx.execute(sql`
+      SELECT 1 FROM public.sales_order_lines sol
+      WHERE sol.id = ${soLineId}::uuid AND sol.company_id = ${companyId}::uuid
+      FOR UPDATE OF sol
+    `);
     const r = (await tx.execute(sql`
       SELECT sol.order_qty AS "orderQty", so.status AS "soStatus", so.code AS "soCode",
              sol.line_no AS "lineNo", sol.short_closed_at IS NOT NULL AS "shortClosed",
@@ -708,7 +744,6 @@ async function assertPlanQtyWithinRemaining(
       JOIN public.sales_orders so ON so.id = sol.sales_order_id
       WHERE sol.id = ${soLineId}::uuid AND sol.company_id = ${companyId}::uuid
         AND sol.deleted_at IS NULL
-      FOR UPDATE OF sol
     `)) as unknown as Array<{
       orderQty: number;
       soStatus: string;
@@ -719,7 +754,9 @@ async function assertPlanQtyWithinRemaining(
       own: number;
     }>;
     const line = r[0];
-    if (!line) return;
+    // No row = the SO line was deleted (possibly while this request waited on
+    // the lock) — never wave a plan through against a line that is gone.
+    if (!line) throw new NotFoundError('Sales Order line not found. Refresh the page.');
     // A cut (or an unchanged re-save) of an existing plan only ever reduces
     // what the line is covered by — always allowed, even on an over-covered
     // line or a cancelled order, so a planner can fix an over-plan.
@@ -2292,96 +2329,8 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
   });
 }
 
-// ─── Needs Planning (PL-3b) ──────────────────────────────────────────────
-// Lists open SO lines that don't yet have a non-cancelled plan covering
-// their full quantity. Mirrors legacy renderPlanDashboard L10024–10041 when
-// flt='unplanned'. SO-side only; JW lines join when JW planning lands.
-export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOrdersResponse> {
-  const companyId = requireCompany(user);
-
-  return withUserContext(user, async (tx) => {
-    const rows = await tx.execute(sql`
-      SELECT
-        sol.id            AS so_line_id,
-        so.id             AS so_id,
-        so.code           AS so_code,
-        sol.line_no       AS line_no,
-        sol.item_code_text AS item_code,
-        -- The customer's drawing revision typed on this very SO line — every row
-        -- here IS an SO line, so no join is needed and it is never
-        -- items.revision, a different column about the item master. Cast to text
-        -- because the contract types it as a string and a database that has not
-        -- had migration 0119 still holds the old integer here.
-        sol.revision::text AS item_revision,
-        -- POL — the line number printed on the CUSTOMER's own purchase order,
-        -- typed on this very SO line. Never sol.line_no, which is OUR line
-        -- number: on live data our line 11 is the customer's line 20.
-        sol.client_po_line_no AS client_po_line_no,
-        sol.part_name     AS part_name,
-        -- Live customer name off the client master (plan v3 Step 4); the SO's
-        -- saved customer_name only when the SO has no client_id.
-        COALESCE(cli.name, so.customer_name) AS customer_name,
-        sol.due_date::text AS due_date,
-        sol.order_qty     AS order_qty,
-        -- ADR-185 — the one "covered / to plan" rule (lib/so-line-coverage.ts),
-        -- the same figures SO Planning states for this line and the same rows
-        -- the Needs Planning KPI tile counts. Covered is computed ONCE per
-        -- line (the LATERAL) and to-plan derived from it.
-        cov.covered       AS planned_qty,
-        GREATEST(sol.order_qty - cov.covered, 0)::numeric AS remaining_qty
-      FROM public.sales_order_lines sol
-      JOIN public.sales_orders so ON so.id = sol.sales_order_id
-      LEFT JOIN public.clients cli ON cli.id = so.client_id AND cli.deleted_at IS NULL
-      CROSS JOIN LATERAL (SELECT ${sql.raw(soLineCoveredRaw('sol'))} AS covered) cov
-      WHERE so.company_id = ${companyId}::uuid
-        AND so.status = 'open'
-        AND so.deleted_at IS NULL
-        AND sol.deleted_at IS NULL
-        AND sol.status = 'open'
-        AND sol.order_qty > cov.covered
-      ORDER BY sol.due_date ASC NULLS LAST, so.code ASC, sol.line_no ASC
-    `);
-
-    type Row = {
-      so_line_id: string;
-      so_id: string;
-      so_code: string;
-      line_no: number;
-      item_code: string | null;
-      item_revision: string | null;
-      client_po_line_no: string | null;
-      part_name: string | null;
-      customer_name: string | null;
-      due_date: string | null;
-      order_qty: number;
-      planned_qty: number;
-      remaining_qty: number;
-    };
-    const typed = rows as unknown as Row[];
-
-    return {
-      generatedAt: new Date().toISOString(),
-      rows: typed.map((r) => ({
-        soLineId: r.so_line_id,
-        soId: r.so_id,
-        soCode: r.so_code,
-        lineNo: Number(r.line_no),
-        itemCode: r.item_code,
-        // Null passed through rather than blanked: on a database that predates
-        // migration 0119 the line may genuinely have no revision, and the table
-        // must then show the bare code instead of a trailing slash.
-        itemRevision: r.item_revision,
-        clientPoLineNo: r.client_po_line_no,
-        partName: r.part_name,
-        customerName: r.customer_name,
-        dueDate: r.due_date,
-        orderQty: Number(r.order_qty),
-        plannedQty: Number(r.planned_qty),
-        remainingQty: Number(r.remaining_qty),
-      })),
-    };
-  });
-}
+// ─── Needs Planning (PL-3b) ── lives in unplanned-orders.ts (paged, ADR-201).
+export { getUnplannedOrders } from './unplanned-orders';
 
 // ─── Internals ────────────────────────────────────────────────────────────
 

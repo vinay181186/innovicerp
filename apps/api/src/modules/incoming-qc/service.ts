@@ -7,13 +7,7 @@
 // (existing goods-receipt-notes update flow), so there is no write here.
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import type {
-  IncomingQcCompletedRow,
-  IncomingQcMetrics,
-  IncomingQcPendingRow,
-  IncomingQcResponse,
-  SubmitIncomingQcInput,
-} from '@innovic/shared';
+import type { SubmitIncomingQcInput } from '@innovic/shared';
 import { ActivityAction, isTpiOp } from '@innovic/shared';
 import {
   goodsReceiptNoteLines,
@@ -24,7 +18,7 @@ import {
   purchaseOrderLines,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -72,18 +66,6 @@ function nextLogNo(): string {
     .replace(/[-:T.Z]/g, '')
     .slice(0, 14);
   return `LOG-${stamp}`;
-}
-
-function dispositionOf(
-  accepted: number,
-  rejected: number,
-  received: number,
-): IncomingQcCompletedRow['disposition'] {
-  // Still some qty awaiting inspection → the line is only partially done.
-  if (received - accepted - rejected > 0) return 'Partial Accept';
-  if (accepted > 0 && rejected > 0) return 'Partial Accept';
-  if (rejected > 0) return 'Rejected';
-  return 'Accepted';
 }
 
 /**
@@ -316,203 +298,8 @@ async function mirrorIncomingQcOntoNextQcOp(
   }
 }
 
-export async function getIncomingQc(user: AuthContext): Promise<IncomingQcResponse> {
-  const companyId = requireCompany(user);
-  // Money-hiding for L1 Viewers ("Can See Price"): the "Value in QC" figure
-  // rides the Incoming-QC price permission.
-  const showMoney = await canSeeFormPrice(user, 'qc_incoming');
-  return withUserContext(user, async (tx) => {
-    // ── Pending lines (received but not fully inspected) ──
-    const pendingRows = await tx.execute(sql`
-      SELECT
-        l.id AS "grnLineId", h.id AS "grnId", h.code AS "grnNo", h.grn_date AS "grnDate",
-        h.po_code_text AS "poCode",
-        COALESCE(v.name, h.vendor_code_text) AS "vendorName",
-        so.code AS "soCode",
-        jc.code AS "jcCode", jco.op_seq AS "opSeq", jco.operation AS "opName",
-        COALESCE(i.code, l.item_code_text) AS "itemCode",
-        -- The customer's drawing revision, off the same PO line -> jc_op -> JC ->
-        -- SO line trace that yields soCode above. This queue mixes two kinds of
-        -- row: an OSP return reaches an SO line and carries a revision, while a
-        -- raw-material receipt from a vendor has no SO behind it and is null here
-        -- -- correctly, since there is no customer drawing for it. It is NOT
-        -- items.revision, a different column about the item master.
-        --
-        -- Cast to text on purpose: the contract types this as a string, and the
-        -- column is only text on a database that has had migration 0119. On one
-        -- that has not it is still the old integer and would arrive here as a
-        -- number wearing a string type. The cast is a no-op once 0119 is in.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- The customer's own PO line number, off the SAME sol join as the
-        -- revision above. Only the SO side: a job-work line belongs to a
-        -- job-work order, not to a customer PO, so it has no client PO line
-        -- number and the field stays null on that trace, as it does on a
-        -- raw-material receipt with no SO behind it at all.
-        sol.client_po_line_no AS "clientPoLineNo",
-        COALESCE(i.name, l.item_name) AS "itemName",
-        l.received_qty AS "receivedQty",
-        (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) AS "pendingQty",
-        GREATEST(0, (CURRENT_DATE - h.grn_date))::int AS "waitDays",
-        COALESCE(pol.rate, 0) AS "rate"
-      FROM public.goods_receipt_note_lines l
-      JOIN public.goods_receipt_notes h ON h.id = l.goods_receipt_note_id AND h.deleted_at IS NULL
-      LEFT JOIN public.purchase_order_lines pol ON pol.id = l.purchase_order_line_id
-      -- SO trace for OSP returns: PO line → jc_op → JC → SO line → SO (null for raw-material GRNs).
-      LEFT JOIN public.jc_ops jco ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
-      LEFT JOIN public.job_cards jc ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
-      LEFT JOIN public.items i ON i.id = l.item_id
-      WHERE l.company_id = ${companyId}::uuid
-        AND l.deleted_at IS NULL
-        AND (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) > 0
-      ORDER BY h.grn_date ASC, h.code ASC
-    `);
-    const rawPending = pendingRows as unknown as Array<Record<string, unknown>>;
-    // Value stuck in QC pipeline: Σ pendingQty × po_lines.rate (legacy L23839).
-    // rate is null for manual GRN lines (no PO line) → treated as 0.
-    const valueInQc = rawPending.reduce(
-      (s, r) => s + Number(r['pendingQty'] ?? 0) * Number(r['rate'] ?? 0),
-      0,
-    );
-    const pending: IncomingQcPendingRow[] = rawPending.map((r) => ({
-      grnLineId: r['grnLineId'] as string,
-      grnId: r['grnId'] as string,
-      grnNo: r['grnNo'] as string,
-      grnDate: String(r['grnDate']).slice(0, 10),
-      poCode: (r['poCode'] as string | null) ?? null,
-      vendorName: (r['vendorName'] as string | null) ?? null,
-      soCode: (r['soCode'] as string | null) ?? null,
-      jcCode: (r['jcCode'] as string | null) ?? null,
-      opSeq: r['opSeq'] != null ? Number(r['opSeq']) : null,
-      opName: (r['opName'] as string | null) ?? null,
-      itemCode: (r['itemCode'] as string | null) ?? null,
-      itemRevision: (r['itemRevision'] as string | null) ?? null,
-      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
-      itemName: (r['itemName'] as string | null) ?? null,
-      receivedQty: Number(r['receivedQty'] ?? 0),
-      pendingQty: Number(r['pendingQty'] ?? 0),
-      waitDays: Number(r['waitDays'] ?? 0),
-    }));
-
-    // ── Recently completed (last 20) ──
-    const completedRows = await tx.execute(sql`
-      SELECT
-        l.id AS "grnLineId", h.id AS "grnId", h.code AS "grnNo", h.grn_date AS "grnDate",
-        l.qc_date AS "qcDate",
-        CASE WHEN l.qc_date IS NOT NULL THEN (l.qc_date - h.grn_date)::int ELSE NULL END AS "respDays",
-        COALESCE(v.name, h.vendor_code_text) AS "vendorName",
-        COALESCE(i.code, l.item_code_text) AS "itemCode",
-        -- The drawing revision the receipt was inspected against, traced exactly
-        -- as on the pending query: PO line -> jc_op -> JC -> SO line. Null on a
-        -- raw-material receipt, which has no SO behind it. Cast to text so a
-        -- pre-0119 database cannot hand the UI a number. Never items.revision.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- The customer's own PO line number, off the SAME sol join as the
-        -- revision above. Only the SO side: a job-work line belongs to a
-        -- job-work order, not to a customer PO, so it has no client PO line
-        -- number and the field stays null on that trace, as it does on a
-        -- raw-material receipt with no SO behind it at all.
-        sol.client_po_line_no AS "clientPoLineNo",
-        COALESCE(i.name, l.item_name) AS "itemName",
-        l.received_qty AS "receivedQty",
-        l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",
-        l.qc_remarks AS "qcRemarks",
-        l.updated_at AS "qcAt",
-        COALESCE(l.qc_inspected_by_text, u.full_name, u.email) AS "qcInspectedBy",
-        l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName"
-      FROM public.goods_receipt_note_lines l
-      JOIN public.goods_receipt_notes h ON h.id = l.goods_receipt_note_id AND h.deleted_at IS NULL
-      LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
-      -- The completed feed carried no SO trace before the drawing revision needed
-      -- one. These are the same four LEFT JOINs the pending query uses, and they
-      -- stay LEFT so a raw-material receipt still appears with a null revision.
-      LEFT JOIN public.purchase_order_lines pol ON pol.id = l.purchase_order_line_id
-      LEFT JOIN public.jc_ops jco ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
-      LEFT JOIN public.job_cards jc ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.items i ON i.id = l.item_id
-      LEFT JOIN public.users u ON u.id = l.qc_inspected_by
-      -- Any line that has had QC activity (accepted and/or rejected), incl.
-      -- partially-inspected lines still carrying a pending balance — so a
-      -- partial accept is logged here immediately, not only once fully resolved.
-      WHERE l.company_id = ${companyId}::uuid
-        AND l.deleted_at IS NULL
-        AND (l.qc_accepted_qty > 0 OR l.qc_rejected_qty > 0)
-      ORDER BY COALESCE(l.qc_date, h.grn_date) DESC, h.code DESC
-      LIMIT 20
-    `);
-    const completed: IncomingQcCompletedRow[] = (
-      completedRows as unknown as Array<Record<string, unknown>>
-    ).map((r) => {
-      const acceptedQty = Number(r['acceptedQty'] ?? 0);
-      const rejectedQty = Number(r['rejectedQty'] ?? 0);
-      return {
-        grnLineId: r['grnLineId'] as string,
-        grnId: r['grnId'] as string,
-        grnNo: r['grnNo'] as string,
-        grnDate: String(r['grnDate']).slice(0, 10),
-        qcDate: r['qcDate'] != null ? String(r['qcDate']).slice(0, 10) : null,
-        respDays: r['respDays'] != null ? Number(r['respDays']) : null,
-        vendorName: (r['vendorName'] as string | null) ?? null,
-        itemCode: (r['itemCode'] as string | null) ?? null,
-        itemRevision: (r['itemRevision'] as string | null) ?? null,
-        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
-        itemName: (r['itemName'] as string | null) ?? null,
-        receivedQty: Number(r['receivedQty'] ?? 0),
-        acceptedQty,
-        rejectedQty,
-        disposition: dispositionOf(acceptedQty, rejectedQty, Number(r['receivedQty'] ?? 0)),
-        qcAt: r['qcAt'] != null ? String(r['qcAt']) : null,
-        qcInspectedBy: (r['qcInspectedBy'] as string | null) ?? null,
-        qcRemarks: (r['qcRemarks'] as string | null) ?? null,
-        qcReportPath: (r['qcReportPath'] as string | null) ?? null,
-        qcReportName: (r['qcReportName'] as string | null) ?? null,
-      };
-    });
-
-    // ── Today's completed totals ──
-    const todayRows = await tx.execute(sql`
-      SELECT
-        COALESCE(SUM(l.qc_accepted_qty), 0)::numeric AS "todayAcceptedQty",
-        COALESCE(SUM(l.qc_rejected_qty), 0)::numeric AS "todayRejectedQty",
-        COUNT(DISTINCT l.goods_receipt_note_id)::int AS "todayAcceptedGrns"
-      FROM public.goods_receipt_note_lines l
-      WHERE l.company_id = ${companyId}::uuid
-        AND l.deleted_at IS NULL
-        AND (l.qc_accepted_qty > 0 OR l.qc_rejected_qty > 0)
-        AND l.qc_date = CURRENT_DATE
-    `);
-    const t = (todayRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
-
-    // ── Pipeline metrics derived from the pending set ──
-    const grnSet = new Set(pending.map((p) => p.grnId));
-    // Decimal on KGS / MTR receipts (0172): sum, then trim float noise to 3 places.
-    const pendingQty = Math.round(pending.reduce((s, p) => s + p.pendingQty, 0) * 1000) / 1000;
-    const avgWaitDays =
-      pending.length > 0
-        ? Math.round((pending.reduce((s, p) => s + p.waitDays, 0) / pending.length) * 10) / 10
-        : 0;
-    // pending is ordered oldest-first, so the first row is the oldest.
-    const oldest = pending[0] ?? null;
-    const metrics: IncomingQcMetrics = {
-      grnsWaiting: grnSet.size,
-      pendingQty,
-      avgWaitDays,
-      oldestDays: oldest ? oldest.waitDays : 0,
-      oldestGrnNo: oldest ? oldest.grnNo : null,
-      valueInQc: showMoney ? Math.round(valueInQc) : null,
-      todayAcceptedQty: Number(t['todayAcceptedQty'] ?? 0),
-      todayAcceptedGrns: Number(t['todayAcceptedGrns'] ?? 0),
-      todayRejectedQty: Number(t['todayRejectedQty'] ?? 0),
-    };
-
-    return { metrics, pending, completed };
-  });
-}
+// The read (GET /incoming-qc) lives in ./read.ts (ADR-201 paging).
+export { getIncomingQc } from './read';
 
 /**
  * Record incoming QC for ONE GRN line (the Incoming QC Call Register inline

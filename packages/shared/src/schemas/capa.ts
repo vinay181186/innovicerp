@@ -5,6 +5,8 @@
 
 import { z } from 'zod';
 
+import { sfRawParamSchema } from './list-query';
+
 export const CAPA_TYPES = ['Corrective', 'Preventive'] as const;
 export const CAPA_STATUSES = ['Open', 'In Progress', 'Verified', 'Closed'] as const;
 export const CAPA_RC_METHODS = ['5-Why', 'Fishbone', 'Other'] as const;
@@ -60,11 +62,28 @@ export const capaCountersSchema = z.object({
   verified: z.number().int().nonnegative(),
   closed: z.number().int().nonnegative(),
   effectivenessPct: z.number().int().nonnegative(),
+  /** Open / In Progress CAPAs past their target date — over ALL rows. */
+  overdue: z.number().int().nonnegative().default(0),
 });
 export type CapaCounters = z.infer<typeof capaCountersSchema>;
 
+// ─── List query (ADR-201: 25-row pages; search + Sort & Filter on the server) ─
+// No `limit` → every CAPA, as before (the New CAPA modal reads the full list to
+// hide NCs that already have one). The screen asks for 25 at a time.
+export const listCapaQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListCapaQuery = z.input<typeof listCapaQuerySchema>;
+
 export interface ListCapaResponse {
   items: CapaRecord[];
+  /** Rows matching search + sf (all pages). */
+  total: number;
+  /** Status strip + overdue — over ALL CAPAs (not the search). */
   counters: CapaCounters;
 }
 

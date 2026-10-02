@@ -9,12 +9,13 @@ import { ActivityAction } from '@innovic/shared';
 // on the single form key `rawmat_create` (Production), because Grade and Size
 // are two tabs of one screen in the user's head.
 
-import { and, asc, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { materialGrades } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type {
   BulkCreateMaterialGradesInput,
   BulkCreateMaterialGradesResponse,
@@ -27,6 +28,7 @@ import type {
 } from './schema';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
+import { MATERIAL_GRADE_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -51,15 +53,21 @@ export async function listMaterialGrades(
       isNull(materialGrades.deletedAt),
     ];
     if (input.search) {
+      // Code, name and description — what the search box promises.
+      const pat = `%${likeEscape(input.search)}%`;
       const s = or(
-        ilike(materialGrades.code, `%${input.search}%`),
-        ilike(materialGrades.name, `%${input.search}%`),
+        sql`${materialGrades.code} ILIKE ${pat} ESCAPE '\\'`,
+        sql`${materialGrades.name} ILIKE ${pat} ESCAPE '\\'`,
+        sql`${materialGrades.description} ILIKE ${pat} ESCAPE '\\'`,
       );
       if (s) conditions.push(s);
     }
     if (typeof input.isActive === 'boolean') {
       conditions.push(eq(materialGrades.isActive, input.isActive));
     }
+    // Sort & Filter (ADR-200), list AND count; code then id keeps paging stable.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(MATERIAL_GRADE_SF_COLUMNS, sf)}`);
 
     const where = and(...conditions);
 
@@ -68,7 +76,13 @@ export async function listMaterialGrades(
         .select()
         .from(materialGrades)
         .where(where)
-        .orderBy(asc(materialGrades.code))
+        .orderBy(
+          sfOrderBy(
+            MATERIAL_GRADE_SF_COLUMNS,
+            sf,
+            sql`${asc(materialGrades.code)}, ${asc(materialGrades.id)}`,
+          ),
+        )
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(materialGrades).where(where),

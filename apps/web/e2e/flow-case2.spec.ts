@@ -85,7 +85,7 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   await page.getByPlaceholder(/Search/i).first().fill(po).catch(() => {});
   await page.waitForTimeout(1500);
   const poRow = page.locator('table tbody tr', { hasText: po }).first();
-  await poRow.getByRole('link', { name: /Create DC/i }).click();
+  await clickRowMenuItem(page, poRow, /^Create DC/);
   await page.waitForTimeout(2200);
   await snap(page, 'c2', '07-dc-form');
   const dcNo = await page.locator('input[value^="IN-DC-"]').first().inputValue().catch(() => '');
@@ -101,7 +101,7 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   await page.getByPlaceholder(/Search/i).first().fill(dcNo).catch(() => {});
   await page.waitForTimeout(1500);
   const dcRow = page.locator('table tbody tr', { hasText: dcNo }).first();
-  await dcRow.getByRole('link', { name: /Receive/i }).click();
+  await clickRowMenuItem(page, dcRow, /^Receive/);
   await page.waitForTimeout(2200);
   await snap(page, 'c2', '09-receive-form');
   await page.locator('input[type="number"]').first().fill(String(QTY)); // received qty

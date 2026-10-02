@@ -38,6 +38,8 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { JW_RETURN_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -757,6 +759,9 @@ export async function listJwReturnChallans(
       );
       if (s) conditions.push(s);
     }
+    // Sort & Filter (ADR-200) — list AND count.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(JW_RETURN_SF_COLUMNS, sf)}`);
     const where = and(...conditions);
 
     // ONE predicate, used by both the page query and the count — a total that
@@ -764,7 +769,14 @@ export async function listJwReturnChallans(
     const [rows, totals] = await Promise.all([
       selectListItems(tx)
         .where(where)
-        .orderBy(desc(jwReturnChallans.returnDate), desc(jwReturnChallans.code))
+        // id last: a unique tie-breaker so paging never skips or repeats a row.
+        .orderBy(
+          sfOrderBy(
+            JW_RETURN_SF_COLUMNS,
+            sf,
+            sql`${desc(jwReturnChallans.returnDate)}, ${desc(jwReturnChallans.code)}, ${desc(jwReturnChallans.id)}`,
+          ),
+        )
         .limit(input.limit)
         .offset(input.offset),
       tx
@@ -772,6 +784,8 @@ export async function listJwReturnChallans(
         .from(jwReturnChallans)
         .leftJoin(clients, eq(clients.id, jwReturnChallans.clientId))
         .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwReturnChallans.jobWorkOrderLineId))
+        // Same item join as the page: the Item Code ▾ filter reads items.code.
+        .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
         .where(where),
     ]);
 

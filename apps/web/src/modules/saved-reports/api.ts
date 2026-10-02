@@ -3,6 +3,7 @@
 import type {
   AdHocSpec,
   CreateSavedReportInput,
+  ListSavedReportsQuery,
   ListSavedReportsResponse,
   ListSourcesResponse,
   RunAdHocResponse,
@@ -16,6 +17,7 @@ export const savedReportsKeys = {
   all: ['saved-reports'] as const,
   sources: () => [...savedReportsKeys.all, 'sources'] as const,
   list: () => [...savedReportsKeys.all, 'list'] as const,
+  page: (q: ListSavedReportsQuery) => [...savedReportsKeys.list(), q] as const,
   detail: (id: string) => [...savedReportsKeys.all, 'detail', id] as const,
   runs: () => [...savedReportsKeys.all, 'run'] as const,
   run: (id: string) => [...savedReportsKeys.runs(), id] as const,
@@ -30,10 +32,19 @@ export function useSourceCatalog() {
   });
 }
 
-export function useSavedReportsList() {
+/** One page of Saved Reports (ADR-201): search + Sort & Filter on the server. */
+export function useSavedReportsList(q: ListSavedReportsQuery) {
   return useQuery<ListSavedReportsResponse>({
-    queryKey: savedReportsKeys.list(),
-    queryFn: () => apiFetch<ListSavedReportsResponse>('/saved-reports'),
+    queryKey: savedReportsKeys.page(q),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (q.search) params.set('search', q.search);
+      if (q.sf) params.set('sf', q.sf);
+      if (q.limit !== undefined) params.set('limit', String(q.limit));
+      if (q.offset !== undefined) params.set('offset', String(q.offset));
+      return apiFetch<ListSavedReportsResponse>(`/saved-reports?${params.toString()}`);
+    },
+    placeholderData: (prev) => prev,
   });
 }
 

@@ -14,18 +14,26 @@
 // plain so the table is not a wall of colour.
 
 import { opSrNo, type PurchaseRequestListItem } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { prBalanceClosedText, prOrderBalance } from '@/modules/purchase-requests/lib/pr-balance';
 import { PR_STATUS_LABELS } from '@/modules/purchase-requests/lib/pr-labels';
-import { ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { ROW_TINT, renderRowMenuLink, type DataTableColumn } from '@/ui/data';
 import { RowActions } from '@/ui/layout';
 
 import { ospCanOrder } from '../lib/osp-band';
 
 const dash = <span className="text3">—</span>;
+
+// Sort & Filter (server mode, ADR-201): the tab is paged, so a ▾ runs on the
+// server over every OSP request. Fields are the Purchase Request list's own
+// (purchase-requests/sf-columns.ts); JC No. / Op / Process / Est. Rate have
+// no field there, so they carry no ▾ (JC No. has its own filter box).
+const PR_STATUS_OPTIONS = Object.entries(PR_STATUS_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
 
 /** Token colour for the PR status label — same meanings the status badge carries
  *  elsewhere on these screens. */
@@ -48,6 +56,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     {
       // First column — the fit engine pins it. The OSP PR number (IN-JWPR-…).
       id: 'pr_no',
+      sortFilterField: 'prCode',
       kind: 'code',
       header: 'PR No.',
       className: 'mono fw-700',
@@ -70,6 +79,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'mono fw-700',
@@ -83,6 +93,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -105,6 +116,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'qty',
+      sortFilterField: 'qty',
       kind: 'num',
       header: 'PR Qty',
       align: 'right',
@@ -113,6 +125,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'pending',
+      sortFilterField: 'balanceQty',
       kind: 'num',
       header: 'Pending',
       align: 'right',
@@ -125,6 +138,7 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendorName',
       kind: 'text',
       header: 'Vendor',
       align: 'left',
@@ -148,12 +162,15 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
     },
     {
       id: 'due',
+      sortFilterField: 'requiredDate',
       kind: 'date',
       header: 'Due Date',
       render: (pr) => fmtDate(pr.requiredDate),
     },
     {
       id: 'status',
+      sortFilterField: 'status',
+      filterOptions: PR_STATUS_OPTIONS,
       kind: 'badge',
       header: 'PR Status',
       render: (pr) => {
@@ -214,10 +231,11 @@ export function OutsourceJobExpand({ pr }: { pr: PurchaseRequestListItem }): Rea
   );
 }
 
-/** The row's Action cell — a single Create PO link, shown only when this request
- *  still has quantity to buy and the user may raise a PO. Reuses the same
- *  /purchase-orders/from-pr destination as the bulk action, with just this one
- *  request's id. */
+/** The row's ⋯ menu — a single Create PO item, shown only when this request
+ *  still has quantity to buy and the user may raise a PO (po_create entry, the
+ *  server's rule). Reuses the same /purchase-orders/from-pr destination as the
+ *  bulk action, with just this one request's id (renderRowMenuLink turns the
+ *  `?prId=` into the route's search param). */
 export function OutsourceJobRowActions({
   pr,
   canCreatePo,
@@ -228,16 +246,16 @@ export function OutsourceJobRowActions({
   if (!canCreatePo || !ospCanOrder(pr)) return null;
   return (
     <RowActions
-      extra={
-        <Link
-          to="/purchase-orders/from-pr"
-          search={{ prId: pr.id }}
-          className="btn btn-sm btn-ghost"
-          title="Raise a purchase order from this OSP request"
-        >
-          🛒 Create PO
-        </Link>
-      }
+      renderLink={renderRowMenuLink}
+      items={[
+        {
+          key: 'create-po',
+          label: 'Create PO',
+          icon: 'plus',
+          group: 'workflow',
+          to: `/purchase-orders/from-pr?prId=${encodeURIComponent(pr.id)}`,
+        },
+      ]}
     />
   );
 }

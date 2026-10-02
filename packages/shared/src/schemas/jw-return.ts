@@ -5,6 +5,7 @@
 // returned; bumps job_work_order_lines.returned_qty. Numbering: IN-JWRC-#####.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { clientCopySchema } from './party-copy';
 
 export const jwReturnChallanSchema = z.object({
@@ -94,6 +95,8 @@ export type ListJwReturnChallansResponse = z.infer<typeof listJwReturnChallansRe
  *  in a query. */
 export const listJwReturnChallansQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(500).default(200),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

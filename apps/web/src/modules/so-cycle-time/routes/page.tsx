@@ -1,51 +1,53 @@
 // SO Cycle Time Report — mirror of legacy renderSOCycleTime (L18176).
 //
-// Per-SO phase durations + filtered-set averages. Filter (All / Completed /
-// Active / by type) + text search are client-side; averages recompute over the
-// filtered set (legacy behaviour). Read-only. Excel export of the full matrix.
+// Per-SO phase durations + averages over the filtered set (legacy behaviour).
+// Read-only. Excel export of the full matrix.
 //
 // ADR-199 table standard (2026-10-01): the one ruled fit sheet <DataTable
 // tableKey={TABLE_KEYS.soCycleTime}>. SO No. is the pinned first column; every
 // phase-duration column is a right-aligned number (kind 'num'); a dispatched
-// (completed) SO gets the green done-row tint. Column sort + filter come from
-// the table's own ▾ header menus (ADR-200). Row click opens the Sales Order.
+// (completed) SO gets the green done-row tint. Row click opens the Sales Order.
+//
+// ADR-201 (2026-10-02): 25 SOs a page. The Show filter, the search, Sort &
+// Filter (▾) and the page run on the SERVER over every SO (filter + page in the
+// URL; any change → page 1). The average tiles are the server's averages over
+// every MATCHING SO — never the 25 on screen. Excel = every matching SO.
 //
 // Every duration rendered here is SERVER-computed (so-cycle-time/service.ts ->
-// lib/so-phase-data.ts computeDurations). Nothing on this page derives a
-// duration from raw records — we only render r.durations.* and take a mean of
-// them over the rows already on screen.
-//
-// Note: the API also returns `averages` (over the FULL set). We do not use it —
-// legacy recomputes averages over the filtered set on every render (L18199) and
-// the filter is client-side, so a full-set average would not match the table.
+// lib/so-phase-data.ts computeDurations); this page only renders them.
 
-import type { SoCycleTimeResponse, SoCycleTimeRow } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { SO_CYCLE_TIME_SHOW, type SoCycleTimeRow, type SoCycleTimeShow } from '@innovic/shared';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { apiFetch } from '@/lib/api';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel, ROW_TINT, StatStrip, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT, StatStrip } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
 import { ListFooter } from '@/ui/layout';
-import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
+import { fetchAllSoCycleTime, useSoCycleTime, type SoCycleTimeParams } from '../api';
+import { soCycleTimeColumns } from '../lib/columns';
 import { exportSoCycleTime } from '../lib/export';
+
+const sctSearchSchema = z.object({
+  show: z.enum(SO_CYCLE_TIME_SHOW).optional(),
+  q: z.string().optional(),
+  page: pageSearchParam,
+});
+type SctSearch = z.infer<typeof sctSearchSchema>;
 
 export const soCycleTimeRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'so-cycle-time',
+  validateSearch: sctSearchSchema,
   component: SoCycleTimePage,
 });
 
-const TYPE_LABEL: Record<string, string> = {
-  component_manufacturing: 'Component',
-  equipment: 'Equipment',
-  with_material: 'With Material',
-};
-
-const FILTERS: { value: string; label: string }[] = [
+const FILTERS: { value: SoCycleTimeShow; label: string }[] = [
   { value: 'all', label: 'All SOs' },
   { value: 'completed', label: 'Completed Only' },
   { value: 'active', label: 'Active Only' },
@@ -57,158 +59,66 @@ const FILTERS: { value: string; label: string }[] = [
   { value: 'with_material', label: 'With Material Only' },
 ];
 
-type AvgKey = 'design' | 'production' | 'qc' | 'assembly' | 'total';
-const AVG_KEYS: AvgKey[] = ['design', 'production', 'qc', 'assembly', 'total'];
-
-function avg(rows: SoCycleTimeRow[], key: AvgKey): number {
-  let sum = 0;
-  let count = 0;
-  for (const r of rows) {
-    const v = r.durations[key];
-    if (v != null) {
-      sum += v;
-      count += 1;
-    }
-  }
-  return count ? Math.round(sum / count) : 0;
-}
-
-/** A phase-duration cell: "Nd" coloured amber > 10 / red > 20, "—" when the
- *  phase was never reached. Days footnote below the table explains the scale. */
-function durContent(v: number | null): React.JSX.Element {
-  if (v == null) return <span className="text3">—</span>;
-  const color = v > 20 ? 'var(--red)' : v > 10 ? 'var(--amber)' : 'var(--text)';
-  return (
-    <span className="mono fw-700" style={{ color }}>
-      {v}d
-    </span>
-  );
-}
-
-function soCycleTimeColumns(avgTotal: number): DataTableColumn<SoCycleTimeRow>[] {
-  const dur = (
-    id: string,
-    header: string,
-    get: (r: SoCycleTimeRow) => number | null,
-  ): DataTableColumn<SoCycleTimeRow> => ({
-    id,
-    kind: 'num',
-    header,
-    filterValue: (r) => get(r),
-    render: (r) => durContent(get(r)),
-  });
-
-  return [
-    {
-      id: 'so_no',
-      kind: 'code',
-      header: 'SO No.',
-      nowrap: true,
-      render: (r) => (
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: r.soId }}
-          className="td-code"
-          style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {r.soNo}
-        </Link>
-      ),
-    },
-    {
-      id: 'customer',
-      kind: 'text',
-      header: 'Customer',
-      align: 'left',
-      ellipsis: true,
-      render: (r) => r.customer ?? '—',
-      title: (r) => r.customer ?? '',
-    },
-    {
-      id: 'so_type',
-      kind: 'code',
-      header: 'SO Type',
-      filterValue: (r) => TYPE_LABEL[r.type ?? ''] ?? r.type ?? '',
-      render: (r) => TYPE_LABEL[r.type ?? ''] ?? r.type ?? '—',
-    },
-    {
-      id: 'so_status',
-      kind: 'badge',
-      header: 'SO Status',
-      filterValue: (r) => (r.phases.dispatched ? 'Completed' : soStatusLabel(r.status)),
-      render: (r) => {
-        const done = Boolean(r.phases.dispatched);
-        return (
-          <span
-            className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-grey' : 'b-blue'}`}
-          >
-            {done ? 'Completed' : soStatusLabel(r.status)}
-          </span>
-        );
-      },
-    },
-    dur('design', 'Design', (r) => r.durations.design),
-    dur('material', 'Material', (r) => r.durations.materialProc),
-    dur('production', 'Production', (r) => r.durations.production),
-    dur('qc', 'QC', (r) => r.durations.qc),
-    dur('assembly', 'Assembly', (r) => r.durations.assembly),
-    dur('dispatch', 'Dispatch', (r) => r.durations.assemblyToDispatch),
-    {
-      id: 'total',
-      kind: 'num',
-      header: 'Total',
-      filterValue: (r) => r.durations.total,
-      render: (r) => {
-        if (r.durations.total == null) return <span className="text3">—</span>;
-        const over = r.durations.total > avgTotal;
-        return (
-          <span className="mono fw-700" style={{ color: over ? 'var(--amber)' : 'var(--green)' }}>
-            {r.durations.total}d
-          </span>
-        );
-      },
-    },
-  ];
-}
-
 function SoCycleTimePage(): React.JSX.Element {
-  const { data, isLoading, isError, error } = useQuery<SoCycleTimeResponse>({
-    queryKey: ['so-cycle-time'],
-    queryFn: () => apiFetch<SoCycleTimeResponse>('/so-cycle-time'),
-    staleTime: 30_000,
-  });
-
+  const urlSearch = soCycleTimeRoute.useSearch();
+  const routeNavigate = soCycleTimeRoute.useNavigate();
   const navigate = useNavigate();
-  const [filter, setFilter] = useState('all');
-  const [search, setSearch] = useState('');
-
-  const allRows = data?.rows ?? [];
-  const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    return allRows.filter((r) => {
-      if (s && !`${r.soNo} ${r.customer ?? ''}`.toLowerCase().includes(s)) return false;
-      if (filter === 'completed' && !r.phases.dispatched) return false;
-      if (filter === 'active' && r.phases.dispatched) return false;
-      if (
-        (filter === 'equipment' ||
-          filter === 'component_manufacturing' ||
-          filter === 'with_material') &&
-        r.type !== filter
-      )
-        return false;
-      return true;
-    });
-  }, [allRows, filter, search]);
-
-  const averages = useMemo(
-    () => Object.fromEntries(AVG_KEYS.map((k) => [k, avg(filtered, k)])) as Record<AvgKey, number>,
-    [filtered],
+  const filter: SoCycleTimeShow = urlSearch.show ?? 'all';
+  // Any filter change goes back to page 1 (a page change passes its own page).
+  const go = useCallback(
+    (patch: Partial<SctSearch>) =>
+      void routeNavigate({
+        search: (p) => ({ ...p, ...patch, page: patch.page ?? 1 }),
+        replace: true,
+      }),
+    [routeNavigate],
   );
+
+  // Typed search → URL after a short pause (page 1).
+  const [search, setSearch] = useState(urlSearch.q ?? '');
+  useEffect(() => {
+    setSearch((prev) =>
+      normalizeSearchTerm(prev) === (urlSearch.q ?? '') ? prev : (urlSearch.q ?? ''),
+    );
+  }, [urlSearch.q]);
+  useEffect(() => {
+    const t = normalizeSearchTerm(search);
+    const next = t === '' ? undefined : t;
+    if (next === urlSearch.q) return;
+    const id = window.setTimeout(() => go({ q: next }), 300);
+    return () => window.clearTimeout(id);
+  }, [search, urlSearch.q, go]);
+
+  const sf = useServerSortFilter(TABLE_KEYS.soCycleTime, () => go({}));
+  const params: SoCycleTimeParams = useMemo(
+    () => ({ show: filter, search: urlSearch.q, sf: sf.param }),
+    [filter, urlSearch.q, sf.param],
+  );
+  const { data, isLoading, isError, error } = useSoCycleTime(
+    params,
+    LIST_PAGE_SIZE,
+    pageOffset(urlSearch.page),
+  );
+  const gotoPage = useCallback((p: number) => go({ page: p }), [go]);
+  useClampPage(urlSearch.page, data?.total, gotoPage);
+
+  // Excel = every matching SO, fetched page by page (never just the 25 shown).
+  const [exporting, setExporting] = useState(false);
+  const runExport = (): void => {
+    setExporting(true);
+    void fetchAllSoCycleTime(params)
+      .then((all) => exportSoCycleTime(all))
+      .catch((e: unknown) =>
+        window.alert(e instanceof Error ? e.message : 'Could not export. Try again.'),
+      )
+      .finally(() => setExporting(false));
+  };
+
+  const averages = data?.averages ?? { design: 0, production: 0, qc: 0, assembly: 0, total: 0 };
   const columns = useMemo(() => soCycleTimeColumns(averages.total), [averages.total]);
 
   const title = 'SO Cycle Time Report';
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <ReportShell title={title}>
         <div className="empty-state">
@@ -246,7 +156,7 @@ function SoCycleTimePage(): React.JSX.Element {
               id="sct-filter"
               className="innovic-select"
               value={filter}
-              onChange={(e) => setFilter(e.target.value)}
+              onChange={(e) => go({ show: e.target.value as SoCycleTimeShow })}
             >
               {FILTERS.map((f) => (
                 <option key={f.value} value={f.value}>
@@ -259,11 +169,12 @@ function SoCycleTimePage(): React.JSX.Element {
       }
       onClear={() => {
         setSearch('');
-        setFilter('all');
+        void routeNavigate({ search: { page: 1 }, replace: true });
       }}
-      onExport={{ excel: () => exportSoCycleTime(filtered) }}
+      onExport={{ excel: runExport, busy: exporting }}
+      exportDisabled={data.total === 0}
       kpis={
-        // Averages over the filtered set
+        // Averages over every matching SO (server-side, all pages)
         <StatStrip
           items={[
             {
@@ -294,11 +205,15 @@ function SoCycleTimePage(): React.JSX.Element {
           ]}
         />
       }
-      rowCount={filtered.length}
-      rowNoun="SO"
       footer={
         <>
-          <ListFooter total={filtered.length} noun="SO" />
+          <ListFooter
+            total={data.total}
+            noun="SO"
+            page={urlSearch.page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPage}
+          />
           <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
             Days · amber &gt; 10 · red &gt; 20 · green = dispatched
           </div>
@@ -309,9 +224,12 @@ function SoCycleTimePage(): React.JSX.Element {
         <DataTable<SoCycleTimeRow>
           tableKey={TABLE_KEYS.soCycleTime}
           columns={columns}
-          rows={filtered}
+          rows={data.rows}
           rowKey={(r) => r.soId}
-          empty={search.trim() || filter !== 'all' ? 'No SOs match.' : 'No SOs yet.'}
+          sortFilterServer={sf}
+          empty={
+            search.trim() || filter !== 'all' || sf.filtering ? 'No SOs match.' : 'No SOs yet.'
+          }
           rowClassName={(r) => (r.phases.dispatched ? ROW_TINT.done : undefined)}
           onRowClick={(r) => void navigate({ to: '/sales-orders/$id', params: { id: r.soId } })}
         />

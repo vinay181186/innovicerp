@@ -33,6 +33,7 @@
 // rewrites the stored rows to the tier that matches each user's role.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import {
   ACCESS_DEPT_KEYS,
   ACCESS_FORM_KEYS,
@@ -170,8 +171,22 @@ export type UserAccessListItem = z.infer<typeof userAccessListItemSchema>;
 
 export const listUserAccessResponseSchema = z.object({
   items: z.array(userAccessListItemSchema),
+  /** Every user matching search + sf (before limit/offset) — ADR-201 paging. */
+  total: z.number().int().nonnegative(),
 });
 export type ListUserAccessResponse = z.infer<typeof listUserAccessResponseSchema>;
+
+// Access Control list query (ADR-201). With no `limit` every user comes back
+// (User Management + the Configure box's "Copy access from…" need all of
+// them); the Access Control screen asks for one 25-row page.
+export const listUserAccessQuerySchema = z.object({
+  search: z.string().max(100).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListUserAccessQuery = z.input<typeof listUserAccessQuerySchema>;
 
 // "Effective" access for /me — applies fullAccess + cascade so the web
 // shell can answer canView/canEdit/canEntry/canApprove without re-deriving

@@ -34,11 +34,12 @@ export const materialSizesKeys = {
   list: (q: ListMaterialSizesQuery) => [...materialSizesKeys.lists(), q] as const,
 };
 
-// Both list queries share the same shape (search / isActive / limit / offset).
+// Both list queries share the same shape (search / isActive / sf / limit / offset).
 function toQueryString(q: ListMaterialGradesQuery | ListMaterialSizesQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (typeof q.isActive === 'boolean') params.set('isActive', String(q.isActive));
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -61,7 +62,8 @@ export function useMaterialGradesList(
 export function useCreateMaterialGrade() {
   const qc = useQueryClient();
   return useMutation<MaterialGrade, Error, CreateMaterialGradeInput>({
-    mutationFn: (input) => apiFetch<MaterialGrade>('/material-grades', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      apiFetch<MaterialGrade>('/material-grades', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: materialGradesKeys.lists() });
     },
@@ -125,7 +127,8 @@ export function useMaterialSizesList(
 export function useCreateMaterialSize() {
   const qc = useQueryClient();
   return useMutation<MaterialSize, Error, CreateMaterialSizeInput>({
-    mutationFn: (input) => apiFetch<MaterialSize>('/material-sizes', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      apiFetch<MaterialSize>('/material-sizes', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: materialSizesKeys.lists() });
     },

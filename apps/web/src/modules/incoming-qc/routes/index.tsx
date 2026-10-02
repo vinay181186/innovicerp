@@ -10,21 +10,29 @@
 // to the screen and dropping the rightmost unpinned ones into a ▸ detail row
 // when it is too narrow. The row columns + ▸ detail live in two column modules
 // so this file stays under the 400-line ceiling.
+//
+// ADR-201: both tables show 25 rows a page (Prev / Next, page in the URL), and
+// the search and each table's Sort & Filter run on the SERVER over every line.
+// The strip is the server's whole-queue metrics. The Inspect popup reads its
+// one line on its own (grnLineId), so a ?line= deep link opens whatever page
+// the line is on.
 
 import { createRoute, Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
-import { StatStrip } from '@/components/shared/stat-strip';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { matchesSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback/Banner';
-import { ListHeader, PageState } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useIncomingQc } from '../api';
 import { type IncomingRaisedNc } from '../components/incoming-qc-inspect-form';
 import { IncomingQcInspectModal } from '../components/incoming-qc-inspect-modal';
+import { IncomingQcMetricsStrip } from '../components/incoming-qc-metrics';
 import {
   IncomingQcCompletedExpanded,
   incomingQcCompletedColumns,
@@ -33,7 +41,6 @@ import {
   IncomingQcPendingExpanded,
   incomingQcPendingColumns,
 } from '../components/incoming-qc-pending-columns';
-import { daysText } from '../lib/qc-format';
 
 const searchSchema = z.object({
   // DEEP LINK: `?line=<grnLineId>` means "open the Inspect popup for this GRN
@@ -41,6 +48,11 @@ const searchSchema = z.object({
   // taken back out of the URL — the moment the popup opens, so a refresh or
   // Back is not a second request to open it.
   line: z.string().optional(),
+  search: z.string().optional(),
+  /** Pending Inspection page (1-based). */
+  page: pageSearchParam,
+  /** Completed QC page (1-based). */
+  donePage: pageSearchParam,
 });
 
 export const incomingQcRoute = createRoute({
@@ -51,69 +63,95 @@ export const incomingQcRoute = createRoute({
 });
 
 function IncomingQcPage(): React.JSX.Element {
-  const { data, isLoading, isFetching, isError, error } = useIncomingQc();
   const { data: eff } = useMyAccess();
   const search = incomingQcRoute.useSearch();
   const navigate = incomingQcRoute.useNavigate();
 
-  // Which pending GRN line the Inspect popup is open on; null = closed. Only
-  // the id is kept — the row itself is always read fresh off the queue below,
-  // so a refetch (the queue polls every 30s) cannot leave the box on stale
-  // figures.
+  const gotoPending = useCallback(
+    (p: number) => void navigate({ search: (s) => ({ ...s, page: p }), replace: true }),
+    [navigate],
+  );
+  const gotoDone = useCallback(
+    (p: number) => void navigate({ search: (s) => ({ ...s, donePage: p }), replace: true }),
+    [navigate],
+  );
+
+  // Search box → ?search= (debounced); any change sends both tables to page 1.
+  const [term, setTerm] = useState(search.search ?? '');
+  useEffect(() => {
+    setTerm((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
+  }, [search.search]);
+  useEffect(() => {
+    const t = normalizeSearchTerm(term);
+    const next = t === '' ? undefined : t;
+    if (next === search.search) return;
+    const id = window.setTimeout(() => {
+      void navigate({
+        search: (s) => ({ ...s, search: next, page: 1, donePage: 1 }),
+        replace: true,
+      });
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [term, search.search, navigate]);
+
+  // Sort & Filter on the SERVER per table (ADR-200); a change → that table's page 1.
+  const sfPending = useServerSortFilter(TABLE_KEYS.incomingQcPending, () => gotoPending(1));
+  const sfDone = useServerSortFilter(TABLE_KEYS.incomingQcDone, () => gotoDone(1));
+
+  const { data, isLoading, isFetching, isError, error } = useIncomingQc({
+    search: search.search,
+    pendingLimit: LIST_PAGE_SIZE,
+    pendingOffset: pageOffset(search.page),
+    completedLimit: LIST_PAGE_SIZE,
+    completedOffset: pageOffset(search.donePage),
+    pendingSf: sfPending.param,
+    completedSf: sfDone.param,
+  });
+  useClampPage(search.page, data?.pendingTotal, gotoPending);
+  useClampPage(search.donePage, data?.completedTotal, gotoDone);
+
+  // Which pending GRN line the Inspect popup is open on; null = closed. The
+  // row is read on its own (whatever page it is on) and never from another
+  // line's cached answer, so a refetch (the queue polls every 30s) cannot
+  // leave the box on stale figures.
   const [inspectLineId, setInspectLineId] = useState<string | null>(null);
+  const lineQuery = useIncomingQc(
+    { grnLineId: inspectLineId ?? undefined, pendingLimit: 1, completedLimit: 1 },
+    { enabled: inspectLineId !== null, keepPrevious: false },
+  );
   // The NC the last reject raised — named with a link to its disposition,
   // the same banner the QC Call Register shows (incoming-qc-inspect#1).
   const [raisedNc, setRaisedNc] = useState<IncomingRaisedNc | null>(null);
-  const pending = data?.pending;
-  const inspectRow = inspectLineId
-    ? (pending?.find((r) => r.grnLineId === inspectLineId) ?? null)
-    : null;
+  const linePending = lineQuery.data?.pending;
+  const inspectRow =
+    inspectLineId && linePending?.[0]?.grnLineId === inspectLineId ? linePending[0] : null;
 
-  // DEEP LINK — open the popup once the queue has loaded and the line is in
-  // it. Acted on once per id, then the param is stripped (replace, so Back
-  // does not step through it). A line that is not in the queue (already
-  // inspected elsewhere) opens nothing; the param is still consumed.
+  // DEEP LINK — open the popup for the line, once per id; the param is
+  // stripped (replace, so Back does not step through it). A line that is not
+  // waiting (already inspected elsewhere) closes again once its read says so.
   const autoOpenedLineRef = useRef<string | null>(null);
   useEffect(() => {
     const line = search.line;
-    if (!line || !pending || autoOpenedLineRef.current === line) return;
+    if (!line || autoOpenedLineRef.current === line) return;
     autoOpenedLineRef.current = line;
-    if (pending.some((r) => r.grnLineId === line)) setInspectLineId(line);
+    setInspectLineId(line);
     void navigate({ search: (prev) => ({ ...prev, line: undefined }), replace: true });
-  }, [pending, search.line, navigate]);
+  }, [search.line, navigate]);
 
-  // The row vanished after a refetch — fully inspected elsewhere, or the GRN
-  // was changed — so there is nothing left to inspect: close rather than keep
-  // a form up for a line that no longer needs one.
+  // The line is no longer pending — fully inspected elsewhere, or the GRN was
+  // changed — so there is nothing left to inspect: close rather than keep a
+  // form up for a line that no longer needs one.
   useEffect(() => {
-    if (inspectLineId && pending && !pending.some((r) => r.grnLineId === inspectLineId)) {
-      setInspectLineId(null);
-    }
-  }, [inspectLineId, pending]);
+    if (inspectLineId && linePending && linePending.length === 0) setInspectLineId(null);
+  }, [inspectLineId, linePending]);
 
-  // Client-side search over the rows already loaded — every column the two
-  // tables show that carries text (GRN, PO, vendor, POL, item code/name).
-  const [term, setTerm] = useState('');
-  const pendingRows = (data?.pending ?? []).filter((r) =>
-    matchesSearchTerm(
-      [r.grnNo, r.poCode, r.vendorName, r.clientPoLineNo, r.itemCode, r.itemRevision, r.itemName],
-      term,
-    ),
-  );
-  const completedRows = (data?.completed ?? []).filter((r) =>
-    matchesSearchTerm(
-      [
-        r.grnNo,
-        r.vendorName,
-        r.clientPoLineNo,
-        r.itemCode,
-        r.itemRevision,
-        r.itemName,
-        r.qcRemarks,
-      ],
-      term,
-    ),
-  );
+  const pendingRows = data?.pending ?? [];
+  const completedRows = data?.completed ?? [];
+  const pendingTotal = data?.pendingTotal ?? 0;
+  const completedTotal = data?.completedTotal ?? 0;
+  const filtering = (search.search ?? '') !== '';
 
   // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
   // expand control (onToggleExpanded), and renderExpanded returns null for a
@@ -143,59 +181,21 @@ function IncomingQcPage(): React.JSX.Element {
       <ListHeader
         title="Incoming QC"
         icon="🔬"
-        count={data ? pendingRows.length : undefined}
+        count={data ? pendingTotal : undefined}
         noun="pending line"
         search={term}
         onSearch={setTerm}
         searchPlaceholder="Search GRN, PO, vendor, POL, item code, item name…"
         updating={isFetching && !isLoading}
+        onClearFilters={() => {
+          sfPending.clearFilters();
+          sfDone.clearFilters();
+          setTerm('');
+        }}
+        filtersActive={term !== '' || sfPending.filtering || sfDone.filtering}
       >
-        {/* Pipeline dashboard — one strip */}
-        {data ? (
-          <StatStrip
-            items={[
-              {
-                key: 'grnsWaiting',
-                label: 'GRNs Waiting',
-                count: data.metrics.grnsWaiting,
-                color: 'var(--amber2)',
-                // Price-gated: the server sends null when prices are hidden.
-                sub:
-                  data.metrics.valueInQc == null
-                    ? undefined
-                    : `₹${data.metrics.valueInQc.toLocaleString('en-IN')} in QC`,
-              },
-              {
-                key: 'pendingQty',
-                label: 'QC Pending',
-                count: data.metrics.pendingQty,
-                color: 'var(--amber2)',
-              },
-              {
-                key: 'oldest',
-                label: 'Oldest GRN',
-                count: daysText(data.metrics.oldestDays),
-                color: data.metrics.oldestDays > 5 ? 'var(--red2)' : 'var(--amber2)',
-                sub: [data.metrics.oldestGrnNo, `Avg ${daysText(data.metrics.avgWaitDays)}`]
-                  .filter(Boolean)
-                  .join(' · '),
-              },
-              {
-                key: 'todayAccepted',
-                label: 'Today Accepted',
-                count: data.metrics.todayAcceptedQty,
-                color: 'var(--green2)',
-                sub: `${data.metrics.todayAcceptedGrns} GRNs`,
-              },
-              {
-                key: 'todayRejected',
-                label: 'Today Rejected',
-                count: data.metrics.todayRejectedQty,
-                color: 'var(--red2)',
-              },
-            ]}
-          />
-        ) : null}
+        {/* Pipeline dashboard — one strip, the whole queue */}
+        {data ? <IncomingQcMetricsStrip m={data.metrics} /> : null}
       </ListHeader>
 
       {raisedNc ? (
@@ -233,7 +233,7 @@ function IncomingQcPage(): React.JSX.Element {
           <div className="panel">
             <div className="panel-hdr">
               <span className="panel-title" style={{ color: 'var(--amber2)' }}>
-                ⏳ Pending Inspection ({pendingRows.length} lines)
+                ⏳ Pending Inspection ({pendingTotal} lines)
               </span>
             </div>
             <Panel bodyPadding="none">
@@ -243,7 +243,12 @@ function IncomingQcPage(): React.JSX.Element {
                 rows={pendingRows}
                 rowKey={(r) => r.grnLineId}
                 loading={isLoading}
-                emptyText={term.trim() ? 'No GRN lines match.' : 'No GRN lines waiting for QC.'}
+                sortFilterServer={sfPending}
+                emptyText={
+                  filtering || sfPending.filtering
+                    ? 'No GRN lines match.'
+                    : 'No GRN lines waiting for QC.'
+                }
                 // Row click opens the GRN doc; Inspect (⋯) opens the accept/reject
                 // popup over the queue.
                 onRowClick={(r) =>
@@ -264,13 +269,20 @@ function IncomingQcPage(): React.JSX.Element {
                 ]}
               />
             </Panel>
+            <ListFooter
+              total={pendingTotal}
+              noun="pending line"
+              page={search.page}
+              pageSize={LIST_PAGE_SIZE}
+              onPage={gotoPending}
+            />
           </div>
 
           {/* Recently completed */}
           <div className="panel" style={{ marginTop: 16 }}>
             <div className="panel-hdr">
               <span className="panel-title" style={{ color: 'var(--green2)' }}>
-                ✅ Recently Completed QC (last 20)
+                ✅ Completed QC ({completedTotal} lines)
               </span>
             </div>
             <Panel bodyPadding="none">
@@ -280,8 +292,11 @@ function IncomingQcPage(): React.JSX.Element {
                 rows={completedRows}
                 rowKey={(r) => r.grnLineId}
                 loading={isLoading}
+                sortFilterServer={sfDone}
                 emptyText={
-                  term.trim() ? 'No completed inspections match.' : 'No completed inspections yet.'
+                  filtering || sfDone.filtering
+                    ? 'No completed inspections match.'
+                    : 'No completed inspections yet.'
                 }
                 onRowClick={(r) =>
                   void navigate({ to: '/goods-receipt-notes/$id', params: { id: r.grnId } })
@@ -295,6 +310,13 @@ function IncomingQcPage(): React.JSX.Element {
                 onToggleExpanded={(r) => toggleCompleted(r.grnLineId)}
               />
             </Panel>
+            <ListFooter
+              total={completedTotal}
+              noun="completed line"
+              page={search.donePage}
+              pageSize={LIST_PAGE_SIZE}
+              onPage={gotoDone}
+            />
           </div>
         </>
       )}

@@ -23,9 +23,12 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useSession } from '@/lib/session';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
@@ -89,14 +92,21 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss PRs. Every change goes to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.prList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListPurchaseRequestsQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.status, search.page],
+    [sf.param, search.search, search.status, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query);
@@ -106,33 +116,35 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const rejectMut = useRejectPr();
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Both return the mutation's Promise (undefined when the confirm / prompt is
+  // cancelled) so the row's ⋯ shows busy; a failure still lands in the red
+  // banner, because the ⋯ menu only logs a rejected Promise.
   const handleApprove = useCallback(
-    (pr: PurchaseRequestListItem): void => {
+    (pr: PurchaseRequestListItem): Promise<void> | undefined => {
       setActionError(null);
-      if (!window.confirm(`Approve PR ${pr.code}?`)) return;
-      approveMut.mutate(pr.id, {
-        onError: (e) =>
+      if (!window.confirm(`Approve PR ${pr.code}?`)) return undefined;
+      return approveMut.mutateAsync(pr.id).then(
+        () => undefined,
+        (e: unknown) =>
           setActionError(e instanceof Error ? e.message : 'Could not approve PR. Try again.'),
-      });
+      );
     },
     [approveMut],
   );
 
   const handleReject = useCallback(
-    (pr: PurchaseRequestListItem): void => {
+    (pr: PurchaseRequestListItem): Promise<void> | undefined => {
       setActionError(null);
       const reason = window.prompt(`Reject ${pr.code} — reason:`);
-      if (reason === null) return;
+      if (reason === null) return undefined;
       if (!reason.trim()) {
         setActionError('Rejection reason is required.');
-        return;
+        return undefined;
       }
-      rejectMut.mutate(
-        { id: pr.id, reason: reason.trim() },
-        {
-          onError: (e) =>
-            setActionError(e instanceof Error ? e.message : 'Could not reject PR. Try again.'),
-        },
+      return rejectMut.mutateAsync({ id: pr.id, reason: reason.trim() }).then(
+        () => undefined,
+        (e: unknown) =>
+          setActionError(e instanceof Error ? e.message : 'Could not reject PR. Try again.'),
       );
     },
     [rejectMut],
@@ -162,19 +174,20 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   );
 
   const clearFilters = useCallback((): void => {
+    sf.clearFilters();
     setSearchInput('');
     void navigate({
       search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
       replace: true,
     });
-  }, [navigate]);
+  }, [navigate, sf]);
 
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
   const today = todayIst();
-  const columns = useMemo(() => prListColumns(), []);
+  const columns = useMemo(() => prListColumns((currentPage - 1) * PAGE_SIZE + 1), [currentPage]);
 
   // Selection: one vendor per PO (sel.isRowSelectable locks to the first vendor).
   const sel = usePrSelection(rows, canCreatePo);
@@ -211,23 +224,32 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     [today],
   );
 
-  // Per-row action cluster — reuses the module's existing handlers / targets.
+  // Assign Task: page-level modal (the ⋯ menu cannot host one). Hidden for the
+  // read-only viewer role, which POST /tasks refuses.
+  const { data: me } = useSession();
+  const canAssign = Boolean(me) && me?.role !== 'viewer';
+  const [assignPr, setAssignPr] = useState<PurchaseRequestListItem | null>(null);
+
+  // Per-row ⋯ menu — reuses the module's existing handlers / targets.
   const rowActionsFor = useCallback(
     (pr: PurchaseRequestListItem): React.ReactNode => (
       <PrListRowActions
         pr={pr}
         canApprove={perms.approve}
         canCreatePo={canCreatePo}
+        canAssign={canAssign}
         prApprovalOn={prApprovalOn}
         approving={approveMut.isPending}
         rejecting={rejectMut.isPending}
         onApprove={handleApprove}
         onReject={handleReject}
+        onAssign={setAssignPr}
       />
     ),
     [
       perms.approve,
       canCreatePo,
+      canAssign,
       prApprovalOn,
       approveMut.isPending,
       rejectMut.isPending,
@@ -284,7 +306,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               </select>
             }
             onClearFilters={clearFilters}
-            filtersActive={search.status !== undefined || searchInput !== ''}
+            filtersActive={sf.filtering || search.status !== undefined || searchInput !== ''}
             primary={
               perms.entry ? (
                 <Link to="/purchase-requests/new" className="btn btn-primary">
@@ -322,8 +344,11 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                 columns={columns}
                 rows={rows}
                 loading={isLoading}
-                defaultHidden={['sr_no']}
-                emptyText={search.search || search.status ? 'No PRs match.' : 'No PRs yet.'}
+                defaultHidden={['sr_no', 'created_on']}
+                sortFilterServer={sf}
+                emptyText={
+                  sf.filtering || search.search || search.status ? 'No PRs match.' : 'No PRs yet.'
+                }
                 onRowClick={(pr) =>
                   void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
                 }
@@ -379,6 +404,23 @@ function PurchaseRequestsListPage(): React.JSX.Element {
           />
         </>
       )}
+
+      {assignPr ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'purchase_request',
+            id: assignPr.id,
+            display: `PR ${assignPr.code}`,
+            navPage: `/purchase-requests/${assignPr.id}`,
+          }}
+          suggestedTitle={
+            assignPr.status === 'open'
+              ? `Review & approve ${assignPr.code}`
+              : `Convert ${assignPr.code} to PO`
+          }
+          onClose={() => setAssignPr(null)}
+        />
+      ) : null}
     </div>
   );
 }

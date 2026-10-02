@@ -46,12 +46,21 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useCostCentersList, useSoftDeleteCostCenter } from '../api';
 
 const PAGE_SIZE = 25;
+
+// Sort & Filter tick lists (ADR-200): the stored value + the label shown.
+const DEPARTMENT_OPTIONS = COST_CENTER_DEPARTMENTS.map((d) => ({ value: d, label: d }));
+const TYPE_OPTIONS = COST_CENTER_TYPES.map((t) => ({ value: t, label: t }));
+const ACTIVE_OPTIONS = [
+  { value: 'true', label: 'Active' },
+  { value: 'false', label: 'Inactive' },
+];
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -108,16 +117,24 @@ function CostCentersListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss rows. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.costCentersList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListCostCentersQuery = useMemo(
     () => ({
       search: search.search,
       isActive: search.isActive,
       department: search.department,
       type: search.type,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.isActive, search.department, search.type, search.page],
+    [search.search, search.isActive, search.department, search.type, sf.param, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useCostCentersList(query);
@@ -137,6 +154,8 @@ function CostCentersListPage(): React.JSX.Element {
     () => [
       {
         id: 'code',
+        sortFilterField: 'code',
+        filterType: 'text',
         header: 'Cost Centre Code',
         width: '11%',
         nowrap: true,
@@ -158,6 +177,7 @@ function CostCentersListPage(): React.JSX.Element {
       },
       {
         id: 'name',
+        sortFilterField: 'name',
         header: 'Cost Centre Name',
         width: '27%',
         align: 'left',
@@ -167,18 +187,25 @@ function CostCentersListPage(): React.JSX.Element {
       },
       {
         id: 'department',
+        sortFilterField: 'department',
+        filterType: 'list',
+        filterOptions: DEPARTMENT_OPTIONS,
         header: 'Department',
         width: '12%',
         render: (cc) => cc.department ?? '—',
       },
       {
         id: 'type',
+        sortFilterField: 'type',
+        filterType: 'list',
+        filterOptions: TYPE_OPTIONS,
         header: 'Cost Centre Type',
         width: '10%',
         render: (cc) => cc.type ?? '—',
       },
       {
         id: 'description',
+        sortFilterField: 'description',
         header: 'Description',
         width: '20%',
         className: 'text3',
@@ -188,6 +215,8 @@ function CostCentersListPage(): React.JSX.Element {
       },
       {
         id: 'is_active',
+        sortFilterField: 'isActive',
+        filterOptions: ACTIVE_OPTIONS,
         kind: 'badge',
         header: 'Active',
         width: '10%',
@@ -330,11 +359,16 @@ function CostCentersListPage(): React.JSX.Element {
         <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.costCentersList}
+            sortFilterServer={sf}
             columns={columns}
             rows={rows}
             loading={isLoading}
             emptyText={
-              search.search || search.isActive !== undefined || search.type || search.department
+              search.search ||
+              search.isActive !== undefined ||
+              search.type ||
+              search.department ||
+              sf.param
                 ? 'No Cost Centres match.'
                 : 'No Cost Centres yet.'
             }

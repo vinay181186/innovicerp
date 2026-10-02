@@ -14,8 +14,10 @@ import { items, stockCountLines } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { roundQty } from '../../lib/stock-ledger';
 import { readStockPositions } from '../../lib/stock-reservation';
+import { STOCK_COUNT_SF_COLUMNS } from './sf-columns';
 
 const FORM = 'stockcount_create' as const;
 
@@ -75,20 +77,29 @@ export async function listStockCounts(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const term = q.search ? `%${q.search}%` : null;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(q.sf);
+    const orderBy = sfOrderBy(STOCK_COUNT_SF_COLUMNS, sf, sql`sc.count_date DESC, sc.code DESC`);
     const where = sql`sc.company_id = ${companyId}::uuid AND sc.deleted_at IS NULL
       ${q.status ? sql`AND sc.status = ${q.status}` : sql``}
-      ${term ? sql`AND (sc.code ILIKE ${term} OR sc.remarks ILIKE ${term})` : sql``}`;
+      ${term ? sql`AND (sc.code ILIKE ${term} OR sc.remarks ILIKE ${term})` : sql``}
+      ${sfWhere(STOCK_COUNT_SF_COLUMNS, sf)}`;
     const rows = (await tx.execute(sql`
       SELECT ${HEADER_SELECT}
       FROM public.stock_counts sc
       LEFT JOIN public.users cu ON cu.id = sc.created_by
       LEFT JOIN public.users au ON au.id = sc.approved_by
       WHERE ${where}
-      ORDER BY sc.count_date DESC, sc.code DESC
+      ORDER BY ${orderBy}
       LIMIT ${q.limit} OFFSET ${q.offset}
     `)) as unknown as Array<Record<string, unknown>>;
     const tot = (await tx.execute(sql`
-      SELECT COUNT(*)::int AS n FROM public.stock_counts sc WHERE ${where}
+      SELECT COUNT(*)::int AS n
+      FROM public.stock_counts sc
+      LEFT JOIN public.users cu ON cu.id = sc.created_by
+      LEFT JOIN public.users au ON au.id = sc.approved_by
+      WHERE ${where}
     `)) as unknown as Array<{ n: number }>;
     return {
       items: rows.map(headerOut),

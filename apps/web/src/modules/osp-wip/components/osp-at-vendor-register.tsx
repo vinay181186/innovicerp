@@ -3,10 +3,18 @@
 // job is still at the vendor, came back accepted, or was never sent. Backed by
 // the v_osp_wip view (migration 0064). Every ordered unit reconciles into a
 // bucket: order_qty = accepted + in_qc + at_vendor + not_sent.
+//
+// 25 rows a page (ADR-201): search, Bucket and Sort & Filter (ADR-200, server
+// mode) run on the server over every op; the Bucket figures and the Total Sent
+// tile are server sums over every matching op. Any change → page 1. The page
+// lives in component state (this is a tab, not a route).
 
 import { type ListOspWipResponse } from '@innovic/shared';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, Panel, StatStrip } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useOspWip } from '../api';
@@ -26,12 +34,31 @@ export function OspAtVendorRegister(): React.JSX.Element {
   // table on a register that does have rows. The Bucket dropdown still filters to it.
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
+  const [term, setTerm] = useState<string | undefined>(undefined);
+  const [page, setPage] = useState(1);
   const columns = useMemo(() => ospAtVendorColumns(), []);
+  const gotoFirst = useCallback(() => setPage(1), []);
+  const sf = useServerSortFilter(TABLE_KEYS.ospAtVendorRegister, gotoFirst);
 
-  const { data, isLoading, isError, error } = useOspWip({
+  // The box searches on the server after a short pause; a new term → page 1.
+  useEffect(() => {
+    const next = normalizeSearchTerm(search) || undefined;
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term]);
+
+  const { data, isLoading, isFetching, isError, error } = useOspWip({
     filter,
-    search: search.trim() || undefined,
+    ...(term ? { search: term } : {}),
+    ...(sf.param ? { sf: sf.param } : {}),
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
+  useClampPage(page, data?.total, setPage);
 
   return (
     <div>
@@ -41,12 +68,13 @@ export function OspAtVendorRegister(): React.JSX.Element {
       <ListHeader
         title="At-Vendor Register"
         icon="🚚"
-        count={data?.rows.length}
+        count={data?.total}
         noun="outsourced operation"
         filterNote={FILTER_LABELS[filter]}
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search JC, item, SO, vendor…"
+        updating={isFetching && !isLoading}
         filters={
           // The qty buckets that used to be clickable strip tiles, now one
           // dropdown with the same numbers in the option labels (owner
@@ -56,7 +84,10 @@ export function OspAtVendorRegister(): React.JSX.Element {
             aria-label="Bucket"
             title="Bucket"
             value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterKey)}
+            onChange={(e) => {
+              setFilter(e.target.value as FilterKey);
+              setPage(1);
+            }}
           >
             <option value="all">
               {data ? `Outsourced Ops (${data.summary.totalOps})` : 'Outsourced Ops'}
@@ -77,8 +108,10 @@ export function OspAtVendorRegister(): React.JSX.Element {
         onClearFilters={() => {
           setFilter('all');
           setSearch('');
+          sf.clearFilters();
+          setPage(1);
         }}
-        filtersActive={filter !== 'all' || search !== ''}
+        filtersActive={filter !== 'all' || search !== '' || sf.filtering}
       >
         {data ? <KpiStrip summary={data.summary} /> : null}
       </ListHeader>
@@ -99,8 +132,9 @@ export function OspAtVendorRegister(): React.JSX.Element {
               rows={data?.rows ?? []}
               rowKey={(r) => r.jcOpId}
               loading={isLoading}
+              sortFilterServer={sf}
               emptyText={
-                filter !== 'all' || search.trim()
+                filter !== 'all' || search.trim() || sf.filtering
                   ? 'No outsourced operations match.'
                   : 'No outsourced operations yet.'
               }
@@ -110,8 +144,11 @@ export function OspAtVendorRegister(): React.JSX.Element {
 
           {data ? (
             <ListFooter
-              total={data.rows.length}
+              total={data.total}
               noun="outsourced operation"
+              page={page}
+              pageSize={LIST_PAGE_SIZE}
+              onPage={setPage}
               hint="Order Qty = Accepted + In QC + At Vendor + Not Sent."
             />
           ) : null}

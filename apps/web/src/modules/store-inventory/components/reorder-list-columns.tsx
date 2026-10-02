@@ -66,6 +66,7 @@ export function reorderListColumns(opts: {
   return [
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       header: 'Item Code',
       kind: 'code',
       nowrap: true,
@@ -77,6 +78,7 @@ export function reorderListColumns(opts: {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       header: 'Item Name',
       align: 'left',
       ellipsis: true,
@@ -85,6 +87,7 @@ export function reorderListColumns(opts: {
     },
     {
       id: 'uom',
+      sortFilterField: 'uom',
       header: 'UOM',
       kind: 'code',
       nowrap: true,
@@ -93,6 +96,7 @@ export function reorderListColumns(opts: {
     },
     {
       id: 'available',
+      sortFilterField: 'availableQty',
       header: 'Available',
       kind: 'num',
       align: 'right',
@@ -102,6 +106,7 @@ export function reorderListColumns(opts: {
     },
     {
       id: 'on_po',
+      sortFilterField: 'onPoQty',
       header: 'On PO',
       kind: 'num',
       align: 'right',
@@ -111,6 +116,7 @@ export function reorderListColumns(opts: {
     },
     {
       id: 'reorder_level',
+      sortFilterField: 'reorderLevel',
       header: 'Reorder Lvl',
       kind: 'num',
       align: 'right',
@@ -120,6 +126,7 @@ export function reorderListColumns(opts: {
     },
     {
       id: 'reorder_qty',
+      sortFilterField: 'reorderQty',
       header: 'Reorder Qty',
       kind: 'num',
       align: 'right',

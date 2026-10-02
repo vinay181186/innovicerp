@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { DC_STATUSES } from '../enums/dc-status';
 import { positiveQtySchema, qtyUomProblem } from '../lib/qty-rule';
 import { uomSchema } from './item';
+import { sfRawParamSchema } from './list-query';
 
 export const dcStatusSchema = z.enum(DC_STATUSES);
 
@@ -159,6 +160,8 @@ export const listDeliveryChallansQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

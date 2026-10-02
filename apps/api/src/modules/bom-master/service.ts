@@ -38,6 +38,8 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { BOM_SF_COLUMNS } from './sf-columns';
 import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
@@ -239,26 +241,21 @@ export async function listBomMasters(
 ): Promise<ListBomMastersResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     // Search the parent's code/name too — "which BOM builds this part?" is the
     // question people actually arrive with.
     const searchFrag = term
-      ? sql`AND (b.bom_no ILIKE ${term} OR b.bom_name ILIKE ${term} OR pi.code ILIKE ${term} OR pi.name ILIKE ${term})`
+      ? sql`AND (b.bom_no ILIKE ${term} ESCAPE '\\' OR b.bom_name ILIKE ${term} ESCAPE '\\'
+          OR pi.code ILIKE ${term} ESCAPE '\\' OR pi.name ILIKE ${term} ESCAPE '\\')`
       : sql``;
     const statusFrag = input.status ? sql`AND b.status = ${input.status}::bom_status` : sql``;
+    // Sort & Filter (ADR-200) — applied to the page AND the count, so `total`
+    // is the number of rows the search + filters really match (ADR-201).
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(BOM_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(BOM_SF_COLUMNS, sf, sql`b.bom_no DESC, b.id DESC`);
 
-    const result = await tx.execute(sql`
-      SELECT
-        b.id, b.company_id AS "companyId", b.bom_no AS "bomNo", b.bom_name AS "bomName",
-        b.revision, b.status, b.revision_date AS "revisionDate",
-        b.created_at AS "createdAt", b.created_by AS "createdBy",
-        b.updated_at AS "updatedAt", b.updated_by AS "updatedBy",
-        b.deleted_at AS "deletedAt",
-        b.parent_item_id AS "parentItemId",
-        pi.code AS "parentItemCode",
-        pi.name AS "parentItemName",
-        COALESCE(line_agg.line_count, 0)::int AS "lineCount",
-        COALESCE(so_agg.linked_so_count, 0)::int AS "linkedSoCount"
+    const fromWhere = sql`
       FROM public.bom_masters b
       LEFT JOIN public.items pi ON pi.id = b.parent_item_id
       LEFT JOIN LATERAL (
@@ -277,17 +274,29 @@ export async function listBomMasters(
         AND b.deleted_at IS NULL
         ${searchFrag}
         ${statusFrag}
-      ORDER BY b.bom_no DESC
+        ${sfFrag}`;
+
+    const result = await tx.execute(sql`
+      SELECT
+        b.id, b.company_id AS "companyId", b.bom_no AS "bomNo", b.bom_name AS "bomName",
+        b.revision, b.status, b.revision_date AS "revisionDate",
+        b.created_at AS "createdAt", b.created_by AS "createdBy",
+        b.updated_at AS "updatedAt", b.updated_by AS "updatedBy",
+        b.deleted_at AS "deletedAt",
+        b.parent_item_id AS "parentItemId",
+        pi.code AS "parentItemCode",
+        pi.name AS "parentItemName",
+        COALESCE(line_agg.line_count, 0)::int AS "lineCount",
+        COALESCE(so_agg.linked_so_count, 0)::int AS "linkedSoCount"
+      ${fromWhere}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(bomMasters.companyId, companyId), isNull(bomMasters.deletedAt)];
-    if (input.status) conditions.push(eq(bomMasters.status, input.status));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(bomMasters)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    const totalRows = (await tx.execute(
+      sql`SELECT COUNT(*)::int AS n ${fromWhere}`,
+    )) as unknown as Array<{ n: number }>;
+    const total = Number(totalRows[0]?.n ?? 0);
 
     const itemsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     return { items: itemsList, total, limit: input.limit, offset: input.offset };

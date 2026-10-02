@@ -8,15 +8,19 @@
 // tooltips, the Sent total keeps its whole-vs-fraction formatting, and the JC /
 // Drawing Rev / Transport facts move into ▸ (defaultHidden below).
 
-import type { DeliveryChallanListItem } from '@innovic/shared';
+import { DC_STATUSES, type DeliveryChallanListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
+import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { DcStatusBadge } from './dc-status-badge';
 
 /** Column ids shown inside the ▸ detail row by default (fit engine
- *  `defaultHidden`): JC No., Drawing Rev, Transport. */
-export const DC_LIST_DEFAULT_HIDDEN = ['jc_code', 'drawing_rev', 'transport'];
+ *  `defaultHidden`): JC No., Drawing Rev, Transport, Created On. */
+export const DC_LIST_DEFAULT_HIDDEN = ['jc_code', 'drawing_rev', 'transport', 'created_on'];
+
+/** Sort & Filter (ADR-200, server mode) DC Status tick list: code + label shown. */
+const DC_STATUS_OPTIONS = DC_STATUSES.map((value) => ({ value, label: DC_STATUS_LABEL[value] }));
 
 /** The PO this DC was issued against — same three-way chip the card drew:
  *  green = a real linked PO, amber + `*` = the issue-time text snapshot only,
@@ -58,6 +62,7 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
   return [
     {
       id: 'dc_code',
+      sortFilterField: 'dcCode',
       header: 'DC No.',
       nowrap: true,
       render: (dc) => (
@@ -74,6 +79,7 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     },
     {
       id: 'dc_date',
+      sortFilterField: 'dcDate',
       kind: 'date',
       header: 'DC Date',
       className: 'mono',
@@ -82,6 +88,7 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendor',
       header: 'Vendor',
       align: 'left',
       ellipsis: true,
@@ -91,6 +98,7 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     },
     {
       id: 'po_code',
+      sortFilterField: 'poCode',
       kind: 'code',
       header: 'PO No.',
       nowrap: true,
@@ -98,6 +106,7 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     },
     {
       id: 'so_code',
+      sortFilterField: 'soCode',
       kind: 'code',
       header: 'SO No.',
       nowrap: true,
@@ -109,6 +118,8 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     },
     {
       id: 'sent_qty',
+      sortFilterField: 'totalQty',
+      filterType: 'num',
       header: 'Sent Qty',
       align: 'right',
       nowrap: true,
@@ -121,6 +132,8 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     },
     {
       id: 'lines',
+      sortFilterField: 'lineCount',
+      filterType: 'num',
       header: 'Lines',
       align: 'right',
       nowrap: true,
@@ -128,6 +141,8 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     },
     {
       id: 'dc_status',
+      sortFilterField: 'status',
+      filterOptions: DC_STATUS_OPTIONS,
       kind: 'badge',
       header: 'DC Status',
       nowrap: true,
@@ -136,6 +151,7 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     // ── ▸ detail row (defaultHidden) ──────────────────────────────────────
     {
       id: 'jc_code',
+      sortFilterField: 'jobCardCode',
       kind: 'code',
       header: 'JC No.',
       nowrap: true,
@@ -148,6 +164,7 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     },
     {
       id: 'drawing_rev',
+      sortFilterField: 'drawingRev',
       kind: 'code',
       header: 'Drawing Rev',
       nowrap: true,
@@ -160,12 +177,24 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
     },
     {
       id: 'transport',
+      sortFilterField: 'transport',
       header: 'Transport',
       align: 'left',
       ellipsis: true,
       className: 'text2',
       render: (dc) => dc.transport?.trim() || '—',
       title: (dc) => dc.transport ?? '',
+    },
+    {
+      // When the DC record was entered (IST day) — Sort & Filter can pick a
+      // range of it (ADR-200). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      header: 'Created On',
+      className: 'mono',
+      nowrap: true,
+      render: (dc) => fmtDate(dc.createdAt),
     },
   ];
 }

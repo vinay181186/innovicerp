@@ -94,7 +94,8 @@ export function ListHeader({
     ) : null);
   // Sort & Filter (ADR-200): the button sits BEFORE the search box whenever a
   // table on the page can be sorted / filtered.
-  const sfTables = useSfSnapshot(useSfStore()).tables.length;
+  const sfSnap = useSfSnapshot(useSfStore());
+  const sfTables = sfSnap.tables.length + sfSnap.heldFilters;
   const hasBar = searchBox != null || filters != null || onClearFilters != null || sfTables > 0;
   return (
     <HeaderBand

@@ -22,6 +22,7 @@ import type {
   PlanningDetailResponse,
   PlanningLine,
   PlanningPlanSummary,
+  PlanningSoListQuery,
   PlanningSoListResponse,
   RaisePlanningPrInput,
   RaisePlanningPrResponse,
@@ -58,6 +59,7 @@ import {
 import { readReservedByLine, readStockPositions } from '../../lib/stock-reservation';
 import { prCoverQtyRaw, soLineCoveredRaw, soLinePlannedRaw } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
+import { pagePlanningSoList } from './list-page';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 
 // ADR-170 — a route-card plan's derived status hangs on two live facts read
@@ -266,7 +268,10 @@ function liveJwCustomerName() {
 
 // ─── Left pane ───────────────────────────────────────────────────────────
 
-export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoListResponse> {
+export async function getPlanningSoList(
+  user: AuthContext,
+  query: PlanningSoListQuery = {},
+): Promise<PlanningSoListResponse> {
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -470,7 +475,8 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
       ),
     ];
 
-    return { generatedAt: new Date().toISOString(), items: listItems };
+    // ADR-201 — source / search / Sort & Filter / page, over every order.
+    return pagePlanningSoList(listItems, query);
   });
 }
 
@@ -1411,6 +1417,21 @@ export async function raisePlanningPr(
         );
       }
 
+      // 3a. Lock the SO line before measuring what is left — the same row lock
+      //     + Plan (plans/service.ts) and the SO edit take. Two planners (or two
+      //     tabs) raising on one line now queue here; the second one measures
+      //     after the first PR has committed and is refused if it would over-raise.
+      //     A separate statement on purpose: under READ COMMITTED the next
+      //     SELECT takes a fresh snapshot, so it sees the PR the winner inserted.
+      //     FOR UPDATE returns the latest committed row, so its short-close
+      //     stamp names the reason if the line changed while we waited.
+      const lockRows = (await tx.execute(sql`
+        SELECT (sol.short_closed_at IS NOT NULL) AS short_closed
+        FROM public.sales_order_lines sol
+        WHERE sol.id = ${soLineId}::uuid
+        FOR UPDATE OF sol
+      `)) as unknown as Array<{ short_closed: boolean }>;
+
       // 3. What the line still has left to plan — ADR-185: read off the ONE
       //    shared rule (lib/so-line-coverage.ts), the same figure the Planning
       //    line and the Needs Planning table state, never rebuilt by hand here.
@@ -1418,8 +1439,21 @@ export async function raisePlanningPr(
         SELECT GREATEST(sol.order_qty - ${sql.raw(soLineCoveredRaw('sol'))}, 0)::numeric AS to_plan
         FROM public.sales_order_lines sol
         WHERE sol.id = ${soLineId}::uuid
+          AND sol.deleted_at IS NULL
+          AND sol.short_closed_at IS NULL
       `)) as unknown as Array<{ to_plan: number }>;
-      const remaining = Number(leftRows[0]?.to_plan ?? 0);
+      // No row = the line was deleted or closed short after the first read
+      // (another user, while this request waited on the lock).
+      const left = leftRows[0];
+      if (!left) {
+        if (lockRows[0]?.short_closed) {
+          throw new ValidationError(
+            `SO ${row.soCode} Ln ${row.line.lineNo} was closed short — no PR can be raised on it.`,
+          );
+        }
+        throw new NotFoundError('Sales Order line not found. Refresh the page.');
+      }
+      const remaining = Number(left.to_plan ?? 0);
       if (input.qty > remaining) {
         throw new ValidationError(
           `PR Qty (${input.qty}) cannot be more than Pending (${remaining}) on SO ${row.soCode} ` +

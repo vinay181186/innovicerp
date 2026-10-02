@@ -14,6 +14,8 @@ import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { CLIENT_SF_COLUMNS } from './sf-columns';
 import {
   applyMasterRules,
   dropBlankCells,
@@ -120,12 +122,21 @@ export async function listClients(
     if (typeof input.isActive === 'boolean') {
       conditions.push(eq(clients.isActive, input.isActive));
     }
+    // Sort & Filter (ADR-200): the Customer Master's column filters + sort,
+    // through the list's own whitelist (sf-columns.ts). List AND count.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(CLIENT_SF_COLUMNS, sf)}`);
 
     const where = and(...conditions);
 
+    // ADR-201: the order always ends on a unique key (code, then id) so a
+    // 25-row page never skips or repeats a row — names are not unique.
     const dir = input.sortDir === 'desc' ? desc : asc;
-    const sortCol = input.sortBy === 'name' ? clients.name : clients.code;
-    const orderBy = dir(sortCol);
+    const baseOrder =
+      input.sortBy === 'name'
+        ? sql`${dir(clients.name)}, ${dir(clients.code)}, ${asc(clients.id)}`
+        : sql`${dir(clients.code)}, ${asc(clients.id)}`;
+    const orderBy = sfOrderBy(CLIENT_SF_COLUMNS, sf, baseOrder);
 
     const [rows, totals] = await Promise.all([
       tx

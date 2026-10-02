@@ -29,18 +29,22 @@ import {
   normalizeDeptsMap,
   pruneDeptsMap,
   pruneFormsMap,
+  type listUserAccessQuerySchema,
   type QcUserOption,
   type SaveUserAccessInput,
   type UserAccess,
   type UserAccessListItem,
 } from '@innovic/shared';
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import type { z } from 'zod';
 import { userAccess, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { labelOf, ROLE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { ACCESS_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -174,9 +178,33 @@ export async function getMyAccess(user: AuthContext): Promise<EffectiveAccess> {
 
 // Admin list: every user in the company + matrix summary. Self-join so
 // users without an access row still appear (deptCount=0, formCount=0).
-export async function listUserAccess(user: AuthContext): Promise<ListUserAccessResponse> {
+// ADR-201 paging: Sort & Filter runs in SQL; the search box matches the
+// columns the screen shows — name / e-mail, Home Dept, the tier summary and
+// the role word — and the tier summary only exists once the jsonb matrix is
+// read, so the search runs here over EVERY user (a company's logins, never a
+// big set) before the page is cut. No `limit` → every user (User Management
+// and the Configure box need the whole list).
+type ListUserAccessInput = z.infer<typeof listUserAccessQuerySchema>;
+
+const normTerm = (raw: string | undefined): string =>
+  (raw ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+function matchesUser(u: UserAccessListItem, needle: string): boolean {
+  if (needle === '') return true;
+  const dept = ACCESS_DEPTS.find((d) => d.key === u.mainDept)?.label;
+  const role = labelOf(ROLE_LABEL, u.role);
+  return [u.userName, u.userEmail, dept, u.tierSummary, role].some(
+    (f) => f != null && f.toLowerCase().includes(needle),
+  );
+}
+
+export async function listUserAccess(
+  user: AuthContext,
+  input: ListUserAccessInput = { offset: 0 },
+): Promise<ListUserAccessResponse> {
   requireAdminRole(user);
   const companyId = requireCompany(user);
+  const sf = readSf(input.sf);
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select({
@@ -193,12 +221,21 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
         acForms: userAccess.forms,
       })
       .from(users)
-      .leftJoin(
-        userAccess,
-        and(eq(userAccess.userId, users.id), isNull(userAccess.deletedAt)),
+      .leftJoin(userAccess, and(eq(userAccess.userId, users.id), isNull(userAccess.deletedAt)))
+      .where(
+        and(
+          eq(users.companyId, companyId),
+          isNull(users.deletedAt),
+          sql`TRUE ${sfWhere(ACCESS_SF_COLUMNS, sf)}`,
+        ),
       )
-      .where(and(eq(users.companyId, companyId), isNull(users.deletedAt)))
-      .orderBy(desc(users.isActive), asc(users.fullName), asc(users.email));
+      .orderBy(
+        sfOrderBy(
+          ACCESS_SF_COLUMNS,
+          sf,
+          sql`${desc(users.isActive)}, ${asc(users.fullName)}, ${asc(users.email)}, ${asc(users.id)}`,
+        ),
+      );
 
     const items: UserAccessListItem[] = rows.map((r) => {
       const fullAccess = r.acFullAccess ?? false;
@@ -235,7 +272,13 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
       };
     });
 
-    return { items };
+    const needle = normTerm(input.search);
+    const matched = needle === '' ? items : items.filter((u) => matchesUser(u, needle));
+    const page =
+      input.limit === undefined
+        ? matched.slice(input.offset)
+        : matched.slice(input.offset, input.offset + input.limit);
+    return { items: page, total: matched.length };
   });
 }
 
@@ -329,11 +372,7 @@ export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption
         ),
       )
       .where(
-        and(
-          eq(users.companyId, companyId),
-          eq(users.isActive, true),
-          isNull(users.deletedAt),
-        ),
+        and(eq(users.companyId, companyId), eq(users.isActive, true), isNull(users.deletedAt)),
       );
 
     // `_direct` rides along purely as a sort key and is stripped before return,
@@ -378,8 +417,7 @@ export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption
     // entry in the system including QC, so those accounts genuinely qualify —
     // but an admin is rarely the person who inspected, and burying the QC team
     // under them is what made this dropdown read as "everybody".
-    const band = (o: (typeof options)[number]): number =>
-      o.isQcDept ? 0 : o._direct ? 1 : 2;
+    const band = (o: (typeof options)[number]): number => (o.isQcDept ? 0 : o._direct ? 1 : 2);
     return options
       .sort((a, b) => (band(a) === band(b) ? a.name.localeCompare(b.name) : band(a) - band(b)))
       .map(({ _direct: _drop, ...o }) => o);
@@ -472,7 +510,11 @@ export async function saveUserAccess(
   // `users.role` is DERIVED, never chosen (ADR-136). It is still what gates
   // 120 write paths, so it has to be written — but making it a consequence of
   // the access is what stops the role and the matrix ever contradicting.
-  const derivedRole = roleForAccess({ fullAccess: input.fullAccess, auditor, departments: cleanDepts });
+  const derivedRole = roleForAccess({
+    fullAccess: input.fullAccess,
+    auditor,
+    departments: cleanDepts,
+  });
 
   return withUserContext(user, async (tx) => {
     // Confirm target user in caller's company.
@@ -521,7 +563,11 @@ export async function saveUserAccess(
     if (targetUser.role !== derivedRole) {
       await tx
         .update(users)
-        .set({ role: derivedRole as typeof users.$inferSelect.role, updatedBy: user.id, updatedAt: new Date() })
+        .set({
+          role: derivedRole as typeof users.$inferSelect.role,
+          updatedBy: user.id,
+          updatedAt: new Date(),
+        })
         .where(eq(users.id, userId));
     }
 

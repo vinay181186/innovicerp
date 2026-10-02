@@ -13,15 +13,13 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayIst } from '@/lib/date';
 import { useNcRegisterList } from '@/modules/nc-register/api';
-import { useCreateCapa, useNextCapaCode } from '../api';
+import { useCapaList, useCreateCapa, useNextCapaCode } from '../api';
 import { Overlay } from './capa-overlay';
 
 export function NewCapaModal({
-  capas,
   onClose,
   onCreated,
 }: {
-  capas: CapaRecord[];
   onClose: () => void;
   onCreated: (capa: CapaRecord) => void;
 }): React.JSX.Element {
@@ -31,11 +29,13 @@ export function NewCapaModal({
   // _capaForNC filter, L22832). On pick, back-fill jc/so/item/operation from
   // the chosen NC (legacy L22847-22850).
   const ncQuery = useNcRegisterList({ limit: 200, offset: 0 });
+  // EVERY CAPA (no limit), not the 25-row page on screen (ADR-201).
+  const allCapas = useCapaList();
   const usedNcRefs = useMemo(() => {
     const set = new Set<string>();
-    for (const c of capas) for (const r of c.ncRefs) set.add(r);
+    for (const c of allCapas.data?.items ?? []) for (const r of c.ncRefs) set.add(r);
     return set;
-  }, [capas]);
+  }, [allCapas.data]);
   const availableNcs = useMemo(
     () => (ncQuery.data?.items ?? []).filter((nc) => !usedNcRefs.has(nc.code)),
     [ncQuery.data, usedNcRefs],

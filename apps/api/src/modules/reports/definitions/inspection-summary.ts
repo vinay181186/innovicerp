@@ -6,7 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { enumFilter, isoDateFilter, likeFilter } from './report-helpers';
+import { enumFilter, isoDateFilter, likeFilter, REPORT_ROW_CAP } from './report-helpers';
 
 const STAGES: Record<string, string> = {
   incoming: 'Incoming',
@@ -108,7 +108,7 @@ export const inspectionSummaryReport: RegisteredReport = {
       GROUP BY s.stage, s.item_code
       ORDER BY CASE s.stage WHEN 'Incoming' THEN 1 WHEN 'In-Process' THEN 2 ELSE 3 END,
                s.item_code
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

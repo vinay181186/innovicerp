@@ -15,6 +15,7 @@ import {
 } from './plan';
 import { itemProcurementTypeSchema } from './item';
 import { PR_STATUSES } from '../enums/pr-status';
+import { sfRawParamSchema } from './list-query';
 
 // ─── Left pane: SO list ──────────────────────────────────────────────────
 
@@ -41,8 +42,23 @@ export const planningSoListItemSchema = z.object({
 });
 export type PlanningSoListItem = z.infer<typeof planningSoListItemSchema>;
 
+/** Planning list query (ADR-201). The screen sends the source, its search,
+ *  Sort & Filter and a 25-row page; with no params every SO + JWSO comes back
+ *  (the Create Plan form's order picker). */
+export const planningSoListQuerySchema = z.object({
+  src: z.enum(['so', 'jw']).optional(),
+  /** SO / JWSO No., customer, type, due date, plan status, item code / name. */
+  search: z.string().trim().max(100).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+export type PlanningSoListQuery = z.infer<typeof planningSoListQuerySchema>;
+
 export const planningSoListResponseSchema = z.object({
   generatedAt: z.string(),
+  /** Orders matching src + search + Sort & Filter (items holds one page). */
+  total: z.number().int().nonnegative(),
   items: z.array(planningSoListItemSchema),
 });
 export type PlanningSoListResponse = z.infer<typeof planningSoListResponseSchema>;

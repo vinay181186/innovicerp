@@ -14,6 +14,7 @@
 import { z } from 'zod';
 import { STORE_TXN_SOURCE_TYPES } from '../enums/store-txn-source-type';
 import { STORE_TXN_TYPES } from '../enums/store-txn-type';
+import { sfRawParamSchema } from './list-query';
 
 export const storeTxnTypeSchema = z.enum(STORE_TXN_TYPES);
 export const storeTxnSourceTypeSchema = z.enum(STORE_TXN_SOURCE_TYPES);
@@ -67,6 +68,8 @@ export const listStoreTransactionsQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

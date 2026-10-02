@@ -4,7 +4,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { raisePlanningPrInputSchema } from '@innovic/shared';
+import { planningSoListQuerySchema, raisePlanningPrInputSchema } from '@innovic/shared';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
 
@@ -15,7 +15,7 @@ const soLineParam = z.object({ soLineId: z.string().uuid() });
 export async function soPlanningRoutes(app: FastifyInstance): Promise<void> {
   app.get('/so-planning', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.getPlanningSoList(req.user);
+    return service.getPlanningSoList(req.user, planningSoListQuerySchema.parse(req.query));
   });
 
   // Must precede '/so-planning/:id' so 'lines' isn't captured as an :id param.

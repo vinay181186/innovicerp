@@ -2,7 +2,7 @@
 // CRUD over qc_documents (migration 0039). Files themselves live in the
 // `qc-docs` Storage bucket — the client uploads direct, then registers metadata.
 
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreateQcDocumentInput,
   ListQcDocumentsQuery,
@@ -29,6 +29,8 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { QC_DOC_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -163,6 +165,10 @@ export async function listQcDocuments(
         )`,
       );
     }
+    // Sort & Filter (ADR-200): the register's column filters + sort, AND-ed
+    // onto the search / category conditions; the page and the count share them.
+    const sf = readSf(input.sf);
+    conds.push(sql`TRUE ${sfWhere(QC_DOC_SF_COLUMNS, sf)}`);
     // The register prints a JC number, so it must name the part too — and
     // qc_documents holds no item at all, so the item comes off the job card.
     // Every one of these joins is LEFT and every one of them has to be:
@@ -184,7 +190,8 @@ export async function listQcDocuments(
     // joined query that would return each table nested under its own key and
     // change the shape this function's mapper reads. `DocRow` is what keeps the
     // list and the create path feeding `toItem` the same thing.
-    const rows = await tx
+    const where = and(...conds);
+    const pageQuery = tx
       .select({
         id: qcDocuments.id,
         companyId: qcDocuments.companyId,
@@ -228,9 +235,34 @@ export async function listQcDocuments(
         jobWorkOrderLines,
         and(eq(jobWorkOrderLines.id, jobCards.sourceJwLineId), isNull(jobWorkOrderLines.deletedAt)),
       )
-      .where(and(...conds))
-      .orderBy(desc(qcDocuments.createdAt));
+      .where(where)
+      // Ends on the id so paging (ADR-201) never skips or repeats a row.
+      .orderBy(
+        sfOrderBy(
+          QC_DOC_SF_COLUMNS,
+          sf,
+          sql`${qcDocuments.createdAt} DESC, ${qcDocuments.id} DESC`,
+        ),
+      )
+      .offset(input.offset ?? 0);
+    const rows = await (input.limit !== undefined ? pageQuery.limit(input.limit) : pageQuery);
+    // Same joins + WHERE as the page, so the total counts what the page pages.
+    const [countRow] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(qcDocuments)
+      .leftJoin(jobCards, and(eq(jobCards.id, qcDocuments.jobCardId), isNull(jobCards.deletedAt)))
+      .leftJoin(items, eq(items.id, jobCards.itemId))
+      .leftJoin(
+        salesOrderLines,
+        and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
+      )
+      .leftJoin(
+        jobWorkOrderLines,
+        and(eq(jobWorkOrderLines.id, jobCards.sourceJwLineId), isNull(jobWorkOrderLines.deletedAt)),
+      )
+      .where(where);
     return {
+      total: countRow?.n ?? 0,
       items: rows.map((r) =>
         toItem(r, {
           itemCode: r.itemCode,

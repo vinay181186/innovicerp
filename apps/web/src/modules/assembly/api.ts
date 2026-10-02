@@ -2,6 +2,7 @@ import type {
   AssemblyListResponse,
   AssemblyTrackerResponse,
   AssemblyUnitRow,
+  ListAssembliesQuery,
   MarkUnitAssembledInput,
   MarkUnitDispatchedInput,
   SetReadinessOverrideInput,
@@ -13,14 +14,27 @@ import { apiFetch } from '@/lib/api';
 
 export const assemblyKeys = {
   all: ['assemblies'] as const,
-  list: () => [...assemblyKeys.all, 'list'] as const,
+  list: (q?: ListAssembliesQuery) =>
+    q ? ([...assemblyKeys.all, 'list', q] as const) : ([...assemblyKeys.all, 'list'] as const),
   detail: (soId: string) => [...assemblyKeys.all, 'detail', soId] as const,
 };
 
-export function useAssembliesList() {
+function listQueryString(q: ListAssembliesQuery): string {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  if (q.status) params.set('status', q.status);
+  if (q.sf) params.set('sf', q.sf);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  params.set('offset', String(q.offset));
+  return params.toString();
+}
+
+/** One page of the Assembly Tracker list (ADR-201) + its server-side counts. */
+export function useAssembliesList(query: ListAssembliesQuery) {
   return useQuery<AssemblyListResponse>({
-    queryKey: assemblyKeys.list(),
-    queryFn: () => apiFetch<AssemblyListResponse>('/assemblies'),
+    queryKey: assemblyKeys.list(query),
+    queryFn: () => apiFetch<AssemblyListResponse>(`/assemblies?${listQueryString(query)}`),
+    placeholderData: (prev) => prev,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });

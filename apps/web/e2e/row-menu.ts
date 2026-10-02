@@ -38,3 +38,34 @@ export async function hasRowMenuItem(page: Page, row: Locator, name: Name): Prom
   await closeRowMenu(page);
   return ok;
 }
+
+/** The first of `rows` whose ⋯ menu has an ENABLED item `name`, or null.
+ *  Opens each row's menu in turn and closes it again. */
+export async function findRowWithMenuItem(
+  page: Page,
+  rows: Locator,
+  name: Name,
+): Promise<Locator | null> {
+  const n = await rows.count();
+  for (let i = 0; i < n; i += 1) {
+    if (await hasRowMenuItem(page, rows.nth(i), name)) return rows.nth(i);
+  }
+  return null;
+}
+
+/** Click item `name` in the ⋯ of the first of `rows` that offers it enabled
+ *  (the old "first matching button on the page"). Throws when no row does. */
+export async function clickFirstRowMenuItem(page: Page, rows: Locator, name: Name): Promise<void> {
+  await rows.first().waitFor({ state: 'visible', timeout: 30_000 });
+  const row = await findRowWithMenuItem(page, rows, name);
+  if (!row) throw new Error(`no row's ⋯ menu offers an enabled "${String(name)}"`);
+  await clickRowMenuItem(page, row, name);
+}
+
+/** SO Planning order-line rows: their ⋯ is named "Actions for line N"
+ *  (Plan N · Raise PR · BOM Planning · Equipment BOM · Allocate · Release). */
+export function planningLineRows(page: Page): Locator {
+  return page
+    .locator('tr')
+    .filter({ has: page.getByRole('button', { name: /^Actions for line/ }) });
+}

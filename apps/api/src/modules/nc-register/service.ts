@@ -40,6 +40,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
 import { requireOpEntryRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
@@ -59,6 +60,7 @@ import { autoCloseLinkedTasks } from '../tasks/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { type DisposeNcContext, disposeNcCascade, nextNcCode, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
+import { NC_SF_COLUMNS } from './sf-columns';
 import type {
   CloseNcReworkInput,
   CreateNcDcInput,
@@ -420,6 +422,20 @@ export async function listNcRegister(
             AND nc.status = 'disposed'::nc_status
             AND nc.delivery_challan_id IS NULL`
       : sql``;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(NC_SF_COLUMNS, sf);
+    // The Item Code filter reads the drawing revision (CODE/REV), so the count
+    // needs the revision hops then — one row per NC, so they never change it.
+    const countRevJoins =
+      sf && sf.filters.length > 0
+        ? sql`LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL`
+        : sql``;
+    const orderBy = sfOrderBy(NC_SF_COLUMNS, sf, sql`nc.nc_date DESC, nc.code DESC`);
 
     const result = await tx.execute(sql`
       SELECT
@@ -571,7 +587,8 @@ export async function listNcRegister(
         ${fromFrag}
         ${toFrag}
         ${pendingRtvChallanFrag}
-      ORDER BY nc.nc_date DESC, nc.code DESC
+        ${sfFrag}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -593,6 +610,7 @@ export async function listNcRegister(
         ON jo.id = nc.jc_op_id AND jo.deleted_at IS NULL
       LEFT JOIN public.items i
         ON i.id = nc.item_id AND i.deleted_at IS NULL
+      ${countRevJoins}
       LEFT JOIN LATERAL (
         SELECT c.code
         FROM public.capa_records c
@@ -611,6 +629,7 @@ export async function listNcRegister(
         ${fromFrag}
         ${toFrag}
         ${pendingRtvChallanFrag}
+        ${sfFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,

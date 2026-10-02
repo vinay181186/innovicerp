@@ -25,13 +25,14 @@
 import type { ListDeliveryChallansQuery } from '@innovic/shared';
 import { DC_STATUSES, type DcStatus } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Inbox, Plus, Printer } from 'lucide-react';
+import { Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
@@ -82,14 +83,22 @@ function DeliveryChallansListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss DCs. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.ospOutwardDc, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListDeliveryChallansQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.status, search.page],
+    [sf.param, search.search, search.status, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useDeliveryChallansList(query);
@@ -98,6 +107,9 @@ function DeliveryChallansListPage(): React.JSX.Element {
   // `entry`, so L2 Data Entry and up; an L1 Viewer no longer sees the button.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
+  // Receive against a DC: the server accepts DC entry or GRN entry (a GRN
+  // storekeeper books the receipt too) — same rule on the ⋯ item.
+  const canReceive = perms.entry || effectiveFormPerms(eff, 'grn_create').entry;
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -224,13 +236,14 @@ function DeliveryChallansListPage(): React.JSX.Element {
               </select>
             }
             onClearFilters={() => {
+              sf.clearFilters();
               setSearchInput('');
               void navigate({
                 search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
                 replace: true,
               });
             }}
-            filtersActive={search.status !== undefined || searchInput !== ''}
+            filtersActive={sf.filtering || search.status !== undefined || searchInput !== ''}
             tools={
               <>
                 <button
@@ -299,10 +312,13 @@ function DeliveryChallansListPage(): React.JSX.Element {
             <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.ospOutwardDc}
+                sortFilterServer={sf}
                 columns={columns}
                 rows={rows}
                 loading={isLoading}
-                emptyText={search.search || search.status ? 'No DCs match.' : 'No DCs yet.'}
+                emptyText={
+                  sf.filtering || search.search || search.status ? 'No DCs match.' : 'No DCs yet.'
+                }
                 defaultHidden={DC_LIST_DEFAULT_HIDDEN}
                 onRowClick={(dc) =>
                   void navigate({ to: '/delivery-challans/$id', params: { id: dc.id } })
@@ -319,21 +335,19 @@ function DeliveryChallansListPage(): React.JSX.Element {
                   <RowActions
                     viewTo={`/delivery-challans/${dc.id}`}
                     renderLink={(p) => <Link {...p} />}
-                    extra={
-                      dc.status === 'issued' ? (
-                        <Link
-                          to="/delivery-challans/$id/receive"
-                          params={{ id: dc.id }}
-                          className="btn btn-ghost btn-sm btn-icon"
-                          style={{ padding: 'var(--sp-1)', color: 'var(--green2)' }}
-                          title="Receive material back from the vendor"
-                          aria-label="Receive"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Inbox size={13} />
-                        </Link>
-                      ) : undefined
-                    }
+                    items={[
+                      {
+                        // Receive material back from the vendor. Server rule
+                        // (receiveAgainstDeliveryChallan): DC entry OR GRN
+                        // entry, and only while the DC is still issued.
+                        key: 'receive',
+                        label: 'Receive',
+                        icon: 'package',
+                        group: 'workflow',
+                        to: `/delivery-challans/${dc.id}/receive`,
+                        hidden: dc.status !== 'issued' || !canReceive,
+                      },
+                    ]}
                   />
                 )}
               />

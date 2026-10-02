@@ -21,7 +21,12 @@ export function SoMaterialPanel({
   const { data, isLoading, isError, error } = useSoMaterial(salesOrderId);
   const { data: eff } = useMyAccess();
   const canIssue = effectiveFormPerms(eff, 'issue_create').entry && !stopped && data?.hasBom;
-  const canReserve = effectiveFormPerms(eff, 'plan_create').entry && !stopped && data?.hasBom;
+  const planEntry = effectiveFormPerms(eff, 'plan_create').entry;
+  const canReserve = planEntry && !stopped && data?.hasBom;
+  // Release follows the server (material/reserve.ts releaseAssemblyParts):
+  // plan_create entry only — any SO status, BOM or not, so stock still held
+  // for an SO whose BOM was unlinked can be let go.
+  const canRelease = planEntry;
   const [reserving, setReserving] = useState(false);
   const [releasing, setReleasing] = useState<SoMaterialLine | null>(null);
   if (isLoading)
@@ -71,7 +76,7 @@ export function SoMaterialPanel({
           </Link>
         ) : null}
       </div>
-      <SoMaterialTable data={data} onRelease={canReserve ? setReleasing : undefined} />
+      <SoMaterialTable data={data} onRelease={canRelease ? setReleasing : undefined} />
       <IssueSlipList issues={data.issues} />
       {reserving ? <ReservePartsModal data={data} onClose={() => setReserving(false)} /> : null}
       {releasing ? (

@@ -9,8 +9,12 @@
 // ids (so_date, invoiced_value, received_value) are default-hidden, so they live
 // in the row's ▸ detail. Labels per docs/NAMING.md (Due Date, Value to Dispatch,
 // Outstanding Amount).
+//
+// ADR-201: the list shows 25 rows a page, so the totals row prints the SERVER's
+// totals over every matching SO (never a sum of the page), and each column's
+// `sortFilterField` is its field in the server's Sort & Filter map.
 
-import type { PendingSoValueRow } from '@innovic/shared';
+import type { PendingSoValueResponse, PendingSoValueRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
@@ -28,11 +32,13 @@ export const inr = (v: string | number | null): string => {
   return `₹ ${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 };
 
-/** Sum one money field across the rows the totals row is given (all loaded
- *  rows). The server stringifies money to keep precision. */
-function sumField(rows: PendingSoValueRow[], k: keyof PendingSoValueRow): number {
-  return rows.reduce((acc, r) => acc + Number(r[k] ?? 0), 0);
-}
+type PsvTotals = PendingSoValueResponse['totals'];
+
+/** SO status tick list for Sort & Filter (stored value + label). */
+const STATUS_OPTIONS = ['draft', 'open', 'dispatched', 'closed', 'cancelled'].map((value) => ({
+  value,
+  label: soStatusLabel(value),
+}));
 
 /** A row is overdue when its Due Date has passed and value is still to dispatch
  *  (the same rule the Due Date cell and the row tint both read). */
@@ -68,10 +74,15 @@ function badgeColor(status: string): string {
 export function psvColumns(
   priceHidden: boolean,
   today: string,
+  /** Server totals over every matching SO (undefined while loading). */
+  totals: PsvTotals | undefined,
 ): DataTableColumn<PendingSoValueRow>[] {
+  const sum = (k: keyof Omit<PsvTotals, 'soCount'>): number => Number(totals?.[k] ?? 0);
   const cols: DataTableColumn<PendingSoValueRow>[] = [
     {
       id: 'so_no',
+      sortFilterField: 'soCode',
+      filterType: 'text',
       header: 'SO No.',
       nowrap: true,
       // The row's ▸ opens the detail; the SO No. link opens the SO. The row
@@ -91,6 +102,7 @@ export function psvColumns(
     },
     {
       id: 'customer',
+      sortFilterField: 'customerName',
       kind: 'text',
       header: 'Customer',
       align: 'left',
@@ -101,6 +113,7 @@ export function psvColumns(
     },
     {
       id: 'due_date',
+      sortFilterField: 'dueDate',
       kind: 'date',
       header: 'Due Date',
       className: 'mono',
@@ -127,27 +140,31 @@ export function psvColumns(
     cols.push(
       {
         id: 'order_value',
+        sortFilterField: 'orderValue',
+        filterType: 'num',
         header: 'Order Value',
         align: 'right',
         className: 'mono',
         nowrap: true,
         render: (r) => inr(r.orderValue),
-        total: (rows) => inr(sumField(rows, 'orderValue')),
+        total: inr(sum('orderValue')),
       },
       {
         id: 'dispatched_value',
+        sortFilterField: 'dispatchedValue',
+        filterType: 'num',
         header: 'Dispatched Value',
         align: 'right',
         className: 'mono',
         nowrap: true,
         headColor: 'var(--green)',
         render: (r) => <span style={{ color: 'var(--green2)' }}>{inr(r.dispatchedValue)}</span>,
-        total: (rows) => (
-          <span style={{ color: 'var(--green2)' }}>{inr(sumField(rows, 'dispatchedValue'))}</span>
-        ),
+        total: <span style={{ color: 'var(--green2)' }}>{inr(sum('dispatchedValue'))}</span>,
       },
       {
         id: 'value_to_dispatch',
+        sortFilterField: 'pendingValue',
+        filterType: 'num',
         header: <span title="Order Value − Dispatched Value">Value to Dispatch</span>,
         label: 'Value to Dispatch',
         align: 'right',
@@ -162,12 +179,12 @@ export function psvColumns(
             </span>
           );
         },
-        total: (rows) => (
-          <span style={{ color: 'var(--amber2)' }}>{inr(sumField(rows, 'pendingValue'))}</span>
-        ),
+        total: <span style={{ color: 'var(--amber2)' }}>{inr(sum('pendingValue'))}</span>,
       },
       {
         id: 'outstanding',
+        sortFilterField: 'outstandingValue',
+        filterType: 'num',
         header: 'Outstanding Amount',
         align: 'right',
         className: 'mono',
@@ -180,16 +197,19 @@ export function psvColumns(
             </span>
           );
         },
-        total: (rows) => {
-          const s = sumField(rows, 'outstandingValue');
-          return <span style={{ color: s > 0 ? 'var(--red)' : 'var(--green)' }}>{inr(s)}</span>;
-        },
+        total: (
+          <span style={{ color: sum('outstandingValue') > 0 ? 'var(--red)' : 'var(--green)' }}>
+            {inr(sum('outstandingValue'))}
+          </span>
+        ),
       },
     );
   }
 
   cols.push({
     id: 'status',
+    sortFilterField: 'status',
+    filterOptions: STATUS_OPTIONS,
     kind: 'badge',
     header: 'SO Status',
     nowrap: true,
@@ -202,6 +222,7 @@ export function psvColumns(
   // Value and Received.
   cols.push({
     id: 'so_date',
+    sortFilterField: 'soDate',
     kind: 'date',
     header: 'SO Date',
     className: 'mono text2',
@@ -212,6 +233,8 @@ export function psvColumns(
     cols.push(
       {
         id: 'invoiced_value',
+        sortFilterField: 'invoicedValue',
+        filterType: 'num',
         header: 'Invoiced Value',
         align: 'right',
         className: 'mono',
@@ -220,6 +243,8 @@ export function psvColumns(
       },
       {
         id: 'received_value',
+        sortFilterField: 'receivedValue',
+        filterType: 'num',
         header: 'Received',
         align: 'right',
         className: 'mono',

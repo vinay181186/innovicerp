@@ -6,6 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 export const itemsOnHandReport: RegisteredReport = {
   definition: {
@@ -40,7 +41,7 @@ export const itemsOnHandReport: RegisteredReport = {
       WHERE i.company_id = ${companyId}::uuid
         AND i.deleted_at IS NULL
       ORDER BY i.code
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

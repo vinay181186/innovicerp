@@ -2,7 +2,8 @@ import type {
   AdjustStockInput,
   ListStoreInventoryQuery,
   ListStoreInventoryResponse,
-  ReorderListRow,
+  ReorderListQuery,
+  ReorderListResponse,
   ReorderPrInput,
   ReorderPrResult,
   SetReorderInput,
@@ -12,14 +13,16 @@ import { apiFetch } from '@/lib/api';
 
 export const storeInventoryKeys = {
   all: ['store-inventory'] as const,
-  list: (q: ListStoreInventoryQuery) =>
-    [...storeInventoryKeys.all, 'list', q.search ?? null, q.filter] as const,
+  list: (q: ListStoreInventoryQuery) => [...storeInventoryKeys.all, 'list', q] as const,
 };
 
 function buildSearch(q: ListStoreInventoryQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   params.set('filter', q.filter);
+  if (q.sf) params.set('sf', q.sf);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  if (q.offset) params.set('offset', String(q.offset));
   return params.toString();
 }
 
@@ -66,11 +69,19 @@ export function useSetReorder() {
   });
 }
 
-/** Every item Below Reorder, with suggested PR qty and vendor. */
-export function useReorderList() {
-  return useQuery<ReorderListRow[]>({
-    queryKey: [...storeInventoryKeys.all, 'reorder-list'],
-    queryFn: () => apiFetch<ReorderListRow[]>('/store-inventory/reorder-list'),
+/** One page of the items Below Reorder (ADR-201), with suggested PR qty and
+ *  vendor, + how many there are in all. */
+export function useReorderList(query: ReorderListQuery) {
+  return useQuery<ReorderListResponse>({
+    queryKey: [...storeInventoryKeys.all, 'reorder-list', query],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (query.sf) p.set('sf', query.sf);
+      p.set('limit', String(query.limit));
+      p.set('offset', String(query.offset));
+      return apiFetch<ReorderListResponse>(`/store-inventory/reorder-list?${p.toString()}`);
+    },
+    placeholderData: (prev) => prev,
   });
 }
 

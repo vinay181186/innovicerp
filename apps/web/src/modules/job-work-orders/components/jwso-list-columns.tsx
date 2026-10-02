@@ -12,6 +12,13 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
+import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
+
+// Sort & Filter (server mode): the JWSO status tick list — stored code + label.
+const STATUS_OPTIONS = Object.entries(SO_STATUS_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));
 
 /** Customer-material status as coloured text: actual Party-GRN receipts
  *  (`partyReceivedQty`) vs the header's expected client material
@@ -43,6 +50,7 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     {
       // First column — pinned by the table standard (ADR-199).
       id: 'jwso_code',
+      sortFilterField: 'code',
       header: 'JWSO No.',
       nowrap: true,
       render: (jw) => (
@@ -60,6 +68,7 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     },
     {
       id: 'jwso_date',
+      sortFilterField: 'jwDate',
       kind: 'date',
       header: 'JWSO Date',
       className: 'mono',
@@ -68,6 +77,7 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     },
     {
       id: 'customer',
+      sortFilterField: 'customerName',
       header: 'Customer',
       align: 'left',
       ellipsis: true,
@@ -77,6 +87,7 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     },
     {
       id: 'client_po',
+      sortFilterField: 'clientPoNo',
       header: 'Client PO No.',
       headColor: 'var(--purple)',
       nowrap: true,
@@ -91,6 +102,8 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     },
     {
       id: 'order_qty',
+      sortFilterField: 'totalQty',
+      filterType: 'num',
       header: 'Order Qty',
       align: 'right',
       nowrap: true,
@@ -99,6 +112,8 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     },
     {
       id: 'jc_qty',
+      sortFilterField: 'jcQty',
+      filterType: 'num',
       header: 'JC Qty',
       align: 'right',
       nowrap: true,
@@ -120,6 +135,8 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     },
     {
       id: 'dispatched',
+      sortFilterField: 'dispatchedQty',
+      filterType: 'num',
       header: 'Dispatched',
       headColor: 'var(--green)',
       align: 'right',
@@ -135,6 +152,8 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     },
     {
       id: 'pending',
+      sortFilterField: 'pendingQty',
+      filterType: 'num',
       header: 'Pending',
       headColor: 'var(--red)',
       align: 'right',
@@ -161,6 +180,7 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     },
     {
       id: 'due',
+      sortFilterField: 'earliestDueDate',
       kind: 'date',
       header: 'Due',
       nowrap: true,
@@ -184,6 +204,8 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
     },
     {
       id: 'jwso_status',
+      sortFilterField: 'status',
+      filterOptions: STATUS_OPTIONS,
       kind: 'badge',
       header: 'JWSO Status',
       nowrap: true,

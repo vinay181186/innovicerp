@@ -129,8 +129,42 @@ export interface QcInspectorOption {
   role: string;
 }
 
+// ── Paging (ADR-201): every table on the board pages at 25 on the SERVER ──
+// One aggregate read still builds every table over ALL rows (the stats strip,
+// FPY %, Pareto totals and the counts below are whole-set figures); `limit`
+// + the per-table offsets cut each table to the page on screen. No `limit` =
+// every row, as before.
+export const QC_QUEUE_SORTS = ['age', 'due', 'customer'] as const;
+export type QcQueueSort = (typeof QC_QUEUE_SORTS)[number];
+const qcOffset = z.coerce.number().int().nonnegative().default(0);
+export const qcCommandQuerySchema = z.object({
+  /** Queue order: oldest first (default), due date (blank last), customer A→Z. */
+  queueSort: z.enum(QC_QUEUE_SORTS).default('age'),
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  queueOffset: qcOffset,
+  fpyOpOffset: qcOffset,
+  fpyInspOffset: qcOffset,
+  paretoOffset: qcOffset,
+  inspectorOffset: qcOffset,
+  reworkOffset: qcOffset,
+});
+export type QcCommandQuery = z.infer<typeof qcCommandQuerySchema>;
+export type QcCommandQueryInput = z.input<typeof qcCommandQuerySchema>;
+
+/** Row count of each table over ALL rows (not the page). */
+export interface QcCommandTotals {
+  queue: number;
+  fpyByOperation: number;
+  fpyByInspector: number;
+  fpyByItem: number;
+  pareto: number;
+  inspectorPerf: number;
+  rework: number;
+}
+
 export interface QcCommandResponse {
   stats: QcCommandStats;
+  totals: QcCommandTotals;
   queue: QcCommandQueueRow[];
   fpy: QcCommandFpy;
   rework: QcReworkRow[];

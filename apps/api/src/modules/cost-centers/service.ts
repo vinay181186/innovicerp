@@ -1,10 +1,11 @@
 import { ActivityAction } from '@innovic/shared';
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { costCenters } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type {
   CostCenter,
   CreateCostCenterInput,
@@ -13,6 +14,7 @@ import type {
   UpdateCostCenterInput,
 } from './schema';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { COST_CENTER_SF_COLUMNS } from './sf-columns';
 import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
@@ -71,6 +73,11 @@ export async function listCostCenters(
     if (input.department) conditions.push(eq(costCenters.department, input.department));
     if (input.type) conditions.push(eq(costCenters.type, input.type));
 
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(COST_CENTER_SF_COLUMNS, sf)}`);
+
     const where = and(...conditions);
 
     const [rows, totals] = await Promise.all([
@@ -78,7 +85,7 @@ export async function listCostCenters(
         .select()
         .from(costCenters)
         .where(where)
-        .orderBy(asc(costCenters.code))
+        .orderBy(sfOrderBy(COST_CENTER_SF_COLUMNS, sf, asc(costCenters.code)))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(costCenters).where(where),

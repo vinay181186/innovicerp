@@ -25,9 +25,11 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { useSession } from '@/lib/session';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useGoodsReceiptNotesList } from '../api';
@@ -91,14 +93,21 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss GRNs. Every change goes to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.grnList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListGoodsReceiptNotesQuery = useMemo(
     () => ({
       search: search.search,
       qcStatus: search.qcStatus,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.qcStatus, search.page],
+    [sf.param, search.search, search.qcStatus, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNotesList(query);
@@ -110,6 +119,8 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   const { data: inProgressData } = useGoodsReceiptNotesList({
     search: search.search,
     qcStatus: 'in_progress',
+    // Same column filters, so this count agrees with the others in the dropdown.
+    sf: sf.param,
     limit: 200,
     offset: 0,
   });
@@ -117,7 +128,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     () => new Set((inProgressData?.items ?? []).map((g) => g.id)),
     [inProgressData],
   );
-  const filtered = Boolean(search.search) || search.qcStatus !== undefined;
+  const filtered = sf.filtering || Boolean(search.search) || search.qcStatus !== undefined;
 
   // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
   // expand control (onToggleExpanded), and renderExpanded returns null for a
@@ -148,25 +159,25 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 
   const columns = useMemo(() => goodsReceiptNoteListColumns(qcStatusFor), [qcStatusFor]);
 
-  // Row action — Assign (link a task to this GRN), the same gate the retired
-  // card used: shown only while a line still awaits QC (qcPendingCount > 0).
+  // ⋯ row menu — Assign Task (link a task to this GRN), the same gate the
+  // retired card used: shown only while a line still awaits QC
+  // (qcPendingCount > 0). Hidden for the read-only viewer role, which
+  // POST /tasks refuses (tasks service requireNotViewer).
+  const { data: me } = useSession();
+  const [assignGrn, setAssignGrn] = useState<GoodsReceiptNoteListItem | null>(null);
   const rowActions = (grn: GoodsReceiptNoteListItem): React.JSX.Element | undefined =>
-    grn.qcPendingCount > 0 ? (
+    grn.qcPendingCount > 0 && me && me.role !== 'viewer' ? (
       <RowActions
         renderLink={(p) => <Link {...p} />}
-        extra={
-          <AssignTaskButton
-            linkedRef={{
-              type: 'GRN',
-              id: grn.id,
-              display: grn.code,
-              navPage: '/incoming-qc',
-            }}
-            suggestedTitle={`Inspect ${grn.code}`}
-            className="btn btn-ghost btn-sm btn-icon"
-            label=""
-          />
-        }
+        items={[
+          {
+            key: 'assign',
+            label: 'Assign Task',
+            icon: 'user-round',
+            group: 'assign',
+            onSelect: () => setAssignGrn(grn),
+          },
+        ]}
       />
     ) : undefined;
 
@@ -230,13 +241,14 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           </select>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
             search: (prev) => ({ ...prev, search: undefined, qcStatus: undefined, page: 1 }),
             replace: true,
           });
         }}
-        filtersActive={search.qcStatus !== undefined || searchInput !== ''}
+        filtersActive={sf.filtering || search.qcStatus !== undefined || searchInput !== ''}
         primary={
           perms.entry ? (
             <Link to="/goods-receipt-notes/new" className="btn btn-primary">
@@ -264,6 +276,8 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             rows={rows}
             loading={isLoading}
             emptyText={filtered ? 'No GRNs match.' : 'No GRNs yet.'}
+            defaultHidden={['created_on']}
+            sortFilterServer={sf}
             onRowClick={(grn) =>
               void navigate({ to: '/goods-receipt-notes/$id', params: { id: grn.id } })
             }
@@ -300,6 +314,19 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         }
         hint="Only QC-accepted qty goes into stock."
       />
+
+      {assignGrn ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'GRN',
+            id: assignGrn.id,
+            display: assignGrn.code,
+            navPage: '/incoming-qc',
+          }}
+          suggestedTitle={`Inspect ${assignGrn.code}`}
+          onClose={() => setAssignGrn(null)}
+        />
+      ) : null}
     </div>
   );
 }

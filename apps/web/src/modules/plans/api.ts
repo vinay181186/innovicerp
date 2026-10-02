@@ -13,6 +13,7 @@ import type {
   ReservationActionResult,
   ReserveStockInput,
   StockAvailability,
+  UnplannedOrdersQuery,
   UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
@@ -54,6 +55,7 @@ function buildPlansSearch(q: ListPlansQuery): string {
   // Only ever sent as `true` — the server coerces the string, so a literal
   // `false` would still read as pending.
   if (q.poPending) params.set('poPending', 'true');
+  if (q.sf) params.set('sf', q.sf);
   if (q.limit !== undefined) params.set('limit', String(q.limit));
   if (q.offset !== undefined) params.set('offset', String(q.offset));
   const s = params.toString();
@@ -91,11 +93,20 @@ export function usePlanningDashboard() {
 }
 
 // PL-3b — Needs Planning tile data. Only fetched when the user clicks the
-// "Needs Planning" tile (gate via `enabled` in the caller).
-export function useUnplannedOrders(enabled: boolean) {
+// "Needs Planning" tile (gate via `enabled` in the caller). ADR-201: one
+// page of lines; search + Sort & Filter run on the server.
+export function useUnplannedOrders(enabled: boolean, q: UnplannedOrdersQuery = {}) {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  if (q.sf) params.set('sf', q.sf);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  if (q.offset !== undefined) params.set('offset', String(q.offset));
+  const qs = params.toString();
   return useQuery<UnplannedOrdersResponse>({
-    queryKey: [...plansKeys.all, 'unplanned'] as const,
-    queryFn: () => apiFetch<UnplannedOrdersResponse>('/planning-dashboard/unplanned'),
+    queryKey: [...plansKeys.all, 'unplanned', qs] as const,
+    queryFn: () =>
+      apiFetch<UnplannedOrdersResponse>(`/planning-dashboard/unplanned${qs ? `?${qs}` : ''}`),
+    placeholderData: (prev) => prev,
     enabled,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,

@@ -1,13 +1,15 @@
-import { qcAssignInputSchema, qcPickUpInputSchema } from '@innovic/shared';
+import { qcAssignInputSchema, qcCommandQuerySchema, qcPickUpInputSchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
 
 export async function qcCommandRoutes(app: FastifyInstance): Promise<void> {
   // Aggregate read: queue + FPY + rework + stats + inspector options.
+  // ADR-201: `limit` + per-table offsets page each table; totals stay whole-set.
   app.get('/qc-command', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.getQcCommand(req.user);
+    const query = qcCommandQuerySchema.parse(req.query);
+    return service.getQcCommand(req.user, query);
   });
 
   // Pick Up — assign this op to the calling QC user.

@@ -1,4 +1,4 @@
-import { createCapaInputSchema, updateCapaInputSchema } from '@innovic/shared';
+import { createCapaInputSchema, listCapaQuerySchema, updateCapaInputSchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
@@ -6,7 +6,7 @@ import * as service from './service';
 export async function capaRoutes(app: FastifyInstance): Promise<void> {
   app.get('/capa', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listCapa(req.user);
+    return service.listCapa(req.user, listCapaQuerySchema.parse(req.query));
   });
 
   app.get('/capa/next-code', async (req) => {

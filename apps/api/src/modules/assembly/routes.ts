@@ -1,4 +1,5 @@
 import {
+  listAssembliesQuerySchema,
   markUnitAssembledInputSchema,
   markUnitDispatchedInputSchema,
   setReadinessOverrideInputSchema,
@@ -20,7 +21,8 @@ const overrideParamsSchema = z.object({
 export async function assemblyRoutes(app: FastifyInstance): Promise<void> {
   app.get('/assemblies', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listAssemblies(req.user);
+    const query = listAssembliesQuerySchema.parse(req.query);
+    return service.listAssemblies(req.user, query);
   });
 
   app.get('/assemblies/:soId', async (req) => {

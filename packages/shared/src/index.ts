@@ -157,4 +157,5 @@ export * from './schemas/task';
 export * from './schemas/daily-task-report';
 export * from './schemas/dashboard-home';
 export * from './schemas/table-prefs';
+export * from './schemas/list-query';
 export * from './schemas/dashboard-registry';

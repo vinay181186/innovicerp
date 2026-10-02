@@ -17,12 +17,24 @@ import {
   resolveActualMachine,
 } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn, RowMenuItem } from '@/ui/data';
-import type { RenderLink } from '@/ui/layout';
+import type { DataTableColumn } from '@/ui/data';
 import { OP_STATUS } from '../../job-cards/lib/jc-op-labels';
 
 export const JC_OPS_DEFAULT_PINNED = ['item_code'];
 export const JC_OPS_DEFAULT_HIDDEN = ['qty_per_machine'];
+
+// Sort & Filter (server mode, ADR-200/201) — the board is paged, so every ▾
+// runs on the server over ALL ops. `sortFilterField` names the field in the
+// API's JC_OPS_SF_COLUMNS map. Actual Machine / Qty per Machine are worked
+// out per row after the query, so they have no ▾.
+const OP_STATUS_OPTIONS = Object.entries(OP_STATUS).map(([value, s]) => ({
+  value,
+  label: s.label,
+}));
+const QC_OPTIONS = [
+  { value: 'true', label: 'Yes' },
+  { value: 'false', label: 'No' },
+];
 
 // Our snake_case enum values, shown in Title Case (legacy L11359-L11368).
 const OUTSOURCE_STATUS_LABELS: Record<string, string> = {
@@ -90,6 +102,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
       // The JC number opens that card — only when `jcId` resolves; otherwise
       // it renders exactly as it always has (no dead link).
       id: 'jc_no',
+      sortFilterField: 'jcCode',
       kind: 'code',
       header: 'JC No.',
       className: 'mono fw-700',
@@ -110,6 +123,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     {
       // POL — the customer's own PO line number, before the item code.
       id: 'client_po_line_no',
+      sortFilterField: 'clientPoLineNo',
       kind: 'code',
       header: 'POL',
       headColor: 'var(--purple)',
@@ -118,6 +132,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'mono fw-700',
@@ -129,6 +144,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -139,6 +155,8 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'op_seq',
+      sortFilterField: 'opSeq',
+      filterType: 'num',
       kind: 'code',
       header: 'Op',
       className: 'mono fw-700',
@@ -148,6 +166,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
       // ADR-164 — PLANNED (where the remaining qty runs) and ACTUAL (who made
       // the Done qty, else the plan). An outsource op has neither.
       id: 'planned_machine',
+      sortFilterField: 'plannedMachine',
       kind: 'code',
       header: 'Planned Machine',
       className: 'mono fw-700',
@@ -173,6 +192,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'operation',
+      sortFilterField: 'operation',
       kind: 'text',
       header: 'Operation',
       ellipsis: true,
@@ -181,6 +201,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'cycle_time',
+      sortFilterField: 'cycleTime',
       kind: 'num',
       header: 'Cycle Time (h)',
       align: 'right',
@@ -189,6 +210,8 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'qc_required',
+      sortFilterField: 'qcRequired',
+      filterOptions: QC_OPTIONS,
       kind: 'badge',
       header: 'QC',
       headColor: 'var(--green2)',
@@ -196,6 +219,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'jc_qty',
+      sortFilterField: 'jcQty',
       kind: 'num',
       header: 'JC Qty',
       align: 'right',
@@ -203,6 +227,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'completed',
+      sortFilterField: 'completed',
       kind: 'num',
       header: 'Completed',
       align: 'right',
@@ -214,6 +239,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
       // Pieces made and still waiting for this op's QC — the "⏳N QC" line
       // that used to sit under Completed.
       id: 'qc_pending',
+      sortFilterField: 'qcPending',
       kind: 'num',
       header: 'QC Pending',
       align: 'right',
@@ -228,6 +254,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'available',
+      sortFilterField: 'available',
       kind: 'num',
       header: 'Available',
       align: 'right',
@@ -237,6 +264,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'pending_hrs',
+      sortFilterField: 'pendingHrs',
       kind: 'num',
       header: 'Pending Hrs',
       align: 'right',
@@ -246,6 +274,8 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'op_status',
+      sortFilterField: 'status',
+      filterOptions: OP_STATUS_OPTIONS,
       kind: 'badge',
       header: 'Op Status',
       render: (o) => <OpStatusBadge status={o.status} />,
@@ -253,6 +283,11 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     {
       // Legacy L11379 [OSP] tag + the outsource sub-status, in one column.
       id: 'outsource_status',
+      sortFilterField: 'outsourceStatus',
+      filterOptions: Object.entries(OUTSOURCE_STATUS_LABELS).map(([value, label]) => ({
+        value,
+        label,
+      })),
       kind: 'badge',
       header: 'Outsource Status',
       render: (o) => {
@@ -274,6 +309,7 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendor',
       kind: 'text',
       header: 'Vendor',
       ellipsis: true,
@@ -298,103 +334,4 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
   ];
 }
 
-export interface JcOpsActionProps {
-  canWrite: boolean;
-  canCreatePr: boolean;
-  canOpEntry: boolean;
-  onEdit: (o: JcOpsBoardRow) => void;
-  onCreatePr: (o: JcOpsBoardRow) => void;
-  onOutsource: (o: JcOpsBoardRow) => void;
-}
-
-/** The ⋯ menu's link renderer: Start / Log Op deep-link to `/op-entry?…`,
- *  and the router's <Link> wants that query as `search`, so it is split off. */
-export const renderJcOpsLink: RenderLink = ({ to, ...rest }) => {
-  const q = to.indexOf('?');
-  if (q < 0) return <Link {...rest} to={to} />;
-  const search = Object.fromEntries(new URLSearchParams(to.slice(q + 1)));
-  return <Link {...rest} to={to.slice(0, q)} search={search} />;
-};
-
-/**
- * The row's ⋯ menu items — only the ones valid for that op (owner-approved
- * spec 2026-10-01). An item the user has no right to is left out; one the
- * server would refuse for this op's state is greyed with the reason. The
- * outsource state that used to sit in the action cell as text ("PR: …",
- * "PO: …", "At Vendor (n pcs)") now shows in the Outsource Status column, and
- * "✓ Locked / 🔒 Running" is Change Machine's greyed reason.
- */
-export function jcOpsRowMenu(o: JcOpsBoardRow, p: JcOpsActionProps): RowMenuItem[] {
-  if (isOutsource(o)) {
-    // Legacy L11369 — raise a PR from a pending outsource op. The server-side
-    // cascade stamps this op as pr_raised + links the new PR.
-    return [
-      {
-        key: 'raise-pr',
-        label: 'Raise PR',
-        icon: 'plus',
-        group: 'workflow',
-        hidden: !p.canCreatePr,
-        disabledReason: outsourceStatusOf(o) === 'pending' ? undefined : 'PR already raised',
-        onSelect: () => p.onCreatePr(o),
-      },
-    ];
-  }
-
-  const running = o.status === 'running';
-  const complete = o.status === 'complete';
-  // Running / complete op: why the server refuses a machine change or an
-  // outsource send for it.
-  const stateReason = complete ? 'Completed' : running ? 'Running — stop it first' : undefined;
-  // ▶ Start / ✚ Log — the Job Queue's rule: an in-house op with pieces waiting
-  // and no session running is the next thing to do. Pieces already made →
-  // Log Op (the Complete half); none yet → Start Operation.
-  const logging = o.completed > 0;
-  const startReason = running
-    ? 'Already running'
-    : complete
-      ? 'Completed'
-      : o.available > 0
-        ? undefined
-        : 'Nothing Pending';
-  const opEntryTo = `/op-entry?${new URLSearchParams({
-    jc: o.jcCode,
-    op: o.jcOpId,
-    mode: logging ? 'complete' : 'start',
-  }).toString()}`;
-
-  return [
-    {
-      key: 'start',
-      label: logging ? 'Log Op' : 'Start Operation',
-      icon: logging ? 'plus' : 'play',
-      group: 'workflow',
-      hidden: !p.canOpEntry,
-      disabledReason: startReason,
-      ...(startReason ? {} : { to: opEntryTo }),
-    },
-    {
-      // ADR-125 — a half-done op CAN change machine (each op_log row carries
-      // the machine that made its qty). Blocked only when 'complete' or a
-      // session is running, matching changeJcOpMachine exactly.
-      key: 'change-machine',
-      label: 'Change Machine',
-      icon: 'settings',
-      group: 'workflow',
-      hidden: !p.canWrite,
-      disabledReason: stateReason,
-      onSelect: () => p.onEdit(o),
-    },
-    {
-      // ADR-081 — send the remaining qty out. Qty already covered by open PRs
-      // is not on the row; the server refuses it and the dialog shows why.
-      key: 'outsource',
-      label: 'Outsource Available',
-      icon: 'truck',
-      group: 'workflow',
-      hidden: !p.canWrite || o.opType !== 'process',
-      disabledReason: stateReason ?? (o.available > 0 ? undefined : 'Nothing Pending'),
-      onSelect: () => p.onOutsource(o),
-    },
-  ];
-}
+export { type JcOpsActionProps, jcOpsRowMenu, renderJcOpsLink } from './jc-ops-row-menu';

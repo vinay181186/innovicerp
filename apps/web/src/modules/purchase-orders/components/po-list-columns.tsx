@@ -13,17 +13,30 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { Badge } from '@/ui/core';
 import type { DataTableColumn } from '@/ui/data';
-import { PO_TYPE_LABELS } from '../lib/po-labels';
+import { PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 import { PoStatusBadge } from './po-status-badge';
 
 // Whole rupees, Indian grouping — the same shape the Invoices list uses.
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
 
-export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListItem>[] {
+/** Sort & Filter tick lists (server mode): stored code → the label shown. */
+const toOptions = (labels: Record<string, string>): Array<{ value: string; label: string }> =>
+  Object.entries(labels).map(([value, label]) => ({ value, label }));
+const PO_STATUS_OPTIONS = toOptions(PO_STATUS_LABELS);
+const PO_TYPE_OPTIONS = toOptions(PO_TYPE_LABELS);
+
+/** `canSeePrice` — Value is sortable / filterable only for a user who may see
+ *  PO prices (the API refuses it otherwise; ADR-200). */
+export function purchaseOrderListColumns({
+  canSeePrice,
+}: {
+  canSeePrice: boolean;
+}): DataTableColumn<PurchaseOrderListItem>[] {
   return [
     {
       // First column — pinned by the table standard (ADR-199).
       id: 'po_code',
+      sortFilterField: 'poCode',
       header: 'PO No.',
       nowrap: true,
       render: (po) => (
@@ -41,6 +54,7 @@ export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListIte
     },
     {
       id: 'po_date',
+      sortFilterField: 'poDate',
       kind: 'date',
       header: 'PO Date',
       className: 'mono',
@@ -49,6 +63,9 @@ export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListIte
     },
     {
       id: 'po_type',
+      sortFilterField: 'poType',
+      filterType: 'list',
+      filterOptions: PO_TYPE_OPTIONS,
       header: 'PO Type',
       nowrap: true,
       // Same chip the card showed — amber Job Work, teal Service, blue
@@ -63,6 +80,7 @@ export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListIte
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendorName',
       header: 'Vendor',
       align: 'left',
       ellipsis: true,
@@ -72,6 +90,7 @@ export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListIte
     },
     {
       id: 'pr_code',
+      sortFilterField: 'prCodeText',
       header: 'PR No.',
       nowrap: true,
       render: (po) =>
@@ -85,6 +104,8 @@ export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListIte
     },
     {
       id: 'total_qty',
+      sortFilterField: 'totalQty',
+      filterType: 'num',
       header: 'Qty',
       align: 'right',
       nowrap: true,
@@ -93,6 +114,8 @@ export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListIte
     },
     {
       id: 'received_qty',
+      sortFilterField: 'receivedQty',
+      filterType: 'num',
       header: 'Received',
       align: 'right',
       nowrap: true,
@@ -107,6 +130,8 @@ export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListIte
     },
     {
       id: 'pending_qty',
+      sortFilterField: 'pendingQty',
+      filterType: 'num',
       header: 'Pending',
       align: 'right',
       nowrap: true,
@@ -121,6 +146,8 @@ export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListIte
     },
     {
       id: 'value',
+      sortFilterField: canSeePrice ? 'totalAmount' : undefined,
+      filterType: 'num',
       header: 'Value',
       align: 'right',
       nowrap: true,
@@ -134,10 +161,23 @@ export function purchaseOrderListColumns(): DataTableColumn<PurchaseOrderListIte
     },
     {
       id: 'po_status',
+      sortFilterField: 'status',
+      filterOptions: PO_STATUS_OPTIONS,
       kind: 'badge',
       header: 'PO Status',
       nowrap: true,
       render: (po) => <PoStatusBadge status={po.status} />,
+    },
+    {
+      // When the PO record was entered (IST day) — Sort & Filter can pick a
+      // range of it (ADR-200). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      header: 'Created On',
+      className: 'mono',
+      nowrap: true,
+      render: (po) => fmtDate(po.createdAt),
     },
   ];
 }

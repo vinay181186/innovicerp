@@ -2,14 +2,18 @@
 // "Report Types" tab of QC Process Master. Master CRUD for report/document types
 // used as QC document-requirement options in Planning. Self-contained: its own
 // hooks + inline New/Edit modal. Backed by /report-types (0038).
+// ADR-201: 25-row server pages (page in component state — this is a tab of QC
+// Process Master); Sort & Filter (▾) runs on the server.
 
 import { REPORT_TYPE_STATUSES, type CreateReportTypeInput, type ReportType } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { PageState } from '@/ui/layout';
+import { ListFooter, PageState } from '@/ui/layout';
 import {
   useCreateReportType,
   useDeleteReportType,
@@ -17,10 +21,24 @@ import {
   useUpdateReportType,
 } from '../api';
 
+const DEFAULT_OPTIONS = [
+  { value: 'mandatory', label: '★ Mandatory' },
+  { value: 'optional', label: 'Optional' },
+] as const;
+const STATUS_OPTIONS = REPORT_TYPE_STATUSES.map((s) => ({ value: s, label: s }));
+
 type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: ReportType };
 
 export function ReportTypesPanel(): React.JSX.Element {
-  const { data, isLoading, isFetching, isError, error } = useReportTypes();
+  const [page, setPage] = useState(1);
+  const sf = useServerSortFilter(TABLE_KEYS.reportTypes, () => setPage(1));
+  const { data, isLoading, isFetching, isError, error } = useReportTypes({
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
+  });
+  const total = data?.total ?? 0;
+  useClampPage(page, data?.total, setPage);
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
   const del = useDeleteReportType();
@@ -40,6 +58,7 @@ export function ReportTypesPanel(): React.JSX.Element {
     () => [
       {
         id: 'name',
+        sortFilterField: 'name',
         header: 'Report / Document Name',
         kind: 'code',
         nowrap: true,
@@ -48,6 +67,7 @@ export function ReportTypesPanel(): React.JSX.Element {
       },
       {
         id: 'description',
+        sortFilterField: 'description',
         header: 'Description',
         kind: 'text',
         align: 'left',
@@ -57,6 +77,8 @@ export function ReportTypesPanel(): React.JSX.Element {
       },
       {
         id: 'default',
+        sortFilterField: 'defaultMandatory',
+        filterOptions: DEFAULT_OPTIONS,
         header: 'Default',
         kind: 'badge',
         nowrap: true,
@@ -68,6 +90,8 @@ export function ReportTypesPanel(): React.JSX.Element {
       },
       {
         id: 'status',
+        sortFilterField: 'status',
+        filterOptions: STATUS_OPTIONS,
         header: 'Active',
         kind: 'badge',
         nowrap: true,
@@ -131,8 +155,13 @@ export function ReportTypesPanel(): React.JSX.Element {
             columns={columns}
             rows={items}
             loading={isLoading}
+            sortFilterServer={sf}
             rowActionsWidth="1%"
-            emptyText="No report types defined. Click + Add Report Type."
+            emptyText={
+              sf.filtering
+                ? 'No report types match.'
+                : 'No report types defined. Click + Add Report Type.'
+            }
             rowMenu={(row) => [
               {
                 key: 'edit',
@@ -155,6 +184,13 @@ export function ReportTypesPanel(): React.JSX.Element {
           />
         </Panel>
       )}
+      <ListFooter
+        total={total}
+        noun="report type"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={setPage}
+      />
 
       {modal.kind !== 'none' ? (
         <ReportTypeModal

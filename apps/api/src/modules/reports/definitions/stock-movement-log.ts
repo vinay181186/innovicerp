@@ -5,6 +5,7 @@
 import { STORE_TXN_SOURCE_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 export const stockMovementLogReport: RegisteredReport = {
   definition: {
@@ -80,7 +81,7 @@ export const stockMovementLogReport: RegisteredReport = {
         ${sourceFrag}
         ${txnFrag}
       ORDER BY st.txn_date DESC, st.created_at DESC
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

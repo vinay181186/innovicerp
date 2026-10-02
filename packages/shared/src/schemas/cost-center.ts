@@ -6,6 +6,7 @@
 // so adding a department doesn't need a migration.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { queryBoolean } from '../lib/query-boolean';
 
 const codeRegex = /^[A-Za-z0-9._-]+$/;
@@ -67,6 +68,8 @@ export const listCostCentersQuerySchema = z.object({
   isActive: queryBoolean().optional(),
   department: z.string().max(64).optional(),
   type: z.string().max(64).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

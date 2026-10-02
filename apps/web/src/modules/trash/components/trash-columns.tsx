@@ -28,6 +28,7 @@ export const TYPE_OPTIONS: readonly TrashEntityType[] = [
   'Route Card',
   'Cost Center',
   'QC Process',
+  'Production Order',
 ];
 
 // On-screen names for the type codes above. The codes themselves are what the
@@ -43,10 +44,15 @@ export function typeLabel(t: TrashEntityType): string {
   return TYPE_LABEL[t] ?? t;
 }
 
+// Sort & Filter tick list (ADR-200): the stored type code + the word shown.
+const TYPE_FILTER_OPTIONS = TYPE_OPTIONS.map((t) => ({ value: t, label: typeLabel(t) }));
+
 export function trashColumns(): DataTableColumn<TrashListItem>[] {
   return [
     {
       id: 'document',
+      sortFilterField: 'document',
+      filterType: 'text',
       kind: 'code',
       header: 'Document',
       className: 'fw-700',
@@ -54,6 +60,8 @@ export function trashColumns(): DataTableColumn<TrashListItem>[] {
     },
     {
       id: 'type',
+      sortFilterField: 'type',
+      filterOptions: TYPE_FILTER_OPTIONS,
       kind: 'badge',
       header: 'Document Type',
       render: (it) => <span className="badge b-grey">{typeLabel(it.type)}</span>,
@@ -61,6 +69,7 @@ export function trashColumns(): DataTableColumn<TrashListItem>[] {
     },
     {
       id: 'deleted_by',
+      sortFilterField: 'deletedBy',
       kind: 'text',
       header: 'Deleted By',
       align: 'left',
@@ -71,6 +80,7 @@ export function trashColumns(): DataTableColumn<TrashListItem>[] {
     },
     {
       id: 'deleted_at',
+      sortFilterField: 'deletedAt',
       kind: 'date',
       header: 'Deleted At',
       className: 'text3',

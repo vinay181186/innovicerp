@@ -5,13 +5,25 @@ import { apiFetch } from '@/lib/api';
 export const soOverviewKeys = {
   all: ['so-overview'] as const,
   list: (q: SoOverviewQuery) =>
-    [...soOverviewKeys.all, q.status ?? null, q.search ?? null] as const,
+    [
+      ...soOverviewKeys.all,
+      q.status ?? null,
+      q.search ?? null,
+      q.overall ?? null,
+      q.sf ?? null,
+      q.limit ?? null,
+      q.offset ?? null,
+    ] as const,
 };
 
 function buildSearch(q: SoOverviewQuery): string {
   const params = new URLSearchParams();
   if (q.status) params.set('status', q.status);
   if (q.search) params.set('search', q.search);
+  if (q.overall) params.set('overall', q.overall);
+  if (q.sf) params.set('sf', q.sf);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  if (q.offset !== undefined) params.set('offset', String(q.offset));
   const s = params.toString();
   return s.length > 0 ? `?${s}` : '';
 }

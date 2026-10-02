@@ -20,16 +20,21 @@
 import type { AlertColumn, AlertRow } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { useCallback } from 'react';
+import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, dynamicColumns, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useAlert } from '../api';
 
 export const alertsDrillRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'alerts/$code',
+  // ADR-201: the records page at 25 — only that page comes from the server.
+  validateSearch: z.object({ page: pageSearchParam }),
   component: AlertDrillPage,
 });
 
@@ -70,8 +75,16 @@ function buildColumns(cols: AlertColumn[]): DataTableColumn<AlertRow>[] {
 
 function AlertDrillPage() {
   const { code } = alertsDrillRoute.useParams();
-  const { data, isLoading, isError, error } = useAlert(code);
+  const { page } = alertsDrillRoute.useSearch();
+  const routeNavigate = alertsDrillRoute.useNavigate();
+  const offset = pageOffset(page);
+  const { data, isLoading, isError, error } = useAlert(code, LIST_PAGE_SIZE, offset);
   const navigate = useNavigate();
+  const gotoPage = useCallback(
+    (p: number) => void routeNavigate({ search: { page: p } }),
+    [routeNavigate],
+  );
+  useClampPage(page, data?.alert.count, gotoPage);
 
   const notFound = error?.message?.toLowerCase().includes('not found') ?? false;
 
@@ -112,20 +125,30 @@ function AlertDrillPage() {
           </div>
         </div>
       ) : (
-        <Panel fill bodyPadding="none">
-          <DataTable
-            tableKey={TABLE_KEYS.alertDrill}
-            columns={buildColumns(data.columns)}
-            rows={data.alert.records}
-            rowKey={(_, i) => `row-${i}`}
-            empty="✅ Nothing pending"
-            isRowClickable={(row) => rowNavPage(row) !== null}
-            onRowClick={(row) => {
-              const to = rowNavPage(row);
-              if (to) void navigate({ to });
-            }}
+        <>
+          <Panel fill bodyPadding="none">
+            <DataTable
+              tableKey={TABLE_KEYS.alertDrill}
+              columns={buildColumns(data.columns)}
+              rows={data.alert.records}
+              rowKey={(_, i) => `row-${offset + i}`}
+              sortFilter={false}
+              empty="✅ Nothing pending"
+              isRowClickable={(row) => rowNavPage(row) !== null}
+              onRowClick={(row) => {
+                const to = rowNavPage(row);
+                if (to) void navigate({ to });
+              }}
+            />
+          </Panel>
+          <ListFooter
+            total={data.alert.count}
+            noun="record"
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPage}
           />
-        </Panel>
+        </>
       )}
     </div>
   );

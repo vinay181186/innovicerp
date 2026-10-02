@@ -1,3 +1,4 @@
+import { sfRawParamSchema } from '@innovic/shared';
 import { z } from 'zod';
 
 export const opLogTypeSchema = z.enum(['start', 'complete', 'qc']);
@@ -15,6 +16,8 @@ export const listOpLogQuerySchema = z.object({
   machineId: z.string().uuid().optional(),
   fromDate: z.string().optional(), // YYYY-MM-DD
   toDate: z.string().optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

@@ -13,6 +13,7 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
   const cols: DataTableColumn<ScVendorRow>[] = [
     {
       id: 'vendor_name',
+      sortFilterField: 'vendorName',
       kind: 'text',
       header: 'Vendor Name',
       align: 'left',
@@ -23,6 +24,7 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
     },
     {
       id: 'vendor_code',
+      sortFilterField: 'vendorCode',
       kind: 'code',
       header: 'Vendor Code',
       className: 'td-code',
@@ -30,15 +32,24 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
     },
     {
       id: 'po_lines',
+      sortFilterField: 'lines',
       kind: 'num',
       header: 'PO Lines',
       align: 'right',
       className: 'mono',
       render: (v) => v.lines,
     },
-    { id: 'items', kind: 'num', header: 'Items', align: 'right', render: (v) => v.uniqueItems },
+    {
+      id: 'items',
+      sortFilterField: 'uniqueItems',
+      kind: 'num',
+      header: 'Items',
+      align: 'right',
+      render: (v) => v.uniqueItems,
+    },
     {
       id: 'order_qty',
+      sortFilterField: 'totalQty',
       kind: 'num',
       header: 'Order Qty',
       align: 'right',
@@ -47,6 +58,7 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
     },
     {
       id: 'received',
+      sortFilterField: 'receivedQty',
       kind: 'num',
       header: 'Received',
       align: 'right',
@@ -56,6 +68,7 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
     },
     {
       id: 'pending_qty',
+      sortFilterField: 'pendingQty',
       kind: 'num',
       header: 'Pending Qty',
       align: 'right',
@@ -68,6 +81,7 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
     cols.push(
       {
         id: 'order_value',
+        sortFilterField: 'totalVal',
         kind: 'num',
         header: 'Order Value',
         align: 'right',
@@ -76,6 +90,7 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
       },
       {
         id: 'pending_value',
+        sortFilterField: 'pendingVal',
         kind: 'num',
         header: 'Pending Value',
         align: 'right',
@@ -92,6 +107,7 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
   const cols: DataTableColumn<ScSoRow>[] = [
     {
       id: 'so_no',
+      sortFilterField: 'soCode',
       kind: 'code',
       header: 'SO / JWSO No.',
       className: 'td-code',
@@ -99,6 +115,7 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
     },
     {
       id: 'po_lines',
+      sortFilterField: 'lines',
       kind: 'num',
       header: 'PO Lines',
       align: 'right',
@@ -107,6 +124,7 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
     },
     {
       id: 'vendors',
+      sortFilterField: 'uniqueVendors',
       kind: 'num',
       header: 'Vendors',
       align: 'right',
@@ -114,6 +132,7 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
     },
     {
       id: 'order_qty',
+      sortFilterField: 'totalQty',
       kind: 'num',
       header: 'Order Qty',
       align: 'right',
@@ -122,6 +141,7 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
     },
     {
       id: 'received',
+      sortFilterField: 'receivedQty',
       kind: 'num',
       header: 'Received',
       align: 'right',
@@ -131,6 +151,7 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
     },
     {
       id: 'pending_qty',
+      sortFilterField: 'pendingQty',
       kind: 'num',
       header: 'Pending Qty',
       align: 'right',
@@ -143,6 +164,7 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
     cols.push(
       {
         id: 'order_value',
+        sortFilterField: 'totalVal',
         kind: 'num',
         header: 'Order Value',
         align: 'right',
@@ -151,6 +173,7 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
       },
       {
         id: 'pending_value',
+        sortFilterField: 'pendingVal',
         kind: 'num',
         header: 'Pending Value',
         align: 'right',

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { queryBoolean } from '../lib/query-boolean';
+import { sfRawParamSchema } from './list-query';
 import { GST_CATEGORIES } from '../lib/gst';
 import type { MasterRuleWarnings } from '../lib/master-rules';
 import {
@@ -126,6 +127,8 @@ export const listVendorsQuerySchema = z.object({
   isActive: queryBoolean().optional(),
   sortBy: vendorSortFieldSchema.optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
+  /** Sort & Filter (ADR-200) — the master screen's column sort / filters. */
+  sf: sfRawParamSchema,
   // 1000 so the Vendor Master can load the whole master in one scrolling fetch
   // (no Prev/Next), matching the SO master list. Raised from 200.
   limit: z.coerce.number().int().positive().max(1000).default(50),

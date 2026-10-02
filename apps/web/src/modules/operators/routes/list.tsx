@@ -7,10 +7,11 @@
 // (modules/clients/routes/list.tsx) as the reference. The composition is the
 // canonical one and nothing else:
 //
-//   <ListHeader>            title · count · SearchInput · status filter · primary
-//   <Banner>                import result (dismissible)
+//   <ListHeader>            title · count · Excel template / import ·
+//                           SearchInput · status filter · primary
+//   <MasterImportDialog>    Excel import: Import Type → preview → import
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
-//   <ListFooter>            count line · Prev / Next · Excel template / import
+//   <ListFooter>            count line · Prev / Next
 //   <PageState>             no-access and load-failure
 //
 // Everything this file used to draw by hand — the sticky band, the search box,
@@ -32,30 +33,23 @@
 
 import type { ListOperatorsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { operatorListColumns } from '../components/operator-list-columns';
-import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateOperators, useOperatorsList, useSoftDeleteOperator } from '../api';
 import { downloadOperatorTemplate, parseOperatorImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
-
-// Join a list of import warnings/failures for the status line, capping at 50 so
-// a huge sheet can't produce an unbounded banner, but still showing far more
-// than the old 3-item cap that hid most problems.
-function fmtList(items: string[]): string {
-  const shown = items.slice(0, 50).join('; ');
-  return items.length > 50 ? `${shown} … (+${items.length - 50} more)` : shown;
-}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -108,65 +102,40 @@ function OperatorsListPage(): React.JSX.Element {
   const isActiveFilter =
     search.status === 'active' ? true : search.status === 'inactive' ? false : undefined;
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss rows. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.operatorsList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListOperatorsQuery = useMemo(
     () => ({
       search: search.search,
       isActive: isActiveFilter,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, isActiveFilter, search.page],
+    [search.search, isActiveFilter, sf.param, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useOperatorsList(query);
   const softDelete = useSoftDeleteOperator();
 
-  // Excel import — the WHOLE sheet goes in one request, and the list reloads
-  // once at the end.
+  // Excel import — ONE shared dialog (components/shared/master-import-dialog),
+  // the same one Item / Vendor / Customer Master use: Import Type (Insert new /
+  // Update existing by Code) → preview (dryRun, the server checks every row and
+  // writes nothing) → import. The whole sheet goes in one request and the list
+  // reloads once at the end; a bad row is left out with its reason and the rest
+  // go in.
   //
-  // It used to loop the single-create mutation over the rows: one round trip per
-  // operator, and because each success invalidated the list query, the browser
-  // re-downloaded the entire operator master after every row — so the import got
-  // slower the longer it ran. Measured on the live vendors import (same code
-  // shape) at ~1 row/second, which put a 500-row sheet at about nine minutes.
-  //
-  // The duplicate-NAME guard moved to the server with it — name is the only key
-  // the operator template gives us (it has no Code column). It used to compare
-  // against `data.operators`, i.e. the page of operators currently loaded on
-  // screen, so anything past that page read as "new" and was created a second
-  // time.
+  // Operator was the last master still writing straight away, insert-only, with
+  // no preview — and a retry after a timeout could create every operator a
+  // second time. The dialog's save key (one per open, reused on retry) is what
+  // stops that, and it is passed for the real import only.
   const bulkCreate = useBulkCreateOperators();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [importMsg, setImportMsg] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-
-  async function onImportFile(file: File): Promise<void> {
-    setImporting(true);
-    setImportMsg(null);
-    try {
-      const { payloads, errors } = await parseOperatorImportFile(file);
-      if (payloads.length === 0) {
-        setImportMsg(
-          errors.length
-            ? `Nothing to import. ${errors.length} row issue(s): ${fmtList(errors)}`
-            : 'Nothing to import — the sheet has no operator rows.',
-        );
-        return;
-      }
-      const res = await bulkCreate.mutateAsync({ operators: payloads });
-      const skips = res.skipped.map((s) => `Row ${s.index} "${s.name}": ${s.reason}`);
-      setImportMsg(
-        `Imported ${res.created}/${payloads.length} operator(s).` +
-          (skips.length ? ` ${skips.length} skipped: ${fmtList(skips)}` : '') +
-          (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
-      );
-    } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Could not import the file. Try again.');
-    } finally {
-      setImporting(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  }
+  const [importOpen, setImportOpen] = useState(false);
 
   const rows = data?.operators ?? [];
   const total = data?.total ?? 0;
@@ -230,6 +199,42 @@ function OperatorsListPage(): React.JSX.Element {
             }}
           />
         }
+        // Excel template + import are data tools, so they sit on the title row
+        // (ZONE B) between the identity line and the primary action — visible
+        // the moment the page opens.
+        //
+        // PERMISSION CHANGE, deliberate (not a tidy-up): the gate was `canAdd`
+        // alone, because this import could only INSERT. The server now also
+        // supports Update existing (by Code), which is the page's EDIT right —
+        // so the pair shows for `canAdd || canEdit`, exactly as Item / Vendor /
+        // Customer Master do. The dialog itself then offers only the Import
+        // Types the user actually holds (allowInsert / allowUpdate below), so an
+        // edit-only user cannot create operators and an entry-only user cannot
+        // overwrite saved ones.
+        tools={
+          canAdd || canEdit ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="download" size={12} />}
+                title="Download a blank Excel template for Operator Master"
+                onClick={() => downloadOperatorTemplate()}
+              >
+                Excel Template
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="upload" size={12} />}
+                title="Add or update operators from a filled template"
+                onClick={() => setImportOpen(true)}
+              >
+                Import from Excel
+              </Button>
+            </>
+          ) : null
+        }
         primary={
           canAdd ? (
             <Link to="/operators/new" className="btn btn-primary">
@@ -238,12 +243,6 @@ function OperatorsListPage(): React.JSX.Element {
           ) : null
         }
       />
-
-      {importMsg ? (
-        <Banner tone="info" onDismiss={() => setImportMsg(null)}>
-          {importMsg}
-        </Banner>
-      ) : null}
 
       {isError ? (
         <PageState
@@ -254,10 +253,15 @@ function OperatorsListPage(): React.JSX.Element {
         <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.operatorsList}
+            sortFilterServer={sf}
             columns={columns}
             rows={rows}
             loading={isLoading}
-            empty={search.search || search.status ? 'No Operators match.' : 'No Operators yet.'}
+            empty={
+              search.search || search.status || sf.param
+                ? 'No Operators match.'
+                : 'No Operators yet.'
+            }
             onRowClick={(op) => void navigate({ to: '/operators/$id', params: { id: op.id } })}
             rowActionsWidth="1%"
             rowActions={(op) => (
@@ -296,43 +300,27 @@ function OperatorsListPage(): React.JSX.Element {
         page={currentPage}
         pageSize={PAGE_SIZE}
         onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
-        // Excel template + import sit below the pager (mirror of Vendors).
-        // Import creates operators, so it follows the create (entry) right.
-        // The file input is hidden and only opened by the button.
-        actions={
-          canAdd ? (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="download" size={12} />}
-                onClick={() => downloadOperatorTemplate()}
-              >
-                Download Excel Template
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="upload" size={12} />}
-                loading={importing}
-                onClick={() => fileRef.current?.click()}
-              >
-                Import from Excel
-              </Button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onImportFile(f);
-                }}
-              />
-            </>
-          ) : null
-        }
       />
+
+      {importOpen ? (
+        <MasterImportDialog
+          title="Import Operators from Excel"
+          noun="operator"
+          codeLabel="Code"
+          nameLabel="Operator Name"
+          allowInsert={canAdd}
+          allowUpdate={canEdit}
+          parse={parseOperatorImportFile}
+          // The save key reaches the REAL import only — the dialog passes it on
+          // the dryRun: false call and never on the preview.
+          submit={(importRows, mode, dryRun, saveKey) =>
+            bulkCreate.mutateAsync({ operators: importRows, mode, dryRun, saveKey })
+          }
+          onDownloadTemplate={downloadOperatorTemplate}
+          errorsFileName="Operator Import Errors.xlsx"
+          onClose={() => setImportOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

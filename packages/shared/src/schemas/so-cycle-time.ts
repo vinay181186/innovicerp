@@ -5,6 +5,30 @@
 // plus filtered-set averages. Read-only.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
+
+/** The "Show" filter: every SO, completed (dispatched) / active ones, or a type. */
+export const SO_CYCLE_TIME_SHOW = [
+  'all',
+  'completed',
+  'active',
+  'equipment',
+  'component_manufacturing',
+  'with_material',
+] as const;
+export type SoCycleTimeShow = (typeof SO_CYCLE_TIME_SHOW)[number];
+
+// ADR-201 — the screen pages at 25; the Show filter, the search, Sort & Filter
+// and the page run on the SERVER; `averages` cover every matching SO.
+// No `limit` → every matching SO (the Excel export pages through them).
+export const soCycleTimeQuerySchema = z.object({
+  show: z.enum(SO_CYCLE_TIME_SHOW).default('all'),
+  search: z.string().max(200).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type SoCycleTimeQuery = z.input<typeof soCycleTimeQuerySchema>;
 
 // Phase transition timestamps (ISO date / timestamp strings, null = not reached).
 export const soPhaseTimestampsSchema = z.object({
@@ -56,6 +80,9 @@ export type SoCycleTimeRow = z.infer<typeof soCycleTimeRowSchema>;
 
 export const soCycleTimeResponseSchema = z.object({
   rows: z.array(soCycleTimeRowSchema),
+  /** SOs matching the filters (every page) — the pager's total. */
+  total: z.number().int().nonnegative(),
+  /** Mean phase days over EVERY matching SO (not the page shown). */
   averages: z.object({
     design: z.number().int().nonnegative(),
     production: z.number().int().nonnegative(),

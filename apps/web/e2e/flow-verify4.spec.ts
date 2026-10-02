@@ -1,4 +1,5 @@
 import { test, type Page } from '@playwright/test';
+import { clickRowMenuItem, findRowWithMenuItem } from './row-menu';
 
 function log(pass: boolean, name: string, detail = ''): void {
   // eslint-disable-next-line no-console
@@ -29,7 +30,7 @@ test('T23+T20/22 blank numbers auto-generate', async ({ page }: { page: Page }) 
   // Chain: create a PO from this PR with a blank number → IN-PO-.
   await page.goto(`/purchase-requests?search=${pr[0]}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByText('Create PO', { exact: false }).first().click().catch(() => {});
+  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: pr[0] }).first(), /^Create PO/).catch(() => {});
   await page.waitForTimeout(3000);
   // Clear the PO number so the blank→auto path is exercised.
   const poNoInput = page.locator('input[value^="IN-PO-"]').first();
@@ -63,9 +64,10 @@ test('T13 DC date required', async ({ page }: { page: Page }) => {
   // Reach a DC create via an existing job-work PO's "Create DC".
   await page.goto('/purchase-orders', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  const createDc = page.getByText('Create DC', { exact: true }).first();
-  if (await createDc.count()) {
-    await createDc.click();
+  // "Create DC" sits in each PO row's ⋯ menu: the first row offering it enabled.
+  const dcRow = await findRowWithMenuItem(page, page.locator('table tbody tr'), /^Create DC/);
+  if (dcRow) {
+    await clickRowMenuItem(page, dcRow, /^Create DC/);
     await page.waitForTimeout(3000);
     await page.screenshot({ path: `${SHOT}/v4-dc-create.png`, fullPage: true });
     const dateReq = await page.getByText(/DC Date/i).first().innerText().catch(() => '');

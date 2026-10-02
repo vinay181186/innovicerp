@@ -5,40 +5,48 @@
 // TABLE_KEYS.jobQueue}> with the SAME columns, so all machines share one
 // remembered column layout. The eight on-sheet columns and the ▸ detail columns
 // (and the ▲/▼ reorder controls + ⋯ op-entry menu in the Action column) live in
-// ../components/job-queue-columns. The DATA and RULES stay: same query, same
-// jc_create / op_entry access, same machine picker, same client-side search,
-// same optimistic reorder.
+// ../components/job-queue-columns. Same jc_create / op_entry access.
+//
+// 25 rows per page (ADR-201): the machine picker, the search and the paging run
+// on the SERVER over the whole queue (machines by code, each in its saved
+// order); the page's rows are grouped into machine panels. Panel figures
+// (pending jobs / hours) and the picker counts are whole-queue figures from
+// the server. Up/down asks the server to swap the row with its neighbour in the
+// machine's FULL queue, so a move on page 2 never disturbs another page.
 
 import type { JobQueueRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
-import { ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   JOB_QUEUE_HIDDEN_IDS,
   jobQueueColumns,
   jobQueueRowActions,
   jobQueueRowTint,
 } from '../components/job-queue-columns';
-import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
+import { useBackfillMachineIds, useJobQueue, useMoveJobQueueOp } from '../api';
 
 const searchSchema = z.object({
   machine: z.string().optional(),
+  search: z.string().optional(),
+  page: pageSearchParam,
 });
 
 export const jobQueueRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'job-queue',
-  validateSearch: (search) => searchSchema.parse(search),
+  validateSearch: searchSchema,
   component: JobQueuePage,
 });
 
@@ -57,11 +65,49 @@ function JobQueuePage(): React.JSX.Element {
   // The machine-code backfill stays a pure admin data-hygiene tool (the server
   // gates it requireAdminRole), so it is not part of the tier model.
   const isAdmin = me?.role === 'admin';
-  const { data, isLoading, isError, error } = useJobQueue({});
-  const reorderMut = useReorderJobQueue();
+
+  // Search box -> URL (debounced), always back to page 1.
+  const [searchInput, setSearchInput] = useState(search.search ?? '');
+  useEffect(() => {
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
+  }, [search.search]);
+  useEffect(() => {
+    const trimmed = normalizeSearchTerm(searchInput);
+    const next = trimmed === '' ? undefined : trimmed;
+    if (next === search.search) return;
+    const id = window.setTimeout(() => {
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [searchInput, search.search, navigate]);
+  const searching = (search.search ?? '') !== '';
+
+  // The URL carries the machine CODE; the server pages by machine id. Every
+  // paged response carries ALL machine summaries, so the code resolves from
+  // the last response (a cold deep link first asks for a 1-row page to learn it).
+  const [machineIdByCode, setMachineIdByCode] = useState<Map<string, string>>(new Map());
+  const machineId = selectedMachineCode ? machineIdByCode.get(selectedMachineCode) : undefined;
+  const waitingForMachineId = selectedMachineCode !== '' && machineId === undefined;
+
+  const { data, isLoading, isError, error } = useJobQueue({
+    machineId,
+    search: search.search,
+    limit: waitingForMachineId ? 1 : LIST_PAGE_SIZE,
+    offset: waitingForMachineId ? 0 : pageOffset(search.page),
+  });
+  const moveMut = useMoveJobQueueOp();
   const backfillMut = useBackfillMachineIds();
 
-  const machines = data?.machines ?? [];
+  const machines = useMemo(() => data?.machines ?? [], [data?.machines]);
+  useEffect(() => {
+    if (machines.length === 0) return;
+    setMachineIdByCode((prev) => {
+      if (machines.every((m) => prev.get(m.machineCode) === m.machineId)) return prev;
+      return new Map(machines.map((m) => [m.machineCode, m.machineId]));
+    });
+  }, [machines]);
   const selectedMachine = useMemo(
     () =>
       selectedMachineCode
@@ -69,49 +115,32 @@ function JobQueuePage(): React.JSX.Element {
         : null,
     [machines, selectedMachineCode],
   );
-  const displayMachines = selectedMachine ? [selectedMachine] : machines;
+  const total = waitingForMachineId ? undefined : data?.total;
 
-  // Client-side search over the columns each row shows — JC no., POL, item
-  // code / name, SO no., customer, operation. The queue is one fetch, so every
-  // row is already here. While a term is typed the ▲/▼ arrows are hidden: a
-  // move swaps a row with its neighbour in the FULL queue, which a filtered
-  // view no longer shows.
-  const [searchInput, setSearchInput] = useState('');
-  const term = searchInput.trim().toLowerCase();
-  const matches = (r: JobQueueRow): boolean =>
-    term === '' ||
-    [
-      r.jcCode,
-      r.clientPoLineNo,
-      itemCodeWithRev(r.itemCode, r.itemRevision, ''),
-      r.itemName,
-      r.soCode,
-      r.soCustomer,
-      r.operation,
-    ].some((v) => v != null && String(v).toLowerCase().includes(term));
-  const shownMachines = term
-    ? displayMachines.filter((m) => m.rows.some(matches))
-    : displayMachines;
-  const pendingShown = displayMachines.reduce((n, m) => n + m.rows.filter(matches).length, 0);
+  const setPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  useClampPage(search.page, total, setPage);
+
+  // The page's rows, grouped into machine panels (machines in code order). A
+  // picked machine with nothing pending still shows its "no pending" panel.
+  const shownMachines = waitingForMachineId
+    ? []
+    : selectedMachine
+      ? [selectedMachine]
+      : machines.filter((m) => m.rows.length > 0);
 
   const today = todayIst();
 
   const setMachine = (code: string | null): void => {
-    void navigate({ search: () => ({ machine: code ?? undefined }) });
+    void navigate({ search: (prev) => ({ ...prev, machine: code ?? undefined, page: 1 }) });
   };
 
-  const onMove = (machineId: string, opId: string, dir: 'up' | 'down'): void => {
-    const machine = machines.find((m) => m.machineId === machineId);
-    if (!machine) return;
-    const ids = machine.rows.map((r) => r.jcOpId);
-    const idx = ids.indexOf(opId);
-    if (idx === -1) return;
-    const swap = dir === 'up' ? idx - 1 : idx + 1;
-    if (swap < 0 || swap >= ids.length) return;
-    const next = [...ids];
-    next[idx] = ids[swap]!;
-    next[swap] = opId;
-    reorderMut.mutate({ machineId, input: { jcOpIds: next } });
+  const onMove = (mid: string, opId: string, dir: 'up' | 'down'): void => {
+    moveMut.mutate({ machineId: mid, input: { jcOpId: opId, dir } });
   };
 
   return (
@@ -119,7 +148,7 @@ function JobQueuePage(): React.JSX.Element {
       <ListHeader
         title="Job Queue"
         icon="⬛"
-        count={isLoading ? undefined : pendingShown}
+        count={total}
         noun="pending op"
         filterNote={selectedMachine ? selectedMachine.machineCode : undefined}
         search={searchInput}
@@ -148,9 +177,11 @@ function JobQueuePage(): React.JSX.Element {
         }
         onClearFilters={() => {
           setSearchInput('');
-          setMachine(null);
+          void navigate({
+            search: (prev) => ({ ...prev, machine: undefined, search: undefined, page: 1 }),
+          });
         }}
-        filtersActive={term !== '' || selectedMachine != null}
+        filtersActive={searchInput !== '' || selectedMachineCode !== ''}
         tools={
           <>
             {isAdmin ? (
@@ -191,15 +222,15 @@ function JobQueuePage(): React.JSX.Element {
       ) : shownMachines.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 32 }}>
-            {term ? 'No pending operations match.' : 'No pending operations.'}
+            {searching ? 'No pending operations match.' : 'No pending operations.'}
           </div>
         </div>
       ) : (
         shownMachines.map((m) => {
-          // Position in the FULL queue (not the filtered rows), so Sr No and the
-          // ▲/▼ neighbours stay true while a search narrows what is shown.
-          const posById = new Map(m.rows.map((r, i) => [r.jcOpId, i]));
-          const machineRows = m.rows.filter(matches);
+          // Position in the machine's FULL queue (from the server), so Sr No and
+          // the up/down limits stay true on any page and while a search narrows it.
+          const posById = new Map(m.rows.map((r, i) => [r.jcOpId, r.queueIndex ?? i]));
+          const machineRows = m.rows;
           return (
             <div key={m.machineId} className="panel" style={{ marginBottom: 14 }}>
               <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
@@ -267,7 +298,7 @@ function JobQueuePage(): React.JSX.Element {
                       posById,
                       canReorder,
                       canOpEntry,
-                      searching: term !== '',
+                      searching,
                       onMove,
                     })
                   }
@@ -277,6 +308,14 @@ function JobQueuePage(): React.JSX.Element {
           );
         })
       )}
+
+      <ListFooter
+        total={total ?? 0}
+        noun="pending op"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={setPage}
+      />
     </div>
   );
 }

@@ -6,13 +6,22 @@
 // mutation (useStopOp → commits produced qty to op_log → op_entry entry), the
 // StopOpModal flow, the op_entry entry permission gate and the realtime refresh
 // (owned by the parent route) are all unchanged.
+//
+// ADR-201 (2026-10-02): both tables are 25-row server pages with Prev / Next
+// (page held in component state — two tables on one route). "Running now" is
+// sorted / filtered on the server (its ▾ is server mode); "Recent" is every
+// finished / cancelled session, newest first — no longer the last 20 of 200.
 
 import type { RunningOp, StopOpInput } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter } from '@/ui/layout';
 import { useStopOp } from '../api';
+import { useRunningOpsPage } from '../running-ops-page-api';
 import {
   RUNNING_OPS_DEFAULT_HIDDEN,
   recentOpsColumns,
@@ -21,17 +30,34 @@ import {
 } from './running-ops-columns';
 import { StopOpModal } from './stop-op-modal';
 
-interface Props {
-  rows: RunningOp[];
-}
-
-export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
+export function RunningOpsBoard(): React.JSX.Element {
   const stop = useStopOp();
   // Stopping a session commits produced qty to op_log → op_entry entry (Production).
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
-  const running = rows.filter((r) => r.status === 'running') as RunningOpRow[];
-  const recent = rows.filter((r) => r.status !== 'running').slice(0, 20) as RunningOpRow[];
+
+  // Running vs Recent is decided on the SERVER (view=running|recent), one
+  // 25-row page each; every ▾ change sends "Running now" back to page 1.
+  const [runPage, setRunPage] = useState(1);
+  const [recentPage, setRecentPage] = useState(1);
+  const sf = useServerSortFilter(TABLE_KEYS.runningOps, () => setRunPage(1));
+  const runQ = useRunningOpsPage({
+    view: 'running',
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(runPage),
+  });
+  const recentQ = useRunningOpsPage({
+    view: 'recent',
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(recentPage),
+  });
+  const running = (runQ.data?.items ?? []) as RunningOpRow[];
+  const recent = (recentQ.data?.items ?? []) as RunningOpRow[];
+  const runTotal = runQ.data?.total ?? 0;
+  const recentTotal = recentQ.data?.total ?? 0;
+  useClampPage(runPage, runQ.data?.total, setRunPage);
+  useClampPage(recentPage, recentQ.data?.total, setRecentPage);
   // The row whose Stop box is open, and the server's message if it refused.
   const [stopRow, setStopRow] = useState<RunningOp | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
@@ -58,15 +84,17 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
         <div className="panel-hdr">
           <span className="panel-title">Running now</span>
           <span className="mono text3" style={{ fontSize: 11 }}>
-            {running.length} session{running.length !== 1 ? 's' : ''}
+            {runTotal} session{runTotal !== 1 ? 's' : ''}
           </span>
         </div>
         <DataTable
           tableKey={TABLE_KEYS.runningOps}
           columns={runningCols}
           rows={running}
+          loading={runQ.isLoading}
+          sortFilterServer={sf}
           defaultHidden={RUNNING_OPS_DEFAULT_HIDDEN}
-          emptyText="No operations running."
+          emptyText={sf.filtering ? 'No running operations match.' : 'No operations running.'}
           // Stop stays the ⋯ row action it has always been — shown only to a
           // user with op_entry entry, busy-locked while a stop is in flight.
           rowMenu={
@@ -87,20 +115,34 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
               : undefined
           }
         />
+        <ListFooter
+          total={runTotal}
+          noun="session"
+          page={runPage}
+          pageSize={LIST_PAGE_SIZE}
+          onPage={setRunPage}
+        />
       </div>
 
-      {recent.length > 0 ? (
+      {recentTotal > 0 ? (
         <div className="panel">
           <div className="panel-hdr">
             <span className="panel-title">Recent</span>
             <span className="mono text3" style={{ fontSize: 11 }}>
-              last {recent.length}
+              {recentTotal} session{recentTotal !== 1 ? 's' : ''}
             </span>
           </div>
           {/* Keyless on purpose: "Recent" is a different column set (Ended +
               Op Status, no Stop) from the live board above, so it must not share
               the runningOps saved layout. It renders as the same ruled sheet. */}
-          <DataTable columns={recentCols} rows={recent} />
+          <DataTable columns={recentCols} rows={recent} loading={recentQ.isLoading} />
+          <ListFooter
+            total={recentTotal}
+            noun="session"
+            page={recentPage}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={setRecentPage}
+          />
         </div>
       ) : null}
 

@@ -118,3 +118,16 @@ export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
     title: (r) => r.remarks ?? '',
   },
 ];
+
+/**
+ * The columns for one machine group on a 25-row page (ADR-201): the Completed
+ * total is the group's WHOLE-day figure from the server, not the sum of the
+ * rows that happen to be on this page.
+ */
+export function dailyReportColumnsFor(groupTotal: number): DataTableColumn<DailyReportRow>[] {
+  return dailyReportColumns.map((c) =>
+    c.id === 'completed'
+      ? { ...c, total: () => <span style={{ color: 'var(--green2)' }}>{groupTotal}</span> }
+      : c,
+  );
+}

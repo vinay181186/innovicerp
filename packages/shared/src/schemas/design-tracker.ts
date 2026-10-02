@@ -6,6 +6,7 @@
 // Numbering: DSN-NNNN.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { DESIGN_HOURS_MAX_PER_ENTRY } from './design-project';
 
 export const DESIGN_TRACKER_STATUSES = [
@@ -117,7 +118,10 @@ export const logDesignTimeInputSchema = z.object({
   hours: z.coerce
     .number()
     .positive()
-    .max(DESIGN_HOURS_MAX_PER_ENTRY, `Hours cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`),
+    .max(
+      DESIGN_HOURS_MAX_PER_ENTRY,
+      `Hours cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`,
+    ),
   workerText: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional(),
 });
@@ -135,6 +139,8 @@ export const listDesignTrackerQuerySchema = z.object({
   status: designTrackerStatusSchema.optional(),
   /** all | pending | progress | review | approved | overdue (per legacy) */
   filter: z.enum(['all', 'pending', 'progress', 'review', 'approved', 'overdue']).default('all'),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(100),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
