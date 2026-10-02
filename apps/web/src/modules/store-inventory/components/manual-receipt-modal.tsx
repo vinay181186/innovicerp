@@ -52,7 +52,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
   );
   // Current stock of the picked item, whatever the inventory page's filter is.
   const { data: stockData } = useStoreInventory(
-    { search: picked?.code ?? '', filter: 'all' },
+    { search: picked?.code ?? '', filter: 'all', offset: 0 },
     Boolean(picked),
   );
   const stockRow = picked ? (stockData?.rows ?? []).find((r) => r.itemId === itemId) : undefined;

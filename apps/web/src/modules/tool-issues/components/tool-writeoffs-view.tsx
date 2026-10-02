@@ -3,17 +3,23 @@
 // In-charge (approve tier). The person who recorded one cannot decide it.
 // Approve → the tool is written off; Reject → Damaged goes back to stock as
 // Good, Lost goes back to "still with the operator".
+//
+// ADR-201: 25 write-offs a page with Prev / Next (page in this tab's state);
+// the status dropdown and the column ▾ Sort & Filter run on the server, and
+// any change of them goes back to page 1.
 import {
   type ToolWriteoffKind,
   type ToolWriteoffRow,
   type ToolWriteoffStatus,
 } from '@innovic/shared';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { DataTable, type DataTableColumn, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { PageState, RowActions } from '@/ui/layout';
+import { ListFooter, PageState, RowActions } from '@/ui/layout';
 import { useDecideToolWriteoff, useToolWriteoffs } from '../api';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
@@ -27,13 +33,24 @@ const STATUS_LABELS: Record<ToolWriteoffStatus, string> = {
   approved: 'Approved',
   rejected: 'Rejected',
 };
+const KIND_OPTIONS = Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }));
+const STATUS_OPTIONS = Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
 export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.JSX.Element {
   const [status, setStatus] = useState<ToolWriteoffStatus | ''>('pending');
+  const [page, setPage] = useState(1);
+  const sf = useServerSortFilter(TABLE_KEYS.toolWriteoffs, () => setPage(1));
   const { data, isLoading, isError, error } = useToolWriteoffs(
-    { ...(status ? { status } : {}), limit: 100, offset: 0 },
+    {
+      ...(status ? { status } : {}),
+      ...(sf.param ? { sf: sf.param } : {}),
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
+    },
     true,
   );
+  const onPage = useCallback((p: number) => setPage(p), []);
+  useClampPage(page, data?.total, onPage);
   const [deciding, setDeciding] = useState<ToolWriteoffRow | null>(null);
 
   const columns = useMemo<DataTableColumn<ToolWriteoffRow>[]>(
@@ -43,6 +60,9 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
         kind: 'text',
         header: 'Write-off Kind',
         render: (w) => KIND_LABELS[w.kind],
+        sortFilterField: 'kind',
+        filterType: 'list',
+        filterOptions: KIND_OPTIONS,
       },
       {
         id: 'item_code',
@@ -51,6 +71,7 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
         align: 'left',
         className: 'mono fw-700',
         render: (w) => <span style={{ color: 'var(--text)' }}>{w.itemCode}</span>,
+        sortFilterField: 'itemCode',
       },
       {
         id: 'serial_no',
@@ -58,6 +79,7 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
         header: 'Instrument Serial No.',
         className: 'mono',
         render: (w) => w.serialNo || '—',
+        sortFilterField: 'serialNo',
       },
       {
         id: 'qty',
@@ -66,6 +88,7 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
         align: 'right',
         className: 'mono',
         render: (w) => r3(w.qty),
+        sortFilterField: 'qty',
       },
       {
         id: 'issue_no',
@@ -74,12 +97,14 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
         className: 'td-code',
         nowrap: true,
         render: (w) => w.toolIssueCode || '—',
+        sortFilterField: 'issueNo',
       },
       {
         id: 'issued_to',
         kind: 'text',
         header: 'Issued To',
         render: (w) => w.holder || '—',
+        sortFilterField: 'issuedTo',
       },
       {
         id: 'reason',
@@ -90,11 +115,13 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
         className: 'text3',
         render: (w) => w.reason,
         title: (w) => w.reason,
+        sortFilterField: 'reason',
       },
       {
         id: 'requested_by',
         kind: 'text',
         header: 'Requested By',
+        sortFilterField: 'requestedBy',
         render: (w) => (
           <>
             {w.requestedByName || '—'}
@@ -106,6 +133,9 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
         id: 'status',
         kind: 'text',
         header: 'Write-off Status',
+        sortFilterField: 'status',
+        filterType: 'list',
+        filterOptions: STATUS_OPTIONS,
         render: (w) => (
           <>
             {STATUS_LABELS[w.status]}
@@ -129,7 +159,10 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
           className="innovic-select"
           aria-label="Write-off Status"
           value={status}
-          onChange={(e) => setStatus(e.target.value as ToolWriteoffStatus | '')}
+          onChange={(e) => {
+            setStatus(e.target.value as ToolWriteoffStatus | '');
+            setPage(1);
+          }}
         >
           <option value="pending">Pending</option>
           <option value="approved">Approved</option>
@@ -148,7 +181,7 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
             tableKey={TABLE_KEYS.toolWriteoffs}
             columns={columns}
             rows={data?.items ?? []}
-            sortFilter={false}
+            sortFilterServer={sf}
             rowKey={(w) => w.id}
             loading={isLoading}
             empty="No write-offs here."
@@ -172,6 +205,13 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
           />
         </Panel>
       )}
+      <ListFooter
+        total={data?.total ?? 0}
+        noun="write-off"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={onPage}
+      />
       {deciding ? <DecideModal w={deciding} onClose={() => setDeciding(null)} /> : null}
     </div>
   );

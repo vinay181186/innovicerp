@@ -7,6 +7,7 @@
 // Numbering: PM-NNNN.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const PARTY_MATERIAL_UOMS = ['NOS', 'KG', 'MTR', 'SET', 'LOT'] as const;
 export type PartyMaterialUom = (typeof PARTY_MATERIAL_UOMS)[number];
@@ -92,6 +93,8 @@ export type ReturnPartyMaterialInput = z.infer<typeof returnPartyMaterialInputSc
 export const listPartyMaterialsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   clientId: z.string().uuid().optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

@@ -7,6 +7,7 @@
 //   renderDesignWorkLog     L7935
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 // ─── Enums ─────────────────────────────────────────────────────────────────
 
@@ -337,7 +338,10 @@ export const createDesignWorkLogInputSchema = z.object({
   hours: z.coerce
     .number()
     .positive()
-    .max(DESIGN_HOURS_MAX_PER_ENTRY, `Hours cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`),
+    .max(
+      DESIGN_HOURS_MAX_PER_ENTRY,
+      `Hours cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`,
+    ),
   description: z.string().trim().max(1000).optional(),
 });
 export type CreateDesignWorkLogInput = z.infer<typeof createDesignWorkLogInputSchema>;
@@ -379,6 +383,8 @@ export type UpdateDesignDcnInput = z.infer<typeof updateDesignDcnInputSchema>;
 export const listDesignProjectsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   filter: z.enum(['all', 'active', 'released', 'hold']).default('all'),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(100),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
@@ -403,6 +409,8 @@ export interface ListDesignProjectsResponse {
 export const listDesignIssuesQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   filter: z.enum(['all', 'open', 'resolved', 'critical']).default('all'),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(500).default(200),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

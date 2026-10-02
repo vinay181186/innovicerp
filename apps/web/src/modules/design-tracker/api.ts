@@ -21,6 +21,7 @@ export const designTrackerKeys = {
       q.search ?? null,
       q.status ?? null,
       q.filter,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -33,6 +34,7 @@ function buildQs(q: ListDesignTrackerQuery): string {
   if (q.search) params.set('search', q.search);
   if (q.status) params.set('status', q.status);
   if (q.filter) params.set('filter', q.filter);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

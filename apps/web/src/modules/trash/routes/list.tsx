@@ -10,12 +10,14 @@
 
 import { createRoute } from '@tanstack/react-router';
 import { Lock } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { SearchInput } from '@/ui/forms';
@@ -29,12 +31,10 @@ import {
 } from '../api';
 import { trashColumns, TYPE_OPTIONS, typeLabel } from '../components/trash-columns';
 
-const PAGE_SIZE = 50;
-
 const listSearchSchema = z.object({
   type: z.string().optional(),
   search: z.string().optional(),
-  page: z.coerce.number().int().positive().default(1),
+  page: pageSearchParam,
 });
 
 export const trashListRoute = createRoute({
@@ -50,17 +50,28 @@ function TrashListPage(): React.JSX.Element {
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
 
+  const gotoPage = useCallback(
+    (p: number) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  // Sort & Filter runs on the SERVER (ADR-200): Trash is paged 25 at a time,
+  // so filtering only the loaded page would miss documents. Every change goes
+  // back to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.trashList, () => gotoPage(1));
+
   const query: ListTrashQuery = useMemo(
     () => ({
       type: search.type as TrashEntityType | undefined,
       search: search.search,
-      limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(search.page),
     }),
-    [search.type, search.search, search.page],
+    [search.type, search.search, search.page, sf.param],
   );
 
   const { data, isLoading, isError, error } = useTrash(query);
+  useClampPage(search.page, data?.total, gotoPage);
   const restore = useRestoreFromTrash();
 
   // The row whose Restore is being confirmed (ConfirmDialog, not window.confirm).
@@ -101,9 +112,10 @@ function TrashListPage(): React.JSX.Element {
   }
 
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  // `total` is scoped to the active type filter; `byType` is always computed
-  // server-side over every type, so its sum is the true trash-wide count.
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+  // `total` is scoped to the active type filter; `byType` is computed
+  // server-side over every type (same search + column filters), so its sum is
+  // the count across all types.
   const grandTotal = Object.values(data?.byType ?? {}).reduce((a, b) => a + b, 0);
 
   async function onRestoreConfirmed(): Promise<void> {
@@ -155,13 +167,14 @@ function TrashListPage(): React.JSX.Element {
           </select>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
             search: (prev) => ({ ...prev, type: undefined, search: undefined, page: 1 }),
             replace: true,
           });
         }}
-        filtersActive={!!search.type || searchInput.trim() !== ''}
+        filtersActive={sf.filtering || !!search.type || searchInput.trim() !== ''}
       />
 
       {isError ? (
@@ -177,11 +190,16 @@ function TrashListPage(): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.trashList}
+            sortFilterServer={sf}
             columns={columns}
             rows={items}
             rowKey={(it) => `${it.type}:${it.id}`}
             loading={isLoading}
-            emptyText={urlTerm || search.type ? 'No deleted documents match.' : 'Trash is empty.'}
+            emptyText={
+              urlTerm || search.type || sf.filtering
+                ? 'No deleted documents match.'
+                : 'Trash is empty.'
+            }
             rowMenu={(it) => [
               {
                 key: 'restore',
@@ -200,13 +218,8 @@ function TrashListPage(): React.JSX.Element {
         total={total}
         noun="deleted document"
         page={search.page}
-        pageSize={PAGE_SIZE}
-        onPage={(p) =>
-          void navigate({
-            search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
-            replace: true,
-          })
-        }
+        pageSize={LIST_PAGE_SIZE}
+        onPage={(p) => gotoPage(Math.min(totalPages, Math.max(1, p)))}
       />
 
       {restoring ? (

@@ -5,7 +5,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { isoDateFilter, numCell, type SqlRow, textCell } from './report-helpers';
+import { isoDateFilter, numCell, REPORT_ROW_CAP, textCell, type SqlRow } from './report-helpers';
 
 /** Assumed length of one shift, in hours. Machines carry shifts_per_day but no
  *  shift length, so Available Hours = days × shifts_per_day × this. */
@@ -129,7 +129,7 @@ export const machineUtilisationReport: RegisteredReport = {
       WHERE m.company_id = ${companyId}::uuid
         AND m.deleted_at IS NULL
       ORDER BY m.code
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

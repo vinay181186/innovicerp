@@ -63,13 +63,13 @@ export async function globalSearch(
   // keystroke in the header, and a red error there on every page is worse
   // than an empty list. Same posture as the no-viewable-kinds path below.
   const companyId = user.companyId;
-  if (!companyId) return { items: [], truncated: false, counts: {} };
+  if (!companyId) return { items: [], truncated: false, total: 0, counts: {} };
 
   // One access read per request, then decide the kinds up front. Admins skip
   // the read entirely (they bypass the matrix, same as requireFormAccess).
   const eff = user.role === 'admin' ? null : await getMyAccess(user);
   const kinds = allowedSearchKinds(user, eff);
-  if (kinds.length === 0) return { items: [], truncated: false, counts: {} };
+  if (kinds.length === 0) return { items: [], truncated: false, total: 0, counts: {} };
 
   // The page is restricted to the requested kind (if viewable); the counts
   // are always over every allowed kind.
@@ -87,7 +87,7 @@ export async function globalSearch(
       pageKinds.length === 0
         ? []
         : ((await tx.execute(
-            buildSearchSql(pageKinds, companyId, input.q, input.limit),
+            buildSearchSql(pageKinds, companyId, input.q, input.limit, input.offset),
           )) as unknown as Row[]);
     return { rows, countRows };
   });
@@ -108,5 +108,7 @@ export async function globalSearch(
     hit: r.hit ?? null,
   }));
 
-  return { items, truncated, counts };
+  // The pager's total: the per-kind counts (same WHERE) summed over the page's kinds.
+  const total = pageKinds.reduce((s, k) => s + (counts[k] ?? 0), 0);
+  return { items, truncated, total, counts };
 }

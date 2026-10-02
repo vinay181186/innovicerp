@@ -15,6 +15,7 @@ export const jcOpsBoardKeys = {
       'list',
       q.jcCode ?? null,
       q.search ?? null,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -24,6 +25,7 @@ function buildQs(q: ListJcOpsBoardQuery): string {
   const p = new URLSearchParams();
   if (q.jcCode) p.set('jcCode', q.jcCode);
   if (q.search) p.set('search', q.search);
+  if (q.sf) p.set('sf', q.sf);
   p.set('limit', String(q.limit));
   p.set('offset', String(q.offset));
   return p.toString();

@@ -2,6 +2,7 @@
 // renderReportMaster (HTML L23677). Backed by report_types (migration 0038).
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const REPORT_TYPE_STATUSES = ['Active', 'Inactive'] as const;
 export const reportTypeStatusSchema = z.enum(REPORT_TYPE_STATUSES);
@@ -18,8 +19,19 @@ export const reportTypeSchema = z.object({
 });
 export type ReportType = z.infer<typeof reportTypeSchema>;
 
+/** GET /report-types — paged (ADR-201). No `limit` = every type (pickers). */
+export const listReportTypesQuerySchema = z.object({
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(1000).default(1000),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListReportTypesQuery = z.infer<typeof listReportTypesQuerySchema>;
+
 export interface ListReportTypesResponse {
   items: ReportType[];
+  /** Every matching type (same filters), not just this page. */
+  total: number;
 }
 
 export const createReportTypeInputSchema = z.object({

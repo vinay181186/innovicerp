@@ -8,7 +8,8 @@
 // "Below Reorder" is decided in reorder-rule.ts and nowhere else.
 
 import type {
-  ReorderListRow,
+  ReorderListQuery,
+  ReorderListResponse,
   ReorderPrInput,
   ReorderPrResult,
   SetReorderInput,
@@ -18,12 +19,14 @@ import { items, vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { assertQtyFitsUom, roundQty } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 import { insertPurchaseRequestTx } from '../purchase-requests/service';
 import {
   isReorderableType,
   readBelowReorder,
+  readBelowReorderPage,
   readOpenPrsByItem,
   readSuggestedVendors,
   suggestedReorderQty,
@@ -102,16 +105,40 @@ export async function setReorder(
   });
 }
 
-export async function getReorderList(user: AuthContext): Promise<ReorderListRow[]> {
+/** Sort & Filter (ADR-200) — the Reorder List's columns, over the Below
+ *  Reorder SELECT `b` (reorder-rule.ts), exactly as the row shows them. PR Qty /
+ *  Vendor / Open PR are worked out per row after the query, so not here. */
+const REORDER_SF_COLUMNS: SfColumnMap = {
+  itemCode: { sql: sql`b.item_code`, type: 'text' },
+  itemName: { sql: sql`b.item_name`, type: 'text' },
+  uom: { sql: sql`b.uom`, type: 'text' },
+  availableQty: { sql: sql`b.available_qty`, type: 'num' },
+  onPoQty: { sql: sql`b.on_po_qty`, type: 'num' },
+  reorderLevel: { sql: sql`b.reorder_level`, type: 'num' },
+  reorderQty: { sql: sql`b.reorder_qty`, type: 'num' },
+};
+
+/** Paged (ADR-201): only this page's items are read for open PRs / vendors;
+ *  `total` counts every Below Reorder item under the same filters. */
+export async function getReorderList(
+  input: ReorderListQuery,
+  user: AuthContext,
+): Promise<ReorderListResponse> {
   await requireAnyFormAccess(user, STORE_VIEW_FORMS);
   const companyId = requireCompany(user);
+  const sf = readSf(input.sf);
   return withUserContext(user, async (tx) => {
-    const below = await readBelowReorder(tx, companyId);
+    const { rows: below, total } = await readBelowReorderPage(tx, companyId, {
+      where: sfWhere(REORDER_SF_COLUMNS, sf),
+      orderBy: sfOrderBy(REORDER_SF_COLUMNS, sf, sql`b.item_code, b.item_id`),
+      limit: input.limit,
+      offset: input.offset,
+    });
     const ids = below.map((r) => r.itemId);
     // One after the other — both run on the same transaction connection.
     const openPrs = await readOpenPrsByItem(tx, companyId, ids);
     const vendorsByItem = await readSuggestedVendors(tx, companyId, ids);
-    return below.map((r) => ({
+    const items = below.map((r) => ({
       itemId: r.itemId,
       itemCode: r.itemCode,
       itemName: r.itemName,
@@ -125,6 +152,7 @@ export async function getReorderList(user: AuthContext): Promise<ReorderListRow[
       openPrs: openPrs.get(r.itemId) ?? [],
       suggestedVendor: vendorsByItem.get(r.itemId) ?? null,
     }));
+    return { items, total };
   });
 }
 

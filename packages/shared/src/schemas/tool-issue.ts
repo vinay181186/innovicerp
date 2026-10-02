@@ -8,6 +8,7 @@
 // while nothing was returned. Numbering: TIS-NNNNN.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { STORE_ISSUE_REF_TYPES } from './store-issue';
 
 // Kept for older imports (no longer used by the Tool Issue form).
@@ -229,12 +230,30 @@ export interface ToolHolderRow {
   isOverdue: boolean;
 }
 
+/** Who holds what, paged (ADR-201) — rows stay in holder order, so a page
+ *  keeps its holder groups together. */
+export const listToolHoldersQuerySchema = z.object({
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(1000).default(1000),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListToolHoldersQuery = z.infer<typeof listToolHoldersQuerySchema>;
+
+export interface ListToolHoldersResponse {
+  items: ToolHolderRow[];
+  /** Every row still out (same filters), not just this page. */
+  total: number;
+}
+
 // ─── Query filters ────────────────────────────────────────────────────────
 
 export const listToolIssuesQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   /** all | out (issued + partial) | overdue | returned | cancelled */
   filter: z.enum(['all', 'out', 'overdue', 'returned', 'cancelled']).default('all'),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
@@ -259,6 +278,8 @@ export interface ListToolIssuesResponse {
 
 export const listToolWriteoffsQuerySchema = z.object({
   status: z.enum(TOOL_WRITEOFF_STATUSES).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

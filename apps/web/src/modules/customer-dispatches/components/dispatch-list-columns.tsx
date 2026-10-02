@@ -4,6 +4,8 @@
 // per-dispatch card (accent bar + metric strip + meta line); every field it
 // showed is still here — Total Qty / Lines are columns, SO / Dispatched By are
 // columns, and the item lines + Remarks moved into the ▸ expand.
+// ADR-201: `sortFilterField` = the register's server column map (sf-columns.ts);
+// Total Qty sorts / filters on ALL the dispatch's lines.
 
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
@@ -27,6 +29,7 @@ export function dispatchListColumns(
   return [
     {
       id: 'dispatch_code',
+      sortFilterField: 'dispatchCode',
       header: 'Dispatch No.',
       nowrap: true,
       render: (g) => (
@@ -43,6 +46,7 @@ export function dispatchListColumns(
     },
     {
       id: 'dispatch_date',
+      sortFilterField: 'dispatchDate',
       kind: 'date',
       header: 'Dispatch Date',
       className: 'mono',
@@ -51,6 +55,7 @@ export function dispatchListColumns(
     },
     {
       id: 'customer',
+      sortFilterField: 'customer',
       header: 'Customer',
       align: 'left',
       ellipsis: true,
@@ -60,6 +65,7 @@ export function dispatchListColumns(
     },
     {
       id: 'so_code',
+      sortFilterField: 'soCode',
       kind: 'code',
       header: 'SO No.',
       nowrap: true,
@@ -71,6 +77,7 @@ export function dispatchListColumns(
     },
     {
       id: 'total_qty',
+      sortFilterField: 'totalQty',
       kind: 'num',
       header: 'Total Qty',
       align: 'right',
@@ -106,6 +113,7 @@ export function dispatchListColumns(
     },
     {
       id: 'dispatched_by',
+      sortFilterField: 'dispatchedBy',
       header: 'Dispatched By',
       align: 'left',
       ellipsis: true,

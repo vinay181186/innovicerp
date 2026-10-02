@@ -5,7 +5,9 @@
 // Status and Due Date options — they replaced the clickable KPI strip), the table, and a hint
 // line that names the view. `?view=` keeps the tab across a refresh;
 // `?task=<uuid>` (Global Search deep link) opens that task's detail on
-// arrival; `?search=` keeps the typed term. Everything else is local state.
+// arrival; `?search=` keeps the typed term; `?page=` the page (ADR-201: 25
+// rows a page — search, filters and Sort & Filter run on the server over the
+// whole view, any change → page 1). Everything else is local state.
 //
 // The All Tasks tab renders ONLY when the server says the caller is admin
 // (`isAdmin` on the list response) — never merely disabled — and the server
@@ -22,11 +24,14 @@ import type {
 import { TASK_VIEWS } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListHeader } from '@/ui/layout';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useMarkTasksViewed, useTaskList, useTaskUserOptions } from '../api';
 import { AssignTaskModal } from '../components/assign-task-modal';
 import {
@@ -44,6 +49,7 @@ const searchSchema = z.object({
   task: z.string().uuid().optional(),
   view: z.enum(TASK_VIEWS).optional(),
   search: z.string().optional(),
+  page: pageSearchParam,
 });
 
 export const taskBoardRoute = createRoute({
@@ -76,24 +82,49 @@ function TaskBoardPage(): React.JSX.Element {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === routeSearch.search) return;
     const id = window.setTimeout(() => {
-      void navigate({ search: (prev) => ({ ...prev, search: next }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, routeSearch.search, navigate]);
 
-  const [status, setStatus] = useState<TaskStatus | ''>('');
-  const [priority, setPriority] = useState<TaskPriority | ''>('');
-  const [person, setPerson] = useState('');
-  const [assignedBy, setAssignedBy] = useState('');
-  const [dept, setDept] = useState('');
-  const [due, setDue] = useState<TaskDueFilter | ''>('');
+  const [status, setStatusRaw] = useState<TaskStatus | ''>('');
+  const [priority, setPriorityRaw] = useState<TaskPriority | ''>('');
+  const [person, setPersonRaw] = useState('');
+  const [assignedBy, setAssignedByRaw] = useState('');
+  const [dept, setDeptRaw] = useState('');
+  const [due, setDueRaw] = useState<TaskDueFilter | ''>('');
+
+  const page = routeSearch.page;
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  // Every filter change goes back to page 1.
+  function toFirst<T>(set: (v: T) => void): (v: T) => void {
+    return (v) => {
+      set(v);
+      gotoPage(1);
+    };
+  }
+  const setStatus = toFirst(setStatusRaw);
+  const setPriority = toFirst(setPriorityRaw);
+  const setPerson = toFirst(setPersonRaw);
+  const setAssignedBy = toFirst(setAssignedByRaw);
+  const setDept = toFirst(setDeptRaw);
+  const setDue = toFirst(setDueRaw);
+  const sf = useServerSortFilter(TABLE_KEYS.taskBoard, () => gotoPage(1));
 
   const setView = (v: TaskView): void => {
     // The person filters mean something different on each tab — reset them.
-    setPerson('');
-    setAssignedBy('');
-    setDept('');
-    void navigate({ search: (prev) => ({ ...prev, view: v, task: undefined }), replace: true });
+    setPersonRaw('');
+    setAssignedByRaw('');
+    setDeptRaw('');
+    void navigate({
+      search: (prev) => ({ ...prev, view: v, task: undefined, page: 1 }),
+      replace: true,
+    });
   };
 
   // `?task=<uuid>` opens that task's detail on arrival. Lazy initial covers the
@@ -122,10 +153,14 @@ function TaskBoardPage(): React.JSX.Element {
       assignedBy: assignedBy || undefined,
       due: due || undefined,
       dept: dept || undefined,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
     }),
-    [view, routeSearch.search, status, priority, person, assignedBy, due, dept],
+    [view, routeSearch.search, status, priority, person, assignedBy, due, dept, sf.param, page],
   );
   const { data, isLoading, isFetching, isError, error } = useTaskList(query);
+  useClampPage(page, data?.total, gotoPage);
   const { data: userOpts } = useTaskUserOptions();
   const users = userOpts?.options ?? [];
   const departments = useMemo(
@@ -174,7 +209,7 @@ function TaskBoardPage(): React.JSX.Element {
       <ListHeader
         title="Task Board"
         icon="📋"
-        count={data.tasks.length}
+        count={data.total}
         noun="task"
         search={searchInput}
         onSearch={setSearchInput}
@@ -196,16 +231,21 @@ function TaskBoardPage(): React.JSX.Element {
           />
         }
         onClearFilters={() => {
-          setStatus('');
-          setPriority('');
-          setPerson('');
-          setAssignedBy('');
-          setDept('');
-          setDue('');
+          setStatusRaw('');
+          setPriorityRaw('');
+          setPersonRaw('');
+          setAssignedByRaw('');
+          setDeptRaw('');
+          setDueRaw('');
           setSearchInput('');
-          void navigate({ search: (prev) => ({ ...prev, search: undefined }), replace: true });
+          sf.clearFilters();
+          void navigate({
+            search: (prev) => ({ ...prev, search: undefined, page: 1 }),
+            replace: true,
+          });
         }}
         filtersActive={
+          sf.filtering ||
           status !== '' ||
           priority !== '' ||
           person !== '' ||
@@ -253,9 +293,24 @@ function TaskBoardPage(): React.JSX.Element {
         rows={data.tasks}
         view={view}
         filtered={Boolean(
-          routeSearch.search || status || priority || person || assignedBy || dept || due,
+          routeSearch.search ||
+          status ||
+          priority ||
+          person ||
+          assignedBy ||
+          dept ||
+          due ||
+          sf.filtering,
         )}
+        sortFilterServer={sf}
         onAction={onRowAction}
+      />
+      <ListFooter
+        total={data.total}
+        noun="task"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
       />
 
       {modal.kind === 'assign' ? <AssignTaskModal onClose={closeModal} /> : null}

@@ -27,6 +27,7 @@ function toQueryString(q: ListMachinesQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.status) params.set('status', q.status);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -106,8 +107,9 @@ export function useSoftDeleteMachine() {
  * group going inactive changes what those screens should offer.
  */
 
-// Masters scroll, they do not paginate: one fetch, the whole master. 1000 is
-// the cap listMachineGroupsQuerySchema allows.
+// The WHOLE master in one fetch, for the lookups (useMachineGroupLookup) — 1000
+// is the cap listMachineGroupsQuerySchema allows. The Machine Groups tab itself
+// pages by 25 (ADR-201) and never shares this query.
 export const MACHINE_GROUP_LIST_LIMIT = 1000;
 
 export const machineGroupsKeys = {
@@ -120,6 +122,7 @@ function groupsToQueryString(q: ListMachineGroupsQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (typeof q.isActive === 'boolean') params.set('isActive', String(q.isActive));
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -131,7 +134,8 @@ export function useMachineGroupsList(
 ) {
   return useQuery<ListMachineGroupsResponse>({
     queryKey: machineGroupsKeys.list(query),
-    queryFn: () => apiFetch<ListMachineGroupsResponse>(`/machine-groups?${groupsToQueryString(query)}`),
+    queryFn: () =>
+      apiFetch<ListMachineGroupsResponse>(`/machine-groups?${groupsToQueryString(query)}`),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -185,6 +189,8 @@ export function useSoftDeleteMachineGroup() {
  *  Inactive groups are included on purpose: a machine linked to a retired group
  *  must still read as that group, not as a blank. */
 export function useMachineGroupLookup(): Map<string, MachineGroup> {
+  // Its own params (no search / filter / sf, limit 1000) — never the tab's
+  // 25-row page, so the lookup always holds every group.
   const list = useMachineGroupsList({ limit: MACHINE_GROUP_LIST_LIMIT, offset: 0 });
   const groups = list.data?.groups;
   return useMemo(() => new Map((groups ?? []).map((g) => [g.id, g])), [groups]);

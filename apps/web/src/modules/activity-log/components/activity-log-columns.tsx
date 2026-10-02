@@ -21,10 +21,23 @@ function fmtTime(ts: string): string {
   return parts[1] ?? '';
 }
 
-export function activityLogColumns(): DataTableColumn<ActivityLogEntry>[] {
+/** Columns off by default (DataTable `defaultHidden`); the Columns menu shows them. */
+export const ACTIVITY_LOG_HIDDEN_COLUMNS = ['created_on'] as const;
+
+/**
+ * @param actions the action codes present in the log (the list response's
+ *   `actions`) — the Action column's Sort & Filter tick list.
+ * Each `sortFilterField` is a field of the endpoint's column map
+ * (apps/api/src/modules/activity-log/sf-columns.ts, ADR-200).
+ */
+export function activityLogColumns(
+  actions: readonly string[] = [],
+): DataTableColumn<ActivityLogEntry>[] {
+  const actionOptions = actions.map((a) => ({ value: a, label: actionLabel(a) }));
   return [
     {
       id: 'log_date',
+      sortFilterField: 'logDate',
       kind: 'date',
       header: 'Log Date',
       className: 'mono text3',
@@ -33,6 +46,8 @@ export function activityLogColumns(): DataTableColumn<ActivityLogEntry>[] {
     },
     {
       id: 'log_time',
+      sortFilterField: 'logTime',
+      filterType: 'text',
       kind: 'code',
       header: 'Log Time',
       className: 'mono text3',
@@ -41,6 +56,8 @@ export function activityLogColumns(): DataTableColumn<ActivityLogEntry>[] {
     },
     {
       id: 'action',
+      sortFilterField: 'action',
+      filterOptions: actionOptions,
       kind: 'badge',
       header: 'Action',
       render: (e) => (
@@ -50,6 +67,7 @@ export function activityLogColumns(): DataTableColumn<ActivityLogEntry>[] {
     },
     {
       id: 'entity',
+      sortFilterField: 'entity',
       kind: 'code',
       header: 'Document Type',
       className: 'fw-700',
@@ -57,6 +75,7 @@ export function activityLogColumns(): DataTableColumn<ActivityLogEntry>[] {
     },
     {
       id: 'detail',
+      sortFilterField: 'detail',
       kind: 'text',
       header: 'Detail',
       align: 'left',
@@ -67,12 +86,14 @@ export function activityLogColumns(): DataTableColumn<ActivityLogEntry>[] {
     },
     {
       id: 'ref_id',
+      sortFilterField: 'refId',
       kind: 'code',
       header: 'Document No.',
       render: (e) => <DocRefLink entity={e.entity} refId={e.refId} entityId={e.entityId} />,
     },
     {
       id: 'user',
+      sortFilterField: 'userName',
       kind: 'text',
       header: 'User',
       align: 'left',
@@ -90,6 +111,17 @@ export function activityLogColumns(): DataTableColumn<ActivityLogEntry>[] {
       ),
       title: (e) => e.userName,
       filterValue: (e) => e.userFullName,
+    },
+    {
+      // When the log row was written (IST day) — Sort & Filter can pick a
+      // range of it (ADR-200). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      header: 'Created On',
+      className: 'mono text3',
+      nowrap: true,
+      render: (e) => fmtDate(e.createdAt),
     },
   ];
 }

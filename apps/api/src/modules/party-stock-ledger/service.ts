@@ -8,15 +8,26 @@
 // the user who posted the move (createdByName). Company-scoped by RLS, exactly
 // like the Party GRN list.
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type {
   ListPartyStockLedgerQuery,
   ListPartyStockLedgerResponse,
   PartyStockLedgerListItem,
 } from '@innovic/shared';
-import { partyStockLedger } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { likeEscape } from '../../lib/list-query';
+
+// The words the ledger screen prints (party-stock-ledger/routes/list.tsx) —
+// the search matches what the user reads, not the stored codes.
+const MOVEMENT_LABEL_SQL = sql`(CASE psl.movement
+  WHEN 'receive' THEN 'Receive' WHEN 'issue' THEN 'Issue' WHEN 'consume' THEN 'Consume'
+  WHEN 'return' THEN 'Return' WHEN 'reversal' THEN 'Reversal' ELSE psl.movement END)`;
+const SOURCE_DOC_LABEL_SQL = sql`(CASE psl.source_doc_type
+  WHEN 'party_grn' THEN 'Party GRN' WHEN 'party_grn_line' THEN 'Party GRN'
+  WHEN 'party_material_issue' THEN 'Customer Material Issue'
+  WHEN 'party_material' THEN 'Customer Material' WHEN 'job_card' THEN 'Job Card'
+  WHEN 'jw_return_challan' THEN 'JW Return' ELSE psl.source_doc_type END)`;
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -39,6 +50,32 @@ export async function listPartyStockLedger(
       : sql``;
     const jwFrag = input.jwLineId ? sql`AND psl.jw_line_id = ${input.jwLineId}::uuid` : sql``;
     const movementFrag = input.movement ? sql`AND psl.movement = ${input.movement}` : sql``;
+    // ADR-201: the search box runs here over EVERY movement, not the 25 on
+    // screen. The date is matched as the screen prints it (DD-Mon-YYYY, IST).
+    const pat = input.search ? `%${likeEscape(input.search.trim())}%` : null;
+    const searchFrag = pat
+      ? sql`AND (
+          pm.code ILIKE ${pat} ESCAPE '\\' OR pm.name ILIKE ${pat} ESCAPE '\\'
+          OR ${MOVEMENT_LABEL_SQL} ILIKE ${pat} ESCAPE '\\'
+          OR psl.direction::text ILIKE ${pat} ESCAPE '\\'
+          OR psl.qty::text ILIKE ${pat} ESCAPE '\\'
+          OR psl.balance_after::text ILIKE ${pat} ESCAPE '\\'
+          OR ${SOURCE_DOC_LABEL_SQL} ILIKE ${pat} ESCAPE '\\'
+          OR u.full_name ILIKE ${pat} ESCAPE '\\'
+          OR to_char(psl.created_at AT TIME ZONE 'Asia/Kolkata', 'DD-Mon-YYYY') ILIKE ${pat} ESCAPE '\\'
+        )`
+      : sql``;
+    // ONE WHERE for the page and the count, so the total follows the search.
+    const fromWhere = sql`
+      FROM public.party_stock_ledger psl
+      LEFT JOIN public.party_materials pm ON pm.id = psl.party_material_id
+      LEFT JOIN public.users u ON u.id = psl.created_by
+      WHERE psl.company_id = ${companyId}::uuid
+        AND psl.deleted_at IS NULL
+        ${pmFrag}
+        ${jwFrag}
+        ${movementFrag}
+        ${searchFrag}`;
 
     const result = (await tx.execute(sql`
       SELECT
@@ -56,27 +93,14 @@ export async function listPartyStockLedger(
         pm.code AS "partyMaterialCode",
         pm.name AS "partyMaterialName",
         u.full_name AS "createdByName"
-      FROM public.party_stock_ledger psl
-      LEFT JOIN public.party_materials pm ON pm.id = psl.party_material_id
-      LEFT JOIN public.users u ON u.id = psl.created_by
-      WHERE psl.company_id = ${companyId}::uuid
-        AND psl.deleted_at IS NULL
-        ${pmFrag}
-        ${jwFrag}
-        ${movementFrag}
+      ${fromWhere}
       ORDER BY psl.created_at DESC, psl.id DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `)) as unknown as Array<Record<string, unknown>>;
 
-    const conditions = [eq(partyStockLedger.companyId, companyId), isNull(partyStockLedger.deletedAt)];
-    if (input.partyMaterialId)
-      conditions.push(eq(partyStockLedger.partyMaterialId, input.partyMaterialId));
-    if (input.jwLineId) conditions.push(eq(partyStockLedger.jwLineId, input.jwLineId));
-    if (input.movement) conditions.push(eq(partyStockLedger.movement, input.movement));
-    const totalRows = await tx
-      .select({ value: sql<number>`count(*)::int` })
-      .from(partyStockLedger)
-      .where(and(...conditions));
+    const totalRows = (await tx.execute(
+      sql`SELECT count(*)::int AS "value" ${fromWhere}`,
+    )) as unknown as Array<{ value: number }>;
     const total = Number(totalRows[0]?.value ?? 0);
 
     const items = result.map(toListItem);

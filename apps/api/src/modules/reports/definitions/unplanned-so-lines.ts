@@ -6,7 +6,14 @@
 import { sql } from 'drizzle-orm';
 import { soLineCoveredRaw } from '../../../lib/so-line-coverage';
 import type { RegisteredReport } from '../registry';
-import { dateCell, likeFilter, numCell, type SqlRow, textCell } from './report-helpers';
+import {
+  dateCell,
+  likeFilter,
+  numCell,
+  REPORT_ROW_CAP,
+  textCell,
+  type SqlRow,
+} from './report-helpers';
 
 // ADR-185 — a JWSO line's Covered, the SQL twin of the JW branch of
 // so-planning/service.ts (getPlanningJwDetail steps 3 + 6): live,
@@ -127,7 +134,7 @@ export const unplannedSoLinesReport: RegisteredReport = {
           ${jwCustomerFrag}
       ) u
       ORDER BY u.due_date ASC NULLS LAST, u.order_code, u.line_no
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

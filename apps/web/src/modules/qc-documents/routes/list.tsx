@@ -12,6 +12,7 @@ import { QC_DOC_CATEGORIES } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { pageSearchParam } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListHeader } from '@/ui/layout';
 import { MatrixView } from '../components/matrix-view';
@@ -23,6 +24,8 @@ const searchSchema = z.object({
   so: z.string().optional(),
   category: z.enum(QC_DOC_CATEGORIES).optional(),
   search: z.string().optional(),
+  /** File Register page (ADR-201, 25 rows). */
+  page: pageSearchParam,
 });
 
 export const qcDocumentsListRoute = createRoute({

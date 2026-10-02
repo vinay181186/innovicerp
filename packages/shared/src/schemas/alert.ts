@@ -143,3 +143,35 @@ export const setAlertSubscriptionInputSchema = z.object({
   channel: alertChannelSchema.optional(),
 });
 export type SetAlertSubscriptionInput = z.infer<typeof setAlertSubscriptionInputSchema>;
+
+// ─── Paged dashboard + drill (ADR-201, 25 rows a page) ───────────────────
+// A query-string flag: "true" / "1" → true, anything else → false.
+const queryFlag = z.preprocess((v) => v === true || v === 'true' || v === '1', z.boolean());
+
+/** GET /alerts — the dashboard's search / "show zero" filter and page run on
+ *  the server. No `limit` → every alert (the home widgets ask that way). */
+export const listAlertsQuerySchema = z.object({
+  search: z.string().max(200).optional(),
+  showZero: queryFlag.optional(),
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListAlertsQuery = z.input<typeof listAlertsQuerySchema>;
+
+/** The paged dashboard answer: the page of alerts plus the summary worked out
+ *  over EVERY active alert (per-department record counts + the grand total) and
+ *  `total` = alerts matching the search / filter (for the pager). */
+export const listAlertsPageResponseSchema = listAlertsResponseSchema.extend({
+  total: z.number().int().nonnegative(),
+  totalRecords: z.number().int().nonnegative(),
+  byDept: z.record(z.number().int().nonnegative()),
+});
+export type ListAlertsPageResponse = z.infer<typeof listAlertsPageResponseSchema>;
+
+/** GET /alerts/:code — the drill's records are paged; `alert.count` stays the
+ *  full record count. No `limit` → every record. */
+export const runAlertQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type RunAlertQuery = z.input<typeof runAlertQuerySchema>;

@@ -117,7 +117,7 @@ export function QcCallRegisterHeader(props: {
             <Link
               to="/qc-history"
               className="btn btn-ghost btn-sm"
-              title="The full QC history log — every completed entry, not just the latest 30"
+              title="The full QC history log — pending ops and completed entries, with dates"
             >
               Full History →
             </Link>
@@ -126,7 +126,7 @@ export function QcCallRegisterHeader(props: {
             type="button"
             className="btn btn-ghost btn-sm"
             disabled={props.isEmpty}
-            title={`Export the ${view} rows on screen to Excel`}
+            title={`Export every ${view} call matching the filters to Excel`}
             onClick={props.onExport}
           >
             ⬇ Export

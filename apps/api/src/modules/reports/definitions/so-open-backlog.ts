@@ -7,7 +7,7 @@ import { SELECTABLE_SO_TYPES, SO_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { jcEffectiveQtySql } from '../../../lib/jc-effective-qty';
 import type { RegisteredReport } from '../registry';
-import { enumFilter } from './report-helpers';
+import { enumFilter, REPORT_ROW_CAP } from './report-helpers';
 
 export const soOpenBacklogReport: RegisteredReport = {
   definition: {
@@ -116,7 +116,7 @@ export const soOpenBacklogReport: RegisteredReport = {
         ${toFrag}
         ${typeFrag}
       ORDER BY sol.due_date ASC NULLS LAST, so.code, sol.line_no
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

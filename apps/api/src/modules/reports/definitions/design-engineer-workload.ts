@@ -10,6 +10,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 export const designEngineerWorkloadReport: RegisteredReport = {
   definition: {
@@ -96,7 +97,7 @@ export const designEngineerWorkloadReport: RegisteredReport = {
           AND engineer_text = e.name
       ) wl ON true
       ORDER BY total_tasks DESC, e.name ASC
-      LIMIT 500
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

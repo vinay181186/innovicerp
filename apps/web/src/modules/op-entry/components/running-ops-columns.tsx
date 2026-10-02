@@ -56,6 +56,7 @@ const polColumn: DataTableColumn<RunningOpRow> = {
   // POL — the line number printed on the CUSTOMER's own purchase order,
   // immediately before the item. '—' when there is no sales order behind it.
   id: 'client_po_line_no',
+  sortFilterField: 'clientPoLineNo',
   kind: 'code',
   header: 'POL',
   headColor: 'var(--purple)',
@@ -67,6 +68,7 @@ const itemCodeColumn: DataTableColumn<RunningOpRow> = {
   // A JC number says WHICH JOB; only this says WHICH PART. The code carries
   // the customer's drawing revision as CODE/REV through the one shared helper.
   id: 'item_code',
+  sortFilterField: 'itemCode',
   kind: 'code',
   header: 'Item Code',
   className: 'mono fw-700',
@@ -79,6 +81,7 @@ const itemCodeColumn: DataTableColumn<RunningOpRow> = {
 
 const itemNameColumn: DataTableColumn<RunningOpRow> = {
   id: 'item_name',
+  sortFilterField: 'itemName',
   kind: 'text',
   header: 'Item Name',
   align: 'left',
@@ -89,6 +92,8 @@ const itemNameColumn: DataTableColumn<RunningOpRow> = {
 
 const opColumn: DataTableColumn<RunningOpRow> = {
   id: 'op_seq',
+  sortFilterField: 'opSeq',
+  filterType: 'num',
   kind: 'code',
   header: 'Op',
   className: 'mono',
@@ -97,6 +102,7 @@ const opColumn: DataTableColumn<RunningOpRow> = {
 
 const operationColumn: DataTableColumn<RunningOpRow> = {
   id: 'operation',
+  sortFilterField: 'operation',
   kind: 'text',
   header: 'Operation',
   ellipsis: true,
@@ -109,6 +115,7 @@ const operationColumn: DataTableColumn<RunningOpRow> = {
  *  machine. */
 const plannedMachineColumn: DataTableColumn<RunningOpRow> = {
   id: 'planned_machine',
+  sortFilterField: 'plannedMachineCode',
   kind: 'code',
   header: 'Planned Machine',
   className: 'mono text3',
@@ -117,6 +124,7 @@ const plannedMachineColumn: DataTableColumn<RunningOpRow> = {
 
 const actualMachineColumn: DataTableColumn<RunningOpRow> = {
   id: 'actual_machine',
+  sortFilterField: 'machineCode',
   kind: 'code',
   header: 'Actual Machine',
   className: 'mono text3',
@@ -132,6 +140,7 @@ const actualMachineColumn: DataTableColumn<RunningOpRow> = {
  *  pressed Start (ADR-197). */
 const operatorColumn: DataTableColumn<RunningOpRow> = {
   id: 'operator',
+  sortFilterField: 'operatorName',
   kind: 'text',
   header: 'Operator',
   align: 'left',
@@ -153,12 +162,15 @@ const operatorColumn: DataTableColumn<RunningOpRow> = {
   },
 };
 
-/** "Running now": the live sessions. First column (JC No.) is always pinned;
+/** "Running now": the live sessions. `sortFilterField` = the field in the
+ *  server's column map (running-ops-read.ts) — the board's Sort & Filter runs
+ *  on the server because it is paged (ADR-201). First column (JC No.) is always pinned;
  *  the Stop action is added by the board as the trailing ⋯ menu. */
 export function runningNowColumns(): DataTableColumn<RunningOpRow>[] {
   return [
     {
       id: 'jc_no',
+      sortFilterField: 'jobCardCode',
       kind: 'code',
       header: 'JC No.',
       className: 'td-code cyan',
@@ -171,6 +183,7 @@ export function runningNowColumns(): DataTableColumn<RunningOpRow>[] {
     operatorColumn,
     {
       id: 'started',
+      sortFilterField: 'startDate',
       kind: 'date',
       header: 'Started',
       className: 'mono',

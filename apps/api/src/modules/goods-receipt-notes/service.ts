@@ -32,6 +32,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
@@ -62,6 +63,7 @@ import type {
   ListGoodsReceiptNotesResponse,
   UpdateGoodsReceiptNoteInput,
 } from './schema';
+import { GRN_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -586,6 +588,30 @@ export async function listGoodsReceiptNotes(
             : sql``;
     const fromFrag = input.fromDate ? sql`AND grn.grn_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND grn.grn_date <= ${input.toDate}::date` : sql``;
+    // Per-GRN line totals. One row per GRN, so the summary (= pager count)
+    // query joins it too without changing its counts — it must, since Sort &
+    // Filter can filter on Received / Accepted / Rejected.
+    const lineAggJoin = sql`LEFT JOIN (
+        SELECT goods_receipt_note_id,
+               COUNT(*) AS line_count,
+               SUM(received_qty) AS total_received_qty,
+               SUM(qc_accepted_qty) AS qc_accepted_qty,
+               SUM(qc_rejected_qty) AS qc_rejected_qty,
+               SUM(CASE WHEN received_qty - qc_accepted_qty - qc_rejected_qty > 0
+                        THEN 1 ELSE 0 END) AS qc_pending_count
+        FROM public.goods_receipt_note_lines
+        WHERE deleted_at IS NULL
+        GROUP BY goods_receipt_note_id
+      ) line_agg ON line_agg.goods_receipt_note_id = grn.id`;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to the list AND the
+    // summary, so the pager total and the QC counts follow the filters too.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(GRN_SF_COLUMNS, sf);
+    // The summary needs the line totals only when a ▾ filter reads them — an
+    // unfiltered summary must not aggregate every GRN line a second time.
+    const summaryLineAgg = sf && sf.filters.length > 0 ? lineAggJoin : sql``;
+    const orderBy = sfOrderBy(GRN_SF_COLUMNS, sf, sql`grn.grn_date DESC, grn.code DESC`);
 
     const result = await tx.execute(sql`
       SELECT
@@ -622,18 +648,7 @@ export async function listGoodsReceiptNotes(
       LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
         ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
-      LEFT JOIN (
-        SELECT goods_receipt_note_id,
-               COUNT(*) AS line_count,
-               SUM(received_qty) AS total_received_qty,
-               SUM(qc_accepted_qty) AS qc_accepted_qty,
-               SUM(qc_rejected_qty) AS qc_rejected_qty,
-               SUM(CASE WHEN received_qty - qc_accepted_qty - qc_rejected_qty > 0
-                        THEN 1 ELSE 0 END) AS qc_pending_count
-        FROM public.goods_receipt_note_lines
-        WHERE deleted_at IS NULL
-        GROUP BY goods_receipt_note_id
-      ) line_agg ON line_agg.goods_receipt_note_id = grn.id
+      ${lineAggJoin}
       WHERE grn.company_id = ${companyId}::uuid
         AND grn.deleted_at IS NULL
         ${searchFrag}
@@ -642,7 +657,8 @@ export async function listGoodsReceiptNotes(
         ${qcStatusFrag}
         ${fromFrag}
         ${toFrag}
-      ORDER BY grn.grn_date DESC, grn.code DESC
+        ${sfFrag}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -668,6 +684,11 @@ export async function listGoodsReceiptNotes(
         WHERE gnl.goods_receipt_note_id = grn.id
           AND gnl.deleted_at IS NULL
       ) per_grn ON TRUE
+      -- For the Sort & Filter fields only (PO/NC No. and, when filtered, the
+      -- line totals); both are one row per GRN, so no count changes.
+      LEFT JOIN public.purchase_orders po
+        ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
+      ${summaryLineAgg}
       WHERE grn.company_id = ${companyId}::uuid
         AND grn.deleted_at IS NULL
         ${searchFrag}
@@ -676,6 +697,7 @@ export async function listGoodsReceiptNotes(
         ${qcStatusFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
     `);
     const sumRow = (summaryRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
     const summary = {

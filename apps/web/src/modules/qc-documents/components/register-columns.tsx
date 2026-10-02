@@ -11,6 +11,12 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 import { CATEGORY_LABEL } from './qc-doc-shared';
 
+// Server Sort & Filter (ADR-200): the Category tick list (stored code + label).
+const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));
+
 /** Ids hidden into the ▸ detail by default. */
 export const REGISTER_DETAIL_IDS = ['category', 'pol', 'item_name', 'so_code', 'uploaded_by'];
 
@@ -19,6 +25,7 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
     {
       // First column — pinned by the table standard (ADR-199).
       id: 'doc_type',
+      sortFilterField: 'docType',
       header: 'Document Type',
       nowrap: true,
       className: 'fw-700',
@@ -26,6 +33,7 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
     },
     {
       id: 'file_name',
+      sortFilterField: 'fileName',
       header: 'File Name',
       align: 'left',
       ellipsis: true,
@@ -34,12 +42,16 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
     },
     {
       id: 'category',
+      sortFilterField: 'category',
+      filterType: 'list',
+      filterOptions: CATEGORY_OPTIONS,
       header: 'Category',
       nowrap: true,
       render: (d) => (CATEGORY_LABEL as Record<string, string>)[d.category] ?? d.category,
     },
     {
       id: 'jc_code',
+      sortFilterField: 'jcCode',
       header: 'JC No.',
       nowrap: true,
       render: (d) => (
@@ -50,6 +62,7 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
     },
     {
       id: 'pol',
+      sortFilterField: 'clientPoLineNo',
       header: 'POL',
       nowrap: true,
       headColor: 'var(--purple)',
@@ -61,6 +74,7 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       nowrap: true,
@@ -71,6 +85,7 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       header: 'Item Name',
       align: 'left',
       ellipsis: true,
@@ -79,6 +94,7 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
     },
     {
       id: 'so_code',
+      sortFilterField: 'soCode',
       header: 'SO No.',
       nowrap: true,
       render: (d) => (
@@ -89,6 +105,7 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
     },
     {
       id: 'uploaded_by',
+      sortFilterField: 'uploadedBy',
       header: 'Uploaded By',
       align: 'left',
       ellipsis: true,
@@ -97,6 +114,7 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
     },
     {
       id: 'upload_date',
+      sortFilterField: 'uploadDate',
       kind: 'date',
       header: 'Upload Date',
       className: 'mono',

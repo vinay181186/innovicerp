@@ -54,16 +54,31 @@ function differs(a: string | null, b: string | null): boolean {
 
 export const OP_LOG_DEFAULT_PINNED = ['item_code'];
 
+/** Columns off by default (DataTable `defaultHidden`); the Columns menu shows them. */
+export const OP_LOG_HIDDEN_COLUMNS = ['created_on'] as const;
+
+// Sort & Filter tick lists (ADR-200): the stored code + the label shown.
+const LOG_TYPE_OPTIONS = (['start', 'complete', 'qc'] as const).map((value) => ({
+  value,
+  label: LOG_TYPE_LABEL[value],
+}));
+const SHIFT_OPTIONS = Object.entries(SHIFT_LABELS).map(([value, label]) => ({ value, label }));
+
+/** Each `sortFilterField` is a field of the endpoint's column map
+ *  (apps/api/src/modules/op-log-viewer/sf-columns.ts, ADR-200). The Reversal
+ *  column has none: its label is built per row. */
 export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
   return [
     {
       id: 'log_no',
+      sortFilterField: 'logNo',
       kind: 'code',
       header: 'Log No.',
       render: (r) => jcLink(r, r.logNo),
     },
     {
       id: 'jc_no',
+      sortFilterField: 'jcNo',
       kind: 'code',
       header: 'JC No.',
       className: 'td-code',
@@ -73,6 +88,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
       // POL — the line number printed on the CUSTOMER's own purchase order,
       // immediately before the item. '—' when no sales order sits behind it.
       id: 'client_po_line_no',
+      sortFilterField: 'clientPoLineNo',
       kind: 'code',
       header: 'POL',
       headColor: 'var(--purple)',
@@ -83,6 +99,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
       // The item the card makes — a JC number says WHICH JOB, only this says
       // WHICH PART. The code is what anyone scans the log for: darkest token.
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'mono fw-700',
@@ -94,6 +111,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -104,14 +122,25 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'log_date',
+      sortFilterField: 'logDate',
       kind: 'date',
       header: 'Log Date',
       className: 'text2',
       render: (r) => fmtDate(r.logDate),
     },
-    { id: 'op_seq', kind: 'code', header: 'Op', className: 'mono', render: (r) => opSrNo(r.opSeq) },
+    {
+      id: 'op_seq',
+      sortFilterField: 'opSeq',
+      filterType: 'num',
+      kind: 'code',
+      header: 'Op',
+      className: 'mono',
+      render: (r) => opSrNo(r.opSeq),
+    },
     {
       id: 'log_type',
+      sortFilterField: 'logType',
+      filterOptions: LOG_TYPE_OPTIONS,
       kind: 'badge',
       header: 'Log Type',
       render: (r) => (
@@ -127,6 +156,9 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'shift',
+      sortFilterField: 'shift',
+      filterType: 'list',
+      filterOptions: SHIFT_OPTIONS,
       kind: 'code',
       header: 'Shift',
       className: 'text2',
@@ -136,6 +168,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
       // ADR-164 — PLANNED is the op's jc_ops machine; ACTUAL is the machine
       // this entry was stamped with, amber only when it is not the plan.
       id: 'planned_machine',
+      sortFilterField: 'plannedMachine',
       kind: 'code',
       header: 'Planned Machine',
       render: (r) => (
@@ -146,6 +179,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'actual_machine',
+      sortFilterField: 'actualMachine',
       kind: 'code',
       header: 'Actual Machine',
       render: (r) => (
@@ -162,6 +196,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'operation',
+      sortFilterField: 'operation',
       kind: 'text',
       header: 'Operation',
       ellipsis: true,
@@ -170,6 +205,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'completed',
+      sortFilterField: 'qty',
       kind: 'num',
       header: 'Completed',
       align: 'right',
@@ -191,6 +227,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'rejected',
+      sortFilterField: 'rejectQty',
       kind: 'num',
       header: 'Rejected',
       align: 'right',
@@ -212,6 +249,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'operator',
+      sortFilterField: 'operatorName',
       kind: 'text',
       header: 'Operator',
       ellipsis: true,
@@ -221,6 +259,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'remarks',
+      sortFilterField: 'remarks',
       kind: 'text',
       header: 'Remarks',
       align: 'left',
@@ -231,6 +270,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'logged_by',
+      sortFilterField: 'loggedBy',
       kind: 'text',
       header: 'Logged By',
       ellipsis: true,
@@ -260,6 +300,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
     },
     {
       id: 'reversal_reason',
+      sortFilterField: 'reversalReason',
       kind: 'text',
       header: 'Reversal Reason',
       align: 'left',
@@ -267,6 +308,17 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
       className: 'text2',
       render: (r) => (isReversalRow(r) ? (r.reversalReason ?? '') : ''),
       title: (r) => r.reversalReason ?? '',
+    },
+    {
+      // When the entry was typed in (IST day) — Sort & Filter can pick a range
+      // of it (ADR-200). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      header: 'Created On',
+      className: 'text2',
+      nowrap: true,
+      render: (r) => fmtDate(r.createdAt),
     },
   ];
 }

@@ -32,9 +32,11 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
 import { lockInstrument, setInstrumentStatus, tsOut } from '../instruments/common';
 import { lockIssue, refreshReturnStatus, requireCompany, todayIst } from './common';
+import { TOOL_WRITEOFF_SF_COLUMNS } from './writeoff-sf-columns';
 
 const SELECT = sql`
   SELECT w.id, w.kind, w.status, w.item_id, i.code AS item_code, i.name AS item_name,
@@ -89,16 +91,27 @@ export async function listToolWriteoffs(
   await requireAnyFormAccess(user, STORE_VIEW_FORMS);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // Sort & Filter (ADR-200) over the SELECT's joins — the count wraps the
+    // same select, so the total follows every filter.
+    const sf = readSf(q.sf);
     const where = sql`w.company_id = ${companyId}::uuid AND w.deleted_at IS NULL
-      ${q.status ? sql`AND w.status = ${q.status}` : sql``}`;
+      ${q.status ? sql`AND w.status = ${q.status}` : sql``}
+      ${sfWhere(TOOL_WRITEOFF_SF_COLUMNS, sf)}`;
+    // Pending first, newest first, id last — a unique tie-breaker so paging
+    // never skips or repeats a row.
+    const order = sfOrderBy(
+      TOOL_WRITEOFF_SF_COLUMNS,
+      sf,
+      sql`(w.status = 'pending') DESC, w.created_at DESC, w.id DESC`,
+    );
     const rows = (await tx.execute(sql`
       ${SELECT}
       WHERE ${where}
-      ORDER BY (w.status = 'pending') DESC, w.created_at DESC
+      ORDER BY ${order}
       LIMIT ${q.limit} OFFSET ${q.offset}
     `)) as unknown as Array<Record<string, unknown>>;
     const totals = (await tx.execute(sql`
-      SELECT COUNT(*)::int AS total FROM public.tool_writeoffs w WHERE ${where}
+      SELECT COUNT(*)::int AS total FROM (${SELECT} WHERE ${where}) z
     `)) as unknown as Array<{ total: number }>;
     return { items: rows.map(toRow), total: Number(totals[0]?.total ?? 0) };
   });

@@ -11,6 +11,7 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { type QcPager, TablePager } from './TablePager';
 
 function attemptColor(attempts: number): string {
   if (attempts === 1) return 'var(--amber)';
@@ -135,7 +136,14 @@ const columns: DataTableColumn<QcReworkRow>[] = [
   },
 ];
 
-export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Element {
+export function ReworkTab({
+  rework,
+  pager,
+}: {
+  /** This page of rework rows (server-paged, ADR-201). */
+  rework: QcReworkRow[];
+  pager: QcPager;
+}): React.JSX.Element {
   return (
     <>
       <div className="panel">
@@ -149,9 +157,9 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
             color: 'var(--text2)',
           }}
         >
-          Rework Cycle Tracking — {rework.length} items with multiple attempts
+          Rework Cycle Tracking — {pager.total} items with multiple attempts
         </div>
-        {rework.length === 0 ? (
+        {pager.total === 0 ? (
           <div className="empty-state" style={{ color: 'var(--green2)' }}>
             No rework cycles yet.
           </div>
@@ -163,6 +171,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
             rowKey={(g) => g.jcOpId}
           />
         )}
+        {pager.total > 0 ? <TablePager pager={pager} noun="rework item" /> : null}
       </div>
     </>
   );

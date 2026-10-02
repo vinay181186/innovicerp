@@ -18,11 +18,13 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePlansList, usePlanningDashboard } from '../api';
@@ -43,7 +45,9 @@ const searchSchema = z.object({
   // route-card plans); the KPI tiles count by the same word.
   status: z.enum(PLAN_EFFECTIVE_STATUSES).optional(),
   planType: z.enum(['manufacture', 'direct_purchase', 'full_outsource', 'assembly']).optional(),
-  offset: z.coerce.number().int().nonnegative().optional(),
+  // 25 rows a page (ADR-201). Every filter change below rebuilds the search
+  // without `page`, so it lands on page 1.
+  page: pageSearchParam,
   // Needs-Planning mode — folded in from the retired Planning Dashboard; swaps
   // the plans table for the unplanned-SO-lines table.
   needsPlanning: z.boolean().optional(),
@@ -80,22 +84,27 @@ const STATUS_KPI_KEY: Record<
   gen_production_order: 'rcCreated',
 };
 
-// One fetch, then scroll — no Prev / Next (user, 2026-09-19). The list-query
-// cap is 500; the count line under the table flags a rarer larger set.
-const LIMIT = 500;
-
 function PlansListPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const { search, status, planType, offset, needsPlanning, pending } = plansListRoute.useSearch();
-  const off = offset ?? 0;
+  const { search, status, planType, page, needsPlanning, pending } = plansListRoute.useSearch();
+  const gotoPage = useCallback(
+    (p: number): void =>
+      void navigate({ to: '/plans', search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  // Sort & Filter on the SERVER (ADR-200): only one page is loaded, so the
+  // column filters must run over every plan. Every change goes to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.plansList, () => gotoPage(1));
   const { data, isLoading, isError, error } = usePlansList({
     search,
     status,
     planType,
     ...(pending ? { poPending: true } : {}),
-    limit: LIMIT,
-    offset: off,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
+  useClampPage(page, data?.total, gotoPage);
   // KPI counts for the status dropdown's option labels (folded in from the
   // Planning Dashboard; they used to be clickable tiles).
   const dash = usePlanningDashboard();
@@ -132,7 +141,7 @@ function PlansListPage(): React.JSX.Element {
       },
     });
   // All | Pending dropdown (was pills). Same URL-param shape as the SO list's status pills;
-  // drops the offset so a narrower result never starts on an empty page.
+  // drops the page so a narrower result never starts on an empty page.
   const selectPending = (p: boolean): void =>
     void navigate({
       to: '/plans',
@@ -164,7 +173,7 @@ function PlansListPage(): React.JSX.Element {
   }
 
   const rows = data?.items ?? [];
-  const filtered = Boolean(search || status || planType || pending);
+  const filtered = Boolean(search || status || planType || pending || sf.filtering);
 
   return (
     <div>
@@ -271,8 +280,11 @@ function PlansListPage(): React.JSX.Element {
             </select>
           </>
         }
-        onClearFilters={() => void navigate({ to: '/plans', search: {} })}
-        filtersActive={!!(search || status || planType || pending || needsPlanning)}
+        onClearFilters={() => {
+          sf.clearFilters();
+          void navigate({ to: '/plans', search: {} });
+        }}
+        filtersActive={!!(search || status || planType || pending || needsPlanning || sf.filtering)}
         primary={
           perms.entry ? (
             <Link to="/plans/new" className="btn btn-primary">
@@ -297,6 +309,7 @@ function PlansListPage(): React.JSX.Element {
               columns={columns}
               rows={rows}
               loading={isLoading}
+              sortFilterServer={sf}
               empty={filtered ? 'No Plans match.' : 'No Plans yet.'}
               rowClassName={(row) => planRowTint(row)}
               onRowClick={(row) => void navigate({ to: '/plans/$id', params: { id: row.id } })}
@@ -311,7 +324,13 @@ function PlansListPage(): React.JSX.Element {
               renderLink={renderPlanLink}
             />
           </Panel>
-          <ListFooter total={data?.total ?? 0} shown={rows.length} noun="plan" limit={LIMIT} />
+          <ListFooter
+            total={data?.total ?? 0}
+            noun="plan"
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPage}
+          />
         </>
       )}
     </div>

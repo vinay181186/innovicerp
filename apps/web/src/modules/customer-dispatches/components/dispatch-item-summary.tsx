@@ -2,42 +2,28 @@
 // renderDispatchRegister item roll-up). Folded away by default so the Dispatch
 // Log is first. One row per ITEM over the ACTIVE register rows (cancelled
 // dispatches were reversed), with the item's current on-hand stock beside it.
+// Worked out on the SERVER over every matching row (ADR-201), not the page.
 //
 // The drawing revision is deliberately left out of both the key and the code
 // shown — Rev A and Rev B of a part are one item holding one stock figure, and
 // splitting them here would double the rows. The ▸ line tables carry the rev.
 
-import type { CustomerDispatchRegisterRow } from '@innovic/shared';
-import { useMemo, useState } from 'react';
+import type { CustomerDispatchItemSummary } from '@innovic/shared';
+import { useState } from 'react';
 
 export function DispatchItemSummary({
-  active,
+  items,
 }: {
-  active: CustomerDispatchRegisterRow[];
+  items: CustomerDispatchItemSummary[];
 }): React.JSX.Element | null {
   const [showSummary, setShowSummary] = useState(false);
-
-  const summary = useMemo(() => {
-    const m = new Map<
-      string,
-      { code: string; name: string; total: number; count: number; stock: number | null }
-    >();
-    for (const r of active) {
-      const key = r.itemCode ?? r.itemCodeText ?? r.itemName;
-      const cur = m.get(key) ?? {
-        code: r.itemCode ?? r.itemCodeText ?? '—',
-        name: r.itemName,
-        total: 0,
-        count: 0,
-        stock: r.currentStock,
-      };
-      cur.total += r.qty;
-      cur.count += 1;
-      if (cur.stock === null) cur.stock = r.currentStock;
-      m.set(key, cur);
-    }
-    return [...m.values()];
-  }, [active]);
+  const summary = items.map((it) => ({
+    code: it.itemCode,
+    name: it.itemName,
+    total: it.totalQty,
+    count: it.lineCount,
+    stock: it.currentStock,
+  }));
 
   if (summary.length === 0) return null;
 

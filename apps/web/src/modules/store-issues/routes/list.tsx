@@ -7,21 +7,24 @@
 import { ISSUE_AGAINST } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
 import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useStoreIssuesList } from '../api';
-import { issueRegisterColumns } from '../components/issue-register-columns';
+import {
+  ISSUE_REGISTER_HIDDEN_COLUMNS,
+  issueRegisterColumns,
+} from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
 import { NewIssueModal, type NewIssueSeed } from '../components/new-issue-modal';
-
-const PAGE_SIZE = 25;
 
 // Deep-link seed for Global Search (no detail page here): `?tab=tools&search=
 // TIS-00003` opens the Tool Issues tab with its box pre-filled. Read ONCE into
@@ -34,24 +37,42 @@ const searchSchema = z.object({
   new: z.enum(ISSUE_AGAINST).optional(),
   jobCardId: z.string().uuid().optional(),
   salesOrderId: z.string().uuid().optional(),
+  // The Item Issues register's page (ADR-201: 25 rows a page, in the URL).
+  page: pageSearchParam,
 });
 
 export const storeIssuesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'issue-register',
-  validateSearch: (search) => searchSchema.parse(search),
+  validateSearch: searchSchema,
   component: StoreIssuesListPage,
 });
 
 function StoreIssuesListPage(): React.JSX.Element {
   const routeSearch = storeIssuesListRoute.useSearch();
+  const navigate = storeIssuesListRoute.useNavigate();
   const [tab, setTab] = useState<'items' | 'tools'>(() => routeSearch.tab ?? 'items');
   // Seed this tab's box only when the landing targets it; a `?tab=tools`
   // landing must not pre-fill the Items box with a tool-issue code.
   const [search, setSearch] = useState(() =>
     (routeSearch.tab ?? 'items') === 'items' ? (routeSearch.search ?? '') : '',
   );
-  const [page, setPage] = useState(1);
+  const page = routeSearch.page;
+  const setPage = useCallback(
+    (p: number) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  // The box is debounced into the server search; a new term goes to page 1.
+  const [term, setTerm] = useState(() => search.trim());
+  useEffect(() => {
+    const next = search.trim();
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term, setPage]);
   const [newSeed, setNewSeed] = useState<NewIssueSeed | null>(() =>
     routeSearch.new
       ? {
@@ -73,14 +94,21 @@ function StoreIssuesListPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'issue_create');
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the register is paged, so
+  // filtering only the loaded page would miss slips. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.issueRegister, () => setPage(1));
+
   const { data, isLoading, isError, error } = useStoreIssuesList({
-    search: search.trim() || undefined,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
+    search: term || undefined,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
+  useClampPage(page, data?.total, setPage);
 
   const columns = useMemo(() => issueRegisterColumns(), []);
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
   const toggleExpand = useCallback((id: string): void => {
     setExpanded((prev) => {
@@ -149,10 +177,7 @@ function StoreIssuesListPage(): React.JSX.Element {
             count={data?.total}
             noun="issue"
             search={search}
-            onSearch={(v) => {
-              setSearch(v);
-              setPage(1);
-            }}
+            onSearch={setSearch}
             searchPlaceholder="Search issue, item, JC, SO, name…"
             primary={
               perms.entry ? (
@@ -176,11 +201,13 @@ function StoreIssuesListPage(): React.JSX.Element {
             <Panel bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.issueRegister}
+                sortFilterServer={sf}
+                defaultHidden={[...ISSUE_REGISTER_HIDDEN_COLUMNS]}
                 columns={columns}
                 rows={data?.items ?? []}
                 rowKey={(iss) => iss.id}
                 loading={isLoading}
-                empty={search.trim() ? 'No issues match.' : 'No issues yet.'}
+                empty={term || sf.filtering ? 'No issues match.' : 'No issues yet.'}
                 onRowClick={(iss) => setViewId(iss.id)}
                 // A reversed slip washes the whole row and strikes its items.
                 rowClassName={(iss) => (iss.reversedAt ? ROW_TINT.cancelled : undefined)}
@@ -214,7 +241,7 @@ function StoreIssuesListPage(): React.JSX.Element {
               total={data.total}
               noun="issue"
               page={page}
-              pageSize={PAGE_SIZE}
+              pageSize={LIST_PAGE_SIZE}
               onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
             />
           ) : null}

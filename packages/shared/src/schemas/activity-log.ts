@@ -7,6 +7,17 @@
 // emitter ships.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
+
+/** A real calendar day as YYYY-MM-DD — a bad value is a 400, never a database
+ *  error (2026-02-30 passes the pattern but is not a day). */
+const isoDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-04-30.')
+  .refine((v) => {
+    const d = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+  }, 'Not a real date.');
 
 export const activityLogEntrySchema = z.object({
   id: z.string().uuid(),
@@ -42,10 +53,12 @@ export const listActivityLogQuerySchema = z.object({
   action: z.string().max(64).optional(),
   /** Filter by user id. */
   userId: z.string().uuid().optional(),
-  /** Inclusive lower-bound for `ts` (ISO date or datetime). */
-  fromDate: z.string().optional(),
-  /** Inclusive upper-bound for `ts` (ISO date or datetime). */
-  toDate: z.string().optional(),
+  /** First India-time day of `ts` to include (YYYY-MM-DD). */
+  fromDate: isoDay.optional(),
+  /** Last India-time day of `ts` to include — the WHOLE day (YYYY-MM-DD). */
+  toDate: isoDay.optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

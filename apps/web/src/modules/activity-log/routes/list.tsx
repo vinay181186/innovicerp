@@ -3,14 +3,18 @@ import { createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useActivityLog } from '../api';
-import { ActivityLogExpand, activityLogColumns } from '../components/activity-log-columns';
-
-const PAGE_SIZE = 50;
+import {
+  ACTIVITY_LOG_HIDDEN_COLUMNS,
+  ActivityLogExpand,
+  activityLogColumns,
+} from '../components/activity-log-columns';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -18,7 +22,7 @@ const searchSchema = z.object({
   userId: z.string().optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
+  page: pageSearchParam,
 });
 
 export const activityLogListRoute = createRoute({
@@ -59,7 +63,14 @@ function ActivityLogListPage() {
     return () => window.clearTimeout(id);
   }, [pendingSearch, search.search, navigate]);
 
-  const offset = (search.page - 1) * PAGE_SIZE;
+  // Sort & Filter runs on the SERVER here (ADR-200): the log is paged 25 at a
+  // time, so sorting / filtering only the loaded page would miss entries.
+  // Every change goes back to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.activityLog, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
+  const offset = pageOffset(search.page);
   const query = useMemo(
     () => ({
       ...(search.search ? { search: search.search } : {}),
@@ -67,14 +78,18 @@ function ActivityLogListPage() {
       ...(search.userId ? { userId: search.userId } : {}),
       ...(search.fromDate ? { fromDate: search.fromDate } : {}),
       ...(search.toDate ? { toDate: search.toDate } : {}),
-      limit: PAGE_SIZE,
+      ...(sf.param ? { sf: sf.param } : {}),
+      limit: LIST_PAGE_SIZE,
       offset,
     }),
-    [search, offset],
+    [search, offset, sf.param],
   );
   const { data, isLoading, isError, error, isFetching } = useActivityLog(query);
 
-  const columns = useMemo(() => activityLogColumns(), []);
+  // The Action ▾ ticks the actions this company's log holds (the same list
+  // the Action dropdown offers), shown by their standard label.
+  const actions = data?.actions;
+  const columns = useMemo(() => activityLogColumns(actions ?? []), [actions]);
 
   // ▸ reveal — the full Detail / remarks for a row. The caller owns the open set;
   // the fit engine's ▸ is the one toggle (onToggleExpanded).
@@ -104,13 +119,16 @@ function ActivityLogListPage() {
   };
 
   const onClear = () => {
+    sf.clearFilters();
     setPendingSearch('');
     void navigate({ search: () => ({ page: 1 }), replace: true });
   };
 
-  const goToPage = (n: number) => {
-    void navigate({ search: (prev) => ({ ...prev, page: n }), replace: true });
-  };
+  const goToPage = useCallback(
+    (n: number) => void navigate({ search: (prev) => ({ ...prev, page: n }), replace: true }),
+    [navigate],
+  );
+  useClampPage(search.page, data?.total, goToPage);
 
   return (
     <div>
@@ -176,6 +194,7 @@ function ActivityLogListPage() {
         }
         onClearFilters={onClear}
         filtersActive={
+          sf.filtering ||
           !!search.action ||
           !!search.userId ||
           !!search.fromDate ||
@@ -198,12 +217,19 @@ function ActivityLogListPage() {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.activityLog}
+            sortFilterServer={sf}
             columns={columns}
+            defaultHidden={[...ACTIVITY_LOG_HIDDEN_COLUMNS]}
             rows={data?.entries ?? []}
             rowKey={(e) => e.id}
             loading={isLoading}
             emptyText={
-              search.search || search.action || search.userId || search.fromDate || search.toDate
+              search.search ||
+              search.action ||
+              search.userId ||
+              search.fromDate ||
+              search.toDate ||
+              sf.filtering
                 ? 'No entries match.'
                 : 'No activity yet.'
             }
@@ -220,7 +246,7 @@ function ActivityLogListPage() {
           noun="entry"
           nounPlural="entries"
           page={search.page}
-          pageSize={PAGE_SIZE}
+          pageSize={LIST_PAGE_SIZE}
           onPage={goToPage}
         />
       ) : null}

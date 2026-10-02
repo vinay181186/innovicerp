@@ -5,7 +5,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { likeFilter } from './report-helpers';
+import { likeFilter, REPORT_ROW_CAP } from './report-helpers';
 
 export const projectedStockReport: RegisteredReport = {
   definition: {
@@ -100,7 +100,7 @@ export const projectedStockReport: RegisteredReport = {
              OR x.production_qty <> 0 OR x.min_stock_qty > 0)
         ${shortFrag}
       ORDER BY (x.min_stock_qty - x.projected_qty) DESC, x.item_code
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

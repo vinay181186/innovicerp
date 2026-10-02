@@ -54,6 +54,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
@@ -63,6 +64,8 @@ import { MachineGroupTab } from '../components/machine-group-tab';
 
 const PAGE_SIZE = 25;
 const STATUSES = ['Idle', 'Running', 'Down', 'Maintenance'] as const;
+// Sort & Filter tick list (ADR-200): the stored status is its own label.
+const STATUS_OPTIONS = STATUSES.map((s) => ({ value: s, label: s }));
 
 const listSearchSchema = z.object({
   // Absent = the machines tab, so every existing /machines link still lands on
@@ -159,14 +162,22 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss rows. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.machinesList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListMachinesQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.status, search.page],
+    [search.search, search.status, sf.param, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useMachinesList(query);
@@ -187,6 +198,10 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
+  // The ₹/hr ▾ only once the server has SAID this user may see prices — before
+  // the first page arrives the column shows, but a no-price user must never
+  // get a sort / filter on it.
+  const priceSortable = data?.priceVisible === true;
 
   const rows = data?.machines ?? [];
   const total = data?.total ?? 0;
@@ -210,6 +225,8 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       },
       {
         id: 'code',
+        sortFilterField: 'code',
+        filterType: 'text',
         header: 'Code',
         nowrap: true,
         // A real link, so the code can be ctrl/middle-clicked into a new tab.
@@ -230,6 +247,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       },
       {
         id: 'name',
+        sortFilterField: 'name',
         kind: 'text',
         header: 'Name',
         align: 'left',
@@ -238,12 +256,16 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       },
       {
         id: 'machine_type',
+        sortFilterField: 'machineType',
+        filterType: 'text',
         header: 'Machine Type',
         className: 'text2',
         render: (m) => m.machineType ?? '—',
       },
       {
         id: 'machine_group',
+        sortFilterField: 'machineGroup',
+        filterType: 'text',
         header: 'Machine Group',
         nowrap: true,
         className: 'text2',
@@ -253,6 +275,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       },
       {
         id: 'hours_per_shift',
+        sortFilterField: 'capacityPerShift',
         header: 'Hours per Shift',
         align: 'right',
         className: 'mono',
@@ -265,6 +288,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         : [
             {
               id: 'hour_rate',
+              ...(priceSortable ? { sortFilterField: 'hourRate' } : {}),
               header: 'Hour Rate (₹/hr)',
               align: 'right' as const,
               headColor: 'var(--green)',
@@ -275,6 +299,8 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
           ]),
       {
         id: 'status',
+        sortFilterField: 'status',
+        filterOptions: STATUS_OPTIONS,
         kind: 'badge',
         header: 'Machine Status',
         nowrap: true,
@@ -285,7 +311,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         render: (m) => <StatusBadge kind="machine" status={m.status} />,
       },
     ],
-    [currentPage, priceHidden, groupLookup],
+    [currentPage, priceHidden, priceSortable, groupLookup],
   );
 
   // The page title, the tab strip and the "Hide page" access gate all come from
@@ -352,10 +378,13 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.machinesList}
+            sortFilterServer={sf}
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText={search.search || search.status ? 'No Machines match.' : 'No Machines yet.'}
+            emptyText={
+              search.search || search.status || sf.param ? 'No Machines match.' : 'No Machines yet.'
+            }
             onRowClick={(m) => void navigate({ to: '/machines/$id', params: { id: m.id } })}
             rowActionsWidth="1%"
             rowActions={(m) => (

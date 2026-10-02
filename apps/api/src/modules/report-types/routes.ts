@@ -1,4 +1,8 @@
-import { createReportTypeInputSchema, updateReportTypeInputSchema } from '@innovic/shared';
+import {
+  createReportTypeInputSchema,
+  listReportTypesQuerySchema,
+  updateReportTypeInputSchema,
+} from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
@@ -6,7 +10,7 @@ import * as service from './service';
 export async function reportTypesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/report-types', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listReportTypes(req.user);
+    return service.listReportTypes(listReportTypesQuerySchema.parse(req.query), req.user);
   });
 
   app.post('/report-types', async (req) => {

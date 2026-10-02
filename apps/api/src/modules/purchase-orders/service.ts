@@ -38,6 +38,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { requireWriteRole } from '../../lib/auth';
 import { assertActiveParty } from '../../lib/active-party';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
@@ -85,6 +86,7 @@ import type {
   PurchaseOrderListItem,
   UpdatePurchaseOrderInput,
 } from './schema';
+import { PO_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -617,6 +619,30 @@ export async function listPurchaseOrders(
               AND jjwl.job_work_order_id = ${input.jobWorkOrderId}::uuid
           )`
       : sql``;
+    // Per-PO line totals (Qty / Received / Pending). One row per PO, so the
+    // count query can join it too without changing the count — it must, since
+    // Sort & Filter can filter on those three figures.
+    const lineAggJoin = sql`LEFT JOIN (
+        SELECT purchase_order_id,
+               COUNT(*) AS line_count,
+               SUM(qty) AS total_qty,
+               SUM(received_qty) AS received_qty,
+               SUM(GREATEST(0, qty - COALESCE(received_qty, 0))) AS pending_qty
+        FROM public.purchase_order_lines
+        WHERE deleted_at IS NULL
+        GROUP BY purchase_order_id
+      ) line_agg ON line_agg.purchase_order_id = po.id`;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count;
+    // Value is sortable / filterable only by a user who may see PO prices.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(PO_SF_COLUMNS, sf, { canSeePrice: showMoney });
+    // The count needs the line totals only when a ▾ filter reads them — an
+    // unfiltered count must not aggregate every PO line a second time.
+    const countLineAgg = sf && sf.filters.length > 0 ? lineAggJoin : sql``;
+    const orderBy = sfOrderBy(PO_SF_COLUMNS, sf, sql`po.po_date DESC, po.code DESC`, {
+      canSeePrice: showMoney,
+    });
 
     const result = await tx.execute(sql`
       SELECT
@@ -655,16 +681,7 @@ export async function listPurchaseOrders(
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.users cu ON cu.id = po.created_by
-      LEFT JOIN (
-        SELECT purchase_order_id,
-               COUNT(*) AS line_count,
-               SUM(qty) AS total_qty,
-               SUM(received_qty) AS received_qty,
-               SUM(GREATEST(0, qty - COALESCE(received_qty, 0))) AS pending_qty
-        FROM public.purchase_order_lines
-        WHERE deleted_at IS NULL
-        GROUP BY purchase_order_id
-      ) line_agg ON line_agg.purchase_order_id = po.id
+      ${lineAggJoin}
       -- What has already gone OUT against this PO's lines — the ONE sent
       -- figure (OSP DCs + JW DC Outwards, lib/po-line-sent.ts) the per-line
       -- sendable check uses — so the +New DC picker can drop a PO whose lines
@@ -687,7 +704,8 @@ export async function listPurchaseOrders(
         ${fromFrag}
         ${toFrag}
         ${jwFrag}
-      ORDER BY po.po_date DESC, po.code DESC
+        ${sfFrag}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -698,12 +716,13 @@ export async function listPurchaseOrders(
     // matched. A Drizzle count on purchase_orders alone cannot express this
     // predicate (it reads v.name and the lines via EXISTS), so the count is
     // raw SQL too and the predicate stays defined once, used twice. The
-    // line_agg join the page query has is one row per PO and cannot change the
-    // count.
+    // line_agg join is one row per PO and cannot change the count; it is here
+    // because Sort & Filter may filter on the line totals.
     const totalRows = await tx.execute(sql`
       SELECT COUNT(*)::int AS total
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
+      ${countLineAgg}
       WHERE po.company_id = ${companyId}::uuid
         AND po.deleted_at IS NULL
         ${searchFrag}
@@ -713,6 +732,7 @@ export async function listPurchaseOrders(
         ${fromFrag}
         ${toFrag}
         ${jwFrag}
+        ${sfFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,

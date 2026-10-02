@@ -56,6 +56,8 @@ export interface ListOpLogQuery {
   operatorId?: string | undefined;
   fromDate?: string | undefined;
   toDate?: string | undefined;
+  /** Sort & Filter (ADR-200): the encoded column sort + filters. */
+  sf?: string | undefined;
   limit: number;
   offset: number;
 }
@@ -80,6 +82,7 @@ export function toQueryString(q: ListOpLogQuery): string {
   if (q.operatorId) params.set('operatorId', q.operatorId);
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

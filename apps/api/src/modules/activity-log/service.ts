@@ -6,11 +6,13 @@
 // circular module dependencies.
 
 import type { ActivityAction, ActivityChange, ActivityEntity } from '@innovic/shared';
-import { and, count, desc, eq, gte, ilike, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { activityLog, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type { ActivityLogEntry, ListActivityLogQuery, ListActivityLogResponse } from './schema';
+import { ACTIVITY_LOG_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -93,12 +95,34 @@ export async function listActivityLog(
     if (input.userId) {
       conditions.push(eq(activityLog.userId, input.userId));
     }
+    // Date range = whole India-time days (CLAUDE.md §6.5). `ts` is UTC; the
+    // old `ts <= new Date(toDate)` stopped at 05:30 IST on the last day and
+    // `ts >= new Date(fromDate)` began at 05:30 IST on the first. Written as
+    // bounds on `ts` itself (IST midnight → the instant) so the
+    // (company_id, ts) index still serves the range.
     if (input.fromDate) {
-      conditions.push(gte(activityLog.ts, new Date(input.fromDate)));
+      conditions.push(
+        sql`${activityLog.ts} >= ((${input.fromDate}::date)::timestamp AT TIME ZONE 'Asia/Kolkata')`,
+      );
     }
     if (input.toDate) {
-      conditions.push(lte(activityLog.ts, new Date(input.toDate)));
+      conditions.push(
+        sql`${activityLog.ts} < ((${input.toDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`,
+      );
     }
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count —
+    // both join `users`, which the User field reads.
+    const sf = readSf(input.sf);
+    // sfWhere answers `AND (…)`; a leading TRUE makes it one condition.
+    if (sf && sf.filters.length > 0) {
+      conditions.push(sql`TRUE ${sfWhere(ACTIVITY_LOG_SF_COLUMNS, sf)}`);
+    }
+    const orderBy = sfOrderBy(
+      ACTIVITY_LOG_SF_COLUMNS,
+      sf,
+      sql`${activityLog.ts} DESC, ${activityLog.id} DESC`,
+    );
 
     const where = and(...conditions);
     const userNameExpr = sql<string>`COALESCE(${users.fullName}, ${activityLog.userName})`;
@@ -109,10 +133,14 @@ export async function listActivityLog(
         .from(activityLog)
         .leftJoin(users, eq(users.id, activityLog.userId))
         .where(where)
-        .orderBy(desc(activityLog.ts), desc(activityLog.id))
+        .orderBy(orderBy)
         .limit(input.limit)
         .offset(input.offset),
-      tx.select({ value: count() }).from(activityLog).where(where),
+      tx
+        .select({ value: count() })
+        .from(activityLog)
+        .leftJoin(users, eq(users.id, activityLog.userId))
+        .where(where),
       // Distinct action values present for the company — drives the filter
       // dropdown without a separate /actions endpoint.
       tx

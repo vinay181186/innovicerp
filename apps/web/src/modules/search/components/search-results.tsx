@@ -10,7 +10,7 @@
 // what the caller may view, so no permission check is repeated — a hidden
 // kind simply never appears.
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   GLOBAL_SEARCH_KINDS,
   GLOBAL_SEARCH_KIND_META,
@@ -18,7 +18,8 @@ import {
 } from '@innovic/shared';
 import type { GlobalSearchKind, GlobalSearchResult } from '@innovic/shared';
 import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
-import { PageState } from '@/ui/layout';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { ListFooter, PageState } from '@/ui/layout';
 import { useGlobalSearch } from '../api';
 import { ResultsFitTable } from './results-fit-table';
 import { RESULT_COLUMNS, ResultsTable } from './results-table';
@@ -29,8 +30,13 @@ export function SearchResults({
   kind,
   onKindChange,
   onOpen,
+  page = 1,
+  onPage,
 }: {
   layout: 'page' | 'popup';
+  /** Page layout only: 1-based page of 25 rows (ADR-201) and its setter. */
+  page?: number;
+  onPage?: (p: number) => void;
   /** Trimmed search term. */
   q: string;
   kind: GlobalSearchKind | undefined;
@@ -43,14 +49,29 @@ export function SearchResults({
   // the count strip always reflects ALL kinds for this term, so picking one
   // kind never collapses the strip to that kind alone; the rows come from the
   // kind-filtered fetch.
-  const all = useGlobalSearch({ q });
-  const filtered = useGlobalSearch({ q, kind });
-  const rows = kind ? filtered : all;
+  //
+  // Page layout (ADR-201): the table loads ONE 25-row page from the server
+  // (`limit` + `offset`); the counts ride on a 1-row read of all kinds — the
+  // server counts every match, the browser never sums the page.
+  const paged = layout === 'page';
+  const all = useGlobalSearch(paged ? { q, limit: 1 } : { q });
+  const filtered = useGlobalSearch(
+    paged ? { q, kind, limit: LIST_PAGE_SIZE, offset: pageOffset(page) } : { q, kind },
+  );
+  const rows = kind || paged ? filtered : all;
 
   // keepPreviousData keeps the LAST term's rows in `data` while the new fetch
   // runs. Those must never show under the new term, so placeholder data counts
-  // as "still searching".
-  const searching = hasQuery && (!rows.data || rows.isPlaceholderData);
+  // as "still searching" — except a page / kind change of the SAME term on the
+  // page layout, where the old page stays on screen until the next one lands.
+  const [settledQ, setSettledQ] = useState<string | null>(null);
+  useEffect(() => {
+    if (rows.data && !rows.isPlaceholderData) setSettledQ(q);
+  }, [rows.data, rows.isPlaceholderData, q]);
+  const searching =
+    hasQuery && (!rows.data || (rows.isPlaceholderData && !(paged && settledQ === q)));
+  const pageTotal = paged && !searching ? (rows.data?.total ?? 0) : undefined;
+  useClampPage(page, pageTotal, (p) => onPage?.(p));
   const countsReady = hasQuery && !!all.data && !all.isPlaceholderData;
   const counts = countsReady && all.data ? all.data.counts : undefined;
 
@@ -125,7 +146,8 @@ export function SearchResults({
     );
   }
 
-  const truncated = !searching && rows.data?.truncated === true;
+  // The paged table has a pager instead of the "first N" note.
+  const truncated = !paged && !searching && rows.data?.truncated === true;
 
   const summary = (
     <div className="text3" style={{ fontSize: 12 }}>
@@ -167,7 +189,18 @@ export function SearchResults({
   ) : rows.isError ? (
     <PageState state="error" message={rows.error.message} />
   ) : (
-    <ResultsFitTable items={items} loading={searching} empty={noResultsMsg} onOpen={onOpen} />
+    <>
+      <ResultsFitTable items={items} loading={searching} empty={noResultsMsg} onOpen={onOpen} />
+      {pageTotal !== undefined && pageTotal > 0 ? (
+        <ListFooter
+          total={pageTotal}
+          page={page}
+          pageSize={LIST_PAGE_SIZE}
+          onPage={(p) => onPage?.(p)}
+          noun="result"
+        />
+      ) : null}
+    </>
   );
   const note = truncated ? (
     <div className="text3" style={{ fontSize: 12, marginTop: 8 }}>

@@ -15,11 +15,8 @@ import type {
   AdjustStockInput,
   ListReservationsQuery,
   ListReservationsResponse,
-  ListStoreInventoryQuery,
-  ListStoreInventoryResponse,
   ReservationDetail,
   StockAvailability,
-  StoreInventoryRow,
 } from '@innovic/shared';
 import { MANUAL_RECEIPT_SOURCE_LABEL } from '@innovic/shared';
 import {
@@ -33,12 +30,10 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
-import { readStockPosition, readStockPositions } from '../../lib/stock-reservation';
-import { onPoByItemSql } from '../../lib/po-pending';
+import { readStockPosition } from '../../lib/stock-reservation';
 import { readAssemblyReservationRows } from './assembly-reservations';
-import { isBelowReorder } from './reorder-rule';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -47,190 +42,9 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
-/** Escape the ILIKE metacharacters in a user's search term. Without this a user
- *  typing "%" in the Store Inventory search box gets a wildcard pattern instead
- *  of a literal search — i.e. the search box becomes a "show everything"
- *  button. Deliberately a local copy of the sales-orders / purchase-orders
- *  helper rather than an export across modules: it is three lines, and each
- *  list must be free to change its own search behaviour without dragging the
- *  others along. */
-function escapeLikeTerm(raw: string): string {
-  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
-
-export async function listStoreInventory(
-  input: ListStoreInventoryQuery,
-  user: AuthContext,
-): Promise<ListStoreInventoryResponse> {
-  await requireAnyFormAccess(user, STORE_VIEW_FORMS);
-  const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    // Every text column the Store Inventory row shows: Item Code, Name,
-    // Material and UOM. The rest of the row is quantities — In Stock, Reorder Level,
-    // On PO, At Vendor, Mfg Pending — which stay out: a partial match on a
-    // number makes "5" hit almost every item and the box stops being useful.
-    // `uom` is a Postgres enum, so it needs the ::text cast the others do not.
-    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
-    const searchFrag = term
-      ? sql`AND (
-          i.code ILIKE ${term} ESCAPE '\\'
-          OR i.name ILIKE ${term} ESCAPE '\\'
-          OR i.material ILIKE ${term} ESCAPE '\\'
-          OR i.uom::text ILIKE ${term} ESCAPE '\\'
-        )`
-      : sql``;
-
-    const result = await tx.execute(sql`
-      WITH jc_open AS (
-        SELECT
-          jc.item_id,
-          SUM(GREATEST(jc.order_qty - COALESCE(comp.completed, 0), 0))::int AS qty
-        FROM public.job_cards jc
-        LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
-        LEFT JOIN LATERAL (
-          -- "Completed" for a job card = output of its LAST operation, NOT the sum
-          -- across every op. A JC is the SAME pieces flowing op → op; summing each
-          -- op's logged output multi-counts them and wildly understates (often to
-          -- 0) Mfg Pending on multi-op routes. Mirror the canonical
-          -- lastOpCompletedQty (job-cards/service.ts:141-147): a QC / qc-required
-          -- final op credits accepted qty, else completed qty — from the highest
-          -- op_seq.
-          SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
-                      THEN vos.qc_accepted_qty ELSE vos.completed_qty END AS completed
-          FROM public.v_jc_op_status vos
-          WHERE vos.job_card_id = jc.id
-          ORDER BY vos.op_seq DESC LIMIT 1
-        ) comp ON TRUE
-        WHERE jc.company_id = ${companyId}::uuid
-          AND jc.deleted_at IS NULL
-          AND (v.computed_status IS NULL OR v.computed_status NOT IN ('complete', 'closed'))
-        GROUP BY jc.item_id
-      ),
-      -- ADR-189 — the one On PO rule (lib/po-pending.ts).
-      po_pending AS (${onPoByItemSql(companyId)}),
-      -- Pieces physically at an OSP vendor: sent on an outward DC, not yet
-      -- returned. Document-derived via v_osp_wip (ADR-066); deliberately NOT
-      -- in the stock ledger (ADR-067), so it must be surfaced as its own
-      -- column or the row silently understates where the material is.
-      at_vendor AS (
-        SELECT w.item_id, SUM(w.at_vendor_qty)::numeric AS qty
-        FROM public.v_osp_wip w
-        WHERE w.company_id = ${companyId}::uuid
-          AND w.item_id IS NOT NULL
-        GROUP BY w.item_id
-      )
-      SELECT
-        i.id                                       AS item_id,
-        i.code                                     AS item_code,
-        i.name                                     AS item_name,
-        i.material                                 AS material,
-        i.uom::text                                AS uom,
-        COALESCE(s.on_hand_qty, 0)::float8            AS in_stock,
-        i.item_type::text                          AS item_type,
-        i.min_stock_qty::float8                    AS reorder_level,
-        i.reorder_qty::float8                      AS reorder_qty,
-        COALESCE(po_pending.qty, 0)::float8        AS on_po_qty,
-        COALESCE(at_vendor.qty, 0)::float8         AS at_vendor_qty,
-        COALESCE(jc_open.qty, 0)::int              AS mfg_pending_qty
-      FROM public.items i
-      LEFT JOIN public.v_item_stock s
-        ON s.item_id = i.id AND s.company_id = i.company_id
-      LEFT JOIN jc_open ON jc_open.item_id = i.id
-      LEFT JOIN po_pending ON po_pending.item_id = i.id
-      LEFT JOIN at_vendor ON at_vendor.item_id = i.id
-      WHERE i.company_id = ${companyId}::uuid
-        AND i.deleted_at IS NULL
-        ${searchFrag}
-      ORDER BY i.code ASC
-    `);
-
-    type R = {
-      item_id: string;
-      item_code: string;
-      item_name: string;
-      material: string | null;
-      uom: string;
-      in_stock: number;
-      item_type: string;
-      reorder_level: number;
-      reorder_qty: number;
-      on_po_qty: number;
-      at_vendor_qty: number;
-      mfg_pending_qty: number;
-    };
-    const typed = result as unknown as R[];
-
-    // RESERVED / AVAILABLE for every row in ONE read, through the shared
-    // reservation library (ADR-180). `inStock` is untouched — it has always been
-    // the physical shelf count and still is; what is new is that the screen can
-    // now say how much of it is already promised to an order.
-    const positions = await readStockPositions(
-      tx,
-      companyId,
-      typed.map((r) => r.item_id),
-    );
-
-    const rows: StoreInventoryRow[] = typed.map((r) => {
-      const inStock = Number(r.in_stock);
-      const reorderLevel = Number(r.reorder_level);
-      const onPoQty = Number(r.on_po_qty);
-      const reservedQty = Math.max(0, positions.get(r.item_id)?.reservedQty ?? 0);
-      const availableQty = inStock - reservedQty;
-      return {
-        itemId: r.item_id,
-        itemCode: r.item_code,
-        itemName: r.item_name,
-        material: r.material,
-        uom: r.uom,
-        inStock,
-        reservedQty,
-        availableQty,
-        reorderLevel,
-        reorderQty: Number(r.reorder_qty),
-        onPoQty,
-        atVendorQty: Number(r.at_vendor_qty),
-        mfgPendingQty: Number(r.mfg_pending_qty),
-        // ADR-193 phase 5 (P19) — the one rule, reorder-rule.ts.
-        belowReorder: isBelowReorder({
-          itemType: r.item_type,
-          reorderLevel,
-          availableQty,
-          onPoQty,
-        }),
-      };
-    });
-
-    const filteredRows =
-      input.filter === 'below'
-        ? rows.filter((r) => r.belowReorder)
-        : input.filter === 'zero'
-          ? rows.filter((r) => r.inStock === 0)
-          : rows;
-
-    // Summary always reflects ALL items (legacy stat tiles show whole-master
-    // counts regardless of active filter — clicking a tile sets the filter).
-    const totalStockPieces = rows.reduce((s, r) => s + r.inStock, 0);
-    const totalReservedPieces = rows.reduce((s, r) => s + r.reservedQty, 0);
-    const summary = {
-      totalItems: rows.length,
-      totalStockPieces,
-      totalReservedPieces,
-      // Clamped at 0: a negative free-stock total would only ever be a data
-      // fault, and showing it as a tile figure helps nobody.
-      totalAvailablePieces: Math.max(0, totalStockPieces - totalReservedPieces),
-      itemsInStockCount: rows.filter((r) => r.inStock > 0).length,
-      belowReorderCount: rows.filter((r) => r.belowReorder).length,
-      zeroStockCount: rows.filter((r) => r.inStock === 0).length,
-    };
-
-    return {
-      generatedAt: new Date().toISOString(),
-      filter: input.filter,
-      rows: filteredRows,
-      summary,
-    };
-  });
-}
+// GET /store-inventory lives in ./list.ts (ADR-201 paging + server summary);
+// re-exported so the route keeps calling service.listStoreInventory.
+export { listStoreInventory } from './list';
 
 export async function adjustStock(
   input: AdjustStockInput,

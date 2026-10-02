@@ -12,6 +12,7 @@
 //   - query: filter params for the lists.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { OP_LOG_CHANGE_STATUSES } from '../enums/op-log-change-status';
 import { OP_LOG_TYPES } from '../enums/op-log-type';
 import { OP_TYPES } from '../enums/op-type';
@@ -343,6 +344,25 @@ export type ListOpLogTimeChangeRequestsQuery = z.infer<
   typeof listOpLogTimeChangeRequestsQuerySchema
 >;
 
+/** Settings → Approvals → Op Entry (ADR-201): 25-row server pages with
+ *  search and Sort & Filter. A separate endpoint, so the badge count and the
+ *  log-history ⏳ marker keep reading the plain array above. */
+export const listOpLogTimeChangePageQuerySchema = z.object({
+  status: opLogChangeStatusSchema.optional(),
+  search: z.string().trim().min(1).max(100).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(200).default(25),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListOpLogTimeChangePageQuery = z.infer<typeof listOpLogTimeChangePageQuerySchema>;
+
+export interface ListOpLogTimeChangePageResponse {
+  items: OpLogTimeChangeRequest[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export const decideOpLogTimeChangeInputSchema = z
   .object({
     id: z.string().uuid(),
@@ -467,7 +487,10 @@ export const submitOpLogInputSchema = z
      *  marker, so completion rows carried no time at all and the JC completion
      *  feed (job-cards/service.ts:739, which already reads it for every log type)
      *  could only ever show a time against a start. */
-    logTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/).optional(),
+    logTime: z
+      .string()
+      .regex(/^\d{1,2}:\d{2}(:\d{2})?$/)
+      .optional(),
     shift: shiftSchema,
     operatorId: z.string().uuid().optional(),
     operatorName: z.string().min(1).max(120).optional(),
@@ -556,7 +579,10 @@ export const submitQcLogInputSchema = z
     rejectQty: z.number().int().nonnegative(),
     logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     /** Time of this inspection (HH:MM). Optional; see submitOpLogInputSchema. */
-    logTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/).optional(),
+    logTime: z
+      .string()
+      .regex(/^\d{1,2}:\d{2}(:\d{2})?$/)
+      .optional(),
     shift: shiftSchema,
     operatorId: z.string().uuid().optional(),
     operatorName: z.string().min(1).max(120).optional(),
@@ -640,3 +666,14 @@ export const listRunningOpsQuerySchema = z.object({
   status: runningOpStatusSchema.optional(),
 });
 export type ListRunningOpsQuery = z.infer<typeof listRunningOpsQuerySchema>;
+
+/** Live Operations board, paged (ADR-201): `running` = the live sessions,
+ *  `recent` = every finished / cancelled one, newest first. */
+export const listRunningOpsPageQuerySchema = z.object({
+  view: z.enum(['running', 'recent']),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(200).default(25),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListRunningOpsPageQuery = z.infer<typeof listRunningOpsPageQuerySchema>;

@@ -4,7 +4,18 @@
 // Read-only.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { machineSplitSchema } from './machine-split';
+
+// ADR-201 — the list pages at 25; the search, Sort & Filter and the page run
+// on the SERVER over every SO. No `limit` → every matching SO.
+export const listSoCostingQuerySchema = z.object({
+  search: z.string().max(200).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListSoCostingQuery = z.input<typeof listSoCostingQuerySchema>;
 
 export const soCostingRowSchema = z.object({
   soId: z.string().uuid(),
@@ -25,6 +36,8 @@ export type SoCostingRow = z.infer<typeof soCostingRowSchema>;
 
 export const listSoCostingResponseSchema = z.object({
   rows: z.array(soCostingRowSchema),
+  /** SOs matching the search / filters (every page) — the pager's total. */
+  total: z.number().int().nonnegative(),
   /** Told, not inferred. The server strips money it may not send and states it
    *  here, so a client never has to guess from a null value. A null money field
    *  also means "no value yet", and probing it made one unpriced row hide the

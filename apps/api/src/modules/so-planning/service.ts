@@ -22,6 +22,7 @@ import type {
   PlanningDetailResponse,
   PlanningLine,
   PlanningPlanSummary,
+  PlanningSoListQuery,
   PlanningSoListResponse,
   RaisePlanningPrInput,
   RaisePlanningPrResponse,
@@ -58,6 +59,7 @@ import {
 import { readReservedByLine, readStockPositions } from '../../lib/stock-reservation';
 import { prCoverQtyRaw, soLineCoveredRaw, soLinePlannedRaw } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
+import { pagePlanningSoList } from './list-page';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 
 // ADR-170 — a route-card plan's derived status hangs on two live facts read
@@ -266,7 +268,10 @@ function liveJwCustomerName() {
 
 // ─── Left pane ───────────────────────────────────────────────────────────
 
-export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoListResponse> {
+export async function getPlanningSoList(
+  user: AuthContext,
+  query: PlanningSoListQuery = {},
+): Promise<PlanningSoListResponse> {
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -470,7 +475,8 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
       ),
     ];
 
-    return { generatedAt: new Date().toISOString(), items: listItems };
+    // ADR-201 — source / search / Sort & Filter / page, over every order.
+    return pagePlanningSoList(listItems, query);
   });
 }
 

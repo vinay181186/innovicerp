@@ -6,14 +6,21 @@
 // CRITICAL: only the table DISPLAY moved onto <DataTable>. The ⋯ Start Operation
 // item still opens the one shared OpEntryModal via `onStart`; it is shown on the
 // server's rule (role + op_entry entry). No logging logic lives here.
+// ADR-201: each table shows 25 rows with Prev / Next. These two lists are ONE
+// machine's operations, read in one call (/op-entry/jc-ops?machineId) that the
+// whole By-Machine view shares — "pending" needs the op calc engine's live
+// figures (available, running session, QC hold), so the 25-row page is cut from
+// that one machine's list here; the counts are of the whole machine list.
 
 import type { JcOpEnriched } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { DataTable } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter } from '@/ui/layout';
 import {
   madeHereColumns,
   type MadeHereRow,
@@ -53,6 +60,24 @@ export function PendingOpsSection({
   const pendingCols = useMemo(() => pendingOpsColumns(), []);
   const madeCols = useMemo(() => madeHereColumns(), []);
 
+  // 25-row pages; a different machine starts both tables on page 1.
+  const [pendPage, setPendPage] = useState(1);
+  const [madePage, setMadePage] = useState(1);
+  useEffect(() => {
+    setPendPage(1);
+    setMadePage(1);
+  }, [machineCode]);
+  useClampPage(pendPage, isLoading ? undefined : ops.length, setPendPage);
+  useClampPage(madePage, isLoading ? undefined : producedOps.length, setMadePage);
+  const pendRows = useMemo(
+    () => ops.slice(pageOffset(pendPage), pageOffset(pendPage) + LIST_PAGE_SIZE),
+    [ops, pendPage],
+  );
+  const madeRows = useMemo(
+    () => producedOps.slice(pageOffset(madePage), pageOffset(madePage) + LIST_PAGE_SIZE),
+    [producedOps, madePage],
+  );
+
   return (
     <div
       style={{
@@ -80,7 +105,9 @@ export function PendingOpsSection({
           <DataTable
             tableKey={TABLE_KEYS.opEntryShopFloor}
             columns={pendingCols}
-            rows={ops}
+            rows={pendRows}
+            // Rows are a 25-row slice cut here; a ▾ would sort only that slice.
+            sortFilter={false}
             defaultHidden={PENDING_OPS_DEFAULT_HIDDEN}
             // Start Operation is the ⋯ row item, shown only on the server's
             // rule above. It opens the one shared OpEntryModal (which owns the
@@ -98,6 +125,13 @@ export function PendingOpsSection({
                   ]
                 : undefined
             }
+          />
+          <ListFooter
+            total={ops.length}
+            noun="pending job"
+            page={pendPage}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={setPendPage}
           />
         </>
       ) : (
@@ -124,7 +158,19 @@ export function PendingOpsSection({
             Made on this Machine ({producedOps.length})
           </div>
           {/* Keyless: history, a different column set from the pending list. */}
-          <DataTable columns={madeCols} rows={producedOps} rowKey={(row) => row.op.id} />
+          <DataTable
+            columns={madeCols}
+            rows={madeRows}
+            sortFilter={false}
+            rowKey={(row) => row.op.id}
+          />
+          <ListFooter
+            total={producedOps.length}
+            noun="operation"
+            page={madePage}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={setMadePage}
+          />
         </>
       ) : null}
       {!isLoading && producedOps.length === 0 ? (

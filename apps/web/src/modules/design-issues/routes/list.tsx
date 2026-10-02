@@ -6,17 +6,27 @@
 // pinned, numbers (Days Open) are right-aligned, the row washes by status and
 // the row's ⋯ carries Assign Task. Row click opens the design project behind
 // the issue (there is no standalone issue detail page).
+//
+// ADR-201: 25 issues a page (page in the URL). Search, the issue filter and the
+// column ▾ Sort & Filter run on the server over every issue; any change of them
+// goes back to page 1. The filter counts come from the server over the same
+// search + Sort & Filter.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { z } from 'zod';
+import { DESIGN_ISSUE_SEVERITIES, DESIGN_ISSUE_STATUSES } from '@innovic/shared';
 import type { DesignIssueListItem } from '@innovic/shared';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -31,11 +41,13 @@ const FILTER_LABEL: Record<FilterKey, string> = {
   critical: 'Critical',
 };
 
-const LIST_LIMIT = 200;
+const SEVERITY_OPTIONS = DESIGN_ISSUE_SEVERITIES.map((v) => ({ value: v, label: v }));
+const STATUS_OPTIONS = DESIGN_ISSUE_STATUSES.map((v) => ({ value: v, label: v }));
 
 export const designIssuesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'design-issues',
+  validateSearch: z.object({ page: pageSearchParam }),
   component: DesignIssuesAllPage,
 });
 
@@ -52,8 +64,30 @@ function DesignIssuesAllPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dsnissue_create');
   const [search, setSearch] = useState('');
+  const [term, setTerm] = useState<string | undefined>(undefined);
   const [filter, setFilter] = useState<FilterKey>('all');
   const navigate = useNavigate();
+  const { page } = designIssuesListRoute.useSearch();
+  const routeNavigate = designIssuesListRoute.useNavigate();
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void routeNavigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [routeNavigate],
+  );
+  // Debounced search → server; a new term goes back to page 1.
+  useEffect(() => {
+    const trimmed = normalizeSearchTerm(search);
+    const next = trimmed === '' ? undefined : trimmed;
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term, gotoPage]);
+  const sf = useServerSortFilter(TABLE_KEYS.designIssues, () => gotoPage(1));
+  const offset = pageOffset(page);
   const { data: me } = useSession();
   // The issue whose ⋯ → Assign Task is open (one modal for the whole list).
   const [assignTarget, setAssignTarget] = useState<{
@@ -63,11 +97,13 @@ function DesignIssuesAllPage(): React.JSX.Element {
   } | null>(null);
 
   const { data, isLoading, isFetching, isError, error } = useDesignIssuesAll({
-    search: search.trim() || undefined,
+    search: term,
     filter,
-    limit: LIST_LIMIT,
-    offset: 0,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset,
   });
+  useClampPage(page, data?.total, gotoPage);
   const summary = data?.summary ?? { total: 0, open: 0, resolved: 0, critical: 0 };
   const filterCount: Record<FilterKey, number> = {
     all: summary.total,
@@ -104,6 +140,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
         </Link>
       ),
       title: (i) => i.title,
+      sortFilterField: 'title',
     },
     {
       id: 'project',
@@ -113,6 +150,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
       ellipsis: true,
       render: (i) => <span style={{ color: 'var(--purple)' }}>{i.projectName ?? '—'}</span>,
       title: (i) => i.projectName ?? '',
+      sortFilterField: 'projectName',
     },
     {
       id: 'severity',
@@ -120,6 +158,8 @@ function DesignIssuesAllPage(): React.JSX.Element {
       kind: 'badge',
       nowrap: true,
       render: (i) => <Badge value={i.severity} />,
+      sortFilterField: 'severity',
+      filterOptions: SEVERITY_OPTIONS,
     },
     {
       id: 'status',
@@ -127,6 +167,8 @@ function DesignIssuesAllPage(): React.JSX.Element {
       kind: 'badge',
       nowrap: true,
       render: (i) => <Badge value={i.status} />,
+      sortFilterField: 'status',
+      filterOptions: STATUS_OPTIONS,
     },
     {
       id: 'assigned_to',
@@ -136,6 +178,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
       ellipsis: true,
       render: (i) => i.assignedToText ?? '—',
       title: (i) => i.assignedToText ?? '',
+      sortFilterField: 'assignedTo',
     },
     {
       id: 'raised_date',
@@ -143,6 +186,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
       kind: 'date',
       nowrap: true,
       render: (i) => fmtDate(i.raisedDate),
+      sortFilterField: 'raisedDate',
     },
     {
       id: 'days_open',
@@ -152,6 +196,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
       className: 'mono fw-700',
       nowrap: true,
       filterValue: (i) => i.ageDays,
+      sortFilterField: 'ageDays',
       render: (i) => {
         const stale = i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
         return <span style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}>{i.ageDays}d</span>;
@@ -175,7 +220,10 @@ function DesignIssuesAllPage(): React.JSX.Element {
           <Select
             aria-label="Issue filter"
             value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterKey)}
+            onChange={(e) => {
+              setFilter(e.target.value as FilterKey);
+              gotoPage(1);
+            }}
             // Counts in the labels — they were the clickable Total / Open /
             // Resolved / Critical strip (owner's filter-bar decision 2026-09-26).
             options={(Object.keys(FILTER_LABEL) as FilterKey[]).map((k) => ({
@@ -187,8 +235,10 @@ function DesignIssuesAllPage(): React.JSX.Element {
         onClearFilters={() => {
           setSearch('');
           setFilter('all');
+          sf.clearFilters();
+          gotoPage(1);
         }}
-        filtersActive={search.trim() !== '' || filter !== 'all'}
+        filtersActive={search.trim() !== '' || filter !== 'all' || sf.filtering}
       />
 
       {isError ? (
@@ -205,8 +255,9 @@ function DesignIssuesAllPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
+            sortFilterServer={sf}
             empty={
-              search.trim() || filter !== 'all'
+              search.trim() || filter !== 'all' || sf.filtering
                 ? 'No Design Issues match.'
                 : 'No Design Issues yet.'
             }
@@ -236,7 +287,15 @@ function DesignIssuesAllPage(): React.JSX.Element {
         </Panel>
       )}
 
-      {data ? <ListFooter total={data.total} noun="issue" limit={LIST_LIMIT} /> : null}
+      {data ? (
+        <ListFooter
+          total={data.total}
+          noun="issue"
+          page={page}
+          pageSize={LIST_PAGE_SIZE}
+          onPage={gotoPage}
+        />
+      ) : null}
       {assignTarget ? (
         <AssignTaskModal
           linkedRef={{

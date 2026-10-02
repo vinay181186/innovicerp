@@ -9,6 +9,8 @@ import { sql } from 'drizzle-orm';
 import type { ListOspWipQuery, ListOspWipResponse, OspWipRow } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { OSP_WIP_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -47,12 +49,43 @@ export async function listOspWip(
 ): Promise<ListOspWipResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
       ? // POL (sol.client_po_line_no) is now a column on this register, so the
-        // box must find it. sol is the SO-line join the SELECT below makes.
-        sql`AND (w.jc_code ILIKE ${term} OR w.item_code ILIKE ${term} OR w.item_name ILIKE ${term} OR w.so_code ILIKE ${term} OR w.vendor_name ILIKE ${term} OR sol.client_po_line_no ILIKE ${term})`
+        // box must find it. sol is the SO-line join the FROM below makes.
+        sql`AND (w.jc_code ILIKE ${term} ESCAPE '\\' OR w.item_code ILIKE ${term} ESCAPE '\\'
+          OR w.item_name ILIKE ${term} ESCAPE '\\' OR w.so_code ILIKE ${term} ESCAPE '\\'
+          OR w.vendor_name ILIKE ${term} ESCAPE '\\' OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\')`
       : sql``;
+    // Sort & Filter (ADR-200): the register's column filters + sort.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(OSP_WIP_SF_COLUMNS, sf);
+    const bucketFrag =
+      input.filter === 'at_vendor'
+        ? sql`AND w.at_vendor_qty > 0`
+        : input.filter === 'not_sent'
+          ? sql`AND w.not_sent_qty > 0`
+          : input.filter === 'ready_to_send'
+            ? sql`AND w.ready_to_send_qty > 0`
+            : sql``;
+    const fromFrag = sql`
+      FROM public.v_osp_wip w
+      LEFT JOIN public.job_cards jc ON jc.id = w.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+      WHERE w.company_id = ${companyId}::uuid
+        ${searchFrag}
+        ${sfFrag}`;
+    // Ends on the op id so paging (ADR-201) never skips or repeats a row.
+    const orderBy = sfOrderBy(
+      OSP_WIP_SF_COLUMNS,
+      sf,
+      sql`w.at_vendor_qty DESC, w.not_sent_qty DESC, w.jc_code ASC, w.op_seq ASC, w.jc_op_id ASC`,
+    );
+    const pageFrag =
+      input.limit !== undefined ? sql`LIMIT ${input.limit} OFFSET ${input.offset}` : sql``;
 
     const result = (await tx.execute(sql`
       SELECT
@@ -79,15 +112,10 @@ export async function listOspWip(
         -- a job-work line has no customer PO, so JW-sourced ops are correctly
         -- null. Never sol.line_no, which is OUR line number.
         sol.client_po_line_no AS client_po_line_no
-      FROM public.v_osp_wip w
-      LEFT JOIN public.job_cards jc ON jc.id = w.job_card_id AND jc.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      WHERE w.company_id = ${companyId}::uuid
-        ${searchFrag}
-      ORDER BY w.at_vendor_qty DESC, w.not_sent_qty DESC, w.jc_code ASC, w.op_seq ASC
+      ${fromFrag}
+        ${bucketFrag}
+      ORDER BY ${orderBy}
+      ${pageFrag}
     `)) as unknown as WipRawRow[];
 
     const rows: OspWipRow[] = result.map((r) => ({
@@ -119,30 +147,43 @@ export async function listOspWip(
       readyToSendQty: Number(r.ready_to_send_qty),
     }));
 
-    // Summary always reflects ALL outsource ops (tiles are whole-register
-    // counts; clicking a tile sets the filter — mirrors store-inventory).
+    // Bucket figures for the dropdown + tile: every op matching the search and
+    // Sort & Filter (NOT the bucket — picking a bucket must not change its own
+    // count), summed in SQL over all rows, not over the page. `total` counts
+    // the rows the page is cut from (bucket included).
+    const [agg] = (await tx.execute(sql`
+      SELECT
+        count(*)::int AS total_ops,
+        count(*) FILTER (WHERE w.at_vendor_qty > 0)::int AS ops_at_vendor,
+        COALESCE(sum(w.at_vendor_qty), 0)::int AS at_vendor_qty,
+        COALESCE(sum(w.not_sent_qty), 0)::int AS not_sent_qty,
+        COALESCE(sum(w.sent_qty), 0)::int AS sent_qty,
+        COALESCE(sum(w.ready_to_send_qty), 0)::int AS ready_to_send_qty,
+        count(*) FILTER (WHERE TRUE ${bucketFrag})::int AS total
+      ${fromFrag}
+    `)) as unknown as Array<{
+      total_ops: number;
+      ops_at_vendor: number;
+      at_vendor_qty: number;
+      not_sent_qty: number;
+      sent_qty: number;
+      ready_to_send_qty: number;
+      total: number;
+    }>;
     const summary = {
-      totalOps: rows.length,
-      opsAtVendor: rows.filter((r) => r.atVendorQty > 0).length,
-      atVendorQty: rows.reduce((s, r) => s + r.atVendorQty, 0),
-      notSentQty: rows.reduce((s, r) => s + r.notSentQty, 0),
-      sentQty: rows.reduce((s, r) => s + r.sentQty, 0),
-      readyToSendQty: rows.reduce((s, r) => s + r.readyToSendQty, 0),
+      totalOps: Number(agg?.total_ops ?? 0),
+      opsAtVendor: Number(agg?.ops_at_vendor ?? 0),
+      atVendorQty: Number(agg?.at_vendor_qty ?? 0),
+      notSentQty: Number(agg?.not_sent_qty ?? 0),
+      sentQty: Number(agg?.sent_qty ?? 0),
+      readyToSendQty: Number(agg?.ready_to_send_qty ?? 0),
     };
-
-    const filteredRows =
-      input.filter === 'at_vendor'
-        ? rows.filter((r) => r.atVendorQty > 0)
-        : input.filter === 'not_sent'
-          ? rows.filter((r) => r.notSentQty > 0)
-          : input.filter === 'ready_to_send'
-            ? rows.filter((r) => r.readyToSendQty > 0)
-            : rows;
 
     return {
       generatedAt: new Date().toISOString(),
       filter: input.filter,
-      rows: filteredRows,
+      rows,
+      total: Number(agg?.total ?? 0),
       summary,
     };
   });

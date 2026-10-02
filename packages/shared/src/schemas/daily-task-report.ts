@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import { DAILY_REPORT_LINE_STATUSES } from '../enums/daily-report-line-status';
 import { SHIFTS } from '../enums/shift';
+import { sfRawParamSchema } from './list-query';
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -57,8 +58,24 @@ export const dailyTaskReportDetailSchema = dailyTaskReportRowSchema.extend({
 });
 export type DailyTaskReportDetail = z.infer<typeof dailyTaskReportDetailSchema>;
 
+// List query (ADR-201): search + Sort & Filter on the server; the screen asks
+// for 25 a page, no `limit` → every report (as before).
+export const listDailyTaskReportsQuerySchema = z.object({
+  userId: z.string().uuid().optional(),
+  dateFrom: dateStr.optional(),
+  dateTo: dateStr.optional(),
+  search: z.string().trim().max(200).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
+});
+export type ListDailyTaskReportsQuery = z.infer<typeof listDailyTaskReportsQuerySchema>;
+
 export const listDailyTaskReportsResponseSchema = z.object({
   reports: z.array(dailyTaskReportRowSchema),
+  /** Reports matching every filter + search + sf (all pages). */
+  total: z.number().int().nonnegative(),
   isAdmin: z.boolean(),
   /** Admin or manager: sees every user's reports (others see only their own). */
   canSeeAll: z.boolean(),

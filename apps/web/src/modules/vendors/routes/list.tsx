@@ -32,12 +32,11 @@
 // the <table>/<colgroup>/<thead>, the loading / error / empty rows, the two
 // badges, the row-action buttons, the count line, the 💡 hint, the import
 // notice and `confirm()` — now comes from apps/web/src/ui/. The only things
-// left here are the DATA and the RULES: the query, the client-side status
-// split, the permission gates and the import.
+// left here are the DATA and the RULES: the query, the server status
+// filter + counts, the permission gates and the import.
 //
 // What did NOT change: the route and its search params, the 300ms debounce on
-// the URL write, normalizeSearchTerm, the single un-filtered fetch (so the
-// status dropdown can count all three options), perms -> canAdd/canEdit/canDelete, the
+// the URL write, normalizeSearchTerm, perms -> canAdd/canEdit/canDelete, the
 // one-request bulk import, row click -> detail, Code cell -> detail.
 
 import type { ListVendorsQuery } from '@innovic/shared';
@@ -46,10 +45,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { vendorListColumns } from '../components/vendor-list-columns';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
@@ -57,15 +58,10 @@ import { useBulkCreateVendors, useSoftDeleteVendor, useVendorsList } from '../ap
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
 import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-export';
 
-// No pagination — Vendors is a master list, so it mirrors the SO/WO list: one
-// fetch, everything in a single scrolling list (styling skill, Rule 4). The
-// vendors list endpoint caps `limit` at 1000 (packages/shared vendor schema,
-// raised from 200 to match the SO master); ListFooter flags a larger set.
-const LIST_LIMIT = 1000;
-
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(['active', 'inactive']).optional(),
+  page: pageSearchParam,
 });
 
 export const vendorsListRoute = createRoute({
@@ -98,24 +94,50 @@ function VendorsListPage(): React.JSX.Element {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
-      void navigate({ search: (prev) => ({ ...prev, search: next }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
-  // One fetch of every vendor matching the search (no isActive server filter):
-  // the Active/Inactive split is derived + filtered client-side so the status
-  // dropdown can show real counts for all three options.
+  // Paging (ADR-201): 25 rows per page; search, the Active / Inactive
+  // dropdown (server `isActive`) and Sort & Filter (▾, ADR-200) all run on
+  // the SERVER over the whole master. Any change of them → page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.vendorsList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+  const offset = pageOffset(search.page);
+  const isActive =
+    search.status === 'active' ? true : search.status === 'inactive' ? false : undefined;
   const query: ListVendorsQuery = useMemo(
     () => ({
       search: search.search,
-      limit: LIST_LIMIT,
-      offset: 0,
+      isActive,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset,
     }),
-    [search.search],
+    [search.search, isActive, sf.param, offset],
   );
 
   const { data, isLoading, isFetching, isError, error } = useVendorsList(query);
+  const gotoPage = useCallback(
+    (p: number): void => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  useClampPage(search.page, data?.total, gotoPage);
+
+  // Dropdown counts — server totals (limit 1) over the same search + ▾
+  // filters, one per option, so they never count just the loaded page.
+  const countQuery = (a: boolean | undefined): ListVendorsQuery => ({
+    search: search.search,
+    isActive: a,
+    sf: sf.param,
+    limit: 1,
+    offset: 0,
+  });
+  const allCount = useVendorsList(countQuery(undefined)).data?.total ?? 0;
+  const activeCount = useVendorsList(countQuery(true)).data?.total ?? 0;
+  const inactiveCount = useVendorsList(countQuery(false)).data?.total ?? 0;
   // Tier-driven, per department (vendor_create sits in Purchase). Replaces the
   // old admin/manager flag, which collapsed all seven tiers into two.
   //   Add / Excel import (Insert new)      -> entry  (L2 Data Entry and up)
@@ -133,7 +155,7 @@ function VendorsListPage(): React.JSX.Element {
 
   const setStatus = useCallback(
     (status: 'active' | 'inactive' | undefined) => {
-      void navigate({ search: (prev) => ({ ...prev, status }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, status, page: 1 }), replace: true });
     },
     [navigate],
   );
@@ -150,19 +172,11 @@ function VendorsListPage(): React.JSX.Element {
   const bulkCreate = useBulkCreateVendors();
   const [importOpen, setImportOpen] = useState(false);
 
-  // All rows matching the search; the Active/Inactive filter is client-side.
-  const allRows = useMemo(() => data?.vendors ?? [], [data?.vendors]);
-  const activeCount = useMemo(() => allRows.filter((v) => v.isActive).length, [allRows]);
-  const inactiveCount = allRows.length - activeCount;
-  const visibleRows = useMemo(() => {
-    if (search.status === 'active') return allRows.filter((v) => v.isActive);
-    if (search.status === 'inactive') return allRows.filter((v) => !v.isActive);
-    return allRows;
-  }, [allRows, search.status]);
+  const visibleRows = useMemo(() => data?.vendors ?? [], [data?.vendors]);
 
   const total = data?.total ?? 0;
 
-  const columns = useMemo(() => vendorListColumns(), []);
+  const columns = useMemo(() => vendorListColumns(offset), [offset]);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
@@ -217,8 +231,8 @@ function VendorsListPage(): React.JSX.Element {
         }
         filters={
           // Status with its counts in the option labels (owner decision
-          // 2026-09-26: one filter bar, no capsule row). Counts are the same
-          // client-side split the strip showed.
+          // 2026-09-26: one filter bar, no capsule row). Counts are server
+          // totals over the same search + ▾ filters.
           <select
             className="innovic-select"
             aria-label="Vendor status"
@@ -229,19 +243,20 @@ function VendorsListPage(): React.JSX.Element {
               setStatus(v === 'active' || v === 'inactive' ? v : undefined);
             }}
           >
-            <option value="">All Vendors ({total})</option>
+            <option value="">All Vendors ({allCount})</option>
             <option value="active">Active ({activeCount})</option>
             <option value="inactive">Inactive ({inactiveCount})</option>
           </select>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
-            search: (prev) => ({ ...prev, search: undefined, status: undefined }),
+            search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
             replace: true,
           });
         }}
-        filtersActive={search.status !== undefined || searchInput !== ''}
+        filtersActive={sf.filtering || search.status !== undefined || searchInput !== ''}
         primary={
           canAdd ? (
             <Link to="/vendors/new" className="btn btn-primary">
@@ -263,7 +278,12 @@ function VendorsListPage(): React.JSX.Element {
             columns={columns}
             rows={visibleRows}
             loading={isLoading}
-            emptyText={search.status || search.search ? 'No vendors match.' : 'No vendors yet.'}
+            sortFilterServer={sf}
+            emptyText={
+              sf.filtering || search.status || search.search
+                ? 'No vendors match.'
+                : 'No vendors yet.'
+            }
             onRowClick={(v) => void navigate({ to: '/vendors/$id', params: { id: v.id } })}
             rowActionsWidth="11%"
             rowActions={(v) => (
@@ -295,7 +315,13 @@ function VendorsListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter total={total} shown={visibleRows.length} noun="vendor" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="vendor"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
       {importOpen ? (
         <MasterImportDialog
           title="Import Vendors from Excel"

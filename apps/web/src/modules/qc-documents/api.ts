@@ -25,6 +25,9 @@ function toQuery(q: ListQcDocumentsQuery): string {
   if (q.category) p.set('category', q.category);
   if (q.jobCardId) p.set('jobCardId', q.jobCardId);
   if (q.search) p.set('search', q.search);
+  if (q.sf) p.set('sf', q.sf);
+  if (q.limit !== undefined) p.set('limit', String(q.limit));
+  if (q.offset) p.set('offset', String(q.offset));
   const s = p.toString();
   return s ? `?${s}` : '';
 }

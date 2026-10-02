@@ -22,6 +22,7 @@ function toQueryString(q: ListUsersQuery): string {
   if (q.search) params.set('search', q.search);
   if (q.role) params.set('role', q.role);
   if (q.isActive !== undefined) params.set('isActive', String(q.isActive));
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

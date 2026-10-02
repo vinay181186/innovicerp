@@ -12,8 +12,7 @@
 // corrective log entry, not deletion. If a soft-delete column is added
 // later, restore the action behind admin-only RLS.
 
-import { and, asc, count, desc, eq, gte, ilike, lte, type SQL, sql } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { and, count, eq, gte, ilike, lte, type SQL, sql } from 'drizzle-orm';
 import {
   items,
   jcOps,
@@ -26,16 +25,14 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type { ListOpLogQuery, ListOpLogResponse, OpLogListItem } from './schema';
+import { OP_LOG_SF_COLUMNS, plannedMachine } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
-
-// Second handle on machines for the PLANNED machine (jc_ops.machine_id); the
-// first join below is the machine the row was ACTUALLY made on (ADR-164).
-const plannedMachine = alias(machines, 'planned_machine');
 
 export async function listOpLog(
   input: ListOpLogQuery,
@@ -59,13 +56,48 @@ export async function listOpLog(
     if (input.operatorId) conditions.push(eq(opLog.operatorId, input.operatorId));
     if (input.fromDate) conditions.push(gte(opLog.logDate, input.fromDate));
     if (input.toDate) conditions.push(lte(opLog.logDate, input.toDate));
-    if (input.jcNo) conditions.push(ilike(jobCards.code, `%${input.jcNo}%`));
+    if (input.jcNo) conditions.push(ilike(jobCards.code, `%${likeEscape(input.jcNo)}%`));
     // machineId + fromDate/toDate together answer "what did CNC-01 produce between
     // these two dates" — the date-range machine report the Daily Report cannot
     // give, because that one is locked to a single day.
     if (input.machineId) conditions.push(sql`${logMachine} = ${input.machineId}::uuid`);
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count —
+    // the count adds every join a field reads when there is a filter (LEFT
+    // joins on keys, so they never change the count). sfWhere answers
+    // `AND (…)`; TRUE makes it one condition.
+    const sf = readSf(input.sf);
+    const hasSfFilters = !!sf && sf.filters.length > 0;
+    if (hasSfFilters) {
+      conditions.push(sql`TRUE ${sfWhere(OP_LOG_SF_COLUMNS, sf)}`);
+    }
+    const orderBy = sfOrderBy(
+      OP_LOG_SF_COLUMNS,
+      sf,
+      sql`${opLog.logDate} DESC, ${opLog.createdAt} DESC, ${opLog.logNo} ASC, ${opLog.id} ASC`,
+    );
 
     const where = and(...conditions);
+
+    // The count carries exactly the page's row-shaping joins (the INNER ones —
+    // a card whose item is gone is in neither). The LEFT joins on unique keys
+    // never change the count, so they are added only when a column filter
+    // reads one of them.
+    let countQuery = tx
+      .select({ value: count() })
+      .from(opLog)
+      .innerJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
+      .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+      .innerJoin(items, eq(items.id, jobCards.itemId))
+      .$dynamic();
+    if (hasSfFilters) {
+      countQuery = countQuery
+        .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
+        .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jobCards.sourceJwLineId))
+        .leftJoin(machines, sql`${machines.id} = ${logMachine}`)
+        .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
+        .leftJoin(users, eq(users.id, opLog.createdBy));
+    }
 
     const [rows, totals] = await Promise.all([
       tx
@@ -143,15 +175,10 @@ export async function listOpLog(
         .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
         .leftJoin(users, eq(users.id, opLog.createdBy))
         .where(where)
-        .orderBy(desc(opLog.logDate), desc(opLog.createdAt), asc(opLog.logNo))
+        .orderBy(orderBy)
         .limit(input.limit)
         .offset(input.offset),
-      tx
-        .select({ value: count() })
-        .from(opLog)
-        .innerJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
-        .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
-        .where(where),
+      countQuery.where(where),
     ]);
 
     const items_: OpLogListItem[] = rows.map((r) => ({

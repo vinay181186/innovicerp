@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { queryBoolean } from '../lib/query-boolean';
+import { sfRawParamSchema } from './list-query';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { PLAN_EFFECTIVE_STATUSES, PLAN_STATUSES, type PlanStatus } from '../enums/plan-status';
 import { PLAN_TYPES, type PlanType } from '../enums/plan-type';
@@ -195,6 +196,8 @@ export const listPlansQuerySchema = z.object({
   /** Production → Plans "Pending" button: route-card-driven plans that have no
    *  Production Order yet (route_card_pending + gen_production_order), not cancelled. */
   poPending: queryBoolean().optional(),
+  /** Sort & Filter (ADR-200) — the screen's column sort + filters. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().min(1).max(500).optional().default(100),
   offset: z.coerce.number().int().min(0).optional().default(0),
 });
@@ -540,8 +543,20 @@ export const unplannedOrderRowSchema = z.object({
 });
 export type UnplannedOrderRow = z.infer<typeof unplannedOrderRowSchema>;
 
+/** Needs Planning list (ADR-201): server search + Sort & Filter + paging.
+ *  No limit → every line (older callers). */
+export const unplannedOrdersQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+export type UnplannedOrdersQuery = z.infer<typeof unplannedOrdersQuerySchema>;
+
 export const unplannedOrdersResponseSchema = z.object({
   generatedAt: z.string(),
+  /** Lines matching search + Sort & Filter (the pager's total). */
+  total: z.number().int().nonnegative(),
   rows: z.array(unplannedOrderRowSchema),
 });
 export type UnplannedOrdersResponse = z.infer<typeof unplannedOrdersResponseSchema>;

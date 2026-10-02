@@ -17,7 +17,7 @@
 import { emitActivityLog } from '../activity-log/service';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import { requireFormAccess } from '../../lib/access';
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   CreateJwDcInwardInput,
   CreateJwDcOutwardInput,
@@ -52,9 +52,11 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockPoLinesForSend, poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { JW_DC_INWARD_SF_COLUMNS, JW_DC_OUTWARD_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -140,7 +142,7 @@ export async function listJwDcOutward(
 ): Promise<ListJwDcOutwardResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
       ? sql`AND (
           jdo.code ILIKE ${term}
@@ -154,17 +156,22 @@ export async function listJwDcOutward(
     const poFrag = input.purchaseOrderId
       ? sql`AND jdo.purchase_order_id = ${input.purchaseOrderId}::uuid`
       : sql``;
+    // Read off the derived row, so it is the very status the row prints (it
+    // used to name a `rs.pending` column the CTE never had).
     const statusFrag = input.returnStatus
-      ? sql`AND (
-          CASE
-            WHEN COALESCE(rs.pending, 0) = 0 AND COALESCE(rs.total_sent, 0) > 0 THEN 'fully_returned'
-            WHEN COALESCE(rs.total_returned, 0) > 0 THEN 'partial'
-            ELSE 'out'
-          END
-        ) = ${input.returnStatus}`
+      ? sql`AND z."returnStatus" = ${input.returnStatus}`
       : sql``;
+    // Sort & Filter (ADR-200) on the derived row `z` — the same WHERE feeds the
+    // page and its count, so the total follows the search + every filter.
+    const sf = readSf(input.sf);
+    const outerWhere = sql`TRUE ${statusFrag} ${sfWhere(JW_DC_OUTWARD_SF_COLUMNS, sf)}`;
+    const orderBy = sfOrderBy(
+      JW_DC_OUTWARD_SF_COLUMNS,
+      sf,
+      sql`z."dcDate" DESC, z.code DESC, z.id DESC`,
+    );
 
-    const result = await tx.execute(sql`
+    const base = sql`
       WITH return_stats AS (
         SELECT
           jdol.jw_dc_outward_id AS dc_id,
@@ -227,17 +234,18 @@ export async function listJwDcOutward(
         ${searchFrag}
         ${vendorFrag}
         ${poFrag}
-        ${statusFrag}
-      ORDER BY jdo.dc_date DESC, jdo.code DESC
+    `;
+
+    const result = await tx.execute(sql`
+      SELECT * FROM (${base}) z
+      WHERE ${outerWhere}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
-
-    const conditions = [eq(jwDcOutward.companyId, companyId), isNull(jwDcOutward.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(jwDcOutward)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    const totalRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS total FROM (${base}) z WHERE ${outerWhere}
+    `)) as unknown as Array<{ total: number }>;
+    const total = Number(totalRows[0]?.total ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toOutwardListItem);
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };
@@ -989,7 +997,7 @@ export async function listJwDcInward(
 ): Promise<ListJwDcInwardResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
       ? sql`AND (
           jdi.code ILIKE ${term}
@@ -1002,8 +1010,17 @@ export async function listJwDcInward(
     const outFrag = input.jwDcOutwardId
       ? sql`AND jdi.jw_dc_outward_id = ${input.jwDcOutwardId}::uuid`
       : sql``;
+    // Sort & Filter (ADR-200) on the derived row `z` — the same WHERE feeds the
+    // page and its count, so the total follows the search + every filter.
+    const sf = readSf(input.sf);
+    const outerWhere = sql`TRUE ${sfWhere(JW_DC_INWARD_SF_COLUMNS, sf)}`;
+    const orderBy = sfOrderBy(
+      JW_DC_INWARD_SF_COLUMNS,
+      sf,
+      sql`z."inwardDate" DESC, z.code DESC, z.id DESC`,
+    );
 
-    const result = await tx.execute(sql`
+    const base = sql`
       SELECT
         jdi.id, jdi.company_id AS "companyId", jdi.code,
         jdi.inward_date AS "inwardDate",
@@ -1048,16 +1065,18 @@ export async function listJwDcInward(
         AND jdi.deleted_at IS NULL
         ${searchFrag}
         ${outFrag}
-      ORDER BY jdi.inward_date DESC, jdi.code DESC
+    `;
+
+    const result = await tx.execute(sql`
+      SELECT * FROM (${base}) z
+      WHERE ${outerWhere}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
-
-    const conditions = [eq(jwDcInward.companyId, companyId), isNull(jwDcInward.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(jwDcInward)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    const totalRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS total FROM (${base}) z WHERE ${outerWhere}
+    `)) as unknown as Array<{ total: number }>;
+    const total = Number(totalRows[0]?.total ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(
       (r): JwDcInwardListItem => ({

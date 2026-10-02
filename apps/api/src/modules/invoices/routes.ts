@@ -1,5 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { addPaymentInputSchema, createInvoiceInputSchema } from '@innovic/shared';
+import {
+  addPaymentInputSchema,
+  createInvoiceInputSchema,
+  listInvoicesQuerySchema,
+} from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
@@ -9,7 +13,7 @@ const idParamSchema = z.object({ id: z.string().uuid() });
 export async function invoicesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/invoices', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listInvoices(req.user);
+    return service.listInvoices(listInvoicesQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/invoices/next-code', async (req) => {

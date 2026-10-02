@@ -1,3 +1,4 @@
+import { sfRawParamSchema } from '@innovic/shared';
 import { z } from 'zod';
 
 // Curated list of entities whose soft-deleted rows surface in /trash.
@@ -43,6 +44,8 @@ export const listTrashQuerySchema = z.object({
   // word) and the deleted-by name. Applied inside the query, so total and
   // paging count only the matching rows.
   search: z.string().trim().max(100).optional(),
+  /** Sort & Filter (ADR-200): the screen's column sort + filters, on the server. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(500).default(100),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

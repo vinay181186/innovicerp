@@ -45,6 +45,9 @@ function toQuery(q: ListTasksQuery): string {
   if (q.assignedBy) p.set('assignedBy', q.assignedBy);
   if (q.due) p.set('due', q.due);
   if (q.dept) p.set('dept', q.dept);
+  if (q.sf) p.set('sf', q.sf);
+  if (q.limit !== undefined) p.set('limit', String(q.limit));
+  if (q.offset) p.set('offset', String(q.offset));
   return `?${p.toString()}`;
 }
 

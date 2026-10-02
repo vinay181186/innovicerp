@@ -17,12 +17,6 @@
 //   <ListFooter>            count line · 💡 hint
 //   <PageState>             no-access and load-failure
 //
-// Everything this file used to draw by hand is gone: the sticky band, the
-// search box, the <table>/<colgroup>/<thead>, the loading / error / empty rows,
-// the badges, the row-action buttons, the count line, the 💡 hint, and
-// `confirm()` on delete. What is left here is the DATA and the RULES — the
-// query, the three count queries, the permission gates and the Excel import.
-//
 // What did NOT change: the route and its search params, the 300ms debounce on
 // the URL write, normalizeSearchTerm, the whole-master count queries (so the
 // item-type dropdown's counts do not shrink as you type), perms -> canCreate/canEdit/
@@ -30,12 +24,8 @@
 // row click -> detail, Item Code -> detail, the thumbnail's own click (the
 // picture opens large; it never opens the row).
 //
-// Item Code and Item Name are separate one-line columns (ADR-199 table
-// standard, 2026-10-01 — replaced the stacked <ItemBadge> cell), with the
-// picture in its OWN column before them (user decision 2026-09-22). The
-// picture is the APP ItemImageBox from components/shared/item-badge: this
-// list has a storage path, and resolving it to a signed URL plus owning the
-// preview modal is exactly what the app wrapper does.
+// Item Code and Item Name are separate one-line columns (ADR-199), the
+// picture (app ItemImageBox) in its OWN column before them (2026-09-22).
 //
 // NO Rev column, deliberately, and it must not come back (user direction
 // 2026-09-10). Legacy had one here and `items.revision` still exists, but a
@@ -46,15 +36,10 @@
 // look like the authority on a number it does not own, and the two disagreeing
 // on screen is worse than one of them being absent.
 //
-// Per-column sorting (the "Item Code ↕ · Name ↕" header toggles) was dropped
-// with the sheet conversion — the SO master standard has none; rows come in
-// the API's default order.
-//
-// Legacy delta now CLOSED (docs/ISSUES.md ISSUE-017): UOM was `.badge.b-grey`
-// because legacy's `.tag` had no port. `.tag` exists today and <Tag> is the
-// primitive named for it ("linked document refs, UOM, revisions"), so UOM is a
-// neutral Tag again. Source (ADR-171) is a <Badge> — it is an item ATTRIBUTE,
-// not a document status, so it is not a StatusBadge and gets no status map.
+// Paging (ADR-201): 25 rows per page, page in the URL; search, item type,
+// Make / Buy and Sort & Filter (▾, ADR-200) run on the SERVER over the whole
+// master, and any change of them goes back to page 1.
+// UOM is a neutral <Tag>; Source (ADR-171) a <Badge> (an attribute, not a status).
 
 import {
   ITEM_PROCUREMENT_TYPES,
@@ -70,10 +55,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { itemListColumns } from '../components/item-list-columns';
 import { Select } from '@/ui/forms';
@@ -81,13 +68,6 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
 import { TrashReasonDialog } from '../components/trash-reason-dialog';
 import { downloadItemTemplate, parseItemImportFile } from '../lib/import-export';
-
-// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next),
-// per the `styling` skill Rule 4. Item Master is a master list you scan end to
-// end; 25-at-a-time made 44 items into two pages. The API caps `limit` at 1000
-// (raised from 200 so item pickers could pull the whole master), and the count
-// line below flags the rare case of a larger set.
-const LIST_LIMIT = 1000;
 
 // One count query per stat. Module-level constants keep the query keys stable so
 // these are fetched once and served from cache, and the counts stay whole-master
@@ -103,6 +83,7 @@ const listSearchSchema = z.object({
   itemType: z.enum(ITEM_TYPES).optional(),
   // ADR-171 — Source (make / buy) filter, same URL-param shape as itemType.
   procurementType: z.enum(ITEM_PROCUREMENT_TYPES).optional(),
+  page: pageSearchParam,
 });
 
 export const itemsListRoute = createRoute({
@@ -139,23 +120,36 @@ function ItemsListPage(): React.JSX.Element {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
-      void navigate({ search: (prev) => ({ ...prev, search: next }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
+
+  // Sort & Filter on the SERVER (ADR-200): the list is paged, so filtering
+  // only the loaded page would miss items. Every change goes to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.itemsList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+  const offset = pageOffset(search.page);
 
   const query: ListItemsQuery = useMemo(
     () => ({
       search: search.search,
       itemType: search.itemType,
       procurementType: search.procurementType,
-      limit: LIST_LIMIT,
-      offset: 0,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset,
     }),
-    [search.search, search.itemType, search.procurementType],
+    [search.search, search.itemType, search.procurementType, sf.param, offset],
   );
 
   const { data, isLoading, isFetching, isError, error } = useItemsList(query);
+  const gotoPage = useCallback(
+    (p: number): void => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  useClampPage(search.page, data?.total, gotoPage);
 
   // Item-type counts — whole-master totals, independent of the search box.
   const allCount = useItemsList(COUNT_ALL).data?.total ?? 0;
@@ -165,14 +159,17 @@ function ItemsListPage(): React.JSX.Element {
 
   const setTypeFilter = useCallback(
     (next: ItemType | undefined): void => {
-      void navigate({ search: (prev) => ({ ...prev, itemType: next }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, itemType: next, page: 1 }), replace: true });
     },
     [navigate],
   );
 
   const setSourceFilter = useCallback(
     (next: ItemProcurementType | undefined): void => {
-      void navigate({ search: (prev) => ({ ...prev, procurementType: next }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, procurementType: next, page: 1 }),
+        replace: true,
+      });
     },
     [navigate],
   );
@@ -199,7 +196,7 @@ function ItemsListPage(): React.JSX.Element {
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
 
-  const columns = useMemo(() => itemListColumns(), []);
+  const columns = useMemo(() => itemListColumns(offset), [offset]);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -292,6 +289,7 @@ function ItemsListPage(): React.JSX.Element {
           </>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
             search: (prev) => ({
@@ -299,11 +297,13 @@ function ItemsListPage(): React.JSX.Element {
               search: undefined,
               itemType: undefined,
               procurementType: undefined,
+              page: 1,
             }),
             replace: true,
           });
         }}
         filtersActive={
+          sf.filtering ||
           search.itemType !== undefined ||
           search.procurementType !== undefined ||
           searchInput !== ''
@@ -329,8 +329,9 @@ function ItemsListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
+            sortFilterServer={sf}
             emptyText={
-              search.search || search.itemType || search.procurementType
+              sf.filtering || search.search || search.itemType || search.procurementType
                 ? 'No items match.'
                 : 'No items yet.'
             }
@@ -365,7 +366,13 @@ function ItemsListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter total={total} noun="item" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="item"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
       {importOpen ? (
         <MasterImportDialog
           title="Import Items from Excel"

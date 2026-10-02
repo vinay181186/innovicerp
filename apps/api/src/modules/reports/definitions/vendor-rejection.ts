@@ -6,7 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { isoDateFilter, likeFilter } from './report-helpers';
+import { isoDateFilter, likeFilter, REPORT_ROW_CAP } from './report-helpers';
 
 export const vendorRejectionReport: RegisteredReport = {
   definition: {
@@ -83,7 +83,7 @@ export const vendorRejectionReport: RegisteredReport = {
                COALESCE(it.code, grl.item_code_text, '—'),
                CASE WHEN po.po_type IN ('job_work', 'service') THEN 'OSP' ELSE 'Material' END
       ORDER BY rejected_qty DESC, vendor_name, item_code
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { listAlertsQuerySchema, runAlertQuerySchema } from '@innovic/shared';
+import { pageAlertRecords, pageAlerts } from './paging';
 import { setAlertActiveInputSchema, setAlertSubscriptionInputSchema } from './schema';
 import * as service from './service';
 import * as subs from './subscriptions';
@@ -10,7 +12,10 @@ const codeParamSchema = z.object({ code: z.string().min(1) });
 export async function alertsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/alerts', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.runAllAlerts(req.user);
+    // ADR-201: search / "show zero" / page on the server; the counts strip is
+    // worked out over every active alert.
+    const q = listAlertsQuerySchema.parse(req.query);
+    return pageAlerts(await service.runAllAlerts(req.user), q);
   });
 
   app.get('/alerts/config', async (req) => {
@@ -50,6 +55,7 @@ export async function alertsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/alerts/:code', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { code } = codeParamSchema.parse(req.params);
-    return service.runAlert(code, req.user);
+    const q = runAlertQuerySchema.parse(req.query);
+    return pageAlertRecords(await service.runAlert(code, req.user), q);
   });
 }

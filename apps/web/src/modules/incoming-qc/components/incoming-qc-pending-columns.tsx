@@ -20,6 +20,7 @@ export function incomingQcPendingColumns(): DataTableColumn<IncomingQcPendingRow
       // First column — pinned by the table standard (ADR-199).
       id: 'grn_code',
       header: 'GRN No.',
+      sortFilterField: 'grnNo',
       nowrap: true,
       className: 'td-code cyan',
       render: (r) => r.grnNo,
@@ -27,6 +28,7 @@ export function incomingQcPendingColumns(): DataTableColumn<IncomingQcPendingRow
     {
       id: 'item_code',
       header: 'Item Code',
+      sortFilterField: 'itemCode',
       nowrap: true,
       className: 'td-code',
       // An OSP return traces back to an SO line and shows CODE/REV; a vendor's
@@ -38,6 +40,7 @@ export function incomingQcPendingColumns(): DataTableColumn<IncomingQcPendingRow
     {
       id: 'vendor',
       header: 'Vendor',
+      sortFilterField: 'vendorName',
       align: 'left',
       ellipsis: true,
       render: (r) => r.vendorName ?? '—',
@@ -46,6 +49,8 @@ export function incomingQcPendingColumns(): DataTableColumn<IncomingQcPendingRow
     {
       id: 'qc_pending',
       header: 'QC Pending',
+      sortFilterField: 'pendingQty',
+      filterType: 'num',
       align: 'right',
       nowrap: true,
       headColor: 'var(--amber2)',
@@ -58,6 +63,8 @@ export function incomingQcPendingColumns(): DataTableColumn<IncomingQcPendingRow
     {
       id: 'days_waiting',
       header: 'Days Waiting',
+      sortFilterField: 'waitDays',
+      filterType: 'num',
       align: 'right',
       nowrap: true,
       headColor: 'var(--amber2)',

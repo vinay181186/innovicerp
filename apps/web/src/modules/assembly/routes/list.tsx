@@ -18,87 +18,108 @@
 // (L28788–28884) is /assemblies/$soId. Both map to renderAssemblyTracker in
 // docs/page-registry.yaml. See docs/PARITY/assytracker.md §0/§8 for that DELTA.
 //
+// ADR-201 (2026-10-02): 25 rows a page with Prev / Next. Search, the status
+// dropdown and Sort & Filter (on SO No. / Customer / BOM No. / Due Date /
+// Required) run on the SERVER over every Equipment SO; the dropdown's (n)
+// counts come from the server too. Any change of them goes back to page 1.
+// Search covers SO no., customer, BOM no. and BOM name (no longer the status
+// text: the status dropdown is the status filter).
+//
 // Port additions with NO legacy counterpart (kept deliberately, not parity):
 //   - red/bold Due when overdue (legacy L28785 prints the date unstyled)
 //   - Dispatched column (legacy shows it only in the expanded body, L28795)
 
-import type { AssemblyListItem } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useMemo, useState } from 'react';
-import { fmtDate, todayIst } from '@/lib/date';
-import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { ASSEMBLY_LIST_STATUSES, type ListAssembliesQuery } from '@innovic/shared';
+import { createRoute, useNavigate } from '@tanstack/react-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { todayIst } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useAssembliesList } from '../api';
+import { assemblyListColumns, ROW_TINT_BY_STATUS } from '../components/assembly-list-columns';
+
+const searchSchema = z.object({
+  search: z.string().optional(),
+  status: z.enum(ASSEMBLY_LIST_STATUSES).optional(),
+  page: pageSearchParam,
+});
 
 export const assemblyListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'assemblies',
+  validateSearch: searchSchema,
   component: AssemblyListPage,
 });
 
-type StatusKey = AssemblyListItem['status'];
-type FilterKey = 'all' | StatusKey;
-
-// Status colours follow the app rule (R5 PR-N50): Waiting grey, Ready (awaiting
-// the next step) blue, In Assembly amber, Completed green.
-const STATUS_BADGE_CLASS: Record<StatusKey, string> = {
-  waiting: 'b-grey',
-  ready: 'b-blue',
-  assembling: 'b-amber',
-  done: 'b-green',
-};
-
-// Row wash by the real status enum (ADR-199 ROW_TINT). Follows the GRN list's
-// pattern: the blocked/pending end (waiting on components) washes amber, the
-// finished end (done) washes green, and the active middle (ready / assembling)
-// stays untinted so the badge carries the signal there. No blue tint exists.
-const ROW_TINT_BY_STATUS: Record<StatusKey, string | undefined> = {
-  waiting: ROW_TINT.pending,
-  ready: undefined,
-  assembling: undefined,
-  done: ROW_TINT.done,
-};
-
-// Legacy badge text (L28778–28781). The waiting variant's "— <ready>/<total>"
-// component counter used to be dropped because the list payload carried no
-// readiness figures; listAssemblies now computes them (batched), so it reads
-// exactly as legacy does.
-function statusBadgeLabel(row: AssemblyListItem): string {
-  switch (row.status) {
-    case 'ready':
-      return 'Ready';
-    case 'assembling':
-      return `In Assembly ${row.assembledQty}/${row.orderQty}`;
-    case 'done':
-      return `Completed ${row.assembledQty}/${row.orderQty}`;
-    case 'waiting':
-      return row.totalCount > 0 ? `Waiting — ${row.readyCount}/${row.totalCount}` : 'Waiting';
-  }
-}
+type FilterKey = 'all' | (typeof ASSEMBLY_LIST_STATUSES)[number];
 
 // Status order + labels match legacy's tiles (L28747–28749).
-const TILES: Array<{ key: FilterKey; label: string; color: string }> = [
-  { key: 'all', label: 'Total', color: 'var(--text)' },
-  { key: 'waiting', label: 'Waiting', color: 'var(--text3)' },
-  { key: 'ready', label: 'Ready', color: 'var(--blue)' },
-  { key: 'assembling', label: 'In Assembly', color: 'var(--amber)' },
-  { key: 'done', label: 'Completed', color: 'var(--green)' },
+const TILES: Array<{ key: FilterKey; label: string }> = [
+  { key: 'all', label: 'Total' },
+  { key: 'waiting', label: 'Waiting' },
+  { key: 'ready', label: 'Ready' },
+  { key: 'assembling', label: 'In Assembly' },
+  { key: 'done', label: 'Completed' },
 ];
 
 function AssemblyListPage(): React.JSX.Element {
-  const { data, isLoading, isFetching, isError, error } = useAssembliesList();
-  const [filter, setFilter] = useState<FilterKey>('all');
-  const [search, setSearch] = useState<string>('');
+  const search = assemblyListRoute.useSearch();
+  const navigate = useNavigate();
+  const filter: FilterKey = search.status ?? 'all';
   // The soIds whose ▸ BOM Name row is open. The fit table's ▸ is the row's one
   // expand control: it toggles this set AND its own detail row (ADR-199).
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // Search lives in the URL; the box mirrors it and a 300ms debounce writes it
+  // back (and goes to page 1).
+  const [searchInput, setSearchInput] = useState(search.search ?? '');
+  useEffect(() => {
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
+  }, [search.search]);
+  useEffect(() => {
+    const trimmed = normalizeSearchTerm(searchInput);
+    const next = trimmed === '' ? undefined : trimmed;
+    if (next === search.search) return;
+    const id = window.setTimeout(() => {
+      void navigate({
+        to: '/assemblies',
+        search: (prev) => ({ ...prev, search: next, page: 1 }),
+        replace: true,
+      });
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [searchInput, search.search, navigate]);
+
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ to: '/assemblies', search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  const sf = useServerSortFilter(TABLE_KEYS.assemblies, () => gotoPage(1));
+  const query: ListAssembliesQuery = useMemo(
+    () => ({
+      search: search.search,
+      status: search.status,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(search.page),
+    }),
+    [search.search, search.status, search.page, sf.param],
+  );
+  const { data, isLoading, isFetching, isError, error } = useAssembliesList(query);
+  useClampPage(search.page, data?.total, gotoPage);
+
   // IST today (the UTC date is yesterday before 05:30 IST).
   const today = todayIst();
-  const navigate = useNavigate();
 
   const toggleExpand = useCallback((soId: string): void => {
     setExpanded((prev) => {
@@ -109,150 +130,25 @@ function AssemblyListPage(): React.JSX.Element {
     });
   }, []);
 
-  const counts = useMemo(() => {
-    const c: Record<FilterKey, number> = { all: 0, waiting: 0, ready: 0, assembling: 0, done: 0 };
-    if (data) {
-      c.all = data.items.length;
-      for (const it of data.items) c[it.status]++;
-    }
-    return c;
-  }, [data]);
-
-  const filtered = useMemo(() => {
-    if (!data) return [];
-    const q = normalizeSearchTerm(search);
-    return data.items.filter((it) => {
-      if (filter !== 'all' && it.status !== filter) return false;
-      // Every column the row shows (plus the ▸ BOM name and legacy's partName,
-      // L28768): SO no., customer, BOM no. + name, due date and the status text.
-      // Shared matcher — case-insensitive, partial. Not the qty numbers: a bare
-      // "5" would match nearly every row.
-      return matchesSearchTerm(
-        [
-          it.soCode,
-          it.customerName,
-          it.bomCode,
-          it.bomName,
-          it.partName,
-          fmtDate(it.dueDate),
-          statusBadgeLabel(it),
-        ],
-        q,
-      );
-    });
-  }, [data, filter, search]);
-
-  const columns = useMemo<DataTableColumn<AssemblyListItem>[]>(
-    () => [
-      {
-        id: 'so_no',
-        header: 'SO No.',
-        kind: 'code',
-        nowrap: true,
-        // The per-SO tracker opens from the row; the link is the same target —
-        // no chevron of its own (the fit ▸ owns expand, ADR-199).
-        render: (row) => (
-          <Link
-            to="/assemblies/$soId"
-            params={{ soId: row.soId }}
-            className="td-code"
-            style={{ color: 'var(--cyan)', fontWeight: 600 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {row.soCode}
-          </Link>
-        ),
-      },
-      {
-        id: 'customer',
-        header: 'Customer',
-        kind: 'text',
-        align: 'left',
-        ellipsis: true,
-        render: (row) => row.customerName ?? '—',
-        title: (row) => row.customerName ?? '',
-      },
-      {
-        id: 'bom_no',
-        header: 'BOM No.',
-        nowrap: true,
-        render: (row) => (
-          <span className="text3" style={{ fontSize: 12 }}>
-            {row.bomCode ?? '—'}
-            {/* Loose != null on purpose: web and API deploy independently, so for
-                a few minutes the old API returns no bomRevision. Strict !== null
-                would print "Rev undefined". */}
-            {row.bomRevision != null ? ` BOM Rev ${row.bomRevision}` : ''}
-          </span>
-        ),
-      },
-      {
-        id: 'due',
-        header: 'Due Date',
-        kind: 'date',
-        nowrap: true,
-        render: (row) => {
-          const overdue = row.dueDate !== null && row.dueDate < today && row.status !== 'done';
-          return (
-            <span
-              style={{
-                color: overdue ? 'var(--red2)' : undefined,
-                fontWeight: overdue ? 600 : undefined,
-              }}
-            >
-              {fmtDate(row.dueDate)}
-            </span>
-          );
-        },
-      },
-      {
-        id: 'required',
-        header: 'Required',
-        kind: 'num',
-        align: 'right',
-        render: (row) => row.orderQty,
-      },
-      {
-        id: 'assembled',
-        header: 'Assembled',
-        kind: 'num',
-        align: 'right',
-        render: (row) => <span style={{ color: 'var(--green2)' }}>{row.assembledQty}</span>,
-      },
-      {
-        id: 'dispatched',
-        header: 'Dispatched',
-        kind: 'num',
-        align: 'right',
-        render: (row) => <span style={{ color: 'var(--green2)' }}>{row.dispatchedQty}</span>,
-      },
-      {
-        id: 'status',
-        header: 'Assembly Status',
-        kind: 'badge',
-        nowrap: true,
-        render: (row) => (
-          <span className={`badge ${STATUS_BADGE_CLASS[row.status]}`}>{statusBadgeLabel(row)}</span>
-        ),
-      },
-    ],
-    [today],
-  );
+  const columns = useMemo(() => assemblyListColumns(today), [today]);
+  const rows = data?.items ?? [];
+  const counts = data?.counts;
+  const filtersActive = searchInput !== '' || filter !== 'all' || sf.filtering;
 
   return (
     <div>
       {/* The ONE list header (ui/layout ListHeader): title · count, then the
           filter bar — search · status dropdown (the old tiles' counts in its
-          option labels) · Clear. */}
+          option labels, counted on the server) · Clear. */}
       <ListHeader
         title="Assembly Tracker"
         icon="🔧"
-        count={data ? filtered.length : undefined}
+        count={data ? data.total : undefined}
         noun="assembly order"
         filterNote={filter !== 'all' ? TILES.find((t) => t.key === filter)?.label : undefined}
-        search={search}
-        onSearch={setSearch}
-        searchPlaceholder="Search SO no., customer, BOM no. / name, part, due date, status…"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search SO no., customer, BOM no. / name…"
         updating={isFetching && !isLoading}
         filters={
           <select
@@ -260,20 +156,28 @@ function AssemblyListPage(): React.JSX.Element {
             aria-label="Assembly status"
             title="Assembly status"
             value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterKey)}
+            onChange={(e) => {
+              const v = e.target.value as FilterKey;
+              void navigate({
+                to: '/assemblies',
+                search: (prev) => ({ ...prev, status: v === 'all' ? undefined : v, page: 1 }),
+                replace: true,
+              });
+            }}
           >
             {TILES.map((t) => (
               <option key={t.key} value={t.key}>
-                {`${t.key === 'all' ? 'All Status' : t.label}${data ? ` (${counts[t.key]})` : ''}`}
+                {`${t.key === 'all' ? 'All Status' : t.label}${counts ? ` (${counts[t.key]})` : ''}`}
               </option>
             ))}
           </select>
         }
         onClearFilters={() => {
-          setSearch('');
-          setFilter('all');
+          setSearchInput('');
+          sf.clearFilters();
+          void navigate({ to: '/assemblies', search: { page: 1 }, replace: true });
         }}
-        filtersActive={search !== '' || filter !== 'all'}
+        filtersActive={filtersActive}
       />
 
       {isError ? (
@@ -286,11 +190,12 @@ function AssemblyListPage(): React.JSX.Element {
           <DataTable
             tableKey={TABLE_KEYS.assemblies}
             columns={columns}
-            rows={filtered}
+            rows={rows}
             loading={isLoading}
+            sortFilterServer={sf}
             rowKey={(row) => row.soId}
             empty={
-              data && data.items.length === 0
+              data && !filtersActive && data.total === 0
                 ? 'No assembly orders yet.'
                 : 'No assembly orders match.'
             }
@@ -317,7 +222,13 @@ function AssemblyListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter total={data?.items.length ?? 0} shown={filtered.length} noun="assembly order" />
+      <ListFooter
+        total={data?.total ?? 0}
+        noun="assembly order"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
     </div>
   );
 }

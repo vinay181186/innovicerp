@@ -10,8 +10,9 @@ import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Z_OVERLAY } from '../../feedback/Modal';
-import type { ColumnFilter, SfType, SortDir } from './filter-model';
+import type { ColumnFilter, SortDir } from './filter-model';
 import { MenuBody } from './MenuBody';
+import type { MenuSpec } from './use-sort-filter-table';
 
 const POP_W = 290;
 const GAP = 4;
@@ -40,17 +41,14 @@ export interface HeadMenuProps {
   sortOff?: boolean | undefined;
   filter: ColumnFilter | undefined;
   /** The column's type and tick list — worked out when the menu opens. */
-  getMenu: () => { type: SfType; values: string[] };
+  getMenu: () => MenuSpec;
   onSort: (dir: SortDir | null) => void;
   onFilter: (f: ColumnFilter | null) => void;
 }
 
 export function HeadMenu(p: HeadMenuProps): ReactElement {
   const [open, setOpen] = useState(false);
-  const [menu, setMenu] = useState<{ type: SfType; values: string[] }>({
-    type: 'text',
-    values: [],
-  });
+  const [menu, setMenu] = useState<MenuSpec>({ type: 'text', values: [] });
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties>({ visibility: 'hidden' });
@@ -152,6 +150,8 @@ export function HeadMenu(p: HeadMenuProps): ReactElement {
                 sortOff={p.sortOff}
                 filter={p.filter}
                 values={menu.values}
+                labelOf={menu.labelOf}
+                noTicks={menu.noTicks}
                 onSort={p.onSort}
                 onFilter={p.onFilter}
                 onClose={close}

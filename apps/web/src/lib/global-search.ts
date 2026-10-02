@@ -16,19 +16,30 @@ import { apiFetch } from '@/lib/api';
 export interface UseGlobalSearchArgs {
   q: string;
   kind?: GlobalSearchKind | undefined;
+  /** Page size + offset — the full Search page pages at 25 (ADR-201); the
+   *  header popup leaves both out (server default limit, first rows). */
+  limit?: number | undefined;
+  offset?: number | undefined;
 }
 
 export function useGlobalSearch({
   q,
   kind,
+  limit,
+  offset,
 }: UseGlobalSearchArgs): UseQueryResult<GlobalSearchResponse> {
   // The API rejects `q` longer than GLOBAL_SEARCH_MAX_CHARS; the input also caps typing at it.
   const term = q.slice(0, GLOBAL_SEARCH_MAX_CHARS);
   return useQuery<GlobalSearchResponse>({
-    queryKey: ['global-search', term, kind ?? null],
+    queryKey: ['global-search', term, kind ?? null, limit ?? null, offset ?? 0],
     queryFn: () =>
       apiFetch<GlobalSearchResponse>(
-        `/global-search?${new URLSearchParams({ q: term, ...(kind ? { kind } : {}) }).toString()}`,
+        `/global-search?${new URLSearchParams({
+          q: term,
+          ...(kind ? { kind } : {}),
+          ...(limit ? { limit: String(limit) } : {}),
+          ...(offset ? { offset: String(offset) } : {}),
+        }).toString()}`,
       ),
     enabled: term.length >= GLOBAL_SEARCH_MIN_CHARS,
     staleTime: 30_000,

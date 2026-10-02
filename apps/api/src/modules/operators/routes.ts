@@ -38,13 +38,15 @@ export async function operatorsRoutes(app: FastifyInstance): Promise<void> {
     return row;
   });
 
-  // Whole-sheet import. It sits beside the single create on purpose: same gate,
-  // same shape per row — only the round trips differ.
+  // Whole-sheet import. It sits beside the single create on purpose: same
+  // shape per row — only the round trips differ. The gate is NOT the same: the
+  // service picks `entry` or `edit` from the import mode.
   app.post('/operators/bulk', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = bulkCreateOperatorsInputSchema.parse(req.body);
     const result = await service.createOperatorsBulk(body, req.user);
-    reply.code(201);
+    // A preview (dryRun) writes nothing — 200; a real import creates — 201.
+    reply.code(body.dryRun ? 200 : 201);
     return result;
   });
 

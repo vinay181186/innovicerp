@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { listSavedReportsQuerySchema } from '@innovic/shared';
 import { z } from 'zod';
 import { buildWorkbookBuffer, XLSX_CONTENT_TYPE, xlsxFilename } from '../../lib/excel';
 import { AuthenticationError } from '../../lib/errors';
@@ -19,7 +20,7 @@ export async function savedReportsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/saved-reports', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listSavedReports(req.user);
+    return service.listSavedReports(req.user, listSavedReportsQuerySchema.parse(req.query));
   });
 
   app.post('/saved-reports', async (req, reply) => {

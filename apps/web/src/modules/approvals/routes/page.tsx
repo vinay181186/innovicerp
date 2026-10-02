@@ -9,17 +9,22 @@
 // count. PR and PO rows open the document, where the Approve button lives. The
 // Op Entry section is the existing decide-here screen (ADR-130: Pending /
 // Approved / Rejected), shown only to managers and admins, who alone decide it.
+//
+// ADR-201: the PR and PO sections show 25 rows a page (Prev / Next); search
+// and Sort & Filter run on the server (GET /approvals/inbox/list) over every
+// waiting document. The tab counts are the inbox's whole-queue counts.
 
-import type { ApprovalInboxRow } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
-import { matchesSearchTerm } from '@/components/shared/search-match';
+import { useEffect, useMemo, useState } from 'react';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader, PageState } from '@/ui/layout';
-import { useApprovalInbox } from '../api';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { useApprovalInbox, useApprovalInboxList } from '../api';
 import { LogEntryApprovals } from '../components/log-entry-approvals';
 import { prPoColumns } from '../components/pr-po-columns';
 
@@ -97,73 +102,92 @@ function ApprovalsPage(): React.JSX.Element {
     return <LogEntryApprovals pendingCount={counts?.logEntry} tabs={tabs} />;
   }
 
-  return (
-    <InboxSection
-      key={section}
-      section={section}
-      rows={inbox.data?.[section] ?? []}
-      loading={inbox.isLoading}
-      error={inbox.isError ? inbox.error : null}
-      updating={inbox.isFetching && !inbox.isLoading}
-      tabs={tabs}
-    />
-  );
+  return <InboxSection key={section} section={section} tabs={tabs} />;
 }
 
 function InboxSection({
   section,
-  rows,
-  loading,
-  error,
-  updating,
   tabs,
 }: {
   section: Exclude<Section, 'logEntry'>;
-  rows: ApprovalInboxRow[];
-  loading: boolean;
-  error: Error | null;
-  updating: boolean;
   tabs: React.ReactNode;
 }): React.JSX.Element {
   const navigate = useNavigate();
+  // Page + search live in component state: the PR / PO switch is a tab of one
+  // route, and switching it (a new key) starts the section on page 1.
+  const [page, setPage] = useState(1);
   const [term, setTerm] = useState('');
-  const shown = rows.filter((r) =>
-    matchesSearchTerm([r.docCode, r.vendorName, r.itemCode, r.itemName, r.createdByName], term),
-  );
+  const [q, setQ] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const t = normalizeSearchTerm(term);
+    const next = t === '' ? undefined : t;
+    if (next === q) return;
+    const id = window.setTimeout(() => {
+      setQ(next);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [term, q]);
+  const sf = useServerSortFilter(TABLE_KEYS.approvalsPrPo, () => setPage(1));
+
+  const list = useApprovalInboxList({
+    section,
+    search: q,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
+  });
+  const rows = useMemo(() => list.data?.items ?? [], [list.data?.items]);
+  const total = list.data?.total ?? 0;
+  useClampPage(page, list.data?.total, setPage);
   // Amount is null when the caller's access hides prices — then the column goes.
   const showAmount = rows.some((r) => r.docAmount != null);
   const columns = useMemo(() => prPoColumns(section, showAmount), [section, showAmount]);
+  const filtering = q !== undefined || sf.filtering;
 
   return (
     <div>
       <ListHeader
         title={SECTION_TITLE[section]}
         icon="✅"
-        count={loading ? undefined : shown.length}
+        count={list.isLoading ? undefined : total}
         noun={section === 'pr' ? 'request' : 'order'}
         search={term}
         onSearch={setTerm}
         searchPlaceholder="Search number, vendor, item, raised by…"
-        updating={updating}
+        updating={list.isFetching && !list.isLoading}
+        onClearFilters={() => {
+          sf.clearFilters();
+          setTerm('');
+        }}
+        filtersActive={term !== '' || sf.filtering}
       >
         {tabs}
       </ListHeader>
 
-      {error ? (
-        <PageState state="error" message={error.message} />
+      {list.isError ? (
+        <PageState state="error" message={list.error.message} />
       ) : (
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.approvalsPrPo}
             columns={columns}
-            rows={shown}
+            rows={rows}
             rowKey={(r) => r.id}
-            loading={loading}
-            empty={term ? SECTION_NO_MATCH[section] : SECTION_EMPTY[section]}
+            loading={list.isLoading}
+            sortFilterServer={sf}
+            empty={filtering ? SECTION_NO_MATCH[section] : SECTION_EMPTY[section]}
             onRowClick={(r) => void navigate({ to: r.navPage })}
           />
         </Panel>
       )}
+      <ListFooter
+        total={total}
+        noun={section === 'pr' ? 'request' : 'order'}
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={setPage}
+      />
     </div>
   );
 }

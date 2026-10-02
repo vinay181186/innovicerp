@@ -9,19 +9,23 @@
 import { sql } from 'drizzle-orm';
 import type {
   MachineLoadCard,
-  MachineLoadOp,
   MachineLoadStatus,
+  MachineLoadingQuery,
   MachineLoadingResponse,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { allOpenOps, pagedOpenOps } from './ops-query';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 }
 
-function deriveLoad(pendingHrs: number, dailyCap: number): {
+function deriveLoad(
+  pendingHrs: number,
+  dailyCap: number,
+): {
   weekCap: number;
   loadPct: number;
   daysToClear: number;
@@ -31,11 +35,20 @@ function deriveLoad(pendingHrs: number, dailyCap: number): {
   const loadPct = weekCap > 0 ? pendingHrs / weekCap : 0;
   const daysToClear = dailyCap > 0 ? Number((pendingHrs / dailyCap).toFixed(1)) : 0;
   const loadStatus: MachineLoadStatus =
-    loadPct > 1 ? 'Overloaded' : loadPct > 0.7 ? 'High Load' : pendingHrs > 0 ? 'Manageable' : 'Clear';
+    loadPct > 1
+      ? 'Overloaded'
+      : loadPct > 0.7
+        ? 'High Load'
+        : pendingHrs > 0
+          ? 'Manageable'
+          : 'Clear';
   return { weekCap, loadPct, daysToClear, loadStatus };
 }
 
-export async function getMachineLoading(user: AuthContext): Promise<MachineLoadingResponse> {
+export async function getMachineLoading(
+  user: AuthContext,
+  input: MachineLoadingQuery = {},
+): Promise<MachineLoadingResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // ── Per-machine aggregate (cards) ──────────────────────────────────────
@@ -64,118 +77,37 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
       ORDER BY m.code
     `);
 
-    const machines: MachineLoadCard[] = (
-      cardRows as unknown as Array<Record<string, unknown>>
-    ).map((r) => {
-      const pendingHrs = Number(r['pendingHrs'] ?? 0);
-      const dailyCap = Number(r['capPerShift'] ?? 0) * Number(r['shiftsPerDay'] ?? 0);
-      const { weekCap, loadPct, daysToClear, loadStatus } = deriveLoad(pendingHrs, dailyCap);
-      return {
-        machineId: r['machineId'] as string,
-        machineCode: r['machineCode'] as string,
-        name: (r['name'] as string | null) ?? '',
-        machineType: (r['machineType'] as string | null) ?? null,
-        totalAvailQty: Number(r['totalAvailQty'] ?? 0),
-        openOps: Number(r['openOps'] ?? 0),
-        pendingHrs,
-        dailyCap,
-        weekCap,
-        loadPct,
-        daysToClear,
-        loadStatus,
-      };
-    });
+    const machines: MachineLoadCard[] = (cardRows as unknown as Array<Record<string, unknown>>).map(
+      (r) => {
+        const pendingHrs = Number(r['pendingHrs'] ?? 0);
+        const dailyCap = Number(r['capPerShift'] ?? 0) * Number(r['shiftsPerDay'] ?? 0);
+        const { weekCap, loadPct, daysToClear, loadStatus } = deriveLoad(pendingHrs, dailyCap);
+        return {
+          machineId: r['machineId'] as string,
+          machineCode: r['machineCode'] as string,
+          name: (r['name'] as string | null) ?? '',
+          machineType: (r['machineType'] as string | null) ?? null,
+          totalAvailQty: Number(r['totalAvailQty'] ?? 0),
+          openOps: Number(r['openOps'] ?? 0),
+          pendingHrs,
+          dailyCap,
+          weekCap,
+          loadPct,
+          daysToClear,
+          loadStatus,
+        };
+      },
+    );
 
-    // ── Open operations (operation view + per-machine queue) ───────────────
-    // ISSUE-068: the Job Queue View was hiding waiting / qc_pending / running
-    // ops. Legacy builds ONE enrichedOps set then applies two DIFFERENT view
-    // filters: the Operation View (renderLoading L5060) shows only
-    // `available > 0 OR In Progress`, while the Job Queue View (L5081) shows
-    // every non-complete, non-outsource op. This query returns the WIDER
-    // Job-Queue set (computed_status <> 'complete'); the Operation View
-    // re-applies the narrow predicate client-side (see list.tsx filteredOps),
-    // so the ops table is unchanged while the queue now surfaces those states.
-    // Sort: priority (High first) → due date → op_seq.
-    const opRows = await tx.execute(sql`
-      SELECT
-        jo.id AS "jcOpId", jo.job_card_id AS "jobCardId", jc.code AS "jobCardCode",
-        jo.op_seq AS "opSeq", jo.operation, jo.machine_id AS "machineId",
-        m.code AS "machineCode",
-        i.code AS "itemCode", i.name AS "itemName",
-        -- The customer's drawing revision off the SO line this card was raised
-        -- against, not items.revision (a different column, about the item master).
-        -- The sol join below is a LEFT JOIN, so JW-sourced and standalone cards
-        -- come back null and render as the bare code.
-        --
-        -- ::text on purpose: the contract types this as a string, but a database
-        -- without migration 0119 still holds an integer here and would hand the
-        -- board a number. The cast is a no-op once 0119 is applied.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the same SO line as the revision above. SO side only: a job-work
-        -- line has no customer PO, so JW-sourced cards are correctly null.
-        sol.client_po_line_no AS "clientPoLineNo",
-        so.code AS "soCode",
-        jc.priority, jc.due_date AS "dueDate", jc.order_qty AS "orderQty",
-        vos.completed_qty AS "completedQty", vos.available,
-        vos.computed_status AS "computedStatus",
-        ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs",
-        -- Who actually made the completed qty, per machine (0095 / ADR-126). The
-        -- machine columns above are the op's CURRENT machine — where the
-        -- REMAINING qty runs — so on a re-routed op they name a machine that may
-        -- have produced nothing. This is the honest breakdown.
-        COALESCE(mo.machines, '[]'::json) AS "machines"
-      FROM public.jc_ops jo
-      JOIN public.v_jc_op_status vos ON vos.jc_op_id = jo.id
-      JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
-      LEFT JOIN public.machines m ON m.id = jo.machine_id
-      LEFT JOIN public.items i ON i.id = jc.item_id
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so
-        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      LEFT JOIN LATERAL (
-        SELECT json_agg(
-                 json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
-                 ORDER BY v.completed_qty DESC, v.machine_code
-               ) AS machines
-        FROM public.v_op_machine_output v
-        WHERE v.jc_op_id = jo.id
-      ) mo ON true
-      WHERE jo.company_id = ${companyId}::uuid
-        AND jo.deleted_at IS NULL
-        AND jo.op_type <> 'outsource'
-        AND vos.computed_status <> 'complete'
-      ORDER BY (jc.priority = 'high') DESC, jc.due_date ASC NULLS LAST, jo.op_seq ASC
-    `);
-
-    const ops: MachineLoadOp[] = (opRows as unknown as Array<Record<string, unknown>>).map((r) => ({
-      jcOpId: r['jcOpId'] as string,
-      jobCardId: r['jobCardId'] as string,
-      jobCardCode: r['jobCardCode'] as string,
-      opSeq: Number(r['opSeq']),
-      operation: (r['operation'] as string | null) ?? '',
-      machineId: (r['machineId'] as string | null) ?? null,
-      machineCode: (r['machineCode'] as string | null) ?? null,
-      machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
-        (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
-      ),
-      itemCode: (r['itemCode'] as string | null) ?? null,
-      itemRevision: (r['itemRevision'] as string | null) ?? null,
-      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
-      itemName: (r['itemName'] as string | null) ?? null,
-      soCode: (r['soCode'] as string | null) ?? null,
-      priority: r['priority'] as MachineLoadOp['priority'],
-      dueDate: r['dueDate'] != null ? String(r['dueDate']).slice(0, 10) : null,
-      orderQty: Number(r['orderQty'] ?? 0),
-      completedQty: Number(r['completedQty'] ?? 0),
-      available: Number(r['available'] ?? 0),
-      pendingHrs: Number(r['pendingHrs'] ?? 0),
-      computedStatus: (r['computedStatus'] as string | null) ?? '',
-    }));
-
-    return { machines, ops };
+    // ── Open operations ────────────────────────────────────────────────────
+    // ISSUE-068: the query returns the WIDER Job-Queue set (computed_status <>
+    // 'complete'). Whole-board call: every op, as before (the Operation View
+    // narrows it). Paged call (ADR-201): the server applies the machine pick,
+    // search, the Operation-View scope and Sort & Filter, and pages it.
+    if (input.limit == null) {
+      return { machines, ops: await allOpenOps(tx, companyId) };
+    }
+    const page = await pagedOpenOps(tx, companyId, { ...input, limit: input.limit });
+    return { machines, ops: page.ops, total: page.total };
   });
 }

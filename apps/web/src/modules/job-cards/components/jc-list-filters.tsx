@@ -15,7 +15,7 @@ interface CodeNameOption {
   name: string;
 }
 
-/** Counts shown in the JC Status dropdown labels (over the loaded set). */
+/** Counts shown in the JC Status dropdown labels (server-counted, ADR-201). */
 export interface JcStatusCounts {
   all: number;
   byStatus: Record<JcComputedStatus, number>;

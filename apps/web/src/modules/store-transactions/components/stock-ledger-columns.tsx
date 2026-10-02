@@ -8,21 +8,40 @@
 //   Movement Date · Ref No. · Item Code · Item Name · Movement Type ·
 //   Movement Qty · Source · Stock Before · Stock After.
 
-import type { StoreTransactionListItem } from '@innovic/shared';
+import {
+  STORE_TXN_SOURCE_TYPES,
+  STORE_TXN_TYPES,
+  type StoreTransactionListItem,
+} from '@innovic/shared';
 
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
 
-import { STORE_TXN_SOURCE_LABELS } from '../lib/txn-labels';
+import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 import { TxnTypeBadge } from './txn-type-badge';
 
+/** Columns off by default (DataTable `defaultHidden`); the Columns menu shows them. */
+export const STOCK_LEDGER_HIDDEN_COLUMNS = ['remarks', 'createdOn'] as const;
+
+// Sort & Filter tick lists (ADR-200): the stored code + the label shown.
+const TXN_TYPE_OPTIONS = STORE_TXN_TYPES.map((value) => ({
+  value,
+  label: STORE_TXN_TYPE_LABELS[value],
+}));
+const SOURCE_OPTIONS = STORE_TXN_SOURCE_TYPES.map((value) => ({
+  value,
+  label: STORE_TXN_SOURCE_LABELS[value],
+}));
+
+/** Each `sortFilterField` is a field of the endpoint's column map
+ *  (apps/api/src/modules/store-transactions/sf-columns.ts, ADR-200). */
 export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[] {
   return [
     {
       header: 'Movement Date',
       id: 'txnDate',
       kind: 'date',
-      sortField: 'txnDate',
+      sortFilterField: 'txnDate',
       nowrap: true,
       render: (r) => fmtDate(r.txnDate),
     },
@@ -30,7 +49,7 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       header: 'Ref No.',
       id: 'sourceRef',
       kind: 'code',
-      sortField: 'sourceRef',
+      sortFilterField: 'sourceRef',
       className: 'mono',
       nowrap: true,
       render: (r) => r.sourceRef,
@@ -39,7 +58,7 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       header: 'Item Code',
       id: 'itemCode',
       kind: 'code',
-      sortField: 'itemCode',
+      sortFilterField: 'itemCode',
       className: 'mono fw-700',
       nowrap: true,
       render: (r) => (
@@ -50,7 +69,7 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       header: 'Item Name',
       id: 'itemName',
       kind: 'text',
-      sortField: 'itemName',
+      sortFilterField: 'itemName',
       align: 'left',
       ellipsis: true,
       render: (r) => r.itemName ?? '',
@@ -60,7 +79,8 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       header: 'Movement Type',
       id: 'txnType',
       kind: 'badge',
-      sortField: 'txnType',
+      sortFilterField: 'txnType',
+      filterOptions: TXN_TYPE_OPTIONS,
       render: (r) => <TxnTypeBadge type={r.txnType} />,
     },
     {
@@ -68,7 +88,7 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       id: 'qty',
       kind: 'num',
       align: 'right',
-      sortField: 'qty',
+      sortFilterField: 'qty',
       className: 'mono fw-700',
       nowrap: true,
       render: (r) => {
@@ -93,7 +113,9 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       header: 'Source',
       id: 'sourceType',
       kind: 'code',
-      sortField: 'sourceType',
+      sortFilterField: 'sourceType',
+      filterType: 'list',
+      filterOptions: SOURCE_OPTIONS,
       nowrap: true,
       render: (r) => (
         <span style={{ color: 'var(--blue)', fontWeight: 600 }}>
@@ -106,7 +128,7 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       id: 'stockBefore',
       kind: 'num',
       align: 'right',
-      sortField: 'stockBefore',
+      sortFilterField: 'stockBefore',
       className: 'mono',
       nowrap: true,
       render: (r) => r.stockBefore,
@@ -116,7 +138,7 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       id: 'stockAfter',
       kind: 'num',
       align: 'right',
-      sortField: 'stockAfter',
+      sortFilterField: 'stockAfter',
       className: 'mono',
       nowrap: true,
       render: (r) => <b>{r.stockAfter}</b>,
@@ -126,11 +148,22 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       // server-searchable, so it must be readable somewhere — it rides in the ▸.
       header: 'Remarks',
       id: 'remarks',
+      sortFilterField: 'remarks',
       kind: 'text',
       align: 'left',
       ellipsis: true,
       render: (r) => r.remarks ?? '',
       title: (r) => r.remarks ?? '',
+    },
+    {
+      // When the movement was recorded (IST day) — Sort & Filter can pick a
+      // range of it (ADR-200). Off by default; Columns ▾ shows it.
+      header: 'Created On',
+      id: 'createdOn',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      nowrap: true,
+      render: (r) => fmtDate(r.createdAt),
     },
   ];
 }

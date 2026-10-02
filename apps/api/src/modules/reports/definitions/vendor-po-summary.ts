@@ -6,6 +6,7 @@
 import { sql } from 'drizzle-orm';
 import { poLinePendingSql } from '../../../lib/po-pending';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 export const vendorPoSummaryReport: RegisteredReport = {
   definition: {
@@ -75,7 +76,7 @@ export const vendorPoSummaryReport: RegisteredReport = {
       LEFT JOIN public.vendors v ON v.id = pl.vendor_id AND v.deleted_at IS NULL
       GROUP BY COALESCE(pl.vendor_id::text, pl.vendor_code_text)
       ORDER BY total_value DESC, vendor_name ASC
-      LIMIT 500
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

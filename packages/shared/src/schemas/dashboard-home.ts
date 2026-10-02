@@ -133,12 +133,26 @@ export type HomeToday = z.infer<typeof homeTodaySchema>;
 export const homeOperatorSchema = z.object({
   myOutputQty: z.number().int(),
   myEntries: z.number().int(),
+  /** Every ready op (not just the first page in `ready`). */
   readyCount: z.number().int(),
   allRunningCount: z.number().int(),
   running: z.array(runningOpRowSchema),
+  /** First page (25) of the Ready table — later pages: GET /dashboard/operator-ready. */
   ready: z.array(readyOpRowSchema),
 });
 export type HomeOperator = z.infer<typeof homeOperatorSchema>;
+
+// Operator home "Ready for You" pages 2+ (ADR-201: 25 a page, only that page loaded).
+export const operatorReadyQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).default(25),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type OperatorReadyQuery = z.infer<typeof operatorReadyQuerySchema>;
+export interface OperatorReadyResponse {
+  items: ReadyOpRow[];
+  /** Every ready op — the same figure as HomeOperator.readyCount. */
+  total: number;
+}
 
 export const homeSpecialistSchema = z.object({
   dept: z.string(),
@@ -171,7 +185,11 @@ export const widgetStatSchema = z.object({
   value: z.union([z.number(), z.string()]),
   tone: z.string().nullable(),
 });
-export const widgetBarSchema = z.object({ label: z.string(), pct: z.number().int(), tone: z.string() });
+export const widgetBarSchema = z.object({
+  label: z.string(),
+  pct: z.number().int(),
+  tone: z.string(),
+});
 export const widgetRowSchema = z.object({ left: z.string(), mid: z.string(), right: z.string() });
 export const widgetDataSchema = z.object({
   key: z.string(),

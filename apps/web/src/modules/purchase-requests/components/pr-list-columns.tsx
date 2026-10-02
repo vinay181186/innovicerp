@@ -14,12 +14,22 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 import { prBalanceColor, prOrderBalance } from '../lib/pr-balance';
+import { PR_STATUS_LABELS } from '../lib/pr-labels';
 import { PrStatusBadge } from './pr-status-badge';
 
-export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
+/** Sort & Filter tick list (server mode): stored PR status → the label shown. */
+const PR_STATUS_OPTIONS = Object.entries(PR_STATUS_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+
+/** @param firstRowNo the Sr No of the page's first row (offset + 1), so Sr No
+ *  runs on across pages (page 2 starts at 26). */
+export function prListColumns(firstRowNo = 1): DataTableColumn<PurchaseRequestListItem>[] {
   return [
     {
       id: 'pr_no',
+      sortFilterField: 'prCode',
       header: 'PR No.',
       kind: 'code',
       nowrap: true,
@@ -43,10 +53,11 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
       header: 'Sr No',
       kind: 'num',
       className: 'text3',
-      render: (_pr, i) => i + 1,
+      render: (_pr, i) => firstRowNo + i,
     },
     {
       id: 'pr_date',
+      sortFilterField: 'prDate',
       header: 'PR Date',
       kind: 'date',
       nowrap: true,
@@ -54,6 +65,7 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       header: 'Item Code',
       kind: 'code',
       nowrap: true,
@@ -67,6 +79,7 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       header: 'Item Name',
       align: 'left',
       className: 'fw-700',
@@ -76,6 +89,7 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendorName',
       header: 'Vendor',
       align: 'left',
       ellipsis: true,
@@ -88,6 +102,7 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
     },
     {
       id: 'pr_qty',
+      sortFilterField: 'qty',
       header: 'PR Qty',
       kind: 'num',
       className: 'mono fw-700',
@@ -96,6 +111,7 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
     },
     {
       id: 'on_po',
+      sortFilterField: 'orderedQty',
       header: 'On PO',
       kind: 'num',
       className: 'mono',
@@ -104,6 +120,7 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
     },
     {
       id: 'pending',
+      sortFilterField: 'balanceQty',
       header: 'Pending',
       kind: 'num',
       nowrap: true,
@@ -119,6 +136,7 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
     },
     {
       id: 'due',
+      sortFilterField: 'requiredDate',
       header: 'Due',
       kind: 'date',
       nowrap: true,
@@ -126,10 +144,23 @@ export function prListColumns(): DataTableColumn<PurchaseRequestListItem>[] {
     },
     {
       id: 'pr_status',
+      sortFilterField: 'status',
+      filterOptions: PR_STATUS_OPTIONS,
       header: 'PR Status',
       kind: 'badge',
       nowrap: true,
       render: (pr) => <PrStatusBadge status={pr.status} />,
+    },
+    {
+      // When the PR record was entered (IST day) — Sort & Filter can pick a
+      // range of it (ADR-200). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      header: 'Created On',
+      className: 'mono',
+      nowrap: true,
+      render: (pr) => fmtDate(pr.createdAt),
     },
   ];
 }

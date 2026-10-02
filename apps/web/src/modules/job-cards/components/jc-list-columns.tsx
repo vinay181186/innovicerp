@@ -9,6 +9,17 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { Badge, StatusBadge } from '@/ui/core';
 import { ProgressBar, type DataTableColumn } from '@/ui/data';
+import { JC_STATUS_LABEL } from './jc-status-badge';
+
+/** Sort & Filter tick lists (server mode): stored value → the label shown. */
+const JC_STATUS_OPTIONS = Object.entries(JC_STATUS_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));
+const PRIORITY_OPTIONS = [
+  { value: 'high', label: 'High' },
+  { value: 'normal', label: 'Normal' },
+];
 
 /** A job is "done" when it has reached complete or closed — the Days Left
  *  column's rule. */
@@ -62,6 +73,7 @@ export function jobCardListColumns(
     },
     {
       id: 'jc_code',
+      sortFilterField: 'jcCode',
       header: 'JC No.',
       nowrap: true,
       render: (jc) => (
@@ -110,6 +122,7 @@ export function jobCardListColumns(
     {
       // The CUSTOMER's PO line no. (never our SO line no.), beside CODE/REV.
       id: 'client_po_line_no',
+      sortFilterField: 'clientPoLineNo',
       header: 'POL',
       width: '4%',
       nowrap: true,
@@ -128,6 +141,7 @@ export function jobCardListColumns(
     // SO line (null -> the bare code, never a trailing slash).
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       header: 'Item Code',
       nowrap: true,
       render: (jc) => (
@@ -138,6 +152,7 @@ export function jobCardListColumns(
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       header: 'Item Name',
       align: 'left',
       ellipsis: true,
@@ -147,6 +162,7 @@ export function jobCardListColumns(
     },
     {
       id: 'source_code',
+      sortFilterField: 'sourceCode',
       header: 'SO / JWSO No.',
       nowrap: true,
       render: (jc) => {
@@ -173,6 +189,8 @@ export function jobCardListColumns(
     },
     {
       id: 'order_qty',
+      sortFilterField: 'orderQty',
+      filterType: 'num',
       header: 'Order Qty',
       align: 'right',
       nowrap: true,
@@ -219,6 +237,8 @@ export function jobCardListColumns(
     },
     {
       id: 'jc_status',
+      sortFilterField: 'status',
+      filterOptions: JC_STATUS_OPTIONS,
       kind: 'badge',
       header: 'JC Status',
       nowrap: true,
@@ -226,6 +246,7 @@ export function jobCardListColumns(
     },
     {
       id: 'jc_date',
+      sortFilterField: 'jcDate',
       kind: 'date',
       header: 'JC Date',
       className: 'mono',
@@ -234,6 +255,7 @@ export function jobCardListColumns(
     },
     {
       id: 'due_date',
+      sortFilterField: 'dueDate',
       kind: 'date',
       header: 'Due Date',
       className: 'mono',
@@ -259,6 +281,7 @@ export function jobCardListColumns(
       // be a second line under Due Date). Last, so it is the first column
       // to move into ▸ on a narrow screen.
       id: 'customer_dispatch_date',
+      sortFilterField: 'customerDispatchDate',
       kind: 'date',
       header: 'Customer Dispatch Date',
       className: 'mono text3',
@@ -271,6 +294,9 @@ export function jobCardListColumns(
     // extra, off-by-default columns so the one-line sheet stays uncluttered.
     {
       id: 'priority',
+      sortFilterField: 'priority',
+      filterType: 'list',
+      filterOptions: PRIORITY_OPTIONS,
       header: 'Priority',
       nowrap: true,
       render: (jc) => {
@@ -280,6 +306,7 @@ export function jobCardListColumns(
     },
     {
       id: 'production_order_code',
+      sortFilterField: 'productionOrderCode',
       header: 'Production Order No.',
       nowrap: true,
       render: (jc) =>
@@ -346,7 +373,19 @@ export function jobCardListColumns(
         ),
     },
     {
+      // When the Job Card record was entered (IST day) — Sort & Filter can
+      // pick a range of it (ADR-200). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      header: 'Created On',
+      className: 'mono',
+      nowrap: true,
+      render: (jc) => fmtDate(jc.createdAt),
+    },
+    {
       id: 'remarks',
+      sortFilterField: 'remarks',
       header: 'Remarks',
       align: 'left',
       ellipsis: true,
@@ -365,5 +404,6 @@ export const JC_LIST_HIDDEN_COLUMNS = [
   'pending',
   'ops',
   'running',
+  'created_on',
   'remarks',
 ] as const;

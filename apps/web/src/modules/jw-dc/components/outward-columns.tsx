@@ -13,10 +13,18 @@ function statusLabel(s: JwDcOutwardListItem['returnStatus']): string {
   return s === 'fully_returned' ? 'Returned' : s === 'partial' ? 'Partly Returned' : 'At Vendor';
 }
 
+// Sort & Filter tick list (ADR-200): the stored status + the label shown.
+const STATUS_OPTIONS = (['out', 'partial', 'fully_returned'] as const).map((s) => ({
+  value: s,
+  label: statusLabel(s),
+}));
+
 export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
   return [
     {
       id: 'dc_no',
+      sortFilterField: 'code',
+      filterType: 'text',
       kind: 'code',
       header: 'DC No.',
       className: 'td-code',
@@ -34,6 +42,7 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
     },
     {
       id: 'dc_date',
+      sortFilterField: 'dcDate',
       kind: 'date',
       header: 'DC Date',
       className: 'mono text2',
@@ -42,6 +51,8 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
     },
     {
       id: 'po_no',
+      sortFilterField: 'poNo',
+      filterType: 'text',
       kind: 'code',
       header: 'PO No.',
       className: 'mono',
@@ -50,6 +61,8 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
     },
     {
       id: 'so_no',
+      sortFilterField: 'soNo',
+      filterType: 'text',
       kind: 'code',
       header: 'SO No.',
       className: 'mono',
@@ -58,6 +71,8 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendor',
+      filterType: 'text',
       kind: 'text',
       header: 'Vendor',
       align: 'left',
@@ -68,6 +83,7 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
     },
     {
       id: 'sent',
+      sortFilterField: 'sentQty',
       kind: 'num',
       header: 'Sent',
       align: 'right',
@@ -77,6 +93,7 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
     },
     {
       id: 'received',
+      sortFilterField: 'receivedQty',
       kind: 'num',
       header: 'Received',
       align: 'right',
@@ -86,6 +103,7 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
     },
     {
       id: 'pending',
+      sortFilterField: 'pendingQty',
       kind: 'num',
       header: 'Pending',
       align: 'right',
@@ -99,6 +117,8 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
     },
     {
       id: 'status',
+      sortFilterField: 'returnStatus',
+      filterOptions: STATUS_OPTIONS,
       kind: 'badge',
       header: 'DC Status',
       render: (dc) => (

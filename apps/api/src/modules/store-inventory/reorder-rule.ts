@@ -66,6 +66,16 @@ export async function readBelowReorder(
     ? sql`AND i.id = ANY(${sql.param(itemIds as string[])}::uuid[])`
     : sql``;
   const rows = (await tx.execute(sql`
+    ${belowReorderSql(companyId, idFrag)}
+    ORDER BY i.code
+  `)) as unknown as Array<Record<string, unknown>>;
+  return rows.map(toBelowReorderRow);
+}
+
+/** The Below Reorder SELECT (no ORDER BY) — ONE place, read by the full list
+ *  above and the paged Reorder List below. */
+function belowReorderSql(companyId: string, idFrag: SQL): SQL {
+  return sql`
     WITH po_pending AS (${onPoByItemSql(companyId)})
     SELECT
       i.id                                   AS item_id,
@@ -88,9 +98,11 @@ export async function readBelowReorder(
       AND i.min_stock_qty > 0
       AND COALESCE(a.available_qty, 0) + COALESCE(p.qty, 0) < i.min_stock_qty
       ${idFrag}
-    ORDER BY i.code
-  `)) as unknown as Array<Record<string, unknown>>;
-  return rows.map((r) => ({
+  `;
+}
+
+function toBelowReorderRow(r: Record<string, unknown>): BelowReorderRow {
+  return {
     itemId: String(r['item_id']),
     itemCode: String(r['item_code']),
     itemName: (r['item_name'] as string | null) ?? null,
@@ -101,7 +113,31 @@ export async function readBelowReorder(
     physicalQty: Number(r['physical_qty'] ?? 0),
     availableQty: Number(r['available_qty'] ?? 0),
     onPoQty: Number(r['on_po_qty'] ?? 0),
-  }));
+  };
+}
+
+/**
+ * One page of the Below Reorder items (Reorder List, ADR-201) + how many there
+ * are in all. `b` is the Below Reorder SELECT above; `where` / `orderBy` are
+ * the caller's Sort & Filter fragments over `b` (orderBy must end on a unique
+ * key). `total` uses the same where as the page.
+ */
+export async function readBelowReorderPage(
+  tx: DbTransaction,
+  companyId: string,
+  page: { where: SQL; orderBy: SQL; limit: number; offset: number },
+): Promise<{ rows: BelowReorderRow[]; total: number }> {
+  const base = sql`(${belowReorderSql(companyId, sql``)}) b`;
+  const rows = (await tx.execute(sql`
+    SELECT b.* FROM ${base}
+    WHERE true ${page.where}
+    ORDER BY ${page.orderBy}
+    LIMIT ${page.limit} OFFSET ${page.offset}
+  `)) as unknown as Array<Record<string, unknown>>;
+  const cnt = (await tx.execute(sql`
+    SELECT COUNT(*)::int AS total FROM ${base} WHERE true ${page.where}
+  `)) as unknown as Array<{ total: number }>;
+  return { rows: rows.map(toBelowReorderRow), total: Number(cnt[0]?.total ?? 0) };
 }
 
 /** Suggested PR qty: max(Reorder Qty, Reorder Level − (Available + On PO)) to

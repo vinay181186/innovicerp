@@ -8,6 +8,11 @@
 // with ROW_TINT.late (the old "⚠ Below Reorder" sub-line is gone — the fit table
 // draws one line per row and the tint carries the same meaning).
 //
+// 25 rows a page (ADR-201, page in the URL): search, the Stock filter and Sort
+// & Filter (ADR-200, server mode) run on the server over every item; the
+// filter counts and the Items in Stock tile are server figures. Any change →
+// page 1.
+//
 // Two legacy features are NOT ported (reported as parity gaps):
 //   - per-row History button (legacy L24847/24953) — needs a per-item txn fetch;
 //     /store-transactions cannot filter by item from the URL today.
@@ -15,13 +20,17 @@
 
 import type { ListStoreInventoryResponse, StoreInventoryRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader, PageState } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useStoreInventory } from '../api';
 import { AdjustStockModal } from '../components/adjust-stock-modal';
 import { ManualReceiptModal } from '../components/manual-receipt-modal';
@@ -35,6 +44,7 @@ type FilterKey = 'all' | 'below' | 'zero';
 export const storeInventoryRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'store-inventory',
+  validateSearch: z.object({ page: pageSearchParam }),
   component: StoreInventoryPage,
 });
 
@@ -59,10 +69,34 @@ function StoreInventoryPage(): React.JSX.Element {
   // ADR-180 — which item's Reserved number was clicked (the drill-down).
   const [reservedRow, setReservedRow] = useState<StoreInventoryRow | null>(null);
 
-  const { data, isLoading, isError, error } = useStoreInventory({
+  const routeSearch = storeInventoryRoute.useSearch();
+  const navigate = storeInventoryRoute.useNavigate();
+  const page = routeSearch.page;
+  const gotoPage = useCallback(
+    (p: number) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  const sf = useServerSortFilter(TABLE_KEYS.storeInventory, () => gotoPage(1));
+  // The box searches on the server after a short pause; a new term → page 1.
+  const [term, setTerm] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const next = normalizeSearchTerm(search) || undefined;
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term, gotoPage]);
+
+  const { data, isLoading, isFetching, isError, error } = useStoreInventory({
     filter,
-    search: search.trim() || undefined,
+    ...(term ? { search: term } : {}),
+    ...(sf.param ? { sf: sf.param } : {}),
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
+  useClampPage(page, data?.total, gotoPage);
 
   const columns = useMemo(
     () => storeInventoryColumns({ onReservedClick: (row) => setReservedRow(row) }),
@@ -112,7 +146,7 @@ function StoreInventoryPage(): React.JSX.Element {
           <ListHeader
             title="Store Inventory"
             icon="📦"
-            count={data?.rows.length}
+            count={data?.total}
             noun="item"
             filterNote={
               filter === 'below' ? 'Below Reorder' : filter === 'zero' ? 'Zero Stock' : undefined
@@ -120,6 +154,7 @@ function StoreInventoryPage(): React.JSX.Element {
             search={search}
             onSearch={setSearch}
             searchPlaceholder="Search item code, name, material, UOM…"
+            updating={isFetching && !isLoading}
             filters={
               // Stock filter, with the item counts the old strip tiles showed
               // in the option labels (owner decision 2026-09-26).
@@ -128,7 +163,10 @@ function StoreInventoryPage(): React.JSX.Element {
                 aria-label="Stock filter"
                 title="Stock filter"
                 value={filter}
-                onChange={(e) => setFilter(e.target.value as FilterKey)}
+                onChange={(e) => {
+                  setFilter(e.target.value as FilterKey);
+                  gotoPage(1);
+                }}
               >
                 <option value="all">{withCount('All Items', data?.summary.totalItems)}</option>
                 <option value="below">
@@ -142,8 +180,10 @@ function StoreInventoryPage(): React.JSX.Element {
             onClearFilters={() => {
               setFilter('all');
               setSearch('');
+              sf.clearFilters();
+              gotoPage(1);
             }}
-            filtersActive={filter !== 'all' || search !== ''}
+            filtersActive={filter !== 'all' || search !== '' || sf.filtering}
             primary={
               canEdit ? (
                 <button
@@ -176,13 +216,18 @@ function StoreInventoryPage(): React.JSX.Element {
                 columns={columns}
                 rows={data?.rows ?? []}
                 loading={isLoading}
+                sortFilterServer={sf}
                 rowKey={(row) => row.itemId}
                 // Below Reorder row → late wash; the fit table's one-line rows
                 // make an inline "⚠ Below Reorder" impossible, the tint says it.
                 rowClassName={(row) => (row.belowReorder ? ROW_TINT.late : undefined)}
                 // Material ships off the default view (kept so no data is lost).
                 defaultHidden={['material']}
-                emptyText={search.trim() || filter !== 'all' ? 'No items match.' : 'No items yet.'}
+                emptyText={
+                  search.trim() || filter !== 'all' || sf.filtering
+                    ? 'No items match.'
+                    : 'No items yet.'
+                }
                 renderLink={(p) => <Link {...p} />}
                 rowMenu={(row) => [
                   {
@@ -215,6 +260,14 @@ function StoreInventoryPage(): React.JSX.Element {
               />
             </div>
           )}
+
+          <ListFooter
+            total={data?.total ?? 0}
+            noun="item"
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPage}
+          />
 
           {adjustRow ? (
             <AdjustStockModal row={adjustRow} onClose={() => setAdjustRow(null)} />
