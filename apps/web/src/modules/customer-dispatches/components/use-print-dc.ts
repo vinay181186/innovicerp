@@ -1,4 +1,4 @@
-// The Print DC click logic, shared by the per-card PrintDcButton and the ⋯
+// The Print DC click logic, used by the ⋯
 // menu's Print item on the Customer Dispatch list.
 //
 // The list is built from register rows, which carry no customer address, so
