@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clickRowMenuItem } from './row-menu';
+import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
 
 // JWSO + FULL OUTSOURCE, end to end.
 //
@@ -222,7 +222,7 @@ test('@jwout 03 — plan the JWSO line as FULL OUTSOURCE and execute', async ({ 
   // The "+ Plan" modal only asks for qty — the plan TYPE is chosen in the plan
   // editor that opens after Save. (My first attempt looked for the type buttons
   // on the create modal and found nothing there.)
-  await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
+  await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
   await page.waitForTimeout(2000);
   await page.getByRole('button', { name: /^Save Plan$/ }).first().click();
   await page.waitForTimeout(4000);
@@ -309,7 +309,7 @@ test('@jwout 05 — PR → PO', async ({ page }) => {
   }
   await page.goto(`/purchase-requests?search=${state.prCode}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3500);
-  await page.getByText('Create PO', { exact: false }).first().click();
+  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: state.prCode }).first(), /^Create PO/);
   await page.waitForTimeout(3500);
   await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(5000);
