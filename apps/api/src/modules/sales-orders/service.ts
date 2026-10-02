@@ -1687,14 +1687,17 @@ export async function updateSalesOrder(
     assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
     // When the client changes, snapshot the customer name from the master.
+    // The SAME clientId (e.g. a line delete that sends it only to satisfy the
+    // schema) is still validated but keeps the stored customer name.
     let snapshotClientName: string | null = null;
     if (input.header.clientId !== undefined && input.header.clientId !== null) {
-      snapshotClientName = await assertClientExists(
+      const masterName = await assertClientExists(
         tx,
         input.header.clientId,
         companyId,
         existingHdr.clientId,
       );
+      if (input.header.clientId !== existingHdr.clientId) snapshotClientName = masterName;
     }
 
     // Header update — only set the fields the caller provided.

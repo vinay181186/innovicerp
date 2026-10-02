@@ -12,6 +12,7 @@ import {
   type SoStatusLine,
   type SoStatusOp,
   type SoStatusOutsourceAlert,
+  type SoStatusPendingOsPrOp,
   opSrNo,
 } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
@@ -22,7 +23,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { DataTable, type DataTableColumn, ROW_TINT, type RowMenuItem } from '@/ui/data';
-import { ToastProvider, useToast } from '@/ui/feedback';
+import { ConfirmDialog, ToastProvider, useToast } from '@/ui/feedback';
 import { useGenerateOspPr } from '@/modules/op-entry/api';
 import { usePlan } from '@/modules/plans/api';
 import { usePlanningSoDetail } from '@/modules/so-planning/api';
@@ -666,6 +667,8 @@ function LinePanel({
   const generatePr = useGenerateOspPr();
   // Ops raised from this screen, greyed at once until the status refetch drops them.
   const [raisedOpIds, setRaisedOpIds] = useState<Set<string>>(new Set());
+  // The pending op whose "Raise PR" is being confirmed (null = no dialog).
+  const [confirmPr, setConfirmPr] = useState<SoStatusPendingOsPrOp | null>(null);
   const jcIssuedQty = line.chips.jcIssued.qty;
   const lineBalance = Math.max(0, line.orderQty - jcIssuedQty);
   // Plan-first flow: this line plans through "+ Plan" (no direct Job Card).
@@ -857,8 +860,9 @@ function LinePanel({
 
   // ⋯ per JC: one "Raise PR · Op n" per pending outsource op on that card.
   // Hidden without the right (or on an older payload with no jcOpId); greyed
-  // once the op already has a PR. Returning the promise keeps the ⋯ busy, so
-  // a double click cannot raise twice (the server also refuses a duplicate).
+  // once the op already has a PR. Selecting it opens a confirm (the JC Ops
+  // board also confirms first); the dialog's pending state stops a double
+  // raise (the server also refuses a duplicate).
   const jcRowMenu = (jc: SoStatusJc): RowMenuItem[] =>
     line.outsourceAlert.pendingOps
       .filter((p) => p.jcId === jc.id)
@@ -874,23 +878,28 @@ function LinePanel({
           group: 'workflow',
           hidden: !canRaisePr || !jcOpId,
           disabledReason: alreadyRaised ? 'PR already raised' : undefined,
-          onSelect: async () => {
-            if (!jcOpId) return;
-            try {
-              const res = await generatePr.mutateAsync({ jcOpId });
-              setRaisedOpIds((prev) => new Set(prev).add(jcOpId));
-              void qc.invalidateQueries({ queryKey: soStatusKeys.all });
-              toast.ok(
-                res.poCode
-                  ? `PR ${res.prCode} raised for ${p.jcCode} Op ${opSrNo(p.opSeq)} — PO ${res.poCode} created`
-                  : `PR ${res.prCode} raised for ${p.jcCode} Op ${opSrNo(p.opSeq)}`,
-              );
-            } catch (e) {
-              toast.error(e instanceof Error ? e.message : 'Could not raise PR. Try again.');
-            }
+          onSelect: () => {
+            if (jcOpId) setConfirmPr(p);
           },
         };
       });
+
+  // Confirmed → the same POST /op-entry/osp-pr call. A failure throws so the
+  // dialog shows the message and stays open.
+  const raiseConfirmedPr = async (): Promise<void> => {
+    const p = confirmPr;
+    const jcOpId = p?.jcOpId;
+    if (!p || !jcOpId) return;
+    const res = await generatePr.mutateAsync({ jcOpId });
+    setRaisedOpIds((prev) => new Set(prev).add(jcOpId));
+    setConfirmPr(null);
+    void qc.invalidateQueries({ queryKey: soStatusKeys.all });
+    toast.ok(
+      res.poCode
+        ? `PR ${res.prCode} raised for ${p.jcCode} Op ${opSrNo(p.opSeq)} — PO ${res.poCode} created`
+        : `PR ${res.prCode} raised for ${p.jcCode} Op ${opSrNo(p.opSeq)}`,
+    );
+  };
 
   return (
     <div className="panel" style={{ marginBottom: 12 }}>
@@ -1096,6 +1105,23 @@ function LinePanel({
           </span>
         ) : null}
       </div>
+      {confirmPr ? (
+        <ConfirmDialog
+          title={`Raise PR for ${confirmPr.jcCode} Op ${opSrNo(confirmPr.opSeq)}?`}
+          message={
+            <>
+              Raise a Purchase Request for <b className="mono">{confirmPr.jcCode}</b> Op{' '}
+              {opSrNo(confirmPr.opSeq)} · <b>{confirmPr.operation}</b>. The vendor comes from System
+              Settings → OSP Processes and the qty from the Job Card.
+            </>
+          }
+          confirmLabel="Raise PR"
+          pendingLabel="Raising…"
+          tone="primary"
+          onConfirm={raiseConfirmedPr}
+          onCancel={() => setConfirmPr(null)}
+        />
+      ) : null}
     </div>
   );
 }

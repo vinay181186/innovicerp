@@ -118,7 +118,8 @@ export const soStatusPendingOsPrOpSchema = z.object({
   operation: z.string(),
   /** The jc_ops row id — the `jcOpId` POST /op-entry/osp-pr takes. */
   jcOpId: z.string().uuid().optional(),
-  /** The op's stored outsource_status (e.g. 'Pending PR'); null when unset. */
+  /** The op's stored outsource_status — one of 'pending' | 'pr_raised' |
+   *  'po_created' | 'sent' | 'received'; null when unset. */
   outsourceStatus: z.string().nullable().optional(),
 });
 export type SoStatusPendingOsPrOp = z.infer<typeof soStatusPendingOsPrOpSchema>;

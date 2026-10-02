@@ -248,7 +248,13 @@ export function ComponentSoExpand({
                             label: 'Delete line',
                             icon: 'trash-2',
                             group: 'danger',
-                            disabledReason: update.isPending ? 'Saving…' : undefined,
+                            // The update schema needs the header's clientId; an SO
+                            // with no customer cannot be re-saved from here.
+                            disabledReason: !so.clientId
+                              ? 'Pick a customer in Edit first'
+                              : update.isPending
+                                ? 'Saving…'
+                                : undefined,
                             onSelect: () => onDeleteLine(l.id),
                           },
                         ]}
@@ -274,7 +280,7 @@ export function ComponentSoExpand({
         pendingLabel="Deleting…"
         onCancel={() => setDeletingLineId(null)}
         onConfirm={async () => {
-          if (!deletingLineId) return;
+          if (!deletingLineId || !so.clientId) return;
           const reason = lineDeleteReason.trim();
           if (!reason) throw new Error(REASON_REQUIRED_MESSAGE);
           const surviving = so.lines.filter((l) => l.id !== deletingLineId).map(lineToInput);
@@ -283,7 +289,7 @@ export function ComponentSoExpand({
           // on, instead of silently dropping a line someone added after this
           // panel loaded. The update schema requires the header's clientId.
           await update.mutateAsync({
-            header: so.clientId ? { clientId: so.clientId } : {},
+            header: { clientId: so.clientId },
             lines: surviving,
             reason,
             expectedUpdatedAt: so.updatedAt,

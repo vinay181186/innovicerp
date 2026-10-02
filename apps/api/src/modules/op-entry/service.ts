@@ -2176,7 +2176,10 @@ export async function decideOpLogTimeChange(
     const req = rows[0];
     if (!req) throw new NotFoundError('Change request not found');
     if (req.status !== 'pending') {
-      throw new ValidationError(`This request was already ${codeLabel(req.status)}.`);
+      // 409 like the guarded-write backstop below: another decision got there first.
+      throw new ConflictError(
+        `This time change request was already ${codeLabel(req.status)} by someone else — reload the page.`,
+      );
     }
     // ADR-197 — REJECT is a reason-required action. The shared input keeps
     // decisionReason optional (frozen contract); both screens already ask for it.

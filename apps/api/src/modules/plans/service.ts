@@ -728,7 +728,9 @@ async function assertPlanQtyWithinRemaining(
       own: number;
     }>;
     const line = r[0];
-    if (!line) return;
+    // No row = the SO line was deleted (possibly while this request waited on
+    // the lock) — never wave a plan through against a line that is gone.
+    if (!line) throw new NotFoundError('Sales Order line not found. Refresh the page.');
     // A cut (or an unchanged re-save) of an existing plan only ever reduces
     // what the line is covered by — always allowed, even on an over-covered
     // line or a cancelled order, so a planner can fix an over-plan.

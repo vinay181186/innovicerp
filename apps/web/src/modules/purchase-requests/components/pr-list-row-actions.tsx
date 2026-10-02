@@ -4,7 +4,8 @@
 //             left and the PR is convertible)
 //   Assign Task (not for the read-only viewer role — POST /tasks refuses it)
 //   ─ Reject (red, last)
-// Reject follows the server (rejectPurchaseRequest): an Open OR Approved PR,
+// Reject follows the server (rejectPurchaseRequest): any PR that is not
+// cancelled (incl. 'PO created' whose PO was cancelled — nothing ordered),
 // greyed with the reason once any of it is on a live PO. Reuses the module's
 // existing handlers / targets; Approve / Reject return the mutation's Promise
 // so the row's ⋯ shows busy, and grey out on every row while one is in flight.
@@ -73,7 +74,7 @@ export function PrListRowActions({
           label: 'Reject',
           icon: 'x',
           group: 'danger',
-          hidden: !canApprove || (pr.status !== 'open' && pr.status !== 'approved'),
+          hidden: !canApprove || pr.status === 'cancelled',
           disabledReason:
             bal.ordered > 0 ? 'Already on a PO' : rejecting ? 'Working…' : undefined,
           onSelect: () => onReject(pr),

@@ -621,9 +621,19 @@ function LineRow(props: {
       {/* Drawing No. No Rev here any more: it is the same value the Item cell
           now carries as CODE/REV, and printing one fact twice in one row reads
           as two facts that might disagree. The attached drawing file opens
-          from the line ⋯ (Preview drawing); the shared preview modal fetches it. */}
+          from the line ⋯ (Preview drawing); the shared preview modal fetches it.
+          The small 📎 is only a marker that a file is attached — not clickable. */}
       <td className="mono" style={{ fontSize: 11 }}>
         {l.drawingNo ?? '—'}
+        {drawingFilePath ? (
+          <span
+            title="Drawing file attached — open it from the line ⋯"
+            aria-label="Drawing file attached"
+            style={{ marginLeft: 4 }}
+          >
+            📎
+          </span>
+        ) : null}
       </td>
       <td className="mono td-num">{l.orderQty}</td>
       <td>{l.uom}</td>

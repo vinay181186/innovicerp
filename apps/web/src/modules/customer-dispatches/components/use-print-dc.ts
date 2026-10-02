@@ -86,9 +86,15 @@ export function usePrintDc(target: PrintDcTarget): {
     waitRef.current = { promise, resolve };
     printedRef.current = false;
     setArmed(true);
-    setPending(true);
+    // A previous load failed: the cached error would refuse this print at
+    // once (and every later one). Re-read first, then wait on the fresh result.
+    if (detailQuery.isError) {
+      void detailQuery.refetch().finally(() => setPending(true));
+    } else {
+      setPending(true);
+    }
     return promise;
-  }, []);
+  }, [detailQuery]);
 
   return { start, loading: pending && (detailQuery.isFetching || clientQuery.isFetching) };
 }
