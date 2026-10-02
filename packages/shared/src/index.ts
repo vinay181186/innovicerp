@@ -101,6 +101,7 @@ export * from './schemas/party-material';
 export * from './schemas/party-grn';
 export * from './schemas/party-stock-ledger';
 export * from './schemas/party-material-issue';
+export * from './schemas/customer-material-return';
 export * from './schemas/party-copy';
 export * from './schemas/jw-return';
 export * from './schemas/jw-invoice';

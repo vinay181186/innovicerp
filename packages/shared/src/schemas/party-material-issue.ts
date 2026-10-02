@@ -46,6 +46,11 @@ export const partyMaterialIssueSchema = z.object({
   partyMaterialCodeText: z.string().nullable(),
   partyMaterialName: z.string().nullable(),
   qty: z.number().int().positive(),
+  /** ADR-203: the JWSO line this issue draws on (= the Job Card's source line). */
+  jwLineId: z.string().uuid().nullable().default(null),
+  /** ADR-203: unused pieces put back from the Job Card to the customer-material
+   *  register (partial reversal). Still on the JC = qty − returnedToStoreQty − used. */
+  returnedToStoreQty: z.number().int().nonnegative().default(0),
   remarks: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -71,11 +76,24 @@ export const createPartyMaterialIssueInputSchema = z.object({
    *  job card made the issue invisible to the gate: material was issued, yet
    *  the operator stayed blocked with no explanation. */
   jobCardId: z.string().uuid(),
-  partyMaterialId: z.string().uuid(),
+  /** ADR-203: optional — the material is the Job Card's JWSO line's customer
+   *  RM. When sent it must equal that; it is never a free choice. */
+  partyMaterialId: z.string().uuid().optional(),
   qty: z.number().int().positive(),
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreatePartyMaterialIssueInput = z.infer<typeof createPartyMaterialIssueInputSchema>;
+
+/** ADR-203: put unused customer material back from a Job Card into the
+ *  customer-material register. Capped at what is still physically on the JC
+ *  (issued − already returned − used by the first operation, good + rejected). */
+export const returnPartyMaterialIssueToStoreInputSchema = z.object({
+  qty: z.number().int().positive(),
+  reason: z.string().trim().min(1).max(500),
+});
+export type ReturnPartyMaterialIssueToStoreInput = z.infer<
+  typeof returnPartyMaterialIssueToStoreInputSchema
+>;
 
 export const cancelPartyMaterialIssueInputSchema = z.object({
   reason: z.string().trim().min(1).max(500),
