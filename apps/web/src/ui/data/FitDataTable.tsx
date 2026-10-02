@@ -277,6 +277,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
                 onRowClick={onRowClick}
                 isRowClickable={isRowClickable}
                 rowClassName={rowClassName}
+                groupRow={props.groupRow}
                 renderExpanded={renderExpanded}
                 onToggleExpanded={onToggleExpanded}
                 rowActions={rowActions}

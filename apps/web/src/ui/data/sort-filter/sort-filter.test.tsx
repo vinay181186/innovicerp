@@ -246,4 +246,20 @@ describe('Sort & Filter', () => {
     fireEvent.click(within(t).getByRole('button', { name: /Z → A/ }));
     expect(last.sort).toEqual({ id: 'jcCode', dir: 'desc' });
   });
+
+  it('a grouped table (groupRow) gets no browser ▾ — sorting would split its groups', () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SortFilterProvider store={new SfScopeStore()}>
+          <ListHeader title="T" search="" onSearch={() => undefined} />
+          <DataTable
+            columns={COLS}
+            rows={ROWS}
+            groupRow={(r, _i, p) => (p?.status === r.status ? null : r.status)}
+          />
+        </SortFilterProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole('button', { name: /Sort & Filter/ })).toBeNull();
+  });
 });

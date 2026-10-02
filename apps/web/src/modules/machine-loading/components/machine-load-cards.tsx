@@ -198,9 +198,11 @@ function capacityColumns(): DataTableColumn<MachineLoadCard>[] {
   ];
 }
 
+/** The Capacity Summary tab's one table — a filled panel (ADR-202), so it must
+ *  sit directly in the page's `page-fill` root. The tab names it, so no title. */
 export function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.JSX.Element {
   return (
-    <Panel title="Capacity Summary" bodyPadding="none" style={{ marginTop: 16 }}>
+    <Panel fill bodyPadding="none">
       <DataTable
         columns={capacityColumns()}
         rows={machines}

@@ -99,6 +99,17 @@ export function diffFields(
   return out;
 }
 
+/**
+ * True when two raw values are "the same change" by the EXACT rules diffFields
+ * uses: undefined / '' / null all mean empty, a Date compares by instant, and
+ * numerics compare numerically ("10.000" === 10). The edit-approval engine uses
+ * this to decide, at approval time, whether a document's current value has
+ * drifted from the `before` captured when the edit was requested.
+ */
+export function valuesEqual(a: unknown, b: unknown): boolean {
+  return sameValue(normalize(a), normalize(b));
+}
+
 /** The two columns a soft delete sets. Spread into the UPDATE:
  *  `.set({ ...softDeleteStamp(user), updatedBy: user.id })`. */
 export function softDeleteStamp(user: { id: string }): { deletedAt: Date; deletedBy: string } {

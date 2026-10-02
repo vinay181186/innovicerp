@@ -77,6 +77,7 @@ function ApprovalConfigPage(): React.JSX.Element {
       cfg.poManagerLimit !== draft.poManagerLimit ||
       cfg.invoiceApproval !== draft.invoiceApproval ||
       cfg.opEntryEditApproval !== draft.opEntryEditApproval ||
+      cfg.docEditApproval !== draft.docEditApproval ||
       cfg.poApprovers.join(',') !== draft.poApprovers.join(','));
 
   function toggleApprover(userId: string, role: UserRole): void {
@@ -317,6 +318,27 @@ function ApprovalConfigPage(): React.JSX.Element {
           <OnOffSwitch
             checked={draft.opEntryEditApproval}
             onChange={(v) => setDraft({ ...draft, opEntryEditApproval: v })}
+          />
+        </div>
+      </div>
+
+      {/* Document Edit Approval (ADR-202) — the owner's master on/off. On:
+          every edit to a LIVE enrolled document (Phase 1: Purchase Orders) is
+          staged and goes for per-change approval. Off: edits save straight
+          through — the instant rollback lever. */}
+      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Document Edit Approval</span>
+            <div className="text3" style={{ fontSize: 11 }}>
+              {draft.docEditApproval
+                ? 'Edits to a live Purchase Order are staged and go for per-change approval.'
+                : 'Document edit approval is off. Edits to a live document save straight away.'}
+            </div>
+          </div>
+          <OnOffSwitch
+            checked={draft.docEditApproval}
+            onChange={(v) => setDraft({ ...draft, docEditApproval: v })}
           />
         </div>
       </div>

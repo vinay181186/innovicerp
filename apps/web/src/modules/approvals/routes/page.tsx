@@ -24,6 +24,8 @@ import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { useDocumentEdits } from '@/modules/document-edits/api';
+import { EditApprovalsInbox } from '@/modules/document-edits/components/edit-approvals-inbox';
 import { useApprovalInbox, useApprovalInboxList } from '../api';
 import { LogEntryApprovals } from '../components/log-entry-approvals';
 import { prPoColumns } from '../components/pr-po-columns';
@@ -34,27 +36,28 @@ export const approvalsRoute = createRoute({
   component: ApprovalsPage,
 });
 
-type Section = 'pr' | 'po' | 'logEntry';
+type Section = 'pr' | 'po' | 'logEntry' | 'editApproval';
 
 const SECTION_LABEL: Record<Section, string> = {
   pr: 'PR',
   po: 'PO',
   logEntry: 'Op Entry',
+  editApproval: 'Edit Approvals',
 };
 
-const SECTION_TITLE: Record<Section, string> = {
+const SECTION_TITLE: Record<Exclude<Section, 'editApproval'>, string> = {
   pr: 'PR Approvals',
   po: 'PO Approvals',
   logEntry: 'Op Entry Approvals',
 };
 
-const SECTION_EMPTY: Record<Section, string> = {
+const SECTION_EMPTY: Record<Exclude<Section, 'editApproval'>, string> = {
   pr: 'No Purchase Requests waiting for your approval.',
   po: 'No Purchase Orders waiting for your approval.',
   logEntry: 'Nothing pending approval.',
 };
 
-const SECTION_NO_MATCH: Record<Exclude<Section, 'logEntry'>, string> = {
+const SECTION_NO_MATCH: Record<Exclude<Section, 'logEntry' | 'editApproval'>, string> = {
   pr: 'No Purchase Requests match.',
   po: 'No Purchase Orders match.',
 };
@@ -64,19 +67,29 @@ function ApprovalsPage(): React.JSX.Element {
   const canDecideLogEntry = me?.role === 'admin' || me?.role === 'manager';
   const inbox = useApprovalInbox({ refetchOnMount: 'always' });
   const counts = inbox.data?.counts;
+  // Edit Approvals (ADR-202) — its own query; `total` is the whole pending
+  // queue, which is what the tab badge shows.
+  const editInbox = useDocumentEdits({ status: 'pending' });
+  const editCount = editInbox.data?.total;
 
-  const sections: Section[] = canDecideLogEntry ? ['pr', 'po', 'logEntry'] : ['pr', 'po'];
+  const sections: Section[] = canDecideLogEntry
+    ? ['pr', 'po', 'logEntry', 'editApproval']
+    : ['pr', 'po', 'editApproval'];
+  // Count for one tab — PR / PO / Op Entry from the approval inbox, Edit
+  // Approvals from its own query.
+  const countFor = (s: Section): number | undefined =>
+    s === 'editApproval' ? editCount : counts?.[s];
   // Until the user picks one, open the first section that has something
   // waiting (PR first), so the page lands on work rather than an empty list.
   const [picked, setPicked] = useState<Section | null>(null);
   const section: Section =
-    picked ?? (counts ? (sections.find((s) => counts[s] > 0) ?? 'pr') : 'pr');
+    picked ?? (counts ? (sections.find((s) => (countFor(s) ?? 0) > 0) ?? 'pr') : 'pr');
 
   const tabs = (
     <div role="tablist" aria-label="Approval type" style={{ display: 'flex', gap: 'var(--sp-1)' }}>
       {sections.map((s) => {
         const on = s === section;
-        const n = counts?.[s];
+        const n = countFor(s);
         return (
           <button
             key={s}
@@ -102,6 +115,15 @@ function ApprovalsPage(): React.JSX.Element {
     return <LogEntryApprovals pendingCount={counts?.logEntry} tabs={tabs} />;
   }
 
+  if (section === 'editApproval') {
+    return (
+      <div className="page-fill">
+        <div style={{ marginBottom: 'var(--sp-2)' }}>{tabs}</div>
+        <EditApprovalsInbox />
+      </div>
+    );
+  }
+
   return <InboxSection key={section} section={section} tabs={tabs} />;
 }
 
@@ -109,7 +131,7 @@ function InboxSection({
   section,
   tabs,
 }: {
-  section: Exclude<Section, 'logEntry'>;
+  section: Exclude<Section, 'logEntry' | 'editApproval'>;
   tabs: React.ReactNode;
 }): React.JSX.Element {
   const navigate = useNavigate();

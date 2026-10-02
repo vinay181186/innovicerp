@@ -1,7 +1,11 @@
 // Job Queue — the shared fit-table columns, row tint and Action cell (ADR-199
 // table standard 2026-10-01). Split out of routes/list.tsx so that file stays
-// under the line ceiling and every machine panel builds ITS columns from one
-// place, guaranteeing one shared layout (one tableKey) across every machine.
+// under the line ceiling.
+//
+// ADR-203 (frozen header): the page is ONE table over the page's rows, with a
+// group heading per machine. Each row therefore carries its machine and its
+// place in that machine's FULL queue (JobQueueSheetRow) instead of the
+// columns being built once per machine panel.
 //
 // One row per pending op. The eight on-sheet columns below (first pinned =
 // JC No.) carry the facts the shop floor reads at a glance; the rest ride in
@@ -67,6 +71,45 @@ function PriorityBadge({ priority }: { priority: string }): React.JSX.Element {
   return <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>{high ? 'High' : 'Normal'}</span>;
 }
 
+/** One sheet row: the queue row plus the machine it is queued on and its
+ *  0-based place in that machine's FULL queue (server `queueIndex`). */
+export type JobQueueSheetRow = JobQueueRow & {
+  queueMachine: JobQueueMachine;
+  queuePos: number;
+};
+
+/** Flatten the page's machine buckets (machines in code order, each in its
+ *  saved queue order) into the ONE table's rows. */
+export function flattenQueue(machines: JobQueueMachine[]): JobQueueSheetRow[] {
+  return machines.flatMap((m) =>
+    m.rows.map((r, i) => ({ ...r, queueMachine: m, queuePos: r.queueIndex ?? i })),
+  );
+}
+
+/** Load word for a machine's whole-queue hours (unchanged thresholds). */
+export function machineLoad(pendingHrs: number): { label: string; cls: string } {
+  if (pendingHrs > 80) return { label: 'Overloaded', cls: 'b-red' };
+  if (pendingHrs > 40) return { label: 'Busy', cls: 'b-amber' };
+  return { label: 'Clear', cls: 'b-green' };
+}
+
+/** The machine's group heading: "VMC-1 · Name · 9 jobs · 12.5 h · Busy" —
+ *  whole-queue figures from the server, not just this page's rows. */
+export function MachineGroupHeading({ m }: { m: JobQueueMachine }): React.JSX.Element {
+  const load = machineLoad(m.pendingHrs);
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      <span className="mono fw-700">{m.machineCode}</span>
+      {m.machineName ? <span>· {m.machineName}</span> : null}
+      <span>
+        · {m.pendingCount} jobs · {m.pendingHrs} h
+        {m.runningCount > 0 ? ` · ▶${m.runningCount} running` : ''} ·
+      </span>
+      <span className={`badge ${load.cls}`}>{load.label}</span>
+    </span>
+  );
+}
+
 /** Columns moved off the sheet into the row's ▸ detail (defaultHidden). */
 export const JOB_QUEUE_HIDDEN_IDS: string[] = [
   'pol',
@@ -80,19 +123,12 @@ export const JOB_QUEUE_HIDDEN_IDS: string[] = [
 ];
 
 /**
- * The columns for one machine's queue. The ids are identical for every machine,
- * so passing the SAME tableKey to every panel's DataTable gives one shared,
- * remembered layout. `machine` is only read for the Actual Machine line and the
- * queue position; the column identities never depend on it.
+ * The columns of the one queue table. Sr No reads the row's place in its
+ * machine's FULL queue (not the filtered rows), so it stays true on any page
+ * and while a search narrows what is shown.
  */
-export function jobQueueColumns(opts: {
-  machine: JobQueueMachine;
-  /** jc_op id → its position in this machine's FULL queue (not the filtered
-   *  rows), so Sr No stays true while a search narrows what is shown. */
-  posById: Map<string, number>;
-  today: string;
-}): DataTableColumn<JobQueueRow>[] {
-  const { machine, posById, today } = opts;
+export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQueueSheetRow>[] {
+  const { today } = opts;
   return [
     {
       id: 'jc_no',
@@ -117,7 +153,7 @@ export function jobQueueColumns(opts: {
       className: 'mono fw-700',
       nowrap: true,
       render: (r) => {
-        const pos = (posById.get(r.jcOpId) ?? 0) + 1;
+        const pos = r.queuePos + 1;
         return <span style={{ color: isNextRow(r) ? 'var(--amber)' : 'var(--text3)' }}>{pos}</span>;
       },
     },
@@ -262,7 +298,9 @@ export function jobQueueColumns(opts: {
       // ADR-164 / ADR-126 — which machine ACTUALLY made the Completed figure:
       // the same name when nothing changed, amber when it differs, with the
       // per-machine breakdown for a 2+ machine split.
-      render: (r) => <ActualMachineLine planned={machine.machineCode} machines={r.machines} />,
+      render: (r) => (
+        <ActualMachineLine planned={r.queueMachine.machineCode} machines={r.machines} />
+      ),
     },
   ];
 }
@@ -275,17 +313,16 @@ export function jobQueueColumns(opts: {
  * the user cannot reorder. Spacers keep the two-row arrow stack aligned.
  */
 export function jobQueueRowActions(opts: {
-  row: JobQueueRow;
-  machine: JobQueueMachine;
-  posById: Map<string, number>;
+  row: JobQueueSheetRow;
   canReorder: boolean;
   canOpEntry: boolean;
   /** True while a search term narrows the rows — hides the arrows. */
   searching: boolean;
   onMove: (machineId: string, opId: string, dir: 'up' | 'down') => void;
 }): React.JSX.Element {
-  const { row: r, machine: m, posById, canReorder, canOpEntry, searching, onMove } = opts;
-  const idx = posById.get(r.jcOpId) ?? 0;
+  const { row: r, canReorder, canOpEntry, searching, onMove } = opts;
+  const m = r.queueMachine;
+  const idx = r.queuePos;
   const isNext = isNextRow(r);
   // ADR-126 — "started" has to mean started ON THIS MACHINE. When the split is
   // empty nothing is attributed to any machine, so fall back to the op total.

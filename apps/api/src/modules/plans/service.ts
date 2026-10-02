@@ -101,6 +101,9 @@ import { fmtDate } from '../../lib/format-date';
 import { nextJcCode } from '../job-cards/service';
 import { saveRouteCardForItem } from '../route-cards/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
+// T1 — the one "raw material on this item's Route Card" lookup, shared with
+// the Route Card side's T2 backfill (modules/plans/rm-backfill.ts).
+import { readRouteCardRawMaterial, routeCardHasRmItem } from './rm-backfill';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 
 // Today's calendar date in IST (same as assembly / production-schedule). The
@@ -943,49 +946,62 @@ async function createPlanInTx(
     bomChildCode: input.bomChildCode ?? null,
   });
 
-  // ADR-193 phase 3a — RM item + qty per piece, validated as a pair. When the
-  // caller does not send the item at all (undefined — the SO Planning
-  // "+ Plan" box), it defaults from the item's active Route Card, the source
-  // of truth, exactly as getDefaultRouteOpsForItem serves it. An explicit
-  // null means the user cleared it and stays null.
+  // T1 (plan-rm-backfill), extending ADR-193 phase 3a — a plan saved with
+  // BLANK raw material fills from the item's Route Card, the source of truth,
+  // exactly as getDefaultRouteOpsForItem serves it to the form.
+  //
+  // The live contract is unchanged, per field:
+  //   not sent (undefined)                  → fill from the Route Card
+  //   sent as null (the user cleared it)     → stays null
+  //   sent with a value                      → untouched
+  //
+  // What is new: ADR-193 defaulted the RM ITEM + qty pair only — grade and
+  // size were never included, and that was the gap. A plan made BEFORE the
+  // item's Route Card existed (the designed `route_card_pending` flow) kept
+  // blank grade/size for ever, because Create Production Order reads the
+  // PLAN's stored snapshot and not the card. One lookup serves all of it
+  // (modules/plans/rm-backfill.ts), ordered newest-card-first.
+  const wantsGradeDefault =
+    input.rawMaterialGradeId === undefined && input.rawMaterialGradeText === undefined;
+  const wantsSizeDefault =
+    input.rawMaterialSizeId === undefined && input.rawMaterialSizeText === undefined;
+  const wantsRmItemDefault = input.rawMaterialItemId === undefined;
+  const rcRm =
+    input.itemId && (wantsGradeDefault || wantsSizeDefault || wantsRmItemDefault)
+      ? await readRouteCardRawMaterial(tx, companyId, input.itemId)
+      : null;
+  // Grade and size each move as an id + text PAIR: the id links to the
+  // master, the text is the snapshot that prints. Either field being sent
+  // (value or explicit null) means the caller owns the pair and nothing is
+  // defaulted into it.
+  const gradeSizeValues = {
+    rawMaterialGradeId: wantsGradeDefault
+      ? (rcRm?.rawMaterialGradeId ?? null)
+      : (input.rawMaterialGradeId ?? null),
+    rawMaterialGradeText: wantsGradeDefault
+      ? (rcRm?.rawMaterialGradeText ?? null)
+      : (input.rawMaterialGradeText ?? null),
+    rawMaterialSizeId: wantsSizeDefault
+      ? (rcRm?.rawMaterialSizeId ?? null)
+      : (input.rawMaterialSizeId ?? null),
+    rawMaterialSizeText: wantsSizeDefault
+      ? (rcRm?.rawMaterialSizeText ?? null)
+      : (input.rawMaterialSizeText ?? null),
+  };
+
   let rmInput: {
     rawMaterialItemId?: string | null | undefined;
     rmQtyPerPiece?: number | null | undefined;
   } = input;
-  if (input.rawMaterialItemId === undefined && input.itemId) {
-    const rcRm = await tx
-      .select({
-        rawMaterialItemId: routeCards.rawMaterialItemId,
-        rmQtyPerPiece: routeCards.rmQtyPerPiece,
-      })
-      .from(routeCards)
-      .innerJoin(
-        items,
-        and(
-          eq(items.id, routeCards.rawMaterialItemId),
-          eq(items.companyId, routeCards.companyId),
-          isNull(items.deletedAt),
-        ),
-      )
-      .where(
-        and(
-          eq(routeCards.companyId, companyId),
-          eq(routeCards.itemId, input.itemId),
-          isNull(routeCards.deletedAt),
-        ),
-      )
-      .limit(1);
-    const rc = rcRm[0];
-    if (rc) {
-      rmInput = {
-        rawMaterialItemId: rc.rawMaterialItemId,
-        rmQtyPerPiece: input.rmQtyPerPiece ?? rc.rmQtyPerPiece,
-      };
-    }
+  if (wantsRmItemDefault && rcRm && routeCardHasRmItem(rcRm)) {
+    rmInput = {
+      rawMaterialItemId: rcRm.rawMaterialItemId,
+      rmQtyPerPiece: input.rmQtyPerPiece ?? rcRm.rmQtyPerPiece,
+    };
   }
   // Review M3: a Route Card default the user never typed must not block
   // "+ Plan" — if it no longer passes the rule (item retyped), drop it.
-  const defaulted = input.rawMaterialItemId === undefined && rmInput !== input;
+  const defaulted = wantsRmItemDefault && rmInput !== input;
   const rmItem = defaulted
     ? await resolveRmItem(tx, companyId, rmInput).catch(() => ({
         rawMaterialItemId: null,
@@ -1018,10 +1034,9 @@ async function createPlanInTx(
       // Raw material (0106) — both masters optional and independent. The FK
       // and the text snapshot are stored together; the snapshot is what is
       // displayed and printed, and what gets copied onto the JC at execute.
-      rawMaterialGradeId: input.rawMaterialGradeId ?? null,
-      rawMaterialGradeText: input.rawMaterialGradeText ?? null,
-      rawMaterialSizeId: input.rawMaterialSizeId ?? null,
-      rawMaterialSizeText: input.rawMaterialSizeText ?? null,
+      // Defaulted from the item's Route Card where the caller sent neither
+      // field (T1, above).
+      ...gradeSizeValues,
       ...rmItem,
       bomMasterId: input.bomMasterId ?? null,
       bomParentCode: input.bomParentCode ?? null,
@@ -1221,6 +1236,75 @@ export async function updatePlan(
     if (input.requiredDocs !== undefined) updates['requiredDocs'] = input.requiredDocs;
     if (input.remarks !== undefined) updates['remarks'] = input.remarks;
 
+    // T1 (plan-rm-backfill) — an EDIT of a plan whose raw material is STILL
+    // BLANK fills it from the item's Route Card. The create path has defaulted
+    // the RM item pair since ADR-193; the edit path had no Route Card default
+    // at all, so a plan made before the item's card existed (the designed
+    // `route_card_pending` flow) stayed blank even when the planner re-saved
+    // it.
+    //
+    // Same contract as create, read against the STORED row: a field the
+    // payload does not carry AND that is still blank in the database is
+    // filled; a field sent as null (the user cleared it) stays null; a sent
+    // value is untouched. Only a plan nothing has been made from yet is
+    // touched — a Job Card (jc_id) or any covered qty means the plan's blank
+    // was already copied downstream, and plan-vs-card must not drift.
+    const canDefaultRm = row.jcId === null && coveredQty === 0;
+    const defaultGrade =
+      canDefaultRm &&
+      input.rawMaterialGradeId === undefined &&
+      input.rawMaterialGradeText === undefined &&
+      row.rawMaterialGradeId === null &&
+      row.rawMaterialGradeText === null;
+    const defaultSize =
+      canDefaultRm &&
+      input.rawMaterialSizeId === undefined &&
+      input.rawMaterialSizeText === undefined &&
+      row.rawMaterialSizeId === null &&
+      row.rawMaterialSizeText === null;
+    const defaultRmItem =
+      canDefaultRm &&
+      input.rawMaterialItemId === undefined &&
+      input.rmQtyPerPiece === undefined &&
+      row.rawMaterialItemId === null &&
+      row.rmQtyPerPiece === null;
+    /** The card a value nobody typed came from — named in the History row. */
+    let rmSourceCardCode: string | null = null;
+    if (row.itemId && (defaultGrade || defaultSize || defaultRmItem)) {
+      const rcRm = await readRouteCardRawMaterial(tx, companyId, row.itemId);
+      if (rcRm) {
+        // id AND text together — text without the id displays a grade that is
+        // not linked to the master.
+        if (
+          defaultGrade &&
+          (rcRm.rawMaterialGradeId !== null || rcRm.rawMaterialGradeText !== null)
+        ) {
+          updates['rawMaterialGradeId'] = rcRm.rawMaterialGradeId;
+          updates['rawMaterialGradeText'] = rcRm.rawMaterialGradeText;
+          rmSourceCardCode = rcRm.routeCardCode;
+        }
+        if (defaultSize && (rcRm.rawMaterialSizeId !== null || rcRm.rawMaterialSizeText !== null)) {
+          updates['rawMaterialSizeId'] = rcRm.rawMaterialSizeId;
+          updates['rawMaterialSizeText'] = rcRm.rawMaterialSizeText;
+          rmSourceCardCode = rcRm.routeCardCode;
+        }
+        if (defaultRmItem && routeCardHasRmItem(rcRm)) {
+          // Review M3 (create path): a Route Card default the user never typed
+          // must not block the save — if the pair no longer passes the rule
+          // (RM item retyped to a non-material type), it is dropped.
+          const rcRmItem = await resolveRmItem(tx, companyId, {
+            rawMaterialItemId: rcRm.rawMaterialItemId,
+            rmQtyPerPiece: rcRm.rmQtyPerPiece,
+          }).catch(() => null);
+          if (rcRmItem) {
+            updates['rawMaterialItemId'] = rcRmItem.rawMaterialItemId;
+            updates['rmQtyPerPiece'] = rcRmItem.rmQtyPerPiece;
+            rmSourceCardCode = rcRm.routeCardCode;
+          }
+        }
+      }
+    }
+
     // ADR-197 — before → after: the row locked above (stored values) against
     // what is about to be written.
     const rmIds = [row.rawMaterialItemId, updates['rawMaterialItemId']].filter(
@@ -1309,7 +1393,10 @@ export async function updatePlan(
           entityId: row.id,
           refId: row.code,
           changes,
-          detail: `Edited ${row.code}`,
+          // ADR-197 — say where a value nobody typed came from.
+          detail: rmSourceCardCode
+            ? `Edited ${row.code} — raw material filled from Route Card ${rmSourceCardCode}`
+            : `Edited ${row.code}`,
         },
         companyId,
         user,

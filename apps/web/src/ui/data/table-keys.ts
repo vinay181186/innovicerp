@@ -44,6 +44,7 @@ export const TABLE_KEYS = {
   jwDcInward: 'jw-dc-inward',
   approvalsPrPo: 'approvals-pr-po',
   approvalsOpEntry: 'approvals-op-entry',
+  editApprovalsInbox: 'edit-approvals-inbox',
 
   // ADR-199 conversions — Store (batch S)
   grnList: 'grn-list',
@@ -87,6 +88,9 @@ export const TABLE_KEYS = {
   opEntryShopFloor: 'op-entry-shop-floor',
   runningOps: 'running-ops',
   prodDashboardReady: 'prod-dashboard-ready',
+  prodDashboardOpenJcs: 'prod-dashboard-open-jcs',
+  prodDashboardMachinePending: 'prod-dashboard-machine-pending',
+  prodDashboardBelowReorder: 'prod-dashboard-below-reorder',
   machineGroups: 'machine-groups',
   rawMaterialGrade: 'raw-material-grade',
   rawMaterialSize: 'raw-material-size',

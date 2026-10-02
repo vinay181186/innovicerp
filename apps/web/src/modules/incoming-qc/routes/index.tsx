@@ -5,6 +5,10 @@
 // draws inline in its expanded row — so the inspector never leaves the list
 // they are working through.
 //
+// ADR-203: Pending Inspection | Completed are TABS (tab in the URL) — one
+// filled table on screen at a time, its column header frozen; the metrics strip
+// and NC banner stay above as fixed chrome.
+//
 // ADR-199 table standard: both tables are the shared FIT table
 // (<DataTable tableKey=…>), one line per GRN line, the fit engine sizing columns
 // to the screen and dropping the rightmost unpinned ones into a ▸ detail row
@@ -29,6 +33,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback/Banner';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { useIncomingQc } from '../api';
 import { type IncomingRaisedNc } from '../components/incoming-qc-inspect-form';
 import { IncomingQcInspectModal } from '../components/incoming-qc-inspect-modal';
@@ -53,6 +58,8 @@ const searchSchema = z.object({
   page: pageSearchParam,
   /** Completed QC page (1-based). */
   donePage: pageSearchParam,
+  /** Active tab (ADR-203); absent = Pending Inspection. */
+  tab: z.enum(['pending', 'done']).optional(),
 });
 
 export const incomingQcRoute = createRoute({
@@ -152,6 +159,12 @@ function IncomingQcPage(): React.JSX.Element {
   const pendingTotal = data?.pendingTotal ?? 0;
   const completedTotal = data?.completedTotal ?? 0;
   const filtering = (search.search ?? '') !== '';
+  const tab = search.tab ?? 'pending';
+  const setTab = (t: string): void =>
+    void navigate({
+      search: (s) => ({ ...s, tab: t === 'done' ? 'done' : undefined }),
+      replace: true,
+    });
 
   // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
   // expand control (onToggleExpanded), and renderExpanded returns null for a
@@ -177,7 +190,10 @@ function IncomingQcPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202/203): title, search, metrics strip, NC banner and the
+    // tabs are fixed chrome; the active tab's ONE table fills the rest and is the
+    // only thing that scrolls, so its column header never leaves the screen.
+    <div className="page-fill">
       <ListHeader
         title="Incoming QC"
         icon="🔬"
@@ -220,107 +236,6 @@ function IncomingQcPage(): React.JSX.Element {
         </Banner>
       ) : null}
 
-      {isError || (!data && !isLoading) ? (
-        <PageState
-          state="error"
-          message={
-            error instanceof Error ? error.message : 'Could not load Incoming QC. Try again.'
-          }
-        />
-      ) : (
-        <>
-          {/* Pending inspection queue */}
-          <div className="panel">
-            <div className="panel-hdr">
-              <span className="panel-title" style={{ color: 'var(--amber2)' }}>
-                ⏳ Pending Inspection ({pendingTotal} lines)
-              </span>
-            </div>
-            <Panel bodyPadding="none">
-              <DataTable
-                tableKey={TABLE_KEYS.incomingQcPending}
-                columns={pendingCols}
-                rows={pendingRows}
-                rowKey={(r) => r.grnLineId}
-                loading={isLoading}
-                sortFilterServer={sfPending}
-                emptyText={
-                  filtering || sfPending.filtering
-                    ? 'No GRN lines match.'
-                    : 'No GRN lines waiting for QC.'
-                }
-                // Row click opens the GRN doc; Inspect (⋯) opens the accept/reject
-                // popup over the queue.
-                onRowClick={(r) =>
-                  void navigate({ to: '/goods-receipt-notes/$id', params: { id: r.grnId } })
-                }
-                renderExpanded={(r) =>
-                  pendingOpen.has(r.grnLineId) ? <IncomingQcPendingExpanded r={r} /> : null
-                }
-                onToggleExpanded={(r) => togglePending(r.grnLineId)}
-                rowMenu={(r) => [
-                  {
-                    key: 'inspect',
-                    label: 'Inspect',
-                    icon: 'check',
-                    group: 'workflow',
-                    onSelect: () => setInspectLineId(r.grnLineId),
-                  },
-                ]}
-              />
-            </Panel>
-            <ListFooter
-              total={pendingTotal}
-              noun="pending line"
-              page={search.page}
-              pageSize={LIST_PAGE_SIZE}
-              onPage={gotoPending}
-            />
-          </div>
-
-          {/* Recently completed */}
-          <div className="panel" style={{ marginTop: 16 }}>
-            <div className="panel-hdr">
-              <span className="panel-title" style={{ color: 'var(--green2)' }}>
-                ✅ Completed QC ({completedTotal} lines)
-              </span>
-            </div>
-            <Panel bodyPadding="none">
-              <DataTable
-                tableKey={TABLE_KEYS.incomingQcDone}
-                columns={completedCols}
-                rows={completedRows}
-                rowKey={(r) => r.grnLineId}
-                loading={isLoading}
-                sortFilterServer={sfDone}
-                emptyText={
-                  filtering || sfDone.filtering
-                    ? 'No completed inspections match.'
-                    : 'No completed inspections yet.'
-                }
-                onRowClick={(r) =>
-                  void navigate({ to: '/goods-receipt-notes/$id', params: { id: r.grnId } })
-                }
-                // Row tint by the real QC result (disposition): accepted green,
-                // partial amber, rejected red.
-                rowClassName={(r) => ROW_TINT_BY_DISP[r.disposition]}
-                renderExpanded={(r) =>
-                  completedOpen.has(r.grnLineId) ? <IncomingQcCompletedExpanded r={r} /> : null
-                }
-                onToggleExpanded={(r) => toggleCompleted(r.grnLineId)}
-              />
-            </Panel>
-            <ListFooter
-              total={completedTotal}
-              noun="completed line"
-              page={search.donePage}
-              pageSize={LIST_PAGE_SIZE}
-              onPage={gotoDone}
-            />
-          </div>
-        </>
-      )}
-
       {inspectRow ? (
         <IncomingQcInspectModal
           key={inspectRow.grnLineId}
@@ -329,6 +244,103 @@ function IncomingQcPage(): React.JSX.Element {
           onNcRaised={setRaisedNc}
         />
       ) : null}
+
+      <TabStrip
+        label="Incoming QC"
+        tabs={[
+          { key: 'pending', label: 'Pending Inspection', count: data ? pendingTotal : null },
+          { key: 'done', label: 'Completed', count: data ? completedTotal : null },
+        ]}
+        activeKey={tab}
+        onChange={setTab}
+      />
+
+      {isError || (!data && !isLoading) ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load Incoming QC. Try again.'
+          }
+        />
+      ) : tab === 'pending' ? (
+        <>
+          <Panel fill bodyPadding="none">
+            <DataTable
+              tableKey={TABLE_KEYS.incomingQcPending}
+              columns={pendingCols}
+              rows={pendingRows}
+              rowKey={(r) => r.grnLineId}
+              loading={isLoading}
+              sortFilterServer={sfPending}
+              emptyText={
+                filtering || sfPending.filtering
+                  ? 'No GRN lines match.'
+                  : 'No GRN lines waiting for QC.'
+              }
+              // Row click opens the GRN doc; Inspect (⋯) opens the accept/reject
+              // popup over the queue.
+              onRowClick={(r) =>
+                void navigate({ to: '/goods-receipt-notes/$id', params: { id: r.grnId } })
+              }
+              renderExpanded={(r) =>
+                pendingOpen.has(r.grnLineId) ? <IncomingQcPendingExpanded r={r} /> : null
+              }
+              onToggleExpanded={(r) => togglePending(r.grnLineId)}
+              rowMenu={(r) => [
+                {
+                  key: 'inspect',
+                  label: 'Inspect',
+                  icon: 'check',
+                  group: 'workflow',
+                  onSelect: () => setInspectLineId(r.grnLineId),
+                },
+              ]}
+            />
+          </Panel>
+          <ListFooter
+            total={pendingTotal}
+            noun="pending line"
+            page={search.page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPending}
+          />
+        </>
+      ) : (
+        <>
+          <Panel fill bodyPadding="none">
+            <DataTable
+              tableKey={TABLE_KEYS.incomingQcDone}
+              columns={completedCols}
+              rows={completedRows}
+              rowKey={(r) => r.grnLineId}
+              loading={isLoading}
+              sortFilterServer={sfDone}
+              emptyText={
+                filtering || sfDone.filtering
+                  ? 'No completed inspections match.'
+                  : 'No completed inspections yet.'
+              }
+              onRowClick={(r) =>
+                void navigate({ to: '/goods-receipt-notes/$id', params: { id: r.grnId } })
+              }
+              // Row tint by the real QC result (disposition): accepted green,
+              // partial amber, rejected red.
+              rowClassName={(r) => ROW_TINT_BY_DISP[r.disposition]}
+              renderExpanded={(r) =>
+                completedOpen.has(r.grnLineId) ? <IncomingQcCompletedExpanded r={r} /> : null
+              }
+              onToggleExpanded={(r) => toggleCompleted(r.grnLineId)}
+            />
+          </Panel>
+          <ListFooter
+            total={completedTotal}
+            noun="completed line"
+            page={search.donePage}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoDone}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -1,0 +1,70 @@
+// Edit-approval engine registry (ADR-202). One entry per document type enrolled
+// in edit-approval, keyed by its ActivityLog entity name. The engine
+// (./service.ts) is entity-agnostic: it drives everything through this table, so
+// Phase 2 adds a document by adding one entry here — no engine change.
+//
+// Phase 1 enrols only PurchaseOrder.
+
+import type { AccessFormKey, DocumentEditEntity } from '@innovic/shared';
+import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import type { DiffField } from '../../lib/audit-trail';
+import { poEditRegistryEntry } from '../purchase-orders/po-edit-registry';
+
+/** The locked (or read) target document, projected to just what the engine
+ *  needs: the row for diffing, its optimistic-lock token, its code, and whether
+ *  it is LIVE (a draft edits directly; a live edit is staged). */
+export interface DocEditTarget {
+  doc: Record<string, unknown>;
+  updatedAt: Date | string | null;
+  docCode: string;
+  isLive: boolean;
+}
+
+/** What one document type must provide for the engine to stage and apply edits
+ *  to it. The diff is computed over flat {key → value} snapshots whose keys are
+ *  `diffFields` keys, so the same `diffFields()` the audit trail uses produces
+ *  the change list and, at approval, the drift check. */
+export interface DocEditRegistryEntry {
+  /** Access Control form that gates edit (request) and approve (decide). */
+  formKey: AccessFormKey;
+  /** The fields compared, in display order. */
+  diffFields: readonly DiffField[];
+  /** Lock the target row FOR UPDATE and project it. Null = gone / not visible. */
+  loadForDiff(tx: DbTransaction, companyId: string, id: string): Promise<DocEditTarget | null>;
+  /** The flat current-value snapshot for diffing (keys = diffFields keys). */
+  beforeSnapshot(target: DocEditTarget): Record<string, unknown>;
+  /** The flat proposed-value snapshot from the edit input (keys = diffFields
+   *  keys). Omits a key the input did not touch, so it is not seen as a change.
+   *  `user` is the actor (requester, or approver on the drift recompute) — used
+   *  to gate price-only fields. */
+  afterSnapshot(
+    tx: DbTransaction,
+    companyId: string,
+    input: unknown,
+    user: AuthContext,
+  ): Promise<Record<string, unknown>>;
+  /** Rebuild a proposed edit input carrying ONLY the approved field keys, or
+   *  null when none remain. */
+  buildFilteredInput(proposedPayload: unknown, approvedFields: ReadonlySet<string>): unknown | null;
+  /** Apply the filtered input inside the engine's transaction (which already
+   *  holds the target row lock). `expectedUpdatedAt` is the freshly-locked token. */
+  applyEdit(
+    tx: DbTransaction,
+    companyId: string,
+    id: string,
+    filteredInput: unknown,
+    expectedUpdatedAt: string | null,
+    user: AuthContext,
+  ): Promise<void>;
+  /** Batch lookup of each document's current updated_at, so the inbox's isStale
+   *  flag costs one query per entity type, not one per request (§6 no N+1). */
+  loadUpdatedAts(
+    tx: DbTransaction,
+    companyId: string,
+    ids: string[],
+  ): Promise<Map<string, Date | string | null>>;
+}
+
+export const DOC_EDIT_REGISTRY: Record<DocumentEditEntity, DocEditRegistryEntry> = {
+  PurchaseOrder: poEditRegistryEntry,
+};

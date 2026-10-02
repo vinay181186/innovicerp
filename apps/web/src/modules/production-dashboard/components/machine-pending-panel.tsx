@@ -1,219 +1,208 @@
-// Machine-wise Pending Work (legacy L3670-3714 + L3780-3788). One card per
-// machine; pending ops grouped from the machine-loading `ops` list (already
-// server-sorted priority → due → op_seq, preserved within each group).
-//
-// Kept as a look-only WIDGET under ADR-199 ("widgets are look-only exceptions"):
-// these per-machine mini-tables are NOT the main Ready-to-process list, so they
-// stay as cards rather than becoming a fit table. Split out of routes/index.tsx
-// (file-size rule); no behaviour change.
+// Machine Pending tab (legacy "Machine-wise Pending Work", L3670-3714 +
+// L3780-3788). ADR-203 frozen header: the card-per-machine grid is now ONE
+// table — a blue group heading per machine ("VMC-1 · Name · 3 ops · Running")
+// over that machine's pending ops. The rows are the machine-loading `ops` list
+// (already server-sorted priority → due → op_seq, kept within each machine),
+// grouped in the machines' own order. Same six columns the mini-tables had.
+// Machines with nothing pending (the old "Idle" cards) are named on one line
+// above the table, so no machine drops out of sight.
 
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import type { MachineLoadOp } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
 import { addDaysLocal, fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { DataTable, Panel } from '@/ui/data';
+import type { DataTableColumn } from '@/ui/data';
 import { OpStatusBadge } from './op-status-badge';
 
 // IST today + 3 days (not the UTC date, which is a day behind before 05:30 IST).
 const DUE_SOON_ISO = addDaysLocal(todayIst(), 3);
 
-export function MachinePendingPanel({
-  machines,
-  ops,
-  isLoading,
-}: {
-  machines: { machineId: string; machineCode: string; name: string }[];
-  ops: MachineLoadOp[];
-  isLoading: boolean;
-}): React.JSX.Element {
-  const opsByMachine = new Map<string, MachineLoadOp[]>();
+export interface PendingMachine {
+  machineId: string;
+  machineCode: string;
+  name: string;
+}
+
+export interface PendingRow {
+  op: MachineLoadOp;
+  machine: PendingMachine;
+  /** Ops in this machine's group / how many of them are running — the
+   *  card header's figures, now on the group heading. */
+  groupCount: number;
+  groupRunning: number;
+}
+
+/** Machines (in their own order) → their pending ops, flattened for the one
+ *  table; plus the machines with nothing pending. */
+export interface PendingGroups {
+  rows: PendingRow[];
+  idle: PendingMachine[];
+}
+
+export function groupPendingOps(machines: PendingMachine[], ops: MachineLoadOp[]): PendingGroups {
+  const byMachine = new Map<string, MachineLoadOp[]>();
   for (const op of ops) {
     if (!op.machineId) continue;
-    const list = opsByMachine.get(op.machineId);
+    const list = byMachine.get(op.machineId);
     if (list) list.push(op);
-    else opsByMachine.set(op.machineId, [op]);
+    else byMachine.set(op.machineId, [op]);
   }
+  const rows: PendingRow[] = [];
+  const idle: PendingMachine[] = [];
+  for (const m of machines) {
+    const list = byMachine.get(m.machineId) ?? [];
+    if (list.length === 0) {
+      idle.push(m);
+      continue;
+    }
+    const running = list.filter((o) => o.computedStatus === 'running').length;
+    for (const op of list) {
+      rows.push({ op, machine: m, groupCount: list.length, groupRunning: running });
+    }
+  }
+  return { rows, idle };
+}
 
-  return (
-    <div className="panel" style={{ marginBottom: 16 }}>
-      <div className="panel-hdr">
-        <span className="panel-title">Machine-wise Pending Work</span>
-        <Link to="/job-queue" className="btn btn-ghost btn-sm">
-          Full Queue →
-        </Link>
-      </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-          gap: 12,
-          padding: 14,
-        }}
+const COLUMNS: DataTableColumn<PendingRow>[] = [
+  {
+    id: 'jc_no',
+    header: 'JC No.',
+    kind: 'code',
+    nowrap: true,
+    render: ({ op }) => (
+      <Link
+        to="/job-cards/$id"
+        params={{ id: op.jobCardId }}
+        title="View job card status"
+        className="mono cyan"
+        style={{ textDecoration: 'none' }}
       >
-        {isLoading && machines.length === 0 ? (
-          <div className="empty-state" style={{ padding: 16 }}>
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading machine load…
-          </div>
-        ) : machines.length === 0 ? (
-          <div className="empty-state" style={{ padding: 16 }}>
-            No Machines yet.
-          </div>
-        ) : (
-          machines.map((m) => (
-            <MachineCard key={m.machineId} machine={m} ops={opsByMachine.get(m.machineId) ?? []} />
-          ))
-        )}
-      </div>
-    </div>
+        {op.jobCardCode}
+      </Link>
+    ),
+  },
+  {
+    // The code carries the drawing revision; the name is only the fallback for
+    // a card with no code.
+    id: 'item_code',
+    header: 'Item Code',
+    kind: 'code',
+    className: 'mono fw-700',
+    nowrap: true,
+    render: ({ op }) => (
+      <span style={{ color: 'var(--text)' }}>
+        {itemCodeWithRev(op.itemCode, op.itemRevision, op.itemName ?? '')}
+      </span>
+    ),
+  },
+  {
+    id: 'operation',
+    header: 'Operation',
+    kind: 'text',
+    align: 'left',
+    ellipsis: true,
+    render: ({ op }) => op.operation,
+    title: ({ op }) => op.operation,
+  },
+  {
+    id: 'op_status',
+    header: 'Op Status',
+    kind: 'badge',
+    nowrap: true,
+    render: ({ op }) => <OpStatusBadge status={op.computedStatus} />,
+  },
+  {
+    id: 'available',
+    header: 'Available',
+    align: 'right',
+    headColor: 'var(--amber2)',
+    className: 'mono fw-700',
+    nowrap: true,
+    render: ({ op }) => <span style={{ color: 'var(--amber2)' }}>{op.available}</span>,
+  },
+  {
+    id: 'due_date',
+    header: 'Due Date',
+    kind: 'date',
+    nowrap: true,
+    render: ({ op }) => {
+      const dueSoon = op.dueDate != null && op.dueDate <= DUE_SOON_ISO;
+      return (
+        <span style={{ color: dueSoon ? 'var(--red)' : 'var(--text3)' }}>
+          {fmtDate(op.dueDate)}
+        </span>
+      );
+    },
+  },
+];
+
+function MachineHeading({ row }: { row: PendingRow }): React.JSX.Element {
+  const { machine: m, groupCount: n, groupRunning } = row;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      <span className="mono fw-700">{m.machineCode}</span>
+      {m.name ? <span>· {m.name}</span> : null}
+      <span>
+        · {n} op{n !== 1 ? 's' : ''} ·
+      </span>
+      {groupRunning > 0 ? (
+        <span className="badge b-green">Running</span>
+      ) : (
+        <span className="badge b-amber">Pending</span>
+      )}
+    </span>
   );
 }
 
-function MachineCard({
-  machine,
-  ops,
+/** Machines that have at least one pending op — the tab's count. */
+export function countBusyMachines(rows: PendingRow[]): number {
+  return rows.reduce((seen, r) => seen.add(r.machine.machineId), new Set<string>()).size;
+}
+
+/** `grouped` is the page's one `groupPendingOps` result (also its tab count). */
+export function MachinePendingPanel({
+  grouped,
+  machineCount,
+  isLoading,
 }: {
-  machine: { machineId: string; machineCode: string; name: string };
-  ops: MachineLoadOp[];
+  grouped: PendingGroups;
+  machineCount: number;
+  isLoading: boolean;
 }): React.JSX.Element {
-  const label = (
-    <div>
-      <span className="mono fw-700 cyan" style={{ fontSize: 12 }}>
-        {machine.machineCode}
-      </span>
-      {machine.name ? (
-        <span className="text3" style={{ fontSize: 11, marginLeft: 6 }}>
-          {machine.name}
-        </span>
-      ) : null}
-    </div>
-  );
-
-  if (ops.length === 0) {
-    return (
-      <div
-        style={{
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          padding: 14,
-          background: 'var(--bg2)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 6,
-          }}
-        >
-          {label}
-          <span className="badge b-grey">Idle</span>
-        </div>
-        <div className="text3" style={{ fontSize: 12, textAlign: 'center', padding: '8px 0' }}>
-          No pending work
-        </div>
-      </div>
-    );
-  }
-
-  const runCount = ops.filter((o) => o.computedStatus === 'running').length;
+  const { rows, idle } = grouped;
   return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 10,
-        padding: 14,
-        background: 'var(--bg2)',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 10,
-        }}
-      >
-        {label}
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span className="text3" style={{ fontSize: 11 }}>
-            {ops.length} op{ops.length !== 1 ? 's' : ''}
-          </span>
-          {runCount > 0 ? (
-            <span className="badge b-green">Running</span>
-          ) : (
-            <span className="badge b-amber">Pending</span>
-          )}
+    <>
+      {idle.length > 0 && rows.length > 0 ? (
+        <div className="text3" style={{ fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-2)' }}>
+          Idle (no pending work):{' '}
+          <span className="mono">{idle.map((m) => m.machineCode).join(', ')}</span>
         </div>
-      </div>
-      <div className="tbl-wrap">
-        <table className="innovic-table" style={{ fontSize: 12 }}>
-          <thead>
-            <tr>
-              <th>JC No.</th>
-              <th>Item Code</th>
-              <th>Operation</th>
-              <th>Op Status</th>
-              <th style={{ color: 'var(--amber2)' }}>Available</th>
-              <th>Due Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ops.map((o) => {
-              const dueSoon = o.dueDate != null && o.dueDate <= DUE_SOON_ISO;
-              return (
-                <tr key={o.jcOpId}>
-                  {/* The JC number opens that card. Colour and mono face are
-                      inherited from the cell so the code looks exactly as it
-                      did before it became reachable. */}
-                  <td className="mono cyan" style={{ fontSize: 11 }}>
-                    <Link
-                      to="/job-cards/$id"
-                      params={{ id: o.jobCardId }}
-                      title="View job card status"
-                      style={{
-                        color: 'inherit',
-                        textDecoration: 'none',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {o.jobCardCode}
-                    </Link>
-                  </td>
-                  <td
-                    style={{
-                      fontSize: 11,
-                      maxWidth: 110,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {/* The cell is capped at 110px and ellipsised, so it holds one
-                        token and no more. The code carries the drawing revision
-                        the operator is being asked to check, so the code leads
-                        and the name is only the fallback for a card with none. */}
-                    {itemCodeWithRev(o.itemCode, o.itemRevision, o.itemName ?? '')}
-                  </td>
-                  <td style={{ fontSize: 11 }}>{o.operation}</td>
-                  <td className="td-ctr">
-                    <OpStatusBadge status={o.computedStatus} />
-                  </td>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
-                    {o.available}
-                  </td>
-                  <td
-                    className="td-ctr"
-                    style={{ fontSize: 11, color: dueSoon ? 'var(--red)' : 'var(--text3)' }}
-                  >
-                    {fmtDate(o.dueDate)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      ) : null}
+      <Panel
+        fill
+        bodyPadding="none"
+        actions={
+          <Link to="/job-queue" className="btn btn-ghost btn-sm">
+            Full Queue →
+          </Link>
+        }
+      >
+        <DataTable<PendingRow>
+          tableKey={TABLE_KEYS.prodDashboardMachinePending}
+          columns={COLUMNS}
+          rows={rows}
+          rowKey={(r) => `${r.machine.machineId}:${r.op.jcOpId}`}
+          loading={isLoading && machineCount === 0}
+          emptyText={machineCount === 0 ? 'No Machines yet.' : 'No pending work on any machine.'}
+          groupRow={(r, _i, prev) =>
+            prev && prev.machine.machineId === r.machine.machineId ? null : (
+              <MachineHeading row={r} />
+            )
+          }
+        />
+      </Panel>
+    </>
   );
 }

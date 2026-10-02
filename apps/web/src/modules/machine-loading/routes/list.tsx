@@ -34,6 +34,7 @@ import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { CapacitySummary, MachineLoadCardView } from '../components/machine-load-cards';
 import { OpsExpanded, opRowTint, opsColumns } from '../components/machine-loading-columns';
 import { useMyCompany } from '../../settings/api';
@@ -47,7 +48,12 @@ const searchSchema = z.object({
   view: z.enum(['ops', 'queue']).optional(),
   search: z.string().optional(),
   page: pageSearchParam,
+  // Frozen-header tabs (ADR-203): Machine Load cards | Operations | Capacity
+  // Summary. Absent = Operations (the default tab).
+  tab: z.enum(['load', 'capacity']).optional(),
 });
+
+type MlTab = 'load' | 'ops' | 'capacity';
 
 export const machineLoadingRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -149,15 +155,25 @@ function MachineLoadingPage(): React.JSX.Element {
 
   const columns = useMemo(() => opsColumns(), []);
 
+  const tab: MlTab = search.tab ?? 'ops';
+  function setTab(k: string): void {
+    const next = k === 'load' || k === 'capacity' ? k : undefined;
+    void navigate({ search: (prev) => ({ ...prev, tab: next }), replace: true });
+  }
+
+  // A card click picks the machine AND opens the Operations tab, filtered to it.
   function selectMachine(id: string): void {
     void navigate({
-      search: (prev) => ({ ...prev, m: id, view: undefined, page: 1 }),
+      search: (prev) => ({ ...prev, m: id, view: undefined, page: 1, tab: undefined }),
       replace: true,
     });
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202/203): header + tabs are fixed chrome; the Operations
+    // and Capacity Summary tables each fill the rest of the screen, so the table
+    // is the only scrollbar and its column header never scrolls away.
+    <div className="page-fill">
       <ListHeader
         title="Machine Loading"
         icon="▣"
@@ -209,6 +225,17 @@ function MachineLoadingPage(): React.JSX.Element {
         }
       />
 
+      <TabStrip
+        label="Machine Loading views"
+        activeKey={tab}
+        onChange={setTab}
+        tabs={[
+          { key: 'load', label: 'Machine Load', count: data ? machines.length : null },
+          { key: 'ops', label: 'Operations', count: total ?? null },
+          { key: 'capacity', label: 'Capacity Summary' },
+        ]}
+      />
+
       {isLoading ? (
         <div className="panel">
           <div className="empty-state">
@@ -221,7 +248,7 @@ function MachineLoadingPage(): React.JSX.Element {
             {error instanceof Error ? error.message : 'Could not load machine loading. Try again.'}
           </div>
         </div>
-      ) : (
+      ) : tab === 'load' ? (
         <>
           {/* Machine cards — legacy .mach-cards (L221): 5 fixed columns, gap 10,
               margin-bottom 16. Not ported to our theme, so inlined verbatim. */}
@@ -247,9 +274,19 @@ function MachineLoadingPage(): React.JSX.Element {
               </div>
             ) : null}
           </div>
-
-          {/* The open-operations fit table (ADR-199). */}
+          {machines.length > 0 ? (
+            <div className="text3" style={{ fontSize: 12 }}>
+              Click a machine to see its operations.
+            </div>
+          ) : null}
+        </>
+      ) : tab === 'capacity' ? (
+        <CapacitySummary machines={machines} />
+      ) : (
+        <>
+          {/* The open-operations fit table (ADR-199), filling the page. */}
           <Panel
+            fill
             title={selMachineCode ? `${selMachineCode} — Job Queue` : 'All Open Operations'}
             actions={
               <span className="mono" style={{ color: 'var(--amber2)', fontSize: 12 }}>
@@ -287,8 +324,6 @@ function MachineLoadingPage(): React.JSX.Element {
             pageSize={LIST_PAGE_SIZE}
             onPage={setPage}
           />
-
-          <CapacitySummary machines={machines} />
         </>
       )}
     </div>

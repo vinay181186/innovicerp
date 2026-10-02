@@ -35,7 +35,9 @@ export function OrderList({
   }
 
   return (
-    <Panel bodyPadding="none">
+    // `fill` (ADR-202/203): the order list takes the rest of the screen and is
+    // the page's one scrollbar, so its column header stays frozen.
+    <Panel fill bodyPadding="none">
       <DataTable
         tableKey={TABLE_KEYS.planningList}
         columns={columns}

@@ -17,7 +17,7 @@ import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge
 import { useSoQcStatus } from '@/modules/so-qc-status/api';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { PageState } from '@/ui/layout';
+import { ListHeader, PageState } from '@/ui/layout';
 import { buildSoStatusColumns, SO_STATUS_DETAIL_IDS } from './so-status-columns';
 import { SoStatusExpanded } from './so-status-detail';
 
@@ -31,7 +31,7 @@ const ROW_TINT_BY_OVERALL: Record<SoQcLine['overall'], string | undefined> = {
 const hasDetail = (l: SoQcLine): boolean =>
   l.grnDetail.length > 0 || l.tpiDetail.length > 0 || l.docDetail.length > 0;
 
-export function SoStatusView(): React.JSX.Element {
+export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
   const [selectedSo, setSelectedSo] = useState<string | null>(null);
   const [soSearch, setSoSearch] = useState('');
   const soList = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
@@ -51,7 +51,11 @@ export function SoStatusView(): React.JSX.Element {
   const lines = detail.data?.lines ?? [];
 
   return (
-    <div>
+    // `page-fill` (ADR-202/203): the title, SO picker, SO card and totals strip
+    // are fixed chrome; the lines table takes the rest of the screen and is the
+    // ONE thing that scrolls, so its column header never leaves the screen.
+    <div className="page-fill">
+      <ListHeader title="QC Documents" icon="🗃" tools={toggle} />
       <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'flex-end' }}>
         <div style={{ minWidth: 300 }}>
           <SearchableSelect
@@ -124,7 +128,7 @@ export function SoStatusView(): React.JSX.Element {
 
           <SummaryStrip lines={lines} />
 
-          <Panel bodyPadding="none">
+          <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.qcDocsStatus}
               columns={columns}

@@ -14,12 +14,20 @@
 // pending line; its line count, Pending Qty and Pending Value, the vendor / SO
 // counts and the Complete Purchase Summary's Grand Total are server figures
 // over every matching row — never sums of the 25 on screen.
+//
+// Frozen-header tabs (ADR-203, 2026-10-02): the five stacked tables are five
+// TABS under the KPI strip, one table on screen at a time, filling the page
+// (`page-fill`), so the table is the only scrollbar and its header stays put.
+// The active tab lives in the URL (`?tab=`); each tab's label carries its
+// table's server total.
 
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatStrip } from '@/ui/data';
 import { ListHeader } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { useScDashboard } from '../api';
 import {
   PendingTracker,
@@ -27,17 +35,33 @@ import {
   RecentGrn,
   SoSummary,
   VendorSummary,
+  useScTables,
 } from '../components/sc-tables';
 import { inr } from '../components/sc-format';
+
+const SC_TABS = ['pending', 'vendors', 'sos', 'po-summary', 'recent-grn'] as const;
+type ScTab = (typeof SC_TABS)[number];
+
+const searchSchema = z.object({
+  // Absent = the first tab (Pending PO Tracker).
+  tab: z.enum(SC_TABS).optional(),
+});
 
 export const scDashboardRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'sc-dashboard',
+  validateSearch: searchSchema,
   component: ScDashboardPage,
 });
 
 function ScDashboardPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useScDashboard();
+  const search = scDashboardRoute.useSearch();
+  const navigate = scDashboardRoute.useNavigate();
+  const tab: ScTab = search.tab ?? 'pending';
+  // All five tables' state lives here, so switching tab keeps each one's page,
+  // filters and Sort & Filter, and every tab label has its server total.
+  const tables = useScTables();
 
   if (isLoading) {
     return (
@@ -61,8 +85,13 @@ function ScDashboardPage(): React.JSX.Element {
   // also means "no value yet"). The money KPI tiles and value columns drop.
   const priceHidden = !data.priceVisible;
 
+  const count = (t: { data?: { total: number } | undefined }): number | null =>
+    t.data ? t.data.total : null;
+
   return (
-    <div>
+    // `page-fill` (ADR-202): header + KPI strip + tabs are fixed chrome; the
+    // active tab's table fills the rest of the screen.
+    <div className="page-fill">
       <ListHeader
         title="Supply Chain Dashboard"
         icon="🔗"
@@ -144,11 +173,35 @@ function ScDashboardPage(): React.JSX.Element {
         />
       </ListHeader>
 
-      <PendingTracker options={data.filterOptions} priceHidden={priceHidden} />
-      <VendorSummary priceHidden={priceHidden} />
-      <SoSummary priceHidden={priceHidden} />
-      <PoSummary priceHidden={priceHidden} />
-      <RecentGrn />
+      <TabStrip
+        label="Supply Chain tables"
+        activeKey={tab}
+        onChange={(k) =>
+          void navigate({
+            search: (prev) => ({ ...prev, tab: k === 'pending' ? undefined : (k as ScTab) }),
+            replace: true,
+          })
+        }
+        tabs={[
+          { key: 'pending', label: 'Pending PO Tracker', count: count(tables.pending.t) },
+          { key: 'vendors', label: 'Vendor-wise', count: count(tables.vendors) },
+          { key: 'sos', label: 'SO / JW-wise', count: count(tables.sos) },
+          { key: 'po-summary', label: 'Purchase Summary', count: count(tables.poSummary) },
+          { key: 'recent-grn', label: 'Recent GRN', count: count(tables.recentGrn) },
+        ]}
+      />
+
+      {tab === 'pending' ? (
+        <PendingTracker p={tables.pending} options={data.filterOptions} priceHidden={priceHidden} />
+      ) : tab === 'vendors' ? (
+        <VendorSummary t={tables.vendors} priceHidden={priceHidden} />
+      ) : tab === 'sos' ? (
+        <SoSummary t={tables.sos} priceHidden={priceHidden} />
+      ) : tab === 'po-summary' ? (
+        <PoSummary t={tables.poSummary} priceHidden={priceHidden} />
+      ) : (
+        <RecentGrn t={tables.recentGrn} />
+      )}
     </div>
   );
 }

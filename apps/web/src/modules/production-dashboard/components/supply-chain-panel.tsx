@@ -1,45 +1,64 @@
-// Supply Chain Snapshot (legacy L3804-3838). Four whole-master tiles + the
-// low-stock item chips. Figures come pre-computed on the dashboard payload.
-//
-// Kept as a look-only WIDGET under ADR-199 ("widgets are look-only exceptions").
-// Split out of routes/index.tsx (file-size rule); no behaviour change.
+// Supply Snapshot tab (legacy Supply Chain Snapshot, L3804-3838). ADR-203
+// frozen header: the four whole-master tiles stay as chrome on top and the
+// "Below Reorder" chips are now ONE table filling the rest of the screen (Item
+// Code · In Stock · Reorder Level). Figures come pre-computed on the dashboard
+// payload. Legacy hid the whole panel when every figure is zero; as a tab it
+// shows an empty state instead.
 
-import type { ProductionDashboardLowStockItem } from '@innovic/shared';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import type { ProductionDashboardSupplyChain } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { DataTable, Panel } from '@/ui/data';
+import type { DataTableColumn } from '@/ui/data';
+
+type LowStockRow = ProductionDashboardSupplyChain['lowStockItems'][number];
+
+const COLUMNS: DataTableColumn<LowStockRow>[] = [
+  {
+    id: 'item_code',
+    header: 'Item Code',
+    kind: 'code',
+    className: 'mono fw-700',
+    nowrap: true,
+    render: (i) => <span style={{ color: 'var(--text)' }}>{i.code}</span>,
+  },
+  {
+    id: 'in_stock',
+    header: 'In Stock',
+    align: 'right',
+    className: 'mono fw-700',
+    nowrap: true,
+    render: (i) => <span style={{ color: 'var(--red2)' }}>{i.inStock}</span>,
+  },
+  {
+    id: 'reorder_level',
+    header: 'Reorder Level',
+    align: 'right',
+    className: 'mono',
+    nowrap: true,
+    render: (i) => i.minQty,
+  },
+];
 
 export function SupplyChainPanel({
   data,
 }: {
-  data:
-    | {
-        lowStockCount: number;
-        zeroStockCount: number;
-        openPos: number;
-        todayGrn: number;
-        lowStockItems: ProductionDashboardLowStockItem[];
-      }
-    | undefined;
-}): React.JSX.Element | null {
-  if (!data) return null;
-  const { lowStockCount, zeroStockCount, openPos, todayGrn, lowStockItems } = data;
-  // Legacy L3809 — hide the whole panel when everything is zero.
-  if (openPos === 0 && todayGrn === 0 && lowStockCount === 0 && zeroStockCount === 0) return null;
-
+  data: ProductionDashboardSupplyChain | undefined;
+}): React.JSX.Element {
+  const lowStockCount = data?.lowStockCount ?? 0;
+  const zeroStockCount = data?.zeroStockCount ?? 0;
+  const openPos = data?.openPos ?? 0;
+  const todayGrn = data?.todayGrn ?? 0;
+  const allZero = openPos === 0 && todayGrn === 0 && lowStockCount === 0 && zeroStockCount === 0;
   const low = lowStockCount > 0;
   return (
-    <div className="panel" style={{ marginBottom: 16 }}>
-      <div className="panel-hdr">
-        <span className="panel-title">Supply Chain Snapshot</span>
-        <Link to="/store-inventory" className="btn btn-ghost btn-sm">
-          Store →
-        </Link>
-      </div>
+    <>
       <div
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(4, 1fr)',
           gap: 10,
-          padding: 14,
+          marginBottom: 'var(--panel-gap)',
         }}
       >
         <ScTile
@@ -71,31 +90,28 @@ export function SupplyChainPanel({
           color="var(--green)"
         />
       </div>
-      {lowStockItems.length > 0 ? (
-        <div style={{ padding: '0 14px 14px' }}>
-          <div style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700, marginBottom: 6 }}>
-            Below Reorder:
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {lowStockItems.map((i) => (
-              <span
-                key={i.itemId}
-                style={{
-                  fontSize: 11,
-                  background: 'var(--red3)',
-                  border: '1px solid var(--red)',
-                  borderRadius: 4,
-                  padding: '2px 8px',
-                  color: 'var(--red2)',
-                }}
-              >
-                {i.code} ({i.inStock} / Reorder Level {i.minQty})
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
+      <Panel
+        fill
+        bodyPadding="none"
+        title="Below Reorder"
+        actions={
+          <Link to="/store-inventory" className="btn btn-ghost btn-sm">
+            Store →
+          </Link>
+        }
+      >
+        <DataTable<LowStockRow>
+          tableKey={TABLE_KEYS.prodDashboardBelowReorder}
+          columns={COLUMNS}
+          rows={data?.lowStockItems ?? []}
+          rowKey={(i) => i.itemId}
+          loading={!data}
+          emptyText={
+            allZero ? 'Nothing to report in the supply chain.' : 'No items below reorder level.'
+          }
+        />
+      </Panel>
+    </>
   );
 }
 

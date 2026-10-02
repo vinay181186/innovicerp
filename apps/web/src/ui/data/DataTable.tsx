@@ -138,6 +138,7 @@ function ClassicDataTable<T>({
   onRowClick,
   isRowClickable,
   rowClassName,
+  groupRow,
   renderExpanded,
   maxHeight,
   sortBy,
@@ -274,8 +275,14 @@ function ClassicDataTable<T>({
                 const clickable = !!onRowClick && (isRowClickable?.(row, ri) ?? true);
                 const rk = keyOf(row, ri);
                 const selected = selectable && selection.isSelected(rk);
+                const group = groupRow?.(row, ri, ri > 0 ? rows[ri - 1] : undefined);
                 return (
                   <Fragment key={rk}>
+                    {group !== null && group !== undefined && group !== false ? (
+                      <tr className="dt-group-row">
+                        <td colSpan={spanCols}>{group}</td>
+                      </tr>
+                    ) : null}
                     <tr
                       className={cx(
                         rowClassName?.(row, ri),
