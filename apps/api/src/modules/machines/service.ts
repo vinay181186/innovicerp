@@ -4,6 +4,7 @@ import { machineGroups, machines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type {
   CreateMachineInput,
   ListMachinesQuery,
@@ -13,6 +14,7 @@ import type {
 } from './schema';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
+import { MACHINE_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -121,6 +123,12 @@ export async function listMachines(
       if (s) conditions.push(s);
     }
     if (input.status) conditions.push(eq(machines.status, input.status));
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count;
+    // ₹/hr only for users who may see it.
+    const sf = readSf(input.sf);
+    const sfOpts = { canSeePrice: showMoney };
+    conditions.push(sql`TRUE ${sfWhere(MACHINE_SF_COLUMNS, sf, sfOpts)}`);
 
     const where = and(...conditions);
 
@@ -129,7 +137,7 @@ export async function listMachines(
         .select()
         .from(machines)
         .where(where)
-        .orderBy(asc(machines.code))
+        .orderBy(sfOrderBy(MACHINE_SF_COLUMNS, sf, asc(machines.code), sfOpts))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(machines).where(where),

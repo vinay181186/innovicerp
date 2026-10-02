@@ -17,6 +17,7 @@
 // superseded — the value is minutes per piece everywhere.)
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { OP_TYPES } from '../enums/op-type';
 import { PLAN_TYPES } from '../enums/plan-type';
@@ -170,6 +171,8 @@ export type RouteCardListItem = z.infer<typeof routeCardListItemSchema>;
 export const listRouteCardsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   itemId: z.string().uuid().optional(),
+  // Sort & Filter (ADR-200) — the screen's column sort / filters, run on the server.
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

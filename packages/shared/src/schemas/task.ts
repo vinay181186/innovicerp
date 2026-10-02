@@ -9,6 +9,7 @@
 // the caller server-side.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { TASK_PRIORITIES } from '../enums/task-priority';
 import { TASK_STATUSES } from '../enums/task-status';
 import {
@@ -125,6 +126,11 @@ export const listTasksQuerySchema = z.object({
   due: z.enum(TASK_DUE_FILTERS).optional(),
   // All Tasks only — assignee's main department (Access Control main_dept).
   dept: z.string().max(32).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
+  // ADR-201: the board asks for 25 a page; no limit → the whole view (as before).
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
 });
 export type ListTasksQuery = z.infer<typeof listTasksQuerySchema>;
 
@@ -250,6 +256,8 @@ export type TaskViewCounts = z.infer<typeof taskViewCountsSchema>;
 
 export const listTasksResponseSchema = z.object({
   tasks: z.array(taskRowSchema),
+  /** Rows matching the view + every row filter + sf (all pages). */
+  total: z.number().int().nonnegative(),
   counts: taskStatusCountsSchema, // KPI cards — over the selected view (before row filters)
   viewCounts: taskViewCountsSchema,
   unreadCount: z.number().int().nonnegative(),

@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import type { RenderLink } from '../layout/link-slot';
 import type { RowMenuItem } from './row-menu-logic';
 import type { SortDir } from './SortHeader';
+import type { ServerSortFilter } from './sort-filter/server-state';
 
 // Every optional prop below is written `?: X | undefined` on purpose. The repo
 // runs `exactOptionalPropertyTypes: true`, so a plain `?: X` REJECTS a caller
@@ -90,6 +91,16 @@ export interface DataTableColumn<T> {
   filterValue?: ((row: T) => string | number | Date | null | undefined) | undefined;
   /** Sort & Filter: `false` = this column has no ▾ (e.g. a picture). */
   filterable?: boolean | undefined;
+  /**
+   * Sort & Filter SERVER mode (`sortFilterServer` on the table): the field this
+   * column sorts / filters by in the endpoint's column map. A column without
+   * one has no ▾ in server mode (a figure worked out per row).
+   */
+  sortFilterField?: string | undefined;
+  /** Server mode: the field's type — default from `kind` (num / date / badge→list / text). */
+  filterType?: 'text' | 'num' | 'date' | 'list' | undefined;
+  /** Server mode, `list` columns: the tick list (stored value + label shown). */
+  filterOptions?: ReadonlyArray<{ value: string; label: string }> | undefined;
   /** Cell holds controls — swallow the click so it never opens the row. */
   stopRowClick?: boolean | undefined;
   /**
@@ -253,6 +264,12 @@ export interface DataTableProps<T> {
    * nested `compact` tables are off by default.
    */
   sortFilter?: boolean | undefined;
+  /**
+   * Sort & Filter on the SERVER (paged / capped lists): the page owns the
+   * state and sends it with its request (`useServerSortFilter`). Rows are
+   * drawn as given; only columns with `sortFilterField` get a ▾.
+   */
+  sortFilterServer?: ServerSortFilter | undefined;
 
   className?: string | undefined;
   wrapClassName?: string | undefined;

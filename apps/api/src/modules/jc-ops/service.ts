@@ -15,9 +15,11 @@ import { ActivityAction, opSrNo } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { emitActivityLog } from '../activity-log/service';
 import { jcOpRef } from '../op-entry/audit';
+import { JC_OPS_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -48,6 +50,32 @@ export async function listJcOpsBoard(
           OR sol.client_po_line_no ILIKE ${term}
         )`
       : sql``;
+    // Sort & Filter (ADR-200/201): the screen's column filters + sort, through
+    // the board's field whitelist. Applied to the page AND the count, so
+    // `total` (and the pager) match what the filters keep.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(JC_OPS_SF_COLUMNS, sf);
+    // Ends on op.id so 25-row pages never skip or repeat a row.
+    const orderBy = sfOrderBy(JC_OPS_SF_COLUMNS, sf, sql`jc.code, op.op_seq, op.id`);
+
+    // The joins every filter can reach — shared by the page and its count.
+    const baseFrom = sql`
+      FROM public.jc_ops op
+      JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+      LEFT JOIN public.machines m ON m.id = op.machine_id AND m.deleted_at IS NULL
+      LEFT JOIN public.vendors ven ON ven.id = op.outsource_vendor_id AND ven.deleted_at IS NULL
+      LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id`;
+    const baseWhere = sql`
+      WHERE op.company_id = ${companyId}::uuid
+        AND op.deleted_at IS NULL
+        ${jcFrag}
+        ${searchFrag}
+        ${sfFrag}`;
 
     // cycle_time_min stored in minutes → convert to hours for legacy parity.
     // Pending hrs = (available pcs) * (cycle minutes / 60).
@@ -114,19 +142,10 @@ export async function listJcOpsBoard(
         -- REMAINING qty runs — so on a re-routed op they name a machine that
         -- may have produced nothing. This is the honest breakdown.
         COALESCE(mo.machines, '[]'::json) AS "machines"
-      FROM public.jc_ops op
-      JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
-      LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.machines m ON m.id = op.machine_id AND m.deleted_at IS NULL
-      LEFT JOIN public.vendors ven ON ven.id = op.outsource_vendor_id AND ven.deleted_at IS NULL
+      ${baseFrom}
       LEFT JOIN public.purchase_requests pr ON pr.id = op.outsource_pr_id AND pr.deleted_at IS NULL
       LEFT JOIN public.purchase_order_lines pol ON pol.id = op.outsource_po_line_id AND pol.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
-      LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id
       LEFT JOIN LATERAL (
         SELECT dc.id, dc.code
         FROM public.delivery_challan_lines dcl
@@ -148,11 +167,8 @@ export async function listJcOpsBoard(
         FROM public.v_op_machine_output v
         WHERE v.jc_op_id = op.id
       ) mo ON true
-      WHERE op.company_id = ${companyId}::uuid
-        AND op.deleted_at IS NULL
-        ${jcFrag}
-        ${searchFrag}
-      ORDER BY jc.code, op.op_seq
+      ${baseWhere}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -198,10 +214,8 @@ export async function listJcOpsBoard(
 
     const totalRows = (await tx.execute(sql`
       SELECT COUNT(*)::int AS total
-      FROM public.jc_ops op
-      JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
-      WHERE op.company_id = ${companyId}::uuid
-        AND op.deleted_at IS NULL
+      ${baseFrom}
+      ${baseWhere}
     `)) as unknown as Array<{ total: number }>;
 
     const jcOptions = (await tx.execute(sql`

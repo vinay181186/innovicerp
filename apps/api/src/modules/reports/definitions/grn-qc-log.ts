@@ -5,6 +5,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 export const grnQcLogReport: RegisteredReport = {
   definition: {
@@ -81,7 +82,7 @@ export const grnQcLogReport: RegisteredReport = {
         ${toFrag}
         ${qcFrag}
       ORDER BY grn.grn_date DESC, grn.code, grnl.line_no
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

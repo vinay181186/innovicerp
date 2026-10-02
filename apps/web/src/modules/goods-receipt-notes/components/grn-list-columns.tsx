@@ -25,6 +25,7 @@ export function goodsReceiptNoteListColumns(
     {
       // First column — pinned by the table standard (ADR-199).
       id: 'grn_code',
+      sortFilterField: 'grnCode',
       header: 'GRN No.',
       nowrap: true,
       render: (grn) => (
@@ -42,6 +43,7 @@ export function goodsReceiptNoteListColumns(
     },
     {
       id: 'grn_date',
+      sortFilterField: 'grnDate',
       kind: 'date',
       header: 'GRN Date',
       className: 'mono',
@@ -50,6 +52,7 @@ export function goodsReceiptNoteListColumns(
     },
     {
       id: 'vendor',
+      sortFilterField: 'vendorName',
       header: 'Vendor',
       align: 'left',
       ellipsis: true,
@@ -78,6 +81,7 @@ export function goodsReceiptNoteListColumns(
     },
     {
       id: 'po_nc_code',
+      sortFilterField: 'poNcCode',
       header: 'PO/NC No.',
       nowrap: true,
       // On an NC-return GRN poCodeText holds the NC code (no PO exists); on a
@@ -95,6 +99,8 @@ export function goodsReceiptNoteListColumns(
     },
     {
       id: 'received',
+      sortFilterField: 'totalReceivedQty',
+      filterType: 'num',
       header: 'Received',
       align: 'right',
       nowrap: true,
@@ -103,6 +109,8 @@ export function goodsReceiptNoteListColumns(
     },
     {
       id: 'accepted',
+      sortFilterField: 'totalQcAcceptedQty',
+      filterType: 'num',
       header: 'Accepted',
       align: 'right',
       nowrap: true,
@@ -118,6 +126,8 @@ export function goodsReceiptNoteListColumns(
     },
     {
       id: 'rejected',
+      sortFilterField: 'totalQcRejectedQty',
+      filterType: 'num',
       header: 'Rejected',
       align: 'right',
       nowrap: true,
@@ -137,6 +147,17 @@ export function goodsReceiptNoteListColumns(
       header: 'QC Status',
       nowrap: true,
       render: (grn) => <QcStatusBadge status={qcStatusFor(grn)} />,
+    },
+    {
+      // When the GRN record was entered (IST day) — Sort & Filter can pick a
+      // range of it (ADR-200). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      header: 'Created On',
+      className: 'mono',
+      nowrap: true,
+      render: (grn) => fmtDate(grn.createdAt),
     },
   ];
 }

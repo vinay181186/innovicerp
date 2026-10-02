@@ -8,12 +8,14 @@
 
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useToolIssuesList } from '../api';
 import { NewToolIssueModal } from './new-tool-issue-modal';
-import { toolIssueColumns } from './tool-issue-columns';
+import { TOOL_ISSUE_HIDDEN_COLUMNS, toolIssueColumns } from './tool-issue-columns';
 import { ToolHoldersView } from './tool-holders-view';
 import { ToolIssueViewModal } from './tool-issue-view-modal';
 import { ToolWriteoffsView } from './tool-writeoffs-view';
@@ -27,7 +29,6 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   cancelled: 'Cancelled',
 };
 type View = 'issues' | 'holders' | 'writeoffs';
-const PAGE_SIZE = 25;
 const withCount = (label: string, n: number | undefined): string =>
   n == null ? label : `${label} (${n})`;
 
@@ -45,14 +46,21 @@ export function ToolIssueRegisterView({
   const [showNew, setShowNew] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the register is paged, so
+  // filtering only the loaded page would miss issues. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.toolIssues, () => setPage(1));
+
   const { data, isLoading, isError, error } = useToolIssuesList({
     filter,
     search: search.trim() || undefined,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
+  useClampPage(page, data?.total, setPage);
   const columns = useMemo(() => toolIssueColumns(), []);
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
   if (eff && !perms.view) {
     return (
@@ -126,11 +134,12 @@ export function ToolIssueRegisterView({
               </select>
             }
             onClearFilters={() => {
+              sf.clearFilters();
               setFilter('all');
               setSearch('');
               setPage(1);
             }}
-            filtersActive={filter !== 'all' || search !== ''}
+            filtersActive={sf.filtering || filter !== 'all' || search !== ''}
             primary={
               perms.entry ? (
                 <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
@@ -149,12 +158,14 @@ export function ToolIssueRegisterView({
             <Panel bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.toolIssues}
+                sortFilterServer={sf}
+                defaultHidden={[...TOOL_ISSUE_HIDDEN_COLUMNS]}
                 columns={columns}
                 rows={data?.items ?? []}
                 rowKey={(t) => t.id}
                 loading={isLoading}
                 empty={
-                  search.trim() || filter !== 'all'
+                  search.trim() || filter !== 'all' || sf.filtering
                     ? 'No tool issues match.'
                     : 'No tool issues yet.'
                 }
@@ -183,7 +194,7 @@ export function ToolIssueRegisterView({
               total={data.total}
               noun="tool issue"
               page={page}
-              pageSize={PAGE_SIZE}
+              pageSize={LIST_PAGE_SIZE}
               onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
             />
           ) : null}

@@ -19,7 +19,8 @@ export type TrashEntityType =
   | 'BOM Master'
   | 'Route Card'
   | 'Cost Center'
-  | 'QC Process';
+  | 'QC Process'
+  | 'Production Order';
 
 export interface TrashListItem {
   id: string;
@@ -42,6 +43,8 @@ export interface ListTrashQuery {
   type?: TrashEntityType | undefined;
   /** Server-side match on document code/name, type and deleted-by. */
   search?: string | undefined;
+  /** Sort & Filter (ADR-200): the encoded column sort + filters. */
+  sf?: string | undefined;
   limit: number;
   offset: number;
 }
@@ -55,6 +58,7 @@ function toQueryString(q: ListTrashQuery): string {
   const params = new URLSearchParams();
   if (q.type) params.set('type', q.type);
   if (q.search) params.set('search', q.search);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

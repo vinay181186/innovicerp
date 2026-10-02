@@ -32,6 +32,7 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
@@ -82,14 +83,22 @@ function DeliveryChallansListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss DCs. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.ospOutwardDc, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListDeliveryChallansQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.status, search.page],
+    [sf.param, search.search, search.status, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useDeliveryChallansList(query);
@@ -145,7 +154,10 @@ function DeliveryChallansListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): both tabs fill the content area so the TABLE is
+    // the only thing that scrolls — the At-Vendor register (osp-wip) now opts
+    // its own Panel in with `fill`, so the page no longer has to scroll for it.
+    <div className="page-fill">
       {/* Outward DC | At-Vendor Register tabs (the At-Vendor register is the
           former standalone /osp-wip screen). */}
       <div
@@ -223,13 +235,14 @@ function DeliveryChallansListPage(): React.JSX.Element {
               </select>
             }
             onClearFilters={() => {
+              sf.clearFilters();
               setSearchInput('');
               void navigate({
                 search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
                 replace: true,
               });
             }}
-            filtersActive={search.status !== undefined || searchInput !== ''}
+            filtersActive={sf.filtering || search.status !== undefined || searchInput !== ''}
             tools={
               <>
                 <button
@@ -295,13 +308,16 @@ function DeliveryChallansListPage(): React.JSX.Element {
             // click opens the DC, and the only per-row action is Receive while
             // the DC is still out at the vendor (status === 'issued') — the same
             // gate the card carried.
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.ospOutwardDc}
+                sortFilterServer={sf}
                 columns={columns}
                 rows={rows}
                 loading={isLoading}
-                emptyText={search.search || search.status ? 'No DCs match.' : 'No DCs yet.'}
+                emptyText={
+                  sf.filtering || search.search || search.status ? 'No DCs match.' : 'No DCs yet.'
+                }
                 defaultHidden={DC_LIST_DEFAULT_HIDDEN}
                 onRowClick={(dc) =>
                   void navigate({ to: '/delivery-challans/$id', params: { id: dc.id } })

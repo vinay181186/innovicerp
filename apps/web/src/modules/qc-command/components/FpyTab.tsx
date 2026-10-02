@@ -10,6 +10,7 @@
 import type { QcCommandFpy, QcFpyGroupRow, QcFpyItemRow } from '@innovic/shared';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { type QcPager, TablePager } from './TablePager';
 
 function fpyColor(pct: number): string {
   if (pct >= 95) return 'var(--green)';
@@ -83,11 +84,14 @@ function GroupPanel({
   title,
   label,
   rows,
+  pager,
   nameWeight,
 }: {
   title: string;
   label: string;
+  /** This page of groups (server-paged, ADR-201). */
   rows: QcFpyGroupRow[];
+  pager: QcPager;
   nameWeight?: number;
 }): React.JSX.Element {
   return (
@@ -99,6 +103,7 @@ function GroupPanel({
         rowKey={(r) => r.name}
         emptyText="No QC data yet."
       />
+      {pager.total > 0 ? <TablePager pager={pager} noun={label.toLowerCase()} /> : null}
     </div>
   );
 }
@@ -148,7 +153,15 @@ const itemColumns: DataTableColumn<QcFpyItemRow>[] = [
   },
 ];
 
-export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
+export function FpyTab({
+  fpy,
+  opPager,
+  inspPager,
+}: {
+  fpy: QcCommandFpy;
+  opPager: QcPager;
+  inspPager: QcPager;
+}): React.JSX.Element {
   return (
     <>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -158,11 +171,13 @@ export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
           title="First-Pass Yield by Operation"
           label="Operation"
           rows={fpy.byOperation}
+          pager={opPager}
         />
         <GroupPanel
           title="First-Pass Yield by Inspector"
           label="Inspector"
           rows={fpy.byInspector}
+          pager={inspPager}
           nameWeight={600}
         />
       </div>

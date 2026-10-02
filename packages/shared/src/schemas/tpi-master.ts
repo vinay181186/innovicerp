@@ -18,6 +18,7 @@
 
 import { z } from 'zod';
 import { queryBoolean } from '../lib/query-boolean';
+import { sfRawParamSchema } from './list-query';
 
 // Same permitted characters as QC Process Master, plus '&' and ',' — inspector
 // names and firm names carry them ("R. Sharma & Co.", "Bureau Veritas, Mumbai").
@@ -70,6 +71,8 @@ export type UpdateTpiMasterInput = z.infer<typeof updateTpiMasterInputSchema>;
 export const listTpiMastersQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   isActive: queryBoolean().optional(),
+  /** Sort & Filter (ADR-200) — the TPI Master screen's column sort / filters. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

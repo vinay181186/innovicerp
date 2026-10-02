@@ -3,6 +3,7 @@ import {
   cancelToolIssueInputSchema,
   createToolIssueInputSchema,
   decideToolWriteoffInputSchema,
+  listToolHoldersQuerySchema,
   listToolIssuesQuerySchema,
   listToolWriteoffsQuerySchema,
   recordToolReturnInputSchema,
@@ -23,7 +24,7 @@ export async function toolIssuesRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/tool-issues/holders', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listToolHolders(req.user);
+    return service.listToolHolders(listToolHoldersQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/tool-issues/:id', async (req) => {

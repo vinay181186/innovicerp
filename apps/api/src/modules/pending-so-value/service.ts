@@ -16,17 +16,17 @@
 //   receivedValue    = SUM(inv.total_paid)
 //   outstandingValue = invoicedValue - receivedValue - SUM(inv.total_tds)  (0171)
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type {
-  PendingSoValueFilter,
+  PendingSoValueQuery,
   PendingSoValueResponse,
   PendingSoValueRow,
 } from '@innovic/shared';
-import { salesOrders } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
-
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { PSV_SF_COLUMNS } from './sf-columns';
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
@@ -47,21 +47,53 @@ function hidePsvRowMoney<T extends Record<string, unknown>>(r: T): T {
 }
 
 export async function getPendingSoValue(
-  filter: PendingSoValueFilter,
+  query: PendingSoValueQuery,
   user: AuthContext,
 ): Promise<PendingSoValueResponse> {
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'so_create');
+  const filter = query.filter;
+  // Read (and 400 on a bad value) before any DB work. Money columns can be
+  // sorted / filtered only by a user who may see them.
+  const sf = readSf(query.sf);
+  const sfFrag = sfWhere(PSV_SF_COLUMNS, sf, { canSeePrice: showMoney });
+  // Highest value-to-dispatch first; SO No. + id make the order unique so the
+  // pages never skip or repeat an SO.
+  const orderBy = sfOrderBy(
+    PSV_SF_COLUMNS,
+    sf,
+    sql`psv.pending_value DESC, psv.so_code ASC, psv.so_id ASC`,
+    { canSeePrice: showMoney },
+  );
+  const today = new Date().toISOString().slice(0, 10);
+
+  // The SO Filter, now in SQL (was a JS filter over every row):
+  //   open      — SO is open OR value is still to dispatch
+  //   overdue   — due date passed AND value still to dispatch
+  //   completed — closed / dispatched / cancelled
+  const filterFrag: SQL =
+    filter === 'open'
+      ? sql`AND (psv.status = 'open' OR psv.pending_value > 0)`
+      : filter === 'overdue'
+        ? sql`AND psv.due_date IS NOT NULL AND psv.due_date < ${today}::date AND psv.pending_value > 0`
+        : filter === 'completed'
+          ? sql`AND psv.status IN ('closed', 'dispatched', 'cancelled')`
+          : sql``;
+  const term = query.search?.trim() ?? '';
+  const searchFrag: SQL =
+    term === ''
+      ? sql``
+      : sql`AND (psv.so_code ILIKE ${`%${likeEscape(term)}%`} ESCAPE '\\'
+              OR psv.customer_name ILIKE ${`%${likeEscape(term)}%`} ESCAPE '\\')`;
 
   return withUserContext(user, async (tx) => {
-    // One aggregating query: per-SO sums of order / dispatched / invoiced /
-    // received. Filtering applied in the outer WHERE.
+    // One aggregating CTE: per-SO sums of order / dispatched / invoiced /
+    // received (`psv`), then the page and the totals both read it with the
+    // SAME WHERE (filter + search + Sort & Filter).
     //
     // Dispatched value uses the SO-line rate (not the DC line which doesn't
-    // carry rate) — multiply dispatched qty by the line's rate. We compute
-    // per-line dispatched-qty via a LATERAL sub-query for clarity over a
-    // chained join.
-    const rows = await tx.execute(sql`
+    // carry rate) — multiply dispatched qty by the line's rate.
+    const base = sql`
       WITH so_order_value AS (
         SELECT
           sol.sales_order_id AS so_id,
@@ -112,29 +144,65 @@ export async function getPendingSoValue(
         WHERE company_id = ${companyId}::uuid
           AND deleted_at IS NULL
         GROUP BY sales_order_id
-      )
-      SELECT
-        so.id                              AS so_id,
-        so.code                            AS so_code,
-        so.customer_name                   AS customer_name,
-        so.so_date::text                   AS so_date,
-        sov.earliest_due_date::text        AS due_date,
-        so.status::text                    AS status,
-        COALESCE(sov.order_value, 0)::text AS order_value,
-        COALESCE(sd.dispatched_value, 0)::text AS dispatched_value,
-        (COALESCE(sov.order_value, 0) - COALESCE(sd.dispatched_value, 0))::text AS pending_value,
-        COALESCE(si.invoiced_value, 0)::text AS invoiced_value,
-        COALESCE(si.received_value, 0)::text AS received_value,
-        (COALESCE(si.invoiced_value, 0) - COALESCE(si.received_value, 0)
-          - COALESCE(si.tds_value, 0))::text AS outstanding_value
-      FROM public.sales_orders so
-      LEFT JOIN so_order_value sov ON sov.so_id = so.id
-      LEFT JOIN so_dispatched   sd  ON sd.so_id  = so.id
-      LEFT JOIN so_invoiced     si  ON si.so_id  = so.id
-      WHERE so.company_id = ${companyId}::uuid
-        AND so.deleted_at IS NULL
-      ORDER BY (COALESCE(sov.order_value, 0) - COALESCE(sd.dispatched_value, 0)) DESC
-    `);
+      ),
+      psv AS (
+        SELECT
+          so.id                              AS so_id,
+          so.code                            AS so_code,
+          so.customer_name                   AS customer_name,
+          so.so_date                         AS so_date,
+          sov.earliest_due_date              AS due_date,
+          so.status::text                    AS status,
+          COALESCE(sov.order_value, 0)       AS order_value,
+          COALESCE(sd.dispatched_value, 0)   AS dispatched_value,
+          (COALESCE(sov.order_value, 0) - COALESCE(sd.dispatched_value, 0)) AS pending_value,
+          COALESCE(si.invoiced_value, 0)     AS invoiced_value,
+          COALESCE(si.received_value, 0)     AS received_value,
+          (COALESCE(si.invoiced_value, 0) - COALESCE(si.received_value, 0)
+            - COALESCE(si.tds_value, 0))     AS outstanding_value
+        FROM public.sales_orders so
+        LEFT JOIN so_order_value sov ON sov.so_id = so.id
+        LEFT JOIN so_dispatched   sd  ON sd.so_id  = so.id
+        LEFT JOIN so_invoiced     si  ON si.so_id  = so.id
+        WHERE so.company_id = ${companyId}::uuid
+          AND so.deleted_at IS NULL
+      )`;
+    const where = sql`WHERE TRUE ${filterFrag} ${searchFrag} ${sfFrag}`;
+    const paging =
+      query.limit === undefined ? sql`` : sql`LIMIT ${query.limit} OFFSET ${query.offset ?? 0}`;
+
+    const [pageRows, totalsRows] = await Promise.all([
+      tx.execute(sql`
+        ${base}
+        SELECT
+          psv.so_id, psv.so_code, psv.customer_name,
+          psv.so_date::text AS so_date, psv.due_date::text AS due_date, psv.status,
+          psv.order_value::text AS order_value,
+          psv.dispatched_value::text AS dispatched_value,
+          psv.pending_value::text AS pending_value,
+          psv.invoiced_value::text AS invoiced_value,
+          psv.received_value::text AS received_value,
+          psv.outstanding_value::text AS outstanding_value
+        FROM psv
+        ${where}
+        ORDER BY ${orderBy}
+        ${paging}
+      `),
+      // Totals over EVERY matching SO (the KPI strip + the totals row).
+      tx.execute(sql`
+        ${base}
+        SELECT
+          count(*)::int AS so_count,
+          COALESCE(SUM(psv.order_value), 0)::numeric(16, 2)::text AS order_value,
+          COALESCE(SUM(psv.dispatched_value), 0)::numeric(16, 2)::text AS dispatched_value,
+          COALESCE(SUM(psv.pending_value), 0)::numeric(16, 2)::text AS pending_value,
+          COALESCE(SUM(psv.invoiced_value), 0)::numeric(16, 2)::text AS invoiced_value,
+          COALESCE(SUM(psv.received_value), 0)::numeric(16, 2)::text AS received_value,
+          COALESCE(SUM(psv.outstanding_value), 0)::numeric(16, 2)::text AS outstanding_value
+        FROM psv
+        ${where}
+      `),
+    ]);
 
     type Row = {
       so_id: string;
@@ -150,29 +218,14 @@ export async function getPendingSoValue(
       received_value: string;
       outstanding_value: string;
     };
-    const typed = rows as unknown as Row[];
-    const today = new Date().toISOString().slice(0, 10);
+    type TotalsRow = Omit<
+      Row,
+      'so_id' | 'so_code' | 'customer_name' | 'so_date' | 'due_date' | 'status'
+    > & {
+      so_count: number;
+    };
 
-    const filtered = typed.filter((r) => {
-      const pending = Number(r.pending_value);
-      const isOpenLike = r.status === 'open';
-      const isCompletedLike =
-        r.status === 'closed' || r.status === 'dispatched' || r.status === 'cancelled';
-      switch (filter) {
-        case 'open':
-          return isOpenLike || pending > 0;
-        case 'all':
-          return true;
-        case 'overdue':
-          return r.due_date !== null && r.due_date < today && pending > 0;
-        case 'completed':
-          return isCompletedLike;
-        default:
-          return true;
-      }
-    });
-
-    const mapped: PendingSoValueRow[] = filtered.map((r) => ({
+    const mapped: PendingSoValueRow[] = (pageRows as unknown as Row[]).map((r) => ({
       soId: r.so_id,
       soCode: r.so_code,
       customerName: r.customer_name,
@@ -187,48 +240,24 @@ export async function getPendingSoValue(
       outstandingValue: r.outstanding_value,
     }));
 
-    const totals = sumTotals(mapped);
+    const t = (totalsRows as unknown as TotalsRow[])[0];
+    const totals: PendingSoValueResponse['totals'] = {
+      soCount: Number(t?.so_count ?? 0),
+      orderValue: t?.order_value ?? '0.00',
+      dispatchedValue: t?.dispatched_value ?? '0.00',
+      pendingValue: t?.pending_value ?? '0.00',
+      invoicedValue: t?.invoiced_value ?? '0.00',
+      receivedValue: t?.received_value ?? '0.00',
+      outstandingValue: t?.outstanding_value ?? '0.00',
+    };
 
     return {
       priceVisible: showMoney,
       generatedAt: new Date().toISOString(),
       filter,
+      total: totals.soCount,
       rows: showMoney ? mapped : mapped.map(hidePsvRowMoney),
       totals: showMoney ? totals : hidePsvRowMoney(totals),
     };
   });
 }
-
-function sumTotals(rows: PendingSoValueRow[]): PendingSoValueResponse['totals'] {
-  let orderValue = 0;
-  let dispatchedValue = 0;
-  let pendingValue = 0;
-  let invoicedValue = 0;
-  let receivedValue = 0;
-  let outstandingValue = 0;
-  for (const r of rows) {
-    orderValue += Number(r.orderValue);
-    dispatchedValue += Number(r.dispatchedValue);
-    pendingValue += Number(r.pendingValue);
-    invoicedValue += Number(r.invoicedValue);
-    receivedValue += Number(r.receivedValue);
-    outstandingValue += Number(r.outstandingValue);
-  }
-  return {
-    soCount: rows.length,
-    orderValue: orderValue.toFixed(2),
-    dispatchedValue: dispatchedValue.toFixed(2),
-    pendingValue: pendingValue.toFixed(2),
-    invoicedValue: invoicedValue.toFixed(2),
-    receivedValue: receivedValue.toFixed(2),
-    outstandingValue: outstandingValue.toFixed(2),
-  };
-}
-
-// Re-export the imports so eslint doesn't complain about unused identifiers
-// when the schema-typed table refs aren't directly used (the SQL goes through
-// tx.execute(sql\`\`)). The imports keep the module's intent obvious.
-void salesOrders;
-void and;
-void eq;
-void isNull;

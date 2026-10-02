@@ -17,8 +17,10 @@ import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -28,11 +30,10 @@ import { jwReturnColumns } from './jw-returns-columns';
 import { NewJwReturnModal } from './new-jw-return-modal';
 import { usePrintJwReturn } from './use-print-jw-return';
 
-// The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
-// exactly the cap this list already ran under, so nothing that was visible
-// before disappears — what changed is that the SEARCH now runs on the server,
-// over the whole book, instead of over the rows that happened to be downloaded.
-const LIST_LIMIT = 500;
+// ADR-201: 25 returns a page with Prev / Next (the page lives in this tab's
+// state — the tab has no route of its own). The search box and the column ▾
+// Sort & Filter run on the server over the whole book; any change of them
+// goes back to page 1.
 
 // `initialSearch` — one-time seed from the host route's ?search param (Global
 // Search deep link). It fills the box AND the debounced term, so the first fetch
@@ -48,28 +49,40 @@ export function JwDispatchView({
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  IN-JR  26 " and "IN-JR 26" are one query, one cache entry, one fetch.
     const next = normalizeSearchTerm(searchInput);
     if (next === term) return;
-    const id = window.setTimeout(() => setTerm(next), 300);
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      setPage(1);
+    }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, term]);
+  const sf = useServerSortFilter(TABLE_KEYS.jwReturns, () => setPage(1));
 
   // The term goes to the SERVER now. It used to filter the downloaded rows in
   // the browser, which only ever searched the capped page the endpoint had
   // sent — past the cap the box quietly hid matching returns. A new term is a
-  // new query key, so it refetches, and the read always starts at the first
-  // page (offset 0) rather than stranding the user mid-list.
+  // new query key, so it refetches from page 1. Only the page on screen loads.
   const query: ListJwReturnChallansQuery = useMemo(
-    () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
-    [term],
+    () => ({
+      ...(term ? { search: term } : {}),
+      ...(sf.param ? { sf: sf.param } : {}),
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
+    }),
+    [term, sf.param, page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useJwReturnsList(query);
   const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const onPage = useCallback((p: number) => setPage(p), []);
+  useClampPage(page, data?.total, onPage);
 
   // The return the Cancel dialog is asking about, or null when closed. The
   // dialog captures a reason (R10, ADR-194) and runs the mutation itself.
@@ -96,12 +109,17 @@ export function JwDispatchView({
       <ListHeader
         title="JW Return"
         icon="📦"
-        count={data?.total ?? rows.length}
+        count={total}
         noun="JW return"
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search return no., date, JWSO, customer, item, transport, status…"
         updating={isFetching && !isLoading}
+        onClearFilters={() => {
+          sf.clearFilters();
+          setSearchInput('');
+        }}
+        filtersActive={sf.filtering || searchInput !== ''}
         primary={
           canWrite ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
@@ -124,7 +142,8 @@ export function JwDispatchView({
             rows={rows}
             rowKey={(r) => r.id}
             loading={isLoading}
-            empty={term ? 'No JW Returns match.' : 'No JW Returns yet.'}
+            sortFilterServer={sf}
+            empty={term || sf.filtering ? 'No JW Returns match.' : 'No JW Returns yet.'}
             // A cancelled return is washed; an issued one is the live state and
             // stays untinted.
             rowClassName={(r) => (r.status === 'cancelled' ? ROW_TINT.cancelled : undefined)}
@@ -163,7 +182,13 @@ export function JwDispatchView({
         </Panel>
       )}
 
-      <ListFooter total={data?.total ?? rows.length} noun="JW return" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="JW return"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={onPage}
+      />
 
       {historyTarget ? (
         <Modal

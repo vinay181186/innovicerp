@@ -4,12 +4,13 @@
 // qc_assignments + nc_register) — Pareto + Inspector are now real legacy-parity
 // reports, no longer reusing /qc-dashboard. Legacy chrome.
 
-import type { QcCommandQueueRow } from '@innovic/shared';
+import type { QcCommandQueueRow, QcCommandTotals, QcQueueSort } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatStrip } from '@/ui/data';
 import { ListHeader } from '@/ui/layout';
@@ -41,6 +42,26 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'rework', label: 'Rework Cycles' },
 ];
 
+/** The paged tables on the board — one page number each (component state:
+ *  the tabs have no route of their own). */
+type PagedTable = 'queue' | 'fpyOp' | 'fpyInsp' | 'pareto' | 'inspector' | 'rework';
+const FIRST_PAGES: Record<PagedTable, number> = {
+  queue: 1,
+  fpyOp: 1,
+  fpyInsp: 1,
+  pareto: 1,
+  inspector: 1,
+  rework: 1,
+};
+const TOTAL_KEY: Record<PagedTable, keyof QcCommandTotals> = {
+  queue: 'queue',
+  fpyOp: 'fpyByOperation',
+  fpyInsp: 'fpyByInspector',
+  pareto: 'pareto',
+  inspector: 'inspectorPerf',
+  rework: 'rework',
+};
+
 function fpyColor(pct: number): string {
   if (pct >= 95) return 'var(--green2)';
   if (pct >= 85) return 'var(--amber2)';
@@ -52,7 +73,36 @@ function QcCommandPage(): React.JSX.Element {
   const navigate = qcCommandRoute.useNavigate();
   const tab: Tab = search.tab ?? 'queue';
 
-  const cmd = useQcCommand();
+  // ADR-201: every table pages at 25 on the server; the stats strip and the
+  // table counts are whole-set figures from the same read.
+  const [pages, setPages] = useState<Record<PagedTable, number>>(FIRST_PAGES);
+  const [queueSort, setQueueSort] = useState<QcQueueSort>('age');
+  const cmd = useQcCommand({
+    queueSort,
+    limit: LIST_PAGE_SIZE,
+    queueOffset: pageOffset(pages.queue),
+    fpyOpOffset: pageOffset(pages.fpyOp),
+    fpyInspOffset: pageOffset(pages.fpyInsp),
+    paretoOffset: pageOffset(pages.pareto),
+    inspectorOffset: pageOffset(pages.inspector),
+    reworkOffset: pageOffset(pages.rework),
+  });
+  const totals = cmd.data?.totals;
+  const setPage = useCallback(
+    (t: PagedTable) => (p: number) => setPages((prev) => ({ ...prev, [t]: p })),
+    [],
+  );
+  const pager = (t: PagedTable) => ({
+    page: pages[t],
+    total: totals?.[TOTAL_KEY[t]] ?? 0,
+    onPage: setPage(t),
+  });
+  useClampPage(pages.queue, totals?.queue, setPage('queue'));
+  useClampPage(pages.fpyOp, totals?.fpyByOperation, setPage('fpyOp'));
+  useClampPage(pages.fpyInsp, totals?.fpyByInspector, setPage('fpyInsp'));
+  useClampPage(pages.pareto, totals?.pareto, setPage('pareto'));
+  useClampPage(pages.inspector, totals?.inspectorPerf, setPage('inspector'));
+  useClampPage(pages.rework, totals?.rework, setPage('rework'));
   const pickUp = usePickUpQc();
 
   // Tier-driven, per department (qc_submit sits in QC) — these were global role
@@ -108,7 +158,7 @@ function QcCommandPage(): React.JSX.Element {
       <ListHeader
         title="QC Center"
         icon="🔬"
-        count={cmd.data ? cmd.data.queue.length : undefined}
+        count={totals?.queue}
         noun="call in queue"
         nounPlural="calls in queue"
         updating={cmd.isFetching && !loading}
@@ -191,6 +241,12 @@ function QcCommandPage(): React.JSX.Element {
           {tab === 'queue' ? (
             <QueueTab
               rows={cmd.data?.queue ?? []}
+              sort={queueSort}
+              onSort={(s) => {
+                setQueueSort(s);
+                setPages((prev) => ({ ...prev, queue: 1 }));
+              }}
+              pager={pager('queue')}
               canPickUp={canPickUp}
               canAssign={canAssign}
               busyId={busyId}
@@ -198,10 +254,18 @@ function QcCommandPage(): React.JSX.Element {
               onAssign={setAssignRow}
             />
           ) : null}
-          {tab === 'fpy' && cmd.data ? <FpyTab fpy={cmd.data.fpy} /> : null}
-          {tab === 'rework' ? <ReworkTab rework={cmd.data?.rework ?? []} /> : null}
-          {tab === 'pareto' && cmd.data ? <ParetoTab pareto={cmd.data.pareto} /> : null}
-          {tab === 'inspector' ? <InspectorTab perf={cmd.data?.inspectorPerf ?? []} /> : null}
+          {tab === 'fpy' && cmd.data ? (
+            <FpyTab fpy={cmd.data.fpy} opPager={pager('fpyOp')} inspPager={pager('fpyInsp')} />
+          ) : null}
+          {tab === 'rework' ? (
+            <ReworkTab rework={cmd.data?.rework ?? []} pager={pager('rework')} />
+          ) : null}
+          {tab === 'pareto' && cmd.data ? (
+            <ParetoTab pareto={cmd.data.pareto} pager={pager('pareto')} />
+          ) : null}
+          {tab === 'inspector' ? (
+            <InspectorTab perf={cmd.data?.inspectorPerf ?? []} pager={pager('inspector')} />
+          ) : null}
         </>
       )}
 

@@ -12,7 +12,12 @@
 // detail row.
 
 import {
+  NC_DISPOSITION_LABELS,
+  NC_DISPOSITIONS,
+  NC_REASON_CATEGORIES,
   NC_REASON_CATEGORY_LABELS,
+  NC_STATUSES,
+  NC_STATUS_LABELS,
   opSrNo,
   roundQty,
   type NcRegisterListItem,
@@ -25,6 +30,21 @@ import { ROW_TINT, type DataTableColumn } from '@/ui/data';
 import type { RowMenuItem } from '@/ui/data/row-menu-logic';
 import { NcDispositionBadge } from './nc-disposition-badge';
 import { NcStatusBadge } from './nc-status-badge';
+
+/** Sort & Filter (ADR-200, server mode) tick lists: stored code + label shown. */
+const NC_STATUS_OPTIONS = NC_STATUSES.map((value) => ({ value, label: NC_STATUS_LABELS[value] }));
+const NC_DISPOSITION_OPTIONS = NC_DISPOSITIONS.map((value) => ({
+  value,
+  label: NC_DISPOSITION_LABELS[value],
+}));
+const NC_REASON_OPTIONS = NC_REASON_CATEGORIES.map((value) => ({
+  value,
+  label: NC_REASON_CATEGORY_LABELS[value],
+}));
+
+/** Columns off by default on the NC Register sheet — passed to the DataTable's
+ *  `defaultHidden`. They stay reachable in ▸ / the Columns menu. */
+export const NC_LIST_HIDDEN_COLUMNS = ['created_on'];
 
 /** NC status → row tint (ADR-199 ROW_TINT), kept in step with NcStatusBadge:
  *  recovery under way (rework / repair / at vendor / QC pending) reads amber
@@ -71,6 +91,7 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
     {
       // First column — pinned by the table standard (ADR-199).
       id: 'nc_code',
+      sortFilterField: 'ncCode',
       header: 'NC No.',
       nowrap: true,
       render: (nc) => (
@@ -88,6 +109,8 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
     },
     {
       id: 'nc_status',
+      sortFilterField: 'status',
+      filterOptions: NC_STATUS_OPTIONS,
       kind: 'badge',
       header: 'NC Status',
       nowrap: true,
@@ -95,6 +118,8 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
     },
     {
       id: 'disposition',
+      sortFilterField: 'disposition',
+      filterOptions: NC_DISPOSITION_OPTIONS,
       kind: 'badge',
       header: 'Disposition',
       nowrap: true,
@@ -102,6 +127,7 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       header: 'Item Code',
       className: 'td-code',
       nowrap: true,
@@ -114,6 +140,7 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       header: 'Item Name',
       align: 'left',
       ellipsis: true,
@@ -123,6 +150,8 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
     },
     {
       id: 'rejected_qty',
+      sortFilterField: 'rejectedQty',
+      filterType: 'num',
       header: 'Rejected',
       headColor: 'var(--red)',
       align: 'right',
@@ -135,6 +164,9 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
     },
     {
       id: 'reason',
+      sortFilterField: 'reasonCategory',
+      filterType: 'list',
+      filterOptions: NC_REASON_OPTIONS,
       header: 'Reason',
       nowrap: true,
       className: 'text2',
@@ -143,11 +175,23 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
     },
     {
       id: 'nc_date',
+      sortFilterField: 'ncDate',
       kind: 'date',
       header: 'NC Date',
       className: 'mono',
       nowrap: true,
       render: (nc) => fmtDate(nc.ncDate),
+    },
+    {
+      // When the NC record was entered (IST day) — Sort & Filter can pick a
+      // range of it (ADR-200). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      header: 'Created On',
+      className: 'mono',
+      nowrap: true,
+      render: (nc) => fmtDate(nc.createdAt),
     },
   ];
 }

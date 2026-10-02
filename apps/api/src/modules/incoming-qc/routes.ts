@@ -1,4 +1,4 @@
-import { submitIncomingQcInputSchema } from '@innovic/shared';
+import { incomingQcQuerySchema, submitIncomingQcInputSchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
@@ -9,7 +9,8 @@ const lineParam = z.object({ grnLineId: z.string().uuid() });
 export async function incomingQcRoutes(app: FastifyInstance): Promise<void> {
   app.get('/incoming-qc', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.getIncomingQc(req.user);
+    // ADR-201: optional search / paging / Sort & Filter per table.
+    return service.getIncomingQc(req.user, incomingQcQuerySchema.parse(req.query));
   });
 
   // Inline accept/reject for one GRN line (Incoming QC Call Register).

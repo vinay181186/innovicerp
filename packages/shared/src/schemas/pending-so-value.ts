@@ -12,12 +12,20 @@
 //   completed — SO status in {closed, dispatched, cancelled}
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const pendingSoValueFilterSchema = z.enum(['open', 'all', 'overdue', 'completed']);
 export type PendingSoValueFilter = z.infer<typeof pendingSoValueFilterSchema>;
 
 export const pendingSoValueQuerySchema = z.object({
   filter: pendingSoValueFilterSchema.default('open'),
+  /** SO No. / customer — matched on the server over every SO (ADR-201). */
+  search: z.string().trim().max(100).optional(),
+  /** Sort & Filter (ADR-200). */
+  sf: sfRawParamSchema,
+  /** Paging (ADR-201). No limit → every row. */
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
 export type PendingSoValueQuery = z.infer<typeof pendingSoValueQuerySchema>;
 
@@ -41,7 +49,8 @@ export const pendingSoValueRowSchema = z.object({
 export type PendingSoValueRow = z.infer<typeof pendingSoValueRowSchema>;
 
 /** Totals row at the bottom of the table + the 5-tile KPI strip data
- *  (legacy L19333–19340). */
+ *  (legacy L19333–19340). Summed on the server over EVERY SO matching the
+ *  filter + search + Sort & Filter — never over the page on screen. */
 export const pendingSoValueTotalsSchema = z.object({
   soCount: z.number().int().nonnegative(),
   // Money — NULL when the viewer's access hides prices.
@@ -57,6 +66,8 @@ export type PendingSoValueTotals = z.infer<typeof pendingSoValueTotalsSchema>;
 export const pendingSoValueResponseSchema = z.object({
   generatedAt: z.string(),
   filter: pendingSoValueFilterSchema,
+  /** SOs matching every filter (the pager's total; rows holds one page). */
+  total: z.number().int().nonnegative(),
   rows: z.array(pendingSoValueRowSchema),
   totals: pendingSoValueTotalsSchema,
   /** Told, not inferred. The server strips money it may not send and states it

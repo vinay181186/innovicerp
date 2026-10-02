@@ -7,15 +7,22 @@
 // Clicking an SO row opens that SO's SO Status page (/sales-orders/$id/status,
 // owner decision 2026-09-26); the SO No. link inside the first cell opens the SO
 // itself (/sales-orders/$id). Rows tint by the derived progress status.
+//
+// ADR-201 (2026-10-02): 25 rows a page with Prev / Next. The search, the SO
+// status, the overall (progress) status and Sort & Filter all run on the
+// server over every SO; the overall-status counts in the dropdown come from
+// the server too, so they never count just the page on screen.
 
-import type { SoOverallStatus, SoOverviewRow } from '@innovic/shared';
+import type { SoOverallStatus, SoOverviewResponse, SoOverviewRow } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { SearchInput } from '@/ui/forms';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useSoOverview } from '../api';
@@ -28,6 +35,10 @@ import {
 const searchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(['open', 'closed', 'dispatched', 'cancelled', 'all']).optional(),
+  overall: z
+    .enum(['not_started', 'in_progress', 'on_track', 'delayed', 'completed', 'blocked'])
+    .optional(),
+  page: pageSearchParam,
 });
 
 export const soOverviewListRoute = createRoute({
@@ -53,8 +64,9 @@ const OVERALL_STATUS_LABELS: Array<{ value: OverallStatusFilter; label: string }
 
 function SoOverviewPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const { search, status } = soOverviewListRoute.useSearch();
-  const [overallFilter, setOverallFilter] = useState<OverallStatusFilter>('all');
+  const routeNavigate = soOverviewListRoute.useNavigate();
+  const { search, status, overall, page } = soOverviewListRoute.useSearch();
+  const overallFilter: OverallStatusFilter = overall ?? 'all';
   // Bumped by Clear so a still-pending debounced keystroke cannot re-apply
   // the search it just cleared (SearchInput RESET SEMANTICS).
   const [clearKey, setClearKey] = useState(0);
@@ -62,8 +74,8 @@ function SoOverviewPage(): React.JSX.Element {
   // The box keeps what the user typed (a trailing space included); only the
   // normalised term goes to the URL. Feeding the trimmed URL term back as the
   // box value made SearchInput overwrite the draft and eat a typed space.
-  const urlRef = useRef({ search, status });
-  urlRef.current = { search, status };
+  const urlRef = useRef({ search, status, overall });
+  urlRef.current = { search, status, overall };
   const [searchInput, setSearchInput] = useState(search ?? '');
   useEffect(() => {
     // Adopt a URL term the box did not produce (Back, a pasted link).
@@ -79,25 +91,61 @@ function SoOverviewPage(): React.JSX.Element {
     if (next === cur.search) return;
     void navigate({
       to: '/so-overview',
-      search: { ...(cur.status ? { status: cur.status } : {}), ...(next ? { search: next } : {}) },
+      search: {
+        ...(cur.status ? { status: cur.status } : {}),
+        ...(cur.overall ? { overall: cur.overall } : {}),
+        ...(next ? { search: next } : {}),
+        page: 1,
+      },
       replace: true,
     });
   }, [searchInput, navigate]);
-  const { data, isLoading, isError, error } = useSoOverview({ search, status });
+
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void routeNavigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [routeNavigate],
+  );
+  // Sort & Filter on the server (the list is paged); any change → page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.soOverview, () => gotoPage(1));
+  const query = useMemo(
+    () => ({
+      search,
+      status,
+      overall,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
+    }),
+    [search, status, overall, sf.param, page],
+  );
+  const { data, isLoading, isFetching, isError, error } = useSoOverview(query);
+  useClampPage(page, data?.total, gotoPage);
 
   const openSoStatus = (row: SoOverviewRow): void => {
     void navigate({ to: '/sales-orders/$id/status', params: { id: row.id } });
   };
 
-  const filteredRows =
-    overallFilter === 'all'
-      ? (data?.rows ?? [])
-      : (data?.rows ?? []).filter((r) => r.overallStatus === overallFilter);
-
-  const columns = soOverviewColumns();
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const columns = useMemo(() => soOverviewColumns(), []);
+  const setOverall = (next: OverallStatusFilter): void => {
+    void routeNavigate({
+      search: (prev) => ({
+        ...prev,
+        overall: next === 'all' ? undefined : next,
+        page: 1,
+      }),
+      replace: true,
+    });
+  };
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header stays on screen down
+    // to the last row.
+    <div className="page-fill">
       {/* The ONE list header (ui/layout ListHeader). The debounced SearchInput
           rides in `searchSlot` so the URL write keeps its 300ms delay; the
           SO status and overall-status (with counts) dropdowns sit beside it
@@ -105,7 +153,8 @@ function SoOverviewPage(): React.JSX.Element {
       <ListHeader
         title="SO Overview"
         icon="📊"
-        count={data ? filteredRows.length : undefined}
+        count={data ? total : undefined}
+        updating={isFetching && !isLoading}
         noun="SO"
         filterNote={
           overallFilter !== 'all'
@@ -135,6 +184,8 @@ function SoOverviewPage(): React.JSX.Element {
                   to: '/so-overview',
                   search: {
                     ...(search ? { search } : {}),
+                    ...(overall ? { overall } : {}),
+                    page: 1,
                     status:
                       (e.target.value as
                         | 'open'
@@ -154,18 +205,20 @@ function SoOverviewPage(): React.JSX.Element {
               <option value="all">All</option>
             </select>
             <OverallStatusSelect
-              rows={data?.rows ?? []}
+              summary={data?.summary}
               value={overallFilter}
-              onChange={setOverallFilter}
+              onChange={setOverall}
             />
           </>
         }
         onClearFilters={() => {
-          setOverallFilter('all');
           setClearKey((k) => k + 1);
-          void navigate({ to: '/so-overview', search: {}, replace: true });
+          sf.clearFilters();
+          void navigate({ to: '/so-overview', search: { page: 1 }, replace: true });
         }}
-        filtersActive={!!(search || status || searchInput) || overallFilter !== 'all'}
+        filtersActive={
+          !!(search || status || searchInput) || overallFilter !== 'all' || sf.filtering
+        }
       />
 
       {isError ? (
@@ -180,15 +233,18 @@ function SoOverviewPage(): React.JSX.Element {
         // Equipment / Lines / SO Date live in the ▸ detail row by default. Rows
         // tint by the derived progress status, the row click opens the SO Status
         // page, and the SO No. link inside the first cell opens the SO itself.
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.soOverview}
             columns={columns}
-            rows={filteredRows}
+            rows={rows}
             loading={isLoading}
             defaultHidden={SO_OVERVIEW_DEFAULT_HIDDEN}
+            sortFilterServer={sf}
             emptyText={
-              search || status || overallFilter !== 'all' ? 'No SOs match.' : 'No SOs yet.'
+              search || status || overallFilter !== 'all' || sf.filtering
+                ? 'No SOs match.'
+                : 'No SOs yet.'
             }
             onRowClick={openSoStatus}
             rowClassName={(row) => soRowTint(row.overallStatus)}
@@ -196,30 +252,38 @@ function SoOverviewPage(): React.JSX.Element {
         </Panel>
       )}
 
-      {data ? <ListFooter total={data.rows.length} shown={filteredRows.length} noun="SO" /> : null}
+      {data ? (
+        <ListFooter
+          total={total}
+          noun="SO"
+          page={page}
+          pageSize={LIST_PAGE_SIZE}
+          onPage={gotoPage}
+        />
+      ) : null}
     </div>
   );
 }
 
 function OverallStatusSelect({
-  rows,
+  summary,
   value,
   onChange,
 }: {
-  rows: SoOverviewRow[];
+  /** Server counts over every SO matching the other filters (not the page). */
+  summary: SoOverviewResponse['summary'] | undefined;
   value: OverallStatusFilter;
   onChange: (next: OverallStatusFilter) => void;
 }): React.JSX.Element {
   const counts: Record<OverallStatusFilter, number> = {
-    all: rows.length,
-    not_started: 0,
-    in_progress: 0,
-    on_track: 0,
-    delayed: 0,
-    completed: 0,
-    blocked: 0,
+    all: summary?.soCount ?? 0,
+    not_started: summary?.notStartedCount ?? 0,
+    in_progress: summary?.inProgressCount ?? 0,
+    on_track: summary?.onTrackCount ?? 0,
+    delayed: summary?.delayedCount ?? 0,
+    completed: summary?.completedCount ?? 0,
+    blocked: summary?.blockedCount ?? 0,
   };
-  for (const r of rows) counts[r.overallStatus] = (counts[r.overallStatus] ?? 0) + 1;
   return (
     <select
       className="innovic-select"

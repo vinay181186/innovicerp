@@ -27,9 +27,11 @@ import { ActivityAction } from '@innovic/shared';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 import { partyMaterialFitsJwLine } from '../party-materials/service';
+import { PARTY_GRN_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -106,6 +108,12 @@ export async function listPartyGrn(
     const clientFrag = input.clientId ? sql`AND pg.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND pg.grn_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND pg.grn_date <= ${input.toDate}::date` : sql``;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to the rows AND the
+    // total/summary query.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(PARTY_GRN_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(PARTY_GRN_SF_COLUMNS, sf, sql`pg.grn_date DESC, pg.code DESC`);
 
     const result = await tx.execute(sql`
       SELECT
@@ -140,7 +148,8 @@ export async function listPartyGrn(
         ${clientFrag}
         ${fromFrag}
         ${toFrag}
-      ORDER BY pg.grn_date DESC, pg.code DESC
+        ${sfFrag}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -157,7 +166,8 @@ export async function listPartyGrn(
       FROM public.party_grn pg
       LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
       LEFT JOIN LATERAL (
-        SELECT SUM(received_qty)::int AS total_received
+        SELECT SUM(received_qty)::int AS total_received,
+               COUNT(*)::int AS lines_count
         FROM public.party_grn_lines pgl
         WHERE pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
       ) agg ON true
@@ -168,6 +178,7 @@ export async function listPartyGrn(
         ${clientFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
     `)) as unknown as Array<Record<string, unknown>>;
     const sum = sumRows[0] ?? {};
     const total = Number(sum['total_grns'] ?? 0);

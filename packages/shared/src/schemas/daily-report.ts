@@ -52,6 +52,11 @@ export type DailyReportSummary = z.infer<typeof dailyReportSummarySchema>;
 export const dailyReportQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   machineId: z.string().uuid().optional(),
+  /** Set -> paged (ADR-201): `groups` carry only this page's rows (machines in
+   *  order, rows in order), while every group's `totalQty`, the `summary` and
+   *  `total` are worked out over the WHOLE day. Unset -> the whole day. */
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
 export type DailyReportQuery = z.infer<typeof dailyReportQuerySchema>;
 
@@ -60,4 +65,6 @@ export interface DailyReportResponse {
   machineId: string | null;
   summary: DailyReportSummary;
   groups: DailyReportMachineGroup[];
+  /** Paged mode: log entries of the day (all pages). */
+  total?: number;
 }

@@ -10,8 +10,9 @@ import {
   isoDateFilter,
   likeFilter,
   numCell,
-  type SqlRow,
+  REPORT_ROW_CAP,
   textCell,
+  type SqlRow,
 } from './report-helpers';
 
 export const receivableAgeingReport: RegisteredReport = {
@@ -108,7 +109,7 @@ export const receivableAgeingReport: RegisteredReport = {
       FROM base
       WHERE grand_total - paid - tds > 0.005
       ORDER BY days_overdue DESC, invoice_code
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

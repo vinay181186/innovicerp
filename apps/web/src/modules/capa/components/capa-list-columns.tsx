@@ -9,7 +9,7 @@
 // route, so the CAPA No. is plain text, not a link; the row click opens the
 // 5-step modal (read-only).
 
-import type { CapaRecord } from '@innovic/shared';
+import { CAPA_STATUSES, type CapaRecord } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { ROW_TINT } from '@/ui/data';
@@ -34,6 +34,8 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
   return [
     {
       id: 'capa_no',
+      sortFilterField: 'code',
+      filterType: 'text',
       header: 'CAPA No.',
       nowrap: true,
       render: (c) => (
@@ -44,6 +46,11 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
     },
     {
       id: 'type',
+      sortFilterField: 'type',
+      filterOptions: [
+        { value: 'Corrective', label: 'Corrective' },
+        { value: 'Preventive', label: 'Preventive' },
+      ],
       kind: 'badge',
       header: 'Type',
       nowrap: true,
@@ -53,6 +60,8 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
     },
     {
       id: 'nc_no',
+      sortFilterField: 'ncRefs',
+      filterType: 'text',
       header: 'NC No.',
       nowrap: true,
       render: (c) =>
@@ -66,6 +75,7 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
     },
     {
       id: 'problem',
+      sortFilterField: 'problem',
       kind: 'text',
       header: 'Problem',
       align: 'left',
@@ -75,6 +85,7 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
     },
     {
       id: 'responsible',
+      sortFilterField: 'responsible',
       kind: 'text',
       header: 'Responsible',
       align: 'left',
@@ -85,6 +96,7 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
     },
     {
       id: 'target',
+      sortFilterField: 'targetDate',
       kind: 'date',
       header: 'Target',
       className: 'mono',
@@ -106,6 +118,8 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
     },
     {
       id: 'status',
+      sortFilterField: 'status',
+      filterOptions: CAPA_STATUSES.map((v) => ({ value: v, label: v })),
       kind: 'badge',
       header: 'CAPA Status',
       nowrap: true,

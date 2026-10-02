@@ -14,12 +14,10 @@ import { colId, colKind, colLabel, cx } from '../data-table-cells';
 import type { DataTableColumn, DataTableProps } from '../data-table-types';
 import { cellText, isFilterableColumn } from './cell-text';
 import {
-  EMPTY_STATE,
   activeFilterCount,
   applySortFilter,
   detectType,
   distinctValues,
-  sanitizeState,
   type ColumnFilter,
   type SfColumn,
   type SfState,
@@ -27,32 +25,12 @@ import {
   type SortDir,
 } from './filter-model';
 import { HeadMenu } from './HeadMenu';
+import { loadSf, saveSf } from './sf-storage';
 import { useSfSnapshot, useSfStore } from './scope';
 import { SortFilterButton } from './SortFilterButton';
 import './sort-filter.css';
 
 const STORE_PREFIX = 'innovic.sf:';
-
-function load(key: string | null): SfState {
-  if (!key) return EMPTY_STATE;
-  try {
-    const raw = window.sessionStorage.getItem(key);
-    return raw ? sanitizeState(JSON.parse(raw)) : EMPTY_STATE;
-  } catch {
-    return EMPTY_STATE;
-  }
-}
-
-function save(key: string | null, s: SfState): void {
-  if (!key) return;
-  try {
-    if (s.sort === null && Object.keys(s.filters).length === 0)
-      window.sessionStorage.removeItem(key);
-    else window.sessionStorage.setItem(key, JSON.stringify(s));
-  } catch {
-    // Storage blocked (private window) — the filters still work, just not across a refresh.
-  }
-}
 
 function isEmpty(s: SfState): boolean {
   return s.sort === null && Object.keys(s.filters).length === 0;
@@ -72,30 +50,38 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
     store !== null &&
     input.sortFilter !== false &&
     (input.sortFilter === true || (!input.editable && input.density !== 'compact'));
-  const live = on && !snap.partial;
+  // SERVER mode: the page owns the state and the rows are already the
+  // server's answer — a partial footer (more pages / a cap) does not matter.
+  const server = on ? input.sortFilterServer : undefined;
+  const live = on && (server !== undefined || !snap.partial);
   // Which table this is: the page path + its key. When a mounted table moves
   // to another path (a detail page reused for the next record) its filters
   // are re-read for the new one instead of being carried over.
   const identity = `${window.location.pathname}:${input.tableKey ?? ''}`;
   const storageKey = on && input.tableKey ? `${STORE_PREFIX}${identity}` : null;
 
-  const [state, setState] = useState<SfState>(() => load(storageKey));
+  const [localState, setLocalState] = useState<SfState>(() => loadSf(storageKey));
   const [stateFor, setStateFor] = useState(identity);
   if (stateFor !== identity) {
     setStateFor(identity);
-    setState(load(storageKey));
+    setLocalState(loadSf(storageKey));
   }
   useEffect(() => {
-    if (stateFor === identity) save(storageKey, state);
-  }, [storageKey, state, stateFor, identity]);
+    if (stateFor === identity && !server) saveSf(storageKey, localState);
+  }, [storageKey, localState, stateFor, identity, server]);
+  const state = server ? server.value : localState;
+  const serverChange = server?.onChange;
+  const setState = serverChange ?? setLocalState;
 
   // "Clear filters" from the button's Keep/Clear question.
   const clearSeen = useRef(snap.clearToken);
   useEffect(() => {
     if (snap.clearToken === clearSeen.current) return;
     clearSeen.current = snap.clearToken;
+    // Server mode: the page's useServerSortFilter answers the Clear itself.
+    if (server) return;
     setState((s) => (Object.keys(s.filters).length === 0 ? s : { ...s, filters: {} }));
-  }, [snap.clearToken]);
+  }, [snap.clearToken, setState, server]);
 
   // The screen's own header sort was used → the ▾ sort gives way, so the
   // table is never ordered by one column while another shows as sorted.
@@ -105,19 +91,24 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
     if (callerSortSeen.current === callerSortKey) return;
     callerSortSeen.current = callerSortKey;
     setState((s) => (s.sort === null ? s : { ...s, sort: null }));
-  }, [callerSortKey]);
+  }, [callerSortKey, setState]);
 
   const activeCount = live ? activeFilterCount(state) : 0;
-  const countRef = useRef(activeCount);
-  countRef.current = activeCount;
+  const isServer = server !== undefined;
+  // In server mode the page's useServerSortFilter counts the filters (it stays
+  // registered while the table is gone, e.g. after the server refused a
+  // filter) — the table registers 0 so the button never counts them twice.
+  const registered = isServer ? 0 : activeCount;
+  const countRef = useRef(registered);
+  countRef.current = registered;
   useEffect(() => {
     if (!store || !on) return;
-    store.setTable(id, countRef.current);
+    store.setTable(id, countRef.current, isServer);
     return () => store.removeTable(id);
-  }, [store, on, id]);
+  }, [store, on, id, isServer]);
   useEffect(() => {
-    if (store && on) store.setTable(id, activeCount);
-  }, [store, on, id, activeCount]);
+    if (store && on) store.setTable(id, registered, isServer);
+  }, [store, on, id, registered, isServer]);
 
   const { columns, rows, onSort: callerSort } = input;
   const work = live && (snap.enabled || !isEmpty(state));
@@ -125,15 +116,20 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
   // The ▾-able columns. Cell text is read LAZILY, one column at a time, only
   // for the columns that are filtered / sorted or whose menu is opened — not
   // every cell of every column on each render.
+  // Keyed by column id — or, in server mode, by the column's server field
+  // (only columns that name one are ▾-able there).
   const filterable = useMemo(() => {
     const m = new Map<string, { col: DataTableColumn<T>; label: string }>();
     columns.forEach((c, i) => {
       const cid = colId(c, i);
       const label = colLabel(c, i);
-      if (isFilterableColumn(c, cid, label)) m.set(cid, { col: c, label });
+      if (!isFilterableColumn(c, cid, label)) return;
+      if (isServer) {
+        if (c.sortFilterField) m.set(c.sortFilterField, { col: c, label });
+      } else m.set(cid, { col: c, label });
     });
     return m;
-  }, [columns]);
+  }, [columns, isServer]);
   const cache = useMemo(
     () => ({ rows, filterable, cols: new Map<string, SfColumn>() }),
     [rows, filterable],
@@ -141,11 +137,11 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
 
   const today = todayIst();
   const outRows = useMemo(() => {
-    if (!work || isEmpty(state)) return rows;
+    if (!work || isEmpty(state) || isServer) return rows;
     const ids = new Set(Object.keys(state.filters));
     if (state.sort) ids.add(state.sort.id);
     return applySortFilter(rows.length, colsFor(cache, ids), state, today).map((i) => rows[i] as T);
-  }, [work, cache, state, rows, today]);
+  }, [work, cache, state, rows, today, isServer]);
 
   const outCols = useMemo((): Array<DataTableColumn<T>> => {
     if (!work) return columns;
@@ -158,7 +154,8 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
       });
     const setSort = (cid: string, dir: SortDir | null): void =>
       setState((s) => ({ ...s, sort: dir ? { id: cid, dir } : null }));
-    const menuFor = (cid: string): { type: SfType; values: string[] } => {
+    const menuFor = (cid: string): MenuSpec => {
+      if (isServer) return serverMenu(filterable.get(cid)?.col);
       const col = sfCol(cache, cid);
       if (!col) return { type: 'text', values: [] };
       // Excel: the list shows what the OTHER filters leave.
@@ -179,7 +176,7 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
       };
     };
     return columns.map((c, i) => {
-      const cid = colId(c, i);
+      const cid = isServer ? (c.sortFilterField ?? '') : colId(c, i);
       const f = filterable.get(cid);
       if (!f) return c;
       // The screen sorts this column itself (server sort) — keep its header click.
@@ -187,7 +184,7 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
       const sortDir = state.sort?.id === cid ? state.sort.dir : null;
       return {
         ...c,
-        id: cid,
+        id: colId(c, i),
         label: f.label,
         header: (
           <HeadMenu
@@ -204,7 +201,18 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
         ),
       };
     });
-  }, [work, filterable, cache, columns, state, snap.enabled, callerSort, today]);
+  }, [
+    work,
+    filterable,
+    cache,
+    columns,
+    state,
+    snap.enabled,
+    callerSort,
+    today,
+    isServer,
+    setState,
+  ]);
 
   if (!on) return { props: input, bar: null };
 
@@ -215,7 +223,7 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
       <div className="sf-bar">
         {filteredOut ? (
           <span className="sf-note">
-            Showing {outRows.length} of {rows.length}
+            {isServer ? 'Filtered' : `Showing ${outRows.length} of ${rows.length}`}
             {' · '}
             <button
               type="button"
@@ -243,7 +251,7 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
           // under filtered rows, so it is hidden while a filter applies.
           // (`showTotals` totals are summed from the rows shown, and stay.)
           ...(filteredOut ? { footer: undefined } : {}),
-          ...(filteredOut && outRows.length === 0 && rows.length > 0
+          ...(filteredOut && outRows.length === 0 && (isServer || rows.length > 0)
             ? { empty: 'No rows match the filters.' }
             : {}),
         };
@@ -275,4 +283,24 @@ function colsFor<T>(cache: TextCache<T>, ids: Iterable<string>): Map<string, SfC
     if (c) m.set(cid, c);
   }
   return m;
+}
+
+export interface MenuSpec {
+  type: SfType;
+  values: string[];
+  labelOf?: ((v: string) => string) | undefined;
+  noTicks?: boolean | undefined;
+}
+
+/** Server mode: the column's declared type; a tick list only for `list` columns. */
+function serverMenu<T>(col: DataTableColumn<T> | undefined): MenuSpec {
+  if (!col) return { type: 'text', values: [], noTicks: true };
+  const k = colKind(col);
+  const type: SfType =
+    col.filterType ??
+    (k === 'num' ? 'num' : k === 'date' ? 'date' : k === 'badge' ? 'list' : 'text');
+  if (type !== 'list') return { type, values: [], noTicks: true };
+  const opts = col.filterOptions ?? [];
+  const labels = new Map(opts.map((o) => [o.value, o.label]));
+  return { type, values: opts.map((o) => o.value), labelOf: (v) => labels.get(v) ?? v };
 }

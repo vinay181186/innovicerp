@@ -427,11 +427,7 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
         label={dc.ncId ? 'NC No.' : 'PO No.'}
         value={
           dc.ncId ? (
-            <Link
-              to="/nc-register/$id"
-              params={{ id: dc.ncId }}
-              className="badge b-red"
-            >
+            <Link to="/nc-register/$id" params={{ id: dc.ncId }} className="badge b-red">
               {dc.ncCode ?? dc.poCodeText}
             </Link>
           ) : dc.poCode ? (

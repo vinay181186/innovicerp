@@ -4,6 +4,7 @@
 import type {
   PlanningBomResponse,
   PlanningDetailResponse,
+  PlanningSoListQuery,
   PlanningSoListResponse,
   RaisePlanningPrInput,
   RaisePlanningPrResponse,
@@ -14,17 +15,28 @@ import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const soPlanningKeys = {
   all: ['so-planning'] as const,
-  list: () => [...soPlanningKeys.all, 'list'] as const,
+  list: (qs = '') => [...soPlanningKeys.all, 'list', qs] as const,
   detail: (soId: string | null) => [...soPlanningKeys.all, 'detail', soId] as const,
   bom: (soLineId: string | null) => [...soPlanningKeys.all, 'bom', soLineId] as const,
 };
 
-export function usePlanningSoList() {
+/** Open SOs + JWSOs to plan. With no query: every order (the Create Plan
+ *  form's picker). The Planning list sends source + search + Sort & Filter +
+ *  a 25-row page (ADR-201) and gets that page plus the matching total. */
+export function usePlanningSoList(q: PlanningSoListQuery = {}) {
+  const params = new URLSearchParams();
+  if (q.src) params.set('src', q.src);
+  if (q.search) params.set('search', q.search);
+  if (q.sf) params.set('sf', q.sf);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  if (q.offset !== undefined) params.set('offset', String(q.offset));
+  const qs = params.toString();
   return useQuery<PlanningSoListResponse>({
-    queryKey: soPlanningKeys.list(),
-    queryFn: () => apiFetch<PlanningSoListResponse>('/so-planning'),
+    queryKey: soPlanningKeys.list(qs),
+    queryFn: () => apiFetch<PlanningSoListResponse>(`/so-planning${qs ? `?${qs}` : ''}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
   });
 }
 

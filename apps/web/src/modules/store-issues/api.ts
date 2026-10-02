@@ -25,6 +25,7 @@ export const storeIssuesKeys = {
       q.salesOrderId ?? null,
       q.fromDate ?? null,
       q.toDate ?? null,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -39,6 +40,7 @@ function buildSearch(q: ListStoreIssuesQuery): string {
   if (q.salesOrderId) p.set('salesOrderId', q.salesOrderId);
   if (q.fromDate) p.set('fromDate', q.fromDate);
   if (q.toDate) p.set('toDate', q.toDate);
+  if (q.sf) p.set('sf', q.sf);
   p.set('limit', String(q.limit));
   p.set('offset', String(q.offset));
   return p.toString();

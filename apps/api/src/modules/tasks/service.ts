@@ -24,26 +24,21 @@ import type {
   CompleteTaskInput,
   CreatePersonalTodoInput,
   CreateTaskInput,
-  ListTasksQuery,
-  ListTasksResponse,
   ReassignTaskInput,
   TaskAttachment,
   TaskAttachmentInput,
   TaskComment,
   TaskDetail,
   TaskHistoryEntry,
-  TaskRow,
   TaskStatus,
-  TaskStatusCounts,
   TaskType,
   TaskUserOption,
   UpdateTaskInput,
   UpdateTaskStatusInput,
 } from '@innovic/shared';
-import { and, asc, count, desc, eq, inArray, isNull, like, ne, or } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, like } from 'drizzle-orm';
 import { fileRegistry, taskComments, tasks, userAccess, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireAdminRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -53,16 +48,11 @@ import {
 import { emitActivityLog } from '../activity-log/service';
 import {
   type NameMap,
-  OPEN_STATUSES,
   type RowContext,
   type TaskRecord,
-  addDays,
   canViewTask,
   dateLabel,
-  isAdmin,
   isOpenStatus,
-  isOverdueRow,
-  isUnreadRow,
   istToday,
   loadTaskHistory,
   loadUserNames,
@@ -73,10 +63,11 @@ import {
   requireCompany,
   rowToTask,
   statusLabel,
-  visibleTasksWhere,
 } from './history';
 
 export { listRelatedOptions } from './related-options';
+// The board list (filters + Sort & Filter + 25-row pages in SQL, ADR-201).
+export { listTasks } from './list';
 // Other modules close linked tasks through this (ADR-190) — never by writing
 // the tasks table themselves.
 export { autoCloseLinkedTasks } from './auto-close';
@@ -85,7 +76,7 @@ export { autoCloseLinkedTasks } from './auto-close';
 
 // Per-task attachment / comment counts for a set of task ids — two grouped
 // queries, never N+1.
-async function loadCounts(
+export async function loadCounts(
   tx: DbTransaction,
   companyId: string,
   ids: string[],
@@ -246,130 +237,6 @@ async function registerAttachment(
 }
 
 // ── List ──────────────────────────────────────────────────────────────────
-
-export async function listTasks(
-  query: ListTasksQuery,
-  user: AuthContext,
-): Promise<ListTasksResponse> {
-  const companyId = requireCompany(user);
-  if (query.view === 'all') requireAdminRole(user);
-  const today = istToday();
-  const me = user.id;
-
-  return withUserContext(user, async (tx) => {
-    const names = await loadUserNames(tx, companyId);
-
-    const viewWhere =
-      query.view === 'inbox'
-        ? and(eq(tasks.assignedTo, me), ne(tasks.createdBy, me))
-        : query.view === 'outbox'
-          ? and(eq(tasks.createdBy, me), or(ne(tasks.assignedTo, me), isNull(tasks.assignedTo)))
-          : query.view === 'todo'
-            ? and(eq(tasks.createdBy, me), eq(tasks.assignedTo, me))
-            : undefined; // all — admin, whole company
-
-    const viewRows = await tx
-      .select()
-      .from(tasks)
-      .where(and(visibleTasksWhere(companyId, user), viewWhere))
-      .orderBy(desc(tasks.createdAt));
-
-    // KPI cards over the whole view, BEFORE row filters. Overdue rows count
-    // only as overdue; cancelled rows count in none.
-    const counts: TaskStatusCounts = { todo: 0, in_progress: 0, completed: 0, overdue: 0 };
-    for (const r of viewRows) {
-      if (isOverdueRow(r, today)) counts.overdue += 1;
-      else if (r.status === 'todo') counts.todo += 1;
-      else if (r.status === 'in_progress') counts.in_progress += 1;
-      else if (r.status === 'completed') counts.completed += 1;
-    }
-
-    // Tab counters + unread — one pass over my open tasks.
-    const mine = await tx
-      .select({
-        createdBy: tasks.createdBy,
-        assignedTo: tasks.assignedTo,
-        viewedAt: tasks.viewedAt,
-        status: tasks.status,
-      })
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.companyId, companyId),
-          isNull(tasks.deletedAt),
-          inArray(tasks.status, [...OPEN_STATUSES]),
-          or(eq(tasks.createdBy, me), eq(tasks.assignedTo, me)),
-        ),
-      );
-    const viewCounts = { inbox: 0, outbox: 0, todo: 0, all: null as number | null };
-    let unreadCount = 0;
-    for (const r of mine) {
-      if (r.assignedTo === me && r.createdBy !== me) viewCounts.inbox += 1;
-      else if (r.createdBy === me && r.assignedTo !== me) viewCounts.outbox += 1;
-      else if (r.createdBy === me && r.assignedTo === me) viewCounts.todo += 1;
-      if (isUnreadRow(r, me)) unreadCount += 1;
-    }
-    if (isAdmin(user)) {
-      const allOpen = await tx
-        .select({ n: count() })
-        .from(tasks)
-        .where(
-          and(
-            eq(tasks.companyId, companyId),
-            isNull(tasks.deletedAt),
-            inArray(tasks.status, [...OPEN_STATUSES]),
-          ),
-        );
-      viewCounts.all = Number(allOpen[0]?.n ?? 0);
-    }
-
-    // Row filters.
-    let rows = viewRows;
-    if (query.search) {
-      const s = query.search.trim().toLowerCase();
-      if (s) {
-        rows = rows.filter((r) =>
-          [r.code, r.title, r.description ?? '', r.linkedRefDisplay ?? ''].some((v) =>
-            v.toLowerCase().includes(s),
-          ),
-        );
-      }
-    }
-    if (query.status) rows = rows.filter((r) => r.status === query.status);
-    if (query.priority) rows = rows.filter((r) => r.priority === query.priority);
-    if (query.person) {
-      const p = query.person;
-      rows =
-        query.view === 'inbox'
-          ? rows.filter((r) => r.assignedBy === p)
-          : rows.filter((r) => r.assignedTo === p);
-    }
-    if (query.assignedBy) rows = rows.filter((r) => r.assignedBy === query.assignedBy);
-    if (query.due === 'today') rows = rows.filter((r) => r.dueDate === today);
-    else if (query.due === 'week') {
-      const end = addDays(today, 6);
-      rows = rows.filter((r) => !!r.dueDate && r.dueDate >= today && r.dueDate <= end);
-    } else if (query.due === 'overdue') rows = rows.filter((r) => isOverdueRow(r, today));
-    if (query.dept && query.view === 'all') {
-      const access = await tx
-        .select({ userId: userAccess.userId, mainDept: userAccess.mainDept })
-        .from(userAccess)
-        .where(and(eq(userAccess.companyId, companyId), isNull(userAccess.deletedAt)));
-      const deptOf = new Map(access.map((a) => [a.userId, a.mainDept]));
-      rows = rows.filter((r) => !!r.assignedTo && deptOf.get(r.assignedTo) === query.dept);
-    }
-
-    const perTask = await loadCounts(
-      tx,
-      companyId,
-      rows.map((r) => r.id),
-    );
-    const ctx: RowContext = { names, user, today, ...perTask };
-    const mapped: TaskRow[] = rows.map((r) => rowToTask(r, ctx));
-
-    return { tasks: mapped, counts, viewCounts, unreadCount, isAdmin: isAdmin(user) };
-  });
-}
 
 // ── Read one ──────────────────────────────────────────────────────────────
 

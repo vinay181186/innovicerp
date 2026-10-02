@@ -7,6 +7,7 @@
 // opens the detail page.
 //
 //   <ListHeader>            title · count · ⟳ Updating… · + New BOM; filter bar:
+//                           (25 rows a page, ADR-201; search / status / ▾ on the server)
 //                           SearchInput · BOM Status dropdown (All | Draft |
 //                           Active | Obsolete — no counts, the API returns none;
 //                           it replaced the status pills, owner's filter-bar
@@ -38,7 +39,9 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { bomListColumns } from '../components/bom-list-columns';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useBomMaster, useBomMastersList } from '../api';
@@ -46,6 +49,7 @@ import { useBomMaster, useBomMastersList } from '../api';
 const searchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(['draft', 'active', 'obsolete']).optional(),
+  page: pageSearchParam,
 });
 
 export const bomMastersListRoute = createRoute({
@@ -57,12 +61,9 @@ export const bomMastersListRoute = createRoute({
 
 const STATUS_PILLS: BomStatus[] = ['draft', 'active', 'obsolete'];
 
-/** One fetch, scroll — masters do not paginate. The API caps `limit` at 200. */
-const LIST_LIMIT = 100;
-
 function BomMastersListPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const { search, status } = bomMastersListRoute.useSearch();
+  const { search, status, page } = bomMastersListRoute.useSearch();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Search lives in the URL (`search` param) so it survives refresh and Back;
@@ -80,23 +81,39 @@ function BomMastersListPage(): React.JSX.Element {
     const id = window.setTimeout(() => {
       void navigate({
         to: '/bom-masters',
-        search: { ...(status ? { status } : {}), search: next },
+        search: (prev) => ({ ...prev, search: next, page: 1 }),
         replace: true,
       });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search, status, navigate]);
 
+  // 25 rows a page (ADR-201); search, status and Sort & Filter run on the
+  // server over every BOM, and any change of them goes back to page 1.
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({
+        to: '/bom-masters',
+        search: (prev) => ({ ...prev, page: p }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+  const sf = useServerSortFilter(TABLE_KEYS.bomMasterList, () => gotoPage(1));
+  const offset = pageOffset(page);
   const { data, isLoading, isFetching, isError, error } = useBomMastersList({
     search,
     status,
-    limit: LIST_LIMIT,
-    offset: 0,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset,
   });
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'bom_create');
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
+  useClampPage(page, data?.total, gotoPage);
 
   const toggleExpand = useCallback((id: string): void => {
     setExpanded((prev) => {
@@ -107,14 +124,16 @@ function BomMastersListPage(): React.JSX.Element {
     });
   }, []);
 
-  const columns = useMemo(() => bomListColumns(), []);
+  const columns = useMemo(() => bomListColumns(offset), [offset]);
 
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the TABLE is this page's only scrollbar, so the
+    // column header cannot ride off the top of the screen at the last row.
+    <div className="page-fill">
       {/* The frozen header band: title, count, primary action and the filter
           bar stay put while the rows scroll underneath. */}
       <ListHeader
@@ -138,10 +157,11 @@ function BomMastersListPage(): React.JSX.Element {
             onChange={(e) =>
               void navigate({
                 to: '/bom-masters',
-                search: {
-                  ...(search ? { search } : {}),
+                search: (prev) => ({
+                  ...prev,
                   status: e.target.value === '' ? undefined : (e.target.value as BomStatus),
-                },
+                  page: 1,
+                }),
                 replace: true,
               })
             }
@@ -149,9 +169,10 @@ function BomMastersListPage(): React.JSX.Element {
         }
         onClearFilters={() => {
           setSearchInput('');
-          void navigate({ to: '/bom-masters', search: {}, replace: true });
+          sf.clearFilters();
+          void navigate({ to: '/bom-masters', search: { page: 1 }, replace: true });
         }}
-        filtersActive={searchInput.trim() !== '' || status != null}
+        filtersActive={searchInput.trim() !== '' || status != null || sf.filtering}
         primary={
           perms.entry ? (
             <Link to="/bom-masters/new" className="btn btn-primary">
@@ -167,13 +188,14 @@ function BomMastersListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load BOMs. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.bomMasterList}
             columns={columns}
             rows={rows}
             loading={isLoading}
-            empty={search || status ? 'No BOMs match.' : 'No BOMs yet.'}
+            sortFilterServer={sf}
+            empty={search || status || sf.filtering ? 'No BOMs match.' : 'No BOMs yet.'}
             onRowClick={(b) => void navigate({ to: '/bom-masters/$id', params: { id: b.id } })}
             // The part list is fetched only for a row that is actually open —
             // returning null for a collapsed row means ExpandedLines (and its
@@ -186,7 +208,13 @@ function BomMastersListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter total={total} noun="BOM" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="BOM"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
     </div>
   );
 }

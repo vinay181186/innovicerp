@@ -5,6 +5,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { DEFAULT_FINAL_QC_OP } from '../../lib/jc-default-qc';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type {
   CreateQcProcessInput,
   ListQcProcessesQuery,
@@ -13,6 +14,7 @@ import type {
   UpdateQcProcessInput,
 } from './schema';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { QC_PROCESS_SF_COLUMNS } from './sf-columns';
 import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
@@ -62,6 +64,11 @@ export async function listQcProcesses(
     }
     if (input.isActive !== undefined) conditions.push(eq(qcProcesses.isActive, input.isActive));
 
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(QC_PROCESS_SF_COLUMNS, sf)}`);
+
     const where = and(...conditions);
 
     const [rows, totals] = await Promise.all([
@@ -69,7 +76,7 @@ export async function listQcProcesses(
         .select()
         .from(qcProcesses)
         .where(where)
-        .orderBy(asc(qcProcesses.code))
+        .orderBy(sfOrderBy(QC_PROCESS_SF_COLUMNS, sf, asc(qcProcesses.code)))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(qcProcesses).where(where),

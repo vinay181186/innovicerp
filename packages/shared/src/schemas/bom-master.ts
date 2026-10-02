@@ -10,6 +10,7 @@
 // their reference).
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { BOM_LINE_TYPES } from '../enums/bom-line-type';
 import { BOM_STATUSES } from '../enums/bom-status';
@@ -112,6 +113,8 @@ export type BomMasterListItem = z.infer<typeof bomMasterListItemSchema>;
 export const listBomMastersQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   status: bomStatusSchema.optional(),
+  // Sort & Filter (ADR-200) — the screen's column sort / filters, run on the server.
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

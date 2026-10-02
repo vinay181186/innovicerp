@@ -8,7 +8,7 @@
 //
 // Known divergences from legacy _sctExport (behaviour, not markup — left as-is):
 //   • Scope: legacy exports ALL SOs regardless of the on-screen filter; we
-//     export the caller's `rows` (the filtered set actually on screen).
+//     export the caller's `rows` (EVERY row matching the screen filters, fetched page by page).
 //   • Dates: legacy wraps each phase in fmt() ("29 Apr 26"); we write each
 //     phase through the app's shared fmtDate (dd-mm-yyyy, the date part of the
 //     API's ISO value, no timezone shift).

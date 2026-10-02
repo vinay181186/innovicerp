@@ -30,6 +30,7 @@ export function storeInventoryColumns(opts: {
   return [
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       header: 'Item Code',
       kind: 'code',
       nowrap: true,
@@ -50,6 +51,7 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       header: 'Item Name',
       align: 'left',
       className: 'fw-700',
@@ -59,6 +61,7 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'material',
+      sortFilterField: 'material',
       header: 'Material',
       align: 'left',
       ellipsis: true,
@@ -68,6 +71,8 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'uom',
+      sortFilterField: 'uom',
+      filterType: 'text',
       header: 'UOM',
       kind: 'code',
       nowrap: true,
@@ -79,6 +84,7 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'physical',
+      sortFilterField: 'inStock',
       header: (
         <HeadWithHint
           label="Physical"
@@ -105,6 +111,7 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'reserved',
+      sortFilterField: 'reservedQty',
       header: (
         <HeadWithHint
           label="Reserved"
@@ -144,6 +151,7 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'available',
+      sortFilterField: 'availableQty',
       header: (
         <HeadWithHint
           label="Available"
@@ -166,6 +174,7 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'reorder_level',
+      sortFilterField: 'reorderLevel',
       header: 'Reorder Level',
       kind: 'num',
       align: 'right',
@@ -175,6 +184,7 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'on_po',
+      sortFilterField: 'onPoQty',
       header: 'On PO',
       kind: 'num',
       align: 'right',
@@ -188,6 +198,7 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'at_vendor',
+      sortFilterField: 'atVendorQty',
       header: 'At Vendor',
       kind: 'num',
       align: 'right',
@@ -205,6 +216,7 @@ export function storeInventoryColumns(opts: {
     },
     {
       id: 'pending_production',
+      sortFilterField: 'mfgPendingQty',
       header: 'Pending from Production',
       label: 'Pending from Production',
       kind: 'num',

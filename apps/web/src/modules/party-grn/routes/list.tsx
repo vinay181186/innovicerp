@@ -23,38 +23,40 @@
 import type { PartyGrnListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyGrnList } from '../api';
 import { CancelPartyGrnModal } from '../components/cancel-party-grn-modal';
 import { NewPartyGrnModal } from '../components/new-party-grn-modal';
-import { partyGrnColumns } from '../components/party-grn-columns';
+import { PARTY_GRN_HIDDEN_COLUMNS, partyGrnColumns } from '../components/party-grn-columns';
 import { PartyGrnExpand } from '../components/party-grn-expand';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
-
-const PAGE_SIZE = 50;
 
 // Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
 // IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
 // the local state below — tab clicks and typing stay local, never navigate.
 // `?jw=<jwsoId>` (from the JWSO screens): opens the Receive tab's New Party
 // GRN modal with that JWSO already picked. A malformed id is ignored.
+// `?page=` is the Receive register's page (ADR-201: 25 rows a page, in the URL).
 const searchSchema = z.object({
   tab: z.enum(['receive', 'issue']).optional(),
   search: z.string().optional(),
   jw: z.string().uuid().optional().catch(undefined),
+  page: pageSearchParam,
 });
 
 export const partyGrnListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'party-grn',
-  validateSearch: (search) => searchSchema.parse(search),
+  validateSearch: searchSchema,
   component: PartyGrnListPage,
 });
 
@@ -71,12 +73,28 @@ function PartyGrnListPage(): React.JSX.Element {
   const canCreate = perms.entry;
   const canCancel = perms.edit && perms.approve;
   const routeSearch = partyGrnListRoute.useSearch();
+  const navigate = partyGrnListRoute.useNavigate();
   // Seed this tab's box only when the landing targets it; a `?tab=issue`
   // landing must not pre-fill the Receive box with an issue code.
   const [search, setSearch] = useState(() =>
     (routeSearch.tab ?? 'receive') === 'receive' ? (routeSearch.search ?? '') : '',
   );
-  const [page, setPage] = useState(1);
+  const page = routeSearch.page;
+  const setPage = useCallback(
+    (p: number) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  // The box is debounced into the server search; a new term goes to page 1.
+  const [term, setTerm] = useState(() => search.trim());
+  useEffect(() => {
+    const next = search.trim();
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term, setPage]);
   // A `?jw=` landing opens the New Party GRN modal straight away (Receive tab).
   const [showModal, setShowModal] = useState(
     () => Boolean(routeSearch.jw) && (routeSearch.tab ?? 'receive') === 'receive',
@@ -85,13 +103,20 @@ function PartyGrnListPage(): React.JSX.Element {
   // Receive | Issue tabs — Issue is the former standalone Party Material Issue screen.
   const [tab, setTab] = useState<'receive' | 'issue'>(() => routeSearch.tab ?? 'receive');
 
-  const { data, isLoading, isError, error } = usePartyGrnList({
-    search: search.trim() || undefined,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
-  });
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss GRNs. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.partyGrn, () => setPage(1));
 
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
+  const { data, isLoading, isError, error } = usePartyGrnList({
+    search: term || undefined,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
+  });
+  useClampPage(page, data?.total, setPage);
+
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
   const summary = data?.summary ?? { totalGrns: 0, totalReceived: 0, today: 0 };
   const rows = data?.items ?? [];
   const columns = useMemo(() => partyGrnColumns(), []);
@@ -120,7 +145,10 @@ function PartyGrnListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): on the list tab the page fills the content area and the
+    // TABLE is the only scrollbox, so the column header cannot ride off the top at the
+    // last row. The Issue tab is its own screen and keeps today's page scroll.
+    <div className={tab === 'issue' ? undefined : 'page-fill'}>
       {/* Receive (GRN) | Issue tabs (Issue is the former standalone Party Material
           Issue screen). */}
       <div
@@ -168,10 +196,7 @@ function PartyGrnListPage(): React.JSX.Element {
             count={data?.total}
             noun="GRN"
             search={search}
-            onSearch={(v) => {
-              setSearch(v);
-              setPage(1);
-            }}
+            onSearch={setSearch}
             searchPlaceholder="Search JWSO, customer, material…"
             primary={
               canCreate ? (
@@ -216,14 +241,16 @@ function PartyGrnListPage(): React.JSX.Element {
             // GRN is soft-deleted and filtered out by the API), so the only tint
             // is the defensive cancelled wash. The one per-row action is Cancel,
             // gated by canCancel exactly as the card's button was.
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.partyGrn}
+                sortFilterServer={sf}
+                defaultHidden={[...PARTY_GRN_HIDDEN_COLUMNS]}
                 columns={columns}
                 rows={rows}
                 rowKey={(g) => g.id}
                 loading={isLoading}
-                emptyText={search.trim() ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
+                emptyText={term || sf.filtering ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
                 rowClassName={(g) => (g.deletedAt ? ROW_TINT.cancelled : undefined)}
                 renderExpanded={(g) => (expanded.has(g.id) ? <PartyGrnExpand g={g} /> : null)}
                 onToggleExpanded={(g) => toggleExpand(g.id)}
@@ -246,7 +273,7 @@ function PartyGrnListPage(): React.JSX.Element {
               total={data.total}
               noun="GRN"
               page={page}
-              pageSize={PAGE_SIZE}
+              pageSize={LIST_PAGE_SIZE}
               onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
             />
           ) : null}

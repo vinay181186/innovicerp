@@ -5,6 +5,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { dropBlankCells, rawRowText, zodRowReason } from '../../lib/master-rules';
 import { createOperatorInputSchema, updateOperatorImportRowSchema } from './schema';
 import type {
@@ -18,6 +19,7 @@ import type {
   UpdateOperatorInput,
 } from './schema';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
+import { OPERATOR_SF_COLUMNS } from './sf-columns';
 import { emitActivityLog } from '../activity-log/service';
 
 type OperatorRow = typeof operators.$inferSelect;
@@ -101,6 +103,11 @@ export async function listOperators(
       conditions.push(eq(operators.isActive, input.isActive));
     }
 
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(OPERATOR_SF_COLUMNS, sf)}`);
+
     const where = and(...conditions);
 
     const [rows, totals] = await Promise.all([
@@ -108,7 +115,7 @@ export async function listOperators(
         .select()
         .from(operators)
         .where(where)
-        .orderBy(asc(operators.code))
+        .orderBy(sfOrderBy(OPERATOR_SF_COLUMNS, sf, asc(operators.code)))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(operators).where(where),

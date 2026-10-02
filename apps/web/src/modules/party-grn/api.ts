@@ -21,6 +21,7 @@ export const partyGrnKeys = {
       q.clientId ?? null,
       q.fromDate ?? null,
       q.toDate ?? null,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -35,6 +36,7 @@ function buildSearch(q: ListPartyGrnQuery): string {
   if (q.clientId) params.set('clientId', q.clientId);
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

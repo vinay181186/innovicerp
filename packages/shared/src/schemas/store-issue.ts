@@ -12,6 +12,7 @@
 // Numbering: ISS-NNNNN (live series, not renumbered).
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 /** Kept for the Tool Issue register (tool-issue.ts), which still uses it. */
 export const STORE_ISSUE_REF_TYPES = [
@@ -157,6 +158,8 @@ export const listStoreIssuesQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

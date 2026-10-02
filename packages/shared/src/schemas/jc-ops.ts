@@ -9,6 +9,7 @@
 // feedback_shared_schema_name_collisions.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { machineSplitSchema } from './machine-split';
 
 export const jcOpsBoardRowSchema = z.object({
@@ -90,6 +91,8 @@ export type JcOpsBoardRow = z.infer<typeof jcOpsBoardRowSchema>;
 export const listJcOpsBoardQuerySchema = z.object({
   jcCode: z.string().min(1).max(64).optional(),
   search: z.string().min(1).max(100).optional(),
+  /** Sort & Filter (ADR-200/201) — field names from JC_OPS_SF_COLUMNS. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(2000).default(500),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

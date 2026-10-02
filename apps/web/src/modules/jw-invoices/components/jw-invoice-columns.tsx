@@ -14,6 +14,11 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 
+const STATUS_OPTIONS = [
+  { value: 'issued', label: 'Issued' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
 function money(n: number): string {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -27,6 +32,7 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
       header: 'Invoice No.',
       kind: 'code',
       nowrap: true,
+      sortFilterField: 'invoiceCode',
       render: (r) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <span className="td-code" style={{ color: 'var(--cyan)' }}>
@@ -54,12 +60,14 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
       className: 'mono text2',
       nowrap: true,
       render: (r) => fmtDate(r.invoiceDate),
+      sortFilterField: 'invoiceDate',
     },
     {
       id: 'jwso_code',
       header: 'JWSO No.',
       kind: 'code',
       nowrap: true,
+      sortFilterField: 'jwsoCode',
       render: (r) => (
         <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
           {r.jwCodeText ?? '—'}
@@ -74,12 +82,14 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
       className: 'fw-700',
       render: (r) => r.clientName ?? '—',
       title: (r) => r.clientName ?? '',
+      sortFilterField: 'customer',
     },
     {
       id: 'item_code',
       header: 'Item Code',
       kind: 'code',
       nowrap: true,
+      sortFilterField: 'itemCode',
       render: (r) => (
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
           {itemCodeWithRev(r.itemCode, r.itemRevision)}
@@ -94,6 +104,7 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
       className: 'mono',
       nowrap: true,
       render: (r) => r.qty,
+      sortFilterField: 'qty',
     },
   ];
 
@@ -107,6 +118,7 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
         className: 'mono',
         nowrap: true,
         render: (r) => money(r.taxableAmount ?? 0),
+        sortFilterField: 'taxable',
       },
       {
         id: 'total',
@@ -115,6 +127,7 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
         align: 'right',
         headColor: 'var(--green)',
         nowrap: true,
+        sortFilterField: 'total',
         render: (r) => (
           <span className="mono fw-700" style={{ color: 'var(--green2)' }}>
             {money(r.totalAmount ?? 0)}
@@ -128,6 +141,9 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
     id: 'status',
     header: 'Invoice Status',
     kind: 'badge',
+    sortFilterField: 'status',
+    filterType: 'list',
+    filterOptions: STATUS_OPTIONS,
     render: (r) => (
       <span
         style={{

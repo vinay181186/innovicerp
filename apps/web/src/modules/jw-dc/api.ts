@@ -25,6 +25,7 @@ export const jwDcKeys = {
       q.vendorId ?? null,
       q.purchaseOrderId ?? null,
       q.returnStatus ?? null,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -39,6 +40,7 @@ export const jwDcKeys = {
       'list',
       q.search ?? null,
       q.jwDcOutwardId ?? null,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -50,6 +52,7 @@ function buildOutwardSearch(q: ListJwDcOutwardQuery): string {
   if (q.vendorId) params.set('vendorId', q.vendorId);
   if (q.purchaseOrderId) params.set('purchaseOrderId', q.purchaseOrderId);
   if (q.returnStatus) params.set('returnStatus', q.returnStatus);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -59,6 +62,7 @@ function buildInwardSearch(q: ListJwDcInwardQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.jwDcOutwardId) params.set('jwDcOutwardId', q.jwDcOutwardId);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

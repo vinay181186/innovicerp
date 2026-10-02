@@ -8,49 +8,44 @@
 // the same `invoice_create` access gate, the same ?tab / ?search deep link, the
 // same "money hidden for L1 viewers" column drop, the same row targets.
 
-import type { ListInvoicesResponse } from '@innovic/shared';
+import type { ListInvoicesQuery } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { fmtDate } from '@/lib/date';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatusBadge } from '@/ui/core';
-import { DataTable, StatStrip, type DataTableColumn, type StatStripItem } from '@/ui/data';
+import { DataTable, Panel, StatStrip, type StatStripItem } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useInvoiceList } from '../api';
-
-/** Invoice status → the words the user reads; the stored codes are unchanged. */
-const INVOICE_STATUS_LABEL: Record<string, string> = {
-  unpaid: 'Unpaid',
-  partial: 'Partly Paid',
-  paid: 'Paid',
-};
+import { invoiceListColumns } from '../components/invoice-list-columns';
 
 // Deep-link seed for Global Search: `?tab=jw&search=IN-JI-26-0001` opens the
 // JW tab with its box pre-filled. Read ONCE into local state — tab clicks and
-// typing stay local. The SO Invoices tab has no search box of its own, so
-// `search` only reaches the JW view.
+// typing stay local. `search` only reaches the JW view; the SO Invoices box
+// is local and runs on the server (ADR-201).
 const searchSchema = z.object({
   tab: z.enum(['so', 'jw']).optional(),
   search: z.string().optional(),
   // `?tab=jw&jw=<jwsoId>` — the JWSO detail's "JW Invoice" button: opens the
   // New JW Invoice form with that JWSO already picked.
   jw: z.string().optional(),
+  // SO Invoices page (ADR-201: 25 rows a page, loaded from the server).
+  page: pageSearchParam,
 });
 
 export const invoiceListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'invoices',
-  validateSearch: (search) => searchSchema.parse(search),
+  validateSearch: searchSchema,
   component: InvoiceListPage,
 });
-
-type InvoiceListRow = ListInvoicesResponse['invoices'][number];
 
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
 
@@ -65,7 +60,37 @@ function InvoiceListPage(): React.JSX.Element {
   const [tab, setTab] = useState<'so' | 'jw'>(
     () => routeSearch.tab ?? (routeSearch.jw ? 'jw' : 'so'),
   );
-  const { data, isLoading, isFetching, isError, error } = useInvoiceList();
+  // ADR-201: one 25-row page from the server; search + Sort & Filter + the
+  // stat strip run there over EVERY invoice. Any change → page 1.
+  const page = routeSearch.page;
+  const gotoPage = useCallback(
+    (p: number) =>
+      void navigate({ to: '/invoices', search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  const [searchInput, setSearchInput] = useState('');
+  const [term, setTerm] = useState('');
+  useEffect(() => {
+    const next = normalizeSearchTerm(searchInput);
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [searchInput, term, gotoPage]);
+  const sf = useServerSortFilter(TABLE_KEYS.invoicesList, () => gotoPage(1));
+  const query: ListInvoicesQuery = useMemo(
+    () => ({
+      search: term || undefined,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
+    }),
+    [term, sf.param, page],
+  );
+  const { data, isLoading, isFetching, isError, error } = useInvoiceList(query);
+  useClampPage(page, data?.total, gotoPage);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
   // The server takes a payment from role admin / manager only (on top of the
@@ -158,139 +183,27 @@ function InvoiceListPage(): React.JSX.Element {
     void navigate({ to: '/invoices/$id', params: { id } });
   };
 
-  // Widths sum to 90 — DataTable's Action column takes the remaining 10.
-  const moneyColumns: DataTableColumn<InvoiceListRow>[] = priceHidden
-    ? []
-    : [
-        {
-          id: 'grand_total',
-          header: 'Grand Total',
-          width: '9%',
-          align: 'right',
-          className: 'mono fw-700',
-          nowrap: true,
-          render: (inv) => (
-            <span style={{ color: 'var(--green2)' }}>{inr(inv.grandTotal ?? 0)}</span>
-          ),
-        },
-        {
-          id: 'paid_amount',
-          header: 'Paid',
-          width: '8%',
-          align: 'right',
-          className: 'mono fw-700',
-          nowrap: true,
-          render: (inv) => <span style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</span>,
-        },
-        {
-          id: 'outstanding_amount',
-          header: 'Outstanding Amount',
-          width: '9%',
-          align: 'right',
-          className: 'mono fw-700',
-          nowrap: true,
-          render: (inv) => (
-            <span style={{ color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
-              {inr(inv.balance ?? 0)}
-            </span>
-          ),
-        },
-      ];
-
-  const columns: DataTableColumn<InvoiceListRow>[] = [
-    {
-      id: 'code',
-      header: 'Invoice No.',
-      width: priceHidden ? '15%' : '12%',
-      className: 'td-code',
-      nowrap: true,
-      // Kept a real <Link> (not plain text): the code is how this list is
-      // ctrl-clicked / middle-clicked open in a new tab today.
-      render: (inv) => (
-        <Link
-          to="/invoices/$id"
-          params={{ id: inv.id }}
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          {inv.code}
-        </Link>
-      ),
-    },
-    {
-      id: 'invoice_date',
-      kind: 'date',
-      header: 'Invoice Date',
-      width: priceHidden ? '11%' : '8%',
-      nowrap: true,
-      render: (inv) => fmtDate(inv.invoiceDate),
-    },
-    {
-      id: 'so_code',
-      header: 'SO No.',
-      width: priceHidden ? '12%' : '9%',
-      className: 'td-code',
-      nowrap: true,
-      key: 'soCode',
-    },
-    {
-      id: 'customer',
-      header: 'Customer',
-      width: priceHidden ? '31%' : '17%',
-      align: 'left',
-      className: 'fw-700',
-      ellipsis: true,
-      key: 'clientName',
-    },
-    ...moneyColumns,
-    {
-      id: 'status',
-      kind: 'badge',
-      header: 'Invoice Status',
-      width: priceHidden ? '13%' : '11%',
-      nowrap: true,
-      render: (inv) => (
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 'var(--sp-1)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {/* kind="invoice", not "doc": the generic map paints unpaid amber and
-              partial blue, which disagreed with the detail page's own colours
-              for the SAME invoice. One status, one colour, both screens. */}
-          <StatusBadge
-            kind="invoice"
-            status={inv.status}
-            label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
-          />
-          {inv.overdue ? <span className="badge b-red">Overdue</span> : null}
-        </span>
-      ),
-    },
-    {
-      id: 'due_date',
-      kind: 'date',
-      header: 'Due Date',
-      width: priceHidden ? '8%' : '7%',
-      nowrap: true,
-      render: (inv) => (
-        <span style={{ color: inv.overdue ? 'var(--red)' : 'var(--text3)' }}>
-          {fmtDate(inv.dueDate)}
-        </span>
-      ),
-    },
-  ];
+  const columns = invoiceListColumns(priceHidden);
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the SO invoice tab fills the content area and the
+    // TABLE is the only thing that scrolls, so the column header stays on
+    // screen down to the last row.
+    <div className="page-fill">
       {tabs}
       <ListHeader
         title="Invoices"
-        count={data ? data.invoices.length : undefined}
+        count={data ? data.total : undefined}
         noun="invoice"
         updating={!isLoading && isFetching}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search invoice no., SO no., customer…"
+        onClearFilters={() => {
+          sf.clearFilters();
+          setSearchInput('');
+        }}
+        filtersActive={sf.filtering || searchInput !== ''}
         primary={
           perms.entry ? (
             <Link to="/invoices/new" className="btn btn-primary">
@@ -309,7 +222,11 @@ function InvoiceListPage(): React.JSX.Element {
         />
       ) : (
         <>
-          <div className="panel">
+          {/* Was a hand-written `<div className="panel">`; it is the shared
+              <Panel> now so the ADR-201 `fill` classes come from the one
+              component instead of being hand-copied here. Same look: a flush,
+              unpadded panel around the table. */}
+          <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.invoicesList}
               columns={columns}
@@ -317,7 +234,8 @@ function InvoiceListPage(): React.JSX.Element {
               loading={isLoading}
               rowKey={(inv) => inv.id}
               onRowClick={(inv) => openInvoice(inv.id)}
-              empty="No Invoices yet."
+              sortFilterServer={sf}
+              empty={sf.filtering || term ? 'No Invoices match.' : 'No Invoices yet.'}
               // Row click opens the invoice (ERPNext list); the Invoice No.
               // stays a real link for ctrl-click / new tab. Add Payment opens
               // the same invoice, where the payment form lives.
@@ -337,8 +255,16 @@ function InvoiceListPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
-          {data ? <ListFooter total={data.invoices.length} noun="invoice" /> : null}
+          </Panel>
+          {data ? (
+            <ListFooter
+              total={data.total}
+              noun="invoice"
+              page={page}
+              pageSize={LIST_PAGE_SIZE}
+              onPage={gotoPage}
+            />
+          ) : null}
         </>
       )}
     </div>

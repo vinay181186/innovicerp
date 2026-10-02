@@ -1,5 +1,6 @@
 import {
   jobQueueQuerySchema,
+  moveJobQueueOpInputSchema,
   reorderJobQueueInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
@@ -21,6 +22,15 @@ export async function jobQueueRoutes(app: FastifyInstance): Promise<void> {
     const { machineId } = machineIdParam.parse(req.params);
     const input = reorderJobQueueInputSchema.parse(req.body);
     return service.reorderMachineQueue(machineId, input, req.user);
+  });
+
+  // ▲/▼ on one row: the server swaps it inside the machine's FULL queue, so a
+  // move made on page 2 keeps every other page's order intact (ADR-201).
+  app.post('/job-queue/machines/:machineId/move', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { machineId } = machineIdParam.parse(req.params);
+    const input = moveJobQueueOpInputSchema.parse(req.body);
+    return service.moveQueueOp(machineId, input, req.user);
   });
 
   // One-time (idempotent) admin action: link jc_ops that carry a machine as text

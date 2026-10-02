@@ -4,13 +4,8 @@
 // its BOM-status strip + exploded BOM (equipment), with Raised By and Remarks.
 // Row click opens the SO detail; Edit / Assign / Delete live in the row's ⋯.
 //
-// What this file no longer owns (ADR-199 split): the card markup and its metric
-// boxes, the List / Card ViewToggle and its per-browser memory, the hand-rolled
-// sheet (components/so-sheet-table.tsx, retired), the column defs
-// (components/so-list-columns.tsx) and the expanded panels
-// (components/so-expanded-panel.tsx + so-component-expand.tsx +
-// so-equipment-expand.tsx). The DATA and RULES stay: same query, same so_create
-// access matrix, same soft-delete, same filters, same URL params.
+// Column defs live in components/so-list-columns.tsx, the ▸ panels in
+// components/so-expanded-panel.tsx (+ so-component / so-equipment expand).
 
 import {
   type ListSalesOrdersQuery,
@@ -23,7 +18,7 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Download, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
@@ -31,27 +26,32 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, renderRowMenuLink } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
-import { soListColumns, soRowMenu, soRowTint } from '../components/so-list-columns';
+import {
+  SO_LIST_HIDDEN_COLUMNS,
+  soListColumns,
+  soRowMenu,
+  soRowTint,
+} from '../components/so-list-columns';
 import { SoExpandedPanel } from '../components/so-expanded-panel';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
 import { todayIst } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { fetchSalesOrdersForExport, useSalesOrdersList, useSoftDeleteSalesOrder } from '../api';
 
-// No pagination — the SO/WO list loads all matching orders into one scrolling
-// list (user decision: scroll, not Prev/Next pages). One fetch, offset 0. The
-// API caps `limit` at 1000; the count line flags the rare case of a larger set.
-const LIST_LIMIT = 1000;
+// ADR-201: 25 orders per page from the SERVER (was one 1000-row fetch); search /
+// filters / Sort & Filter run there over ALL orders and reset to page 1.
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(SO_STATUSES).optional(),
   type: z.enum(SO_TYPES).optional(),
-  page: z.coerce.number().int().positive().default(1),
+  page: pageSearchParam,
 });
 
 export const salesOrdersListRoute = createRoute({
@@ -67,8 +67,7 @@ function SalesOrdersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
-    // raw draft (a typed trailing space) when it already normalises to it.
+    // Adopt a URL term the box did not produce (Back, a pasted link).
     setSearchInput((prev) =>
       normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
     );
@@ -86,18 +85,33 @@ function SalesOrdersListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER (ADR-200): the list is paged, so filtering
+  // the loaded page only would miss orders. A change → page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.soMaster, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
+  const offset = pageOffset(search.page);
   const query: ListSalesOrdersQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
       type: search.type,
-      limit: LIST_LIMIT,
-      offset: 0,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset,
     }),
-    [search.search, search.status, search.type],
+    [sf.param, search.search, search.status, search.type, offset],
   );
 
   const { data, isLoading, isFetching, isError, error } = useSalesOrdersList(query);
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  useClampPage(search.page, data?.total, gotoPage);
   // Access matrix (so_create, dept Sales) replaces the old admin/manager flag.
   //   New SO / bulk import -> entry; +Line / per-line edit -> edit;
   //   whole-SO delete      -> edit AND approve (L5 Dept Admin and up).
@@ -107,8 +121,7 @@ function SalesOrdersListPage(): React.JSX.Element {
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
 
-  // The row's ▸ opens that SO's detail fetch; nothing auto-expands on load, so
-  // arriving on the list fires no per-order requests. A Set — many can be open.
+  // Rows whose ▸ is open (none on load, so no per-order fetches on arrival).
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const toggleExpand = (id: string): void =>
     setExpandedIds((prev) => {
@@ -119,8 +132,7 @@ function SalesOrdersListPage(): React.JSX.Element {
     });
 
   const softDelete = useSoftDeleteSalesOrder();
-  // Delete asks through the ONE confirm dialog (never window.confirm); a failed
-  // delete is shown inside the dialog and the question stays open.
+  // Delete asks through the ONE confirm dialog; a failure shows inside it.
   const [deletingSo, setDeletingSo] = useState<SalesOrderListItem | null>(null);
   // ADR-197 — why it goes to Trash (required; lands on the SO History).
   const [deleteReason, setDeleteReason] = useState('');
@@ -134,11 +146,9 @@ function SalesOrdersListPage(): React.JSX.Element {
   // Export status banner — an export that finds nothing, or fails, says so here.
   const [importMsg, setImportMsg] = useState<string | null>(null);
 
-  // Export the whole filtered list to Excel — pulls every matching row (not just
-  // the visible page) using the current search/type/status filter.
+  // Excel export: EVERY row matching search / status / type / Sort & Filter.
   const [exporting, setExporting] = useState(false);
-  // Client-PO document being previewed (ADR-142). Preview in-app; the modal
-  // owns the one button that actually downloads.
+  // Client-PO document being previewed in-app (ADR-142).
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   async function onExport(): Promise<void> {
     setExporting(true);
@@ -147,6 +157,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         search: search.search,
         status: search.status,
         type: search.type,
+        sf: sf.param,
         limit: 10000,
         offset: 0,
       });
@@ -170,15 +181,17 @@ function SalesOrdersListPage(): React.JSX.Element {
     [today],
   );
 
-  // Hide-page: a user whose VIEW was removed for SO Master sees the no-access
-  // panel, not the list. `eff` undefined only while access loads — don't block
-  // then, or every legitimate user flashes this panel on cold load.
+  // Hide-page: no VIEW → the no-access panel (not while access still loads).
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): this page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header — sticky to the table's
+    // own scroll box — can never ride off the top of the screen, and the
+    // search / filters stay reachable at the last row.
+    <div className="page-fill">
       {/* The ONE list header (ui/layout ListHeader): title · count · Export · +
           New, then the filter bar (search · status · type · Clear). */}
       <ListHeader
@@ -236,6 +249,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           </>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
             search: (prev) => ({
@@ -249,6 +263,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           });
         }}
         filtersActive={
+          sf.filtering ||
           search.search != null ||
           search.status != null ||
           search.type != null ||
@@ -304,18 +319,22 @@ function SalesOrdersListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable<SalesOrderListItem>
             tableKey={TABLE_KEYS.soMaster}
+            sortFilterServer={sf}
             columns={columns}
+            defaultHidden={SO_LIST_HIDDEN_COLUMNS}
             rows={rows}
             loading={isLoading}
-            empty={search.search || search.status || search.type ? 'No SOs match.' : 'No SOs yet.'}
+            empty={
+              sf.filtering || search.search || search.status || search.type
+                ? 'No SOs match.'
+                : 'No SOs yet.'
+            }
             rowClassName={(so) => soRowTint(so, today)}
             onRowClick={(so) => void navigate({ to: '/sales-orders/$id', params: { id: so.id } })}
-            // The fit table's ▸ is the row's one expand control: it opens the
-            // SO's detail panel too. renderExpanded returns null for a closed
-            // row, so the detail fetch never fires for it.
+            // ▸ opens the SO's detail panel; a closed row renders null (no fetch).
             renderExpanded={(so) =>
               expandedIds.has(so.id) ? <SoExpandedPanel so={so} canEdit={canEdit} /> : null
             }
@@ -329,7 +348,13 @@ function SalesOrdersListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter total={total} shown={rows.length} noun="sales order" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="sales order"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
 
       {previewPath ? (
         <FilePreviewModal storagePath={previewPath} onClose={() => setPreviewPath(null)} />

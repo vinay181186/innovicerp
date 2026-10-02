@@ -15,6 +15,7 @@
 import { NC_FILTER_STATUSES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 function toDateString(v: unknown): string | null {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -97,7 +98,7 @@ export const ncRegisterAllReport: RegisteredReport = {
         ${toFrag}
         ${statusFrag}
       ORDER BY nc.nc_date DESC, nc.code DESC
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

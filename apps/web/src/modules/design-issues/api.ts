@@ -1,7 +1,4 @@
-import type {
-  ListDesignIssuesQuery,
-  ListDesignIssuesResponse,
-} from '@innovic/shared';
+import type { ListDesignIssuesQuery, ListDesignIssuesResponse } from '@innovic/shared';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
@@ -13,6 +10,7 @@ export const designIssuesKeys = {
       'list',
       q.search ?? null,
       q.filter,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -22,6 +20,7 @@ function buildQs(q: ListDesignIssuesQuery): string {
   const p = new URLSearchParams();
   if (q.search) p.set('search', q.search);
   if (q.filter) p.set('filter', q.filter);
+  if (q.sf) p.set('sf', q.sf);
   p.set('limit', String(q.limit));
   p.set('offset', String(q.offset));
   return p.toString();

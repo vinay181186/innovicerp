@@ -41,6 +41,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { operatorListColumns } from '../components/operator-list-columns';
 import { Select } from '@/ui/forms';
@@ -101,14 +102,22 @@ function OperatorsListPage(): React.JSX.Element {
   const isActiveFilter =
     search.status === 'active' ? true : search.status === 'inactive' ? false : undefined;
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss rows. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.operatorsList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListOperatorsQuery = useMemo(
     () => ({
       search: search.search,
       isActive: isActiveFilter,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, isActiveFilter, search.page],
+    [search.search, isActiveFilter, sf.param, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useOperatorsList(query);
@@ -146,7 +155,10 @@ function OperatorsListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header can never ride off the
+    // top of the screen at the last row.
+    <div className="page-fill">
       {/* The frozen header band: title, count, search, the status filter and
           the primary action stay put while the rows scroll underneath. */}
       <ListHeader
@@ -238,13 +250,18 @@ function OperatorsListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load operators. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.operatorsList}
+            sortFilterServer={sf}
             columns={columns}
             rows={rows}
             loading={isLoading}
-            empty={search.search || search.status ? 'No Operators match.' : 'No Operators yet.'}
+            empty={
+              search.search || search.status || sf.param
+                ? 'No Operators match.'
+                : 'No Operators yet.'
+            }
             onRowClick={(op) => void navigate({ to: '/operators/$id', params: { id: op.id } })}
             rowActionsWidth="1%"
             rowActions={(op) => (

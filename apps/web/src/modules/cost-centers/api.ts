@@ -23,6 +23,7 @@ function toQueryString(q: ListCostCentersQuery): string {
   if (q.isActive !== undefined) params.set('isActive', String(q.isActive));
   if (q.department) params.set('department', q.department);
   if (q.type) params.set('type', q.type);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

@@ -12,6 +12,7 @@
 
 import type { ApprovalInboxResponse, ApprovalInboxRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
+import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { isWriteRole } from '../../lib/auth';
 import { AuthorizationError } from '../../lib/errors';
@@ -36,7 +37,24 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
   }));
 
   let logEntry: ApprovalInboxRow[] = [];
+  let logEntryCount = 0;
   if (isWriteRole(user)) {
+    // The count is the whole waiting queue (ADR-201) — the list below stops at
+    // LOG_ENTRY_LIMIT. Same rows selectTimeChangeRequests can return: its
+    // inner joins (op_log, a live jc_op, its job card) are repeated here.
+    const [c] = (await withUserContext(user, (tx) =>
+      tx.execute(sql`
+        SELECT COUNT(*)::int AS n
+        FROM public.op_log_time_change_requests r
+        JOIN public.op_log l ON l.id = r.op_log_id
+        JOIN public.jc_ops o ON o.id = r.jc_op_id AND o.deleted_at IS NULL
+        JOIN public.job_cards jc ON jc.id = o.job_card_id
+        WHERE r.company_id = ${companyId}::uuid
+          AND r.deleted_at IS NULL
+          AND r.status = 'pending'
+      `),
+    )) as unknown as Array<{ n: number }>;
+    logEntryCount = Number(c?.n ?? 0);
     const requests = await listOpLogTimeChangeRequests(
       { status: 'pending', limit: LOG_ENTRY_LIMIT },
       user,
@@ -56,7 +74,7 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
   }
 
   return {
-    counts: { pr: pr.length, po: po.length, logEntry: logEntry.length },
+    counts: { pr: pr.length, po: po.length, logEntry: logEntryCount },
     pr,
     po,
     logEntry,

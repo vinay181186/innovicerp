@@ -9,14 +9,17 @@ import type {
   DailyTaskReportDetail,
   DailyTaskReportLine,
   DailyTaskReportRow,
+  ListDailyTaskReportsQuery,
   ListDailyTaskReportsResponse,
   UpsertDailyTaskReportInput,
 } from '@innovic/shared';
-import { and, asc, desc, eq, gte, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { dailyReportLines, dailyReports, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
+import { DTR_SF_COLUMNS, DTR_SHIFT_LABEL } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -39,12 +42,14 @@ async function loadUserNames(tx: DbTransaction, companyId: string): Promise<Map<
   return new Map(rows.map((r) => [r.id, r.name ?? '']));
 }
 
-export interface DailyReportFilters {
-  userId?: string | undefined;
-  dateFrom?: string | undefined;
-  dateTo?: string | undefined;
-}
+export type DailyReportFilters = ListDailyTaskReportsQuery;
 
+/**
+ * Daily Task Reports list (ADR-201): user / date filters, the search (Report
+ * Date as shown, User, Shift) and Sort & Filter all run in SQL; `total` uses
+ * the same WHERE; 25-row pages when the screen passes `limit` (no `limit` →
+ * every report, as before). Task count + hours are summed per report in SQL.
+ */
 export async function listDailyReports(
   filters: DailyReportFilters,
   user: AuthContext,
@@ -52,53 +57,75 @@ export async function listDailyReports(
   const companyId = requireCompany(user);
   const isAdmin = user.role === 'admin';
   const canSeeAll = canSeeAllReports(user);
+  const sf = readSf(filters.sf);
   return withUserContext(user, async (tx) => {
     const names = await loadUserNames(tx, companyId);
 
-    const conds = [eq(dailyReports.companyId, companyId), isNull(dailyReports.deletedAt)];
-    if (!canSeeAll) conds.push(eq(dailyReports.userId, user.id));
-    else if (filters.userId) conds.push(eq(dailyReports.userId, filters.userId));
-    if (filters.dateFrom) conds.push(gte(dailyReports.reportDate, filters.dateFrom));
-    if (filters.dateTo) conds.push(lte(dailyReports.reportDate, filters.dateTo));
-
-    const headers = await tx
-      .select()
-      .from(dailyReports)
-      .where(and(...conds))
-      .orderBy(desc(dailyReports.reportDate), desc(dailyReports.createdAt));
-
-    // Aggregate task count + total hours per report.
-    const lineRows = await tx
-      .select({
-        reportId: dailyReportLines.dailyReportId,
-        hours: dailyReportLines.hours,
-      })
-      .from(dailyReportLines)
-      .where(and(eq(dailyReportLines.companyId, companyId), isNull(dailyReportLines.deletedAt)));
-    const agg = new Map<string, { count: number; hours: number }>();
-    for (const l of lineRows) {
-      const cur = agg.get(l.reportId) ?? { count: 0, hours: 0 };
-      cur.count += 1;
-      cur.hours += n(l.hours);
-      agg.set(l.reportId, cur);
+    const conds: SQL[] = [sql`dr.company_id = ${companyId}`, sql`dr.deleted_at IS NULL`];
+    if (!canSeeAll) conds.push(sql`dr.user_id = ${user.id}`);
+    else if (filters.userId) conds.push(sql`dr.user_id = ${filters.userId}`);
+    if (filters.dateFrom) conds.push(sql`dr.report_date >= ${filters.dateFrom}::date`);
+    if (filters.dateTo) conds.push(sql`dr.report_date <= ${filters.dateTo}::date`);
+    const term = (filters.search ?? '').trim().replace(/\s+/g, ' ');
+    if (term) {
+      const pat = `%${likeEscape(term)}%`;
+      conds.push(sql`(to_char(dr.report_date, 'DD-Mon-YYYY') ILIKE ${pat} ESCAPE '\\'
+        OR u.full_name ILIKE ${pat} ESCAPE '\\'
+        OR ${DTR_SHIFT_LABEL} ILIKE ${pat} ESCAPE '\\')`);
     }
+    const where = sql`${sql.join(conds, sql` AND `)} ${sfWhere(DTR_SF_COLUMNS, sf)}`;
+    const order = sfOrderBy(
+      DTR_SF_COLUMNS,
+      sf,
+      sql`dr.report_date DESC, dr.created_at DESC, dr.id DESC`,
+    );
+    const from = sql`
+      FROM public.daily_reports dr
+      LEFT JOIN public.users u ON u.id = dr.user_id
+      LEFT JOIN LATERAL (
+        SELECT count(*)::int AS n, COALESCE(sum(l.hours), 0)::numeric AS h
+        FROM public.daily_report_lines l
+        WHERE l.daily_report_id = dr.id AND l.company_id = ${companyId} AND l.deleted_at IS NULL
+      ) agg ON TRUE`;
+    const page =
+      filters.limit !== undefined
+        ? sql`LIMIT ${filters.limit} OFFSET ${filters.offset ?? 0}`
+        : sql`OFFSET ${filters.offset ?? 0}`;
 
-    const reports: DailyTaskReportRow[] = headers.map((h) => {
-      const a = agg.get(h.id) ?? { count: 0, hours: 0 };
-      return {
-        id: h.id,
-        userId: h.userId,
-        userName: names.get(h.userId) ?? null,
-        reportDate: h.reportDate,
-        shift: h.shift,
-        taskCount: a.count,
-        totalHours: Math.round(a.hours * 100) / 100,
-        canEdit: isAdmin || h.userId === user.id,
-      };
-    });
+    const headers = (await tx.execute(sql`
+      SELECT dr.id, dr.user_id AS "userId", to_char(dr.report_date, 'YYYY-MM-DD') AS "reportDate",
+             dr.shift, agg.n AS "taskCount", agg.h AS "hours"
+      ${from}
+      WHERE ${where}
+      ORDER BY ${order}
+      ${page}
+    `)) as unknown as Array<{
+      id: string;
+      userId: string;
+      reportDate: string;
+      shift: DailyTaskReportRow['shift'];
+      taskCount: number | string;
+      hours: number | string | null;
+    }>;
+    const [cnt] = (await tx.execute(
+      sql`SELECT count(*)::int AS n ${from} WHERE ${where}`,
+    )) as unknown as Array<{
+      n: number | string;
+    }>;
+
+    const reports: DailyTaskReportRow[] = headers.map((h) => ({
+      id: h.id,
+      userId: h.userId,
+      userName: names.get(h.userId) ?? null,
+      reportDate: h.reportDate,
+      shift: h.shift,
+      taskCount: Number(h.taskCount) || 0,
+      totalHours: Math.round(n(h.hours) * 100) / 100,
+      canEdit: isAdmin || h.userId === user.id,
+    }));
 
     const userOptions = canSeeAll ? [...names.entries()].map(([id, name]) => ({ id, name })) : [];
-    return { reports, isAdmin, canSeeAll, userOptions };
+    return { reports, total: Number(cnt?.n ?? 0), isAdmin, canSeeAll, userOptions };
   });
 }
 

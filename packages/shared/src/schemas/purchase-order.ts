@@ -30,6 +30,7 @@ import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { servicePoTaxTypeSchema } from './service-po';
 import { PO_STATUSES } from '../enums/po-status';
 import { PO_TYPES } from '../enums/po-type';
+import { sfRawParamSchema } from './list-query';
 
 /** PO Tax Type — the same fixed list as invoices / JW invoices / Service POs
  *  (S1): 'sgst_cgst' = SGST + CGST (same state), 'igst' = IGST. Null = None. */
@@ -393,6 +394,8 @@ export const listPurchaseOrdersQuerySchema = z.object({
     .optional(),
   /** Only job-work / service POs whose lines trace to this JWSO (ADR-190 addendum). */
   jobWorkOrderId: z.string().uuid().optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
@@ -420,7 +423,10 @@ export const shortClosePurchaseOrderInputSchema = z.object({
   reason: z
     .string()
     .trim()
-    .min(PO_SHORT_CLOSE_REASON_MIN, `Give a reason (at least ${PO_SHORT_CLOSE_REASON_MIN} characters)`)
+    .min(
+      PO_SHORT_CLOSE_REASON_MIN,
+      `Give a reason (at least ${PO_SHORT_CLOSE_REASON_MIN} characters)`,
+    )
     .max(500),
 });
 export type ShortClosePurchaseOrderInput = z.infer<typeof shortClosePurchaseOrderInputSchema>;

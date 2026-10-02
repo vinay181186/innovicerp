@@ -1,5 +1,6 @@
 // QC History — the columns of its two tables, QC Pending and QC Entries
-// (ADR-199 fit table: one line per row, always fits the screen). Moved out of
+// (ADR-199 fit table: one line per row, always fits the screen). Columns carry
+// `sortFilterField` — the server's Sort & Filter field (ADR-200/201). Moved out of
 // routes/index.tsx. An overdue pending row keeps its red blink through
 // DataTable's rowClassName (`qc-alert-blink`).
 
@@ -15,6 +16,11 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 
 export const QC_HISTORY_DEFAULT_PINNED = ['item_code'];
+
+// Sort & Filter (server mode, ADR-200): the Shift tick list — stored code + label.
+const SHIFT_OPTIONS = Object.entries(SHIFT_LABELS as Record<string, string>).map(
+  ([value, label]) => ({ value, label }),
+);
 
 interface QcRowBase {
   jcCode: string;
@@ -32,6 +38,7 @@ function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
   return [
     {
       id: 'jc_no',
+      sortFilterField: 'jcCode',
       kind: 'code',
       header: 'JC No.',
       className: 'td-code cyan',
@@ -46,6 +53,7 @@ function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
     },
     {
       id: 'so_no',
+      sortFilterField: 'soCode',
       kind: 'code',
       header: 'SO No.',
       className: 'mono',
@@ -54,6 +62,7 @@ function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
     {
       // POL — the CUSTOMER's own purchase-order line number, before the item code.
       id: 'client_po_line_no',
+      sortFilterField: 'clientPoLineNo',
       kind: 'code',
       header: 'POL',
       headColor: 'var(--purple)',
@@ -62,6 +71,7 @@ function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'td-code',
@@ -73,6 +83,7 @@ function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
       // An unresolved item prints nothing — a dash would read as a part that
       // was deliberately left unnamed.
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -83,6 +94,7 @@ function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
     },
     {
       id: 'operation',
+      sortFilterField: 'operation',
       kind: 'text',
       header: 'Operation',
       ellipsis: true,
@@ -97,10 +109,12 @@ function numCol<T>(
   header: string,
   pick: (r: T) => number,
   color?: string,
+  sortFilterField?: string,
 ): DataTableColumn<T> {
   return {
     id,
     kind: 'num',
+    sortFilterField,
     header,
     align: 'right',
     headColor: color,
@@ -112,13 +126,38 @@ function numCol<T>(
 export function qcPendingColumns(): DataTableColumn<QcHistoryPendingRow>[] {
   return [
     ...leadColumns<QcHistoryPendingRow>(),
-    numCol<QcHistoryPendingRow>('order_qty', 'Order Qty', (o) => o.orderQty),
-    numCol<QcHistoryPendingRow>('completed', 'Completed', (o) => o.completed),
-    numCol<QcHistoryPendingRow>('accepted', 'Accepted', (o) => o.qcAccepted, 'var(--green2)'),
-    numCol<QcHistoryPendingRow>('rejected', 'Rejected', (o) => o.qcRejected, 'var(--red2)'),
-    numCol<QcHistoryPendingRow>('qc_pending', 'QC Pending', (o) => o.qcPending, 'var(--amber2)'),
+    numCol<QcHistoryPendingRow>('order_qty', 'Order Qty', (o) => o.orderQty, undefined, 'orderQty'),
+    numCol<QcHistoryPendingRow>(
+      'completed',
+      'Completed',
+      (o) => o.completed,
+      undefined,
+      'completed',
+    ),
+    numCol<QcHistoryPendingRow>(
+      'accepted',
+      'Accepted',
+      (o) => o.qcAccepted,
+      'var(--green2)',
+      'qcAccepted',
+    ),
+    numCol<QcHistoryPendingRow>(
+      'rejected',
+      'Rejected',
+      (o) => o.qcRejected,
+      'var(--red2)',
+      'qcRejected',
+    ),
+    numCol<QcHistoryPendingRow>(
+      'qc_pending',
+      'QC Pending',
+      (o) => o.qcPending,
+      'var(--amber2)',
+      'qcPending',
+    ),
     {
       id: 'pending_since',
+      sortFilterField: 'pendSince',
       kind: 'date',
       header: 'Pending Since',
       className: 'text3',
@@ -135,11 +174,20 @@ export function qcPendingColumns(): DataTableColumn<QcHistoryPendingRow>[] {
 export function qcEntryColumns(): DataTableColumn<QcHistoryLogRow>[] {
   return [
     ...leadColumns<QcHistoryLogRow>(),
-    numCol<QcHistoryLogRow>('accepted', 'Accepted', (l) => l.accepted, 'var(--green2)'),
-    numCol<QcHistoryLogRow>('rejected', 'Rejected', (l) => l.rejected, 'var(--red2)'),
-    { id: 'qc_date', kind: 'date', header: 'QC Date', render: (l) => fmtDate(l.logDate) },
+    numCol<QcHistoryLogRow>('accepted', 'Accepted', (l) => l.accepted, 'var(--green2)', 'accepted'),
+    numCol<QcHistoryLogRow>('rejected', 'Rejected', (l) => l.rejected, 'var(--red2)', 'rejected'),
+    {
+      id: 'qc_date',
+      kind: 'date',
+      header: 'QC Date',
+      sortFilterField: 'logDate',
+      render: (l) => fmtDate(l.logDate),
+    },
     {
       id: 'shift',
+      sortFilterField: 'shift',
+      filterType: 'list',
+      filterOptions: SHIFT_OPTIONS,
       kind: 'code',
       header: 'Shift',
       render: (l) =>
@@ -147,6 +195,7 @@ export function qcEntryColumns(): DataTableColumn<QcHistoryLogRow>[] {
     },
     {
       id: 'inspected_by',
+      sortFilterField: 'inspector',
       kind: 'text',
       header: 'Inspected By',
       ellipsis: true,
@@ -155,6 +204,7 @@ export function qcEntryColumns(): DataTableColumn<QcHistoryLogRow>[] {
     },
     {
       id: 'remarks',
+      sortFilterField: 'remarks',
       kind: 'text',
       header: 'Remarks',
       align: 'left',

@@ -21,6 +21,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
   return [
     {
       id: 'issue_code',
+      sortFilterField: 'issueCode',
       header: 'Issue No.',
       kind: 'code',
       nowrap: true,
@@ -32,6 +33,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
     },
     {
       id: 'issue_date',
+      sortFilterField: 'issueDate',
       header: 'Issue Date',
       kind: 'date',
       className: 'text2',
@@ -40,6 +42,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
     },
     {
       id: 'jwso_code',
+      sortFilterField: 'jwsoCode',
       header: 'JWSO No.',
       kind: 'code',
       nowrap: true,
@@ -51,6 +54,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
     },
     {
       id: 'jc_code',
+      sortFilterField: 'jcCode',
       header: 'JC No.',
       kind: 'code',
       className: 'mono text2',
@@ -60,6 +64,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
     {
       // OUR produced part (CODE/REV). Null renders an em dash.
       id: 'item_code',
+      sortFilterField: 'itemCode',
       header: 'Item Code',
       kind: 'code',
       nowrap: true,
@@ -71,6 +76,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       header: 'Item Name',
       align: 'left',
       ellipsis: true,
@@ -81,6 +87,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
     {
       // The CLIENT'S supplied material this issue debits — NOT the produced part.
       id: 'customer_material',
+      sortFilterField: 'customerMaterial',
       header: 'Customer Material',
       align: 'left',
       ellipsis: true,
@@ -101,6 +108,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
     },
     {
       id: 'issue_qty',
+      sortFilterField: 'qty',
       header: 'Issue Qty',
       kind: 'num',
       align: 'right',

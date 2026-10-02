@@ -14,24 +14,32 @@
 import { type PartyMaterialListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyMaterialsList } from '../api';
 import { AddPartyMaterialModal } from '../components/add-party-material-modal';
-import { PartyMaterialDetails, partyMaterialColumns } from '../components/party-material-columns';
+import {
+  PARTY_MATERIAL_HIDDEN_COLUMNS,
+  PartyMaterialDetails,
+  partyMaterialColumns,
+} from '../components/party-material-columns';
 import { DeletePartyMaterialModal } from '../components/delete-party-material-modal';
 import { EditPartyMaterialModal } from '../components/edit-party-material-modal';
 import { ReturnPartyMaterialModal } from '../components/return-party-material-modal';
 
-const PAGE_SIZE = 50;
-
 export const partyMaterialsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'party-material',
+  // Search and page live in the URL (ADR-201: 25 rows a page).
+  validateSearch: z.object({ search: z.string().optional(), page: pageSearchParam }),
   component: PartyMaterialsListPage,
 });
 
@@ -54,8 +62,29 @@ function PartyMaterialsListPage(): React.JSX.Element {
   // (the same gate the JWSO create / invoice / return actions use), not
   // party_create — the server enforces jw_create on this endpoint.
   const canReturn = effectiveFormPerms(eff, 'jw_create').entry;
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const urlSearch = partyMaterialsListRoute.useSearch();
+  const navigate = partyMaterialsListRoute.useNavigate();
+  const page = urlSearch.page;
+  const setPage = useCallback(
+    (p: number) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
+    [navigate],
+  );
+  // The box mirrors ?search=; a 300ms debounce writes it back on page 1.
+  const [search, setSearch] = useState(urlSearch.search ?? '');
+  useEffect(() => {
+    setSearch((prev) =>
+      normalizeSearchTerm(prev) === (urlSearch.search ?? '') ? prev : (urlSearch.search ?? ''),
+    );
+  }, [urlSearch.search]);
+  useEffect(() => {
+    const trimmed = normalizeSearchTerm(search);
+    const next = trimmed === '' ? undefined : trimmed;
+    if (next === urlSearch.search) return;
+    const id = window.setTimeout(() => {
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, urlSearch.search, navigate]);
   const [showAdd, setShowAdd] = useState(false);
   const [editRow, setEditRow] = useState<PartyMaterialListItem | null>(null);
   const [returnRow, setReturnRow] = useState<PartyMaterialListItem | null>(null);
@@ -65,13 +94,20 @@ function PartyMaterialsListPage(): React.JSX.Element {
   // Which rows have their ▸ detail open (the fit table's one expand control).
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const { data, isLoading, isError, error } = usePartyMaterialsList({
-    search: search.trim() || undefined,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
-  });
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss materials. Every change goes back
+  // to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.partyMaterials, () => setPage(1));
 
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
+  const { data, isLoading, isError, error } = usePartyMaterialsList({
+    search: urlSearch.search,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
+  });
+  useClampPage(page, data?.total, setPage);
+
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const columns = useMemo(() => partyMaterialColumns(), []);
 
@@ -97,7 +133,9 @@ function PartyMaterialsListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + Add Material. */}
       <ListHeader
@@ -106,10 +144,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
         count={data?.total}
         noun="material"
         search={search}
-        onSearch={(v) => {
-          setSearch(v);
-          setPage(1);
-        }}
+        onSearch={setSearch}
         searchPlaceholder="Search code, material, customer…"
         primary={
           canAdd ? (
@@ -128,14 +163,18 @@ function PartyMaterialsListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.partyMaterials}
+            sortFilterServer={sf}
+            defaultHidden={[...PARTY_MATERIAL_HIDDEN_COLUMNS]}
             columns={columns}
             rows={rows}
             loading={isLoading}
             emptyText={
-              search.trim() ? 'No customer materials match.' : 'No customer materials yet.'
+              urlSearch.search || sf.filtering
+                ? 'No customer materials match.'
+                : 'No customer materials yet.'
             }
             // No row click — there is no Customer Material detail page.
             renderExpanded={(pm) => (expanded.has(pm.id) ? <PartyMaterialDetails pm={pm} /> : null)}
@@ -179,7 +218,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
           total={data.total}
           noun="material"
           page={page}
-          pageSize={PAGE_SIZE}
+          pageSize={LIST_PAGE_SIZE}
           onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
         />
       ) : null}

@@ -6,7 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { isoDateFilter, numCell, type SqlRow, textCell } from './report-helpers';
+import { isoDateFilter, numCell, REPORT_ROW_CAP, textCell, type SqlRow } from './report-helpers';
 
 export const hsnOutwardSummaryReport: RegisteredReport = {
   definition: {
@@ -69,7 +69,7 @@ export const hsnOutwardSummaryReport: RegisteredReport = {
         COALESCE(it.uom::text, sol.uom::text),
         inv.gst_percent
       ORDER BY 1, 3, 6
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

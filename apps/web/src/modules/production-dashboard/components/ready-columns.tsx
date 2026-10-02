@@ -12,7 +12,13 @@ import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machi
 import { itemCodeWithRev } from '@/lib/item-code';
 import { ROW_TINT } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
-import { OpStatusBadge } from './op-status-badge';
+import { OP_STATUS_BADGES, OpStatusBadge } from './op-status-badge';
+
+/** Op Status tick list for server Sort & Filter: stored value + label shown. */
+const OP_STATUS_OPTIONS = Object.entries(OP_STATUS_BADGES).map(([value, b]) => ({
+  value,
+  label: b.label,
+}));
 
 // JC No. is column 0 (always pinned). The six visible columns match the brief:
 // JC No. · Op · Operation · Actual Machine · Available · Op Status. The rest of
@@ -46,6 +52,7 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
       // DESTINATION (user request, 2026-09-11): a JC number goes to the job card
       // itself, everywhere in the app. Op Entry is reachable from the ⋯ menu.
       id: 'jc_no',
+      sortFilterField: 'jobCardCode',
       kind: 'code',
       header: 'JC No.',
       className: 'td-code',
@@ -62,6 +69,8 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
     },
     {
       id: 'op_seq',
+      sortFilterField: 'opSeq',
+      filterType: 'num',
       kind: 'code',
       header: 'Op',
       className: 'mono',
@@ -69,6 +78,7 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
     },
     {
       id: 'operation',
+      sortFilterField: 'operation',
       kind: 'text',
       header: 'Operation',
       ellipsis: true,
@@ -90,6 +100,7 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
     },
     {
       id: 'available',
+      sortFilterField: 'available',
       kind: 'num',
       header: 'Available',
       align: 'right',
@@ -99,6 +110,8 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
     },
     {
       id: 'op_status',
+      sortFilterField: 'computedStatus',
+      filterOptions: OP_STATUS_OPTIONS,
       kind: 'badge',
       header: 'Op Status',
       render: (op) => <OpStatusBadge status={op.computedStatus} />,
@@ -108,6 +121,7 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
       // The item the card is for. The code leads because it carries the drawing
       // revision (CODE/REV) the operator works to.
       id: 'item_code',
+      sortFilterField: 'itemCode',
       kind: 'code',
       header: 'Item Code',
       className: 'td-code',
@@ -119,6 +133,7 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       kind: 'text',
       header: 'Item Name',
       align: 'left',
@@ -130,12 +145,14 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
     {
       // ADR-164 — where the REMAINING qty runs.
       id: 'planned_machine',
+      sortFilterField: 'machineCode',
       kind: 'code',
       header: 'Planned Machine',
       render: (op) => (hasMachine(op) ? <PlannedMachineCell planned={op.machineCode} /> : dash),
     },
     {
       id: 'order_qty',
+      sortFilterField: 'orderQty',
       kind: 'num',
       header: 'Order Qty',
       align: 'right',
@@ -144,6 +161,7 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
     },
     {
       id: 'completed',
+      sortFilterField: 'completedQty',
       kind: 'num',
       header: 'Completed',
       align: 'right',
@@ -153,6 +171,7 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
     },
     {
       id: 'pending_hrs',
+      sortFilterField: 'pendingHrs',
       kind: 'num',
       header: 'Pending Hrs',
       align: 'right',

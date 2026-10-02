@@ -5,7 +5,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { isoDateFilter } from './report-helpers';
+import { isoDateFilter, REPORT_ROW_CAP } from './report-helpers';
 
 export const vendorPerformanceReport: RegisteredReport = {
   definition: {
@@ -147,7 +147,7 @@ export const vendorPerformanceReport: RegisteredReport = {
              THEN ROUND(100.0 * osp_rejected_qty / osp_inspected_qty, 1) END     AS osp_reject_pct
       FROM per_vendor
       ORDER BY vendor_name
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const num = (v: unknown): number | null => (v != null ? Number(v) : null);

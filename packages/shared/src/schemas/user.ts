@@ -9,6 +9,7 @@
 // reactivate / soft-delete.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { queryBoolean } from '../lib/query-boolean';
 import { USER_ROLES } from '../enums/user-role';
 
@@ -77,6 +78,8 @@ export const listUsersQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   role: userRoleSchema.optional(),
   isActive: queryBoolean().optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

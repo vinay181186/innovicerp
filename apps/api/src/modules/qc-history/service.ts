@@ -1,197 +1,142 @@
 // QC History service (QC Wave 2) — read-only.
 //
-// GET /qc-history — pending QC ops + completed QC log entries + tracking stats.
+// GET /qc-history          — the whole feed: pending QC ops + the last 500 QC
+//                            log entries + tracking stats (older callers).
+// GET /qc-history/pending  — QC Pending ops, one page + total (ADR-201).
+// GET /qc-history/logs     — completed QC entries, one page + total (ADR-201).
+// GET /qc-history/stats    — the KPI figures over EVERY row (ADR-201).
 // Mirrors legacy renderQCHistory (HTML L23531). Raw SQL over v_jc_op_status +
-// op_log (log_type='qc'). RLS via base tables. No migration.
+// op_log (log_type='qc'); the SQL pieces live in sql.ts. RLS via base tables.
 
 import { sql } from 'drizzle-orm';
 import type {
-  QcHistoryLogRow,
-  QcHistoryPendingRow,
+  ListQcLogsQuery,
+  ListQcPendingQuery,
   QcHistoryResponse,
   QcHistoryStats,
+  QcLogsListResponse,
+  QcPendingListResponse,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { QC_LOGS_SF_COLUMNS, QC_PENDING_SF_COLUMNS } from './sf-columns';
+import {
+  LOGS_ORDER,
+  LOGS_SELECT,
+  PENDING_ORDER,
+  PENDING_SELECT,
+  PEND_SINCE,
+  logsFrom,
+  opSearchWhere,
+  overdueToday,
+  pendingFrom,
+  toLogRow,
+  toPendingRow,
+} from './sql';
 
-function requireCompany(user: AuthContext): string {
+export function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 }
 
-function dateLike(v: unknown): string {
-  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+type Raw = Record<string, unknown>;
+const rows = (r: unknown): Raw[] => r as Raw[];
+
+/** QC Pending ops — one page, total over the same WHERE (search + sf). */
+export async function listQcPending(
+  input: ListQcPendingQuery,
+  user: AuthContext,
+): Promise<QcPendingListResponse> {
+  const companyId = requireCompany(user);
+  const sf = readSf(input.sf);
+  const where = sql`${pendingFrom(companyId)} ${opSearchWhere(input.search)} ${sfWhere(QC_PENDING_SF_COLUMNS, sf)}`;
+  const order = sfOrderBy(QC_PENDING_SF_COLUMNS, sf, PENDING_ORDER);
+  const today = overdueToday();
+  return withUserContext(user, async (tx) => {
+    const page = await tx.execute(sql`
+      SELECT ${PENDING_SELECT} ${where}
+      ORDER BY ${order}
+      LIMIT ${input.limit} OFFSET ${input.offset}
+    `);
+    const cnt = await tx.execute(sql`SELECT COUNT(*)::int AS n ${where}`);
+    return {
+      items: rows(page).map((r) => toPendingRow(r, today)),
+      total: Number(rows(cnt)[0]?.['n'] ?? 0),
+    };
+  });
 }
 
-export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse> {
+/** Completed QC entries — one page, total over search + date range + sf. */
+export async function listQcLogs(
+  input: ListQcLogsQuery,
+  user: AuthContext,
+): Promise<QcLogsListResponse> {
   const companyId = requireCompany(user);
+  const sf = readSf(input.sf);
+  const where = sql`${logsFrom(companyId)} ${opSearchWhere(input.search)}
+    ${input.dateFrom ? sql`AND ol.log_date >= ${input.dateFrom}::date` : sql``}
+    ${input.dateTo ? sql`AND ol.log_date <= ${input.dateTo}::date` : sql``}
+    ${sfWhere(QC_LOGS_SF_COLUMNS, sf)}`;
+  const order = sfOrderBy(QC_LOGS_SF_COLUMNS, sf, LOGS_ORDER);
   return withUserContext(user, async (tx) => {
-    // ── Pending QC ops ──
-    const pendingRows = await tx.execute(sql`
-      SELECT
-        vos.jc_op_id AS "jcOpId", jc.id AS "jobCardId", jc.code AS "jcCode",
-        vos.op_seq AS "opSeq", so.code AS "soCode", i.code AS "itemCode",
-        -- The customer's drawing revision, read live off the SO line the card was
-        -- raised against. It rides the sol LEFT JOIN that already produces soCode,
-        -- so a JW-sourced or standalone card comes back null and renders as the
-        -- bare code. It is NOT items.revision, which describes the item master and
-        -- would tell the inspector to check against the wrong drawing.
-        --
-        -- Cast to text on purpose: the contract types this as a string, and the
-        -- column is only text on a database that has had migration 0119. On one
-        -- that has not it is still the old integer, and would arrive here as a
-        -- number wearing a string type. The cast is a no-op once 0119 is in.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- WHAT is being made. A job-card number says which job, not which part,
-        -- so the item name rides along beside the code off the items LEFT JOIN
-        -- that is already here for i.code.
-        i.name AS "itemName",
-        -- Terminal QC gate (ADR-069): true when this op is the job card's LAST
-        -- live op. Same criterion as op-entry/qc-stock-cascade.ts
-        -- tryApplyQcStockCascade (highest op_seq on the JC, soft-deleted ops
-        -- excluded), expressed as a correlated subquery so the register and
-        -- the stock cascade can never disagree on which op credits stock.
-        (vos.op_seq = (SELECT MAX(lo.op_seq) FROM public.jc_ops lo
-          WHERE lo.job_card_id = jc.id AND lo.deleted_at IS NULL)) AS "isLastOp",
-        jo.operation, jc.order_qty AS "orderQty",
-        vos.completed_qty AS "completed", vos.qc_accepted_qty AS "qcAccepted",
-        vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
-        sol.client_po_line_no AS "clientPoLineNo", jo.qc_call_date AS "qcCallDate",
-        (SELECT MAX(ol.log_date) FROM public.op_log ol
-          WHERE ol.jc_op_id = vos.jc_op_id AND ol.log_type = 'complete') AS "pendSince",
-        -- QC Command's active assignment (one per op, unique partial index).
-        qa.inspector_name AS "assignedTo"
-      FROM public.v_jc_op_status vos
-      JOIN public.jc_ops jo ON jo.id = vos.jc_op_id AND jo.deleted_at IS NULL
-      JOIN public.job_cards jc ON jc.id = vos.job_card_id AND jc.deleted_at IS NULL
-      LEFT JOIN public.items i ON i.id = jc.item_id
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so
-        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      LEFT JOIN public.qc_assignments qa
-        ON qa.jc_op_id = vos.jc_op_id AND qa.company_id = vos.company_id
-       AND qa.deleted_at IS NULL
-      WHERE vos.company_id = ${companyId}::uuid
-        AND (vos.qc_required OR vos.op_type = 'qc')
-        AND vos.qc_pending > 0
-      ORDER BY jo.qc_call_date DESC NULLS LAST, jc.code, vos.op_seq
+    const page = await tx.execute(sql`
+      SELECT ${LOGS_SELECT} ${where}
+      ORDER BY ${order}
+      LIMIT ${input.limit} OFFSET ${input.offset}
     `);
-    const today = new Date().toISOString().slice(0, 10);
-    const pending: QcHistoryPendingRow[] = (
-      pendingRows as unknown as Array<Record<string, unknown>>
-    ).map((r) => {
-      const pendSince = r['pendSince'] != null ? dateLike(r['pendSince']) : null;
-      return {
-        jcOpId: r['jcOpId'] as string,
-        jobCardId: r['jobCardId'] as string,
-        jcCode: r['jcCode'] as string,
-        opSeq: Number(r['opSeq']),
-        soCode: (r['soCode'] as string | null) ?? null,
-        itemCode: (r['itemCode'] as string | null) ?? null,
-        itemRevision: (r['itemRevision'] as string | null) ?? null,
-        itemName: (r['itemName'] as string | null) ?? null,
-        isLastOp: Boolean(r['isLastOp']),
-        operation: (r['operation'] as string | null) ?? '',
-        orderQty: Number(r['orderQty'] ?? 0),
-        completed: Number(r['completed'] ?? 0),
-        qcAccepted: Number(r['qcAccepted'] ?? 0),
-        qcRejected: Number(r['qcRejected'] ?? 0),
-        qcPending: Number(r['qcPending'] ?? 0),
-        pendSince,
-        overdue: pendSince !== null && pendSince < today,
-        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
-        qcCallDate: r['qcCallDate'] != null ? dateLike(r['qcCallDate']) : null,
-        assignedTo: (r['assignedTo'] as string | null) ?? null,
-      };
-    });
+    const cnt = await tx.execute(sql`SELECT COUNT(*)::int AS n ${where}`);
+    return {
+      items: rows(page).map(toLogRow),
+      total: Number(rows(cnt)[0]?.['n'] ?? 0),
+    };
+  });
+}
 
-    // ── Completed QC log entries (last 500) ──
-    const logRows = await tx.execute(sql`
-      SELECT
-        ol.id AS "logId", jc.id AS "jobCardId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
-        so.code AS "soCode", i.code AS "itemCode",
-        -- Same live SO-line read as the pending query above: the drawing revision
-        -- rides the existing sol LEFT JOIN, is null for cards with no SO behind
-        -- them, and is cast to text so a pre-0119 database cannot hand the UI a
-        -- number. Never items.revision.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the SAME sol join as the revision above. SO side only: a job-work
-        -- line has no customer PO, so it correctly stays null there. Never
-        -- sol.line_no, which is OUR line number.
-        sol.client_po_line_no AS "clientPoLineNo",
-        -- The part that was inspected, named beside its code so the completed
-        -- feed can be read back without opening each job card in turn.
-        i.name AS "itemName",
-        -- Same last-op test as the pending query above (ADR-069 terminal gate).
-        (jo.op_seq = (SELECT MAX(lo.op_seq) FROM public.jc_ops lo
-          WHERE lo.job_card_id = jc.id AND lo.deleted_at IS NULL)) AS "isLastOp",
-        jo.operation,
-        ol.qty AS "accepted", ol.reject_qty AS "rejected",
-        ol.log_date AS "logDate", ol.created_at AS "loggedAt", ol.shift, ol.operator_name AS "inspector", ol.remarks,
-        ol.log_no AS "logNo", jo.qc_call_date AS "qcCallDate",
-        ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName"
-      FROM public.op_log ol
-      JOIN public.jc_ops jo ON jo.id = ol.jc_op_id AND jo.deleted_at IS NULL
-      JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
-      LEFT JOIN public.items i ON i.id = jc.item_id
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so
-        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      WHERE ol.company_id = ${companyId}::uuid
-        AND ol.log_type = 'qc'
-      ORDER BY ol.log_date DESC, ol.id DESC
-      LIMIT 500
+/** KPI figures over every row (not the page): pending ops, overdue, entries, today. */
+export async function getQcHistoryStats(user: AuthContext): Promise<QcHistoryStats> {
+  const companyId = requireCompany(user);
+  const today = overdueToday();
+  return withUserContext(user, async (tx) => {
+    const pend = await tx.execute(sql`
+      SELECT COUNT(*)::int AS "pendingOps",
+        COUNT(*) FILTER (WHERE ${PEND_SINCE} < ${today}::date)::int AS "overdue"
+      ${pendingFrom(companyId)}
     `);
-    const logs: QcHistoryLogRow[] = (logRows as unknown as Array<Record<string, unknown>>).map(
-      (r) => ({
-        logId: r['logId'] as string,
-        jobCardId: (r['jobCardId'] as string | null) ?? null,
-        jcCode: r['jcCode'] as string,
-        opSeq: Number(r['opSeq']),
-        soCode: (r['soCode'] as string | null) ?? null,
-        itemCode: (r['itemCode'] as string | null) ?? null,
-        itemRevision: (r['itemRevision'] as string | null) ?? null,
-        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
-        itemName: (r['itemName'] as string | null) ?? null,
-        isLastOp: Boolean(r['isLastOp']),
-        operation: (r['operation'] as string | null) ?? '',
-        accepted: Number(r['accepted'] ?? 0),
-        rejected: Number(r['rejected'] ?? 0),
-        logDate: dateLike(r['logDate']),
-        loggedAt: r['loggedAt'] != null ? String(r['loggedAt']) : dateLike(r['logDate']),
-        shift: (r['shift'] as string | null) ?? null,
-        inspector: (r['inspector'] as string | null) ?? null,
-        remarks: (r['remarks'] as string | null) ?? null,
-        logNo: (r['logNo'] as string | null) ?? '',
-        qcCallDate: r['qcCallDate'] != null ? dateLike(r['qcCallDate']) : null,
-        qcReportPath: (r['qcReportPath'] as string | null) ?? null,
-        qcReportName: (r['qcReportName'] as string | null) ?? null,
-      }),
-    );
-
-    // ── Stats ──
-    const statRows = await tx.execute(sql`
+    const logs = await tx.execute(sql`
       SELECT
         COUNT(*)::int AS "totalEntries",
         COUNT(*) FILTER (WHERE log_date = CURRENT_DATE)::int AS "today"
       FROM public.op_log
       WHERE company_id = ${companyId}::uuid AND log_type = 'qc'
     `);
-    const s = (statRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
-    const stats: QcHistoryStats = {
-      pendingOps: pending.length,
-      overdue: pending.filter((p) => p.overdue).length,
-      totalEntries: Number(s['totalEntries'] ?? 0),
-      today: Number(s['today'] ?? 0),
+    const p = rows(pend)[0] ?? {};
+    const l = rows(logs)[0] ?? {};
+    return {
+      pendingOps: Number(p['pendingOps'] ?? 0),
+      overdue: Number(p['overdue'] ?? 0),
+      totalEntries: Number(l['totalEntries'] ?? 0),
+      today: Number(l['today'] ?? 0),
     };
-
-    return { stats, pending, logs };
   });
+}
+
+/** The whole feed (older callers): every pending op + the last 500 QC entries. */
+export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse> {
+  const companyId = requireCompany(user);
+  const today = overdueToday();
+  const result = await withUserContext(user, async (tx) => {
+    const pendingRows = await tx.execute(sql`
+      SELECT ${PENDING_SELECT} ${pendingFrom(companyId)} ORDER BY ${PENDING_ORDER}
+    `);
+    const logRows = await tx.execute(sql`
+      SELECT ${LOGS_SELECT} ${logsFrom(companyId)} ORDER BY ${LOGS_ORDER} LIMIT 500
+    `);
+    return {
+      pending: rows(pendingRows).map((r) => toPendingRow(r, today)),
+      logs: rows(logRows).map(toLogRow),
+    };
+  });
+  const stats = await getQcHistoryStats(user);
+  return { stats, ...result };
 }

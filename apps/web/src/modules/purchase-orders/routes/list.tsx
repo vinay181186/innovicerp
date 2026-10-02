@@ -39,10 +39,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT, renderRowMenuLink } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { usePurchaseOrdersList } from '../api';
@@ -50,9 +52,9 @@ import { PoExpandedLines } from '../components/po-expanded-lines';
 import { purchaseOrderListColumns } from '../components/po-list-columns';
 import { PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 
-// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
-// PO list-query cap is 200; the count line flags a rare larger set.
-const LIST_LIMIT = 200;
+// ADR-201 (2026-10-02): 25 POs per page, loaded from the SERVER (was one
+// 200-row fetch); search / filters / Sort & Filter run on the server over ALL
+// POs and send the list back to page 1.
 
 // PO status → row tint (ADR-199 ROW_TINT). Real status enum only: draft and
 // qc_pending read as pending work, closed is done, cancelled is cancelled; the
@@ -70,7 +72,7 @@ const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(PO_STATUSES).optional(),
   poType: z.enum(PO_TYPES).optional(),
-  page: z.coerce.number().int().positive().default(1),
+  page: pageSearchParam,
 });
 
 export const purchaseOrdersListRoute = createRoute({
@@ -105,18 +107,34 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss POs. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.poList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
+  const offset = pageOffset(search.page);
   const query: ListPurchaseOrdersQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
       poType: search.poType,
-      limit: LIST_LIMIT,
-      offset: 0,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset,
     }),
-    [search.search, search.status, search.poType],
+    [sf.param, search.search, search.status, search.poType, offset],
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseOrdersList(query);
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  useClampPage(search.page, data?.total, gotoPage);
   // Tier-driven, per department (po_create sits in Purchase). Replaces the old
   // admin-or-manager flag, which collapsed all seven tiers into two and gave a
   // manager the same rights everywhere.
@@ -149,7 +167,10 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     });
   }, []);
 
-  const columns = useMemo(() => purchaseOrderListColumns(), []);
+  const columns = useMemo(
+    () => purchaseOrderListColumns({ canSeePrice: perms.price }),
+    [perms.price],
+  );
 
   // Row ⋯ menu — Edit · Create DC · Assign Task. No View: the row click opens
   // the PO.
@@ -202,10 +223,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   }
 
   const emptyText =
-    search.search || search.status || search.poType ? 'No POs match.' : 'No POs yet.';
+    sf.filtering || search.search || search.status || search.poType
+      ? 'No POs match.'
+      : 'No POs yet.';
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       {/* THE list header (ui/layout ListHeader): title · count · + New PO, then
           the filter bar (search · status · type · Clear). */}
       <ListHeader
@@ -270,6 +295,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           </>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
             search: (prev) => ({
@@ -283,7 +309,10 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           });
         }}
         filtersActive={
-          search.status !== undefined || search.poType !== undefined || searchInput !== ''
+          sf.filtering ||
+          search.status !== undefined ||
+          search.poType !== undefined ||
+          searchInput !== ''
         }
         primary={
           canAdd ? (
@@ -302,13 +331,15 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.poList}
             columns={columns}
             rows={rows}
             loading={isLoading}
             emptyText={emptyText}
+            defaultHidden={['created_on']}
+            sortFilterServer={sf}
             onRowClick={(po) =>
               void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })
             }
@@ -327,8 +358,13 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter total={total} noun="purchase order" limit={LIST_LIMIT} />
-
+      <ListFooter
+        total={total}
+        noun="purchase order"
+        page={search.page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
       {assignPo ? (
         <AssignTaskModal
           linkedRef={{

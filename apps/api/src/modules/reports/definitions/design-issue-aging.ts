@@ -4,6 +4,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 export const designIssueAgingReport: RegisteredReport = {
   definition: {
@@ -51,7 +52,7 @@ export const designIssueAgingReport: RegisteredReport = {
         AND di.status IN ('Open', 'In Progress')
         ${sevFrag}
       ORDER BY age_days DESC, di.raised_date ASC
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

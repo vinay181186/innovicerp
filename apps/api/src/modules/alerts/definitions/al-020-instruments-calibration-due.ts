@@ -39,7 +39,7 @@ export const al020InstrumentsCalibrationDue: RegisteredAlert = {
         AND ins.deleted_at IS NULL
         AND ins.status NOT IN ('lost', 'scrapped')
         AND ins.calibration_due_on IS NOT NULL
-        AND ins.calibration_due_on <= (now() AT TIME ZONE 'Asia/Kolkata')::date + ${WINDOW_DAYS}
+        AND ins.calibration_due_on <= (now() AT TIME ZONE 'Asia/Kolkata')::date + ${WINDOW_DAYS}::int
       ORDER BY ins.calibration_due_on, i.code, lower(ins.serial_no)
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

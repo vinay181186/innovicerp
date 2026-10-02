@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import { JC_PRIORITIES } from '../enums/jc-priority';
+import { sfRawParamSchema } from './list-query';
 import { machineSplitSchema } from './machine-split';
 
 export const productionDashboardCountersSchema = z.object({
@@ -90,9 +91,7 @@ export const productionDashboardLowStockItemSchema = z.object({
   inStock: z.number(),
   minQty: z.number().nonnegative(),
 });
-export type ProductionDashboardLowStockItem = z.infer<
-  typeof productionDashboardLowStockItemSchema
->;
+export type ProductionDashboardLowStockItem = z.infer<typeof productionDashboardLowStockItemSchema>;
 
 export const productionDashboardSupplyChainSchema = z.object({
   lowStockCount: z.number().int().nonnegative(),
@@ -101,14 +100,33 @@ export const productionDashboardSupplyChainSchema = z.object({
   todayGrn: z.number().int().nonnegative(),
   lowStockItems: z.array(productionDashboardLowStockItemSchema),
 });
-export type ProductionDashboardSupplyChain = z.infer<
-  typeof productionDashboardSupplyChainSchema
->;
+export type ProductionDashboardSupplyChain = z.infer<typeof productionDashboardSupplyChainSchema>;
 
+// ADR-201 (2026-10-02): the two lists page at 25 on their own endpoints —
+// GET /production-dashboard/ready (Available Now, with sf) and
+// GET /production-dashboard/open-job-cards. The dashboard payload keeps the
+// whole-company counters + the Supply Chain Snapshot.
 export const productionDashboardResponseSchema = z.object({
   counters: productionDashboardCountersSchema,
-  openJobCards: z.array(productionDashboardJcSchema),
-  readyToProcess: z.array(productionDashboardReadyOpSchema),
   supplyChain: productionDashboardSupplyChainSchema,
 });
 export type ProductionDashboardResponse = z.infer<typeof productionDashboardResponseSchema>;
+
+export const productionDashboardPageQuerySchema = z.object({
+  sf: sfRawParamSchema,
+  limit: z.coerce.number().int().positive().max(200).default(25),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ProductionDashboardPageQuery = z.input<typeof productionDashboardPageQuerySchema>;
+
+export const productionDashboardReadyPageSchema = z.object({
+  items: z.array(productionDashboardReadyOpSchema),
+  total: z.number().int().nonnegative(),
+});
+export type ProductionDashboardReadyPage = z.infer<typeof productionDashboardReadyPageSchema>;
+
+export const productionDashboardJcPageSchema = z.object({
+  items: z.array(productionDashboardJcSchema),
+  total: z.number().int().nonnegative(),
+});
+export type ProductionDashboardJcPage = z.infer<typeof productionDashboardJcPageSchema>;

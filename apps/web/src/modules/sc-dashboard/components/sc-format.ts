@@ -16,3 +16,8 @@ export function statusBadge(s: string): { cls: string; label: string } {
   if (s === 'cancelled') return { cls: 'b-grey', label: 'Cancelled' };
   return { cls: 'b-blue', label: 'Open' };
 }
+
+/** PO Status tick list for server Sort & Filter: stored value + the label shown. */
+export const PO_STATUS_OPTIONS = (
+  ['open', 'partial', 'qc_pending', 'closed', 'cancelled'] as const
+).map((value) => ({ value, label: statusBadge(value).label }));

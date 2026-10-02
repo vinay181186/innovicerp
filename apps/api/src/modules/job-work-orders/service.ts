@@ -58,6 +58,8 @@ import type {
   UpdateJobWorkOrderInput,
 } from './schema';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { JWSO_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -322,26 +324,17 @@ export async function listJobWorkOrders(
     const fromFrag = input.fromDate ? sql`AND jw.jw_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND jw.jw_date <= ${input.toDate}::date` : sql``;
 
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(JWSO_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(JWSO_SF_COLUMNS, sf, sql`jw.code DESC, jw.id DESC`);
+
     // ONE ROW PER JWSO HEADER (#6 — matches the SO Master list). Line aggregates
     // (count, total qty, earliest due) + rolled-up JC qty across all lines.
-    const baseWhere = sql`
-      FROM public.job_work_orders jw
-      WHERE jw.company_id = ${companyId}::uuid AND jw.deleted_at IS NULL
-        ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag}`;
-
-    const result = await tx.execute(sql`
-      SELECT
-        jw.id AS "jwId", jw.code, jw.jw_date AS "jwDate",
-        jw.client_id AS "clientId", jw.customer_name AS "customerName",
-        jw.client_po_no AS "clientPoNo",
-        COALESCE(agg.line_count, 0)::int AS "lineCount",
-        COALESCE(agg.total_qty, 0)::int AS "totalQty",
-        COALESCE(agg.dispatched_qty, 0)::int AS "dispatchedQty",
-        COALESCE(jca.jc_qty, 0)::int AS "jcQty",
-        agg.earliest_due::text AS "earliestDueDate",
-        jw.status, jw.remarks,
-        jw.client_material_qty::text AS "clientMaterialQty",
-        COALESCE(pg.party_received_qty, 0)::int AS "partyReceivedQty"
+    // The FROM + WHERE is shared by the page and the count (the sf columns read
+    // the aggregates), so `total` always counts what the pages show.
+    const fromWhere = sql`
       FROM public.job_work_orders jw
       LEFT JOIN (
         SELECT job_work_order_id,
@@ -374,12 +367,27 @@ export async function listJobWorkOrders(
         GROUP BY g.job_work_order_id
       ) pg ON pg.job_work_order_id = jw.id
       WHERE jw.company_id = ${companyId}::uuid AND jw.deleted_at IS NULL
-        ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag}
-      ORDER BY jw.code DESC
+        ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag} ${sfFrag}`;
+
+    const result = await tx.execute(sql`
+      SELECT
+        jw.id AS "jwId", jw.code, jw.jw_date AS "jwDate",
+        jw.client_id AS "clientId", jw.customer_name AS "customerName",
+        jw.client_po_no AS "clientPoNo",
+        COALESCE(agg.line_count, 0)::int AS "lineCount",
+        COALESCE(agg.total_qty, 0)::int AS "totalQty",
+        COALESCE(agg.dispatched_qty, 0)::int AS "dispatchedQty",
+        COALESCE(jca.jc_qty, 0)::int AS "jcQty",
+        agg.earliest_due::text AS "earliestDueDate",
+        jw.status, jw.remarks,
+        jw.client_material_qty::text AS "clientMaterialQty",
+        COALESCE(pg.party_received_qty, 0)::int AS "partyReceivedQty"
+      ${fromWhere}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const totalRows = await tx.execute(sql`SELECT COUNT(*)::int AS c ${baseWhere}`);
+    const totalRows = await tx.execute(sql`SELECT COUNT(*)::int AS c ${fromWhere}`);
     const total = Number((totalRows as unknown as Array<{ c: number }>)[0]?.c ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toListItem);

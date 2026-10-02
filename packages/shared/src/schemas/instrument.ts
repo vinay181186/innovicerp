@@ -6,6 +6,7 @@
 // An instrument past its Calibration Due date cannot be issued.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const INSTRUMENT_STATUSES = [
   'in_store',
@@ -130,6 +131,8 @@ export const listInstrumentsQuerySchema = z.object({
   status: z.enum(INSTRUMENT_STATUSES).optional(),
   /** overdue = due before today; week = due within the next 7 days (incl. overdue). */
   due: z.enum(['overdue', 'week']).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

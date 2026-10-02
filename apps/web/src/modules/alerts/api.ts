@@ -3,6 +3,7 @@ import type {
   AlertSubscriptionEntry,
   ListAlertConfigResponse,
   ListAlertSubscriptionsResponse,
+  ListAlertsPageResponse,
   ListAlertsResponse,
   RunAlertResponse,
 } from '@innovic/shared';
@@ -12,7 +13,10 @@ import { apiFetch } from '@/lib/api';
 export const alertsKeys = {
   all: ['alerts'] as const,
   list: () => [...alertsKeys.all, 'list'] as const,
+  page: (q: AlertsPageParams) => [...alertsKeys.list(), 'page', q] as const,
   drill: (code: string) => [...alertsKeys.all, 'drill', code] as const,
+  drillPage: (code: string, limit: number, offset: number) =>
+    [...alertsKeys.drill(code), limit, offset] as const,
   config: () => [...alertsKeys.all, 'config'] as const,
   subscriptions: () => [...alertsKeys.all, 'subscriptions'] as const,
 };
@@ -27,10 +31,34 @@ export function useAlerts() {
   });
 }
 
-export function useAlert(code: string | undefined) {
+/** The dashboard's server-side search / "show zero" filter + page (ADR-201). */
+export interface AlertsPageParams {
+  search: string | undefined;
+  showZero: boolean;
+  limit: number;
+  offset: number;
+}
+
+export function useAlertsPage(q: AlertsPageParams) {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  params.set('showZero', q.showZero ? 'true' : 'false');
+  params.set('limit', String(q.limit));
+  params.set('offset', String(q.offset));
+  return useQuery<ListAlertsPageResponse>({
+    queryKey: alertsKeys.page(q),
+    queryFn: () => apiFetch<ListAlertsPageResponse>(`/alerts?${params.toString()}`),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** One alert's drill records — one page (`alert.count` = every record). */
+export function useAlert(code: string | undefined, limit: number, offset: number) {
   return useQuery<RunAlertResponse>({
-    queryKey: code ? alertsKeys.drill(code) : alertsKeys.drill('__missing__'),
-    queryFn: () => apiFetch<RunAlertResponse>(`/alerts/${code}`),
+    queryKey: code ? alertsKeys.drillPage(code, limit, offset) : alertsKeys.drill('__missing__'),
+    queryFn: () => apiFetch<RunAlertResponse>(`/alerts/${code}?limit=${limit}&offset=${offset}`),
     enabled: Boolean(code),
     placeholderData: (prev) => prev,
   });

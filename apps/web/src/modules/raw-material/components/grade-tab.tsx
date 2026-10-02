@@ -2,8 +2,6 @@
 // modal and the Excel template/import UI all live in the shared
 // <MaterialMasterPanel> (the Size tab is the same panel with the other hooks).
 
-import type { ListMaterialGradesQuery } from '@innovic/shared';
-import { useMemo } from 'react';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import {
   useBulkCreateMaterialGrades,
@@ -15,32 +13,34 @@ import {
 import { downloadMaterialGradeTemplate, parseMaterialGradeImportFile } from '../lib/import-export';
 import { fmtImportList } from '../lib/import-message';
 import { MaterialMasterPanel } from './material-master-panel';
+import { useMaterialMasterPaging } from './use-material-master-paging';
 
-// Masters scroll, they do not paginate: one fetch, everything in a single
-// scrolling list. 1000 is the cap listMaterialGradesQuerySchema allows.
-const LIST_LIMIT = 1000;
+// ADR-201: 25 rows a page; search / Active / ▾ on the server — the query
+// objects come from useMaterialMasterPaging (shared with the other tab).
 
 export function GradeTab({
   term,
   searchInput,
   onSearchInput,
+  page,
+  onPage,
   tabs,
 }: {
   /** The debounced search term from the URL (the route owns the debounce). */
   term: string | undefined;
   searchInput: string;
   onSearchInput: (v: string) => void;
+  /** 1-based page (in the URL, owned by the route) + its setter. */
+  page: number;
+  onPage: (p: number) => void;
   /** The page's Grade | Size strip — drawn inside the panel's header band. */
   tabs?: React.ReactNode;
 }): React.JSX.Element {
-  // No isActive filter here — the whole master comes down once and the
-  // Active/Inactive split is done in the panel, so the count strip can show all
-  // three numbers at the same time.
-  const query: ListMaterialGradesQuery = useMemo(
-    () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
-    [term],
-  );
-  const list = useMaterialGradesList(query);
+  const paging = useMaterialMasterPaging(TABLE_KEYS.rawMaterialGrade, term, page, onPage);
+  const list = useMaterialGradesList(paging.pageQuery);
+  const allCount = useMaterialGradesList(paging.countQueries.all).data?.total;
+  const activeCount = useMaterialGradesList(paging.countQueries.active).data?.total;
+  const inactiveCount = useMaterialGradesList(paging.countQueries.inactive).data?.total;
   const create = useCreateMaterialGrade();
   const update = useUpdateMaterialGrade();
   const bulkCreate = useBulkCreateMaterialGrades();
@@ -51,7 +51,13 @@ export function GradeTab({
       noun="Grade"
       tableKey={TABLE_KEYS.rawMaterialGrade}
       rows={list.data?.grades ?? []}
-      total={list.data?.total ?? 0}
+      total={list.data?.total}
+      counts={{ all: allCount, active: activeCount, inactive: inactiveCount }}
+      status={paging.status}
+      onStatus={paging.setStatus}
+      sf={paging.sf}
+      page={page}
+      onPage={onPage}
       isLoading={list.isLoading}
       isFetching={list.isFetching}
       isError={list.isError}

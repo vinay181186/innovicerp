@@ -6,6 +6,7 @@
 // Numbering: PGRN-NNNNN.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 // ─── Read shapes ───────────────────────────────────────────────────────────
 
@@ -131,6 +132,8 @@ export const listPartyGrnQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

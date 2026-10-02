@@ -1,9 +1,11 @@
 import { ActivityAction } from '@innovic/shared';
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { tpiMasters } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { TPI_MASTER_SF_COLUMNS } from './sf-columns';
 import type {
   CreateTpiMasterInput,
   ListTpiMastersQuery,
@@ -89,6 +91,10 @@ export async function listTpiMasters(
       if (s) conditions.push(s);
     }
     if (input.isActive !== undefined) conditions.push(eq(tpiMasters.isActive, input.isActive));
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own whitelist (sf-columns.ts). List AND count.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(TPI_MASTER_SF_COLUMNS, sf)}`);
 
     const where = and(...conditions);
 
@@ -97,7 +103,10 @@ export async function listTpiMasters(
         .select(tpiMasterColumns)
         .from(tpiMasters)
         .where(where)
-        .orderBy(asc(tpiMasters.code))
+        .orderBy(
+          // ADR-201: ends on id so a 25-row page never skips or repeats a row.
+          sfOrderBy(TPI_MASTER_SF_COLUMNS, sf, sql`${asc(tpiMasters.code)}, ${asc(tpiMasters.id)}`),
+        )
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(tpiMasters).where(where),

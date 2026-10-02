@@ -8,6 +8,7 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { z } from 'zod';
 import { globalSearchKindSchema } from '@innovic/shared';
+import { pageSearchParam } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { openSearchResult } from '../api';
 import { SearchResults } from '../components/search-results';
@@ -15,6 +16,7 @@ import { SearchResults } from '../components/search-results';
 const searchSchema = z.object({
   q: z.string().optional(),
   kind: globalSearchKindSchema.optional(),
+  page: pageSearchParam,
 });
 
 export const searchRoute = createRoute({
@@ -37,8 +39,10 @@ function SearchPage(): React.JSX.Element {
         layout="page"
         q={q}
         kind={search.kind}
+        page={search.page}
+        onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }) })}
         onKindChange={(next) =>
-          void navigate({ search: (prev) => ({ ...prev, kind: next }), replace: true })
+          void navigate({ search: (prev) => ({ ...prev, kind: next, page: 1 }), replace: true })
         }
         onOpen={(r) => {
           openSearchResult(appNavigate, r);

@@ -119,16 +119,36 @@ export async function getDailyReport(
       grp.rows.push(row);
     }
 
+    const summary = {
+      totalPieces,
+      logEntries: allRows.length,
+      machinesActive: byMachine.size,
+      jcsActive: jcSet.size,
+    };
+    const groups = Array.from(byMachine.values());
+    if (input.limit == null) {
+      return { date: input.date, machineId: input.machineId ?? null, summary, groups };
+    }
+
+    // Paged (ADR-201): cut 25 rows from the day in on-screen order (machine
+    // groups in order, rows in order). Group totals + the summary stay
+    // whole-day figures; a group shows only when it has a row on this page.
+    const from = input.offset ?? 0;
+    const to = from + input.limit;
+    let at = 0;
+    const pageGroups: DailyReportMachineGroup[] = [];
+    for (const g of groups) {
+      const start = Math.max(from - at, 0);
+      const end = Math.min(to - at, g.rows.length);
+      if (start < end) pageGroups.push({ ...g, rows: g.rows.slice(start, end) });
+      at += g.rows.length;
+    }
     return {
       date: input.date,
       machineId: input.machineId ?? null,
-      summary: {
-        totalPieces,
-        logEntries: allRows.length,
-        machinesActive: byMachine.size,
-        jcsActive: jcSet.size,
-      },
-      groups: Array.from(byMachine.values()),
+      summary,
+      groups: pageGroups,
+      total: allRows.length,
     };
   });
 }

@@ -4,6 +4,8 @@
 // file stays under the 400-line rule and matches the reference list shape
 // (so-overview-columns). The fit engine sizes the columns to the screen and cuts
 // the long Customer name with "…"; the number columns are right-aligned.
+// `sortFilterField` names each column's field in the server's Sort & Filter
+// map (so-planning/list-page.ts) — the list is paged, so ▾ runs on the server.
 
 import type { PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
@@ -28,13 +30,22 @@ export function orderRowTint(status: PlanningSoListItem['planningStatus']): stri
   }
 }
 
+// Sort & Filter tick lists (server mode, ADR-201): stored code + label shown.
+const STATUS_OPTIONS = Object.entries(ORDER_STATUS_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));
+const TYPE_OPTIONS = ['component_manufacturing', 'equipment', 'with_material', 'job_work'].map(
+  (value) => ({ value, label: soTypeLabel(value) }),
+);
+
 export function orderListColumns(src: Source): DataTableColumn<PlanningSoListItem>[] {
   return [
     {
       id: 'so_code',
       header: src === 'jw' ? 'JWSO No.' : 'SO No.',
       kind: 'code',
-      sortField: 'soCode',
+      sortFilterField: 'soCode',
       nowrap: true,
       render: (so) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -50,7 +61,7 @@ export function orderListColumns(src: Source): DataTableColumn<PlanningSoListIte
       header: 'Customer',
       align: 'left',
       ellipsis: true,
-      sortField: 'customerName',
+      sortFilterField: 'customerName',
       render: (so) => so.customerName ?? '—',
       title: (so) => so.customerName ?? '',
     },
@@ -58,7 +69,8 @@ export function orderListColumns(src: Source): DataTableColumn<PlanningSoListIte
       id: 'so_type',
       header: src === 'jw' ? 'JWSO Type' : 'SO Type',
       kind: 'badge',
-      sortField: 'soType',
+      sortFilterField: 'soType',
+      filterOptions: TYPE_OPTIONS,
       nowrap: true,
       render: (so) => <span className="badge b-grey">{soTypeLabel(so.soType)}</span>,
     },
@@ -66,7 +78,7 @@ export function orderListColumns(src: Source): DataTableColumn<PlanningSoListIte
       id: 'due_date',
       header: 'Due Date',
       kind: 'date',
-      sortField: 'dueDate',
+      sortFilterField: 'dueDate',
       nowrap: true,
       render: (so) => <span className="mono">{fmtDate(so.dueDate)}</span>,
     },
@@ -75,7 +87,7 @@ export function orderListColumns(src: Source): DataTableColumn<PlanningSoListIte
       header: 'Lines',
       kind: 'num',
       align: 'right',
-      sortField: 'totalLines',
+      sortFilterField: 'totalLines',
       className: 'mono',
       nowrap: true,
       render: (so) => so.totalLines,
@@ -85,7 +97,7 @@ export function orderListColumns(src: Source): DataTableColumn<PlanningSoListIte
       header: 'Order Qty',
       kind: 'num',
       align: 'right',
-      sortField: 'totalQty',
+      sortFilterField: 'totalQty',
       className: 'mono fw-700',
       nowrap: true,
       render: (so) => so.totalQty,
@@ -95,7 +107,7 @@ export function orderListColumns(src: Source): DataTableColumn<PlanningSoListIte
       header: 'Plan Qty',
       kind: 'num',
       align: 'right',
-      sortField: 'totalPlannedQty',
+      sortFilterField: 'totalPlannedQty',
       className: 'mono fw-700',
       nowrap: true,
       render: (so) => <span style={{ color: 'var(--cyan)' }}>{so.totalPlannedQty}</span>,
@@ -105,7 +117,7 @@ export function orderListColumns(src: Source): DataTableColumn<PlanningSoListIte
       header: '% Planned',
       kind: 'num',
       align: 'right',
-      sortField: 'planningPct',
+      sortFilterField: 'planningPct',
       nowrap: true,
       render: (so) => (
         <span className={`badge ${ORDER_STATUS_BADGE[so.planningStatus]}`}>{so.planningPct}%</span>
@@ -115,7 +127,8 @@ export function orderListColumns(src: Source): DataTableColumn<PlanningSoListIte
       id: 'plan_status',
       header: 'Plan Status',
       kind: 'badge',
-      sortField: 'planningStatus',
+      sortFilterField: 'planningStatus',
+      filterOptions: STATUS_OPTIONS,
       nowrap: true,
       render: (so) => (
         <span className={`badge ${ORDER_STATUS_BADGE[so.planningStatus]}`}>

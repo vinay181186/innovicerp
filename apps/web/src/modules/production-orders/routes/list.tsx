@@ -10,10 +10,9 @@
 // All / Open / Closed / Short Closed status dropdown with its counts, and the
 // `search` / `status` URL params. Search is server-side (`?search=` matches PO
 // code, plan code, POL, item code / name, JC code and SO code — every text
-// column this table shows; see the API contract). Like SO Master this list
-// SCROLLS rather than pages: one fetch at the contract's cap (500); the count
-// line flags a larger set. Columns sort in memory via useClientSort (the rows
-// are already fully loaded), exactly as the retired react-table sort did.
+// column this table shows; see the API contract). 25 rows a page (ADR-201):
+// only the page on screen is loaded, and the column sort / filters (▾) run on
+// the SERVER over every order (ADR-200) — any change goes back to page 1.
 
 import {
   type ListProductionOrdersQuery,
@@ -28,16 +27,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel, useClientSort } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useProductionOrdersList } from '../api';
 import { PO_LIST_DETAIL_IDS, poListColumns, poRowTint } from '../components/po-list-columns';
-
-// listProductionOrdersQuerySchema caps `limit` at 500.
-const LIST_LIMIT = 500;
 
 // Tile counts ignore the search box (they count the whole book, like SO Master
 // and the PR list). Module-level constants keep the query keys stable.
@@ -55,7 +53,7 @@ const COUNT_SHORT_CLOSED: ListProductionOrdersQuery = {
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(PRODUCTION_ORDER_STATUSES).optional(),
-  page: z.coerce.number().int().positive().default(1),
+  page: pageSearchParam,
 });
 
 export const productionOrdersListRoute = createRoute({
@@ -93,17 +91,28 @@ function ProductionOrdersListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  const sf = useServerSortFilter(TABLE_KEYS.productionOrders, () => gotoPage(1));
+
+  const offset = pageOffset(search.page);
   const query: ListProductionOrdersQuery = useMemo(
     () => ({
       ...(search.search ? { search: search.search } : {}),
       ...(search.status ? { status: search.status } : {}),
-      limit: LIST_LIMIT,
-      offset: 0,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset,
     }),
-    [search.search, search.status],
+    [search.search, search.status, sf.param, offset],
   );
 
   const { data, isLoading, isFetching, isError, error } = useProductionOrdersList(query);
+  useClampPage(search.page, data?.total, gotoPage);
 
   const allCount = useProductionOrdersList(COUNT_ALL).data?.total ?? 0;
   const openCount = useProductionOrdersList(COUNT_OPEN).data?.total ?? 0;
@@ -117,19 +126,17 @@ function ProductionOrdersListPage(): React.JSX.Element {
     [navigate],
   );
   const clearFilters = (): void => {
+    sf.clearFilters();
     setSearchInput('');
     void navigate({
       search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
       replace: true,
     });
   };
-  const filtersActive = searchInput.trim() !== '' || search.status != null;
+  const filtersActive = sf.filtering || searchInput.trim() !== '' || search.status != null;
 
   const columns = useMemo(() => poListColumns(), []);
-  const items = useMemo(() => data?.items ?? [], [data?.items]);
-  // Client-side sort over the fully-loaded list — the same behaviour the old
-  // react-table getSortedRowModel gave, without a server round-trip.
-  const { rows, sortBy, sortDir, onSort } = useClientSort<ProductionOrderListItem>(items);
+  const rows = useMemo(() => data?.items ?? [], [data?.items]);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. Sits
@@ -145,7 +152,10 @@ function ProductionOrdersListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header can never ride off the
+    // top of the screen at the last row.
+    <div className="page-fill">
       {/* Frozen header band — title + count + New PO + the filter bar stay
           pinned; the table scrolls under them. */}
       <ListHeader
@@ -208,7 +218,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable<ProductionOrderListItem>
             tableKey={TABLE_KEYS.productionOrders}
             columns={columns}
@@ -216,11 +226,9 @@ function ProductionOrdersListPage(): React.JSX.Element {
             defaultHidden={PO_LIST_DETAIL_IDS}
             rows={rows}
             loading={isLoading}
-            sortBy={sortBy}
-            sortDir={sortDir}
-            onSort={onSort}
+            sortFilterServer={sf}
             empty={
-              search.search || search.status
+              sf.filtering || search.search || search.status
                 ? 'No Production Orders match.'
                 : 'No Production Orders yet.'
             }
@@ -234,7 +242,13 @@ function ProductionOrdersListPage(): React.JSX.Element {
       )}
 
       {isError ? null : (
-        <ListFooter total={total} shown={rows.length} noun="production order" limit={LIST_LIMIT} />
+        <ListFooter
+          total={total}
+          noun="production order"
+          page={search.page}
+          pageSize={LIST_PAGE_SIZE}
+          onPage={gotoPage}
+        />
       )}
     </div>
   );

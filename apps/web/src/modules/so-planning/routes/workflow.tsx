@@ -23,28 +23,38 @@
 // and the line-search results — now render on the shared FIT <DataTable>
 // (TABLE_KEYS.planningList / .planningLineSearch). The file was split into the
 // sibling components under ../components to stay under the 400-line rule.
+//
+// ADR-201 (2026-10-02): level 1 shows 25 orders a page with Prev / Next (?page=).
+// The SO / JWSO source, the search and Sort & Filter run on the server over
+// every open order; the header count is the server's total. The line search
+// under the list covers the orders on the page shown.
 
 import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
-import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListHeader, PageState } from '@/ui/layout';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePlan } from '@/modules/plans/api';
 import { soPlanningKeys, usePlanningSoList } from '../api';
 import { EditPlanModal } from '../components/edit-plan-modal';
 import { OrderDetail } from '../components/order-detail';
 import { OrderList } from '../components/order-list';
 import { SearchResults } from '../components/search-results';
-import { ORDER_STATUS_LABEL, type ModalState, type Source } from '../components/planning-shared';
+import { type ModalState, type Source } from '../components/planning-shared';
 
 const searchSchema = z.object({
   soId: z.string().uuid().optional(),
   openPlan: z.string().uuid().optional(),
   /** Which orders level 1 lists. Survives reload / Back. Default 'so'. */
   src: z.enum(['so', 'jw']).optional(),
+  /** Level-1 page (ADR-201). */
+  page: pageSearchParam,
 });
 
 export const soPlanningWorkflowRoute = createRoute({
@@ -56,9 +66,8 @@ export const soPlanningWorkflowRoute = createRoute({
 
 function PlanningWorkflowPage(): JSX.Element {
   const navigate = useNavigate();
-  const { soId, openPlan, src: srcParam } = soPlanningWorkflowRoute.useSearch();
+  const { soId, openPlan, src: srcParam, page } = soPlanningWorkflowRoute.useSearch();
   const src: Source = srcParam ?? 'so';
-  const soList = usePlanningSoList();
   const qc = useQueryClient();
   // Page + write gate (plan_create, Planning dept). Writes on this page (create
   // plan, edit, execute, BOM planning) live in the plans module; here we hide
@@ -73,10 +82,16 @@ function PlanningWorkflowPage(): JSX.Element {
   // plan id, so it lives at page level and works on either level.
   const editingPlan = usePlan(modal.kind === 'edit' ? modal.planId : '');
 
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ to: '/planning', search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
   const setSrc = (s: Source): void => {
     void navigate({
       to: '/planning',
-      search: (prev) => ({ ...prev, src: s, soId: undefined }),
+      search: (prev) => ({ ...prev, src: s, soId: undefined, page: 1 }),
       replace: true,
     });
   };
@@ -90,30 +105,31 @@ function PlanningWorkflowPage(): JSX.Element {
     void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
   };
 
-  // Client-side filter over the already-loaded list (it is fetched whole — it
-  // scrolls, it does not page): the toggle picks the source, then the shared
-  // matcher narrows within it — case-insensitive, partial, across every column
-  // the row shows plus the item code + part name text behind it.
-  const searchTerm = normalizeSearchTerm(soSearch);
-  const visibleSos = useMemo(
-    () =>
-      (soList.data?.items ?? []).filter(
-        (so) =>
-          so.source === src &&
-          matchesSearchTerm(
-            [
-              so.soCode,
-              so.customerName,
-              so.soType,
-              so.dueDate,
-              ORDER_STATUS_LABEL[so.planningStatus],
-              so.itemsText,
-            ],
-            soSearch,
-          ),
-      ),
-    [soList.data, src, soSearch],
-  );
+  // The server filters by source and matches the term (case-insensitive,
+  // partial) across every column the row shows plus the item code + part name
+  // behind it — over every open order, then sends one 25-row page. The term
+  // goes 300 ms after typing stops, back to page 1.
+  const [searchTerm, setSearchTerm] = useState('');
+  useEffect(() => {
+    const next = normalizeSearchTerm(soSearch);
+    if (next === searchTerm) return;
+    const id = window.setTimeout(() => {
+      setSearchTerm(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [soSearch, searchTerm, gotoPage]);
+  const sf = useServerSortFilter(TABLE_KEYS.planningList, () => gotoPage(1));
+  const soList = usePlanningSoList({
+    src,
+    search: searchTerm || undefined,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
+  });
+  useClampPage(page, soId ? undefined : soList.data?.total, gotoPage);
+  const visibleSos = soList.data?.items ?? [];
+  const total = soList.data?.total ?? 0;
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
@@ -141,7 +157,7 @@ function PlanningWorkflowPage(): JSX.Element {
           <ListHeader
             title="SO/JWSO Planning"
             icon="📋"
-            count={soList.data ? visibleSos.length : undefined}
+            count={soList.data ? total : undefined}
             noun={src === 'jw' ? 'JWSO' : 'SO'}
             search={soSearch}
             onSearch={setSoSearch}
@@ -161,9 +177,12 @@ function PlanningWorkflowPage(): JSX.Element {
             }
             onClearFilters={() => {
               setSoSearch('');
+              setSearchTerm('');
+              sf.clearFilters();
               if (src !== 'so') setSrc('so');
+              else gotoPage(1);
             }}
-            filtersActive={soSearch !== '' || src !== 'so'}
+            filtersActive={soSearch !== '' || src !== 'so' || sf.filtering}
           />
 
           <OrderList
@@ -172,12 +191,25 @@ function PlanningWorkflowPage(): JSX.Element {
             loading={soList.isLoading}
             error={soList.error instanceof Error ? soList.error.message : null}
             onOpen={openOrder}
+            sf={sf}
+          />
+          <ListFooter
+            total={total}
+            noun={src === 'jw' ? 'JWSO' : 'SO'}
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPage}
           />
 
           {/* Cross-order line search: while a term is typed, every LINE the
-              term hits across the listed orders, under the order list. */}
+              term hits across the orders on this page, under the order list. */}
           {searchTerm !== '' && visibleSos.length > 0 ? (
-            <SearchResults term={searchTerm} sos={visibleSos} onPick={openOrder} />
+            <SearchResults
+              term={searchTerm}
+              sos={visibleSos}
+              totalOrders={total}
+              onPick={openOrder}
+            />
           ) : null}
         </>
       )}

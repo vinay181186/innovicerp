@@ -5,6 +5,8 @@
 // v_jc_op_status. No migration.
 
 import { z } from 'zod';
+import type { IncomingQcCompletedRow, IncomingQcPendingRow } from './incoming-qc';
+import { sfRawParamSchema } from './list-query';
 
 export const qcHistoryPendingRowSchema = z.object({
   jcOpId: z.string().uuid(),
@@ -113,3 +115,106 @@ export const qcHistoryResponseSchema = z.object({
   logs: z.array(qcHistoryLogRowSchema),
 });
 export type QcHistoryResponse = z.infer<typeof qcHistoryResponseSchema>;
+
+// ── Paged lists (ADR-201) ──────────────────────────────────────────────────
+// QC History shows 25 rows per page on each table; search, the date range and
+// Sort & Filter run on the SERVER over every row, and the totals come back with
+// the page. GET /qc-history (the whole feed above) stays for older callers.
+
+const qcSearchParam = z.string().trim().max(100).optional();
+const ymdParam = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .optional();
+const limitParam = z.coerce.number().int().positive().max(200).default(50);
+const offsetParam = z.coerce.number().int().nonnegative().default(0);
+
+/** GET /qc-history/pending — QC Pending ops, one page. */
+export const listQcPendingQuerySchema = z.object({
+  /** JC, SO, POL, item code / revision / name, operation. */
+  search: qcSearchParam,
+  sf: sfRawParamSchema,
+  limit: limitParam,
+  offset: offsetParam,
+});
+export type ListQcPendingQuery = z.infer<typeof listQcPendingQuerySchema>;
+
+/** GET /qc-history/logs — completed QC entries, one page (no 500-row cap). */
+export const listQcLogsQuerySchema = z.object({
+  search: qcSearchParam,
+  /** QC date range (log_date), inclusive. */
+  dateFrom: ymdParam,
+  dateTo: ymdParam,
+  sf: sfRawParamSchema,
+  limit: limitParam,
+  offset: offsetParam,
+});
+export type ListQcLogsQuery = z.infer<typeof listQcLogsQuerySchema>;
+
+export interface QcPendingListResponse {
+  items: QcHistoryPendingRow[];
+  total: number;
+}
+export interface QcLogsListResponse {
+  items: QcHistoryLogRow[];
+  total: number;
+}
+
+// ── QC Call Register (ADR-201) ─────────────────────────────────────────────
+// One register of incoming (GRN line) calls and process (job-card op) calls,
+// paged 25 at a time on the server. Pending: incoming calls first (oldest GRN
+// first), then process calls (latest QC call first). Completed: both kinds
+// interleaved, newest inspection first.
+
+export const QC_REGISTER_STAGES = ['incoming', 'inprocess', 'final'] as const;
+export type QcRegisterStage = (typeof QC_REGISTER_STAGES)[number];
+
+export const qcRegisterQuerySchema = z.object({
+  view: z.enum(['pending', 'completed']).default('pending'),
+  /** Omitted = every stage. */
+  stage: z.enum(QC_REGISTER_STAGES).optional(),
+  search: qcSearchParam,
+  /** 'true' = only the pending process calls QC Command assigned to the caller. */
+  mine: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
+  /** One pending process call (the Inspect popup / ?op= deep link). */
+  jcOpId: z.string().uuid().optional(),
+  /** One pending incoming call (the Inspect popup / ?line= deep link). */
+  grnLineId: z.string().uuid().optional(),
+  limit: limitParam,
+  offset: offsetParam,
+});
+export type QcRegisterQuery = z.input<typeof qcRegisterQuerySchema>;
+
+export type QcRegisterPendingItem =
+  | { kind: 'op'; row: QcHistoryPendingRow }
+  | { kind: 'inc'; row: IncomingQcPendingRow };
+export type QcRegisterCompletedItem =
+  | { kind: 'op'; row: QcHistoryLogRow }
+  | { kind: 'inc'; row: IncomingQcCompletedRow };
+
+export interface QcRegisterStageSummary {
+  /** Open calls in this stage. */
+  pendingCount: number;
+  /** Σ pending pieces over this stage's open calls. */
+  pcsPending: number;
+  /** Completed entries in this stage. */
+  doneCount: number;
+}
+
+/** Whole-register figures (not narrowed by search / stage / Mine). */
+export interface QcRegisterSummary {
+  stages: Record<QcRegisterStage, QcRegisterStageSummary>;
+  pendingCount: number;
+  completeCount: number;
+  pcsPending: number;
+}
+
+export interface QcRegisterResponse<T = QcRegisterPendingItem | QcRegisterCompletedItem> {
+  items: T[];
+  /** Rows matching view + stage + search + Mine (all pages). */
+  total: number;
+  summary: QcRegisterSummary;
+}

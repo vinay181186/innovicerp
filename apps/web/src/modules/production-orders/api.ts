@@ -52,6 +52,7 @@ function toQueryString(q: ListProductionOrdersQuery): string {
   if (q.status) params.set('status', q.status);
   if (q.planId) params.set('planId', q.planId);
   if (q.jobCardId) params.set('jobCardId', q.jobCardId);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

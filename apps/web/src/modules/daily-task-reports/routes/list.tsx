@@ -1,17 +1,22 @@
 // Daily Task Reports — mirror of legacy renderDailyReports (HTML L14141).
 // User-submitted "what I did today" reports. Admin / manager see all + a user filter;
 // everyone else sees only their own (server-filtered) and may file/edit their own.
+// ADR-201: 25 rows a page (?page=); the user / date filters, the search and
+// Sort & Filter run on the server over every report; any change → page 1.
 
-import { SHIFT_LABELS, type DailyTaskReportRow } from '@innovic/shared';
+import { SHIFT_LABELS, SHIFTS, type DailyTaskReportRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
-import { matchesSearchTerm } from '@/components/shared/search-match';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useDailyReportList } from '../api';
 import { ReportLinesExpand } from '../components/report-lines-expand';
 import { EditReportModal, NewReportModal, ViewReportModal } from '../components/report-modals';
@@ -19,6 +24,7 @@ import { EditReportModal, NewReportModal, ViewReportModal } from '../components/
 export const dailyTaskReportsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'daily-task-reports',
+  validateSearch: z.object({ page: pageSearchParam }),
   component: DailyTaskReportsPage,
 });
 
@@ -28,12 +34,46 @@ type ModalState =
   | { kind: 'edit'; id: string }
   | { kind: 'view'; id: string };
 
+const SHIFT_OPTIONS = SHIFTS.map((v) => ({ value: v, label: SHIFT_LABELS[v] }));
+
 function DailyTaskReportsPage(): React.JSX.Element {
-  const [userFilter, setUserFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const { page } = dailyTaskReportsRoute.useSearch();
+  const navigate = dailyTaskReportsRoute.useNavigate();
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  const [userFilter, setUserFilterRaw] = useState('');
+  const [dateFrom, setDateFromRaw] = useState('');
+  const [dateTo, setDateToRaw] = useState('');
+  const setUserFilter = (v: string): void => {
+    setUserFilterRaw(v);
+    gotoPage(1);
+  };
+  const setDateFrom = (v: string): void => {
+    setDateFromRaw(v);
+    gotoPage(1);
+  };
+  const setDateTo = (v: string): void => {
+    setDateToRaw(v);
+    gotoPage(1);
+  };
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   const [term, setTerm] = useState('');
+  // The search goes to the server 300 ms after typing stops → page 1.
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const next = normalizeSearchTerm(term);
+    if (next === search) return;
+    const id = window.setTimeout(() => {
+      setSearch(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [term, search, gotoPage]);
+  const sf = useServerSortFilter(TABLE_KEYS.dailyTaskReports, () => gotoPage(1));
   // The row's ▸ (fit engine) reveals that report's task lines. A Set — many open.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const toggleExpand = (id: string): void =>
@@ -48,7 +88,12 @@ function DailyTaskReportsPage(): React.JSX.Element {
     userId: userFilter || undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
+    search: search || undefined,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
+  useClampPage(page, data?.total, gotoPage);
 
   if (isLoading) {
     return (
@@ -65,14 +110,13 @@ function DailyTaskReportsPage(): React.JSX.Element {
     );
   }
 
-  // Client-side search over the rows loaded — the three text columns.
-  const rows = data.reports.filter((r) =>
-    matchesSearchTerm([fmtDate(r.reportDate), r.userName, SHIFT_LABELS[r.shift]], term),
-  );
+  // One page of reports; the server already applied search + filters + sf.
+  const rows = data.reports;
 
   const columns: DataTableColumn<DailyTaskReportRow>[] = [
     {
       id: 'report_date',
+      sortFilterField: 'reportDate',
       kind: 'date',
       header: 'Report Date',
       className: 'fw-700',
@@ -81,6 +125,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
     },
     {
       id: 'user',
+      sortFilterField: 'user',
       kind: 'text',
       header: 'User',
       align: 'left',
@@ -91,12 +136,16 @@ function DailyTaskReportsPage(): React.JSX.Element {
     },
     {
       id: 'shift',
+      sortFilterField: 'shift',
+      filterOptions: SHIFT_OPTIONS,
       header: 'Shift',
       nowrap: true,
       render: (r) => SHIFT_LABELS[r.shift],
     },
     {
       id: 'tasks',
+      sortFilterField: 'taskCount',
+      filterType: 'num',
       header: 'Tasks',
       align: 'right',
       className: 'mono fw-700',
@@ -105,6 +154,8 @@ function DailyTaskReportsPage(): React.JSX.Element {
     },
     {
       id: 'hours',
+      sortFilterField: 'totalHours',
+      filterType: 'num',
       header: 'Hours',
       align: 'right',
       className: 'mono fw-700',
@@ -114,11 +165,14 @@ function DailyTaskReportsPage(): React.JSX.Element {
   ];
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header can never ride off the
+    // top of the screen at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Daily Task Reports"
         icon="📝"
-        count={rows.length}
+        count={data.total}
         noun="report"
         search={term}
         onSearch={setTerm}
@@ -165,8 +219,15 @@ function DailyTaskReportsPage(): React.JSX.Element {
           setDateFrom('');
           setDateTo('');
           setTerm('');
+          sf.clearFilters();
         }}
-        filtersActive={userFilter !== '' || dateFrom !== '' || dateTo !== '' || term.trim() !== ''}
+        filtersActive={
+          sf.filtering ||
+          userFilter !== '' ||
+          dateFrom !== '' ||
+          dateTo !== '' ||
+          term.trim() !== ''
+        }
         primary={
           <button
             type="button"
@@ -178,13 +239,14 @@ function DailyTaskReportsPage(): React.JSX.Element {
         }
       />
 
-      <Panel bodyPadding="none">
+      <Panel fill bodyPadding="none">
         <DataTable<DailyTaskReportRow>
           tableKey={TABLE_KEYS.dailyTaskReports}
           columns={columns}
           rows={rows}
+          sortFilterServer={sf}
           empty={
-            term.trim() || userFilter || dateFrom || dateTo
+            term.trim() || userFilter || dateFrom || dateTo || sf.filtering
               ? 'No Daily Reports match.'
               : 'No Daily Reports yet.'
           }
@@ -204,6 +266,13 @@ function DailyTaskReportsPage(): React.JSX.Element {
           ]}
         />
       </Panel>
+      <ListFooter
+        total={data.total}
+        noun="report"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
 
       {modal.kind === 'new' ? <NewReportModal onClose={() => setModal({ kind: 'none' })} /> : null}
       {modal.kind === 'edit' ? (

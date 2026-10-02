@@ -7,6 +7,8 @@
 
 import { z } from 'zod';
 
+import { sfRawParamSchema } from './list-query';
+
 // ─── Outward ───────────────────────────────────────────────────────────────
 
 export const jwDcOutwardLineSchema = z.object({
@@ -213,6 +215,8 @@ export const listJwDcOutwardQuerySchema = z.object({
   vendorId: z.string().uuid().optional(),
   purchaseOrderId: z.string().uuid().optional(),
   returnStatus: z.enum(['out', 'partial', 'fully_returned']).optional(),
+  /** Sort & Filter (ADR-200): the screen's column sort + filters, on the server. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
@@ -228,6 +232,8 @@ export interface ListJwDcOutwardResponse {
 export const listJwDcInwardQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   jwDcOutwardId: z.string().uuid().optional(),
+  /** Sort & Filter (ADR-200): the screen's column sort + filters, on the server. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

@@ -12,13 +12,7 @@
 
 import { z } from 'zod';
 
-export const PARTY_STOCK_MOVEMENTS = [
-  'receive',
-  'issue',
-  'consume',
-  'return',
-  'reversal',
-] as const;
+export const PARTY_STOCK_MOVEMENTS = ['receive', 'issue', 'consume', 'return', 'reversal'] as const;
 export type PartyStockMovement = (typeof PARTY_STOCK_MOVEMENTS)[number];
 export const partyStockMovementSchema = z.enum(PARTY_STOCK_MOVEMENTS);
 
@@ -57,6 +51,10 @@ export const listPartyStockLedgerQuerySchema = z.object({
   partyMaterialId: z.string().uuid().optional(),
   jwLineId: z.string().uuid().optional(),
   movement: partyStockMovementSchema.optional(),
+  /** ADR-201: the screen's search box, matched on the server over every
+   *  column the ledger shows (material, movement, in/out, qty, balance,
+   *  source doc, recorded by, date). */
+  search: z.string().min(1).max(100).optional(),
   limit: z.coerce.number().int().positive().max(500).default(200),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

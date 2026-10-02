@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { queryBoolean } from '../lib/query-boolean';
 import { PR_STATUSES, PR_TYPES } from '../enums/pr-status';
+import { sfRawParamSchema } from './list-query';
 
 export const prStatusSchema = z.enum(PR_STATUSES);
 export const prTypeSchema = z.enum(PR_TYPES);
@@ -273,6 +274,12 @@ export const listPurchaseRequestsQuerySchema = z.object({
    *  raised, even for 10 of 100. The server owns this filter because the balance
    *  is a SUM over purchase_order_lines that the browser cannot compute. */
   convertibleOnly: queryBoolean().optional(),
+  /** Outsource Jobs tab (ADR-201) — its two bands, on the server: `open` = the
+   *  convertibleOnly rule (still something to order); `ordered` = not cancelled
+   *  and nothing left to order (fully ordered or short-closed). */
+  orderBand: z.enum(['open', 'ordered']).optional(),
+  /** Outsource Jobs tab (ADR-201): PRs raised off this Job Card (its code). */
+  sourceJcCode: z.string().trim().min(1).max(64).optional(),
   /** Inclusive lower bound on pr_date (YYYY-MM-DD). */
   fromDate: z
     .string()
@@ -283,6 +290,8 @@ export const listPurchaseRequestsQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

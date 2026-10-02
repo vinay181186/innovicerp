@@ -10,9 +10,15 @@
 // (Inbox), who it went to (Outbox / All), "Me" on My To-Do.
 
 import type { TaskRow, TaskView } from '@innovic/shared';
-import { TASK_PRIORITY_LABELS } from '@innovic/shared';
+import {
+  TASK_PRIORITIES,
+  TASK_PRIORITY_LABELS,
+  TASK_STATUSES,
+  TASK_STATUS_LABELS,
+} from '@innovic/shared';
 import { useState } from 'react';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { fmtTaskDate, fmtTaskDateTime, isOpenTask, priorityColor, statusPill } from '../lib/format';
 import { RelatedRefLink } from './related-ref-link';
@@ -45,10 +51,16 @@ function taskRowTint(t: TaskRow): string | undefined {
   return undefined;
 }
 
+// Sort & Filter tick lists (ADR-200) — the stored codes the server filters on.
+const PRIORITY_OPTIONS = TASK_PRIORITIES.map((v) => ({ value: v, label: TASK_PRIORITY_LABELS[v] }));
+const STATUS_OPTIONS = TASK_STATUSES.map((v) => ({ value: v, label: TASK_STATUS_LABELS[v] }));
+
 function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
   return [
     {
       id: 'task_no',
+      sortFilterField: 'code',
+      filterType: 'text',
       header: 'Task No.',
       nowrap: true,
       render: (t) => (
@@ -60,6 +72,7 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
     },
     {
       id: 'title',
+      sortFilterField: 'title',
       kind: 'text',
       header: 'Title',
       align: 'left',
@@ -70,6 +83,7 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
     },
     {
       id: 'person',
+      sortFilterField: 'person',
       kind: 'text',
       header: PERSON_LABEL[view],
       align: 'left',
@@ -79,12 +93,16 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
     },
     {
       id: 'related',
+      sortFilterField: 'related',
+      filterType: 'text',
       header: 'Related To',
       nowrap: true,
       render: (t) => <RelatedRefLink linkedRef={t.linkedRef} stopRowClick />,
     },
     {
       id: 'priority',
+      sortFilterField: 'priority',
+      filterOptions: PRIORITY_OPTIONS,
       kind: 'badge',
       header: 'Priority',
       nowrap: true,
@@ -101,6 +119,7 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
     },
     {
       id: 'due_date',
+      sortFilterField: 'dueDate',
       kind: 'date',
       header: 'Due Date',
       className: 'mono',
@@ -122,6 +141,8 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
     },
     {
       id: 'status',
+      sortFilterField: 'status',
+      filterOptions: STATUS_OPTIONS,
       kind: 'badge',
       header: 'Task Status',
       nowrap: true,
@@ -172,10 +193,13 @@ export function TaskTable({
   rows,
   view,
   filtered,
+  sortFilterServer,
   onAction,
 }: {
   rows: TaskRow[];
   view: TaskView;
+  /** Sort & Filter on the server (ADR-200) — the board pages at 25 rows. */
+  sortFilterServer: ServerSortFilter;
   /** True when a search / filter is on — picks the empty-state wording. */
   filtered: boolean;
   onAction: (action: RowAction, task: TaskRow) => void;
@@ -196,6 +220,7 @@ export function TaskTable({
         tableKey={TABLE_KEYS.taskBoard}
         columns={taskColumns(view)}
         rows={rows}
+        sortFilterServer={sortFilterServer}
         rowClassName={(t) => taskRowTint(t)}
         onRowClick={(t) => onAction('view', t)}
         renderExpanded={(t) => (expandedIds.has(t.id) ? <TaskExpand t={t} /> : null)}

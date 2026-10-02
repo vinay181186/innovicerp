@@ -12,10 +12,17 @@
 import { ISSUE_AGAINST, ISSUE_AGAINST_LABELS, type IssueAgainst } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { enumFilter, isoDateFilter, likeFilter, numCell, textCell } from './report-helpers';
+import {
+  enumFilter,
+  isoDateFilter,
+  likeFilter,
+  numCell,
+  REPORT_ROW_CAP,
+  textCell,
+} from './report-helpers';
 
 /** Most rows one run returns; the rest are named in a note. */
-const ROW_CAP = 2000;
+const ROW_CAP = REPORT_ROW_CAP;
 
 export const materialConsumptionReport: RegisteredReport = {
   definition: {

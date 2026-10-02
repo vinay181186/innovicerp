@@ -14,8 +14,10 @@ import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { itemsSummaryOf, slipSummaryLateral } from '../../lib/material-requirement';
 import { roundQty } from '../../lib/stock-ledger';
+import { STORE_ISSUE_SF_COLUMNS } from './sf-columns';
 
 export function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -116,24 +118,31 @@ export async function listStoreIssues(
       : sql``;
     const fromFrag = input.fromDate ? sql`AND si.issue_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND si.issue_date <= ${input.toDate}::date` : sql``;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(STORE_ISSUE_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(STORE_ISSUE_SF_COLUMNS, sf, sql`si.issue_date DESC, si.code DESC`);
     const where = sql`
       WHERE si.company_id = ${companyId}::uuid
         AND si.deleted_at IS NULL
-        ${searchFrag} ${itemFrag} ${jcFrag} ${soFrag} ${fromFrag} ${toFrag}`;
+        ${searchFrag} ${itemFrag} ${jcFrag} ${soFrag} ${fromFrag} ${toFrag} ${sfFrag}`;
 
     const rows = (await tx.execute(sql`
       ${HEADER_SELECT}
       ${where}
-      ORDER BY si.issue_date DESC, si.code DESC
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `)) as unknown as Array<Record<string, unknown>>;
 
-    // The pager total counts under the SAME filters (and joins) as the page.
+    // The pager total counts under the SAME filters (and joins) as the page —
+    // the users join included, since the Issued By filter reads u.full_name.
     const totalRows = (await tx.execute(sql`
       SELECT COUNT(*)::int AS total
       FROM public.store_issues si
       LEFT JOIN public.job_cards jc ON jc.id = si.job_card_id
       LEFT JOIN public.sales_orders so ON so.id = si.sales_order_id
+      LEFT JOIN public.users u ON u.id = si.created_by
       ${where}
     `)) as unknown as Array<{ total: number }>;
 

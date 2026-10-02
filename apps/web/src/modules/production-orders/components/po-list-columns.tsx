@@ -12,13 +12,23 @@
 // PRO Target Date (the order's own target date, owner label 2026-09-30), plus
 // Plan No., SO / JWSO No., POL, JC No. in the ▸.
 
-import type { ProductionOrderListItem } from '@innovic/shared';
+import {
+  PRODUCTION_ORDER_STATUS_LABEL,
+  PRODUCTION_ORDER_STATUSES,
+  type ProductionOrderListItem,
+} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 import { ROW_TINT } from '@/ui/data';
 import { PoStatusBadge } from './po-status-badge';
+
+// Sort & Filter (server mode): the status tick list — stored code + label.
+const STATUS_OPTIONS = PRODUCTION_ORDER_STATUSES.map((value) => ({
+  value,
+  label: PRODUCTION_ORDER_STATUS_LABEL[value],
+}));
 
 /**
  * Whole-row wash by the REAL Production Order status enum only (ADR-199
@@ -55,7 +65,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       id: 'pro_no',
       header: 'Production Order No.',
       kind: 'code',
-      sortField: 'code',
+      sortFilterField: 'code',
       nowrap: true,
       // The row's ▸ (fit engine) opens the detail strip; the link opens the PRO
       // detail page. stopPropagation on the link only, so clicking the rest of
@@ -77,7 +87,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       id: 'pro_date',
       header: 'Production Order Date',
       kind: 'date',
-      sortField: 'createdAt',
+      sortFilterField: 'createdOn',
       className: 'mono',
       nowrap: true,
       render: (po) => fmtDate(po.createdAt),
@@ -86,7 +96,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       id: 'item_code',
       header: 'Item Code',
       kind: 'code',
-      sortField: 'itemCodeText',
+      sortFilterField: 'itemCode',
       className: 'td-code',
       nowrap: true,
       render: (po) => (
@@ -100,7 +110,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       id: 'item_name',
       header: 'Item Name',
       kind: 'text',
-      sortField: 'itemNameText',
+      sortFilterField: 'itemName',
       align: 'left',
       className: 'text2',
       ellipsis: true,
@@ -112,7 +122,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       header: 'Order Qty',
       kind: 'num',
       align: 'right',
-      sortField: 'orderQty',
+      sortFilterField: 'orderQty',
       className: 'mono fw-700',
       nowrap: true,
       render: (po) => po.orderQty,
@@ -122,7 +132,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       header: 'Completed',
       kind: 'num',
       align: 'right',
-      sortField: 'jcFinishedQty',
+      sortFilterField: 'jcFinishedQty',
       className: 'mono fw-700',
       nowrap: true,
       render: (po) => <span style={{ color: completedColor(po) }}>{po.jcFinishedQty}</span>,
@@ -131,7 +141,8 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       id: 'pro_status',
       header: 'Production Order Status',
       kind: 'badge',
-      sortField: 'status',
+      sortFilterField: 'status',
+      filterOptions: STATUS_OPTIONS,
       nowrap: true,
       render: (po) => <PoStatusBadge status={po.status} />,
     },
@@ -139,7 +150,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       id: 'pro_target_date',
       header: 'PRO Target Date',
       kind: 'date',
-      sortField: 'targetDate',
+      sortFilterField: 'targetDate',
       className: 'mono',
       nowrap: true,
       render: (po) => fmtDate(po.targetDate),
@@ -149,7 +160,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       id: 'plan_no',
       header: 'Plan No.',
       kind: 'code',
-      sortField: 'planCodeText',
+      sortFilterField: 'planCode',
       className: 'mono',
       nowrap: true,
       render: (po) => (
@@ -168,7 +179,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       id: 'so_jwso',
       header: 'SO / JWSO No.',
       kind: 'code',
-      sortField: 'soCodeText',
+      sortFilterField: 'sourceCode',
       className: 'mono',
       nowrap: true,
       render: (po) =>
@@ -189,7 +200,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       header: 'POL',
       kind: 'code',
       headColor: 'var(--purple)',
-      sortField: 'clientPoLineNo',
+      sortFilterField: 'clientPoLineNo',
       className: 'mono fw-700',
       nowrap: true,
       render: (po) => <span style={{ color: 'var(--purple)' }}>{po.clientPoLineNo ?? '—'}</span>,
@@ -198,7 +209,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       id: 'jc_no',
       header: 'JC No.',
       kind: 'code',
-      sortField: 'jcCodeText',
+      sortFilterField: 'jcCode',
       className: 'td-code',
       nowrap: true,
       render: (po) => (

@@ -23,12 +23,19 @@ import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, PageState } from '@/ui/layout';
 import { CapaView } from '@/modules/capa/components/capa-view';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
 import { NcListHeader } from '../components/nc-list-header';
-import { NcExpanded, ncListColumns, ncRowMenu, ncRowTint } from '../components/nc-list-columns';
+import {
+  NC_LIST_HIDDEN_COLUMNS,
+  NcExpanded,
+  ncListColumns,
+  ncRowMenu,
+  ncRowTint,
+} from '../components/nc-list-columns';
 
 const PAGE_SIZE = 25;
 
@@ -81,15 +88,23 @@ function NcRegisterListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss NCs. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.ncRegister, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListNcRegisterQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
       reasonCategory: search.reasonCategory,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.status, search.reasonCategory, search.page],
+    [sf.param, search.search, search.status, search.reasonCategory, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useNcRegisterList(query);
@@ -154,7 +169,9 @@ function NcRegisterListPage(): React.JSX.Element {
   const currentPage = search.page;
 
   const emptyText =
-    search.search || search.status || search.reasonCategory ? 'No NCs match.' : 'No NCs yet.';
+    sf.filtering || search.search || search.status || search.reasonCategory
+      ? 'No NCs match.'
+      : 'No NCs yet.';
 
   const tabBar = (
     <div
@@ -194,7 +211,10 @@ function NcRegisterListPage(): React.JSX.Element {
   );
 
   return (
-    <div>
+    // `page-fill` (ADR-202): on the list tab the TABLE is the page's only
+    // scrollbar, so the column header stays on screen at the last row. The
+    // other tab is a different, self-sizing view and keeps the page scroll.
+    <div className={tab === 'capa' ? undefined : 'page-fill'}>
       {tabBar}
       {tab === 'capa' ? (
         // key: a new ?capa landing while already on this page remounts the
@@ -226,6 +246,7 @@ function NcRegisterListPage(): React.JSX.Element {
               })
             }
             onClearFilters={() => {
+              sf.clearFilters();
               setSearchInput('');
               void navigate({
                 search: (prev) => ({
@@ -238,6 +259,7 @@ function NcRegisterListPage(): React.JSX.Element {
                 replace: true,
               });
             }}
+            columnFiltering={sf.filtering}
             canReportNc={canReportNc}
             summary={summary}
           />
@@ -248,7 +270,7 @@ function NcRegisterListPage(): React.JSX.Element {
               message={error instanceof Error ? error.message : 'Could not load NCs. Try again.'}
             />
           ) : (
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.ncRegister}
                 columns={columns}
@@ -256,9 +278,10 @@ function NcRegisterListPage(): React.JSX.Element {
                 loading={isLoading}
                 emptyText={emptyText}
                 rowKey={(nc) => nc.id}
-                // Server-paginated page, not the whole list — the column ▾ sort /
-                // filter would act on this page only, so it is off.
-                sortFilter={false}
+                // Server-paginated page: the column ▾ sort / filter runs on the
+                // server (ADR-200), over every NC, not this page only.
+                sortFilterServer={sf}
+                defaultHidden={NC_LIST_HIDDEN_COLUMNS}
                 onRowClick={(nc) =>
                   void navigate({ to: '/nc-register/$id', params: { id: nc.id } })
                 }

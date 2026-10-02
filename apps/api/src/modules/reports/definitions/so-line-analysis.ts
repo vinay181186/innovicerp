@@ -11,8 +11,9 @@ import {
   isoDateFilter,
   likeFilter,
   numCell,
-  type SqlRow,
+  REPORT_ROW_CAP,
   textCell,
+  type SqlRow,
 } from './report-helpers';
 
 const STATUSES = ['open', 'closed', 'dispatched'] as const;
@@ -140,7 +141,7 @@ export const soLineAnalysisReport: RegisteredReport = {
         ${customerFrag}
         ${pendingFrag}
       ORDER BY so.so_date DESC, so.code DESC, sol.line_no
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

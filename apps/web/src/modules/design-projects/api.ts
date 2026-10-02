@@ -31,6 +31,7 @@ export const designProjectsKeys = {
       'list',
       q.search ?? null,
       q.filter,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -42,6 +43,7 @@ function buildQs(q: ListDesignProjectsQuery): string {
   const p = new URLSearchParams();
   if (q.search) p.set('search', q.search);
   if (q.filter) p.set('filter', q.filter);
+  if (q.sf) p.set('sf', q.sf);
   p.set('limit', String(q.limit));
   p.set('offset', String(q.offset));
   return p.toString();
@@ -50,8 +52,7 @@ function buildQs(q: ListDesignProjectsQuery): string {
 export function useDesignProjectsList(query: ListDesignProjectsQuery) {
   return useQuery<ListDesignProjectsResponse>({
     queryKey: designProjectsKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListDesignProjectsResponse>(`/design-projects?${buildQs(query)}`),
+    queryFn: () => apiFetch<ListDesignProjectsResponse>(`/design-projects?${buildQs(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -122,11 +123,7 @@ export function useReleaseDesignProject() {
 // Task mutations
 export function useCreateDesignTask() {
   const qc = useQueryClient();
-  return useMutation<
-    DesignTask,
-    Error,
-    { projectId: string; input: CreateDesignTaskInput }
-  >({
+  return useMutation<DesignTask, Error, { projectId: string; input: CreateDesignTaskInput }>({
     mutationFn: ({ projectId, input }) =>
       apiFetch<DesignTask>(`/design-projects/${projectId}/tasks`, {
         method: 'POST',
@@ -160,11 +157,7 @@ export function useAddDesignTaskComment() {
 // Issue mutations (writes are nested under projects; list-side hooks live in design-issues module)
 export function useCreateDesignIssue() {
   const qc = useQueryClient();
-  return useMutation<
-    DesignIssue,
-    Error,
-    { projectId: string; input: CreateDesignIssueInput }
-  >({
+  return useMutation<DesignIssue, Error, { projectId: string; input: CreateDesignIssueInput }>({
     mutationFn: ({ projectId, input }) =>
       apiFetch<DesignIssue>(`/design-projects/${projectId}/issues`, {
         method: 'POST',

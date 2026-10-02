@@ -28,6 +28,7 @@ import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
@@ -91,14 +92,21 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss PRs. Every change goes to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.prList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListPurchaseRequestsQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.status, search.page],
+    [sf.param, search.search, search.status, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query);
@@ -166,19 +174,20 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   );
 
   const clearFilters = useCallback((): void => {
+    sf.clearFilters();
     setSearchInput('');
     void navigate({
       search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
       replace: true,
     });
-  }, [navigate]);
+  }, [navigate, sf]);
 
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
   const today = todayIst();
-  const columns = useMemo(() => prListColumns(), []);
+  const columns = useMemo(() => prListColumns((currentPage - 1) * PAGE_SIZE + 1), [currentPage]);
 
   // Selection: one vendor per PO (sel.isRowSelectable locks to the first vendor).
   const sel = usePrSelection(rows, canCreatePo);
@@ -255,7 +264,10 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): on the list tab the page fills the content area and the
+    // TABLE is the only scrollbox, so the column header cannot ride off the top at the
+    // last row. The Outsource Jobs tab is its own screen and keeps today's page scroll.
+    <div className={tab === 'osp' ? undefined : 'page-fill'}>
       <PrListTabs tab={tab} onChange={setTab} />
 
       {tab === 'osp' ? (
@@ -294,7 +306,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               </select>
             }
             onClearFilters={clearFilters}
-            filtersActive={search.status !== undefined || searchInput !== ''}
+            filtersActive={sf.filtering || search.status !== undefined || searchInput !== ''}
             primary={
               perms.entry ? (
                 <Link to="/purchase-requests/new" className="btn btn-primary">
@@ -326,14 +338,17 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               message={error instanceof Error ? error.message : 'Could not load PRs. Try again.'}
             />
           ) : (
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.prList}
                 columns={columns}
                 rows={rows}
                 loading={isLoading}
-                defaultHidden={['sr_no']}
-                emptyText={search.search || search.status ? 'No PRs match.' : 'No PRs yet.'}
+                defaultHidden={['sr_no', 'created_on']}
+                sortFilterServer={sf}
+                emptyText={
+                  sf.filtering || search.search || search.status ? 'No PRs match.' : 'No PRs yet.'
+                }
                 onRowClick={(pr) =>
                   void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
                 }

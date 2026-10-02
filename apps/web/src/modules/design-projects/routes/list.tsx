@@ -6,14 +6,24 @@
 // components/add-project-modal.tsx. DATA and RULES are unchanged: same query,
 // same dsnproj_create access matrix, same Project filter + its counts, same
 // StatStrip, same search.
+//
+// ADR-201: 25 projects a page (page in the URL). Search, the Project filter and
+// the column ▾ Sort & Filter run on the server over every project; any change of
+// them goes back to page 1. The filter counts and the Tasks / Open Issues strip
+// come from the server over the same search + Sort & Filter (the strip also
+// follows the Project filter — it sums the listed projects).
 
 import { type DesignProjectListItem } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, StatStrip } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -34,13 +44,10 @@ const FILTER_LABEL: Record<FilterKey, string> = {
   hold: 'On Hold',
 };
 
-// The design-projects list loads all matching projects into one scrolling list
-// (one fetch, offset 0); the API caps `limit` at 100.
-const LIST_LIMIT = 100;
-
 export const designProjectsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'design-projects',
+  validateSearch: z.object({ page: pageSearchParam }),
   component: DesignProjectsListPage,
 });
 
@@ -50,15 +57,37 @@ function DesignProjectsListPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dsnproj_create');
   const [search, setSearch] = useState('');
+  const [term, setTerm] = useState<string | undefined>(undefined);
   const [filter, setFilter] = useState<FilterKey>('all');
   const [showAdd, setShowAdd] = useState(false);
+  const { page } = designProjectsListRoute.useSearch();
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
+  // Debounced search → server; a new term goes back to page 1.
+  useEffect(() => {
+    const trimmed = normalizeSearchTerm(search);
+    const next = trimmed === '' ? undefined : trimmed;
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term, gotoPage]);
+  const sf = useServerSortFilter(TABLE_KEYS.designProjects, () => gotoPage(1));
 
   const { data, isLoading, isFetching, isError, error } = useDesignProjectsList({
-    search: search.trim() || undefined,
+    search: term,
     filter,
-    limit: LIST_LIMIT,
-    offset: 0,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
+  useClampPage(page, data?.total, gotoPage);
   const summary = data?.summary ?? {
     total: 0,
     active: 0,
@@ -100,7 +129,9 @@ function DesignProjectsListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the TABLE is this page's only scrollbar, so the
+    // column header cannot ride off the top of the screen at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Design Projects"
         icon="📋"
@@ -115,7 +146,10 @@ function DesignProjectsListPage(): React.JSX.Element {
           <Select
             aria-label="Project filter"
             value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterKey)}
+            onChange={(e) => {
+              setFilter(e.target.value as FilterKey);
+              gotoPage(1);
+            }}
             // Counts in the labels — they were the clickable Total / Active /
             // Released / On Hold tiles (owner's filter-bar decision 2026-09-26).
             options={(Object.keys(FILTER_LABEL) as FilterKey[]).map((k) => ({
@@ -127,8 +161,10 @@ function DesignProjectsListPage(): React.JSX.Element {
         onClearFilters={() => {
           setSearch('');
           setFilter('all');
+          sf.clearFilters();
+          gotoPage(1);
         }}
-        filtersActive={search.trim() !== '' || filter !== 'all'}
+        filtersActive={search.trim() !== '' || filter !== 'all' || sf.filtering}
         primary={
           perms.entry ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
@@ -165,14 +201,15 @@ function DesignProjectsListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable<DesignProjectListItem>
             tableKey={TABLE_KEYS.designProjects}
             columns={columns}
             rows={rows}
             loading={isLoading}
+            sortFilterServer={sf}
             empty={
-              search.trim() || filter !== 'all'
+              search.trim() || filter !== 'all' || sf.filtering
                 ? 'No Design Projects match.'
                 : 'No Design Projects yet.'
             }
@@ -187,7 +224,13 @@ function DesignProjectsListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter total={total} shown={rows.length} noun="project" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="project"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
 
       {showAdd ? <AddProjectModal onClose={() => setShowAdd(false)} /> : null}
     </div>

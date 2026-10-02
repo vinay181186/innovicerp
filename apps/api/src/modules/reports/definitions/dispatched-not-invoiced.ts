@@ -5,7 +5,14 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { dateCell, likeFilter, numCell, type SqlRow, textCell } from './report-helpers';
+import {
+  dateCell,
+  likeFilter,
+  numCell,
+  REPORT_ROW_CAP,
+  textCell,
+  type SqlRow,
+} from './report-helpers';
 
 export const dispatchedNotInvoicedReport: RegisteredReport = {
   definition: {
@@ -128,7 +135,7 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
           ${jwCustomerFrag}
       ) u
       ORDER BY u.last_dispatch_date ASC NULLS LAST, u.order_code, u.line_no
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => {

@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 import { jcPendingToStockQtySql } from '../../../lib/jc-effective-qty';
 import { onPoByItemSql } from '../../../lib/po-pending';
+import { REPORT_ROW_CAP } from './report-helpers';
 
 export const itemTrackerReport: RegisteredReport = {
   definition: {
@@ -106,7 +107,7 @@ export const itemTrackerReport: RegisteredReport = {
         AND i.deleted_at IS NULL
         ${searchFrag}
       ORDER BY i.code
-      LIMIT 1000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

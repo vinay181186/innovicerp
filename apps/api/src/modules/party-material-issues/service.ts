@@ -27,6 +27,8 @@ import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/er
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { PARTY_ISSUE_SF_COLUMNS } from './sf-columns';
 import { ActivityAction } from '@innovic/shared';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { partyMaterialFitsJwLine } from '../party-materials/service';
@@ -567,6 +569,9 @@ export async function listPartyMaterialIssues(
       );
       if (s) conditions.push(s);
     }
+    // Sort & Filter (ADR-200) — list AND count.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(PARTY_ISSUE_SF_COLUMNS, sf)}`);
     const where = and(...conditions);
 
     // ONE predicate, used by both the page query and the count — a total that
@@ -610,7 +615,14 @@ export async function listPartyMaterialIssues(
           ),
         )
         .where(where)
-        .orderBy(desc(partyMaterialIssues.issueDate), desc(partyMaterialIssues.code))
+        // id last: a unique tie-breaker so paging never skips or repeats a row.
+        .orderBy(
+          sfOrderBy(
+            PARTY_ISSUE_SF_COLUMNS,
+            sf,
+            sql`${desc(partyMaterialIssues.issueDate)}, ${desc(partyMaterialIssues.code)}, ${desc(partyMaterialIssues.id)}`,
+          ),
+        )
         .limit(input.limit)
         .offset(input.offset),
       // The count carries the same job-card/item LEFT JOINs as the page query
@@ -622,6 +634,16 @@ export async function listPartyMaterialIssues(
         .from(partyMaterialIssues)
         .leftJoin(jobCards, eq(jobCards.id, partyMaterialIssues.jobCardId))
         .leftJoin(items, eq(items.id, jobCards.itemId))
+        // The SO / JW line joins too: the Item Code ▾ filter reads the drawing
+        // revision off them. Each is on a primary key — no row inflation.
+        .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
+        .leftJoin(
+          jobWorkOrderLines,
+          and(
+            eq(jobWorkOrderLines.id, jobCards.sourceJwLineId),
+            isNull(jobWorkOrderLines.deletedAt),
+          ),
+        )
         .where(where),
     ]);
 

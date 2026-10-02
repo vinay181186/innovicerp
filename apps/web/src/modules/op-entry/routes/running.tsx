@@ -4,8 +4,12 @@ import { useState } from 'react';
 import { ShopFloorView } from '@/modules/shop-floor/components/shop-floor-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListHeader } from '@/ui/layout';
-import { useRealtimeRunningOps, useRunningOps } from '../api';
+import { useRealtimeRunningOps } from '../api';
+import { useRunningOpsPage } from '../running-ops-page-api';
 import { RunningOpsBoard } from '../components/running-ops-board';
+
+// Module-level so the count query key is stable.
+const RUNNING_COUNT = { view: 'running', limit: 1, offset: 0 } as const;
 
 export const runningOpsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -15,7 +19,9 @@ export const runningOpsRoute = createRoute({
 
 function RunningOpsPage(): React.JSX.Element {
   useRealtimeRunningOps();
-  const { data, isLoading, isFetching, isError, error } = useRunningOps();
+  // The header count = every running session, from the server (ADR-201) —
+  // the board below loads only 25-row pages, so it is never counted from them.
+  const { data, isLoading, isFetching, isError, error } = useRunningOpsPage(RUNNING_COUNT);
   const [view, setView] = useState<'table' | 'machine'>('table');
 
   return (
@@ -23,7 +29,7 @@ function RunningOpsPage(): React.JSX.Element {
       <ListHeader
         title="Live Operations"
         icon="🔴"
-        count={isLoading ? undefined : (data ?? []).filter((r) => r.status === 'running').length}
+        count={isLoading ? undefined : (data?.total ?? 0)}
         noun="running session"
         updating={isFetching && !isLoading}
         tools={
@@ -73,7 +79,7 @@ function RunningOpsPage(): React.JSX.Element {
           </div>
         </div>
       ) : (
-        <RunningOpsBoard rows={data ?? []} />
+        <RunningOpsBoard />
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import type {
+  ListUserAccessQuery,
   ListUserAccessResponse,
   SaveUserAccessInput,
   UserAccess,
@@ -10,13 +11,32 @@ import { myAccessKey } from '@/lib/access-control';
 export const accessControlKeys = {
   all: ['access-control'] as const,
   list: () => [...accessControlKeys.all, 'list'] as const,
+  page: (q: ListUserAccessQuery) => [...accessControlKeys.list(), q] as const,
   detail: (userId: string) => [...accessControlKeys.all, 'detail', userId] as const,
 };
 
-export function useUserAccessList() {
+/** EVERY user with their access summary (User Management, Configure box). */
+export function useUserAccessList(opts?: { enabled?: boolean }) {
   return useQuery<ListUserAccessResponse>({
     queryKey: accessControlKeys.list(),
     queryFn: () => apiFetch<ListUserAccessResponse>('/access-control/users'),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+/** One page of the Access Control screen (ADR-201): search + sf on the server. */
+export function useUserAccessPage(q: ListUserAccessQuery) {
+  return useQuery<ListUserAccessResponse>({
+    queryKey: accessControlKeys.page(q),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (q.search) params.set('search', q.search);
+      if (q.sf) params.set('sf', q.sf);
+      if (q.limit !== undefined) params.set('limit', String(q.limit));
+      if (q.offset !== undefined) params.set('offset', String(q.offset));
+      return apiFetch<ListUserAccessResponse>(`/access-control/users?${params.toString()}`);
+    },
+    placeholderData: (prev) => prev,
   });
 }
 

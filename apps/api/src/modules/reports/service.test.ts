@@ -127,7 +127,7 @@ describe('reports service', () => {
     expect(result.slug).toBe('items-on-hand');
     expect(result.rowCount).toBeGreaterThan(0);
     // Items master has 352 migrated rows; LIMIT 1000 caps it.
-    expect(result.rowCount).toBeLessThanOrEqual(1000);
+    expect(result.rowCount).toBeLessThanOrEqual(10_000);
     for (const row of result.rows) {
       expect(typeof row['code']).toBe('string');
       expect(typeof row['on_hand_qty']).toBe('number');

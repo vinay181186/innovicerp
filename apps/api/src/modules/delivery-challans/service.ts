@@ -23,6 +23,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
@@ -45,6 +46,7 @@ import {
   reverseOutwardFromJcOp,
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
+import { DC_SF_COLUMNS, DC_SF_JOINS } from './sf-columns';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import {
   ActivityAction,
@@ -179,6 +181,14 @@ export async function listDeliveryChallans(
       : sql``;
     const fromFrag = input.fromDate ? sql`AND dc.dc_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND dc.dc_date <= ${input.toDate}::date` : sql``;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to the list, the count
+    // AND the KPI summary — the latter two add the page query's other joins
+    // (DC_SF_JOINS, one row per DC) only while a filter needs them.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(DC_SF_COLUMNS, sf);
+    const sfJoins = sf && sf.filters.length > 0 ? DC_SF_JOINS : sql``;
+    const orderBy = sfOrderBy(DC_SF_COLUMNS, sf, sql`dc.dc_date DESC, dc.code DESC`);
 
     const result = await tx.execute(sql`
       SELECT
@@ -220,43 +230,9 @@ export async function listDeliveryChallans(
         COALESCE(line_agg.total_qty, 0)::text AS "totalQty"
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
-      LEFT JOIN public.purchase_orders po
-        ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
-      LEFT JOIN public.nc_register nc ON nc.id = dc.nc_id AND nc.deleted_at IS NULL
-      LEFT JOIN public.job_cards njc ON njc.id = dc.job_card_id AND njc.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines njc_jwl
-        ON njc_jwl.id = njc.source_jw_line_id AND njc_jwl.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = dc.sales_order_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so
-        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      -- OSP/vendor DCs carry only purchase_order_id (no sales_order_line_id),
-      -- so resolve the SO through the PO's lines' source_so_line_id as a fallback.
-      LEFT JOIN LATERAL (
-        SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code,
-          -- One drawing revision, or none at all. The SO code beside it is an
-          -- aggregate over every line of the PO, so pairing "IN-SO-11, IN-SO-12"
-          -- with "A, B" would leave the reader to guess which belongs to which.
-          -- A revision is emitted only when all of the PO's SO lines agree on
-          -- one; otherwise NULL, which prints as no revision rather than as a
-          -- guess. ::text for the same pre-0119 reason as everywhere else.
-          CASE WHEN COUNT(DISTINCT sol2.revision) = 1
-               THEN MIN(sol2.revision)::text END AS so_revision
-        FROM public.purchase_order_lines pol
-        JOIN public.sales_order_lines sol2
-          ON sol2.id = pol.source_so_line_id AND sol2.deleted_at IS NULL
-        JOIN public.sales_orders so2
-          ON so2.id = sol2.sales_order_id AND so2.deleted_at IS NULL
-        WHERE pol.purchase_order_id = dc.purchase_order_id
-          AND pol.deleted_at IS NULL
-      ) po_so ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT
-          COUNT(*) AS line_count,
-          COALESCE(SUM(qty), 0) AS total_qty
-        FROM public.delivery_challan_lines dcl
-        WHERE dcl.delivery_challan_id = dc.id AND dcl.deleted_at IS NULL
-      ) line_agg ON TRUE
+      -- PO / NC / job card / SO (direct, else through the PO's lines) and the
+      -- line totals: one copy, shared with the count and summary (sf-columns.ts).
+      ${DC_SF_JOINS}
       WHERE dc.company_id = ${companyId}::uuid
         AND dc.deleted_at IS NULL
         ${searchFrag}
@@ -265,7 +241,8 @@ export async function listDeliveryChallans(
         ${poFrag}
         ${fromFrag}
         ${toFrag}
-      ORDER BY dc.dc_date DESC, dc.code DESC
+        ${sfFrag}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -279,6 +256,7 @@ export async function listDeliveryChallans(
       SELECT COUNT(*)::int AS total
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
+      ${sfJoins}
       WHERE dc.company_id = ${companyId}::uuid
         AND dc.deleted_at IS NULL
         ${searchFrag}
@@ -287,6 +265,7 @@ export async function listDeliveryChallans(
         ${poFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
@@ -302,6 +281,7 @@ export async function listDeliveryChallans(
         COUNT(DISTINCT dcl.item_id)::int       AS item_count
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
+      ${sfJoins}
       LEFT JOIN public.delivery_challan_lines dcl
         ON dcl.delivery_challan_id = dc.id AND dcl.deleted_at IS NULL
       WHERE dc.company_id = ${companyId}::uuid
@@ -312,6 +292,7 @@ export async function listDeliveryChallans(
         ${poFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
     `);
     const sumRow = (summaryRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
     const summary = {

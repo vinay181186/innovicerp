@@ -6,12 +6,18 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { StatusBadge } from '@/ui/core';
 import type { DataTableColumn } from '@/ui/data';
+import { statusText } from '@/lib/status-text';
+
+const BOM_STATUS_OPTIONS = (['draft', 'active', 'obsolete'] as const).map((v) => ({
+  value: v,
+  label: statusText(v),
+}));
 
 // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
 // only Sr No keeps a width; codes, revs, dates and counts sit on one line
 // and the BOM name / parent item name wrap into what is left. Centred by the
 // standard; BOM Name and Parent Item read from their left edge.
-export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
+export function bomListColumns(offset = 0): DataTableColumn<BomMasterListItem>[] {
   return [
     {
       id: 'sr_no',
@@ -19,10 +25,11 @@ export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
       width: '4%',
       className: 'text3',
       align: 'right',
-      render: (_b, i) => i + 1,
+      render: (_b, i) => offset + i + 1,
     },
     {
       id: 'bom_no',
+      sortFilterField: 'bomNo',
       header: 'BOM No.',
       nowrap: true,
       // The part list opens from the fit table's ▸ (the row's ONE expand
@@ -44,6 +51,7 @@ export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
     },
     {
       id: 'bom_name',
+      sortFilterField: 'bomName',
       kind: 'text',
       header: 'BOM Name',
       align: 'left',
@@ -54,6 +62,7 @@ export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
     // standard: every row one line). Code strong, name quiet.
     {
       id: 'parent_item_code',
+      sortFilterField: 'parentItemCode',
       header: 'Parent Item Code',
       nowrap: true,
       render: (b) =>
@@ -67,6 +76,7 @@ export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
     },
     {
       id: 'parent_item_name',
+      sortFilterField: 'parentItemName',
       header: 'Parent Item Name',
       align: 'left',
       ellipsis: true,
@@ -76,6 +86,8 @@ export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
     },
     {
       id: 'line_count',
+      sortFilterField: 'lineCount',
+      filterType: 'num',
       header: 'Items',
       align: 'right',
       className: 'mono fw-700',
@@ -84,6 +96,8 @@ export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
     },
     {
       id: 'revision',
+      sortFilterField: 'revision',
+      filterType: 'num',
       header: 'BOM Rev',
       className: 'mono fw-700',
       nowrap: true,
@@ -91,6 +105,7 @@ export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
     },
     {
       id: 'revision_date',
+      sortFilterField: 'revisionDate',
       kind: 'date',
       header: 'Revision Date',
       className: 'mono text2',
@@ -101,6 +116,8 @@ export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
     {
       // Counts SO LINES that use this BOM (not orders) — same label as the detail.
       id: 'linked_so_count',
+      sortFilterField: 'linkedSoCount',
+      filterType: 'num',
       header: 'Linked SO Lines',
       align: 'right',
       nowrap: true,
@@ -115,6 +132,8 @@ export function bomListColumns(): DataTableColumn<BomMasterListItem>[] {
     },
     {
       id: 'status',
+      sortFilterField: 'status',
+      filterOptions: BOM_STATUS_OPTIONS,
       kind: 'badge',
       header: 'BOM Status',
       nowrap: true,

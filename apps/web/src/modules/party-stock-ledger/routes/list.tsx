@@ -4,23 +4,23 @@
 // value column — party material carries no rupee value on our books.
 //
 // Styled to the SO Master list conventions: ListHeader (title · count · search)
-// over a `.innovic-table`. The ledger loads whole (it scrolls, it does not
-// paginate — the endpoint caps at 500), so the universal search runs client-side
-// across the visible columns via the shared search-match helper.
+// over a `.innovic-table`. ADR-201: 25 movements a page with Prev / Next (page
+// in the URL); the search box runs on the SERVER over every movement and the
+// columns on screen, and a new search goes back to page 1.
 
 import type { PartyStockMovement } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { matchesSearchTerm } from '@/components/shared/search-match';
+import { useCallback, useEffect, useState } from 'react';
+import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { usePartyStockLedgerList } from '../api';
-
-// The register scrolls; no Prev/Next. 500 is the endpoint's ceiling.
-const LIST_LIMIT = 500;
 
 const MOVEMENT_LABELS: Record<PartyStockMovement, string> = {
   receive: 'Receive',
@@ -43,6 +43,7 @@ const SOURCE_DOC_LABELS: Record<string, string> = {
 export const partyStockLedgerListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'party-stock-ledger',
+  validateSearch: z.object({ page: pageSearchParam }),
   component: PartyStockLedgerListPage,
 });
 
@@ -50,33 +51,34 @@ function PartyStockLedgerListPage(): React.JSX.Element {
   // Same department gate as the other party pages (Store, party_create view).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'party_create');
+  const { page } = partyStockLedgerListRoute.useSearch();
+  const navigate = partyStockLedgerListRoute.useNavigate();
+  const gotoPage = useCallback(
+    (p: number): void => {
+      void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+    },
+    [navigate],
+  );
   const [search, setSearch] = useState('');
+  const [term, setTerm] = useState('');
+  useEffect(() => {
+    const next = normalizeSearchTerm(search);
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      gotoPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term, gotoPage]);
 
-  const { data, isLoading, isError, error } = usePartyStockLedgerList({
-    limit: LIST_LIMIT,
-    offset: 0,
+  const { data, isLoading, isFetching, isError, error } = usePartyStockLedgerList({
+    ...(term ? { search: term } : {}),
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
-
-  const rows = useMemo(() => {
-    const all = data?.items ?? [];
-    if (!search.trim()) return all;
-    return all.filter((r) =>
-      matchesSearchTerm(
-        [
-          r.partyMaterialCode,
-          r.partyMaterialName,
-          MOVEMENT_LABELS[r.movement],
-          r.direction === 'in' ? 'in' : 'out',
-          r.qty,
-          r.balanceAfter,
-          SOURCE_DOC_LABELS[r.sourceDocType] ?? r.sourceDocType,
-          r.createdByName,
-          fmtDate(r.createdAt),
-        ],
-        search,
-      ),
-    );
-  }, [data?.items, search]);
+  useClampPage(page, data?.total, gotoPage);
+  const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
 
   // Hide-page: once access loads, a user whose VIEW was removed sees the panel.
   if (eff && !perms.view) {
@@ -88,18 +90,21 @@ function PartyStockLedgerListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Customer Material Stock Ledger"
         icon="📒"
-        count={data?.total ?? rows.length}
+        count={total}
         noun="movement"
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search material, movement, source doc, by…"
+        updating={isFetching && !isLoading}
       />
 
-      <div className="panel">
+      <Panel fill bodyPadding="none">
         {isLoading ? (
           <div className="panel-body">
             <div className="text3" style={{ fontSize: 12 }}>
@@ -193,9 +198,15 @@ function PartyStockLedgerListPage(): React.JSX.Element {
             </table>
           </div>
         )}
-      </div>
+      </Panel>
 
-      <ListFooter total={data?.total ?? rows.length} noun="movement" limit={LIST_LIMIT} />
+      <ListFooter
+        total={total}
+        noun="movement"
+        page={page}
+        pageSize={LIST_PAGE_SIZE}
+        onPage={gotoPage}
+      />
     </div>
   );
 }

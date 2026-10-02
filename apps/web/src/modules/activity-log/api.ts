@@ -25,6 +25,7 @@ export function useActivityLog(query: ListActivityLogQuery) {
       if (query.userId) params.set('userId', query.userId);
       if (query.fromDate) params.set('fromDate', query.fromDate);
       if (query.toDate) params.set('toDate', query.toDate);
+      if (query.sf) params.set('sf', query.sf);
       params.set('limit', String(query.limit));
       params.set('offset', String(query.offset));
       return apiFetch<ListActivityLogResponse>(`/activity-log?${params.toString()}`);

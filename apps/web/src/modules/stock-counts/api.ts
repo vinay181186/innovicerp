@@ -15,7 +15,15 @@ import { activityLogKeys } from '@/modules/activity-log/api';
 export const stockCountKeys = {
   all: ['stock-counts'] as const,
   list: (q: ListStockCountsQuery) =>
-    [...stockCountKeys.all, 'list', q.status ?? null, q.search ?? null, q.limit, q.offset] as const,
+    [
+      ...stockCountKeys.all,
+      'list',
+      q.status ?? null,
+      q.search ?? null,
+      q.sf ?? null,
+      q.limit,
+      q.offset,
+    ] as const,
   detail: (id: string) => [...stockCountKeys.all, 'detail', id] as const,
 };
 
@@ -23,6 +31,7 @@ export function useStockCounts(q: ListStockCountsQuery) {
   const p = new URLSearchParams();
   if (q.status) p.set('status', q.status);
   if (q.search) p.set('search', q.search);
+  if (q.sf) p.set('sf', q.sf);
   p.set('limit', String(q.limit));
   p.set('offset', String(q.offset));
   return useQuery<ListStockCountsResponse>({

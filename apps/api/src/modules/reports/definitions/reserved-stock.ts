@@ -6,7 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { dateCell as dateOrNull, enumFilter, likeFilter } from './report-helpers';
+import { dateCell as dateOrNull, enumFilter, likeFilter, REPORT_ROW_CAP } from './report-helpers';
 
 const RESERVATION_STATUSES = [
   'active',
@@ -115,7 +115,7 @@ export const reservedStockReport: RegisteredReport = {
         ${statusFrag}
         ${itemFrag}
       ORDER BY x.created_at DESC
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

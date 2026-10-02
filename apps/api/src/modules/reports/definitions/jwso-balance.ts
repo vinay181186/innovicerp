@@ -5,7 +5,15 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { dateCell, enumFilter, likeFilter, numCell, type SqlRow, textCell } from './report-helpers';
+import {
+  dateCell,
+  enumFilter,
+  likeFilter,
+  numCell,
+  REPORT_ROW_CAP,
+  textCell,
+  type SqlRow,
+} from './report-helpers';
 
 const STATUSES = ['open', 'closed', 'dispatched'] as const;
 
@@ -97,7 +105,7 @@ export const jwsoBalanceReport: RegisteredReport = {
         ${statusFrag}
         ${customerFrag}
       ORDER BY jwo.jw_date DESC, jwo.code DESC, jwl.line_no
-      LIMIT 2000
+      LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({

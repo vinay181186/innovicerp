@@ -12,13 +12,23 @@ import type { DataTableColumn } from '@/ui/data';
 // left-aligned so the vendor names share one edge, and the long free-text
 // columns ellipsize with the full value on hover rather than wrapping the
 // row taller.
-export function vendorListColumns(): DataTableColumn<Vendor>[] {
+// `offset` = the first row's position on this page (ADR-201 paging), so Sr No
+// keeps counting across pages. `sortFilterField` = the field in the API's
+// VENDOR_SF_COLUMNS map (Sort & Filter runs on the server — ADR-200).
+export function vendorListColumns(offset = 0): DataTableColumn<Vendor>[] {
   return [
-    { id: 'sr_no', header: 'Sr No', width: '4%', className: 'text3', render: (_v, i) => i + 1 },
+    {
+      id: 'sr_no',
+      header: 'Sr No',
+      width: '4%',
+      className: 'text3',
+      render: (_v, i) => offset + i + 1,
+    },
     {
       id: 'code',
       header: 'Vendor Code',
       width: '8%',
+      sortFilterField: 'code',
       nowrap: true,
       // A real link, so the code can be ctrl/middle-clicked into a new tab.
       // stopPropagation sits on the link (not the cell) so clicking the rest
@@ -38,6 +48,7 @@ export function vendorListColumns(): DataTableColumn<Vendor>[] {
     {
       id: 'name',
       header: 'Vendor Name',
+      sortFilterField: 'name',
       width: '12%',
       align: 'left',
       className: 'fw-700',
@@ -47,15 +58,24 @@ export function vendorListColumns(): DataTableColumn<Vendor>[] {
     {
       id: 'contact_person',
       header: 'Contact Person',
+      sortFilterField: 'contactPerson',
       width: '9%',
       ellipsis: true,
       render: (v) => v.contactPerson ?? '—',
       title: (v) => v.contactPerson ?? '',
     },
-    { id: 'phone', header: 'Phone', width: '8%', nowrap: true, render: (v) => v.phone ?? '—' },
+    {
+      id: 'phone',
+      header: 'Phone',
+      width: '8%',
+      nowrap: true,
+      sortFilterField: 'phone',
+      render: (v) => v.phone ?? '—',
+    },
     {
       id: 'email',
       header: 'Email',
+      sortFilterField: 'email',
       width: '10%',
       className: 'text3',
       ellipsis: true,
@@ -65,6 +85,7 @@ export function vendorListColumns(): DataTableColumn<Vendor>[] {
     {
       id: 'gst_number',
       header: 'GSTIN',
+      sortFilterField: 'gstNumber',
       width: '12%',
       nowrap: true,
       render: (v) => v.gstNumber ?? '—',
@@ -72,6 +93,8 @@ export function vendorListColumns(): DataTableColumn<Vendor>[] {
     {
       id: 'payment_terms_days',
       header: 'Payment Terms (days)',
+      sortFilterField: 'paymentTermsDays',
+      filterType: 'num',
       width: '6%',
       align: 'right',
       nowrap: true,
@@ -80,6 +103,7 @@ export function vendorListColumns(): DataTableColumn<Vendor>[] {
     {
       id: 'address',
       header: 'Address',
+      sortFilterField: 'address',
       width: '8%',
       className: 'text3',
       ellipsis: true,
@@ -89,6 +113,7 @@ export function vendorListColumns(): DataTableColumn<Vendor>[] {
     {
       id: 'rating',
       header: 'Rating',
+      sortFilterField: 'rating',
       width: '6%',
       nowrap: true,
       // Same letter->colour map the hand-rolled ratingBadgeClass carried

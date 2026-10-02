@@ -9,17 +9,19 @@
 import { type JwDcOutwardListItem } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useJwDcOutwardDetail, useJwDcOutwardList } from '../api';
 import { outwardColumns } from './outward-columns';
 import { NewOutwardModal } from './new-outward-modal';
 
-const PAGE_SIZE = 50;
+const TABLE_KEY = TABLE_KEYS.jwDcOutward;
 
 export function OutwardView({
   forJwId,
@@ -36,19 +38,36 @@ export function OutwardView({
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => initialSearch ?? '');
   const [page, setPage] = useState(1);
+  // The box is debounced into the server search; a new term goes to page 1.
+  const [term, setTerm] = useState(() => (initialSearch ?? '').trim());
+  useEffect(() => {
+    const next = search.trim();
+    if (next === term) return;
+    const id = window.setTimeout(() => {
+      setTerm(next);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [search, term]);
+  // Sort & Filter runs on the SERVER (ADR-200): the register is paged 25 at a
+  // time, so filtering only the loaded page would miss rows. Every change goes
+  // back to page 1.
+  const sf = useServerSortFilter(TABLE_KEY, () => setPage(1));
   // A `?jw=` landing opens New Outward DC at once (write access only — the
   // modal is gated the same way the + button is).
   const [showModal, setShowModal] = useState(() => Boolean(forJwId));
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, error } = useJwDcOutwardList({
-    search: search.trim() || undefined,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
+    search: term || undefined,
+    sf: sf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(page),
   });
+  useClampPage(page, data?.total, setPage);
 
   const columns = useMemo(() => outwardColumns(), []);
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
   const toggleExpand = useCallback((id: string): void => {
     setExpanded((prev) => {
@@ -69,9 +88,11 @@ export function OutwardView({
         count={data?.total}
         noun="outward DC"
         search={search}
-        onSearch={(v) => {
-          setSearch(v);
-          setPage(1);
+        onSearch={setSearch}
+        filtersActive={sf.filtering || search !== ''}
+        onClearFilters={() => {
+          sf.clearFilters();
+          setSearch('');
         }}
         searchPlaceholder="Search DC, PO, vendor…"
         primary={
@@ -93,12 +114,13 @@ export function OutwardView({
       ) : (
         <Panel bodyPadding="none">
           <DataTable
-            tableKey={TABLE_KEYS.jwDcOutward}
+            tableKey={TABLE_KEY}
+            sortFilterServer={sf}
             columns={columns}
             rows={data?.items ?? []}
             rowKey={(dc) => dc.id}
             loading={isLoading}
-            empty={search.trim() ? 'No outward DCs match.' : 'No outward DCs yet.'}
+            empty={term || sf.filtering ? 'No outward DCs match.' : 'No outward DCs yet.'}
             onRowClick={(dc) => void navigate({ to: '/jw-dc/$id', params: { id: dc.id } })}
             // Green when every unit is back, amber while a return is still
             // partial. A freshly-sent DC (nothing back yet) stays untinted.
@@ -126,7 +148,7 @@ export function OutwardView({
           total={data.total}
           noun="outward DC"
           page={page}
-          pageSize={PAGE_SIZE}
+          pageSize={LIST_PAGE_SIZE}
           onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
         />
       ) : null}

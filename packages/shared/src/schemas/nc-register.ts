@@ -21,6 +21,7 @@ import { positiveQtyCoerceSchema } from '../lib/qty-rule';
 import { type NcDisposition, NC_DISPOSITIONS } from '../enums/nc-disposition';
 import { NC_REASON_CATEGORIES } from '../enums/nc-reason-category';
 import { type NcStatus, NC_STATUSES } from '../enums/nc-status';
+import { sfRawParamSchema } from './list-query';
 
 export const ncStatusSchema = z.enum(NC_STATUSES);
 export const ncDispositionSchema = z.enum(NC_DISPOSITIONS);
@@ -291,6 +292,8 @@ export const listNcRegisterQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

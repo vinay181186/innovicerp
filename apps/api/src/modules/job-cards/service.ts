@@ -70,6 +70,8 @@ import type {
 import type {
   JcOpInput,
   JcOpPoLinkView,
+  JcStatusCountsQuery,
+  JcStatusCountsResponse,
   JobCardCompletionEvent,
   JobCardEditModel,
   JobCardListItem,
@@ -83,6 +85,9 @@ import type {
   ListJobCardsResponse,
 } from './schema';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
+import { readSf, sfOrderBy } from '../../lib/list-query';
+import { JC_SF_COLUMNS } from './sf-columns';
+import { JC_LIST_JOINS, jcListWhere, jcStatusCounts } from './list-filters';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -101,84 +106,19 @@ const OSP_MOVED_STATUSES: ReadonlySet<string> = new Set(['po_created', 'sent', '
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
-/** Escape the ILIKE metacharacters in a user's search term. Without this a
- *  user typing "50%" or "a_b" in the Job Card search box gets a wildcard
- *  pattern instead of a literal search — a bare "%" returned every job card.
- *  The SQL side must pair it with an ESCAPE '\' clause on every ILIKE, or the
- *  escapes match literally.
- *  Deliberately a local copy of the sales-orders helper rather than an export
- *  across modules: it is three lines, and each list must be free to change its
- *  own search behaviour without dragging the others with it. */
-function escapeLikeTerm(raw: string): string {
-  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
-
 export async function listJobCards(
   input: ListJobCardsQuery,
   user: AuthContext,
 ): Promise<ListJobCardsResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    // Search covers every field the JC list card actually shows — band 1 (JC
-    // code, item name, item code, the SO/JWSO source code, the priority badge
-    // and the computed-status badge) and band 2's meta line (JC date, client PO
-    // line no, due date, remarks). Customer name is kept from the original
-    // clause set: the search box placeholder advertises "customer", even though
-    // the card itself resolves the customer only on the detail page.
-    // Deliberately NOT searched: order qty, completed / pending / ops counts and
-    // the running-op count — matching numbers would make "1" hit nearly every
-    // job card. No money column either: the JC list shows none, and this module
-    // hides prices behind `canSeeFormPrice` elsewhere, so a searchable amount
-    // would let a user without that right confirm a value by guessing.
-    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
-    const searchFrag = term
-      ? sql`AND (
-          jc.code ILIKE ${term} ESCAPE '\\'
-          OR i.code ILIKE ${term} ESCAPE '\\'
-          OR i.name ILIKE ${term} ESCAPE '\\'
-          OR so.code ILIKE ${term} ESCAPE '\\'
-          OR jw.code ILIKE ${term} ESCAPE '\\'
-          OR so.customer_name ILIKE ${term} ESCAPE '\\'
-          OR jw.customer_name ILIKE ${term} ESCAPE '\\'
-          OR cli_so.name ILIKE ${term} ESCAPE '\\'
-          OR cli_jw.name ILIKE ${term} ESCAPE '\\'
-          -- Badges on band 1: priority renders as High/Normal, status as the
-          -- computed status. Both are matched on the stored value.
-          OR jc.priority::text ILIKE ${term} ESCAPE '\\'
-          OR COALESCE(s.computed_status, 'no_ops')::text ILIKE ${term} ESCAPE '\\'
-          -- Band 2 meta line, in the order the card prints it.
-          OR jc.jc_date::text ILIKE ${term} ESCAPE '\\'
-          OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\'
-          -- Same COALESCE the SELECT uses for "dueDate", so what the card shows
-          -- is what the search matches.
-          OR COALESCE(jc.due_date, sol.due_date, jwl.due_date)::text ILIKE ${term} ESCAPE '\\'
-          OR jc.remarks ILIKE ${term} ESCAPE '\\'
-        )`
-      : sql``;
-    const statusFrag = input.status
-      ? sql`AND COALESCE(s.computed_status, 'no_ops') = ${input.status}`
-      : sql``;
-    const fromFrag = input.fromDate ? sql`AND jc.jc_date >= ${input.fromDate}::date` : sql``;
-    const toFrag = input.toDate ? sql`AND jc.jc_date <= ${input.toDate}::date` : sql``;
-    // Machine filter: JC has at least one op assigned to this machine.
-    const machineFrag = input.machineId
-      ? sql`AND EXISTS (
-          SELECT 1 FROM public.jc_ops jo
-          WHERE jo.job_card_id = jc.id
-            AND jo.machine_id = ${input.machineId}::uuid
-            AND jo.deleted_at IS NULL
-        )`
-      : sql``;
-    // Operator filter: JC has at least one op_log entry by this operator
-    // (joined via jc_ops).
-    const operatorFrag = input.operatorId
-      ? sql`AND EXISTS (
-          SELECT 1 FROM public.op_log ol
-          JOIN public.jc_ops jo ON jo.id = ol.jc_op_id
-          WHERE jo.job_card_id = jc.id
-            AND ol.operator_id = ${input.operatorId}::uuid
-        )`
-      : sql``;
+    // FROM joins + WHERE (search, status, overdue, dates, machine, operator,
+    // Sort & Filter) live in list-filters.ts — shared with the count below and
+    // the JC Status dropdown counts (ADR-201), so they always agree.
+    const where = jcListWhere(companyId, input);
+    // A sort always ends on jc.code (unique per company) so paging never
+    // skips or repeats a card.
+    const orderBy = sfOrderBy(JC_SF_COLUMNS, readSf(input.sf), sql`jc.jc_date DESC, jc.code DESC`);
 
     const result = await tx.execute(sql`
       SELECT
@@ -308,89 +248,32 @@ export async function listJobCards(
           WHERE jor.job_card_id = jc.id AND ro.status = 'running'
         )::int AS "runningCount"
       FROM public.job_cards jc
-      LEFT JOIN public.items i ON i.id = jc.item_id
-      -- The item's single active route card (route_cards is unique per item) —
-      -- surfaces the route-card reference (code + current revision) on the JC.
-      LEFT JOIN public.route_cards rc
-        ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
-      LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
-      LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
-      LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
-      LEFT JOIN public.production_orders po
-        ON po.id = jc.production_order_id AND po.deleted_at IS NULL
-      -- The parent card's Production Order — a rework/repair child reads its
-      -- Customer Dispatch Date off the parent's plan (see the select above).
-      LEFT JOIN public.production_orders pjc_po
-        ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so
-        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      LEFT JOIN public.clients cli_so
-        ON cli_so.id = so.client_id AND cli_so.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines jwl
-        ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
-      LEFT JOIN public.job_work_orders jw
-        ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
-      LEFT JOIN public.clients cli_jw
-        ON cli_jw.id = jw.client_id AND cli_jw.deleted_at IS NULL
-      WHERE jc.company_id = ${companyId}::uuid
-        AND jc.deleted_at IS NULL
-        ${searchFrag}
-        ${statusFrag}
-        ${fromFrag}
-        ${toFrag}
-        ${machineFrag}
-        ${operatorFrag}
-      ORDER BY jc.jc_date DESC, jc.code DESC
+      ${JC_LIST_JOINS}
+      WHERE ${where}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    // Total count uses the same WHERE clauses minus pagination. Drizzle ORM
-    // doesn't help here because of the v_jc_status join; reuse the raw query.
+    // Total count uses the same FROM + WHERE minus pagination.
     const countResult = await tx.execute(sql`
       SELECT COUNT(*)::int AS count
       FROM public.job_cards jc
-      LEFT JOIN public.items i ON i.id = jc.item_id
-      -- The item's single active route card (route_cards is unique per item) —
-      -- surfaces the route-card reference (code + current revision) on the JC.
-      LEFT JOIN public.route_cards rc
-        ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
-      LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
-      LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
-      LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
-      LEFT JOIN public.production_orders po
-        ON po.id = jc.production_order_id AND po.deleted_at IS NULL
-      -- The parent card's Production Order — a rework/repair child reads its
-      -- Customer Dispatch Date off the parent's plan (see the select above).
-      LEFT JOIN public.production_orders pjc_po
-        ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so
-        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      LEFT JOIN public.clients cli_so
-        ON cli_so.id = so.client_id AND cli_so.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines jwl
-        ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
-      LEFT JOIN public.job_work_orders jw
-        ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
-      LEFT JOIN public.clients cli_jw
-        ON cli_jw.id = jw.client_id AND cli_jw.deleted_at IS NULL
-      WHERE jc.company_id = ${companyId}::uuid
-        AND jc.deleted_at IS NULL
-        ${searchFrag}
-        ${statusFrag}
-        ${fromFrag}
-        ${toFrag}
-        ${machineFrag}
-        ${operatorFrag}
+      ${JC_LIST_JOINS}
+      WHERE ${where}
     `);
     const total = Number((countResult as unknown as Array<{ count: number }>)[0]?.count ?? 0);
 
     const items = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     return { items, total, limit: input.limit, offset: input.offset };
   });
+}
+
+/** JC Status dropdown counts over every card the list's other filters match. */
+export async function jobCardStatusCounts(
+  input: JcStatusCountsQuery,
+  user: AuthContext,
+): Promise<JcStatusCountsResponse> {
+  return jcStatusCounts(input, requireCompany(user), user);
 }
 
 export async function getJobCard(id: string, user: AuthContext): Promise<JobCardListItem> {
