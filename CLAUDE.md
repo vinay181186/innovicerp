@@ -1060,3 +1060,57 @@ stops on the first error), merges `test` into `main`, pushes, and waits for the 
 deploy. It is pre-approved in the owner's Claude Code settings. Never run migrations or
 `git push … main` against production any other way, and never ask the owner to type
 production commands.
+
+---
+
+## Section 20 — Writes That Must Not Double, Clash or Overshoot
+
+Five rules, each from a bug that reached live use. They are one shape: a number or a
+status written by two code paths, or by two people in the same second.
+
+**20.1 One number, one writer.** A quantity the business counts — produced, accepted,
+received, credited, stock — has exactly ONE function that writes it. A second screen
+that affects it calls that function; it never writes the column itself. Before adding
+a write, grep every existing writer (`grep -rn "completedQty" apps/api/src`), list them
+in your plan, and name the one you are reusing.
+_The bug:_ the operator logs 20 pieces on Turning, then presses Stop Operation and the
+same 20 are counted again — 40 produced on a job of 20.
+
+**20.2 A status change is a conditional UPDATE, never read-then-write.** Write
+`UPDATE … SET status = 'approved' WHERE id = ? AND status = 'pending'` and check the row
+count. Zero rows means someone got there first: re-read and answer 409 saying what
+actually happened ("already rejected by Jinal at 14:32"). Applies to approve / reject,
+close, short close, cancel, QC accept, dispatch.
+_The bug:_ Jinal approves an Op Entry and Rakesh rejects it in the same second; both read
+"pending", both write, the last one silently wins.
+
+**20.3 A limit is checked inside the transaction that writes, under the parent's row
+lock.** Lock the parent first, then sum, then insert — one transaction:
+`SELECT … FROM plans WHERE id = ? FOR UPDATE` → `SUM(qty)` → insert. Copy
+`createProductionOrder` (ADR-182), which caps `SUM(order_qty)` at `plans.plan_qty` inside
+the plan's lock. Do NOT copy `assertPlanQtyWithinRemaining` — it sums without a lock.
+Every cap ships with a test that fires two requests at once and asserts exactly one wins
+and the stored total never exceeds the cap.
+_The bug:_ plan PLN-0009 has 10 pending; two people press "+ PR 10" together, both read
+"10 left", both save — 20 raised against a plan of 10.
+
+**20.4 An edit sends back what it loaded.** Every PATCH of an existing document carries
+the `updatedAt` it was loaded with; the server writes `WHERE updated_at = ?` and answers
+409 "This Sales Order was changed by <name> at <time> — reload and redo your change."
+For line arrays compare per line, so two people editing different lines both succeed.
+A resent save (same user, network retry) is a different problem, already solved by the
+Idempotency-Key plugin (ADR-172) — do not re-solve it.
+_The bug:_ you change a line's qty to 60 while Jinal changes its Rev to C; your save wipes
+his Rev and nobody is told.
+
+**20.5 A screen only offers an action whose data that screen already loads.** When you add
+an action, add the fields its API needs to THAT screen's response in the same commit. If
+they cannot be there, do not render the button. The server still validates — the screen is
+never the rule.
+_The bug:_ "Raise PR" on SO Status fails on click because that screen never loaded the
+operation details the PR needs.
+
+**Verify before you finish.** Grep every writer of the number you touched — there must be
+one. Point at the line that locks the parent row and show the insert is in the same
+transaction. Point at the `WHERE status = …` or `WHERE updated_at = …` on your UPDATE.
+Name the test that runs two of your requests at the same time.
