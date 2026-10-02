@@ -97,7 +97,10 @@ function SoOverviewPage(): React.JSX.Element {
   const columns = soOverviewColumns();
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header stays on screen down
+    // to the last row.
+    <div className="page-fill">
       {/* The ONE list header (ui/layout ListHeader). The debounced SearchInput
           rides in `searchSlot` so the URL write keeps its 300ms delay; the
           SO status and overall-status (with counts) dropdowns sit beside it
@@ -180,7 +183,7 @@ function SoOverviewPage(): React.JSX.Element {
         // Equipment / Lines / SO Date live in the ▸ detail row by default. Rows
         // tint by the derived progress status, the row click opens the SO Status
         // page, and the SO No. link inside the first cell opens the SO itself.
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.soOverview}
             columns={columns}

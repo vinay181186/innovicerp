@@ -11,6 +11,31 @@
   min-width: 0;
 }
 
+/* ADR-201 list fill — the chain has to continue THROUGH this root.
+   Inside a filling panel the scrolling box is a GRANDCHILD:
+   `.panel-bd--fill > .dt-fit-root > .tbl-wrap`. The theme's fill rules only
+   reach a direct child, so without these two the fit table silently kept
+   `max-height: calc(100vh - 220px)` — the sticky header stopped riding away
+   (because #content no longer scrolls) but the last rows and the footer could
+   be CLIPPED with nothing left to scroll them into view. */
+.panel-bd--fill > .dt-fit-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The selection bar and the toolbar are fixed chrome above the rows. */
+.panel-bd--fill > .dt-fit-root > :not(.tbl-wrap) {
+  flex-shrink: 0;
+}
+.panel-bd--fill > .dt-fit-root > .tbl-wrap {
+  flex: 1;
+  /* A floor, not 0 — see the note in innovic-theme.css: a box squeezed to
+     nothing shows no rows and offers nothing to scroll. */
+  min-height: calc(var(--tbl-row-h) * 6);
+  max-height: none;
+}
+
 /* R2 — never a sideways scroll inside a fitted table. */
 .tbl-wrap.dt-fit-wrap {
   overflow-x: hidden;

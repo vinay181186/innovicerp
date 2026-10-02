@@ -16,6 +16,7 @@ import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { usePartyStockLedgerList } from '../api';
 
@@ -88,7 +89,9 @@ function PartyStockLedgerListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Customer Material Stock Ledger"
         icon="📒"
@@ -99,7 +102,7 @@ function PartyStockLedgerListPage(): React.JSX.Element {
         searchPlaceholder="Search material, movement, source doc, by…"
       />
 
-      <div className="panel">
+      <Panel fill bodyPadding="none">
         {isLoading ? (
           <div className="panel-body">
             <div className="text3" style={{ fontSize: 12 }}>
@@ -193,7 +196,7 @@ function PartyStockLedgerListPage(): React.JSX.Element {
             </table>
           </div>
         )}
-      </div>
+      </Panel>
 
       <ListFooter total={data?.total ?? rows.length} noun="movement" limit={LIST_LIMIT} />
     </div>

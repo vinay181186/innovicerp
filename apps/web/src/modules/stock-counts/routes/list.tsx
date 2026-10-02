@@ -135,7 +135,9 @@ function StockCountsListPage(): React.JSX.Element {
   );
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Stock Count"
         icon="🧮"
@@ -182,7 +184,7 @@ function StockCountsListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load stock counts.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.stockCounts}
             columns={columns}

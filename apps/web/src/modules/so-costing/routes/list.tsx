@@ -213,9 +213,12 @@ function SoCostingListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header stays on screen down
+    // to the last row.
+    <div className="page-fill">
       {header}
-      <Panel bodyPadding="none">
+      <Panel fill bodyPadding="none">
         <DataTable<SoCostingRow>
           tableKey={TABLE_KEYS.soCosting}
           columns={columns}

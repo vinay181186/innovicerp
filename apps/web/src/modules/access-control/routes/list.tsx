@@ -30,7 +30,7 @@ import { z } from 'zod';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader } from '@/ui/layout';
 import { useUserAccessList } from '../api';
@@ -103,7 +103,9 @@ function AccessControlListPage(): React.JSX.Element {
   );
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the TABLE is this page's only scrollbar, so the
+    // column header cannot ride off the top of the screen at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Access Control"
         icon="🔒"
@@ -114,7 +116,7 @@ function AccessControlListPage(): React.JSX.Element {
         searchPlaceholder="Search user, email, department, tiers…"
       />
 
-      <div className="panel">
+      <Panel fill bodyPadding="none">
         <DataTable
           tableKey={TABLE_KEYS.accessControlList}
           columns={columns}
@@ -138,7 +140,7 @@ function AccessControlListPage(): React.JSX.Element {
             )
           }
         />
-      </div>
+      </Panel>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
         Admins always have full access.

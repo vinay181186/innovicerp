@@ -160,7 +160,9 @@ function DesignIssuesAllPage(): React.JSX.Element {
   ];
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the TABLE is this page's only scrollbar, so the
+    // column header cannot ride off the top of the screen at the last row.
+    <div className="page-fill">
       <ListHeader
         title="All Design Issues"
         icon="⚠"
@@ -199,7 +201,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable<DesignIssueListItem>
             tableKey={TABLE_KEYS.designIssues}
             columns={columns}

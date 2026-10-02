@@ -98,7 +98,10 @@ function JcOpsPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header can never ride off the
+    // top of the screen at the last row.
+    <div className="page-fill">
       <ListHeader
         title="JC Operations"
         icon="⨯"
@@ -155,7 +158,7 @@ function JcOpsPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load operations. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.jcOpsBoard}
             columns={columns}

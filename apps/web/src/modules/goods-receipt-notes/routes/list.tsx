@@ -185,7 +185,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       {/* THE list header (ui/layout ListHeader): title · count · + New GRN, then
           the filter bar (search · QC status with counts · Clear), with the
           read-only "Today" tile inside the same band. */}
@@ -255,7 +257,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load GRNs. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.grnList}
             columns={columns}

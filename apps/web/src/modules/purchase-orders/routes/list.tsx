@@ -195,7 +195,9 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     search.search || search.status || search.poType ? 'No POs match.' : 'No POs yet.';
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       {/* THE list header (ui/layout ListHeader): title · count · + New PO, then
           the filter bar (search · status · type · Clear). */}
       <ListHeader
@@ -292,7 +294,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.poList}
             columns={columns}

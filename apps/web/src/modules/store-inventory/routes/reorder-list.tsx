@@ -14,7 +14,7 @@ import { createRoute, Link } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, ROW_TINT } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader, PageState } from '@/ui/layout';
 import { useRaiseReorderPrs, useReorderList } from '../api';
@@ -127,7 +127,9 @@ function ReorderListPage(): React.JSX.Element {
   }, [rows, selectedKeys, draftOf, raise]);
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       <ListHeader title="Reorder List" icon="🔁" count={rows.length} noun="item below reorder" />
       {result ? (
         <div className="panel" style={{ marginBottom: 10 }}>
@@ -163,7 +165,7 @@ function ReorderListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load the reorder list.'}
         />
       ) : (
-        <div className="panel">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.reorderList}
             columns={columns}
@@ -199,7 +201,7 @@ function ReorderListPage(): React.JSX.Element {
               </>
             )}
           />
-        </div>
+        </Panel>
       )}
     </div>
   );

@@ -114,7 +114,10 @@ function TrashListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header and the pager stay on
+    // screen down to the last row.
+    <div className="page-fill">
       <ListHeader
         title="Trash"
         icon="🗑"
@@ -174,7 +177,7 @@ function TrashListPage(): React.JSX.Element {
         // trashed row has no detail page, so the row is not clickable. The one
         // per-row action — Restore — is the ⋯ rowMenu, gated and wired to the
         // same confirm + mutation as before.
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.trashList}
             columns={columns}

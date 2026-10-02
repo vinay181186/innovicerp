@@ -113,7 +113,10 @@ function ActivityLogListPage() {
   };
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header and the pager stay on
+    // screen down to the last row.
+    <div className="page-fill">
       <ListHeader
         title="Activity Log"
         icon="📜"
@@ -195,7 +198,7 @@ function ActivityLogListPage() {
         // THE shared FIT table (ADR-199). First column (Log Date) is pinned; no
         // detail page for a log row, so a row is not clickable — the ▸ reveals
         // its full Detail / remarks.
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.activityLog}
             columns={columns}

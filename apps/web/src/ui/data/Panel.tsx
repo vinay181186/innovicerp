@@ -32,6 +32,14 @@ export interface PanelProps {
   accent?: string | undefined;
   /** Extra class on the body wrapper (e.g. `tbl-wrap` for a scrolling table). */
   bodyClassName?: string | undefined;
+  /** Take the height left in the page and let the TABLE inside do the
+   *  scrolling (ADR-201 list-fill). Pair with `page-fill` on the page root.
+   *
+   *  Needed because a flex chain only works if every link opts in: without a
+   *  class on the body wrapper there is nothing for CSS to grab, and with
+   *  `bodyPadding="none"` — the mode every full-bleed list uses — that wrapper
+   *  had no class at all. */
+  fill?: boolean | undefined;
   className?: string | undefined;
   style?: React.CSSProperties | undefined;
   bodyStyle?: React.CSSProperties | undefined;
@@ -45,6 +53,7 @@ export function Panel({
   bodyPadding = 'default',
   accent,
   bodyClassName,
+  fill = false,
   className,
   style,
   bodyStyle,
@@ -56,7 +65,7 @@ export function Panel({
   return (
     <section
       id={id}
-      className={['panel', className].filter(Boolean).join(' ')}
+      className={['panel', fill ? 'panel--fill' : null, className].filter(Boolean).join(' ')}
       style={{
         // `var(--sp-1)` is the 4px step — the bar is a token, not a magic number.
         ...(accent ? { borderLeft: `var(--sp-1) solid ${accent}` } : {}),
@@ -79,7 +88,11 @@ export function Panel({
         </div>
       ) : null}
       <div
-        className={[bodyPadding === 'none' ? null : 'panel-body', bodyClassName]
+        className={[
+          bodyPadding === 'none' ? null : 'panel-body',
+          fill ? 'panel-bd--fill' : null,
+          bodyClassName,
+        ]
           .filter(Boolean)
           .join(' ')}
         style={bodyStyle}

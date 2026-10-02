@@ -183,7 +183,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the Dispatch
+    // Log table is the only thing that scrolls, so its column header stays on
+    // screen down to the last row.
+    <div className="page-fill">
       {tabBar}
       {/* The ONE list header (ui/layout ListHeader). Same filters, same
           client-side search, same Export / Print as before. */}
@@ -307,7 +310,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
           {/* THE shared FIT table (ADR-199). First column (Dispatch No.) is
               pinned; the row click opens the dispatch; the ▸ opens the item
               lines + Remarks; rows tint by status (cancelled → grey). */}
-          <Panel bodyPadding="none">
+          <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.customerDispatches}
               columns={columns}

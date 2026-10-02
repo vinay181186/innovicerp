@@ -178,7 +178,11 @@ function SalesOrdersListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): this page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header — sticky to the table's
+    // own scroll box — can never ride off the top of the screen, and the
+    // search / filters stay reachable at the last row.
+    <div className="page-fill">
       {/* The ONE list header (ui/layout ListHeader): title · count · Export · +
           New, then the filter bar (search · status · type · Clear). */}
       <ListHeader
@@ -304,7 +308,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable<SalesOrderListItem>
             tableKey={TABLE_KEYS.soMaster}
             columns={columns}

@@ -211,7 +211,9 @@ function CostCentersListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       {/* The frozen header band: title, count and the primary action, then the
           filter bar (search, the three filters, Clear), stay put while the
           rows scroll underneath. */}
@@ -325,7 +327,7 @@ function CostCentersListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.costCentersList}
             columns={columns}

@@ -286,7 +286,10 @@ function JobCardsListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header can never ride off the
+    // top of the screen at the last row.
+    <div className="page-fill">
       {/* The frozen header band: title, count, the create buttons AND the
           filter bar stay pinned while the list scrolls
           underneath, so the filters stay reachable. */}
@@ -346,7 +349,7 @@ function JobCardsListPage(): React.JSX.Element {
         />
       ) : (
         // ── THE SHEET (ADR-199 fit table — the sole view) ────────────────────
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.jobCardsList}
             columns={columns}

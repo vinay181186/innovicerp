@@ -242,7 +242,10 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): on the list tab the page fills the content area and the
+    // TABLE is the only scrollbox, so the column header cannot ride off the top at the
+    // last row. The Outsource Jobs tab is its own screen and keeps today's page scroll.
+    <div className={tab === 'osp' ? undefined : 'page-fill'}>
       <PrListTabs tab={tab} onChange={setTab} />
 
       {tab === 'osp' ? (
@@ -313,7 +316,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               message={error instanceof Error ? error.message : 'Could not load PRs. Try again.'}
             />
           ) : (
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.prList}
                 columns={columns}

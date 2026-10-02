@@ -167,7 +167,11 @@ function PlansListPage(): React.JSX.Element {
   const filtered = Boolean(search || status || planType || pending);
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the Plans list fills the content area so the
+    // TABLE is the only thing that scrolls. The Needs-Planning mode renders a
+    // separate component that has not opted in yet, so it keeps today's page
+    // scroll.
+    <div className={needsPlanning ? undefined : 'page-fill'}>
       {/* The ONE list header (ui/layout ListHeader). Same URL params and the
           same server search / status / type filters as before. The filter bar
           carries status (with the old KPI-tile counts), type and All |
@@ -291,7 +295,7 @@ function PlansListPage(): React.JSX.Element {
         />
       ) : (
         <>
-          <Panel bodyPadding="none">
+          <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.plansList}
               columns={columns}

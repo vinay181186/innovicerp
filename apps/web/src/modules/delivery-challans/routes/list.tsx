@@ -142,7 +142,11 @@ function DeliveryChallansListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the Outward DC tab fills the content area so the
+    // DC table is the only thing that scrolls. The At-Vendor tab renders
+    // another module's component (osp-wip), which has not opted in yet, so it
+    // keeps today's page scroll.
+    <div className={tab === 'at_vendor' ? undefined : 'page-fill'}>
       {/* Outward DC | At-Vendor Register tabs (the At-Vendor register is the
           former standalone /osp-wip screen). */}
       <div
@@ -292,7 +296,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
             // click opens the DC, and the only per-row action is Receive while
             // the DC is still out at the vendor (status === 'issued') — the same
             // gate the card carried.
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.ospOutwardDc}
                 columns={columns}

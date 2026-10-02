@@ -291,7 +291,10 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   // The page title, the tab strip and the "Hide page" access gate all come from
   // the shell above; the title sits in this band so the page keeps ONE header.
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header can never ride off the
+    // top of the screen at the last row.
+    <div className="page-fill">
       {/* The frozen header band: title, count, search, the status filter and
           the primary action stay put while the rows scroll underneath. */}
       <ListHeader
@@ -349,7 +352,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load machines. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.machinesList}
             columns={columns}

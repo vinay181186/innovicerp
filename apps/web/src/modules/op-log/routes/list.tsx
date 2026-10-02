@@ -123,7 +123,10 @@ function OpLogListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header can never ride off the
+    // top of the screen at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Operation Log"
         icon="☰"
@@ -244,7 +247,7 @@ function OpLogListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load op log. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.opLogList}
             columns={columns}
