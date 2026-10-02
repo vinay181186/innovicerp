@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { type Locator, type Page, expect, test } from '@playwright/test';
+import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -833,7 +834,7 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
   const modal = page.locator('table.ops-routing').locator('xpath=ancestor::div[contains(@class,"modal") or @role="dialog"][1]');
   const planStatusNow = s.planId ? (await db<{ plan_status: string }>(`SELECT plan_status FROM plans WHERE id = $1 AND deleted_at IS NULL`, [s.planId]))[0]?.plan_status : undefined;
   if (!s.planId || !planStatusNow || !/^(in_planning|planned)$/.test(planStatusNow)) {
-    await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
+    await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
     await page.waitForTimeout(1500);
     const planQty = page.locator('.form-grp:has(label:has-text("Plan Qty")) input[type="number"]').first();
     await planQty.waitFor({ state: 'visible', timeout: 30_000 });

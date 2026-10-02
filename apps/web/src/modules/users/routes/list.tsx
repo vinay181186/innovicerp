@@ -52,7 +52,7 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { Select } from '@/ui/forms';
-import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, renderRowMenuLink, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
@@ -426,14 +426,7 @@ function UsersListPage(): React.JSX.Element {
                 editTo={`/users/${u.id}/edit`}
                 // `/access-control?configure=<id>` is split back into path +
                 // search so the router gets a real search param.
-                renderLink={(p) => {
-                  const [path = p.to, qs] = p.to.split('?');
-                  return qs ? (
-                    <Link {...p} to={path} search={Object.fromEntries(new URLSearchParams(qs))} />
-                  ) : (
-                    <Link {...p} />
-                  );
-                }}
+                renderLink={renderRowMenuLink}
                 // ⋯ menu: Edit · Access. Access is still a real link, carrying
                 // `configure=<id>` so Access Control opens straight onto this
                 // person (padlock = the app's access glyph).

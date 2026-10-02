@@ -3,10 +3,9 @@
 // history. Split out of machine-op-entry-view.tsx (ADR-199) so both stay under
 // the 400-line ceiling.
 //
-// CRITICAL: only the table DISPLAY moved onto <DataTable>. The ▶ Start action
-// still opens the one shared OpEntryModal via `onStart`, and the op_entry entry
-// permission gate is unchanged. No logging logic lives here.
-//
+// CRITICAL: only the table DISPLAY moved onto <DataTable>. The ⋯ Start Operation
+// item still opens the one shared OpEntryModal via `onStart`; it is shown on the
+// server's rule (role + op_entry entry). No logging logic lives here.
 // ADR-201: each table shows 25 rows with Prev / Next. These two lists are ONE
 // machine's operations, read in one call (/op-entry/jc-ops?machineId) that the
 // whole By-Machine view shares — "pending" needs the op calc engine's live
@@ -18,6 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { useSession } from '@/lib/session';
 import { DataTable } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
@@ -49,9 +49,14 @@ export function PendingOpsSection({
   isLoading,
   onStart,
 }: PendingOpsSectionProps): React.JSX.Element {
-  // Starting a session records shop-floor work → op_entry entry (Production).
+  // Starting a session records shop-floor work. The server (POST /op-entry/start)
+  // demands role admin / manager / operator AND op_entry entry, so a qc or
+  // viewer role never sees Start even when it holds the op_entry tier.
+  const { data: me } = useSession();
   const { data: eff } = useMyAccess();
-  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
+  const canOpEntry =
+    (me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator') &&
+    effectiveFormPerms(eff, 'op_entry').entry;
   const pendingCols = useMemo(() => pendingOpsColumns(), []);
   const madeCols = useMemo(() => madeHereColumns(), []);
 
@@ -102,19 +107,20 @@ export function PendingOpsSection({
             columns={pendingCols}
             rows={pendRows}
             defaultHidden={PENDING_OPS_DEFAULT_HIDDEN}
-            // ▶ Start stays the inline button it has always been, shown only to
-            // a user with op_entry entry. It opens the one shared OpEntryModal.
-            rowActions={
+            // Start Operation is the ⋯ row item, shown only on the server's
+            // rule above. It opens the one shared OpEntryModal (which owns the
+            // submit lock), so onSelect returns nothing.
+            rowMenu={
               canOpEntry
-                ? (op) => (
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => onStart(op)}
-                    >
-                      ▶ Start Operation
-                    </button>
-                  )
+                ? (op) => [
+                    {
+                      key: 'start',
+                      label: 'Start Operation',
+                      icon: 'play',
+                      group: 'workflow',
+                      onSelect: () => onStart(op),
+                    },
+                  ]
                 : undefined
             }
           />

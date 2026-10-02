@@ -5,24 +5,18 @@
 //
 // Shows the line detail the list row cannot: Ln · Item (CODE/REV + name) ·
 // Material · Drawing No. · Order Qty · Dispatched · Pending · UOM · [Rate] ·
-// Due Date · JWSO Status · [Edit]. The JWSO-level Remarks sit above the table
-// (the retired card showed them on its meta line).
+// Due Date · JWSO Status. The JWSO-level Remarks sit below the table (the
+// retired card showed them on its meta line). No per-line Edit: it opened the
+// same JWSO edit page as the row's ⋯ Edit, so it was a duplicate.
 
 import { type JobWorkOrderDetail } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
 import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader } from '@/components/shared/item-badge';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { useJobWorkOrder } from '../api';
 
-export function JwsoExpandedLines({
-  jwId,
-  canEdit,
-}: {
-  jwId: string;
-  canEdit: boolean;
-}): React.JSX.Element {
+export function JwsoExpandedLines({ jwId }: { jwId: string }): React.JSX.Element {
   const { data, isLoading, isError, error } = useJobWorkOrder(jwId);
   if (isLoading)
     return (
@@ -36,23 +30,17 @@ export function JwsoExpandedLines({
         {error instanceof Error ? error.message : 'Could not load JWSO detail. Try again.'}
       </div>
     );
-  return <JwLinesTable jw={data} canEdit={canEdit} />;
+  return <JwLinesTable jw={data} />;
 }
 
-function JwLinesTable({
-  jw,
-  canEdit,
-}: {
-  jw: JobWorkOrderDetail;
-  canEdit: boolean;
-}): React.JSX.Element {
+function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
   // Money hidden for L1 Viewers: the API nulls the JWSO GST % + line rates, so
   // the Rate column is dropped here too. Told by the server, not inferred from a
   // null money field (a null also means "no value yet").
   const priceHidden = jw.priceVisible === false;
   // Ln · Item (badge) · Material · Drawing No. · Qty · Dispatched · Pending ·
-  // UOM · [Rate] · Due Date · JWSO Status · [edit].
-  const cols = (canEdit ? 13 : 12) - (priceHidden ? 1 : 0);
+  // UOM · [Rate] · Due Date · JWSO Status.
+  const cols = 12 - (priceHidden ? 1 : 0);
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
       <div
@@ -84,7 +72,6 @@ function JwLinesTable({
               {priceHidden ? null : <th className="th-num">Rate</th>}
               <th>Due Date</th>
               <th>JWSO Status</th>
-              {canEdit ? <th /> : null}
             </tr>
           </thead>
           <tbody>
@@ -151,18 +138,6 @@ function JwLinesTable({
                     <td>
                       <SoStatusBadge status={l.status} />
                     </td>
-                    {canEdit ? (
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <Link
-                          to="/job-work-orders/$id/edit"
-                          params={{ id: jw.id }}
-                          className="btn btn-ghost btn-sm"
-                          style={{ fontSize: 11 }}
-                        >
-                          Edit
-                        </Link>
-                      </td>
-                    ) : null}
                   </tr>
                 );
               })

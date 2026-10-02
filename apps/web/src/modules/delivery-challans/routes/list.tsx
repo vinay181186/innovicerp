@@ -25,7 +25,7 @@
 import type { ListDeliveryChallansQuery } from '@innovic/shared';
 import { DC_STATUSES, type DcStatus } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Inbox, Plus, Printer } from 'lucide-react';
+import { Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
@@ -107,6 +107,9 @@ function DeliveryChallansListPage(): React.JSX.Element {
   // `entry`, so L2 Data Entry and up; an L1 Viewer no longer sees the button.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
+  // Receive against a DC: the server accepts DC entry or GRN entry (a GRN
+  // storekeeper books the receipt too) — same rule on the ⋯ item.
+  const canReceive = perms.entry || effectiveFormPerms(eff, 'grn_create').entry;
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -328,21 +331,19 @@ function DeliveryChallansListPage(): React.JSX.Element {
                   <RowActions
                     viewTo={`/delivery-challans/${dc.id}`}
                     renderLink={(p) => <Link {...p} />}
-                    extra={
-                      dc.status === 'issued' ? (
-                        <Link
-                          to="/delivery-challans/$id/receive"
-                          params={{ id: dc.id }}
-                          className="btn btn-ghost btn-sm btn-icon"
-                          style={{ padding: 'var(--sp-1)', color: 'var(--green2)' }}
-                          title="Receive material back from the vendor"
-                          aria-label="Receive"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Inbox size={13} />
-                        </Link>
-                      ) : undefined
-                    }
+                    items={[
+                      {
+                        // Receive material back from the vendor. Server rule
+                        // (receiveAgainstDeliveryChallan): DC entry OR GRN
+                        // entry, and only while the DC is still issued.
+                        key: 'receive',
+                        label: 'Receive',
+                        icon: 'package',
+                        group: 'workflow',
+                        to: `/delivery-challans/${dc.id}/receive`,
+                        hidden: dc.status !== 'issued' || !canReceive,
+                      },
+                    ]}
                   />
                 )}
               />

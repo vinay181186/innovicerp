@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { findRowWithMenuItem, openRowMenu, planningLineRows } from './row-menu';
 
 // BOM → EQUIPMENT (assembly) SO → INVOICE, end to end.
 //
@@ -280,8 +281,9 @@ test('@bom 03 — explode the BOM into child plans', async ({ page }) => {
   await page.getByText(state.soCode).first().click();
   await page.waitForTimeout(2500);
 
-  const bomBtn = page.getByRole('button', { name: /BOM Planning/i }).first();
-  const hasBtn = (await bomBtn.count()) > 0;
+  // BOM Planning is an item in the SO line's ⋯ menu ("BOM Planning (n)").
+  const bomRow = await findRowWithMenuItem(page, planningLineRows(page), /^BOM Planning/);
+  const hasBtn = bomRow !== null;
   // eslint-disable-next-line no-console
   console.log(`>> BOM Planning button present: ${hasBtn}`);
   if (!hasBtn) {
@@ -298,10 +300,11 @@ test('@bom 03 — explode the BOM into child plans', async ({ page }) => {
     });
     return;
   }
-  const btnLabel = await bomBtn.innerText();
+  await openRowMenu(page, bomRow!);
+  const btnLabel = await page.getByRole('menuitem', { name: /^BOM Planning/ }).first().innerText();
   // eslint-disable-next-line no-console
   console.log(`>> ${btnLabel.replace(/\s+/g, ' ')}`);
-  await bomBtn.click();
+  await page.getByRole('menuitem', { name: /^BOM Planning/ }).first().click();
   await page.waitForTimeout(3000);
 
   // The modal lists each child with its total need = qty/set × order qty.

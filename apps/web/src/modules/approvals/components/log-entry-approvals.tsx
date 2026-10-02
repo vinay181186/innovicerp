@@ -93,7 +93,10 @@ export function LogEntryApprovals({
   const columns = useMemo(() => opEntryColumns(), []);
   const actionProps: OpEntryActionProps = {
     busy: decide.isPending,
-    onApprove: (r) => decide.mutate({ id: r.id, decision: 'approve' }, { onSuccess: refreshInbox }),
+    // The Promise keeps the row's ⋯ busy; a failure is swallowed here because
+    // decide.isError already shows it in the red line above the table.
+    onApprove: (r) =>
+      decide.mutateAsync({ id: r.id, decision: 'approve' }).then(refreshInbox, () => undefined),
     onReject: (r) => setRejecting(r),
   };
 

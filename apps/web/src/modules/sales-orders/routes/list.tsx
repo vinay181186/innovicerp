@@ -25,7 +25,7 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel } from '@/ui/data';
+import { DataTable, Panel, renderRowMenuLink } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -332,15 +332,14 @@ function SalesOrdersListPage(): React.JSX.Element {
             onRowClick={(so) => void navigate({ to: '/sales-orders/$id', params: { id: so.id } })}
             // ▸ opens the SO's detail panel; a closed row renders null (no fetch).
             renderExpanded={(so) =>
-              expandedIds.has(so.id) ? (
-                <SoExpandedPanel so={so} canEdit={canEdit} canDelete={canDelete} />
-              ) : null
+              expandedIds.has(so.id) ? <SoExpandedPanel so={so} canEdit={canEdit} /> : null
             }
             onToggleExpanded={(so) => toggleExpand(so.id)}
             rowMenu={(so) =>
               soRowMenu(so, { canEdit, canDelete, onAssign: setAssignSo, onDelete: onDeleteSo })
             }
-            renderLink={(p) => <Link {...p} />}
+            // Splits a `?query` off a ⋯ `to` (Plan BOM Items → /planning?soId=).
+            renderLink={renderRowMenuLink}
           />
         </Panel>
       )}

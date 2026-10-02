@@ -282,8 +282,11 @@ export function soListColumns(opts: {
 
 /**
  * The order's ⋯ menu — the retired card's actions, same gates. View is the row
- * click (so it is not repeated here); Edit needs edit; Assign Task needs edit on
- * a non-closed order; Delete needs edit + approve on a non-closed order.
+ * click (so it is not repeated here); Edit needs edit; Plan BOM Items (workflow)
+ * only on an equipment SO with a BOM linked — it moved here from the ▸ panel;
+ * Assign Task needs edit on a non-closed order; Delete needs edit + approve on
+ * a non-closed order. Plan BOM Items carries `?soId=`, so the table's
+ * renderLink must be renderRowMenuLink.
  */
 export function soRowMenu(
   so: SalesOrderListItem,
@@ -302,6 +305,14 @@ export function soRowMenu(
       icon: 'pencil',
       hidden: !canEdit,
       to: `/sales-orders/${so.id}/edit`,
+    },
+    {
+      key: 'plan-bom',
+      label: 'Plan BOM Items',
+      icon: 'package',
+      group: 'workflow',
+      hidden: so.type !== 'equipment' || !so.bomMasterId,
+      to: `/planning?soId=${so.id}`,
     },
     {
       key: 'assign',

@@ -21,8 +21,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT, type RowMenuItem } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
@@ -115,9 +116,21 @@ function QcCallRegisterPage(): React.JSX.Element {
   // "Mine": only the pending calls QC Command assigned to the signed-in user —
   // the server matches the caller's full name and short form.
   const [mineOnly, setMineOnly] = useState(false);
+  const session = useSession().data;
+  // Caller's effective access — drives the "Hide page" VIEW guard below and
+  // whether a row offers Inspect. Each kind follows its server rule exactly:
+  //   job-card op QC (op-entry submitQcLog): role admin / manager / operator
+  //     AND qc_submit entry;
+  //   incoming GRN QC (incoming-qc inspect): role admin / manager AND
+  //     qc_incoming entry.
+  // A viewer who can inspect neither kind gets no ⋯ column.
   const { data: eff } = useMyAccess();
-  const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
-  const canIncoming = effectiveFormPerms(eff, 'qc_incoming').entry;
+  const role = session?.role;
+  const canEntry =
+    (role === 'admin' || role === 'manager' || role === 'operator') &&
+    effectiveFormPerms(eff, 'qc_submit').entry;
+  const canIncoming =
+    (role === 'admin' || role === 'manager') && effectiveFormPerms(eff, 'qc_incoming').entry;
   const showAction = canEntry || canIncoming;
 
   const gotoPage = useCallback(
@@ -201,25 +214,20 @@ function QcCallRegisterPage(): React.JSX.Element {
       : nav({ to: '/job-cards', search: { search: vm.row.jcCode, page: 1 } }));
   };
 
-  // The Inspect action (last column). Dropped when the viewer can inspect
-  // nothing; a dash for a kind of call this viewer cannot inspect.
-  const pendingRowActions = showAction
-    ? (vm: PendingVM): React.JSX.Element => {
-        const can = vm.kind === 'op' ? canEntry : canIncoming;
-        return can ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            title="Record the QC inspection"
-            style={{ color: 'var(--cyan)', fontWeight: 700 }}
-            onClick={() => openInspect(vm)}
-          >
-            Inspect ▸
-          </button>
-        ) : (
-          <span className="text3">—</span>
-        );
-      }
+  // Inspect is the ⋯ row item. No ⋯ column when the viewer can inspect
+  // nothing; the item is left out (blank cell) for a kind of call this viewer
+  // cannot inspect. The menu stops the click, so the row's own open still works.
+  const pendingRowMenu = showAction
+    ? (vm: PendingVM): RowMenuItem[] => [
+        {
+          key: 'inspect',
+          label: 'Inspect',
+          icon: 'search',
+          group: 'workflow',
+          hidden: !(vm.kind === 'op' ? canEntry : canIncoming),
+          onSelect: () => openInspect(vm),
+        },
+      ]
     : undefined;
 
   // The tab bar sits above whichever tab is showing.
@@ -327,7 +335,7 @@ function QcCallRegisterPage(): React.JSX.Element {
             rowClassName={(vm) =>
               pendingOverdue(vm) ? `${ROW_TINT.late} qc-alert-blink` : undefined
             }
-            rowActions={pendingRowActions}
+            rowMenu={pendingRowMenu}
           />
         </Panel>
       ) : (

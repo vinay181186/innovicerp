@@ -25,7 +25,8 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { useSession } from '@/lib/session';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -158,25 +159,25 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 
   const columns = useMemo(() => goodsReceiptNoteListColumns(qcStatusFor), [qcStatusFor]);
 
-  // Row action — Assign (link a task to this GRN), the same gate the retired
-  // card used: shown only while a line still awaits QC (qcPendingCount > 0).
+  // ⋯ row menu — Assign Task (link a task to this GRN), the same gate the
+  // retired card used: shown only while a line still awaits QC
+  // (qcPendingCount > 0). Hidden for the read-only viewer role, which
+  // POST /tasks refuses (tasks service requireNotViewer).
+  const { data: me } = useSession();
+  const [assignGrn, setAssignGrn] = useState<GoodsReceiptNoteListItem | null>(null);
   const rowActions = (grn: GoodsReceiptNoteListItem): React.JSX.Element | undefined =>
-    grn.qcPendingCount > 0 ? (
+    grn.qcPendingCount > 0 && me && me.role !== 'viewer' ? (
       <RowActions
         renderLink={(p) => <Link {...p} />}
-        extra={
-          <AssignTaskButton
-            linkedRef={{
-              type: 'GRN',
-              id: grn.id,
-              display: grn.code,
-              navPage: '/incoming-qc',
-            }}
-            suggestedTitle={`Inspect ${grn.code}`}
-            className="btn btn-ghost btn-sm btn-icon"
-            label=""
-          />
-        }
+        items={[
+          {
+            key: 'assign',
+            label: 'Assign Task',
+            icon: 'user-round',
+            group: 'assign',
+            onSelect: () => setAssignGrn(grn),
+          },
+        ]}
       />
     ) : undefined;
 
@@ -311,6 +312,19 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         }
         hint="Only QC-accepted qty goes into stock."
       />
+
+      {assignGrn ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'GRN',
+            id: assignGrn.id,
+            display: assignGrn.code,
+            navPage: '/incoming-qc',
+          }}
+          suggestedTitle={`Inspect ${assignGrn.code}`}
+          onClose={() => setAssignGrn(null)}
+        />
+      ) : null}
     </div>
   );
 }

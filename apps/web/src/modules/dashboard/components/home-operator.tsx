@@ -7,9 +7,11 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { StatStrip } from '@/components/shared/stat-strip';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { useSession } from '@/lib/session';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
@@ -21,7 +23,7 @@ function elapsedStr(min: number): string {
 
 // "Ready for You" columns for the ADR-199 fit sheet. JC No. is the pinned first
 // column; Item Name is hidden by default and shows in the ▸ detail row. Numbers
-// right-align; the ▶ Start action is the last column (rowActions).
+// right-align; Start Operation is the ⋯ row menu (rowMenu).
 const READY_DEFAULT_HIDDEN = ['item_name'];
 
 function readyColumns(): DataTableColumn<ReadyOpRow>[] {
@@ -111,6 +113,13 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
   const readyRows = page > 1 ? (more.data?.items ?? []) : o.ready;
   const readyTotal = page > 1 ? (more.data?.total ?? o.readyCount) : o.readyCount;
   useClampPage(page, readyTotal, setPage);
+  // The server's Start rule (POST /op-entry/start): role admin / manager /
+  // operator AND op_entry entry. Anyone else gets no Start item at all.
+  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const canStart =
+    (me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator') &&
+    effectiveFormPerms(eff, 'op_entry').entry;
   return (
     <div>
       {o.running.length > 0 ? (
@@ -233,7 +242,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
           </span>
         </div>
         {/* THE shared fit sheet (ADR-199). JC No. is pinned; Item Name drops into
-            the ▸ detail; the ▶ Start action is the last column. */}
+            the ▸ detail; Start Operation is the ⋯ row menu. */}
         <DataTable<ReadyOpRow>
           tableKey={TABLE_KEYS.homeOperator}
           columns={readyColumns()}
@@ -243,11 +252,20 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
           defaultHidden={READY_DEFAULT_HIDDEN}
           maxHeight="50vh"
           empty="No operations ready. Check back soon or speak to your supervisor."
-          rowActions={() => (
-            <Link to="/op-entry" className="btn btn-success btn-sm" style={{ fontSize: 11 }}>
-              ▶ Start Operation
-            </Link>
-          )}
+          rowMenu={
+            canStart
+              ? () => [
+                  {
+                    key: 'start',
+                    label: 'Start Operation',
+                    icon: 'play',
+                    group: 'workflow',
+                    to: '/op-entry',
+                  },
+                ]
+              : undefined
+          }
+          renderLink={(p) => <Link {...p} />}
         />
         <div style={{ padding: '0 14px 10px' }}>
           <ListFooter

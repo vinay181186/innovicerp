@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { createSO, makeGuard, makeLog, snap } from './case-helpers';
+import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
 
 // CASE 5 — QC OPERATION (in-house + TPI). Build a JC with a process op + a TPI
 // QC op; op-log the process, then do the in-house QC on the TPI op (accept +
@@ -29,7 +30,7 @@ test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
   await expect(page.getByText(soNo).first()).toBeVisible({ timeout: 15_000 });
   await page.getByText(soNo).first().click();
   await page.waitForTimeout(2000);
-  await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
+  await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
   await page.waitForTimeout(1500);
   await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);

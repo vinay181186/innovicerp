@@ -104,6 +104,10 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // server, so the UI must require edit AND approve — same pair as delete —
   // otherwise an edit-only user sees the button and gets a 403.
   const canShortCloseAction = perms.edit && perms.approve;
+  // The line ⋯ column exists when any line has something in it: Short Close
+  // (edit + approve) or a drawing file to preview.
+  const showLineMenu =
+    canShortCloseAction || (detail?.lines ?? []).some((l) => Boolean(l.drawingFilePath));
 
   // Next steps — each opens the downstream create screen with this JWSO
   // already picked (`?jw=<jwsoId>`). Gates mirror the target screens: Party
@@ -290,7 +294,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 )}
                 <th>Due Date</th>
                 <th>JWSO Status</th>
-                {canShortCloseAction ? <th aria-label="Actions" /> : null}
+                {showLineMenu ? <th aria-label="Actions" /> : null}
               </tr>
             </thead>
             <tbody>
@@ -298,7 +302,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <tr>
                   <td
                     colSpan={
-                      priceHidden ? (canShortCloseAction ? 9 : 8) : canShortCloseAction ? 11 : 10
+                      priceHidden ? (showLineMenu ? 9 : 8) : showLineMenu ? 11 : 10
                     }
                     className="empty-state"
                   >
@@ -313,6 +317,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                     priceHidden={priceHidden}
                     onPreview={setLinePreview}
                     canShortClose={canShortCloseAction}
+                    showMenu={showLineMenu}
                     onShortClose={() => setShortCloseLine(l)}
                   />
                 ))
@@ -575,9 +580,10 @@ function LineRow(props: {
   priceHidden: boolean;
   onPreview: (storagePath: string) => void;
   canShortClose: boolean;
+  showMenu: boolean;
   onShortClose: () => void;
 }): React.JSX.Element {
-  const { line: l, priceHidden, onPreview, canShortClose, onShortClose } = props;
+  const { line: l, priceHidden, onPreview, canShortClose, showMenu, onShortClose } = props;
   const drawingFilePath = l.drawingFilePath ?? null;
   // R6 (ADR-194): an OPEN line with an unmet balance can be short-closed; a line
   // already short-closed shows the badge and its Short Close is greyed.
@@ -612,26 +618,22 @@ function LineRow(props: {
       <td className="text3" style={{ fontSize: 11 }}>
         {l.material ?? '—'}
       </td>
-      {/* Drawing No. + the attached drawing file, the way the Sales Order detail
-          shows them. No Rev here any more: it is the same value the Item cell
+      {/* Drawing No. No Rev here any more: it is the same value the Item cell
           now carries as CODE/REV, and printing one fact twice in one row reads
-          as two facts that might disagree. The 📎 records which file was asked
-          for; the shared preview modal fetches it. */}
+          as two facts that might disagree. The attached drawing file opens
+          from the line ⋯ (Preview drawing); the shared preview modal fetches it.
+          The small 📎 is only a marker that a file is attached — not clickable. */}
       <td className="mono" style={{ fontSize: 11 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-          <span>{l.drawingNo ?? '—'}</span>
-          {drawingFilePath ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ padding: '1px 6px', fontSize: 11 }}
-              onClick={() => onPreview(drawingFilePath)}
-              title="Preview drawing"
-            >
-              📎 Drawing
-            </button>
-          ) : null}
-        </div>
+        {l.drawingNo ?? '—'}
+        {drawingFilePath ? (
+          <span
+            title="Drawing file attached — open it from the line ⋯"
+            aria-label="Drawing file attached"
+            style={{ marginLeft: 4 }}
+          >
+            📎
+          </span>
+        ) : null}
       </td>
       <td className="mono td-num">{l.orderQty}</td>
       <td>{l.uom}</td>
@@ -668,18 +670,29 @@ function LineRow(props: {
           ) : null}
         </div>
       </td>
-      {canShortClose ? (
+      {showMenu ? (
         <td className="td-ctr">
-          {/* ⋯ — Short Close closes the line with its balance left unmet;
-              greyed with the reason the server would refuse it. */}
+          {/* ⋯ — Preview drawing (only when a file is attached). Short Close
+              closes the line with its balance left unmet; hidden without
+              edit + approve, greyed with the reason the server would refuse it. */}
           <RowMenu
             label={`Actions for line ${l.lineNo}`}
             items={[
+              {
+                key: 'drawing',
+                label: 'Preview drawing',
+                icon: 'paperclip',
+                hidden: !drawingFilePath,
+                onSelect: () => {
+                  if (drawingFilePath) onPreview(drawingFilePath);
+                },
+              },
               {
                 key: 'short-close',
                 label: 'Short Close',
                 icon: 'x',
                 group: 'workflow',
+                hidden: !canShortClose,
                 disabledReason: shortCloseBlock,
                 onSelect: onShortClose,
               },

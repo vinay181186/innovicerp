@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clickRowMenuItem } from './row-menu';
+import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
 
 // FULLY AUTONOMOUS end-to-end: SO → plan(4 ops incl OSP) → execute → op logs →
 // OSP loop (PR→PO→DC→receive→Incoming QC) → final op → dispatch → invoice.
@@ -69,7 +69,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.waitForTimeout(1300);
   await page.getByText(so, { exact: true }).first().click();
   await page.waitForTimeout(1800);
-  await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
+  await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
   await page.waitForTimeout(1300);
   await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);
@@ -117,7 +117,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   // ── 4. OSP loop: PR → PO → DC → receive → Incoming QC ──
   await page.goto(`/purchase-requests?search=${docs['OSP PR']}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByText('Create PO', { exact: false }).first().click();
+  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: docs['OSP PR']! }).first(), /^Create PO/);
   await page.waitForTimeout(3000);
   const poAuto = await page.locator('input[value^="IN-PO-"], input[value^="IN-JWPO-"]').first().inputValue().catch(() => '');
   await page.getByRole('button', { name: /Save PO/i }).click();
@@ -184,7 +184,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   // ── 7. Invoice (from the dispatch row) ──
   await page.goto('/customer-dispatches', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.locator('tr', { hasText: docs['Dispatch']! }).first().getByText(/Invoice/i).first().click();
+  await clickRowMenuItem(page, page.locator('tr', { hasText: docs['Dispatch']! }).first(), /^Invoice/);
   await page.waitForTimeout(3500);
   const invAuto = await page.locator('input[value^="INV-"]').first().inputValue().catch(() => '');
   await page.getByRole('spinbutton').first().fill(QTY, { timeout: 8000 }).catch(() => {});

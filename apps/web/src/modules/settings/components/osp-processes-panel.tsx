@@ -13,6 +13,7 @@ import { apiFetch } from '@/lib/api';
 import { type SaveKey, useSaveKey, withSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
 import { useVendorsList } from '@/modules/vendors/api';
+import { RowMenu } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 
 interface ListOspProcessesResponse {
@@ -209,7 +210,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                   <th>Preferred Vendor</th>
                   <th className="td-ctr">Auto PO</th>
                   <th>Lead Time</th>
-                  <th style={{ width: 110 }} />
+                  <th style={{ width: 48 }} aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -240,24 +241,24 @@ export function OspProcessesPanel(): React.JSX.Element {
                     </td>
                     <td>
                       {canWrite ? (
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => openEdit(p)}
-                          >
-                            ✎ Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            onClick={() => setRemoving(p)}
-                            aria-label={`Delete ${p.processName}`}
-                            title="Delete"
-                          >
-                            ✕
-                          </button>
-                        </div>
+                        <RowMenu
+                          label={`Actions for ${p.processName}`}
+                          items={[
+                            {
+                              key: 'edit',
+                              label: 'Edit',
+                              icon: 'pencil',
+                              onSelect: () => openEdit(p),
+                            },
+                            {
+                              key: 'delete',
+                              label: 'Delete',
+                              icon: 'trash-2',
+                              group: 'danger',
+                              onSelect: () => setRemoving(p),
+                            },
+                          ]}
+                        />
                       ) : null}
                     </td>
                   </tr>

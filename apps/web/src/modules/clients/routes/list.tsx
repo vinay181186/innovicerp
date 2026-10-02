@@ -8,12 +8,13 @@
 // PHASE 4 — this screen is the GROUP 1 reference implementation. It is the
 // canonical LIST composition and nothing else:
 //
-//   <ListHeader>            title · count · ⟳ Updating… · primary, then the
-//                           filter bar: SearchInput · status (counts in the
-//                           option labels) · Clear
+//   <ListHeader>            title · count · Excel template / import ·
+//                           ⟳ Updating… · primary, then the filter bar:
+//                           SearchInput · status (counts in the option
+//                           labels) · Clear
 //   <MasterImportDialog>    Excel import: Import Type → preview → import
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
-//   <ListFooter>            count line · 💡 hint · Excel template / import
+//   <ListFooter>            count line · 💡 hint
 //   <PageState>             no-access and load-failure
 //
 // Everything this file used to draw by hand — the sticky band, the search box,
@@ -211,8 +212,34 @@ function ClientsListPage(): React.JSX.Element {
             replace: true,
           });
         }}
-        filtersActive={
-          sf.filtering || search.search != null || search.status != null || searchInput !== ''
+        filtersActive={sf.filtering || search.search != null || search.status != null || searchInput !== ''}
+        // Excel template + import are data tools, so they sit on the title row
+        // (ZONE B) between the identity line and the primary action — visible
+        // the moment the page opens. Import opens the shared import dialog;
+        // Insert new needs Add, Update existing needs Edit.
+        tools={
+          canAdd || canEdit ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="download" size={12} />}
+                title="Download a blank Excel template for Customer Master"
+                onClick={() => downloadClientTemplate()}
+              >
+                Excel Template
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="upload" size={12} />}
+                title="Add or update customers from a filled template"
+                onClick={() => setImportOpen(true)}
+              >
+                Import from Excel
+              </Button>
+            </>
+          ) : null
         }
         primary={
           canAdd ? (
@@ -285,31 +312,6 @@ function ClientsListPage(): React.JSX.Element {
         page={search.page}
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}
-        // Excel template + import sit below the count line (mirror of Vendor
-        // Master). Import opens the shared import dialog; Insert new needs Add,
-        // Update existing needs Edit.
-        actions={
-          canAdd || canEdit ? (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="download" size={12} />}
-                onClick={() => downloadClientTemplate()}
-              >
-                Download Excel Template
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="upload" size={12} />}
-                onClick={() => setImportOpen(true)}
-              >
-                Import from Excel
-              </Button>
-            </>
-          ) : null
-        }
       />
       {importOpen ? (
         <MasterImportDialog

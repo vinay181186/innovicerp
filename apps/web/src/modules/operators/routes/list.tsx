@@ -7,10 +7,11 @@
 // (modules/clients/routes/list.tsx) as the reference. The composition is the
 // canonical one and nothing else:
 //
-//   <ListHeader>            title · count · SearchInput · status filter · primary
+//   <ListHeader>            title · count · Excel template / import ·
+//                           SearchInput · status filter · primary
 //   <Banner>                import result (dismissible)
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
-//   <ListFooter>            count line · Prev / Next · Excel template / import
+//   <ListFooter>            count line · Prev / Next
 //   <PageState>             no-access and load-failure
 //
 // Everything this file used to draw by hand — the sticky band, the search box,
@@ -236,6 +237,46 @@ function OperatorsListPage(): React.JSX.Element {
             }}
           />
         }
+        // Excel template + import are data tools, so they sit on the title row
+        // (ZONE B) between the identity line and the primary action — visible
+        // the moment the page opens. Import creates operators, so it follows
+        // the create (entry) right. The file input is hidden and only opened by
+        // the button; it moves with the button so the pair stays together.
+        tools={
+          canAdd ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="download" size={12} />}
+                title="Download a blank Excel template for Operator Master"
+                onClick={() => downloadOperatorTemplate()}
+              >
+                Excel Template
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="upload" size={12} />}
+                loading={importing}
+                title="Add or update operators from a filled template"
+                onClick={() => fileRef.current?.click()}
+              >
+                Import from Excel
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onImportFile(f);
+                }}
+              />
+            </>
+          ) : null
+        }
         primary={
           canAdd ? (
             <Link to="/operators/new" className="btn btn-primary">
@@ -307,42 +348,6 @@ function OperatorsListPage(): React.JSX.Element {
         page={currentPage}
         pageSize={PAGE_SIZE}
         onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
-        // Excel template + import sit below the pager (mirror of Vendors).
-        // Import creates operators, so it follows the create (entry) right.
-        // The file input is hidden and only opened by the button.
-        actions={
-          canAdd ? (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="download" size={12} />}
-                onClick={() => downloadOperatorTemplate()}
-              >
-                Download Excel Template
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="upload" size={12} />}
-                loading={importing}
-                onClick={() => fileRef.current?.click()}
-              >
-                Import from Excel
-              </Button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onImportFile(f);
-                }}
-              />
-            </>
-          ) : null
-        }
       />
     </div>
   );

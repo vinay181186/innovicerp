@@ -14,16 +14,24 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateAndTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useStopOp } from '@/modules/op-entry/api';
 import { StopOpModal } from '@/modules/op-entry/components/stop-op-modal';
+import { RowMenu } from '@/ui/data';
 import { useShopFloor } from '../api';
 
 export function ShopFloorView(): React.JSX.Element {
   const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Stop follows the server rule (POST /op-entry/running-ops/:id/stop): role
+  // admin / manager / operator AND op_entry entry — the same gate as the Table
+  // tab's Stop (running-ops-board.tsx), so the two tabs agree.
+  const { data: eff } = useMyAccess();
+  const canWrite =
+    (me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator') &&
+    effectiveFormPerms(eff, 'op_entry').entry;
   const { data, isLoading, isError, error, refetch } = useShopFloor();
   const stopMut = useStopOp();
   // The row whose Stop box is open (with its machine code for the title), and
@@ -285,20 +293,24 @@ export function ShopFloorView(): React.JSX.Element {
                         <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                           {fmtDateAndTime(r.startDate, r.startTime)}
                         </td>
-                        {/* Legacy L10327 renders an empty <td> when !canEdit(). */}
-                        <td>
+                        {/* Empty cell when the viewer may not stop (legacy L10327). */}
+                        <td className="td-ctr">
                           {canWrite ? (
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              disabled={stopMut.isPending}
-                              onClick={() => {
-                                setStopError(null);
-                                setStopRow({ row: r, machineCode: m.machineCode });
-                              }}
-                            >
-                              ■ Stop Operation
-                            </button>
+                            <RowMenu
+                              items={[
+                                {
+                                  key: 'stop',
+                                  label: 'Stop Operation',
+                                  icon: 'square',
+                                  group: 'workflow',
+                                  disabledReason: stopMut.isPending ? 'Stopping…' : undefined,
+                                  onSelect: () => {
+                                    setStopError(null);
+                                    setStopRow({ row: r, machineCode: m.machineCode });
+                                  },
+                                },
+                              ]}
+                            />
                           ) : null}
                         </td>
                       </tr>

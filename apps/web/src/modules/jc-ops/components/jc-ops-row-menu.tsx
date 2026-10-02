@@ -4,8 +4,7 @@
 // so existing imports keep working.
 
 import type { JcOpsBoardRow } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
-import type { RowMenuItem } from '@/ui/data';
+import { renderRowMenuLink, type RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
 
 const isOutsource = (o: JcOpsBoardRow): boolean => o.opType === 'outsource';
@@ -20,14 +19,10 @@ export interface JcOpsActionProps {
   onOutsource: (o: JcOpsBoardRow) => void;
 }
 
-/** The ⋯ menu's link renderer: Start / Log Op deep-link to `/op-entry?…`,
- *  and the router's <Link> wants that query as `search`, so it is split off. */
-export const renderJcOpsLink: RenderLink = ({ to, ...rest }) => {
-  const q = to.indexOf('?');
-  if (q < 0) return <Link {...rest} to={to} />;
-  const search = Object.fromEntries(new URLSearchParams(to.slice(q + 1)));
-  return <Link {...rest} to={to.slice(0, q)} search={search} />;
-};
+/** The ⋯ menu's link renderer: Start / Log Op deep-link to `/op-entry?…`.
+ *  Kept under its old name for the boards that import it; the shared
+ *  `renderRowMenuLink` splits the query into the router's `search`. */
+export const renderJcOpsLink: RenderLink = renderRowMenuLink;
 
 /**
  * The row's ⋯ menu items — only the ones valid for that op (owner-approved

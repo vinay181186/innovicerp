@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { clickRowMenuItem, findRowWithMenuItem, planningLineRows } from './row-menu';
 
 // A multi-item, mixed-type BOM driven the whole way: BOM -> equipment SO ->
 // explosion -> plans -> job cards -> JOB CARD EDITS -> production -> QC ->
@@ -304,12 +305,13 @@ test('@bommulti 02 — equipment SO, BOM attaches itself', async ({ page }) => {
 
 test('@bommulti 03 — explode into one plan per child', async ({ page }) => {
   await openSoInPlanning(page);
-  const bomBtn = page.getByRole('button', { name: /BOM Planning/i }).first();
-  if ((await bomBtn.count()) === 0) {
+  // BOM Planning is an item in the SO line's ⋯ menu ("BOM Planning (n)").
+  const bomRow = await findRowWithMenuItem(page, planningLineRows(page), /^BOM Planning/);
+  if (!bomRow) {
     record({ step: '03', doc: 'Plans', code: '—', qty: '—', status: 'BLOCKED', note: 'no BOM Planning button' });
     return;
   }
-  await bomBtn.click();
+  await clickRowMenuItem(page, bomRow, /^BOM Planning/);
   await page.waitForTimeout(3000);
 
   const boxes = page.locator('table input[type="checkbox"]:not([disabled])');

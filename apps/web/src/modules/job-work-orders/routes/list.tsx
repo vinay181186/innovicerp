@@ -252,9 +252,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
             // returning null for a collapsed row means JwsoExpandedLines (and
             // its detail query) never mounts for it.
             renderExpanded={(jw) =>
-              expandedIds.has(jw.jwId) ? (
-                <JwsoExpandedLines jwId={jw.jwId} canEdit={canEdit} />
-              ) : null
+              expandedIds.has(jw.jwId) ? <JwsoExpandedLines jwId={jw.jwId} /> : null
             }
             // The fit table's ▸ is the row's one expand control: it opens the
             // line items too.
