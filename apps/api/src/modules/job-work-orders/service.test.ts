@@ -1,7 +1,14 @@
-import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
+import { and, asc, eq, isNull, like, ne, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { activityLog, items, jobWorkOrderLines, jobWorkOrders, users } from '../../db/schema';
+import {
+  activityLog,
+  clients,
+  items,
+  jobWorkOrderLines,
+  jobWorkOrders,
+  users,
+} from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import {
   AuthorizationError,
@@ -17,6 +24,7 @@ const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 let admin: AuthContext;
 let firstItemId: string;
 let firstItemCode: string;
+let firstClientId: string;
 
 beforeAll(async () => {
   const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
@@ -38,7 +46,13 @@ beforeAll(async () => {
     .select({ id: items.id, code: items.code })
     .from(items)
     .where(
-      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
+      and(
+        eq(items.companyId, u.companyId),
+        isNull(items.deletedAt),
+        notLike(items.code, 'T%-%'),
+        // ADR-203: a JWSO line's item may not be a customer material.
+        ne(items.itemType, 'party_supplied_material'),
+      ),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -46,6 +60,15 @@ beforeAll(async () => {
   if (!it) throw new Error('No items in seed company — run migration load first');
   firstItemId = it.id;
   firstItemCode = it.code;
+  // ADR-203: every JWSO needs a client (its customer RM register is per client).
+  const clientRow = await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(and(eq(clients.companyId, u.companyId), isNull(clients.deletedAt)))
+    .orderBy(asc(clients.createdAt))
+    .limit(1);
+  if (!clientRow[0]) throw new Error('No clients in seed company');
+  firstClientId = clientRow[0].id;
 });
 
 afterAll(async () => {
@@ -71,11 +94,7 @@ describe('job-work-orders service', () => {
         header: {
           code,
           jwDate: '2026-05-02',
-          customerName: 'JW Acme',
-          status: 'open',
-          // Client material is header-level (migration 0053).
-          clientMaterial: 'EN8 Round Bar 50mm',
-          clientMaterialQty: 12.5,
+          clientId: firstClientId,
         },
         lines: [
           {
@@ -87,7 +106,7 @@ describe('job-work-orders service', () => {
           },
           {
             partName: 'Bracket',
-            itemCodeText: 'NONEXISTENT-BRK',
+            itemId: firstItemId,
             uom: 'NOS',
             orderQty: 5,
           },
@@ -104,21 +123,21 @@ describe('job-work-orders service', () => {
     // Bug 1.3/1.4: a line matched to a master item now surfaces the readable
     // master code on read (instead of null), so the detail/edit form shows it.
     expect(detail.lines[0]?.itemCodeText).toBe(firstItemCode);
-    // line rate + header material numeric formatting
+    // line rate numeric formatting
     expect(detail.lines[0]?.rate).toBe('35.50');
-    expect(detail.clientMaterialQty).toBe('12.50');
     // GST % defaults to 18 on the header (migration 0061, parity with SO).
     expect(detail.gstPercent).toBe('18.00');
-    // ADR-012 #10 fallback
-    expect(detail.lines[1]?.itemId).toBeNull();
-    expect(detail.lines[1]?.itemCodeText).toBe('NONEXISTENT-BRK');
+    // ADR-203: server-numbered lines, each with its customer RM.
     expect(detail.lines[1]?.lineNo).toBe(2);
+    expect(detail.lines[0]?.rmItemCode).toBe(`${firstItemCode}-RM`);
+    expect(detail.lines[0]?.partyMaterialId).not.toBeNull();
+    expect(detail.lines[0]?.inUse).toBe(false);
   });
 
   it('createJobWorkOrder auto-generates the next IN-JW code when omitted (bug 1.2)', async () => {
     const detail = await service.createJobWorkOrder(
       {
-        header: { jwDate: '2026-05-03', customerName: 'Auto Code Co', status: 'open' },
+        header: { jwDate: '2026-05-03', customerName: 'Auto Code Co', clientId: firstClientId },
         lines: [{ partName: 'Auto', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
       },
       admin,
@@ -133,7 +152,7 @@ describe('job-work-orders service', () => {
     const mk = () =>
       service.createJobWorkOrder(
         {
-          header: { jwDate: '2026-05-03', customerName: 'Seq Co', status: 'open' },
+          header: { jwDate: '2026-05-03', customerName: 'Seq Co', clientId: firstClientId },
           lines: [{ partName: 'Seq', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
         },
         admin,
@@ -152,7 +171,7 @@ describe('job-work-orders service', () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createJobWorkOrder(
       {
-        header: { code, jwDate: '2026-05-02', customerName: 'Dup Co', status: 'open' },
+        header: { code, jwDate: '2026-05-02', customerName: 'Dup Co', clientId: firstClientId },
         lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
       },
       admin,
@@ -160,7 +179,7 @@ describe('job-work-orders service', () => {
     await expect(
       service.createJobWorkOrder(
         {
-          header: { code, jwDate: '2026-05-02', customerName: 'Dup Co', status: 'open' },
+          header: { code, jwDate: '2026-05-02', customerName: 'Dup Co', clientId: firstClientId },
           lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
         },
         admin,
@@ -176,7 +195,6 @@ describe('job-work-orders service', () => {
             code: `${TEST_PREFIX}BADCLI`,
             jwDate: '2026-05-02',
             clientId: '00000000-0000-0000-0000-000000000000',
-            status: 'open',
           },
           lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
         },
@@ -189,7 +207,7 @@ describe('job-work-orders service', () => {
     const code = `${TEST_PREFIX}G1`;
     const created = await service.createJobWorkOrder(
       {
-        header: { code, jwDate: '2026-05-02', customerName: 'Gettable', status: 'open' },
+        header: { code, jwDate: '2026-05-02', customerName: 'Gettable', clientId: firstClientId },
         lines: [
           { partName: 'Line One', itemId: firstItemId, uom: 'NOS', orderQty: 3 },
           { partName: 'Line Two', itemId: firstItemId, uom: 'NOS', orderQty: 7 },
@@ -217,9 +235,7 @@ describe('job-work-orders service', () => {
           code,
           jwDate: '2026-05-02',
           customerName: 'Listable',
-          status: 'open',
-          // Client material is header-level (migration 0053).
-          clientMaterialQty: 12,
+          clientId: firstClientId,
         },
         lines: [
           { partName: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 4, rate: 10 },
@@ -238,7 +254,9 @@ describe('job-work-orders service', () => {
     const row = rowsForJw[0];
     expect(row?.lineCount).toBe(2);
     expect(row?.totalQty).toBe(10); // 4 + 6
-    expect(Number(row?.clientMaterialQty)).toBe(12);
+    // ADR-203: both lines have a customer RM → 1 RM piece per finished part.
+    expect(row?.rmRequiredQty).toBe(10);
+    expect(row?.partyReceivedQty).toBe(0);
     expect(row?.jcQty).toBe(0);
   });
 
@@ -246,7 +264,7 @@ describe('job-work-orders service', () => {
     const code = `${TEST_PREFIX}UH1`;
     const created = await service.createJobWorkOrder(
       {
-        header: { code, jwDate: '2026-05-02', customerName: 'Before', status: 'open' },
+        header: { code, jwDate: '2026-05-02', customerName: 'Before', clientId: firstClientId },
         lines: [{ partName: 'Stay', itemId: firstItemId, uom: 'NOS', orderQty: 9 }],
       },
       admin,
@@ -267,7 +285,7 @@ describe('job-work-orders service', () => {
     const code = `${TEST_PREFIX}UM1`;
     const created = await service.createJobWorkOrder(
       {
-        header: { code, jwDate: '2026-05-02', customerName: 'Merge', status: 'open' },
+        header: { code, jwDate: '2026-05-02', customerName: 'Merge', clientId: firstClientId },
         lines: [
           { partName: 'Keep+Update', itemId: firstItemId, uom: 'NOS', orderQty: 10 },
           { partName: 'Drop Me', itemId: firstItemId, uom: 'NOS', orderQty: 20 },
@@ -295,7 +313,9 @@ describe('job-work-orders service', () => {
     expect(kept?.partName).toBe('Keep+Updated');
     expect(kept?.orderQty).toBe(11);
     expect(fresh?.partName).toBe('Brand New');
-    expect(fresh?.lineNo).toBe(2);
+    // ADR-203: a new line takes MAX(line_no incl. removed)+1 — "Drop Me" was
+    // Ln 2, so the new line is Ln 3 (numbers are never reused).
+    expect(fresh?.lineNo).toBe(3);
 
     const allRows = await db
       .select()
@@ -310,7 +330,7 @@ describe('job-work-orders service', () => {
     const code = `${TEST_PREFIX}DEL`;
     const created = await service.createJobWorkOrder(
       {
-        header: { code, jwDate: '2026-05-02', customerName: 'Goner', status: 'open' },
+        header: { code, jwDate: '2026-05-02', customerName: 'Goner', clientId: firstClientId },
         lines: [
           { partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
           { partName: 'L2', itemId: firstItemId, uom: 'NOS', orderQty: 2 },
@@ -331,7 +351,12 @@ describe('job-work-orders service', () => {
     const code = `${TEST_PREFIX}AUD`;
     const created = await service.createJobWorkOrder(
       {
-        header: { code, jwDate: '2026-05-02', customerName: 'Audit Customer', status: 'open' },
+        header: {
+          code,
+          jwDate: '2026-05-02',
+          customerName: 'Audit Customer',
+          clientId: firstClientId,
+        },
         lines: [{ partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
       },
       admin,
@@ -366,7 +391,6 @@ describe('job-work-orders service', () => {
             code: `${TEST_PREFIX}NOC`,
             jwDate: '2026-05-02',
             customerName: 'X',
-            status: 'open',
           },
           lines: [{ partName: 'L', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
         },

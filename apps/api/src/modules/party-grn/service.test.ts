@@ -1,10 +1,8 @@
-// Party GRN service tests — the ADR-102 guards + the cancel path.
+// Party GRN service tests — ADR-203 gate-in, Incoming QC and cancel.
 //
 // Fixtures are self-contained and prefixed TPG- so they never touch seed or
 // production rows: one client, one JWSO with TWO lines carrying DIFFERENT
-// items, and one party material per item. That shape is what makes the
-// wrong-part case testable — it is exactly the shape that produced the live
-// bug (a LEVER received against the SINGLE FIRE CHECK LEVER line).
+// items, each line pointing at its own party material (the line's customer RM).
 
 import { and, asc, eq, inArray, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -18,10 +16,12 @@ import {
   partyGrn,
   partyGrnLines,
   partyMaterials,
+  partyStockLedger,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { NotFoundError, ValidationError } from '../../lib/errors';
+import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { qcPartyGrn } from './qc';
 import * as service from './service';
 
 const TEST_PREFIX = 'TPG-';
@@ -34,8 +34,10 @@ let itemAId: string;
 let itemBId: string;
 /** Party material for line 1's item. */
 let pmAId: string;
-/** Party material for line 2's item — used for the wrong-part case. */
+/** Party material for line 2's item. */
 let pmBId: string;
+let line1Id: string;
+let line2Id: string;
 
 const ORDER_QTY = 100;
 
@@ -52,11 +54,13 @@ beforeAll(async () => {
   };
   const companyId = u.companyId;
 
-  // Two DISTINCT seed items — the wrong-part guard compares their ids.
+  // Two DISTINCT seed items, one per JWSO line.
   const itemRows = await db
     .select({ id: items.id, code: items.code })
     .from(items)
-    .where(and(eq(items.companyId, companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')))
+    .where(
+      and(eq(items.companyId, companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
+    )
     .orderBy(asc(items.createdAt))
     .limit(2);
   if (itemRows.length < 2) throw new Error('Need 2 items in the seed company');
@@ -92,33 +96,7 @@ beforeAll(async () => {
       .returning()
   )[0]!.id;
 
-  await db.insert(jobWorkOrderLines).values([
-    {
-      companyId,
-      jobWorkOrderId: jwId,
-      lineNo: 1,
-      itemId: itemAId,
-      partName: `${TEST_PREFIX}PART-A`,
-      uom: 'NOS',
-      orderQty: ORDER_QTY,
-      status: 'open',
-      createdBy: u.id,
-      updatedBy: u.id,
-    },
-    {
-      companyId,
-      jobWorkOrderId: jwId,
-      lineNo: 2,
-      itemId: itemBId,
-      partName: `${TEST_PREFIX}PART-B`,
-      uom: 'NOS',
-      orderQty: ORDER_QTY,
-      status: 'open',
-      createdBy: u.id,
-      updatedBy: u.id,
-    },
-  ]);
-
+  // ADR-203: each JWSO line carries its own customer material.
   const pms = await db
     .insert(partyMaterials)
     .values([
@@ -146,19 +124,56 @@ beforeAll(async () => {
     .returning();
   pmAId = pms.find((p) => p.code === `${TEST_PREFIX}PM-A`)!.id;
   pmBId = pms.find((p) => p.code === `${TEST_PREFIX}PM-B`)!.id;
+
+  const lines = await db
+    .insert(jobWorkOrderLines)
+    .values([
+      {
+        companyId,
+        jobWorkOrderId: jwId,
+        lineNo: 1,
+        itemId: itemAId,
+        partyMaterialId: pmAId,
+        partName: `${TEST_PREFIX}PART-A`,
+        uom: 'NOS',
+        orderQty: ORDER_QTY,
+        status: 'open',
+        createdBy: u.id,
+        updatedBy: u.id,
+      },
+      {
+        companyId,
+        jobWorkOrderId: jwId,
+        lineNo: 2,
+        itemId: itemBId,
+        partyMaterialId: pmBId,
+        partName: `${TEST_PREFIX}PART-B`,
+        uom: 'NOS',
+        orderQty: ORDER_QTY,
+        status: 'open',
+        createdBy: u.id,
+        updatedBy: u.id,
+      },
+    ])
+    .returning();
+  line1Id = lines.find((l) => l.lineNo === 1)!.id;
+  line2Id = lines.find((l) => l.lineNo === 2)!.id;
 });
 
 afterAll(async () => {
   const grnIds = (
     await db.select({ id: partyGrn.id }).from(partyGrn).where(eq(partyGrn.jobWorkOrderId, jwId))
   ).map((g) => g.id);
+  await db
+    .delete(partyStockLedger)
+    .where(inArray(partyStockLedger.partyMaterialId, [pmAId, pmBId]));
   if (grnIds.length > 0) {
     await db.delete(partyGrnLines).where(inArray(partyGrnLines.partyGrnId, grnIds));
     await db.delete(partyGrn).where(inArray(partyGrn.id, grnIds));
   }
   await db.delete(activityLog).where(like(activityLog.refId, 'PGRN-%'));
-  await db.delete(partyMaterials).where(like(partyMaterials.code, `${TEST_PREFIX}%`));
   await db.delete(jobWorkOrderLines).where(eq(jobWorkOrderLines.jobWorkOrderId, jwId));
+  await db.delete(partyMaterials).where(like(partyMaterials.code, `${TEST_PREFIX}%`));
   await db.delete(jobWorkOrders).where(eq(jobWorkOrders.id, jwId));
   await db.delete(clients).where(eq(clients.id, clientId));
 });
@@ -174,159 +189,113 @@ async function pmStock(id: string): Promise<{ stockQty: number; receivedQty: num
   return r;
 }
 
-describe('party-grn service — ADR-102 guards', () => {
-  it('rejects a line with no JWSO line number', async () => {
+function receipt(jwLineId: string, receivedQty: number) {
+  return { grnDate: '2026-08-04', jobWorkOrderId: jwId, lines: [{ jwLineId, receivedQty }] };
+}
+
+/** Receive, then pass Incoming QC with everything accepted. */
+async function receiveAndAccept(jwLineId: string, qty: number) {
+  const grn = await service.createPartyGrn(receipt(jwLineId, qty), admin);
+  const detail = await service.getPartyGrnDetail(grn.id, admin);
+  await qcPartyGrn(
+    grn.id,
+    { lines: [{ lineId: detail.lines[0]!.id, acceptedQty: qty, rejectedQty: 0 }] },
+    admin,
+  );
+  return grn;
+}
+
+describe('party-grn service — create (ADR-203)', () => {
+  it('rejects an unknown JWSO line', async () => {
     await expect(
-      service.createPartyGrn(
-        {
-          grnDate: '2026-08-04',
-          jobWorkOrderId: jwId,
-          // Cast: the zod schema now makes this required, so the only way to
-          // reach the service guard is to bypass the schema — which is exactly
-          // what a stale client or a direct API caller would do.
-          lines: [{ partyMaterialId: pmAId, receivedQty: 1 } as never],
-        },
-        admin,
-      ),
+      service.createPartyGrn(receipt('00000000-0000-0000-0000-000000000000', 1), admin),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('rejects more than the line order qty in a single receipt', async () => {
+    await expect(
+      service.createPartyGrn(receipt(line1Id, ORDER_QTY + 1), admin),
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it('rejects a JWSO line number that does not exist on the order', async () => {
-    await expect(
-      service.createPartyGrn(
-        {
-          grnDate: '2026-08-04',
-          jobWorkOrderId: jwId,
-          lines: [
-            { partyMaterialId: pmAId, receivedQty: 1, acceptedQty: 1, rejectedQty: 0, jwLineNoText: '99' },
-          ],
-        },
-        admin,
-      ),
-    ).rejects.toBeInstanceOf(ValidationError);
-  });
-
-  it('rejects a material that is not that line’s part', async () => {
-    // PM-B belongs to item B (line 2) — receiving it against line 1 is the
-    // live bug this guard exists for.
-    await expect(
-      service.createPartyGrn(
-        {
-          grnDate: '2026-08-04',
-          jobWorkOrderId: jwId,
-          lines: [
-            { partyMaterialId: pmBId, receivedQty: 1, acceptedQty: 1, rejectedQty: 0, jwLineNoText: '1' },
-          ],
-        },
-        admin,
-      ),
-    ).rejects.toBeInstanceOf(ValidationError);
-  });
-
-  it('rejects more than the line’s order qty in a single receipt', async () => {
-    await expect(
-      service.createPartyGrn(
-        {
-          grnDate: '2026-08-04',
-          jobWorkOrderId: jwId,
-          lines: [
-            {
-              partyMaterialId: pmAId,
-              receivedQty: ORDER_QTY + 1,
-              acceptedQty: ORDER_QTY + 1,
-              rejectedQty: 0,
-              jwLineNoText: '1',
-            },
-          ],
-        },
-        admin,
-      ),
-    ).rejects.toBeInstanceOf(ValidationError);
-  });
-
-  it('accepts a correct receipt and adds the qty to party stock', async () => {
+  it('books the gate-in only — nothing enters the register until QC', async () => {
     const before = await pmStock(pmAId);
-    const grn = await service.createPartyGrn(
-      {
-        grnDate: '2026-08-04',
-        jobWorkOrderId: jwId,
-        lines: [
-          { partyMaterialId: pmAId, receivedQty: 60, acceptedQty: 60, rejectedQty: 0, jwLineNoText: '1' },
-        ],
-      },
-      admin,
-    );
+    const grn = await service.createPartyGrn(receipt(line1Id, 60), admin);
     expect(grn.code).toMatch(/^PGRN-\d{5}$/);
-    const after = await pmStock(pmAId);
-    expect(after.stockQty).toBe(before.stockQty + 60);
-    expect(after.receivedQty).toBe(before.receivedQty + 60);
+    const detail = await service.getPartyGrnDetail(grn.id, admin);
+    expect(detail.qcPendingLines).toBe(1);
+    expect(detail.totalAcceptedQty).toBe(0);
+    expect(detail.lines[0]!.partyMaterialId).toBe(pmAId);
+    expect(detail.lines[0]!.jwLineNoText).toBe('1');
+    expect(await pmStock(pmAId)).toEqual(before);
   });
 
-  it('blocks a second receipt that would push the line past its order qty', async () => {
-    // 60 already received above; 100 more would be 160 against an order of 100.
-    await expect(
-      service.createPartyGrn(
-        {
-          grnDate: '2026-08-04',
-          jobWorkOrderId: jwId,
-          lines: [
-            {
-              partyMaterialId: pmAId,
-              receivedQty: ORDER_QTY,
-              acceptedQty: ORDER_QTY,
-              rejectedQty: 0,
-              jwLineNoText: '1',
-            },
-          ],
-        },
-        admin,
-      ),
-    ).rejects.toBeInstanceOf(ValidationError);
-  });
-
-  it('caps each JWSO line separately — line 2 is still fully open', async () => {
-    const grn = await service.createPartyGrn(
-      {
-        grnDate: '2026-08-04',
-        jobWorkOrderId: jwId,
-        lines: [
-          {
-            partyMaterialId: pmBId,
-            receivedQty: ORDER_QTY,
-            acceptedQty: ORDER_QTY,
-            rejectedQty: 0,
-            jwLineNoText: '2',
-          },
-        ],
-      },
-      admin,
+  it('counts pieces waiting for QC against the order qty', async () => {
+    // 60 waiting above; 41 more would be 101 against an order of 100.
+    await expect(service.createPartyGrn(receipt(line1Id, 41), admin)).rejects.toBeInstanceOf(
+      ValidationError,
     );
-    expect(grn.id).toBeTruthy();
   });
 });
 
-describe('party-grn service — cancel (ADR-102)', () => {
-  it('reverses the qty off party stock and soft-deletes the GRN', async () => {
-    const created = await service.createPartyGrn(
+describe('party-grn service — Incoming QC (ADR-203)', () => {
+  it('refuses a split that does not add up to received', async () => {
+    const grn = await service.createPartyGrn(receipt(line2Id, 10), admin);
+    const d = await service.getPartyGrnDetail(grn.id, admin);
+    await expect(
+      qcPartyGrn(
+        grn.id,
+        { lines: [{ lineId: d.lines[0]!.id, acceptedQty: 5, rejectedQty: 0 }] },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await service.cancelPartyGrn(grn.id, 'cleanup', admin);
+  });
+
+  it('posts only the accepted qty and holds the rejects', async () => {
+    const before = await pmStock(pmBId);
+    const grn = await service.createPartyGrn(receipt(line2Id, 10), admin);
+    const d = await service.getPartyGrnDetail(grn.id, admin);
+    const after = await qcPartyGrn(
+      grn.id,
       {
-        grnDate: '2026-08-04',
-        jobWorkOrderId: jwId,
-        lines: [
-          { partyMaterialId: pmAId, receivedQty: 10, acceptedQty: 10, rejectedQty: 0, jwLineNoText: '1' },
-        ],
+        lines: [{ lineId: d.lines[0]!.id, acceptedQty: 7, rejectedQty: 3, rejectReason: 'rusty' }],
       },
       admin,
     );
-    const afterCreate = await pmStock(pmAId);
+    expect(after.qcPendingLines).toBe(0);
+    expect(after.totalAcceptedQty).toBe(7);
+    const s = await pmStock(pmBId);
+    expect(s.stockQty).toBe(before.stockQty + 7);
+    expect(s.receivedQty).toBe(before.receivedQty + 7);
+  });
+
+  it('lets exactly one of two simultaneous QCs of one line through', async () => {
+    const grn = await service.createPartyGrn(receipt(line2Id, 4), admin);
+    const d = await service.getPartyGrnDetail(grn.id, admin);
+    const body = { lines: [{ lineId: d.lines[0]!.id, acceptedQty: 4, rejectedQty: 0 }] };
+    const results = await Promise.allSettled([
+      qcPartyGrn(grn.id, body, admin),
+      qcPartyGrn(grn.id, body, admin),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(lost.reason).toBeInstanceOf(ConflictError);
+  });
+});
+
+describe('party-grn service — cancel (ADR-203)', () => {
+  it('reverses the accepted qty and soft-deletes the GRN', async () => {
+    const created = await receiveAndAccept(line1Id, 10);
+    const afterQc = await pmStock(pmAId);
 
     const res = await service.cancelPartyGrn(created.id, 'entered twice', admin);
     expect(res.reversedQty).toBe(10);
 
     const afterCancel = await pmStock(pmAId);
-    expect(afterCancel.stockQty).toBe(afterCreate.stockQty - 10);
-    expect(afterCancel.receivedQty).toBe(afterCreate.receivedQty - 10);
+    expect(afterCancel.stockQty).toBe(afterQc.stockQty - 10);
+    expect(afterCancel.receivedQty).toBe(afterQc.receivedQty - 10);
 
-    // Gone from reads, and its qty no longer counts toward the line cap.
     await expect(service.getPartyGrnDetail(created.id, admin)).rejects.toBeInstanceOf(
       NotFoundError,
     );
@@ -338,42 +307,14 @@ describe('party-grn service — cancel (ADR-102)', () => {
     expect(rows[0]!.remarks).toContain('[Cancelled] entered twice');
   });
 
-  it('requires a reason', async () => {
-    const created = await service.createPartyGrn(
-      {
-        grnDate: '2026-08-04',
-        jobWorkOrderId: jwId,
-        lines: [
-          { partyMaterialId: pmAId, receivedQty: 1, acceptedQty: 1, rejectedQty: 0, jwLineNoText: '1' },
-        ],
-      },
-      admin,
-    );
+  it('requires a reason, and refuses a second cancel', async () => {
+    const created = await service.createPartyGrn(receipt(line1Id, 1), admin);
     await expect(service.cancelPartyGrn(created.id, '   ', admin)).rejects.toBeInstanceOf(
       ValidationError,
     );
     await service.cancelPartyGrn(created.id, 'cleanup', admin);
-  });
-
-  it('refuses when the material has already been issued out', async () => {
-    const created = await service.createPartyGrn(
-      {
-        grnDate: '2026-08-04',
-        jobWorkOrderId: jwId,
-        lines: [
-          { partyMaterialId: pmAId, receivedQty: 5, acceptedQty: 5, rejectedQty: 0, jwLineNoText: '1' },
-        ],
-      },
-      admin,
-    );
-    // Simulate an issue to production: stock drops, received stays.
-    await db
-      .update(partyMaterials)
-      .set({ stockQty: 0, issuedQty: 999 })
-      .where(eq(partyMaterials.id, pmAId));
-
-    await expect(service.cancelPartyGrn(created.id, 'oops', admin)).rejects.toBeInstanceOf(
-      ValidationError,
+    await expect(service.cancelPartyGrn(created.id, 'again', admin)).rejects.toBeInstanceOf(
+      ConflictError,
     );
   });
 

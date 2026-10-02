@@ -1,7 +1,7 @@
-// Customer Material roll-up (R1, ADR-194) — shown ONLY on a JW-sourced Job Card
-// (jc.customerMaterial is not null). Needed = rmQtyPerPiece × JC qty (from the
-// ADR-193 route-card RM); Received / Issued / Returned come from the party store
-// ledger for this JWSO line; Balance = received − issued − returned. Hidden
+// Customer Material roll-up (R1, ADR-194 + ADR-203) — shown ONLY on a JW-sourced
+// Job Card (jc.customerMaterial is not null). The strip shows THIS Job Card's
+// figures (Needed = JC qty, Issued to JC, Returned to Store, Used = first op good
+// + rejected, On JC); the line below shows the JWSO line's totals. Hidden
 // entirely on an own-material JC. Numbers are right-aligned (owner rule
 // 2026-09-26); no rupee value — party material carries none.
 
@@ -54,17 +54,10 @@ export function JcCustomerMaterialPanel({ jc }: { jc: JobCardListItem }): React.
           Customer Material
         </div>
         <span className="text3" style={{ fontSize: 11 }}>
-          (party store)
+          (this Job Card · 1 RM piece per part)
         </span>
       </div>
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'stretch',
-          padding: '4px 0',
-        }}
-      >
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch', padding: '4px 0' }}>
         {/* The first cell drops its left border so the row reads as one strip. */}
         <div style={{ flex: '1 1 90px', minWidth: 80, padding: '6px 14px', textAlign: 'right' }}>
           <div className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -74,14 +67,32 @@ export function JcCustomerMaterialPanel({ jc }: { jc: JobCardListItem }): React.
             {cm.needed ?? '—'}
           </div>
         </div>
-        <Metric label="Received" value={cm.received} color="var(--green2)" />
-        <Metric label="Issued" value={cm.issued} color="var(--amber2)" />
-        <Metric label="Returned" value={cm.returned} color="var(--purple)" />
+        <Metric label="Issued to JC" value={cm.issuedToJcQty} color="var(--amber2)" />
+        <Metric label="Returned to Store" value={cm.returnedToStoreQty} color="var(--purple)" />
+        <Metric label="Used" value={cm.usedQty} />
         <Metric
-          label="Balance"
-          value={cm.balance}
-          color={cm.balance > 0 ? 'var(--green)' : 'var(--text3)'}
+          label="On JC"
+          value={cm.onJcQty}
+          color={cm.onJcQty > 0 ? 'var(--green)' : 'var(--text3)'}
         />
+      </div>
+      <div
+        className="text3"
+        style={{ display: 'flex', flexWrap: 'wrap', gap: 16, padding: '4px 14px 8px', fontSize: 11 }}
+      >
+        <span>JWSO line totals —</span>
+        <span>
+          Accepted <b className="mono">{cm.received}</b>
+        </span>
+        <span>
+          Issued <b className="mono">{cm.issued}</b>
+        </span>
+        <span>
+          Returned to Customer <b className="mono">{cm.returned}</b>
+        </span>
+        <span>
+          Register Balance <b className="mono">{cm.balance}</b>
+        </span>
       </div>
     </div>
   );

@@ -21,7 +21,13 @@
 //   'none'      — no check (compensating reversals whose caller already
 //                 proved the stock, and legacy assembly — ADR-115).
 
-import { isWholeNumberUom, roundQty, type StoreTxnSourceType } from '@innovic/shared';
+import {
+  ITEM_TYPE_RULES,
+  type ItemType,
+  isWholeNumberUom,
+  roundQty,
+  type StoreTxnSourceType,
+} from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { storeTransactions } from '../db/schema';
 import type { DbTransaction } from '../db/with-user-context';
@@ -72,16 +78,26 @@ export async function lockItemForStock(
   tx: DbTransaction,
   companyId: string,
   itemId: string,
-): Promise<{ code: string; uom: string; trackSerial: boolean }> {
+): Promise<{ code: string; uom: string; trackSerial: boolean; itemType: string | null }> {
   const rows = (await tx.execute(sql`
-    SELECT code, uom::text AS uom, track_serial AS "trackSerial"
+    SELECT code, uom::text AS uom, track_serial AS "trackSerial", item_type::text AS "itemType"
     FROM public.items
     WHERE id = ${itemId}::uuid AND company_id = ${companyId}::uuid
     FOR UPDATE
-  `)) as unknown as Array<{ code: string; uom: string; trackSerial: boolean }>;
+  `)) as unknown as Array<{
+    code: string;
+    uom: string;
+    trackSerial: boolean;
+    itemType: string | null;
+  }>;
   const row = rows[0];
   if (!row) throw new NotFoundError('Item not found. Please select the Item Code again.');
-  return { code: row.code, uom: row.uom, trackSerial: Boolean(row.trackSerial) };
+  return {
+    code: row.code,
+    uom: row.uom,
+    trackSerial: Boolean(row.trackSerial),
+    itemType: row.itemType ?? null,
+  };
 }
 
 /** ADR-193 phase 4 (P38) — pieces the instrument register says are on the
@@ -116,6 +132,15 @@ export async function postStockMove(
   const qty = roundQty(input.qty);
   const label = input.qtyLabel ?? 'Qty';
   const item = await lockItemForStock(tx, input.companyId, input.itemId);
+  // ADR-203 — the customer's own material (Party Supplied Material) lives in
+  // the separate party register (party_stock_ledger), never in company stock.
+  if (item.itemType && ITEM_TYPE_RULES[item.itemType as ItemType]?.partyOwned) {
+    throw new ValidationError(
+      `${item.code} is the customer's material (Party Supplied Material) — it cannot be moved ` +
+        `in company stock. Use the customer material screens (Party GRN, Issue to Job Card, ` +
+        `Customer Material Return).`,
+    );
+  }
   assertQtyFitsUom(item.code, item.uom, qty, label);
 
   const position = await readStockPosition(tx, input.companyId, input.itemId);

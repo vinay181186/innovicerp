@@ -18,7 +18,6 @@ import type {
 import { clients, items, jobWorkOrderLines, jobWorkOrders, jwInvoices } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
-import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -51,6 +50,11 @@ function dateLike(v: unknown): string {
   return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 }
 const money = (n: number): string => n.toFixed(2);
+
+// ADR-203 — the JW invoice page's form key. JW invoices are a tab of the
+// Invoices page (nav formKey invoice_create), so create, cancel and price
+// visibility all answer to this ONE key.
+const JW_INVOICE_FORM_KEY = 'invoice_create';
 
 async function nextInvoiceCode(tx: DbTransaction, companyId: string): Promise<string> {
   // S2: queue behind any other save numbering this series (lib/doc-series-lock).
@@ -111,10 +115,11 @@ export async function createJwInvoice(
   input: CreateJwInvoiceInput,
   user: AuthContext,
 ): Promise<JwInvoice> {
-  requireWriteRole(user);
   // Raising a JW invoice is Finance invoice entry — the same form key the SO
-  // invoice checks, so Access Control governs both from one switch.
-  await requireFormAccess(user, 'invoice_create', 'entry');
+  // invoice checks, so Access Control governs both from one switch (ADR-203:
+  // form access is the rule; the old role check is gone).
+  await requireFormAccess(user, JW_INVOICE_FORM_KEY, 'entry');
+  const showMoney = await canSeeFormPrice(user, JW_INVOICE_FORM_KEY);
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -167,7 +172,9 @@ export async function createJwInvoice(
       );
     }
 
-    const rate = input.rate ?? Number(line.rate);
+    // ADR-203 — a user who cannot see JW prices cannot set one either: their
+    // typed rate is ignored and the JWSO line's rate is billed.
+    const rate = showMoney && input.rate != null ? input.rate : Number(line.rate);
     if (!(rate >= 0)) throw new ValidationError('Rate cannot be less than 0.');
     const gstPercent = Number(jw.gstPercent);
     const taxable = input.qty * rate;
@@ -246,7 +253,8 @@ export async function createJwInvoice(
       user,
     );
 
-    return rowToInvoice(row);
+    const out = rowToInvoice(row);
+    return showMoney ? out : hideJwInvoiceMoney(out);
   });
 }
 
@@ -263,8 +271,11 @@ export async function cancelJwInvoice(
   input: CancelJwInvoiceInput,
   user: AuthContext,
 ): Promise<JwInvoice> {
-  await requireFormAccess(user, 'jw_create', 'edit');
-  await requireFormAccess(user, 'jw_create', 'approve');
+  // ADR-203 — the JW invoice page's ONE form key (it lives on the Invoices
+  // page, formKey invoice_create), for create, cancel and price alike.
+  await requireFormAccess(user, JW_INVOICE_FORM_KEY, 'edit');
+  await requireFormAccess(user, JW_INVOICE_FORM_KEY, 'approve');
+  const showMoney = await canSeeFormPrice(user, JW_INVOICE_FORM_KEY);
   const companyId = requireCompany(user);
   const userId = user.id;
   const reason = input.reason.trim();
@@ -295,14 +306,25 @@ export async function cancelJwInvoice(
       );
     }
 
-    // Lock the JW line, then give the billed qty back (clamp at 0).
-    await tx.execute(
-      sql`SELECT 1 FROM public.job_work_order_lines WHERE id = ${inv.jobWorkOrderLineId}::uuid FOR UPDATE`,
-    );
+    // Lock the JW line, then give the billed qty back. No clamp (ADR-203): a
+    // line whose invoiced qty is below this invoice's qty means the counter
+    // is already wrong — refuse rather than hide it at 0.
+    const lockedRows = (await tx.execute(
+      sql`SELECT invoiced_qty AS "invoicedQty" FROM public.job_work_order_lines
+          WHERE id = ${inv.jobWorkOrderLineId}::uuid FOR UPDATE`,
+    )) as unknown as Array<{ invoicedQty: number }>;
+    const invoicedNow = Number(lockedRows[0]?.invoicedQty ?? 0);
+    if (invoicedNow - inv.qty < 0) {
+      throw new ConflictError(
+        `Cannot cancel ${inv.code}: its JWSO line shows only ${invoicedNow} invoiced, ` +
+          `less than this invoice's ${inv.qty}. The line's Invoiced count is out of step — ` +
+          `report this to the administrator before cancelling.`,
+      );
+    }
     await tx
       .update(jobWorkOrderLines)
       .set({
-        invoicedQty: sql`GREATEST(${jobWorkOrderLines.invoicedQty} - ${inv.qty}, 0)`,
+        invoicedQty: invoicedNow - inv.qty,
         updatedAt: new Date(),
         updatedBy: userId,
       })
@@ -338,7 +360,8 @@ export async function cancelJwInvoice(
       user,
     );
 
-    return rowToInvoice(row);
+    const out = rowToInvoice(row);
+    return showMoney ? out : hideJwInvoiceMoney(out);
   });
 }
 
@@ -389,8 +412,8 @@ export async function listJwInvoiceableLines(
   });
 }
 
-// Money-hiding for L1 Viewers ("Can See Price"). JW invoices ride the JW
-// department's price permission (jw_create).
+// Money-hiding for L1 Viewers ("Can See Price"). JW invoices ride the price
+// permission of the page they live on — Invoices, invoice_create (ADR-203).
 function hideJwInvoiceMoney<
   T extends {
     rate: number | null;
@@ -428,7 +451,7 @@ export async function listJwInvoices(
   user: AuthContext,
 ): Promise<ListJwInvoicesResponse> {
   const companyId = requireCompany(user);
-  const showMoney = await canSeeFormPrice(user, 'jw_create');
+  const showMoney = await canSeeFormPrice(user, JW_INVOICE_FORM_KEY);
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(jwInvoices.companyId, companyId), isNull(jwInvoices.deletedAt)];
     if (input.search) {
@@ -438,7 +461,7 @@ export async function listJwInvoices(
       // Deliberately NOT searched:
       //  - Qty — a number, so "2" would hit nearly every invoice.
       //  - EVERY money column (Rate, Taxable, GST%, GST Amt, Total). This list
-      //    gates amounts behind `priceVisible` (canSeeFormPrice 'jw_create')
+      //    gates amounts behind `priceVisible` (canSeeFormPrice 'invoice_create')
       //    and nulls them for a user without price rights — a searchable
       //    amount would hand that same user a way to confirm a value by typing
       //    it and seeing whether the row comes back.

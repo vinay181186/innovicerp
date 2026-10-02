@@ -53,12 +53,13 @@ export type PartyMaterialListItem = z.infer<typeof partyMaterialListItemSchema>;
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
 export const createPartyMaterialInputSchema = z.object({
+  /** ADR-203: server-assigned (PM-#### under the party_materials series lock).
+   *  Accepted for old callers but ignored. */
   code: z
     .string()
     .trim()
-    .min(1)
     .max(32)
-    .regex(/^PM-\d{4,}$/, 'Code must match PM-NNNN'),
+    .optional(),
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(500).optional(),
   material: z.string().trim().max(100).optional(),

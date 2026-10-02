@@ -109,6 +109,13 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const showLineMenu =
     canShortCloseAction || (detail?.lines ?? []).some((l) => Boolean(l.drawingFilePath));
 
+  // ADR-203: customer material is per LINE now. Required = Σ order qty of the
+  // lines that have a Customer RM (1 RM piece per finished part — the same rule
+  // the list's rmRequiredQty uses); received = QC-accepted across the lines.
+  const rmRequiredTotal = detail.lines
+    .filter((l) => Boolean(l.rmItemId))
+    .reduce((s, l) => s + l.orderQty, 0);
+
   // Next steps — each opens the downstream create screen with this JWSO
   // already picked (`?jw=<jwsoId>`). Gates mirror the target screens: Party
   // GRN is party_create entry; JW DC and JW Invoice are admin/manager there.
@@ -130,9 +137,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // Actions menu. Material still short → receive it; every line dispatched →
   // bill it; otherwise the job is in work → JW DC.
   const materialShort =
-    Number(detail.clientMaterialQty ?? 0) > 0
-      ? detail.partyReceivedQty < Number(detail.clientMaterialQty ?? 0)
-      : detail.partyReceivedQty === 0;
+    rmRequiredTotal > 0 ? detail.partyReceivedQty < rmRequiredTotal : detail.partyReceivedQty === 0;
   const allDispatched =
     detail.lines.length > 0 && detail.lines.every((l) => l.returnedQty >= l.orderQty);
   const nextSteps = [
@@ -145,10 +150,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
     nextSteps.find((n) => n.key === primaryKey && n.allowed) ?? nextSteps.find((n) => n.allowed);
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
-  // Client material is header-level (migration 0053).
-  const clientMatTotal = Number(detail.clientMaterialQty ?? 0);
-  // Actual client-material received = Σ Party GRN receipts (source of truth for
-  // the badge and the client-material summary).
+  // Customer material QC-accepted across the lines (Σ Party GRN accepted) —
+  // the source of truth for the badge and the summary.
   const partyReceivedTotal = detail.partyReceivedQty;
   // Money hidden for L1 Viewers: the API nulls the JWSO's GST % and line rates
   // together, so a null GST % is the single signal to drop ₹ here.
@@ -171,7 +174,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         badges={
           <>
             <SoStatusBadge status={detail.status} />
-            <JwMaterialStatusBadge receivedQty={partyReceivedTotal} expectedQty={clientMatTotal} />
+            <JwMaterialStatusBadge receivedQty={partyReceivedTotal} expectedQty={rmRequiredTotal} />
           </>
         }
         actions={
@@ -259,12 +262,12 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <b style={{ color: 'var(--green2, var(--green))' }}>₹{inrFormat(lineValueTotal)}</b>
               </>
             ) : null}
-            {clientMatTotal > 0 ? (
+            {rmRequiredTotal > 0 ? (
               <>
                 {' '}
-                · Customer Material{' '}
+                · Customer RM accepted{' '}
                 <b style={{ color: 'var(--text)' }}>
-                  {partyReceivedTotal}/{clientMatTotal}
+                  {partyReceivedTotal}/{rmRequiredTotal}
                 </b>
               </>
             ) : null}
@@ -278,6 +281,12 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 {/* Image · CODE/REV · Part name in one badge cell (user decision
                     2026-09-21) — the former separate Part name column folded in. */}
                 <th>Item</th>
+                {/* ADR-203: the line's customer raw material (`<code>-RM`) and
+                    how much of it Incoming QC has accepted on this line. */}
+                <th>Customer RM</th>
+                <th className="th-num" title="Customer RM accepted by Incoming QC on this line">
+                  Accepted
+                </th>
                 <th>Material</th>
                 <th>Drawing</th>
                 <th className="th-num">Order Qty</th>
@@ -301,9 +310,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
               {detail.lines.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={
-                      priceHidden ? (showLineMenu ? 9 : 8) : showLineMenu ? 11 : 10
-                    }
+                    colSpan={priceHidden ? (showLineMenu ? 11 : 10) : showLineMenu ? 13 : 12}
                     className="empty-state"
                   >
                     No lines yet.
@@ -615,6 +622,16 @@ function LineRow(props: {
           imagePath={l.itemImagePath}
         />
       </td>
+      <td>
+        {l.rmItemCode ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {l.rmItemCode}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        )}
+      </td>
+      <td className="mono td-num">{l.rmItemCode ? l.rmAcceptedQty : '—'}</td>
       <td className="text3" style={{ fontSize: 11 }}>
         {l.material ?? '—'}
       </td>
@@ -736,8 +753,6 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
           )
         }
       />
-      <StripItem label="Customer Material" value={detail.clientMaterial ?? '—'} />
-      <StripItem label="Customer Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
       <div style={{ flex: '1 1 240px', minWidth: 200 }}>
         <span className="form-label">Remarks</span>
         <div style={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>

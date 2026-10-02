@@ -3,6 +3,7 @@
 // truth stays in the shared package and frontend uses the same types.
 export {
   createJobWorkOrderInputSchema,
+  ensureJwRmItemInputSchema,
   jobWorkOrderDetailSchema,
   jobWorkOrderLineSchema,
   jobWorkOrderListItemSchema,
@@ -13,6 +14,8 @@ export {
 } from '@innovic/shared';
 export type {
   CreateJobWorkOrderInput,
+  EnsureJwRmItemInput,
+  EnsureJwRmItemResponse,
   JobWorkOrder,
   JobWorkOrderDetail,
   JobWorkOrderLine,

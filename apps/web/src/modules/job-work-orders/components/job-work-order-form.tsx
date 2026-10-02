@@ -1,18 +1,22 @@
-// Job Work Order form — header + a header-level CLIENT MATERIAL DETAILS section
-// (client supplies raw material → we process → deliver finished parts) + line
-// items with per-line Rate + Amount.
+// Job Work Order form — header + line items with per-line Rate + Amount.
 //
 // The header mirrors the Sales Order header for parity (user request): a
 // live-checked JWSO No. (DocNumberInput), a server-searched Client picker with
-// inline quick-add, GST %, a header-level Due Date applied to every line, and a
-// Client PO No. that is required OR satisfied by an attached Email Ref. Status is
-// hidden on create (defaults to 'open') and only shown on edit. What stays
-// JWSO-specific: the free-text line editor + the Client Material Details block.
+// inline quick-add, GST %, a header Due Date that FILLS every line's Due Date
+// when changed (a helper — it is not stored; each line keeps its own date), and
+// a Client PO No. that is required OR satisfied by an attached Email Ref.
+// Status is server-owned: read-only on edit, never sent.
+//
+// ADR-203: no material fields in the header. Each line names a master item and
+// shows its customer raw material in the "Customer RM" column — the
+// `<item code>-RM` item, found or created silently the moment the item is picked
+// (POST /job-work-orders/rm-item). Lines already used downstream (`inUse`) lock
+// Item / UOM / BOM and cannot be removed — they are short-closed instead.
 
 import {
   type CreateJobWorkOrderInput,
-  type Item,
   type JobWorkOrderDetail,
+  type JobWorkOrderLine,
   type ListItemsResponse,
   normalizeRevision,
   revisionBackwardsMessage,
@@ -23,7 +27,7 @@ import {
   UOMS,
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { Fragment, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { docCodeToSend } from '@/lib/use-doc-number';
@@ -38,13 +42,18 @@ import { useItemsList } from '@/modules/items/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { useEnsureJwRmItem } from '../api';
 import { downloadJwLineTemplate, parseJwLineFile } from '../lib/import-export';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
-import { QuickAddPartyMaterial } from './quick-add-party-material';
 
 interface LineFormValue {
   id?: string | undefined;
+  /** Our line number, assigned by the server on save and never reused. Shown,
+   *  never sent; a new line has none until it is saved. */
+  lineNo?: number | undefined;
   itemId?: string | undefined;
+  /** The picked item's code — DISPLAY only (the picker's label). Never sent:
+   *  the server snapshots it from `itemId`. */
   itemCodeText: string;
   partName: string;
   material?: string | undefined;
@@ -61,9 +70,11 @@ interface LineFormValue {
   orderQty: number;
   rate: number;
   dueDate?: string | undefined;
-  status?: SoStatus | undefined;
   /** Assembly line: the BOM whose components make up this part (0086). */
   sourceBomMasterId?: string | undefined;
+  /** ADR-203: a downstream document uses this line — Item / UOM / BOM locked,
+   *  Remove disabled. Read from the detail; never sent. */
+  inUse?: boolean | undefined;
 }
 
 interface FormValues {
@@ -76,12 +87,9 @@ interface FormValues {
     customerName?: string;
     clientPoNo?: string;
     remarks?: string;
-    // Header-level Due Date (UI only) — applied to every line on save, matching
-    // the Sales Order header. Not stored on the JWSO header (due_date lives per
-    // line); the form captures it once.
+    // Header Due Date (UI only) — a helper: changing it fills every line's Due
+    // Date, and a new line starts from it. Never sent; due_date lives per line.
     dueDate?: string;
-    clientMaterial?: string;
-    clientMaterialQty?: number;
   };
   lines: LineFormValue[];
 }
@@ -131,6 +139,55 @@ function upperCaseRevField<T extends string>(
  *  class must be escaped or the whole pattern is silently ignored. */
 const REV_INPUT_PATTERN = '[A-Z0-9][A-Z0-9.\\/\\-]{0,31}';
 const REV_INPUT_TITLE = 'Drawing Rev: letters, digits, . - / only';
+/** The Customer RM lookup for one order item (ADR-203). */
+type RmState =
+  | { status: 'loading' }
+  | { status: 'ok'; code: string; created: boolean }
+  | { status: 'error'; message: string };
+
+/** Why a line's Item / UOM / BOM / Remove are locked (ADR-203 `inUse`). */
+const IN_USE_TITLE =
+  'Used by a Job Card / Plan / Party GRN / issue / return / invoice — use Short-close on the JWSO page';
+
+/** The line's Customer RM (ADR-203): `<code>-RM ✓` in strong mono once known,
+ *  with a small "new" chip when this lookup created it; a muted "…" while it is
+ *  being checked; the server's message in red when it was refused (Save is
+ *  blocked until the item is re-picked). Blank until an item is picked. */
+function CustomerRmCell(props: { rm: RmState | undefined }): React.JSX.Element {
+  const { rm } = props;
+  if (!rm) return <span className="text3">—</span>;
+  if (rm.status === 'loading')
+    return (
+      <span className="text3" title="Checking the Customer RM…">
+        …
+      </span>
+    );
+  if (rm.status === 'error')
+    return (
+      <span
+        role="alert"
+        title={rm.message}
+        style={{ color: 'var(--red2)', fontSize: 11, whiteSpace: 'normal' }}
+      >
+        {rm.message}
+      </span>
+    );
+  return (
+    <span title={rm.code} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+        {rm.code}
+      </span>
+      <span aria-label="found" style={{ color: 'var(--green2)' }}>
+        ✓
+      </span>
+      {rm.created ? (
+        <span className="badge b-amber" title="Created in Item Master for this line">
+          new
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 type CreateMode = {
   mode: 'create';
@@ -142,6 +199,10 @@ type CreateMode = {
   onPoFileChange?: (file: File | null) => void;
   /** Email reference attached against the Client PO (uploaded after save). */
   onEmailFileChange?: (file: File | null) => void;
+  /** May this user see money on JWSOs — `effectiveFormPerms(eff,'jw_create')
+   *  .price`, the same rule the server applies before sending a JWSO detail
+   *  (which the edit form reads as `detail.priceVisible`). */
+  priceVisible: boolean;
 } & PageHeaderSlot;
 type EditMode = {
   mode: 'edit';
@@ -256,32 +317,16 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
   // (The old fixed 200-row item preload that fed a code→item map is gone: the
   // line picker below searches the server and hands the PICKED record straight
-  // to fillLineFromItem, so an item past the first page auto-fills too.)
+  // to pickLineItem, so an item past the first page auto-fills too.)
 
-  // ── Customer Material picker: the party-supplied item the client ships us ──
-  // Server-side filtered to itemType=party_supplied_material (ADR-195), searched
-  // like the line Item Code picker so a code beyond the first page is reachable.
-  // Replaces the old free-text + 200-row `-rm` datalist.
-  const [partyMatSearch, setPartyMatSearch] = useState('');
-  const { data: partyMatData, isFetching: partyMatFetching } = useItemsList({
-    itemType: 'party_supplied_material',
-    ...(partyMatSearch.trim() ? { search: partyMatSearch.trim() } : {}),
-    // Show ALL party-supplied materials, not a small page (user request): the
-    // dropdown loads the whole set (1000 = the query cap; party materials are a
-    // small catalogue), and server search still narrows as you type.
-    limit: 1000,
-    offset: 0,
-  });
-  const partyMatItems = partyMatData?.items ?? [];
-  const [showAddPartyMat, setShowAddPartyMat] = useState(false);
   // Line Item Code picker: the shared SearchableSelect, server-searched like the
   // SO form's, so a code beyond any first page can still be picked.
   const [lineItemSearch, setLineItemSearch] = useState('');
   const { data: lineItemsData, isFetching: lineItemsFetching } = useItemsList({
     ...(lineItemSearch.trim() ? { search: lineItemSearch.trim() } : {}),
     // excludePartyOwned (ADR-195): a JWSO line is the part we MAKE, so a
-    // customer's own -rm material must not be pickable here (it belongs only in
-    // the Customer Material picker above).
+    // customer's own -RM material must not be pickable here (it is derived from
+    // the picked item and shown in the Customer RM column).
     excludePartyOwned: true,
     limit: 50,
     offset: 0,
@@ -309,144 +354,97 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
   const gstPercent = Number(watch('header.gstPercent')) || 0;
 
-  // The picker writes the picked item's CODE to header.clientMaterial (kept — the
-  // backend bridge reads the code). Confirm the pick inline (green ✅) and show it
-  // selected.
-  const clientMaterialCode = watch('header.clientMaterial') ?? '';
-  const clientMaterialKey = clientMaterialCode.trim().toUpperCase();
-  const partyMatInPage = clientMaterialKey
-    ? partyMatItems.find((it) => it.code.trim().toUpperCase() === clientMaterialKey)
-    : undefined;
+  // Money (rates / amounts / GST / totals) is shown only to a user who may see
+  // JWSO prices. Edit: told by the server on the detail it loaded. Create: the
+  // route reads the same permission the server checks.
+  const priceVisible = isEdit ? props.detail.priceVisible !== false : props.priceVisible;
 
-  // ISSUE-5: on edit, the stored Customer Material code can sit beyond the first
-  // 50 party-supplied items, so it is absent from the page above and the picker
-  // would render blank with no ✅. Resolve it with a targeted exact-code search
-  // (only while it is not already in the page) and seed it as a known option —
-  // mirrors the Job Card form's `linkedSourceOption`.
-  const needPartyMatLookup = Boolean(clientMaterialKey) && !partyMatInPage;
-  const { data: partyMatLookupData } = useItemsList(
-    {
-      itemType: 'party_supplied_material',
-      search: clientMaterialCode.trim(),
-      limit: 50,
-      offset: 0,
-    },
-    { enabled: needPartyMatLookup },
+  // ADR-203: any line already used downstream locks the customer — its Job
+  // Cards / Party GRNs / issues were made for this customer.
+  const anyLineInUse = isEdit && props.detail.lines.some((l) => l.inUse);
+  const savedLineById = new Map<string, JobWorkOrderLine>(
+    isEdit ? props.detail.lines.map((l) => [l.id, l] as const) : [],
   );
-  const partyMatLookupItem = needPartyMatLookup
-    ? (partyMatLookupData?.items ?? []).find(
-        (it) => it.code.trim().toUpperCase() === clientMaterialKey,
+
+  // ── Customer RM per order item (ADR-203) ──
+  // Keyed by the ORDER item id: the RM is a function of the item alone (one
+  // `<code>-RM` per item, any customer), so two lines with the same item share
+  // one lookup. Seeded on edit with the RM each line was saved with.
+  const [rmByItem, setRmByItem] = useState<Record<string, RmState>>(() => {
+    const seed: Record<string, RmState> = {};
+    if (props.mode === 'edit') {
+      for (const l of props.detail.lines) {
+        if (l.itemId && l.rmItemCode)
+          seed[l.itemId] = { status: 'ok', code: l.rmItemCode, created: false };
+      }
+    }
+    return seed;
+  });
+  // Item ids already asked for (or answered) — guards against a second request
+  // while the first is still in flight. Cleared for an id to retry it.
+  const rmRequested = useRef<Set<string>>(new Set(Object.keys(rmByItem)));
+  const ensureRm = useEnsureJwRmItem();
+  const ensureRmAsync = ensureRm.mutateAsync;
+  function requestRm(itemId: string): void {
+    if (rmRequested.current.has(itemId)) return;
+    rmRequested.current.add(itemId);
+    setRmByItem((prev) => ({ ...prev, [itemId]: { status: 'loading' } }));
+    ensureRmAsync({ itemId })
+      .then((res) =>
+        setRmByItem((prev) => ({
+          ...prev,
+          [itemId]: { status: 'ok', code: res.rmItemCode, created: res.created },
+        })),
       )
-    : undefined;
-
-  const selectedPartyMat = partyMatInPage ?? partyMatLookupItem;
-  const matchedRmItem = selectedPartyMat;
-
-  // What the picker offers: the current page, plus the seeded stored item when it
-  // is not in that page, so the selected value is a real, re-selectable option.
-  const partyMatOptions = (() => {
-    const base = partyMatItems.map((it) => ({ id: it.id, code: it.code, name: it.name }));
-    if (partyMatLookupItem && !base.some((o) => o.id === partyMatLookupItem.id)) {
-      return [
-        { id: partyMatLookupItem.id, code: partyMatLookupItem.code, name: partyMatLookupItem.name },
-        ...base,
-      ];
-    }
-    return base;
-  })();
-
-  // A new party-supplied item created in the +New pop-up: select its code into
-  // the picker and close. The half-filled JWSO is untouched — the modal never
-  // navigated away.
-  function onPartyMaterialCreated(item: Item): void {
-    setValue('header.clientMaterial', item.code, { shouldDirty: true });
-    setShowAddPartyMat(false);
+      .catch((err: unknown) => {
+        // Not cached as answered: re-picking the item asks again.
+        rmRequested.current.delete(itemId);
+        setRmByItem((prev) => ({
+          ...prev,
+          [itemId]: {
+            status: 'error',
+            message: err instanceof Error ? err.message : 'Could not set up the Customer RM.',
+          },
+        }));
+      });
   }
 
-  // Per-line memory of the master code we last auto-filled a line from, keyed by
-  // the react-hook-form field id (stable as lines are added/removed). This is
-  // how we tell an AUTO-FILLED value (safe to refresh or reset) from a value the
-  // user hand-typed on an OFF-MASTER line (must never be wiped).
-  //
-  // Why this stays inline rather than moving to the shared `useFieldCascade`
-  // (which does support a synchronous resolver, so a fetch race is not the
-  // reason): the JWSO line accepts off-master free text, and its reset rule is
-  // LINE-LEVEL — reset the derived fields IFF this line was ever auto-filled,
-  // signalled here by `prevMatchedCodeRef` OR an edit-mode-loaded `itemId`. The
-  // hook's preservation is FIELD-LEVEL (a dependent is reset only while it still
-  // equals what the hook itself last wrote). It never wrote the values an edit
-  // form loaded, so it would PRESERVE a stale saved Part Name when the code is
-  // changed to off-master — losing the documented edit-mode reset — and seeding
-  // it to fix that would then wipe genuinely hand-typed off-master lines. The
-  // hook's model cannot express this signal, so the cascade lives here inline.
-  // (The SO line has no off-master/hand-typed case and DOES route through the
-  // hook — see LineItemCascade in sales-order-form.tsx.)
-  const prevMatchedCodeRef = useRef<Record<string, string>>({});
-
-  /** Item Code is the unique key for a line; the master-derived fields (Part
-   *  Name, Material, UOM) follow it on every change:
-   *   - resolves to a master item  → REPLACE all three with the master's values
-   *     (overwrite, mirroring the SO form's line auto-fill), and remember the
-   *     matched code for this line;
-   *   - cleared / no longer matches → RESET all three (and drop the stale master
-   *     link) ONLY IF this line was previously auto-filled from a master, so no
-   *     stale master data lingers. A pure off-master line the user typed by hand
-   *     is left exactly as typed.
-   *  Rate, Qty, Drawing No. and Rev are always user-entered and are never
-   *  touched here — the drawing lives on the JWSO line, not the item master
-   *  (user decision 2026-09-21). */
-  function fillLineFromItem(
-    idx: number,
-    codeValue: string,
-    picked?: (typeof lineItems)[number],
-  ): void {
-    const lineKey = fields[idx]?.id ?? String(idx);
-    // The picked master record (from the server-searched picker page). A cleared
-    // box passes none, and an empty code never matches a master item.
-    const it = codeValue.trim() ? picked : undefined;
-    if (it) {
-      // Matched a master item — the code is the key, so the master wins: refresh
-      // all three derived fields (replace, not fill-only), even across a change
-      // from one valid code to another. Drawing No. is deliberately NOT here.
-      setValue(`lines.${idx}.partName`, it.name);
-      setValue(`lines.${idx}.material`, it.material ?? '');
-      setValue(`lines.${idx}.uom`, it.uom);
-      // Keep the hidden master link in step with the visible code so save uses
-      // the item now shown, not a stale itemId from a prior pick or an edit-mode
-      // load (fixes the edit-mode "swap to another master code" mismatch). The
-      // reset branch below already drops itemId when the code stops matching.
-      setValue(`lines.${idx}.itemId`, it.id);
-      prevMatchedCodeRef.current[lineKey] = it.code.trim().toUpperCase();
-      return;
-    }
-    // No master match. Reset the derived fields only if THIS line was previously
-    // auto-filled from a master — either matched earlier in this session, or
-    // loaded in edit mode as a master-linked line (itemId set). A hand-typed
-    // off-master line has neither signal and is left untouched, so manual Part
-    // Name / Material entered on a non-master code is never wiped. The typed
-    // Drawing No. survives either way.
-    const wasAutoFilled =
-      prevMatchedCodeRef.current[lineKey] !== undefined ||
-      Boolean(getValues(`lines.${idx}.itemId`));
-    if (!wasAutoFilled) return;
-    setValue(`lines.${idx}.partName`, '');
-    setValue(`lines.${idx}.material`, '');
-    setValue(`lines.${idx}.uom`, NEW_LINE.uom);
-    // The code no longer resolves to a master, so drop the stale master link too
-    // — leaving it would save blank/new text against the old item.
-    setValue(`lines.${idx}.itemId`, undefined);
-    delete prevMatchedCodeRef.current[lineKey];
-  }
-
-  /** The line's Item Code picker returned an item id (or null when cleared). */
+  /** Item Code is the key of a line and must come from Item Master. Picking an
+   *  item REPLACES its master-derived fields (Item Name, Material, UOM) and
+   *  asks for its Customer RM; clearing it clears them, so nothing stale is
+   *  left behind. Rate, Qty, Drawing No., Rev and Due Date are user-entered and
+   *  never touched here — the drawing lives on the JWSO line, not the item
+   *  master (user decision 2026-09-21). */
   function pickLineItem(idx: number, id: string | null): void {
     const it = id ? lineItems.find((x) => x.id === id) : undefined;
-    const code = it?.code ?? '';
-    setValue(`lines.${idx}.itemCodeText`, code, { shouldDirty: true });
-    fillLineFromItem(idx, code, it);
+    setValue(`lines.${idx}.itemCodeText`, it?.code ?? '', { shouldDirty: true });
+    setValue(`lines.${idx}.itemId`, it?.id);
+    setValue(`lines.${idx}.partName`, it?.name ?? '');
+    setValue(`lines.${idx}.material`, it?.material ?? '');
+    setValue(`lines.${idx}.uom`, it?.uom ?? NEW_LINE.uom);
+    if (it) {
+      // A failed earlier attempt for this item is retried on a fresh pick.
+      if (rmByItem[it.id]?.status === 'error') rmRequested.current.delete(it.id);
+      requestRm(it.id);
+    }
+  }
+
+  /** The header Due Date is a helper: changing it fills every line's Due Date
+   *  (the one explicit "apply to all"). Saving never copies it again. */
+  function applyDueDateToAllLines(value: string): void {
+    const n = getValues('lines')?.length ?? 0;
+    for (let i = 0; i < n; i++)
+      setValue(`lines.${i}.dueDate`, value || undefined, { shouldDirty: true });
   }
 
   const watchedLines = watch('lines');
+  // Every line's item gets its Customer RM looked up — a picked line already
+  // asked in pickLineItem; this catches imported lines and saved lines that
+  // pre-date ADR-203 (no RM stored yet). requestRm skips ids already asked.
+  const lineItemIdsKey = (watchedLines ?? []).map((l) => l.itemId ?? '').join(',');
+  useEffect(() => {
+    for (const itemId of lineItemIdsKey.split(',')) if (itemId) requestRm(itemId);
+  }, [lineItemIdsKey]);
   const subtotal = (watchedLines ?? []).reduce(
     (s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0),
     0,
@@ -535,7 +533,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         uniqueCodes.map(async (code) => {
           try {
             const res = await apiFetch<ListItemsResponse>(
-              `/items?search=${encodeURIComponent(code)}&limit=50&offset=0`,
+              // excludePartyOwned: a customer's own -RM material is never an
+              // order line, so a sheet naming one reports it as not found.
+              `/items?search=${encodeURIComponent(code)}&excludePartyOwned=true&limit=50&offset=0`,
             );
             const hit = res.items.find((it) => it.code.trim().toUpperCase() === code);
             if (hit) masterByCode.set(code, hit);
@@ -575,6 +575,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           // nobody read off a drawing.
           revision: r.revision?.trim() || NEW_LINE.revision,
           uom: master.uom,
+          // The sheet's own Due Date per row; a blank cell starts from the
+          // header Due Date, like a hand-added line.
+          dueDate: r.dueDate ?? (getValues('header.dueDate') || undefined),
         });
       }
 
@@ -587,6 +590,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           (l) => !l.itemId && !l.itemCodeText?.trim() && !l.partName?.trim(),
         );
         if (allBlank) replace(newLines);
+        // Each imported line's Customer RM is looked up by the effect above.
         else for (const l of newLines) append(l);
       }
 
@@ -632,21 +636,43 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       return;
     }
 
+    // Name a line the way the table shows it: its stored Ln, or its row for a
+    // line not saved yet (which has no Ln).
+    const lineRef = (idx: number): string => {
+      const no = values.lines[idx]?.lineNo;
+      return no ? `Line ${no}` : `New line (row ${idx + 1})`;
+    };
+
+    // Item Code is the key of a JWSO line and must come from Item Master
+    // (ADR-203) — the picker and the import both resolve to an itemId.
+    const badCode = values.lines.findIndex((l) => !l.itemId);
+    if (badCode >= 0) {
+      setLineError(`${lineRef(badCode)}: pick the Item Code from Item Master.`);
+      return;
+    }
+    // ADR-203: every line's Customer RM must be settled before Save — still
+    // being looked up, or refused by the server (its message is in the row).
+    for (let i = 0; i < values.lines.length; i++) {
+      const itemId = values.lines[i]?.itemId;
+      const rm = itemId ? rmByItem[itemId] : undefined;
+      if (!rm || rm.status === 'loading') {
+        setLineError(`${lineRef(i)}: still checking the Customer RM — Save again in a moment.`);
+        return;
+      }
+      if (rm.status === 'error') {
+        setLineError(`${lineRef(i)}: Customer RM — ${rm.message}`);
+        return;
+      }
+    }
     // Rev is compulsory (migration 0120), exactly as on the Sales Order line.
     // Caught here so the message names the line. Lines loaded for EDIT are never
     // blocked by this: every pre-existing row was backfilled to '0' in the
     // database, and detailToFormValues keeps that '0' (falling back to '0' again
     // if the API has not started sending the column yet) — '0' is non-blank.
-    // Item Code is the key of a JWSO line, as on the SO form.
-    const badCode = values.lines.findIndex((l) => !l.itemId && !l.itemCodeText.trim());
-    if (badCode >= 0) {
-      setLineError(`Line ${badCode + 1}: Item Code is required.`);
-      return;
-    }
     const badRev = values.lines.findIndex((l) => !String(l.revision ?? '').trim());
     if (badRev >= 0) {
       setLineError(
-        `Line ${badRev + 1}: enter the Drawing Rev — the revision printed on the customer's drawing.`,
+        `${lineRef(badRev)}: enter the Drawing Rev — the revision printed on the customer's drawing.`,
       );
       return;
     }
@@ -654,57 +680,49 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     // here against the revision the JWSO was loaded with, with the same sentence
     // the API answers, so the person is told before the round trip. A change of
     // kind (1 → A) cannot be ordered and is allowed.
-    if (props.mode === 'edit') {
-      const savedById = new Map(props.detail.lines.map((d) => [d.id, d]));
-      for (const l of values.lines) {
-        const saved = l.id ? savedById.get(l.id) : undefined;
-        if (!saved) continue;
-        const typed = String(l.revision ?? '');
-        if (revisionGoesBackwards(saved.revision, typed)) {
-          setLineError(revisionBackwardsMessage(saved.lineNo, saved.revision, typed));
-          return;
-        }
+    for (const l of values.lines) {
+      const saved = l.id ? savedLineById.get(l.id) : undefined;
+      if (!saved) continue;
+      const typed = String(l.revision ?? '');
+      if (revisionGoesBackwards(saved.revision, typed)) {
+        setLineError(revisionBackwardsMessage(saved.lineNo, saved.revision, typed));
+        return;
       }
     }
 
     const h = values.header;
-    // Header-level Due Date applied to every line (parity with the SO form).
-    const soDue = h.dueDate?.trim() || undefined;
+    // Built field by field — never a spread of the form header, which also holds
+    // UI-only values (the Due Date helper, the read-only status).
     const headerOut = {
-      ...h,
       // Code is generated server-side in series; never send a client value on
       // create (an empty string would fail the schema's min-length check).
       code: docCodeToSend(h.code, suggestedCode),
-      // customerName is snapshotted server-side from the client master.
-      customerName: undefined,
-      gstPercent: Number(h.gstPercent) || 0,
+      jwDate: h.jwDate,
       clientId: h.clientId || undefined,
-      clientPoNo: h.clientPoNo?.trim() || undefined,
-      remarks: h.remarks?.trim() || undefined,
-      clientMaterial: h.clientMaterial?.trim() || undefined,
-      clientMaterialQty:
-        h.clientMaterialQty !== undefined && !Number.isNaN(Number(h.clientMaterialQty))
-          ? Number(h.clientMaterialQty)
-          : undefined,
+      // customerName is snapshotted server-side from the client master.
+      // null, not undefined: a field the user cleared must be sent as null to
+      // actually clear it (an absent key leaves the stored value as it was).
+      clientPoNo: h.clientPoNo?.trim() || null,
+      remarks: h.remarks?.trim() || null,
+      // Money only from a user who may see it (the server ignores it otherwise).
+      ...(priceVisible ? { gstPercent: Number(h.gstPercent) || 0 } : {}),
     };
 
     const linesOut = values.lines.map((l) => {
-      const trimmedCode = l.itemCodeText.trim();
-      // Prefer a resolved master itemId (mirrors the SO form) so a picked/
-      // imported item is never discarded in favour of stale text; fall back to
-      // the raw code only when the row has no master link.
-      const refs: { itemId?: string; itemCodeText?: string } = l.itemId
-        ? { itemId: l.itemId }
-        : trimmedCode
-          ? { itemCodeText: trimmedCode }
-          : {};
+      // A line in use keeps its Item / UOM / BOM: the controls are locked, and
+      // the saved values are sent so a locked control can never change them.
+      const saved = l.id ? savedLineById.get(l.id) : undefined;
+      const locked = Boolean(saved?.inUse);
+      const itemId = locked && saved?.itemId ? saved.itemId : (l.itemId ?? '');
+      const uom = locked && saved ? saved.uom : l.uom;
+      const bomId = locked ? (saved?.sourceBomMasterId ?? undefined) : l.sourceBomMasterId;
       return {
         ...(l.id ? { id: l.id } : {}),
-        ...refs,
+        itemId,
         partName: l.partName.trim(),
-        material: l.material?.trim() || undefined,
-        // null, not undefined: the server merges only PRESENT keys on update, so a
-        // Drawing No. the user cleared must be sent as null to actually clear it.
+        // null, not undefined: the server merges only PRESENT keys on update, so
+        // a cleared field must be sent as null to actually clear it.
+        material: l.material?.trim() || null,
         drawingNo: l.drawingNo?.trim() || null,
         // Always sent, and trimmed. The check above guarantees it is non-blank.
         revision: normalizeRevision(String(l.revision ?? '')),
@@ -712,12 +730,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         // drawing would send nothing at all and the server would keep the old
         // file. An explicit null is what says the drawing was removed.
         drawingFilePath: l.drawingFilePath || null,
-        uom: l.uom,
+        uom,
         orderQty: Number(l.orderQty),
-        rate: Number(l.rate) || 0,
-        dueDate: soDue,
-        ...(l.status ? { status: l.status } : {}),
-        ...(l.sourceBomMasterId ? { sourceBomMasterId: l.sourceBomMasterId } : {}),
+        ...(priceVisible ? { rate: Number(l.rate) || 0 } : {}),
+        // Each line's own date — the header Due Date only ever filled these in.
+        dueDate: l.dueDate || null,
+        ...(bomId ? { sourceBomMasterId: bomId } : {}),
       };
     });
 
@@ -730,6 +748,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     }
   };
 
+  // Line table column count: Ln, Item Code, Item Name, Customer RM, Drawing
+  // Rev, UOM, Order Qty, [Rate, Amount], Due Date, More, Remove.
+  const colCount = priceVisible ? 12 : 10;
   const standalone = Boolean(props.pageTitle);
   const saveDisabled = formState.isSubmitting || (isCreate && !docNoValid);
   const submitForm = handleSubmit(onValid);
@@ -788,10 +809,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         </>
       ) : null}
       {/* Header on the 12-column grid, in reading order: Customer + Client PO
-          first, the Customer Material the client supplies right after the
-          customer, then JWSO No. / dates, GST % and (edit) status, then
-          Remarks. Every field and its wiring is unchanged — only the order and
-          the widths moved. */}
+          first, then JWSO No. / dates, GST % and (edit) status, then Remarks.
+          No material fields (ADR-203) — each line carries its Customer RM. */}
       <Section standalone={standalone} title="JWSO Details">
         <div className="form-grid-12">
           <div className="form-grp f-lg">
@@ -802,6 +821,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               <div style={{ flex: 1 }}>
                 <SearchableSelect
                   id="clientId"
+                  disabled={anyLineInUse}
                   value={selectedClientId}
                   onChange={(id) => {
                     setValue('header.clientId', id ?? undefined, { shouldValidate: true });
@@ -823,11 +843,18 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 type="button"
                 className="btn btn-ghost btn-sm"
                 style={{ whiteSpace: 'nowrap' }}
+                disabled={anyLineInUse}
                 onClick={() => setShowAddClient(true)}
               >
                 + New
               </button>
             </div>
+            {anyLineInUse ? (
+              <div className="form-help">
+                Locked — a line of this JWSO is already used by a Job Card, Party GRN or another
+                document.
+              </div>
+            ) : null}
             <input
               type="hidden"
               {...register('header.clientId', { required: 'Customer is required.' })}
@@ -979,66 +1006,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             ) : null}
           </div>
 
-          {/* Customer Material (ADR-195) — right after the customer, since it is
-            the customer who supplies it. A picker of party-supplied items only
-            (server-filtered to itemType=party_supplied_material), so a code
-            beyond the first page is still searchable. The +New pop-up creates a
-            party-supplied item without leaving this half-filled JWSO. */}
-          <div className="form-grp f-lg">
-            <label className="form-label">Customer Material (Item -rm)</label>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <div style={{ flex: 1 }}>
-                <SearchableSelect
-                  id="clientMaterial"
-                  value={selectedPartyMat?.id ?? null}
-                  onChange={(id) => {
-                    const it = id ? partyMatOptions.find((x) => x.id === id) : undefined;
-                    setValue('header.clientMaterial', it?.code ?? undefined, { shouldDirty: true });
-                  }}
-                  onSearch={setPartyMatSearch}
-                  loading={partyMatFetching}
-                  options={partyMatOptions}
-                  placeholder="🔍 Search customer material (Item -rm)…"
-                  valueLabel={
-                    selectedPartyMat
-                      ? `${selectedPartyMat.code} — ${selectedPartyMat.name}`
-                      : clientMaterialCode || undefined
-                  }
-                  selectedLabel={(o) => o.code ?? o.name}
-                />
-              </div>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ whiteSpace: 'nowrap' }}
-                onClick={() => setShowAddPartyMat(true)}
-              >
-                + New
-              </button>
-            </div>
-            {/* Positive match only: confirms the picked party-supplied item inline.
-              (Legacy's "⚠ not found" branch is deliberately not ported — the page
-              holds one server page, so absence from it does not prove absence from
-              the master and the warning would fire falsely.) */}
-            {matchedRmItem ? (
-              <div className="form-help" style={{ color: 'var(--green2)' }}>
-                ✅ <b>{matchedRmItem.name}</b>
-                {matchedRmItem.material ? ` [${matchedRmItem.material}]` : ''}
-              </div>
-            ) : null}
-          </div>
-          <div className="form-grp f-sm">
-            <label className="form-label">Customer Material Qty</label>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              className="innovic-input"
-              placeholder="0"
-              {...register('header.clientMaterialQty', { valueAsNumber: true })}
-            />
-          </div>
-
           {/* No ★: `code` is `.optional()` and the server generates the next
             IN-JW-##### in series when omitted — the field's own help text says
             "leave blank to auto-generate on save", and useDocNumber treats empty
@@ -1073,25 +1040,32 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               id="jwDueDate"
               type="date"
               className="innovic-input"
-              {...register('header.dueDate')}
+              title="Fills every line's Due Date. Each line can then be changed on its own."
+              {...register('header.dueDate', {
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                  applyDueDateToAllLines(e.target.value),
+              })}
             />
+            <div className="form-help">Fills every line&apos;s Due Date</div>
           </div>
-          <div className="form-grp f-sm">
-            <label className="form-label" htmlFor="gstPercent">
-              GST %
-            </label>
-            <select
-              id="gstPercent"
-              className="innovic-select"
-              {...register('header.gstPercent', { valueAsNumber: true })}
-            >
-              {[0, 5, 12, 18, 28].map((g) => (
-                <option key={g} value={g}>
-                  {g}%
-                </option>
-              ))}
-            </select>
-          </div>
+          {priceVisible ? (
+            <div className="form-grp f-sm">
+              <label className="form-label" htmlFor="gstPercent">
+                GST %
+              </label>
+              <select
+                id="gstPercent"
+                className="innovic-select"
+                {...register('header.gstPercent', { valueAsNumber: true })}
+              >
+                {[0, 5, 12, 18, 28].map((g) => (
+                  <option key={g} value={g}>
+                    {g}%
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           {isEdit ? (
             <div className="form-grp f-sm">
               <label className="form-label" htmlFor="status">
@@ -1158,7 +1132,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => append({ ...NEW_LINE })}
+              onClick={() => {
+                // A new line starts from the header Due Date helper, if set.
+                const due = getValues('header.dueDate');
+                append({ ...NEW_LINE, ...(due ? { dueDate: due } : {}) });
+              }}
             >
               <Plus size={13} /> Add Line
             </button>
@@ -1214,59 +1192,67 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         </div>
 
         {/* Same shape as the SO line editor: one row per line in a fixed-layout
-          table. Eight data columns stay visible (Ln, Item Code, Item Name,
-          Drawing Rev, UOM, Order Qty, Rate, Amount); the less-used Material,
+          table. Visible: Ln, Item Code, Item Name, Customer RM, Drawing Rev,
+          UOM, Order Qty, [Rate, Amount], Due Date; the less-used Material,
           Drawing No., Drawing File and Assembly BOM open per line under
-          "▸ More", like ERPNext's grid row edit. */}
+          "▸ More", like ERPNext's grid row edit. Rate / Amount are dropped for a
+          user who may not see prices. */}
         <table
           className="innovic-table tbl-ctr"
-          style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}
+          style={{ width: '100%', tableLayout: 'fixed', minWidth: 1100 }}
         >
           <thead>
             <tr>
               <th style={{ width: '4%' }}>Ln</th>
-              <th style={{ width: '16%' }}>
+              <th style={{ width: '14%' }}>
                 Item Code <span className="req">★</span>
               </th>
-              <th style={{ width: '22%' }}>Item Name</th>
-              <th style={{ width: '8%' }}>
+              <th style={{ width: '16%' }}>Item Name</th>
+              <th style={{ width: '12%' }} title="The customer's raw material for this item">
+                Customer RM
+              </th>
+              <th style={{ width: '7%' }}>
                 Drawing Rev <span className="req">★</span>
               </th>
-              <th style={{ width: '8%' }}>UOM</th>
-              <th className="th-num" style={{ width: '9%' }}>
+              <th style={{ width: '7%' }}>UOM</th>
+              <th className="th-num" style={{ width: '7%' }}>
                 Order Qty <span className="req">★</span>
               </th>
-              <th className="th-num" style={{ width: '10%', color: 'var(--green2)' }}>
-                Rate (₹)
-              </th>
-              <th className="th-num" style={{ width: '10%', color: 'var(--green2)' }}>
-                Amount
-              </th>
+              {priceVisible ? (
+                <>
+                  <th className="th-num" style={{ width: '8%', color: 'var(--green2)' }}>
+                    Rate (₹)
+                  </th>
+                  <th className="th-num" style={{ width: '8%', color: 'var(--green2)' }}>
+                    Amount
+                  </th>
+                </>
+              ) : null}
+              <th style={{ width: '10%' }}>Due Date</th>
               <th style={{ width: '8%' }} />
-              <th style={{ width: '5%' }} />
+              <th style={{ width: '4%' }} />
             </tr>
           </thead>
           <tbody>
             {fields.length === 0 ? (
               <tr>
-                <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
+                <td colSpan={colCount} className="empty-state" style={{ padding: 14 }}>
                   No lines yet — click <strong>+ Add Line</strong>. At least one is required.
                 </td>
               </tr>
             ) : (
               fields.map((field, idx) => {
-                const amt =
-                  (Number(watchedLines?.[idx]?.orderQty) || 0) *
-                  (Number(watchedLines?.[idx]?.rate) || 0);
+                const wl = watchedLines?.[idx];
+                const amt = (Number(wl?.orderQty) || 0) * (Number(wl?.rate) || 0);
                 // On-master item → name is derived + read-only; an older
-                // off-master line (code with no master link) keeps it editable.
-                // Every pick from the master sets itemId, so the link alone says
-                // "on master" — no preloaded page to consult.
-                const lineOnMaster = Boolean(watchedLines?.[idx]?.itemId);
+                // off-master line (code with no master link) keeps it editable
+                // until an item is picked.
+                const lineOnMaster = Boolean(wl?.itemId);
+                // ADR-203: used downstream → Item / UOM / BOM locked, no Remove.
+                const inUse = Boolean(field.inUse);
                 const isOpen = openMore.has(field.id);
                 // How many of the folded fields hold a value — shown on the
                 // toggle so a filled Material / BOM is never hidden silently.
-                const wl = watchedLines?.[idx];
                 const filledMore = [
                   wl?.material,
                   wl?.drawingNo,
@@ -1277,12 +1263,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   <Fragment key={field.id}>
                     <tr>
                       <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
-                        {idx + 1}
+                        {field.lineNo ?? '—'}
                       </td>
-                      <td>
+                      <td title={inUse ? IN_USE_TITLE : undefined}>
                         <SearchableSelect
                           id={`jwln-ic-${idx}`}
-                          value={watchedLines?.[idx]?.itemId ?? null}
+                          disabled={inUse}
+                          value={wl?.itemId ?? null}
                           onChange={(id) => pickLineItem(idx, id)}
                           onSearch={setLineItemSearch}
                           loading={lineItemsFetching}
@@ -1292,7 +1279,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                             name: it.name,
                           }))}
                           placeholder="🔍 Search item code or name..."
-                          valueLabel={watchedLines?.[idx]?.itemCodeText || undefined}
+                          valueLabel={wl?.itemCodeText || undefined}
                           selectedLabel={(o) => o.code ?? o.name}
                         />
                       </td>
@@ -1315,6 +1302,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           <div className="form-error">{errors.lines[idx]?.partName?.message}</div>
                         ) : null}
                       </td>
+                      <td>
+                        <CustomerRmCell rm={wl?.itemId ? rmByItem[wl.itemId] : undefined} />
+                      </td>
                       {/* The client's drawing revision, typed exactly as it reads on
                         their print ('A', 'B', 'R1', '0'). Independent of the Drawing
                         File (under ▸ More) in BOTH directions. Compulsory — onValid
@@ -1331,9 +1321,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           {...upperCaseRevField(register(`lines.${idx}.revision` as const))}
                         />
                       </td>
-                      <td>
+                      <td title={inUse ? IN_USE_TITLE : undefined}>
+                        {/* onValid sends the SAVED UOM for a line in use, so the
+                          locked select can never change it. */}
                         <select
                           className="innovic-select"
+                          disabled={inUse}
                           {...register(`lines.${idx}.uom` as const)}
                         >
                           {UOMS.map((u) => (
@@ -1356,22 +1349,34 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           })}
                         />
                       </td>
-                      <td className="td-num">
+                      {priceVisible ? (
+                        <>
+                          <td className="td-num">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              placeholder="₹ Rate"
+                              className="innovic-input"
+                              style={{ color: 'var(--green2)' }}
+                              {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
+                            />
+                          </td>
+                          <td
+                            className="mono td-num"
+                            style={{ color: 'var(--green2)', fontWeight: 700 }}
+                          >
+                            {amt > 0 ? `₹${inrFormat(amt)}` : '—'}
+                          </td>
+                        </>
+                      ) : null}
+                      <td>
                         <input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          placeholder="₹ Rate"
+                          type="date"
                           className="innovic-input"
-                          style={{ color: 'var(--green2)' }}
-                          {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
+                          aria-label={`Due Date, row ${idx + 1}`}
+                          {...register(`lines.${idx}.dueDate` as const)}
                         />
-                      </td>
-                      <td
-                        className="mono td-num"
-                        style={{ color: 'var(--green2)', fontWeight: 700 }}
-                      >
-                        {amt > 0 ? `₹${inrFormat(amt)}` : '—'}
                       </td>
                       <td>
                         <button
@@ -1385,19 +1390,24 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                         </button>
                       </td>
                       <td>
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm btn-icon"
-                          onClick={() => remove(idx)}
-                          aria-label={`Remove line ${idx + 1}`}
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {/* The wrapper carries the reason: a disabled button
+                          shows no tooltip in every browser. */}
+                        <span title={inUse ? IN_USE_TITLE : undefined}>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm btn-icon"
+                            disabled={inUse}
+                            onClick={() => remove(idx)}
+                            aria-label={`Remove row ${idx + 1}`}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </span>
                       </td>
                     </tr>
                     {isOpen ? (
                       <tr>
-                        <td colSpan={10} style={{ background: 'var(--bg2)' }}>
+                        <td colSpan={colCount} style={{ background: 'var(--bg2)' }}>
                           <div className="form-grid-12" style={{ textAlign: 'left' }}>
                             <div className="form-grp f-md">
                               <label className="form-label">Material</label>
@@ -1426,10 +1436,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                                 }
                               />
                             </div>
-                            <div className="form-grp f-lg">
+                            <div className="form-grp f-lg" title={inUse ? IN_USE_TITLE : undefined}>
                               <label className="form-label">Assembly BOM</label>
                               <select
                                 className="innovic-select"
+                                disabled={inUse}
                                 {...register(`lines.${idx}.sourceBomMasterId` as const)}
                               >
                                 <option value="">— none (plain machining) —</option>
@@ -1462,11 +1473,14 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           background: 'rgba(34,197,94,0.03)',
         }}
       >
-        <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <Tot label="Subtotal" value={subtotal} />
-          <Tot label={`GST (${gstPercent}%)`} value={gstAmt} />
-          <Tot label="Grand Total" value={grand} bold />
-        </div>
+        {/* Money only for a user who may see prices; the count stays. */}
+        {priceVisible ? (
+          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Tot label="Subtotal" value={subtotal} />
+            <Tot label={`GST (${gstPercent}%)`} value={gstAmt} />
+            <Tot label="Grand Total" value={grand} bold />
+          </div>
+        ) : null}
         <div className="text3" style={{ fontSize: 11, textAlign: 'right', marginTop: 4 }}>
           {lineCount} item{lineCount === 1 ? '' : 's'} • {totalPcs} total pcs
         </div>
@@ -1486,13 +1500,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
       {showAddClient ? (
         <QuickAddClient onClose={() => setShowAddClient(false)} onCreated={onClientCreated} />
-      ) : null}
-
-      {showAddPartyMat ? (
-        <QuickAddPartyMaterial
-          onClose={() => setShowAddPartyMat(false)}
-          onCreated={onPartyMaterialCreated}
-        />
       ) : null}
     </form>
   );
@@ -1537,24 +1544,15 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
       ...(detail.customerName ? { customerName: detail.customerName } : {}),
       ...(detail.clientPoNo ? { clientPoNo: detail.clientPoNo } : {}),
       ...(detail.remarks ? { remarks: detail.remarks } : {}),
-      // Header-level Due Date = the earliest line due date (lines all share it now).
-      ...(() => {
-        const due = detail.lines
-          .map((l) => l.dueDate)
-          .filter((d): d is string => Boolean(d))
-          .sort()[0];
-        return due ? { dueDate: due } : {};
-      })(),
-      ...(detail.clientMaterial ? { clientMaterial: detail.clientMaterial } : {}),
-      ...(detail.clientMaterialQty !== null
-        ? { clientMaterialQty: Number(detail.clientMaterialQty) }
-        : {}),
+      // No header Due Date on load: it is only a helper that fills the lines,
+      // and each line shows its own saved date below.
     },
     lines:
       detail.lines.length > 0
         ? detail.lines.map(
             (l): LineFormValue => ({
               id: l.id,
+              lineNo: l.lineNo,
               ...(l.itemId ? { itemId: l.itemId } : {}),
               itemCodeText: l.itemCodeText ?? '',
               partName: l.partName,
@@ -1569,10 +1567,10 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
               drawingFilePath: l.drawingFilePath ?? null,
               uom: l.uom,
               orderQty: l.orderQty,
-              rate: Number(l.rate),
+              rate: Number(l.rate ?? 0),
               ...(l.dueDate ? { dueDate: l.dueDate } : {}),
-              status: l.status,
               ...(l.sourceBomMasterId ? { sourceBomMasterId: l.sourceBomMasterId } : {}),
+              inUse: l.inUse,
             }),
           )
         : [{ ...NEW_LINE }],

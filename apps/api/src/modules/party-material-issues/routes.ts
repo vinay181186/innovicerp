@@ -2,6 +2,7 @@ import {
   cancelPartyMaterialIssueInputSchema,
   createPartyMaterialIssueInputSchema,
   listPartyMaterialIssuesQuerySchema,
+  returnPartyMaterialIssueToStoreInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -31,5 +32,13 @@ export async function partyMaterialIssuesRoutes(app: FastifyInstance): Promise<v
     const { id } = idParam.parse(req.params);
     const { reason } = cancelPartyMaterialIssueInputSchema.parse(req.body);
     return service.cancelPartyMaterialIssue(id, reason, req.user);
+  });
+
+  // ADR-203 - put unused pieces back from the Job Card into the register.
+  app.post('/party-material-issues/:id/return-to-store', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParam.parse(req.params);
+    const input = returnPartyMaterialIssueToStoreInputSchema.parse(req.body);
+    return service.returnPartyMaterialIssueToStore(id, input, req.user);
   });
 }

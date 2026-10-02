@@ -29,6 +29,7 @@ import {
   materialGrades,
   materialSizes,
   ncRegister,
+  partyMaterialIssues,
   plans,
   purchaseOrderLines,
   purchaseOrders,
@@ -43,6 +44,7 @@ import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/er
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { resolveRmItem } from '../../lib/rm-item';
+import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import {
   assertNoQcDirectlyAfterOutsource,
@@ -57,7 +59,6 @@ import {
   ActivityAction,
   type ActivityChange,
   opSrNo,
-  roundQty,
   stripStaleGeneratedTerminalQc,
 } from '@innovic/shared';
 import type {
@@ -103,6 +104,66 @@ const OSP_VENDOR_TBD = '(vendor TBD)';
 // vendor. 'pending' / 'pr_raised' are pre-PO intent only — they commit the op
 // solely while the PR behind them is still alive (ADR-101).
 const OSP_MOVED_STATUSES: ReadonlySet<string> = new Set(['po_created', 'sent', 'received']);
+
+// ADR-203 — customer-material figures for a JW-sourced card (the JC
+// customer-material panel). Read off the DOCUMENTS, not the ledger: a cancelled
+// GRN / issue / return is soft-deleted or 'cancelled', so excluding it is the
+// netting of its reversal. Everything keys on the JWSO line id
+// (never the line-number text). All 0 on a non-JW card (jwl.id NULL).
+//
+//   Line totals (the whole JWSO line, every JC on it):
+//     cmLineAccepted  Σ party_grn_lines.accepted_qty, live GRN. A line still
+//                     waiting for Incoming QC carries accepted 0 (0193 §12), so
+//                     it adds nothing until QC books it.
+//     cmLineIssued    Σ (issue qty − returned to store), live issues
+//     cmLineReturned  Σ good pieces sent back on a live Customer Material Return
+//                     (rejects never entered the register)
+//   This card:
+//     cmJcIssued          Σ issue qty to this JC
+//     cmJcReturnedToStore Σ returned_to_store_qty of those issues
+//     cmJcUsed            first op's Σ (qty + reject_qty) on 'complete' rows —
+//                         a rejected piece used up its material too (ADR-183).
+//                         NC re-injections (LOG-NC-…) are not new material.
+const JC_CUSTOMER_MATERIAL_SELECT = sql`
+        COALESCE((SELECT SUM(pgl.accepted_qty)
+          FROM public.party_grn_lines pgl
+          JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+          WHERE pgl.jw_line_id = jwl.id AND pgl.deleted_at IS NULL), 0)::int AS "cmLineAccepted",
+        COALESCE((SELECT SUM(mi.qty - mi.returned_to_store_qty)
+          FROM public.party_material_issues mi
+          WHERE mi.jw_line_id = jwl.id AND mi.deleted_at IS NULL), 0)::int AS "cmLineIssued",
+        COALESCE((SELECT SUM(cl.qty)
+          FROM public.customer_material_return_lines cl
+          JOIN public.customer_material_returns c
+            ON c.id = cl.return_id AND c.deleted_at IS NULL AND c.status <> 'cancelled'
+          WHERE cl.jw_line_id = jwl.id AND cl.kind = 'good' AND cl.deleted_at IS NULL), 0)::int AS "cmLineReturned",
+        CASE WHEN jwl.id IS NULL THEN 0 ELSE COALESCE((SELECT SUM(mi.qty)
+          FROM public.party_material_issues mi
+          WHERE mi.job_card_id = jc.id AND mi.deleted_at IS NULL), 0) END::int AS "cmJcIssued",
+        CASE WHEN jwl.id IS NULL THEN 0 ELSE COALESCE((SELECT SUM(mi.returned_to_store_qty)
+          FROM public.party_material_issues mi
+          WHERE mi.job_card_id = jc.id AND mi.deleted_at IS NULL), 0) END::int AS "cmJcReturnedToStore",
+        CASE WHEN jwl.id IS NULL THEN 0 ELSE COALESCE((SELECT SUM(l.qty + l.reject_qty)
+          FROM public.op_log l
+          WHERE l.jc_op_id = (SELECT o.id FROM public.jc_ops o
+                               WHERE o.job_card_id = jc.id AND o.deleted_at IS NULL
+                               ORDER BY o.op_seq LIMIT 1)
+            AND l.log_type = 'complete'
+            AND l.log_no NOT LIKE '%LOG-NC-%'), 0) END::int AS "cmJcUsed",
+`;
+
+/** The JC customer-material panel (ADR-203). The first five fields are the
+ *  shared contract's `customerMaterial` shape, now carrying the JWSO LINE's
+ *  register figures (received = accepted on the line, issued = issued on the
+ *  line net of returns to store, returned = good returned to the customer,
+ *  balance = the line's register balance) and Needed = this card's qty (1
+ *  piece per part, owner D1). The four extra fields are THIS card's figures. */
+type JcCustomerMaterial = NonNullable<JobCardListItem['customerMaterial']> & {
+  issuedToJcQty: number;
+  returnedToStoreQty: number;
+  usedQty: number;
+  onJcQty: number;
+};
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
@@ -155,27 +216,7 @@ export async function listJobCards(
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
         jwl.part_name AS "jwPartName",
-        -- R1 (ADR-194): customer-material roll-up for a JW-sourced JC, summed off
-        -- the separate party-store ledger for THIS JWSO line. Reversals are NETTED
-        -- so the roll-up matches party-store reality after a cancel: a GRN cancel
-        -- posts reversal/out (undoes a receive), an issue cancel posts reversal/in
-        -- (undoes an issue). balance = received − issued − returned is computed in
-        -- the mapper. All 0 on a non-JW card (jwl.id NULL).
-        COALESCE((SELECT SUM(CASE
-            WHEN psl.movement = 'receive' THEN psl.qty
-            WHEN psl.movement = 'reversal' AND psl.direction = 'out' THEN -psl.qty
-            ELSE 0 END)
-          FROM public.party_stock_ledger psl
-          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmReceived",
-        COALESCE((SELECT SUM(CASE
-            WHEN psl.movement = 'issue' THEN psl.qty
-            WHEN psl.movement = 'reversal' AND psl.direction = 'in' THEN -psl.qty
-            ELSE 0 END)
-          FROM public.party_stock_ledger psl
-          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmIssued",
-        COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
-          WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
-            AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
+        ${JC_CUSTOMER_MATERIAL_SELECT}
         COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
@@ -326,27 +367,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
         jwl.part_name AS "jwPartName",
-        -- R1 (ADR-194): customer-material roll-up for a JW-sourced JC, summed off
-        -- the separate party-store ledger for THIS JWSO line. Reversals are NETTED
-        -- so the roll-up matches party-store reality after a cancel: a GRN cancel
-        -- posts reversal/out (undoes a receive), an issue cancel posts reversal/in
-        -- (undoes an issue). balance = received − issued − returned is computed in
-        -- the mapper. All 0 on a non-JW card (jwl.id NULL).
-        COALESCE((SELECT SUM(CASE
-            WHEN psl.movement = 'receive' THEN psl.qty
-            WHEN psl.movement = 'reversal' AND psl.direction = 'out' THEN -psl.qty
-            ELSE 0 END)
-          FROM public.party_stock_ledger psl
-          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmReceived",
-        COALESCE((SELECT SUM(CASE
-            WHEN psl.movement = 'issue' THEN psl.qty
-            WHEN psl.movement = 'reversal' AND psl.direction = 'in' THEN -psl.qty
-            ELSE 0 END)
-          FROM public.party_stock_ledger psl
-          WHERE psl.jw_line_id = jwl.id AND psl.deleted_at IS NULL), 0)::int AS "cmIssued",
-        COALESCE((SELECT SUM(psl.qty) FROM public.party_stock_ledger psl
-          WHERE psl.jw_line_id = jwl.id AND psl.movement = 'return'
-            AND psl.deleted_at IS NULL), 0)::int AS "cmReturned",
+        ${JC_CUSTOMER_MATERIAL_SELECT}
         COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
@@ -502,30 +523,37 @@ function toChildJobCards(v: unknown): JobCardListItem['childJobCards'] {
 }
 
 function toListItem(r: Record<string, unknown>): JobCardListItem {
-  // R1 (ADR-194): customer-material roll-up. Only a JW-sourced card has customer
-  // material; an own-material (SO-sourced or standalone) card reports null. When
-  // the card IS JW-sourced, Needed = rmQtyPerPiece × orderQty (route-card RM,
-  // null when not planned), and Received/Issued/Returned come off the party-store
-  // ledger for this JWSO line; Balance = received − issued − returned.
+  // ADR-203: customer-material panel. Only a JW-sourced card has customer
+  // material; an own-material (SO-sourced or standalone) card reports null.
+  // Figures come from JC_CUSTOMER_MATERIAL_SELECT (documents, keyed on the JWSO
+  // line id). Customer material is 1 piece per part (owner D1), so Needed is
+  // simply this card's qty.
   const jwLineId = (r['jwLineId'] as string | null) ?? null;
   const rmQtyPerPiece = r['rmQtyPerPiece'] == null ? null : Number(r['rmQtyPerPiece']);
   const orderQty = Number(r['orderQty']);
-  // Netted totals (reversals already subtracted in SQL). Balance uses the TRUE
-  // net so it always equals party-store reality; the three display categories
-  // are clamped at ≥0 in case a reversal edge case drives one slightly negative.
-  const cmReceived = Number(r['cmReceived'] ?? 0);
-  const cmIssued = Number(r['cmIssued'] ?? 0);
-  const cmReturned = Number(r['cmReturned'] ?? 0);
-  const customerMaterial: JobCardListItem['customerMaterial'] = jwLineId
+  const lineAccepted = Number(r['cmLineAccepted'] ?? 0);
+  const lineIssued = Number(r['cmLineIssued'] ?? 0);
+  const lineReturned = Number(r['cmLineReturned'] ?? 0);
+  const jcIssued = Number(r['cmJcIssued'] ?? 0);
+  const jcReturnedToStore = Number(r['cmJcReturnedToStore'] ?? 0);
+  const jcUsed = Number(r['cmJcUsed'] ?? 0);
+  const customerMaterialView: JcCustomerMaterial | null = jwLineId
     ? {
-        // S9 — 3 decimals, never a whole-number round (2.4 KG stayed 2).
-        needed: rmQtyPerPiece == null ? null : roundQty(rmQtyPerPiece * orderQty),
-        received: roundQty(Math.max(0, cmReceived)),
-        issued: roundQty(Math.max(0, cmIssued)),
-        returned: roundQty(Math.max(0, cmReturned)),
-        balance: roundQty(cmReceived - cmIssued - cmReturned),
+        needed: orderQty,
+        received: Math.max(0, lineAccepted),
+        issued: Math.max(0, lineIssued),
+        returned: Math.max(0, lineReturned),
+        // The TRUE net — equals the line's register balance.
+        balance: lineAccepted - lineIssued - lineReturned,
+        issuedToJcQty: jcIssued,
+        returnedToStoreQty: jcReturnedToStore,
+        usedQty: Math.max(0, jcUsed),
+        onJcQty: Math.max(0, jcIssued - jcReturnedToStore - jcUsed),
       }
     : null;
+  // Widened on purpose: the four per-JC fields ride along in the response; the
+  // shared contract only names the first five (see JcCustomerMaterial).
+  const customerMaterial: JobCardListItem['customerMaterial'] = customerMaterialView;
   return {
     id: r['id'] as string,
     companyId: r['companyId'] as string,
@@ -696,7 +724,11 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
       JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.items i2 ON i2.id = jwl.item_id
       LEFT JOIN public.clients cli2 ON cli2.id = jw.client_id
-      WHERE jwl.company_id = ${companyId}::uuid AND jwl.deleted_at IS NULL AND jw.status != 'closed'
+      -- ADR-203: a Job Card can only be raised on an OPEN, not short-closed
+      -- line of an OPEN JWSO (the same rule createJobCard enforces).
+      WHERE jwl.company_id = ${companyId}::uuid AND jwl.deleted_at IS NULL
+        AND jw.status::text = 'open'
+        AND jwl.status::text = 'open' AND jwl.short_closed_at IS NULL
       ORDER BY type, code, "lineNo"
     `)) as unknown as Array<Record<string, unknown>>;
 
@@ -1214,10 +1246,15 @@ export async function getJobCardStatusExtras(
       )
       SELECT
         jc.jw_code AS "jwCode",
-        COALESCE((SELECT SUM(mi.qty) FROM public.party_material_issues mi
+        -- ADR-203: issued is net of pieces returned to store; consumed counts
+        -- good + rejected (ADR-183) on 'complete' rows, never an NC re-injection
+        -- (the same figures as the JC customer-material panel).
+        COALESCE((SELECT SUM(mi.qty - mi.returned_to_store_qty) FROM public.party_material_issues mi
                   WHERE mi.job_card_id = jc.id AND mi.deleted_at IS NULL), 0)::int AS "issued",
-        COALESCE((SELECT SUM(l.qty) FROM public.op_log l
-                  WHERE l.jc_op_id = (SELECT id FROM first_op)), 0)::int AS "consumed"
+        COALESCE((SELECT SUM(l.qty + l.reject_qty) FROM public.op_log l
+                  WHERE l.jc_op_id = (SELECT id FROM first_op)
+                    AND l.log_type = 'complete'
+                    AND l.log_no NOT LIKE '%LOG-NC-%'), 0)::int AS "consumed"
       FROM jc
       WHERE jc.gated = true
     `)) as unknown as Array<{ jwCode: string | null; issued: number; consumed: number }>;
@@ -1516,19 +1553,26 @@ async function assertLineBalance(
     fkCol: typeof jobCards.sourceSoLineId | typeof jobCards.sourceJwLineId,
     lineId: string,
   ): Promise<void> => {
-    const line = (
-      await tx
-        .select({ oq: lineTable.orderQty })
-        .from(lineTable)
-        .where(
-          and(
-            eq(lineTable.id, lineId),
-            eq(lineTable.companyId, companyId),
-            isNull(lineTable.deletedAt),
-          ),
-        )
-        .limit(1)
-    )[0];
+    // ADR-203 — a JWSO line is read under its row lock (FOR UPDATE) so the
+    // "already on JCs" sum below cannot race another create / edit on the
+    // same line. SO lines keep the plain read: their cards are made from
+    // Planning, which owns its own locking order.
+    const line =
+      lineTable === jobWorkOrderLines
+        ? { oq: (await lockJwLine(tx, companyId, lineId)).orderQty }
+        : (
+            await tx
+              .select({ oq: lineTable.orderQty })
+              .from(lineTable)
+              .where(
+                and(
+                  eq(lineTable.id, lineId),
+                  eq(lineTable.companyId, companyId),
+                  isNull(lineTable.deletedAt),
+                ),
+              )
+              .limit(1)
+          )[0];
     if (!line) throw new ValidationError('The SO / JWSO line was not found. Pick the line again.');
 
     // A BOM line's child job cards ALL hang off the parent SO line but are for
@@ -1833,6 +1877,11 @@ export async function createJobCard(
   const newId = await withUserContext(user, async (tx) => {
     const item = await resolveItem(tx, input.itemCode, companyId);
     await assertItemIsJwLineItem(tx, companyId, input.sourceJwLineId!, item);
+    // ADR-203 — lock the JWSO line FIRST, then refuse a short-closed / closed
+    // line or a cancelled JWSO, so the balance sum below runs under the lock
+    // and two creates on the same line cannot both pass (CLAUDE.md §20.3).
+    const jwLine = await lockJwLine(tx, companyId, input.sourceJwLineId!);
+    assertJwLineOpenForWork(jwLine, 'raise a Job Card');
     await assertLineBalance(tx, input, companyId, null, item.id);
 
     // Routing rule: a QC op may not sit directly after an OSP op. Checked on
@@ -2142,6 +2191,23 @@ export async function updateJobCard(
       throw new ValidationError(
         `JC Qty (${input.orderQty}) cannot be less than what is already completed on ${head.code} (${work.done}).`,
       );
+    }
+    // ADR-203 — nor below the customer material still issued to it (issued −
+    // returned to store): 1 piece per part, so a smaller card would hold
+    // material it can never use. Floor = max(completed, issued net).
+    if (input.orderQty !== head.orderQty) {
+      const issuedRows = (await tx.execute(sql`
+        SELECT COALESCE(SUM(qty - returned_to_store_qty), 0)::int AS "net"
+        FROM public.party_material_issues
+        WHERE job_card_id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+      `)) as unknown as Array<{ net: number }>;
+      const issuedNet = Number(issuedRows[0]?.net ?? 0);
+      if (input.orderQty < issuedNet) {
+        throw new ValidationError(
+          `JC Qty (${input.orderQty}) cannot be less than the customer material issued to ${head.code} ` +
+            `(${issuedNet}, after returns to store). Return the spare pieces to store first.`,
+        );
+      }
     }
 
     await assertLineBalance(tx, input, companyId, id, item.id, { recoveryKind: head.recoveryKind });
@@ -2612,6 +2678,30 @@ export async function deleteJobCard(
     if (!rows[0]) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
     // ADR-182 — nor may it be deleted; the stopped order still points at it.
     await assertProductionOrderNotShortClosed(tx, id);
+    // ADR-203 — customer material issued to this card would be orphaned (the
+    // register says it is on a card that no longer exists). Refuse while any
+    // live issue still holds pieces on it (qty − returned to store > 0); the
+    // user returns the spare pieces to store or cancels the issue first. An
+    // issue fully returned to store holds nothing and does not block.
+    const liveIssues = await tx
+      .select({ code: partyMaterialIssues.code })
+      .from(partyMaterialIssues)
+      .where(
+        and(
+          eq(partyMaterialIssues.jobCardId, id),
+          eq(partyMaterialIssues.companyId, companyId),
+          isNull(partyMaterialIssues.deletedAt),
+          sql`${partyMaterialIssues.qty} - ${partyMaterialIssues.returnedToStoreQty} > 0`,
+        ),
+      )
+      .orderBy(asc(partyMaterialIssues.code));
+    if (liveIssues.length > 0) {
+      throw new ValidationError(
+        `${rows[0].code} cannot be deleted — customer material is issued to it ` +
+          `(${liveIssues.map((r) => r.code).join(', ')}). ` +
+          `Return the pieces to store or cancel the issue first.`,
+      );
+    }
 
     const now = new Date();
     // ADR-197 — deleted_by stamped with deleted_at (one stamp for card + ops).

@@ -8,7 +8,13 @@
 
 import { type SQL, type SQLWrapper, and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { ActivityAction, type DocumentTraceability, type RelatedDoc } from '@innovic/shared';
+import {
+  ActivityAction,
+  type DocumentTraceability,
+  ITEM_TYPE_RULES,
+  type ItemType,
+  type RelatedDoc,
+} from '@innovic/shared';
 import {
   items,
   jcOps,
@@ -161,6 +167,29 @@ async function assertItemExists(
     .limit(1);
   if (rows.length === 0) {
     throw new ValidationError('Selected Item was not found. Please select the Item Code again.');
+  }
+}
+
+/** ADR-203 — Party Supplied Material is the CUSTOMER's own material: it is
+ *  never purchased, so no PR may name it (the PO already refuses it). Reads
+ *  the type's `partyOwned` flag so a future party-owned type is covered too. */
+async function assertItemNotPartyOwned(
+  tx: DbTransaction,
+  itemId: string | null,
+  companyId: string,
+): Promise<void> {
+  if (!itemId) return;
+  const rows = await tx
+    .select({ code: items.code, itemType: items.itemType })
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
+    .limit(1);
+  const r = rows[0];
+  if (r && ITEM_TYPE_RULES[r.itemType as ItemType]?.partyOwned) {
+    throw new ValidationError(
+      `${r.code} is the customer's material (Party Supplied Material) — it cannot be ` +
+        `purchased, so no Purchase Request can be raised for it.`,
+    );
   }
 }
 
@@ -1040,6 +1069,7 @@ export async function insertPurchaseRequestTx(
   const resolvedItemId =
     input.itemId ??
     (input.itemCodeText ? await resolveItemIdByCode(tx, input.itemCodeText, companyId) : null);
+  await assertItemNotPartyOwned(tx, resolvedItemId, companyId);
   // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
   await assertLineQtysFitUom(tx, companyId, [{ itemId: resolvedItemId, qty: input.qty }], 'PR Qty');
 
@@ -1197,6 +1227,9 @@ export async function updatePurchaseRequest(
     } else if (input.itemCodeText !== undefined && input.itemCodeText !== null) {
       const reResolved = await resolveItemIdByCode(tx, input.itemCodeText, companyId);
       if (reResolved) updates['itemId'] = reResolved;
+    }
+    if ('itemId' in updates && updates['itemId'] !== existing[0]!.itemId) {
+      await assertItemNotPartyOwned(tx, updates['itemId'] as string | null, companyId);
     }
     if (input.itemCodeText !== undefined) updates['itemCodeText'] = input.itemCodeText ?? null;
     if (input.itemName !== undefined) updates['itemName'] = input.itemName ?? null;

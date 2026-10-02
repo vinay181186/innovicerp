@@ -128,6 +128,9 @@ function JobWorkOrderNewPage(): React.JSX.Element {
       {exit.dialog}
       <JobWorkOrderForm
         mode="create"
+        // Money on the form follows the same JWSO price permission the server
+        // applies to a saved JWSO (detail.priceVisible on edit).
+        priceVisible={perms.price}
         pageTitle="New JWSO"
         backLabel="Back to JWSO Master"
         onBack={goBack}

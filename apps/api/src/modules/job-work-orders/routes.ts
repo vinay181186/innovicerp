@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
   createJobWorkOrderInputSchema,
+  ensureJwRmItemInputSchema,
   listJobWorkOrdersQuerySchema,
   shortCloseJobWorkOrderLineInputSchema,
   updateJobWorkOrderInputSchema,
@@ -40,6 +41,14 @@ export async function jobWorkOrdersRoutes(app: FastifyInstance): Promise<void> {
     const detail = await service.createJobWorkOrder(body, req.user);
     reply.code(201);
     return detail;
+  });
+
+  // ADR-203: find-or-create the customer RM (`<item code>-RM`) for an order
+  // item — called silently by the JWSO form when a line's item is picked.
+  app.post('/job-work-orders/rm-item', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = ensureJwRmItemInputSchema.parse(req.body);
+    return service.ensureJwRmItem(body, req.user);
   });
 
   app.patch('/job-work-orders/:id', async (req) => {

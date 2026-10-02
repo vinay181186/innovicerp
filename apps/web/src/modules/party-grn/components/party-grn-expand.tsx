@@ -7,6 +7,7 @@
 
 import type { PartyGrnLine, PartyGrnListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
+import { fmtDateTime } from '@/lib/date';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { usePartyGrnDetail } from '../api';
@@ -24,11 +25,11 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
     },
     {
       id: 'party_material',
-      header: 'Customer Material',
+      header: 'Customer RM',
       kind: 'code',
       nowrap: true,
       render: (l) => (
-        <span className="td-code" style={{ color: 'var(--purple)' }}>
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
           {l.partyMaterialCodeText}
         </span>
       ),
@@ -72,7 +73,13 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       headColor: 'var(--green)',
       className: 'mono fw-700',
       nowrap: true,
-      render: (l) => <span style={{ color: 'var(--green2)' }}>{l.acceptedQty}</span>,
+      // ADR-203: 0 until Incoming QC — show a dash rather than a false zero.
+      render: (l) =>
+        l.qcAt == null ? (
+          <span className="text3">—</span>
+        ) : (
+          <span style={{ color: 'var(--green2)' }}>{l.acceptedQty}</span>
+        ),
     },
     {
       id: 'rejected_qty',
@@ -89,6 +96,16 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       ),
     },
     {
+      // ADR-203 (owner D3): rejected pieces already sent back to the customer.
+      id: 'rejected_returned_qty',
+      header: 'Rejected Returned Qty',
+      kind: 'num',
+      align: 'right',
+      className: 'mono',
+      nowrap: true,
+      render: (l) => (l.rejectedQty > 0 ? l.rejectedReturnedQty : '—'),
+    },
+    {
       id: 'reject_reason',
       header: 'Reject Reason',
       align: 'left',
@@ -96,6 +113,16 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       className: 'text3',
       render: (l) => l.rejectReason ?? '—',
       title: (l) => l.rejectReason ?? '',
+    },
+    {
+      // ADR-203: Incoming QC is a separate step. Who did it is in History below.
+      id: 'qc_at',
+      header: 'QC At',
+      kind: 'date',
+      className: 'mono',
+      nowrap: true,
+      render: (l) =>
+        l.qcAt == null ? <span className="badge b-amber">Waiting QC</span> : fmtDateTime(l.qcAt),
     },
   ];
 }

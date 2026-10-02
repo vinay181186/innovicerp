@@ -4,8 +4,8 @@
 // routes/list.tsx so that file stays under the 400-line ceiling.
 //
 // Shows the line detail the list row cannot: Ln · Item (CODE/REV + name) ·
-// Material · Drawing No. · Order Qty · Dispatched · Pending · UOM · [Rate] ·
-// Due Date · JWSO Status. The JWSO-level Remarks sit below the table (the
+// Customer RM · Accepted (ADR-203) · Material · Drawing No. · Order Qty ·
+// Dispatched · Pending · UOM · [Rate] · Due Date · JWSO Status. The JWSO-level Remarks sit below the table (the
 // retired card showed them on its meta line). No per-line Edit: it opened the
 // same JWSO edit page as the row's ⋯ Edit, so it was a duplicate.
 
@@ -38,9 +38,10 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
   // the Rate column is dropped here too. Told by the server, not inferred from a
   // null money field (a null also means "no value yet").
   const priceHidden = jw.priceVisible === false;
-  // Ln · Item (badge) · Material · Drawing No. · Qty · Dispatched · Pending ·
-  // UOM · [Rate] · Due Date · JWSO Status.
-  const cols = 12 - (priceHidden ? 1 : 0);
+  // Ln · thumbnail · Item (badge) · Customer RM · Accepted · Material ·
+  // Drawing No. · Qty · Dispatched · Pending · UOM · [Rate] · Due Date ·
+  // JWSO Status.
+  const cols = 14 - (priceHidden ? 1 : 0);
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
       <div
@@ -61,6 +62,10 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
               <th style={{ width: 36 }}>Ln</th>
               <ItemThumbnailHeader />
               <th>Item</th>
+              <th>Customer RM</th>
+              <th className="th-num" title="Customer RM accepted by Incoming QC on this line">
+                Accepted
+              </th>
               <th>Material</th>
               <th>Drawing No.</th>
               <th className="th-num">Order Qty</th>
@@ -103,6 +108,16 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
                         imagePath={l.itemImagePath}
                       />
                     </td>
+                    <td>
+                      {l.rmItemCode ? (
+                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                          {l.rmItemCode}
+                        </span>
+                      ) : (
+                        <span className="text3">—</span>
+                      )}
+                    </td>
+                    <td className="mono td-num">{l.rmItemCode ? l.rmAcceptedQty : '—'}</td>
                     <td className="text2" style={{ fontSize: 11 }}>
                       {l.material ?? '—'}
                     </td>

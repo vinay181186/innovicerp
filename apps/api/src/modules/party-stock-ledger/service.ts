@@ -15,6 +15,7 @@ import type {
   PartyStockLedgerListItem,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape } from '../../lib/list-query';
 
@@ -26,6 +27,9 @@ const MOVEMENT_LABEL_SQL = sql`(CASE psl.movement
 const SOURCE_DOC_LABEL_SQL = sql`(CASE psl.source_doc_type
   WHEN 'party_grn' THEN 'Party GRN' WHEN 'party_grn_line' THEN 'Party GRN'
   WHEN 'party_material_issue' THEN 'Customer Material Issue'
+  WHEN 'party_material_issue_return' THEN 'Returned to Store'
+  WHEN 'customer_material_return' THEN 'Customer Material Return'
+  WHEN 'party_material_return' THEN 'Customer Material Return'
   WHEN 'party_material' THEN 'Customer Material' WHEN 'job_card' THEN 'Job Card'
   WHEN 'jw_return_challan' THEN 'JW Return' ELSE psl.source_doc_type END)`;
 
@@ -43,6 +47,8 @@ export async function listPartyStockLedger(
   input: ListPartyStockLedgerQuery,
   user: AuthContext,
 ): Promise<ListPartyStockLedgerResponse> {
+  // ADR-203: the register is read on the Party screens' view permission.
+  await requireFormAccess(user, 'party_create', 'view');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const pmFrag = input.partyMaterialId

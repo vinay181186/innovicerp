@@ -38,6 +38,13 @@ const SOURCE_DOC_LABELS: Record<string, string> = {
   party_material: 'Customer Material',
   job_card: 'Job Card',
   jw_return_challan: 'JW Return',
+  // ADR-203: unused material put back from a Job Card into the register.
+  party_material_issue_return: 'Returned to Store',
+  // ADR-203: the new Customer Material Return document (good + rejected).
+  customer_material_return: 'Customer Material Return',
+  // The old per-material "Return" action (removed by ADR-203) — kept so its
+  // historical rows still read sensibly.
+  party_material_return: 'Returned to Customer (old)',
 };
 
 export const partyStockLedgerListRoute = createRoute({

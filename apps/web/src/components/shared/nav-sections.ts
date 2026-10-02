@@ -121,6 +121,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/stock-counts', label: 'Stock Count', icon: '🧮', formKey: 'stockcount_create' },
           { to: '/instruments', label: 'Instrument Register', icon: '📏', formKey: 'toolissue_create' },
           { to: '/party-grn', label: 'Party GRN', icon: '📥', formKey: 'party_create' },
+          { to: '/customer-material-returns', label: 'Customer Material Return', icon: '📤', formKey: 'party_create' },
         ],
       },
       {

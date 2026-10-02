@@ -240,6 +240,7 @@ export const ACTIVITY_ENTITIES = [
   'JwInvoice',
   'JwReturnChallan',
   'PartyGrn',
+  'CustomerMaterialReturn',
   'PartyMaterial',
   'PartyMaterialIssue',
   'StoreIssue',
@@ -354,6 +355,12 @@ export const ACTIVITY_ENTITY_META: Record<ActivityEntity, ActivityEntityMeta> = 
     aliases: [],
     searchKind: 'jw-return',
     viewForm: 'dispatch_create',
+  },
+  CustomerMaterialReturn: {
+    label: 'Customer Material Return',
+    aliases: [],
+    searchKind: null,
+    viewForm: 'party_create',
   },
   PartyGrn: {
     label: 'Party GRN',

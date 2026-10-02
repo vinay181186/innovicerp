@@ -33,7 +33,6 @@ import {
 } from '../components/party-material-columns';
 import { DeletePartyMaterialModal } from '../components/delete-party-material-modal';
 import { EditPartyMaterialModal } from '../components/edit-party-material-modal';
-import { ReturnPartyMaterialModal } from '../components/return-party-material-modal';
 
 export const partyMaterialsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -58,10 +57,6 @@ function PartyMaterialsListPage(): React.JSX.Element {
   const canAdd = perms.entry;
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
-  // R7 (ADR-194): returning spare customer material reuses the jw_create key
-  // (the same gate the JWSO create / invoice / return actions use), not
-  // party_create — the server enforces jw_create on this endpoint.
-  const canReturn = effectiveFormPerms(eff, 'jw_create').entry;
   const urlSearch = partyMaterialsListRoute.useSearch();
   const navigate = partyMaterialsListRoute.useNavigate();
   const page = urlSearch.page;
@@ -87,7 +82,6 @@ function PartyMaterialsListPage(): React.JSX.Element {
   }, [search, urlSearch.search, navigate]);
   const [showAdd, setShowAdd] = useState(false);
   const [editRow, setEditRow] = useState<PartyMaterialListItem | null>(null);
-  const [returnRow, setReturnRow] = useState<PartyMaterialListItem | null>(null);
   // The material the Delete dialog is asking about, or null when closed. A row
   // with stock on hand never gets here — its Delete item is disabled.
   const [deleteRow, setDeleteRow] = useState<PartyMaterialListItem | null>(null);
@@ -179,8 +173,10 @@ function PartyMaterialsListPage(): React.JSX.Element {
             // No row click — there is no Customer Material detail page.
             renderExpanded={(pm) => (expanded.has(pm.id) ? <PartyMaterialDetails pm={pm} /> : null)}
             onToggleExpanded={(pm) => toggleExpand(pm.id)}
-            // ⋯ menu: Edit · Return (workflow) · ─ · Delete (danger) — same gates
-            // as before; greyed with a reason where the server would refuse.
+            // ⋯ menu: Edit · ─ · Delete (danger) — same gates as before; greyed
+            // with a reason where the server would refuse. ADR-203 removed the
+            // old per-material Return (it is now the Customer Material Return
+            // document).
             rowMenu={(pm) => [
               {
                 key: 'edit',
@@ -188,15 +184,6 @@ function PartyMaterialsListPage(): React.JSX.Element {
                 icon: 'pencil',
                 hidden: !canEdit,
                 onSelect: () => setEditRow(pm),
-              },
-              {
-                key: 'return',
-                label: 'Return',
-                icon: 'arrow-left',
-                group: 'workflow',
-                hidden: !canReturn,
-                disabledReason: pm.stockQty <= 0 ? 'Nothing in stock' : undefined,
-                onSelect: () => setReturnRow(pm),
               },
               {
                 key: 'delete',
@@ -225,9 +212,6 @@ function PartyMaterialsListPage(): React.JSX.Element {
 
       {showAdd ? <AddPartyMaterialModal onClose={() => setShowAdd(false)} /> : null}
       {editRow ? <EditPartyMaterialModal row={editRow} onClose={() => setEditRow(null)} /> : null}
-      {returnRow ? (
-        <ReturnPartyMaterialModal row={returnRow} onClose={() => setReturnRow(null)} />
-      ) : null}
       {deleteRow ? (
         <DeletePartyMaterialModal
           id={deleteRow.id}

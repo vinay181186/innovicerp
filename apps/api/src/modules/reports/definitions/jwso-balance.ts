@@ -1,5 +1,5 @@
 // JWSO balance — one row per Job Work Sales Order line: customer material
-// received (Party GRN), processed pieces returned, labour invoiced, and what
+// accepted (Party GRN, Incoming QC), processed pieces returned, labour invoiced, and what
 // is still to return and to bill.
 // Modelled on ERPNext's "Subcontracted Item To Be Received" / job-work balance reports.
 
@@ -22,7 +22,7 @@ export const jwsoBalanceReport: RegisteredReport = {
     slug: 'jwso-balance',
     title: 'JWSO balance',
     description:
-      'Every JWSO line (Draft and Cancelled left out): customer material received on Party GRN, Returned, Invoiced, To Return (Order Qty minus Returned) and To Invoice (Returned minus Invoiced). Material Recd is matched to the line by the Party GRN "JWSO Ln"; on a one-line JWSO every receipt counts.',
+      'Every JWSO line (Draft and Cancelled left out): customer RM accepted at Incoming QC on Party GRNs for that line, Returned, Invoiced, To Return (Order Qty minus Returned) and To Invoice (Returned minus Invoiced).',
     group: 'Sales',
     dept: 'sales',
     showsMoney: true,
@@ -39,7 +39,7 @@ export const jwsoBalanceReport: RegisteredReport = {
       { key: 'item_revision', label: 'Drawing Rev', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'order_qty', label: 'Order Qty', type: 'number' },
-      { key: 'material_received_qty', label: 'Material Recd', type: 'number' },
+      { key: 'material_received_qty', label: 'Customer RM Accepted', type: 'number' },
       { key: 'returned_qty', label: 'Returned', type: 'number' },
       { key: 'invoiced_qty', label: 'Invoiced', type: 'number' },
       { key: 'to_return_qty', label: 'To Return', type: 'number' },
@@ -70,21 +70,17 @@ export const jwsoBalanceReport: RegisteredReport = {
         COALESCE(it.name, jwl.part_name)            AS item_name,
         jwl.order_qty                               AS order_qty,
         COALESCE((
-          -- Same matching rule as op-entry's client-material gate: a one-line
-          -- JWSO takes every receipt on the order; a multi-line JWSO matches
-          -- the Party GRN line's JWSO Ln (ADR-102 made it mandatory).
-          SELECT SUM(pgl.received_qty)
-          FROM public.party_grn pg
-          JOIN public.party_grn_lines pgl
-            ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
-          WHERE pg.job_work_order_id = jwo.id
-            AND pg.company_id = ${companyId}::uuid
-            AND pg.deleted_at IS NULL
-            AND (
-              (SELECT COUNT(*) FROM public.job_work_order_lines x
-               WHERE x.job_work_order_id = jwo.id AND x.deleted_at IS NULL) = 1
-              OR TRIM(pgl.jw_line_no_text) = jwl.line_no::text
-            )
+          -- ADR-203: customer RM ACCEPTED at Incoming QC for THIS line, matched
+          -- by the JWSO line id (never the line-number text, never received
+          -- qty). A line waiting for QC carries accepted 0; a cancelled GRN is
+          -- soft-deleted and drops out.
+          SELECT SUM(pgl.accepted_qty)
+          FROM public.party_grn_lines pgl
+          JOIN public.party_grn pg
+            ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+          WHERE pgl.jw_line_id = jwl.id
+            AND pgl.company_id = ${companyId}::uuid
+            AND pgl.deleted_at IS NULL
         ), 0)::int                                  AS material_received_qty,
         jwl.returned_qty                            AS returned_qty,
         jwl.invoiced_qty                            AS invoiced_qty,

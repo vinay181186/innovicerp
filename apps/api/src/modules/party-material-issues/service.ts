@@ -1,9 +1,18 @@
-// Party Material Issue service (ADR-079).
+// Party Material Issue service (ADR-079, ADR-103, ADR-203).
 //
 // Issues client-supplied ("party") material to a Job Card for in-house
 // machining. Debits the SEPARATE party stock (party_materials.stock_qty↓,
-// issued_qty↑) — never writes own-stock store_transactions. Guard: cannot issue
-// more than the received party stock on hand.
+// issued_qty↑) — never writes own-stock store_transactions.
+//
+// ADR-203: the material is the Job Card's JWSO line's customer RM
+// (job_work_order_lines.party_material_id), never a free choice, and every
+// issue records that line (jw_line_id). Two caps, both checked under the JWSO
+// line's row lock:
+//   per line — the line's register balance (accepted − net issued − good
+//              returned to the customer, see ./register.ts)
+//   per JC   — net issued to the Job Card ≤ its order qty (1 piece = 1 part)
+// Unused pieces go back to the register with Return to store (partial reversal);
+// a whole wrong issue is cancelled.
 
 import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
 import type {
@@ -11,6 +20,7 @@ import type {
   ListPartyMaterialIssuesQuery,
   ListPartyMaterialIssuesResponse,
   PartyMaterialIssue,
+  ReturnPartyMaterialIssueToStoreInput,
 } from '@innovic/shared';
 import {
   items,
@@ -23,15 +33,21 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { PARTY_ISSUE_SF_COLUMNS } from './sf-columns';
 import { ActivityAction } from '@innovic/shared';
 import { softDeleteStamp } from '../../lib/audit-trail';
-import { partyMaterialFitsJwLine } from '../party-materials/service';
+import { jcMaterial, jwLineRegister } from './register';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -105,6 +121,9 @@ function rowToIssue(
     partyMaterialCodeText: row.partyMaterialCodeText,
     partyMaterialName: row.partyMaterialName,
     qty: row.qty,
+    // ADR-203: the JWSO line drawn on + pieces put back into the register.
+    jwLineId: row.jwLineId,
+    returnedToStoreQty: row.returnedToStoreQty,
     remarks: row.remarks,
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy,
@@ -112,6 +131,33 @@ function rowToIssue(
     updatedBy: row.updatedBy,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
   };
+}
+
+/** Lower party_materials.issued_qty by `qty`. Conditional — a counter that
+ *  would go negative means the books disagree, so it throws instead of
+ *  clamping (ADR-203). */
+async function lowerIssuedQty(
+  tx: DbTransaction,
+  partyMaterialId: string,
+  qty: number,
+  userId: string,
+  code: string,
+): Promise<void> {
+  const updated = await tx
+    .update(partyMaterials)
+    .set({
+      issuedQty: sql`${partyMaterials.issuedQty} - ${qty}`,
+      updatedAt: new Date(),
+      updatedBy: userId,
+    })
+    .where(and(eq(partyMaterials.id, partyMaterialId), sql`${partyMaterials.issuedQty} >= ${qty}`))
+    .returning({ id: partyMaterials.id });
+  if (updated.length === 0) {
+    throw new ConflictError(
+      `${code}: the material's Issued total is less than ${qty}, so it cannot be lowered. ` +
+        `The customer-material figures disagree — ask an administrator to check this material.`,
+    );
+  }
 }
 
 export async function createPartyMaterialIssue(
@@ -124,15 +170,12 @@ export async function createPartyMaterialIssue(
   const userId = user.id;
 
   return withUserContext(user, async (tx) => {
-    // 1) JWO
+    // 1) JWSO
     const jwRows = await tx
       .select({
         id: jobWorkOrders.id,
         code: jobWorkOrders.code,
         clientId: jobWorkOrders.clientId,
-        // ADR-195: the JWSO's own customer material (-rm item code) is a valid
-        // part for any of its job cards in the identity check below.
-        clientMaterial: jobWorkOrders.clientMaterial,
       })
       .from(jobWorkOrders)
       .where(
@@ -146,26 +189,18 @@ export async function createPartyMaterialIssue(
     const jw = jwRows[0];
     if (!jw) throw new NotFoundError('Selected JWSO was not found. Please select the JWSO again.');
 
-    // 2) Optional JC (for traceability) — and cross-check its owning JWSO.
-    // A Job Card sourced from a JW line already belongs to a specific JWSO
-    // (job_cards.source_jw_line_id -> job_work_order_lines.job_work_order_id).
-    // Resolve that owner in the same load and reject issuing the JC against a
-    // DIFFERENT JWSO. JCs with no JW source (e.g. SO-sourced) are left alone.
-    // ADR-103: the job card is mandatory — it is the only link from an issue to
-    // a JWSO LINE, and the first-op material gate is computed per line.
+    // 2) Job Card — must be raised from a line of THIS JWSO, and not a recovery
+    // card (a rework / replacement card works pieces that already drew their
+    // material on the original card).
     const jcRows = await tx
       .select({
         id: jobCards.id,
         code: jobCards.code,
         orderQty: jobCards.orderQty,
         sourceJwLineId: jobCards.sourceJwLineId,
-        jcJobWorkOrderId: jobWorkOrderLines.jobWorkOrderId,
-        lineNo: jobWorkOrderLines.lineNo,
-        lineItemId: jobWorkOrderLines.itemId,
-        linePartName: jobWorkOrderLines.partName,
+        recoveryKind: jobCards.recoveryKind,
       })
       .from(jobCards)
-      .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jobCards.sourceJwLineId))
       .where(
         and(
           eq(jobCards.id, input.jobCardId),
@@ -176,136 +211,94 @@ export async function createPartyMaterialIssue(
       .limit(1);
     const jc = jcRows[0];
     if (!jc) throw new NotFoundError('Selected JC was not found. Please pick the JC No. again.');
-    const jcCodeText: string = jc.code;
-    if (jc.sourceJwLineId && jc.jcJobWorkOrderId && jc.jcJobWorkOrderId !== jw.id) {
-      throw new ValidationError(
-        `JC ${jc.code} belongs to another JWSO — it cannot be issued against ${jw.code}.`,
-      );
-    }
     if (!jc.sourceJwLineId) {
       throw new ValidationError(
         `JC ${jc.code} is not linked to a JWSO line, so customer material cannot be issued.`,
       );
     }
+    if (jc.recoveryKind) {
+      throw new ValidationError(
+        `JC ${jc.code} is a recovery Job Card — customer material is issued to the original ` +
+          `Job Card of the line, not to it.`,
+      );
+    }
 
-    // 3) Party material — lock + availability GUARD (cannot issue > received on hand)
-    await tx.execute(
-      sql`SELECT 1 FROM public.party_materials WHERE id = ${input.partyMaterialId}::uuid FOR UPDATE`,
-    );
+    // 3) Lock the JWSO line FIRST — every figure capped below is summed under
+    // this lock (CLAUDE.md §20.3). Then: same JWSO, open for work, has its RM.
+    const line = await lockJwLine(tx, companyId, jc.sourceJwLineId);
+    if (line.jobWorkOrderId !== jw.id) {
+      throw new ValidationError(
+        `JC ${jc.code} belongs to ${line.jwCode}, not ${jw.code} — it cannot be issued against ${jw.code}.`,
+      );
+    }
+    assertJwLineOpenForWork(line, 'issue customer material');
+    const where = `${line.jwCode} Ln ${line.lineNo}`;
+    if (!line.partyMaterialId) {
+      throw new ValidationError(`${where} has no customer RM — open and save the JWSO first.`);
+    }
+
+    // 4) The material IS the line's customer RM.
     const pmRows = await tx
       .select({
         id: partyMaterials.id,
         code: partyMaterials.code,
         name: partyMaterials.name,
-        stockQty: partyMaterials.stockQty,
-        issuedQty: partyMaterials.issuedQty,
         clientId: partyMaterials.clientId,
-        itemId: partyMaterials.itemId,
-        itemCodeText: partyMaterials.itemCodeText,
       })
       .from(partyMaterials)
       .where(
         and(
-          eq(partyMaterials.id, input.partyMaterialId),
+          eq(partyMaterials.id, line.partyMaterialId),
           eq(partyMaterials.companyId, companyId),
           isNull(partyMaterials.deletedAt),
         ),
       )
       .limit(1);
     const pm = pmRows[0];
-    if (!pm)
-      throw new NotFoundError('Selected Party Material was not found. Please select it again.');
-
-    // ADR-103: same two identity checks the Party GRN got in ADR-102. Without
-    // them the gate can be unlocked with the wrong customer's material, or with
-    // the right customer's material for a different part.
+    if (!pm) {
+      throw new NotFoundError(
+        `The customer RM of ${where} was not found. Open and save the JWSO again.`,
+      );
+    }
+    if (input.partyMaterialId && input.partyMaterialId !== pm.id) {
+      throw new ValidationError(
+        `${where} uses customer material ${pm.code} — only that material can be issued to ${jc.code}.`,
+      );
+    }
     if (pm.clientId != null && jw.clientId != null && pm.clientId !== jw.clientId) {
       throw new ValidationError(
         `${pm.code} belongs to another Customer than ${jw.code}. ` +
-          `Party Material can only be issued against its own Customer's order.`,
-      );
-    }
-    // ADR-195: a material pinned to the JWSO's customer material also fits.
-    if (!partyMaterialFitsJwLine(pm, jc.lineItemId, jw.clientMaterial)) {
-      throw new ValidationError(
-        `${pm.code} is "${pm.name}"${pm.itemCodeText ? ` (Item Code ${pm.itemCodeText})` : ''}, but ` +
-          `${jc.code} makes "${jc.linePartName}". Issue the material for this part.`,
+          `Customer material can only be issued against its own Customer's order.`,
       );
     }
 
-    if (input.qty > pm.stockQty) {
+    // 5) Per-line cap: what is still in the register for THIS line.
+    const reg = await jwLineRegister(tx, companyId, line.id);
+    if (input.qty > reg.balance) {
+      const avail = Math.max(0, reg.balance);
       throw new ValidationError(
-        `Qty (${input.qty}) cannot be more than stock of ${pm.code} (${pm.stockQty}). Receive more via a Party GRN first.`,
+        `Qty (${input.qty}) cannot be more than the customer material left for ${where} (${avail}) — ` +
+          `Accepted ${reg.accepted}, Issued (net of returns to store) ${reg.netIssued}` +
+          (reg.goodReturned > 0 ? `, Returned to customer ${reg.goodReturned}` : '') +
+          `. Book a Party GRN and its QC for the rest first.`,
       );
     }
 
-    // ADR-103: PER-LINE limit. The overall stock check above is not enough on a
-    // multi-line JWSO — material received for line 1 could be issued wholesale
-    // to line 2's job card, starving the part it was sent for. Compare what was
-    // received FOR THIS LINE against what has already been issued to job cards
-    // on THIS LINE. Single-line JWSOs match every receipt (the line-no text on
-    // older GRNs may be blank).
-    const lineNo = jc.lineNo == null ? null : String(jc.lineNo);
-    const lineCountRows = (await tx.execute(sql`
-      SELECT COUNT(*)::int AS n FROM public.job_work_order_lines
-      WHERE job_work_order_id = ${jw.id}::uuid AND deleted_at IS NULL
-    `)) as unknown as Array<{ n: number }>;
-    const multiLine = Number(lineCountRows[0]?.n ?? 1) > 1;
-    const lineFilter = multiLine && lineNo ? sql`AND pgl.jw_line_no_text = ${lineNo}` : sql``;
-    const balRows = (await tx.execute(sql`
-      SELECT
-        COALESCE((
-          -- R2 (ADR-194): only ACCEPTED qty enters the party store, so issue
-          -- availability is Σ accepted (not received — rejected pieces never
-          -- became stock and must not show as pending to issue).
-          SELECT SUM(pgl.accepted_qty)
-          FROM public.party_grn pg
-          JOIN public.party_grn_lines pgl
-            ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
-          WHERE pg.job_work_order_id = ${jw.id}::uuid
-            AND pg.deleted_at IS NULL
-            ${lineFilter}
-        ), 0)::int AS "receivedForLine",
-        COALESCE((
-          SELECT SUM(mi.qty)
-          FROM public.party_material_issues mi
-          JOIN public.job_cards j2 ON j2.id = mi.job_card_id
-          WHERE mi.deleted_at IS NULL
-            AND j2.source_jw_line_id = ${jc.sourceJwLineId}::uuid
-        ), 0)::int AS "issuedForLine"
-    `)) as unknown as Array<{ receivedForLine: number; issuedForLine: number }>;
-    const receivedForLine = Number(balRows[0]?.receivedForLine ?? 0);
-    const issuedForLine = Number(balRows[0]?.issuedForLine ?? 0);
-    const remainingForLine = Math.max(0, receivedForLine - issuedForLine);
-    if (input.qty > remainingForLine) {
-      throw new ValidationError(
-        `Qty (${input.qty}) for "${jc.linePartName}" (${jw.code} Ln ${lineNo ?? '?'}) cannot be more than ` +
-          `Pending to Issue (${remainingForLine}) — Accepted ${receivedForLine}, already Issued ${issuedForLine}. ` +
-          `Record a Party GRN for the rest first.`,
-      );
-    }
-
-    // ADR-103: never issue more than the job card is actually making. 1 piece of
-    // client material = 1 finished piece, so a 50-piece job card needs 50 — more
-    // than that is a typo, and it would hand the operator a licence to log more
-    // than was planned.
-    const jcIssuedRows = (await tx.execute(sql`
-      SELECT COALESCE(SUM(qty), 0)::int AS "issued"
-      FROM public.party_material_issues
-      WHERE job_card_id = ${jc.id}::uuid AND deleted_at IS NULL
-    `)) as unknown as Array<{ issued: number }>;
-    const alreadyToJc = Number(jcIssuedRows[0]?.issued ?? 0);
-    const jcRemaining = Math.max(0, Number(jc.orderQty) - alreadyToJc);
+    // 6) Per-JC cap: 1 piece of customer material = 1 finished piece, so the
+    // net issued to a Job Card never exceeds what it makes.
+    const jcm = await jcMaterial(tx, companyId, jc.id);
+    const jcOrderQty = Number(jc.orderQty);
+    const jcRemaining = jcOrderQty - jcm.netIssued;
     if (input.qty > jcRemaining) {
       throw new ValidationError(
-        jcRemaining === 0
-          ? `${jc.code} already has all ${jc.orderQty} pieces of material issued. Nothing more is needed for this JC.`
-          : `${jc.code} is making ${jc.orderQty} pieces and ${alreadyToJc} are already issued, ` +
+        jcRemaining <= 0
+          ? `${jc.code} already has all ${jcOrderQty} pieces of material issued. Nothing more is needed for this JC.`
+          : `${jc.code} is making ${jcOrderQty} pieces and ${jcm.netIssued} are already issued, ` +
               `so only ${jcRemaining} more can be issued. Qty entered: ${input.qty}.`,
       );
     }
 
-    // 4) Insert issue
+    // 7) Insert the issue.
     // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
     await lockDocSeries(tx, companyId, 'party_material_issues');
     const code = input.code ?? (await nextIssueCode(tx, companyId));
@@ -318,7 +311,8 @@ export async function createPartyMaterialIssue(
         jobWorkOrderId: jw.id,
         jwCodeText: jw.code,
         jobCardId: jc.id,
-        jcCodeText,
+        jcCodeText: jc.code,
+        jwLineId: line.id,
         partyMaterialId: pm.id,
         partyMaterialCodeText: pm.code,
         partyMaterialName: pm.name,
@@ -331,20 +325,18 @@ export async function createPartyMaterialIssue(
     const row = inserted[0];
     if (!row) throw new ValidationError('Could not save Party Material Issue. Try again.');
 
-    // 5) Draw down party stock. R3 (ADR-194): the ledger writer takes the qty
-    // OUT of the party store (an 'issue'/'out' row, capped at the balance) and
-    // lowers stock_qty; this service keeps the issued_qty lifetime counter and
-    // stamps the JWSO line so the JC customer-material roll-up can read it.
+    // 8) Draw down the register. The ledger writer owns stock_qty and refuses
+    // an 'out' beyond the material's balance; this service keeps issued_qty.
     await postPartyStockMove(tx, {
       companyId,
       partyMaterialId: pm.id,
-      jwLineId: jc.sourceJwLineId,
+      jwLineId: line.id,
       movement: 'issue',
       direction: 'out',
       qty: input.qty,
       sourceDocType: 'party_material_issue',
       sourceDocId: row.id,
-      remarks: `${code} · issued to ${jcCodeText ?? jw.code}`,
+      remarks: `${code} · issued to ${jc.code}`,
       userId,
       qtyLabel: 'Issue Qty',
     });
@@ -364,8 +356,9 @@ export async function createPartyMaterialIssue(
         entity: 'PartyMaterialIssue',
         entityId: row.id,
         refId: code,
+        lineRef: `${line.jwCode} Ln ${line.lineNo}`,
         qty: input.qty,
-        detail: `${code} — issued ${input.qty} of ${pm.code} to ${jcCodeText ?? jw.code} (${jw.code})`,
+        detail: `${code} — issued ${input.qty} of ${pm.code} to ${jc.code} (${jw.code} Ln ${line.lineNo})`,
       },
       companyId,
       user,
@@ -375,18 +368,52 @@ export async function createPartyMaterialIssue(
   });
 }
 
-// ADR-103 — cancel (reverse) a Party Material Issue.
+/** Lock order for a change to an existing issue: the JWSO line first (the
+ *  parent of every cap), then the issue row itself, re-checked live after the
+ *  lock so two cancels / returns cannot both pass. */
+async function lockIssue(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<typeof partyMaterialIssues.$inferSelect> {
+  const pre = (await tx.execute(sql`
+    SELECT mi.jw_line_id AS "jwLineId", jc.source_jw_line_id AS "jcLineId"
+      FROM public.party_material_issues mi
+      LEFT JOIN public.job_cards jc ON jc.id = mi.job_card_id
+     WHERE mi.id = ${id}::uuid AND mi.company_id = ${companyId}::uuid AND mi.deleted_at IS NULL
+  `)) as unknown as Array<{ jwLineId: string | null; jcLineId: string | null }>;
+  const p = pre[0];
+  if (!p) throw new NotFoundError('Party Material Issue not found. Refresh the page.');
+  const lineId = p.jwLineId ?? p.jcLineId;
+  if (lineId) await lockJwLine(tx, companyId, lineId);
+
+  await tx.execute(sql`
+    SELECT 1 FROM public.party_material_issues WHERE id = ${id}::uuid FOR UPDATE
+  `);
+  const rows = await tx
+    .select()
+    .from(partyMaterialIssues)
+    .where(and(eq(partyMaterialIssues.id, id), eq(partyMaterialIssues.companyId, companyId)))
+    .limit(1);
+  const iss = rows[0];
+  if (!iss) throw new NotFoundError('Party Material Issue not found. Refresh the page.');
+  if (iss.deletedAt) {
+    throw new ConflictError(
+      `${iss.code} has just been cancelled by someone else. Refresh the page.`,
+    );
+  }
+  // Legacy rows written before 0193's backfill reached them: fall back to the
+  // Job Card's line so the reversal still lands on the right line.
+  return { ...iss, jwLineId: iss.jwLineId ?? lineId ?? null };
+}
+
+// ADR-103 / ADR-203 — cancel (reverse) a whole Party Material Issue.
 //
-// Needed because the issued qty now controls whether an operator may work: a
-// mistyped issue would otherwise unlock production for the wrong quantity, with
-// no way back. It is also what unblocks the Party GRN cancel, which refuses
-// while material is still issued.
-//
-// GUARD (the mirror of the GRN's): material that has already been MACHINED
-// cannot be un-issued. Cancelling an issue of 20 after 20 pieces were made
-// would drive the job card's remaining material negative and freeze it. The
-// pieces are gone — a scrap/adjustment entry is the honest correction, not a
-// cancel.
+// GUARD: material that has already been worked cannot be un-issued. "Used" is
+// the first operation's good + rejected pieces (ADR-183); the Job Card's net
+// issued after the cancel must still cover it. An issue that already had pieces
+// returned to store is refused — return the rest to store instead, so the
+// history stays one story.
 export async function cancelPartyMaterialIssue(
   id: string,
   reason: string,
@@ -401,85 +428,53 @@ export async function cancelPartyMaterialIssue(
   if (!trimmed) throw new ValidationError('Reason is required to cancel a Party Material Issue.');
 
   return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({
-        id: partyMaterialIssues.id,
-        code: partyMaterialIssues.code,
-        qty: partyMaterialIssues.qty,
-        remarks: partyMaterialIssues.remarks,
-        jobCardId: partyMaterialIssues.jobCardId,
-        jcCodeText: partyMaterialIssues.jcCodeText,
-        partyMaterialId: partyMaterialIssues.partyMaterialId,
-        partyMaterialCodeText: partyMaterialIssues.partyMaterialCodeText,
-      })
-      .from(partyMaterialIssues)
-      .where(
-        and(
-          eq(partyMaterialIssues.id, id),
-          eq(partyMaterialIssues.companyId, companyId),
-          isNull(partyMaterialIssues.deletedAt),
-        ),
-      )
-      .limit(1);
-    const iss = rows[0];
-    if (!iss) throw new NotFoundError('Party Material Issue not found. Refresh the page.');
+    const iss = await lockIssue(tx, companyId, id);
+
+    if (iss.returnedToStoreQty > 0) {
+      throw new ConflictError(
+        `Cannot cancel ${iss.code}: ${iss.returnedToStoreQty} piece(s) of it were already returned to store. ` +
+          `Use Return to store for the rest instead.`,
+      );
+    }
 
     if (iss.jobCardId) {
-      // How much of this job card's material has already been turned into
-      // parts (qty logged on its FIRST op — the op the material feeds).
-      const consumedRows = (await tx.execute(sql`
-        WITH first_op AS (
-          SELECT id FROM public.jc_ops
-          WHERE job_card_id = ${iss.jobCardId}::uuid AND deleted_at IS NULL
-          ORDER BY op_seq LIMIT 1
-        )
-        SELECT
-          COALESCE((SELECT SUM(l.qty) FROM public.op_log l
-                    WHERE l.jc_op_id = (SELECT id FROM first_op)), 0)::int AS "consumed",
-          COALESCE((SELECT SUM(mi.qty) FROM public.party_material_issues mi
-                    WHERE mi.job_card_id = ${iss.jobCardId}::uuid
-                      AND mi.deleted_at IS NULL), 0)::int AS "issued"
-      `)) as unknown as Array<{ consumed: number; issued: number }>;
-      const consumed = Number(consumedRows[0]?.consumed ?? 0);
-      const issued = Number(consumedRows[0]?.issued ?? 0);
-      if (issued - iss.qty < consumed) {
+      const jcm = await jcMaterial(tx, companyId, iss.jobCardId);
+      const netAfter = jcm.netIssued - (iss.qty - iss.returnedToStoreQty);
+      if (netAfter < jcm.used) {
         throw new ValidationError(
-          `Cannot cancel ${iss.code}: ${consumed} piece(s) have already been machined on ` +
-            `${iss.jcCodeText ?? 'this JC'} against the ${issued} issued. ` +
-            `Cancelling would leave it short by ${consumed - (issued - iss.qty)}. ` +
-            `That material is already used — record a scrap/adjustment instead.`,
+          `Cannot cancel ${iss.code}: ${jcm.used} piece(s) have already been worked on ` +
+            `${iss.jcCodeText ?? 'this JC'} (good + rejected on the first operation) against ` +
+            `${jcm.netIssued} issued. Cancelling would leave it short by ${jcm.used - netAfter}. ` +
+            `Return the unused pieces to store instead.`,
         );
       }
     }
 
     const now = new Date();
-    // R3 (ADR-194): the ledger writer puts the qty back into the party store (a
-    // compensating 'reversal'/'in' row) and raises stock_qty; this service
-    // unwinds the issued_qty lifetime counter alongside it.
-    if (iss.partyMaterialId) {
-      await postPartyStockMove(tx, {
-        companyId,
-        partyMaterialId: iss.partyMaterialId,
-        movement: 'reversal',
-        direction: 'in',
-        qty: iss.qty,
-        sourceDocType: 'party_material_issue',
-        sourceDocId: id,
-        remarks: `${iss.code} cancelled: ${trimmed}`,
-        userId: user.id,
-        qtyLabel: 'Reversal Qty',
-      });
-      await tx
-        .update(partyMaterials)
-        .set({
-          issuedQty: sql`GREATEST(${partyMaterials.issuedQty} - ${iss.qty}, 0)`,
-          updatedAt: now,
-          updatedBy: user.id,
-        })
-        .where(eq(partyMaterials.id, iss.partyMaterialId));
-    }
+    // The ledger writer puts the qty back into the register (a 'reversal'/'in'
+    // row on the same JWSO line) and raises stock_qty; issued_qty comes down.
+    await postPartyStockMove(tx, {
+      companyId,
+      partyMaterialId: iss.partyMaterialId,
+      jwLineId: iss.jwLineId,
+      movement: 'reversal',
+      direction: 'in',
+      qty: iss.qty,
+      sourceDocType: 'party_material_issue',
+      sourceDocId: id,
+      remarks: `${iss.code} cancelled: ${trimmed}`,
+      userId: user.id,
+      qtyLabel: 'Reversal Qty',
+    });
+    await lowerIssuedQty(
+      tx,
+      iss.partyMaterialId,
+      iss.qty,
+      user.id,
+      iss.partyMaterialCodeText ?? iss.code,
+    );
 
-    await tx
+    const cancelled = await tx
       .update(partyMaterialIssues)
       .set({
         ...softDeleteStamp(user),
@@ -487,7 +482,13 @@ export async function cancelPartyMaterialIssue(
         updatedAt: now,
         updatedBy: user.id,
       })
-      .where(eq(partyMaterialIssues.id, id));
+      .where(and(eq(partyMaterialIssues.id, id), isNull(partyMaterialIssues.deletedAt)))
+      .returning({ id: partyMaterialIssues.id });
+    if (cancelled.length === 0) {
+      throw new ConflictError(
+        `${iss.code} has just been cancelled by someone else. Refresh the page.`,
+      );
+    }
 
     await emitActivityLog(
       tx,
@@ -507,6 +508,120 @@ export async function cancelPartyMaterialIssue(
     );
 
     return { ok: true as const, code: iss.code, reversedQty: iss.qty };
+  });
+}
+
+// ADR-203 — Return to store: put UNUSED pieces of an issue back from the Job
+// Card into the customer-material register (a partial reversal; the issue
+// stays). Capped twice:
+//   · this issue — qty ≤ issue qty − already returned to store
+//   · the Job Card — qty ≤ net issued to the JC − used on its first operation,
+//     so pieces the JC has already worked can never come back.
+export async function returnPartyMaterialIssueToStore(
+  id: string,
+  input: ReturnPartyMaterialIssueToStoreInput,
+  user: AuthContext,
+): Promise<PartyMaterialIssue> {
+  await requireFormAccess(user, 'party_create', 'entry');
+  const companyId = requireCompany(user);
+  const reason = input.reason.trim();
+  if (!reason) throw new ValidationError('Reason is required to return material to store.');
+
+  return withUserContext(user, async (tx) => {
+    const iss = await lockIssue(tx, companyId, id);
+
+    const left = iss.qty - iss.returnedToStoreQty;
+    if (input.qty > left) {
+      throw new ValidationError(
+        left <= 0
+          ? `All ${iss.qty} piece(s) of ${iss.code} are already returned to store.`
+          : `Return Qty (${input.qty}) cannot be more than what is left on ${iss.code} (${left}) — ` +
+              `Issued ${iss.qty}, already returned to store ${iss.returnedToStoreQty}.`,
+      );
+    }
+    if (iss.jobCardId) {
+      const jcm = await jcMaterial(tx, companyId, iss.jobCardId);
+      const onJc = jcm.netIssued - jcm.used;
+      if (input.qty > onJc) {
+        throw new ValidationError(
+          `Return Qty (${input.qty}) cannot be more than the unused material still on ` +
+            `${iss.jcCodeText ?? 'the JC'} (${Math.max(0, onJc)}) — issued ${jcm.netIssued} (net of returns), ` +
+            `already worked ${jcm.used} (good + rejected on the first operation).`,
+        );
+      }
+    }
+
+    await postPartyStockMove(tx, {
+      companyId,
+      partyMaterialId: iss.partyMaterialId,
+      jwLineId: iss.jwLineId,
+      movement: 'reversal',
+      direction: 'in',
+      qty: input.qty,
+      sourceDocType: 'party_material_issue_return',
+      sourceDocId: iss.id,
+      remarks: `${iss.code} · returned to store from ${iss.jcCodeText ?? 'JC'}: ${reason}`,
+      userId: user.id,
+      qtyLabel: 'Return Qty',
+    });
+
+    // Conditional: the CHECK (returned ≤ qty) also guards it, but a 0-row
+    // answer here names the problem in plain words.
+    const updated = await tx
+      .update(partyMaterialIssues)
+      .set({
+        returnedToStoreQty: sql`${partyMaterialIssues.returnedToStoreQty} + ${input.qty}`,
+        updatedAt: new Date(),
+        updatedBy: user.id,
+      })
+      .where(
+        and(
+          eq(partyMaterialIssues.id, iss.id),
+          isNull(partyMaterialIssues.deletedAt),
+          sql`${partyMaterialIssues.returnedToStoreQty} + ${input.qty} <= ${partyMaterialIssues.qty}`,
+        ),
+      )
+      .returning();
+    const row = updated[0];
+    if (!row) {
+      throw new ConflictError(
+        `${iss.code} was changed by someone else just now. Refresh the page.`,
+      );
+    }
+    await lowerIssuedQty(
+      tx,
+      iss.partyMaterialId,
+      input.qty,
+      user.id,
+      iss.partyMaterialCodeText ?? iss.code,
+    );
+
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Return,
+        entity: 'PartyMaterialIssue',
+        entityId: iss.id,
+        refId: iss.code,
+        qty: input.qty,
+        reason,
+        changes: [
+          {
+            field: 'returnedToStoreQty',
+            label: 'Returned to store',
+            before: iss.returnedToStoreQty,
+            after: row.returnedToStoreQty,
+          },
+        ],
+        detail:
+          `${iss.code} — ${input.qty} of ${iss.partyMaterialCodeText ?? 'material'} returned to store ` +
+          `from ${iss.jcCodeText ?? 'JC'}`,
+      },
+      companyId,
+      user,
+    );
+
+    return rowToIssue(row);
   });
 }
 

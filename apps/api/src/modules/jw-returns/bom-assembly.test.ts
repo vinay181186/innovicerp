@@ -90,12 +90,11 @@ async function makeJw(tag: string, orderQty: number, bomId: string | undefined) 
         code: `${P}JW-${tag}`,
         jwDate: '2026-08-01',
         clientId,
-        status: 'open',
       },
       lines: [
         {
           partName: 'ASSEMBLY',
-          itemCodeText: `${P}PARENT`,
+          itemId: parentId,
           orderQty,
           uom: 'NOS',
           rate: 250,

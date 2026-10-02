@@ -1,5 +1,7 @@
 import type {
   CreateJobWorkOrderInput,
+  EnsureJwRmItemInput,
+  EnsureJwRmItemResponse,
   JobWorkOrderDetail,
   ListJobWorkOrdersQuery,
   ListJobWorkOrdersResponse,
@@ -87,6 +89,20 @@ export function useUpdateJobWorkOrder(id: string, saveKey?: SaveKey) {
       qc.setQueryData(jobWorkOrdersKeys.detail(id), updated);
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
+  });
+}
+
+/** ADR-203: find-or-create the customer RM (`<item code>-RM`) for an order
+ *  item. Called silently by the JWSO form the moment a line's item is picked —
+ *  no popup. Idempotent server-side: the same item always returns the same RM;
+ *  `created` is true only on the call that made it (the line shows "new"). */
+export function useEnsureJwRmItem() {
+  return useMutation<EnsureJwRmItemResponse, Error, EnsureJwRmItemInput>({
+    mutationFn: (input) =>
+      apiFetch<EnsureJwRmItemResponse>('/job-work-orders/rm-item', {
+        method: 'POST',
+        json: input,
+      }),
   });
 }
 

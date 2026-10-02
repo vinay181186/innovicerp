@@ -38,6 +38,7 @@ import { CancelPartyGrnModal } from '../components/cancel-party-grn-modal';
 import { NewPartyGrnModal } from '../components/new-party-grn-modal';
 import { PARTY_GRN_HIDDEN_COLUMNS, partyGrnColumns } from '../components/party-grn-columns';
 import { PartyGrnExpand } from '../components/party-grn-expand';
+import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
@@ -72,6 +73,9 @@ function PartyGrnListPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'party_create');
   const canCreate = perms.entry;
   const canCancel = perms.edit && perms.approve;
+  // ADR-203 (owner D4): Incoming QC on a party GRN is the Incoming QC
+  // permission (qc_incoming · entry), the same gate the Incoming QC screens use.
+  const canQc = effectiveFormPerms(eff, 'qc_incoming').entry;
   const routeSearch = partyGrnListRoute.useSearch();
   const navigate = partyGrnListRoute.useNavigate();
   // Seed this tab's box only when the landing targets it; a `?tab=issue`
@@ -100,6 +104,7 @@ function PartyGrnListPage(): React.JSX.Element {
     () => Boolean(routeSearch.jw) && (routeSearch.tab ?? 'receive') === 'receive',
   );
   const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
+  const [qcRow, setQcRow] = useState<PartyGrnListItem | null>(null);
   // Receive | Issue tabs — Issue is the former standalone Party Material Issue screen.
   const [tab, setTab] = useState<'receive' | 'issue'>(() => routeSearch.tab ?? 'receive');
 
@@ -239,8 +244,8 @@ function PartyGrnListPage(): React.JSX.Element {
             // the ▸ reveals the per-line QC split, Received By / Remarks and the
             // receipt's History. Every row here is a live receipt (a cancelled
             // GRN is soft-deleted and filtered out by the API), so the only tint
-            // is the defensive cancelled wash. The one per-row action is Cancel,
-            // gated by canCancel exactly as the card's button was.
+            // is the defensive cancelled wash. Row ⋯: Incoming QC (ADR-203,
+            // qc_incoming entry, only while a line waits) and Cancel (canCancel).
             <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.partyGrn}
@@ -255,6 +260,14 @@ function PartyGrnListPage(): React.JSX.Element {
                 renderExpanded={(g) => (expanded.has(g.id) ? <PartyGrnExpand g={g} /> : null)}
                 onToggleExpanded={(g) => toggleExpand(g.id)}
                 rowMenu={(g) => [
+                  {
+                    key: 'incoming-qc',
+                    label: 'Incoming QC',
+                    icon: 'check',
+                    group: 'workflow',
+                    hidden: !canQc || g.qcPendingLines <= 0,
+                    onSelect: () => setQcRow(g),
+                  },
                   {
                     key: 'cancel',
                     label: 'Cancel GRN',
@@ -284,6 +297,7 @@ function PartyGrnListPage(): React.JSX.Element {
           {cancelRow ? (
             <CancelPartyGrnModal row={cancelRow} onClose={() => setCancelRow(null)} />
           ) : null}
+          {qcRow && canQc ? <PartyGrnQcModal row={qcRow} onClose={() => setQcRow(null)} /> : null}
         </>
       )}
     </div>
